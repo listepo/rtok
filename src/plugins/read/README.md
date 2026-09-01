@@ -35,6 +35,8 @@ allow_paths = []             # extra roots outside cwd
 
 ## Tasks
 
+See `roadmap.md` § `read`. Checks in `plan.md`.
+
 T4.2 full/lines · T4.3 map/signatures · T4.4 dedup · T4.5 search + tree · T4.6 Read advice.
 
 ## Status

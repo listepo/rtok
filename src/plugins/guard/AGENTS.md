@@ -9,4 +9,4 @@
 - Runs on the hook path: one indexed DB lookup, no filesystem reads.
 - Each denial writes `Measurement { kind: "guard" }` with the avoided result size.
 
-**Not scheduled yet.** Add a task to `plan.md` (with a Check) before writing code here.
+**Checks**: `plan.md` T2.6. Order: `roadmap.md` § `guard`.

@@ -30,8 +30,9 @@ window_turns = 5
 
 ## Tasks
 
-Not yet scheduled in `plan.md` as a numbered task; it is listed in the catalogue (§1) and
-depends on T2.1 (dispatcher) and T3.1 (archive ids). Propose a task before implementing.
+See `roadmap.md` § `guard`. Checks in `plan.md`.
+
+T2.6 deny duplicate Read/Bash within `window_turns` when an archive id exists.
 
 ## Status
 

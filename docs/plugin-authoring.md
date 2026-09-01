@@ -6,7 +6,7 @@ fits in a single ≤ 200 LOC task. `examples/hello_plugin.rs` is the runnable re
 
 ## 0. Should it exist?
 
-Check `plan.md` §1 (catalogue) and §0 (decisions). If the method is not there, propose a plan
+Check `plan.md` §1 (catalogue) and §0 (decisions), and `roadmap.md` for that plugin's task order. If the method is not there, add it to `ideas.md` (source tool + plugin; Later if it is v0.2+) and propose a plan
 change first. Every plugin is written from scratch here: it must not shell out to, link, or
 read the data of a third-party tool (D6). The tool it replaces is the spec; `research.md`
 is the evidence.
@@ -94,7 +94,7 @@ fn denies_rm_rf() {
 }
 ```
 
-Then the task's Check from `plan.md`, then `make check`.
+Then the task's Check from `plan.md` (see `roadmap.md` for order), then `make check`.
 
 ## 6. Ship
 

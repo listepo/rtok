@@ -5,7 +5,7 @@ saving is measured; everything shortened can be expanded back.
 
 > Status: **P0 scaffold done** (config, store, plugin registry, estimator, hook types, CI).
 > No token is saved yet — by design, measurement comes first (`plan.md` D3). See `done.md`
-> for what is finished, `plan.md` for what is next, and `roadmap.md` for each plugin's build plan.
+> for what is finished, `plan.md` for what is next, `roadmap.md` for each plugin's build plan, and `ideas.md` for tool-inspired propositions (not yet tasks).
 
 ## Why
 
@@ -112,7 +112,8 @@ tests/fixtures/hooks/  real hook payloads
 ```
 
 Full picture: [`architecture.md`](architecture.md). Writing a plugin:
-[`docs/plugin-authoring.md`](docs/plugin-authoring.md).
+[`docs/plugin-authoring.md`](docs/plugin-authoring.md). Tool-inspired ideas not yet in the plan:
+[`ideas.md`](ideas.md) (v0.1 open ideas and v0.2+ Later).
 
 ## Development
 

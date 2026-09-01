@@ -27,7 +27,9 @@ min_rows = 5
 
 ## Tasks
 
-None scheduled. Enable only after `rtok bench` (T9.1) can A/B it.
+See `roadmap.md` § `toon`. Checks in `plan.md`.
+
+T11.7 `proxy_filter` TOON on tabular JSON (default off). Enable for traffic after T9.1 can A/B it.
 
 ## Status
 

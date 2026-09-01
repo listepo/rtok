@@ -34,7 +34,9 @@ min_tokens = 1500
 
 ## Tasks
 
-T5.3 live-zone rewrite · T5.4 `expand` through the proxy.
+See `roadmap.md` § `archive`. Checks in `plan.md`.
+
+T5.3 live-zone rewrite · T5.4 `expand` through the proxy · T11.4 across wires.
 
 ## Status
 

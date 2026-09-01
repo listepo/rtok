@@ -29,6 +29,8 @@ max_tokens = 2000
 
 ## Tasks
 
+See `roadmap.md` § `graph`. Checks in `plan.md`.
+
 T8.1 symbol index · T8.2 MCP tools.
 
 ## Status

@@ -36,6 +36,8 @@ modes = []          # e.g. ["terse", "yagni"]
 
 ## Tasks
 
+See `roadmap.md` § `inject`. Checks in `plan.md`.
+
 T2.4 plugin + budget · T7.1 modes as data.
 
 ## Status

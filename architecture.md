@@ -5,8 +5,8 @@ surfaces reach the plugins: Claude Code hooks, an MCP server, and an API proxy. 
 file records what every plugin did, before and after, so a saving is a row or it does not
 exist.
 
-This document describes the shape; `plan.md` holds the decisions (D1–D12) and the tasks;
-`research.md` holds the evidence.
+This document describes the shape; `plan.md` holds the decisions (D1–D14) and the tasks;
+`research.md` holds the evidence. `roadmap.md` is the per-plugin build plan. `ideas.md` holds propositions not yet in `plan.md`.
 
 ## 1. Principles the code enforces
 
@@ -17,9 +17,9 @@ This document describes the shape; `plan.md` holds the decisions (D1–D12) and 
 | A saving that is not a `Measurement` row does not exist | `plugin::Measurement` is the only type `Ctx::record` accepts; `measurements` table |
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
-| No daemon, no subprocess plugins, no WASM | plugins are in-tree modules behind Cargo features |
+| v0.1: no daemon, no subprocess plugins, no WASM (v0.2+ may add daemon/WASM; D6 unchanged) | plugins are in-tree modules behind Cargo features |
 | Every plugin is written here from scratch; no third-party tool on any code path (D6) | `Manifest` has no adapter kind; T0.8 Check greps `src/plugins` for retired tool names |
-| Every CLI flag is a config key; one precedence rule (D12) | `config/default.toml` (reference, embedded), `Config` typed sections, `tests/config_coverage.rs` walks the clap tree |
+| Every CLI flag is a config key; one precedence rule (D12, D14) | clap 4 derive; figment layers + provenance; toml_edit for `config set`; `tests/config_coverage.rs` walks the clap tree |
 
 ## 2. Layers
 
@@ -42,7 +42,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D12) and 
 ┌──────────────────────────────── core ─────────────────────────────────┐
 │  plugin.rs   trait Plugin, Manifest, Ctx, Measurement, event views    │
 │  config.rs   ~/.rtok/config.toml, RTOK_HOME, CATALOGUE                │
-│  store.rs    SQLite (WAL, FTS5), migrations/NNNN.sql                  │
+│  store/      Diesel ORM + bundled SQLite (WAL, FTS5), migrations/     │
 │  tokens.rs   chars-per-token estimator per class (±15 %)              │
 └───────────────────────────────────────────────────────────────────────┘
                │
@@ -60,8 +60,8 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/main.rs` | clap CLI; each subcommand is a thin call into the library | T0.1 |
 | `src/lib.rs` | crate root; declares the modules below | — |
 | `src/config.rs` | `Config::load()`, defaults, `[plugins.<id>]`, `CATALOGUE` | T0.2 |
-| `src/config/layers.rs`, `validate.rs`, `config/default.toml` | layering defaults < user < project < env < flags, origin tracking, `rtok config show/validate/set` (see `docs/config.md`) | P12 |
-| `src/store.rs` + `migrations/` | `Store::open`, migration runner, `insert_measurement` | T0.3 |
+| `src/config/layers.rs`, `validate.rs`, `config/default.toml` | figment providers (D14); `rtok config show/validate/set` (see `docs/config.md`) | P12 |
+| `src/store/` + `migrations/` | Diesel models; `Store::open`; `insert_call`/`tokens`/`log`; `insert_measurement` | T0.3, P13 |
 | `src/plugin.rs` | the contract (§4) | T0.4 |
 | `src/plugins/mod.rs` | feature-gated module list, `all()`, `Registry` | T0.4 |
 | `src/plugins/<id>/` | one plugin: `mod.rs` + `README.md` (what/why) + `AGENTS.md` (how to work on it) | per plugin |
@@ -149,9 +149,13 @@ migration is forbidden; add the next file.
 
 | Table | Written by | Read by |
 |-------|-----------|---------|
-| `events` | dispatcher | `rtok doctor`, latency checks |
+| `hosts`, `providers`, `models`, `sessions` | `Store` upsert | every `calls` row |
+| `calls` + `call_io` | dispatcher, mcp, proxy | `rtok stats`, doctor |
+| `tokens` | same surfaces (`before`/`after`/`mcp`) | `rtok stats --plugin <id>` |
+| `logs` | core + plugins via `Ctx::log` | doctor, debug |
+| `events` | (superseded; 0001 leftover) | — |
 | `measurements` | `Ctx::record` | `rtok stats --plugin <id>`, bench |
-| `archive` | `cmd`, `read`, `archive` | `rtok expand`, `guard` |
+| `archive` | `cmd`, `read`, `archive`, `call_io` spill | `rtok expand`, `guard` |
 | `read_cache` | `read` | `read` (dedup) |
 | `notes` + `notes_fts` | `memory` | `memory` |
 | `usage` | `proxy` | `measure` |
@@ -193,9 +197,10 @@ under 5 %.
   the single-feature build; CI runs it on macOS and Linux with the toolchain from `mise.toml`.
 - `examples/hello_plugin.rs` runs in CI and asserts a measurement row was written.
 
-## 11. Deliberately not here
+## 11. Not in v0.1
 
-No LLM-based compression, no embeddings, no type-resolved call graph (the `graph` plugin is
-a tree-sitter-tags index), no semantic response cache, no daemon, no WASM plugin host, no
-adapters over third-party tools. Each is rejected on evidence or by decision in `plan.md` §0;
-re-open them only with a measurement.
+v0.1 has no LLM-based compression, embeddings, type-resolved call graph (the `graph` plugin
+is a tree-sitter-tags index), semantic response cache, daemon, or WASM plugin host. Those
+are **v0.2+** (`plan.md` Later versions, `ideas.md` Later, `roadmap.md` Later), not discarded.
+Adapters over third-party tools stay out of *this repo* at every version (D6); a later WASM
+host loads plugins that live outside this repo.

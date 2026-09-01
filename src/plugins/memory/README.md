@@ -33,7 +33,9 @@ no third-party schema (D6).
 
 ## Tasks
 
-T2.5 checkpoint · T6.1 notes API · T6.2 recall · T6.3 import.
+See `roadmap.md` § `memory`. Checks in `plan.md`.
+
+T6.1 notes API · T2.5 checkpoint · T6.2 recall · T6.3 import.
 
 ## Status
 

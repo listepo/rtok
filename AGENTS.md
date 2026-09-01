@@ -2,9 +2,9 @@
 
 **What this is.** One Rust binary that reduces tokens for AI coding agents; every method is a plugin. Three surfaces: `rtok hook <event>` (Claude Code hooks), `rtok mcp` (MCP server), `rtok proxy` (`ANTHROPIC_BASE_URL`).
 
-**Before you start.** Use a low-cost model (Haiku) for simple jobs: subagents, background and one-off shell commands (build, test, git, cargo), API/HTTP calls, file listings. Reserve the expensive model for design, code that needs judgment, and reviews. Delegate, do not run cargo/git from the main context.
+**Before you start.** Use a low-cost model (any provider) for simple jobs: subagents, background and one-off shell commands (build, test, git, cargo), API/HTTP calls, file listings. Reserve the expensive model for design, code that needs judgment, and reviews. Delegate, do not run cargo/git from the main context.
 
-**Read first.** `plan.md` — decisions D1–D10 and every open task with its Check. `done.md` — finished tasks. `architecture.md` — module map and plugin contract. `research.md` — evidence. Before touching a plugin, read its `src/plugins/<id>/AGENTS.md`. Do not add work that is not in `plan.md`; propose it as a plan change instead.
+**Read first.** `plan.md` — decisions and every open task with its Check. `roadmap.md` — plan per internal plugin. `ideas.md` — propositions; do not implement from there. `done.md` — finished tasks. `architecture.md` — module map and plugin contract. `research.md` — evidence. Before touching a plugin, read its `src/plugins/<id>/AGENTS.md`. Do not add work that is not in `plan.md`; propose it as a plan change instead.
 
 **Toolchain.** Rust is pinned in `mise.toml`. Run everything as `mise exec -- cargo <cmd>` (or `mise activate` your shell). Never install or switch a global toolchain.
 
@@ -18,6 +18,6 @@
 - PostToolUse can only add context; it cannot change tool results.
 - No new dependency without a one-line reason in the commit message.
 
-**Models.** Haiku implements tasks. Sonnet reviews phase gates. Opus only edits `plan.md`.
+**Models.** Small/cheap model implements tasks. Mid-tier reviews phase gates. Frontier model only edits `plan.md`. Any provider.
 
 Keep this file under 350 tokens; it is loaded into every session.

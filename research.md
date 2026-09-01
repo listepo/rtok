@@ -1,6 +1,6 @@
 # Token-reduction tools for AI coding agents — research, comparison, evidence
 
-Date: 2026-09-01. Method: 8 Haiku research agents (compression tools, code graphs, memory, host surfaces, architecture, techniques, token-optimizer plugin, session-log measurement) + 2 Haiku adversarial fact-check agents (GitHub API metadata for 19 repos; 27 documentation/blog claims). Local ground truth from `~/.claude/settings.json`, `rtk gain`, `headroom savings`, `lean-ctx gain`, `caveman status`, claude-mem banner, and 17 session transcripts (Jul 29 – Sep 1). Raw reports live in the session scratchpad `token-research/`.
+Date: 2026-09-01. Method: 8 Haiku research agents (compression tools, code graphs, memory, host surfaces, architecture, techniques, token-optimizer plugin, session-log measurement) + 2 Haiku adversarial fact-check agents (GitHub API metadata for 19 repos; 27 documentation/blog claims). Local ground truth from `~/.claude/settings.json`, `rtk gain`, `headroom savings`, `lean-ctx gain`, `caveman status`, claude-mem banner, and 17 session transcripts (Jul 29 – Sep 1). Raw reports live in the session scratchpad `token-research/`. Features those tools have that rtok has not scheduled live in `ideas.md`.
 
 ## 1. Verdict
 
@@ -102,7 +102,7 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 6. Tabular JSON → TOON where results are tables (−40 %).
 7. Memory with progressive disclosure (titles → ids → bodies), never bodies at SessionStart.
 8. Code graph queries instead of grep-and-read chains — plausible, unmeasured; adapter first.
-9. LLM-based compression — negative until proven; skip.
+9. LLM-based compression — negative until proven; **v0.2+**, not v0.1 (`ideas.md` I-21).
 
 ## 7. Fact-check ledger
 
