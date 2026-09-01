@@ -5,7 +5,7 @@ saving is measured; everything shortened can be expanded back.
 
 > Status: **P0 scaffold done** (config, store, plugin registry, estimator, hook types, CI).
 > No token is saved yet — by design, measurement comes first (`plan.md` D3). See `done.md`
-> for what is finished and `plan.md` for what is next.
+> for what is finished, `plan.md` for what is next, and `roadmap.md` for each plugin's build plan.
 
 ## Why
 
@@ -120,7 +120,12 @@ Full picture: [`architecture.md`](architecture.md). Writing a plugin:
 make check      # fmt --check, clippy -D warnings, tests, single-feature build
 make example    # run examples/hello_plugin.rs
 make fmt        # apply rustfmt
+make changelog  # regenerate CHANGELOG.md from git history (git-cliff, cliff.toml)
 ```
+
+Commit subjects are `<task-id>: <title>` or `<area>: <title>` (`plan:`, `docs:`, `ci:`);
+`cliff.toml` groups them into the changelog by that prefix. Run `make changelog` before
+tagging a release.
 
 Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, branch
 `rtok/<task-id>`, stay within ≤ 200 LOC and ≤ 3 files, run the task's Check verbatim, then
