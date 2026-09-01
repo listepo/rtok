@@ -7,7 +7,7 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::config::{Config, PluginCfg};
+use crate::config::Config;
 use crate::store::Store;
 use crate::tokens::{self, Class};
 
@@ -82,11 +82,6 @@ impl Ctx {
     /// Estimated token count for `text` (±15 %, no tokenizer, no network).
     pub fn estimate(&self, text: &str, class: Class) -> u32 {
         tokens::estimate(text, class, &self.config.estimator)
-    }
-
-    /// `[plugins.<id>]` table, if the user wrote one.
-    pub fn plugin_cfg(&self, id: &str) -> Option<&PluginCfg> {
-        self.config.plugins.get(id)
     }
 
     /// Persist a measurement for this session (the only path for savings into the DB).

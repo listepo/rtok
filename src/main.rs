@@ -34,8 +34,25 @@ enum Cmd {
     },
     /// Print an archived payload
     Expand { id: String },
-    /// List plugins: id, kind, enabled, surfaces
+    /// List plugins: id, enabled, surfaces
     Plugins,
+    /// The one config file (T12.1; show/get/set/validate land in T12.2–T12.3)
+    Config {
+        #[command(subcommand)]
+        action: ConfigCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Write the annotated reference file to `<home>/config.toml`
+    Init {
+        /// Overwrite an existing file
+        #[arg(long)]
+        force: bool,
+    },
+    /// Print the path of the config file
+    Path,
 }
 
 impl Cmd {
@@ -51,6 +68,7 @@ impl Cmd {
             Cmd::Run { .. } => "run",
             Cmd::Expand { .. } => "expand",
             Cmd::Plugins => "plugins",
+            Cmd::Config { .. } => "config",
         }
     }
 }
@@ -61,6 +79,15 @@ fn main() -> Result<()> {
         Cmd::Plugins => {
             let config = Config::load()?;
             print!("{}", Registry::new(&config).table());
+        }
+        Cmd::Config { action } => {
+            let home = Config::home_dir();
+            match action {
+                ConfigCmd::Init { force } => {
+                    println!("{}", Config::init(&home, force)?.display());
+                }
+                ConfigCmd::Path => println!("{}", Config::path_for(&home).display()),
+            }
         }
         // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),

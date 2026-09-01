@@ -28,7 +28,7 @@ impl Plugin for MyPlugin {
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
-        // Read config: cx.plugin_cfg("<id>")?.extra.get("some_key")
+        // Read config: cx.config.plugins.<id>.some_key   (typed section, T12.1)
         // Estimate:    cx.estimate(text, Class::Code)
         // Claim:       cx.record(&Measurement { .. }).ok()?
         None

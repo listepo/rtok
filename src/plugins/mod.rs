@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn config_overrides_default_on() {
         let mut cfg = Config::default();
-        cfg.plugins.entry("cmd".into()).or_default().enabled = Some(false);
-        cfg.plugins.entry("toon".into()).or_default().enabled = Some(true);
+        cfg.plugins.cmd.enabled = false;
+        cfg.plugins.toon.enabled = true;
         let reg = Registry::new(&cfg);
         let on: Vec<&str> = reg.enabled().map(|p| p.manifest().id).collect();
         assert!(!on.contains(&"cmd"));

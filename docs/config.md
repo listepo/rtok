@@ -4,8 +4,10 @@ One file, `~/.rtok/config.toml`, holds every setting rtok has. **Every CLI flag 
 key**, so anything you can pass on the command line you can also make permanent, and
 `rtok config show --sources` always tells you where a value came from.
 
-Status: this is the design (plan D12, phase P12). Today `config.rs` implements `[core]`,
-`[estimator]` and `[plugins.<id>].enabled`; the rest lands with T12.1–T12.4.
+Status: T12.1 is done — every table below is a typed section in `config.rs` (unknown key = error),
+`config/default.toml` is embedded and written verbatim by `rtok config init`, and
+`core.inject_budget_tokens` has moved to `plugins.inject.budget_tokens`. Layering,
+`config show --sources`, `config get/set/validate` and the flag-coverage test land in T12.2–T12.4.
 
 ## Precedence
 
