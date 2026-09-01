@@ -2,7 +2,7 @@
 //! feature of the same name (`default = all`). Order here is dispatch order.
 
 use crate::config::Config;
-use crate::plugin::{Kind, Manifest, Plugin};
+use crate::plugin::{Manifest, Plugin};
 
 #[cfg(feature = "measure")]
 pub mod measure;
@@ -67,8 +67,15 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Registry over every compiled-in plugin.
     pub fn new(config: &Config) -> Self {
-        let plugins = all()
+        Self::from_plugins(all(), config)
+    }
+
+    /// Registry over a caller-supplied plugin list. This is the entry point for a crate that
+    /// embeds `rtok` as a library and registers its own plugins; see `examples/mcp_tool.rs`.
+    pub fn from_plugins(plugins: Vec<Box<dyn Plugin>>, config: &Config) -> Self {
+        let plugins = plugins
             .into_iter()
             .map(|p| {
                 let m = p.manifest();
@@ -97,17 +104,12 @@ impl Registry {
 
     /// The `rtok plugins` table.
     pub fn table(&self) -> String {
-        let mut out = format!("{:<9}{:<9}{:<9}surfaces\n", "id", "kind", "enabled");
+        let mut out = format!("{:<9}{:<9}surfaces\n", "id", "enabled");
         for (m, on) in self.manifests() {
-            let kind = match m.kind {
-                Kind::Native => "native",
-                Kind::Adapter => "adapter",
-            };
             let surfaces: Vec<&str> = m.surfaces.iter().map(|s| s.as_str()).collect();
             out.push_str(&format!(
-                "{:<9}{:<9}{:<9}{}\n",
+                "{:<9}{:<9}{}\n",
                 m.id,
-                kind,
                 if on { "on" } else { "off" },
                 surfaces.join(",")
             ));
@@ -145,6 +147,24 @@ mod tests {
         let on: Vec<&str> = reg.enabled().map(|p| p.manifest().id).collect();
         assert!(!on.contains(&"cmd"));
         assert!(on.contains(&"toon"));
-        assert!(reg.table().contains("cmd      native   off"));
+        assert!(reg.table().contains("cmd      off"));
+    }
+
+    /// The external-plugin path: a plugin that is not in the catalogue, registered by hand.
+    #[test]
+    fn from_plugins_takes_external_plugins() {
+        struct Ext;
+        impl Plugin for Ext {
+            fn manifest(&self) -> Manifest {
+                Manifest {
+                    id: "ext",
+                    surfaces: &[crate::plugin::Surface::Mcp],
+                    default_on: true,
+                }
+            }
+        }
+        let reg = Registry::from_plugins(vec![Box::new(Ext)], &Config::default());
+        let on: Vec<&str> = reg.enabled().map(|p| p.manifest().id).collect();
+        assert_eq!(on, ["ext"]);
     }
 }

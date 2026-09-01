@@ -4,9 +4,8 @@ Every Bash output archived raw, filtered for the model, measured.
 
 | | |
 |---|---|
-| Kind | native, written from scratch (rtk's command families are the spec, not a dependency) |
 | Surfaces | PreToolUse(Bash) hook → `rtok run -- <cmd>`; `rtok expand <id>` |
-| Replaces | rtk hook, lean-ctx ctx_shell, token-optimizer bash_compress |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## How it works

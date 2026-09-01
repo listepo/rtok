@@ -18,13 +18,13 @@ is the evidence.
 ```rust
 //! `<id>` — one line on what it does and what it replaces.
 
-use crate::plugin::{Ctx, Kind, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
+use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
 
 pub struct MyPlugin;
 
 impl Plugin for MyPlugin {
     fn manifest(&self) -> Manifest {
-        Manifest { id: "<id>", kind: Kind::Native, surfaces: &[Surface::Hook], default_on: true }
+        Manifest { id: "<id>", surfaces: &[Surface::Hook], default_on: true }
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
@@ -49,9 +49,10 @@ The `registry_matches_catalogue` test fails until all three agree.
 
 ## 2b. Outside this repo
 
-A third-party plugin lives in its own crate: depend on the `rtok` library, implement
-`Plugin`, and build your own binary with
-`Registry::from_plugins(vec![Box::new(Mine)], &Config::load()?)` (T0.8). This repo ships no
+A third-party plugin lives in its own crate: depend on the `rtok` library
+(`use rtok::{Ctx, Manifest, Plugin, Surface};` — the contract is re-exported at the crate
+root), implement `Plugin`, and build your own binary with
+`Registry::from_plugins(vec![Box::new(Mine)], &Config::load()?)`. This repo ships no
 third-party plugins and no adapters; `examples/` shows the two minimal shapes (a hook plugin
 and an MCP-tool plugin).
 

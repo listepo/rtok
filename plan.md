@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-01 (see `done.md`); next unblocked task: T0.8, then P12, then P13, then T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8, see `done.md`); next unblocked task: P12 (T12.1), then P13, then T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -86,13 +86,9 @@ Format: **Tn.m title** · model · depends · files · do · **Check** (command 
 
 ### P0 — Scaffold (goal: `rtok --version`, DB, plugin registry, hook I/O types) — **done 2026-09-01, moved to `done.md`**
 
-T0.1–T0.7 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (review: trait shape final; no plugin logic yet) is still open.
+T0.1–T0.8 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (review: trait shape final; no plugin logic yet) is still open.
 
 Gate P0 (review): trait shape final; no plugin logic yet. **Status: open.**
-
-**T0.8 plugin SDK: one kind, external plugins, simple examples** · T0.4 · `src/plugin.rs`, `src/plugins/mod.rs`, `examples/` (+ the `Kind` row of each `src/plugins/<id>/README.md`, `docs/plugin-authoring.md`; mechanical, exceeds the 3-file rule once)
-Do: delete `Kind` and `Manifest::kind` (every plugin is native, D6). Add `Registry::from_plugins(Vec<Box<dyn Plugin>>, &Config)` so an external crate can embed the `rtok` library and register its own plugins; `Registry::new` becomes `from_plugins(plugins::all(), cfg)`. `pub use plugin::*` at the crate root; `///` docs on every public item in `plugin.rs`. Examples stay small (≤ 60 lines): `examples/hello_plugin.rs` (hook: deny, inject, measure — exists) and new `examples/mcp_tool.rs` (one plugin exposing one `ToolDef`, built through `from_plugins`, asserts the tool is listed). `make example` runs both.
-Check: `make check && make example` green; `cargo doc --no-deps 2>&1 | grep -c warning` → 0; `grep -rn "Kind" src examples docs` → nothing; `grep -rln "rtk\|engram\|claude-mem\|serena\|codebase-memory" src/plugins` → nothing.
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 

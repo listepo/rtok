@@ -1,10 +1,10 @@
-//! `graph` — adapter over an installed code-graph MCP server: `symbol` / `callers` / `outline`
-//! with capped output (plan P8).
+//! `graph` — `symbol` / `callers` / `outline` over a symbol index rtok builds itself
+//! with tree-sitter-tags, with capped output (plan P8).
 //!
-//! Replaces: codebase-memory-mcp, code-review-graph, serena, codegraph tool surfaces.
-//! Off when nothing is installed.
+//! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
+//! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Kind, Manifest, Plugin, Surface};
+use crate::plugin::{Manifest, Plugin, Surface};
 
 pub struct Graph;
 
@@ -12,7 +12,6 @@ impl Plugin for Graph {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "graph",
-            kind: Kind::Adapter,
             surfaces: &[Surface::Mcp],
             default_on: true,
         }

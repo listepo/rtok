@@ -1,9 +1,9 @@
 //! `proxy` — `ANTHROPIC_BASE_URL` passthrough with SSE streaming and usage capture (plan P5).
 //!
-//! Replaces: headroom proxy, caveman-proxy. Never touches `system`, `tools`, or the last
-//! `keep_turns` turns.
+//! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
+//! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Kind, Manifest, Plugin, Surface};
+use crate::plugin::{Manifest, Plugin, Surface};
 
 pub struct Proxy;
 
@@ -11,7 +11,6 @@ impl Plugin for Proxy {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "proxy",
-            kind: Kind::Native,
             surfaces: &[Surface::Proxy],
             default_on: true,
         }

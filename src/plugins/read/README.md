@@ -4,9 +4,8 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | MCP `read`, `search`, `tree`; PreToolUse(Read) advice |
-| Replaces | lean-ctx ctx_read/ctx_search/ctx_tree, token-optimizer read_cache/structure_map |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Tools

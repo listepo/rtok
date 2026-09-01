@@ -5,9 +5,8 @@ something to the model at those points goes through here, under one budget.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | SessionStart, UserPromptSubmit hooks |
-| Replaces | caveman shrink-hook, ponytail/caveman modes, lean-ctx banner, engram/claude-mem SessionStart context |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Mechanism

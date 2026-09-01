@@ -22,8 +22,9 @@ test:
 build-min: ## T0.4 check: one plugin feature must build alone
 	$(CARGO) build -q --no-default-features --features measure
 
-example: ## run the plugin-authoring example
+example: ## run the plugin-authoring examples (hook plugin, MCP-tool plugin)
 	$(CARGO) run -q --example hello_plugin
+	$(CARGO) run -q --example mcp_tool
 
 changelog: ## regenerate CHANGELOG.md from git history (git-cliff, config in cliff.toml)
 	$(CLIFF) -o CHANGELOG.md

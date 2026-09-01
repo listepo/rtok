@@ -5,9 +5,8 @@ before/after number (decision D3).
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | `rtok stats`, `rtok bench`, proxy `usage` capture |
-| Replaces | rtk gain, headroom savings, lean-ctx gain, token-optimizer dashboard |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## What it does

@@ -5,9 +5,8 @@ pays for itself on this workload.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | proxy `compress` mode; MCP tool results |
-| Replaces | caveman toon, TOON |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | **off** |
 
 ## Mechanism

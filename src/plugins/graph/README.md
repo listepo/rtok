@@ -5,9 +5,8 @@ four servers with 130+ tool descriptions in every request.
 
 | | |
 |---|---|
-| Kind | native (own index; no external graph server) |
 | Surfaces | MCP `symbol(name)`, `callers(name)`, `outline(path)` |
-| Replaces | codebase-memory-mcp, code-review-graph, serena, codegraph (as MCP surfaces) |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Mechanism

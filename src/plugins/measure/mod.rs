@@ -1,8 +1,9 @@
 //! `measure` — session-log ingest, proxy usage capture, `rtok stats` / `rtok bench` (plan P1, P9).
 //!
-//! Replaces: rtk gain, headroom savings, lean-ctx gain, token-optimizer dashboard.
+//! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
+//! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Kind, Manifest, Plugin, Surface};
+use crate::plugin::{Manifest, Plugin, Surface};
 
 pub struct Measure;
 
@@ -10,7 +11,6 @@ impl Plugin for Measure {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "measure",
-            kind: Kind::Native,
             surfaces: &[Surface::Cli, Surface::Proxy],
             default_on: true,
         }

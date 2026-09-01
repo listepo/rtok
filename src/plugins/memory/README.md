@@ -5,9 +5,8 @@ progressive disclosure.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | MCP `mem_save`, `mem_search`, `mem_get`; PreCompact checkpoint; SessionStart recall |
-| Replaces | engram, claude-mem |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Tools

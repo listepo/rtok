@@ -4,9 +4,8 @@ Stops the model from paying twice for the same result.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | PreToolUse hook |
-| Replaces | token-optimizer refetch_guard / loop detection |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Mechanism

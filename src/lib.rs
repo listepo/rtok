@@ -14,3 +14,7 @@ pub mod plugin;
 pub mod plugins;
 pub mod store;
 pub mod tokens;
+
+/// The plugin contract at the crate root, so an external plugin crate writes
+/// `use rtok::{Ctx, Manifest, Plugin, Surface};`.
+pub use plugin::*;

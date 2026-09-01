@@ -7,7 +7,7 @@
 use anyhow::Result;
 use rtok::hooks::types::{HookInput, HookOutput, HookSpecificOutput};
 use rtok::plugin::{
-    Ctx, Injection, Kind, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse, SessionStart,
+    Ctx, Injection, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse, SessionStart,
     Surface,
 };
 use rtok::tokens::Class;
@@ -18,7 +18,6 @@ impl Plugin for Hello {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "hello",
-            kind: Kind::Native,
             surfaces: &[Surface::Hook],
             default_on: true,
         }

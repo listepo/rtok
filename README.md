@@ -34,7 +34,7 @@ rtok --version              # rtok 0.1.0
 
 | Command | Does | Status |
 |---------|------|--------|
-| `rtok plugins` | list plugins: id, kind, enabled, surfaces | done |
+| `rtok plugins` | list plugins: id, enabled, surfaces | done |
 | `rtok config show\|init\|validate\|get\|set\|path` | the one config file; `show --sources` says where each value came from | P12 |
 | `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) | T2.1 |
 | `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools | T4.1 |

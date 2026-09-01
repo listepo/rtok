@@ -5,9 +5,8 @@ prompt cache.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | proxy `compress` mode; MCP `expand` |
-| Replaces | token-optimizer archive_result, headroom CCR, caveman retrieve |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on (active only when the proxy runs in `compress` mode) |
 
 ## Mechanism

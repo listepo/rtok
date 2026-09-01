@@ -5,9 +5,8 @@ other plugins rewrite the request.
 
 | | |
 |---|---|
-| Kind | native |
 | Surfaces | `rtok proxy [--port 8790] [--upstream URL] [--mode passthrough\|compress]`; serves `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` |
-| Replaces | headroom proxy, caveman-proxy |
+| Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
 ## Behaviour
