@@ -1,0 +1,12 @@
+{
+  "session_id": "b1e2c3d4-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/dev/.claude/projects/-Users-dev-proj/b1e2c3d4.jsonl",
+  "cwd": "/Users/dev/proj",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Read",
+  "tool_input": {
+    "file_path": "/Users/dev/proj/src/main.rs"
+  },
+  "tool_use_id": "toolu_01ReadAbCdEfGhIjKlMnOpQr"
+}

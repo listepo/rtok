@@ -1,0 +1,13 @@
+{
+  "session_id": "b1e2c3d4-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/dev/.claude/projects/-Users-dev-proj/b1e2c3d4.jsonl",
+  "cwd": "/Users/dev/proj",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git status",
+    "description": "Show working tree status"
+  },
+  "tool_use_id": "toolu_01AbCdEfGhIjKlMnOpQrStUv"
+}
