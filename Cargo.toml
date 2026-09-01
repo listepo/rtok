@@ -8,5 +8,34 @@ description = "Token-reduction CLI for AI coding agents: hooks, MCP server and A
 name = "rtok"
 path = "src/main.rs"
 
+[features]
+# One feature per catalogue plugin (plan T0.4). Default = all.
+default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon"]
+measure = []
+cmd = []
+read = []
+archive = []
+proxy = []
+inject = []
+guard = []
+memory = []
+graph = []
+toon = []
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "allow"
+
 [dependencies]
+anyhow = "1.0.104"
 clap = { version = "4.5", features = ["derive"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.4"
