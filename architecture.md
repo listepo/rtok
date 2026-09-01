@@ -5,7 +5,7 @@ surfaces reach the plugins: Claude Code hooks, an MCP server, and an API proxy. 
 file records what every plugin did, before and after, so a saving is a row or it does not
 exist.
 
-This document describes the shape; `plan.md` holds the decisions (D1–D11) and the tasks;
+This document describes the shape; `plan.md` holds the decisions (D1–D12) and the tasks;
 `research.md` holds the evidence.
 
 ## 1. Principles the code enforces
@@ -18,6 +18,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D11) and 
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
 | No daemon, no subprocess plugins, no WASM | plugins are in-tree modules behind Cargo features |
+| Every CLI flag is a config key; one precedence rule (D12) | `config/default.toml` (reference, embedded), `Config` typed sections, `tests/config_coverage.rs` walks the clap tree |
 
 ## 2. Layers
 
@@ -58,6 +59,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/main.rs` | clap CLI; each subcommand is a thin call into the library | T0.1 |
 | `src/lib.rs` | crate root; declares the modules below | — |
 | `src/config.rs` | `Config::load()`, defaults, `[plugins.<id>]`, `CATALOGUE` | T0.2 |
+| `src/config/layers.rs`, `validate.rs`, `config/default.toml` | layering defaults < user < project < env < flags, origin tracking, `rtok config show/validate/set` (see `docs/config.md`) | P12 |
 | `src/store.rs` + `migrations/` | `Store::open`, migration runner, `insert_measurement` | T0.3 |
 | `src/plugin.rs` | the contract (§4) | T0.4 |
 | `src/plugins/mod.rs` | feature-gated module list, `all()`, `Registry` | T0.4 |

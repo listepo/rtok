@@ -18,6 +18,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D9 | **Agents:** Haiku implements every task below (each task ≤ ~200 LOC, ≤ 3 files, one machine check). Sonnet reviews at each phase gate. Opus only to change this plan. | User constraint: low-cost models. |
 | D10 | **Retire, don't stack.** Phase 9 replaces the 81 legacy hooks with ≤ 8 and drops every tool the A/B bench cannot justify. | Duplicated responsibilities: 3 tools compress bash, 3 compress reads, 2 memories, 3–4 code graphs. |
 | D11 | **The proxy speaks both wire formats.** Anthropic Messages (`/v1/messages`) and OpenAI (`/v1/chat/completions`, `/v1/responses`) are `Wire` adapters behind one proxy; plugins that touch requests (`archive`, `toon`) and `usage` capture work on a normalised view of tool results, never on a specific JSON shape. Hosts point `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` at rtok. Added 2026-09-01 by user request. | Codex, OpenCode, Cursor-with-own-key and aider talk OpenAI; without it `measure` has no ground truth for them and `archive` cannot shrink their context. One proxy, two parsers is cheaper than two proxies. |
+| D12 | **One config file holds every setting; every CLI flag is a config key.** `~/.rtok/config.toml` (schema and reference file: `docs/config.md`, embedded as `config/default.toml`). Precedence: defaults < user file < `<git root>/.rtok.toml` < `RTOK_<SECTION>_<KEY>` env < flags. Positional per-call arguments (`hook <event>`, `expand <id>`, `run -- <cmd>`) have no key; everything else does, enforced by a test that walks the clap tree. `rtok config show --sources` tells where each value came from. Added 2026-09-01 by user request. | Hooks are spawned with a fixed command line, the proxy and MCP server run for hours, and a bench needs two reproducible configurations — none of that works with flags alone. One precedence rule beats per-flag special cases. |
 
 Non-goals for v0.1 (each rejected on evidence): LLM-based compression (LLMLingua, claude-mem style extraction) — costs tokens to save tokens; embeddings/semantic search — no measured need; own tree-sitter call graph — adapter first; semantic response cache (bifrost) — agent contexts never repeat at 0.9 similarity and a hit returns a wrong answer. (Formerly listed here: Codex Responses-API proxy. Moved into scope as P11 on 2026-09-01, decision D11.)
 
@@ -74,6 +75,7 @@ Plugin catalogue (v0.1 scope):
 - No new dependency without a one-line justification in the commit message. Allowed baseline: clap, serde, serde_json, rusqlite (bundled, fts5), toml, regex, anyhow, tokio, hyper/axum, reqwest, rmcp, tree-sitter + tree-sitter-tags, sha2, time.
 - Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` green before every Check.
 - Anything unmeasurable is a bug in the plan: add a `Measurement` before adding a feature.
+- Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12); flag names in the tasks below imply the key `<subcommand>.<flag>` or `plugins.<id>.<flag>`.
 
 ## 3. Phases and tasks
 
@@ -323,6 +325,28 @@ Check: `cargo test store::` still applies both migrations idempotently; fixture 
 
 Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for two days; every request has a `usage` row. Then compress for two days; keep only under the P5 gate rule (context-token-turns − 15 %, expand rate < 5 %). Record in research.md §2.
 
+### P12 — Config file (goal: every setting in one file, one precedence rule, no flag without a key) — added 2026-09-01 (D12)
+
+Runs right after P0's gate: P1–P11 tasks that add flags then wire them through this instead of ad-hoc `clap` defaults.
+
+**T12.1 typed schema + reference file** · haiku · T0.2 · `src/config.rs`, `config/default.toml`, `docs/config.md`
+Do: replace the free-form `[plugins.<id>]` extras with typed sections for every table in `docs/config.md` (`hook`, `mcp`, `proxy`, `stats`, `bench`, `doctor`, `setup`, `expand`, `filter`, `plugins.<id>` each with its keys). `#[serde(deny_unknown_fields)]` on every section; `#[serde(default)]` everywhere so partial files work. `config/default.toml` is the annotated reference embedded with `include_str!`; a fresh install writes it verbatim (not a serialised struct, so comments survive). Move `core.inject_budget_tokens` to `plugins.inject.budget_tokens`, accepting the old key with a one-line warning. `rtok config init [--force]`, `rtok config path`.
+Check: `cargo test config::` → `config/default.toml` parses with zero unknown keys and equals `Config::default()`; `RTOK_HOME=$(mktemp -d) rtok config init && diff $RTOK_HOME/config.toml config/default.toml` is empty.
+
+**T12.2 layering + precedence + `config show`** · haiku · T12.1 · `src/config/layers.rs`, `src/main.rs`
+Do: load order defaults → user file (`RTOK_CONFIG` / `--config` override the path) → `<git root>/.rtok.toml` → env `RTOK_<SECTION>_<KEY>` (lists comma-separated; legacy aliases `RTOK_UPSTREAM`, `RTOK_OPENAI_UPSTREAM`) → flags. Every clap arg is `Option<T>` and merged last, so a flag is never a second source of defaults. Track the origin per key; `rtok config show [--sources] [--json]` and `rtok config get <key>`.
+Check: `RTOK_PROXY_PORT=1 rtok config show --sources | grep proxy.port` → `1 (env)`; `RTOK_PROXY_PORT=1 rtok proxy --port 2 --dry-run` reports port 2; a project `.rtok.toml` with `[plugins.read] allow_paths` shows as `(project)`.
+
+**T12.3 `config validate` + `config set`** · haiku · T12.1 · `src/config/validate.rs`
+Do: `rtok config validate [path]` → unknown key, wrong type, out-of-range (`port` 1–65535, `keep_turns` ≥ 1, `budget_tokens` ≥ 0, `mode` enum) with file:line, exit 1. Elsewhere the same problems are one stderr warning and defaults are used — hooks never fail on config. `rtok config set <key> <value>` edits the user file in place preserving comments (`toml_edit`; one-line dependency reason).
+Check: a file with `[proxy] port = 70000` → exit 1 naming the line; `echo '{}' | RTOK_CONFIG=bad.toml rtok hook PreToolUse` → `{}` and exit 0; `set proxy.port 8791` then `get proxy.port` → 8791 and the comment above `[proxy]` is intact.
+
+**T12.4 flag ↔ key coverage test** · haiku · T12.2 · `tests/config_coverage.rs`
+Do: walk `Cli::command()` recursively; for every non-positional arg that is not in a tiny allow-list (`--config`, `--home`, `--help`, `--version`, `--json` where `stats.format` covers it, action flags `--remove`, `--replace`, `--calibrate`, `--cache`, `--force`) assert `<path>.<arg>` (dashes → underscores; `run`/`filter` args map under `plugins.cmd`) exists in `config/default.toml`. Also the reverse: every key in `default.toml` is read somewhere (grep the source for the key's last segment) so dead keys fail too.
+Check: `cargo test config_coverage` passes; adding `--foo` to any subcommand without a key fails the test.
+
+Gate P12 (sonnet review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults.
+
 ## 4. Definition of done for v0.1
 
 1. `rtok doctor` shows ≤ 8 token-related hooks, one MCP server for reads/memory/graph, one proxy hop (serving both Anthropic and OpenAI wire formats, D11).
@@ -330,10 +354,11 @@ Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for t
 3. Every plugin has a `Measurement` path and appears in `rtok stats --plugin <id>`.
 4. Hook p95 < 10 ms; proxy adds < 20 ms per request (measured in T5.1 test).
 5. README documents what is lossless, what is estimated, and how to revert (`rtok setup claude --remove`, backups).
+6. `rtok config show --sources` lists every setting with its origin; the coverage test (T12.4) is green.
 
 ## 5. Order of value (if time is short)
 
-P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use.
+P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag.
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -346,3 +371,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-01 | `guard` and `toon` are in the catalogue and registry but have no numbered task yet. | Noted in their READMEs; add a task with a Check before implementing either. |
 | 2026-09-01 | `README.md` exists now as a status page; T9.5 still replaces it with measured results. | Newcomers need install + layout before P9. |
 | 2026-09-01 | OpenAI API support added: decision D11, phase P11 (T11.1–T11.6), non-goal on the Codex Responses proxy withdrawn. | User request; OpenAI-API hosts (Codex, OpenCode, aider) were otherwise unmeasurable and uncompressible. |
+| 2026-09-01 | Config file designed (`docs/config.md`): decision D12, phase P12 (T12.1–T12.4), new `rtok config` subcommand, `core.inject_budget_tokens` moves to `plugins.inject.budget_tokens`. | User request: every CLI parameter must be settable in the config file. |

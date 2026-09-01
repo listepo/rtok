@@ -35,6 +35,7 @@ rtok --version              # rtok 0.1.0
 | Command | Does | Status |
 |---------|------|--------|
 | `rtok plugins` | list plugins: id, kind, enabled, surfaces | done |
+| `rtok config show\|init\|validate\|get\|set\|path` | the one config file; `show --sources` says where each value came from | P12 |
 | `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) | T2.1 |
 | `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools | T4.1 |
 | `rtok proxy` | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` hop: usage capture, optional compress mode | T5.1, P11 |
@@ -69,7 +70,11 @@ tasks for whoever works on it). Turn plugins off in `~/.rtok/config.toml`
 
 ## Configuration
 
-`~/.rtok/config.toml` is created on first run (`RTOK_HOME` overrides the directory):
+One file holds every setting, and every CLI flag is a key in it (decision D12; full
+reference and precedence rules in [`docs/config.md`](docs/config.md)). Precedence:
+defaults < `~/.rtok/config.toml` < `<git root>/.rtok.toml` < `RTOK_<SECTION>_<KEY>` env <
+flags. `~/.rtok/config.toml` is created on first run (`RTOK_HOME` overrides the directory).
+What exists today:
 
 ```toml
 [core]
