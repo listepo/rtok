@@ -1,0 +1,368 @@
+<title>Reduce-Token Blueprint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F4F5F2; --surface:#FFFFFF; --ink:#1A1F1D; --muted:#5C6661; --rule:#D8DED9;
+  --accent:#1E6B5C; --accent-soft:#DDEDE7; --claim:#B07A1B; --claim-soft:#F5EBD3; --bad:#B23A34; --bad-soft:#F6DDDB;
+  --code-bg:#ECEFEC;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#121615; --surface:#1A201E; --ink:#E8ECE9; --muted:#9AA5A0; --rule:#2B3431;
+    --accent:#5FC1A6; --accent-soft:#1F3A33; --claim:#E0A93E; --claim-soft:#3A2F14; --bad:#E06C64; --bad-soft:#3F1F1D;
+    --code-bg:#0E1211;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121615; --surface:#1A201E; --ink:#E8ECE9; --muted:#9AA5A0; --rule:#2B3431;
+  --accent:#5FC1A6; --accent-soft:#1F3A33; --claim:#E0A93E; --claim-soft:#3A2F14; --bad:#E06C64; --bad-soft:#3F1F1D;
+  --code-bg:#0E1211;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px 96px}
+header.hero{padding:56px 0 28px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:"Bricolage Grotesque","IBM Plex Sans",sans-serif;font-weight:700;font-size:clamp(34px,5vw,54px);line-height:1.05;margin:10px 0 14px;text-wrap:balance;letter-spacing:-.01em}
+h2{font-family:"Bricolage Grotesque","IBM Plex Sans",sans-serif;font-weight:700;font-size:28px;line-height:1.15;margin:0 0 6px;text-wrap:balance}
+h3{font-family:"Bricolage Grotesque","IBM Plex Sans",sans-serif;font-weight:500;font-size:20px;margin:24px 0 8px}
+.lede{font-size:19px;max-width:68ch;color:var(--ink);margin:0}
+.lede b{font-weight:600}
+nav.toc{position:sticky;top:0;z-index:5;background:var(--ground);border-bottom:1px solid var(--rule);padding:10px 0;margin-bottom:8px}
+nav.toc ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px 14px}
+nav.toc a{font-family:"IBM Plex Mono",monospace;font-size:12.5px;text-decoration:none;color:var(--muted);padding:4px 0}
+nav.toc a:hover{color:var(--accent)}
+section{padding:44px 0 8px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.sec-head{display:grid;grid-template-columns:1fr;gap:4px;margin-bottom:18px}
+p{max-width:68ch;margin:0 0 12px}
+ul.plain{max-width:68ch;padding-left:20px;margin:0 0 12px}
+ul.plain li{margin:0 0 6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:18px 0}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:16px 18px}
+.card .k{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.card .v{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:34px;line-height:1.1;margin:6px 0 4px;font-variant-numeric:tabular-nums}
+.card .d{font-size:14px;color:var(--muted)}
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:6px;background:var(--surface);margin:14px 0 18px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--surface);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:"IBM Plex Mono",monospace;font-size:13px;white-space:nowrap}
+td.tool{font-weight:600;white-space:nowrap}
+.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
+code{font-family:"IBM Plex Mono",monospace;font-size:.9em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+pre{background:var(--code-bg);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;font-size:13px;line-height:1.5;margin:12px 0 18px}
+pre.mermaid{background:var(--surface)}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--rule);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.pill.warn{background:var(--claim-soft);color:var(--claim);border-color:transparent}
+.pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+/* claimed vs measured bars */
+.bars{display:grid;grid-template-columns:150px 1fr;gap:10px 16px;align-items:center;margin:16px 0 8px;max-width:900px}
+.bars .name{font-weight:600;font-size:14px}
+.bars .name small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.track{display:grid;gap:5px}
+.bar{position:relative;height:16px;border-radius:3px;background:var(--rule);overflow:visible}
+.bar span{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.bar.claim span{background:var(--claim)}
+.bar.meas span{background:var(--accent)}
+.bar.meas.neg span{background:var(--bad)}
+.bar label{position:absolute;left:calc(var(--w) + 8px);top:-1px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--muted);margin:0 0 6px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.two{grid-template-columns:1fr}.bars{grid-template-columns:1fr}.bars .name{margin-top:8px}}
+.callout{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;border-radius:0 6px 6px 0;margin:14px 0;max-width:72ch}
+.callout.warn{border-left-color:var(--claim)}
+.phase{display:grid;grid-template-columns:64px 1fr 60px;gap:12px;padding:12px 0;border-bottom:1px dashed var(--rule);align-items:start}
+.phase:last-child{border-bottom:0}
+.phase .id{font-family:"IBM Plex Mono",monospace;font-weight:500;color:var(--accent)}
+.phase .n{font-family:"IBM Plex Mono",monospace;color:var(--muted);text-align:right;font-size:13px}
+.phase .g{font-size:13px;color:var(--muted);margin-top:2px}
+footer{color:var(--muted);font-size:13px;padding-top:24px}
+@media (prefers-reduced-motion:no-preference){a{transition:color .15s}}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">rtok · research + plan · 2026-09-01</div>
+  <h1>Ten tools, 81 hooks, no scale: what the token stack actually saves, and the one binary to replace it</h1>
+  <p class="lede">Vendors claim <b>60–99 %</b>. Your own meters show <b>3–40 %</b> on the slice each tool touches. The only independent test found rtk <b>cost more</b>. The plan: one Rust CLI, every method a plugin, measurement before features, and a bench that retires whatever does not pay.</p>
+</header>
+
+<nav class="toc"><ul>
+  <li><a href="#verdict">Verdict</a></li><li><a href="#tokens">Where tokens go</a></li><li><a href="#claims">Claimed vs measured</a></li>
+  <li><a href="#matrix">Comparison</a></li><li><a href="#stack">Your stack vs rtok</a></li><li><a href="#arch">Architecture</a></li>
+  <li><a href="#plugins">Plugins</a></li><li><a href="#plan">Plan</a></li><li><a href="#skip">Skipped</a></li><li><a href="#risks">Risks</a></li><li><a href="#method">Method</a></li>
+</ul></nav>
+
+<section id="verdict">
+  <div class="sec-head"><div class="eyebrow">01</div><h2>Verdict</h2></div>
+  <div class="cards">
+    <div class="card"><div class="k">hooks in settings.json</div><div class="v">81</div><div class="d">16 events, 10 tools; 27 are Python subprocesses (token-optimizer)</div></div>
+    <div class="card"><div class="k">proxies chained</div><div class="v">2</div><div class="d">headroom :8788 → caveman :8787 (inert on Max) → Anthropic</div></div>
+    <div class="card"><div class="k">measured end to end</div><div class="v">0</div><div class="d">five meters, five methods, none reconcile with the bill</div></div>
+    <div class="card"><div class="k">cache hit rate</div><div class="v">98.1 %</div><div class="d">every context token is re-read on every later turn</div></div>
+  </div>
+  <ul class="plain">
+    <li><b>Duplicated responsibilities.</b> Three tools compress Bash output (rtk, lean-ctx, token-optimizer), three compress reads, two keep memory (claude-mem, engram), three or four build code graphs (~85 MCP tools).</li>
+    <li><b>The lever is context × turns.</b> A 17 K-token Read on turn 10 of 60 costs 1.25 × 17 K to cache and 0.1 × 17 K × 50 to keep. Shrinking early and clearing old results beats shaving a little everywhere.</li>
+    <li><b>Hooks cannot fix results after the fact.</b> PostToolUse only adds context (verified in docs). Real shrinking needs PreToolUse rewriting, MCP tool replacement, or an API proxy. The binary needs all three surfaces.</li>
+    <li><b>Deliverables.</b> <code>~/GitHub/rtok/plan.md</code> (11 phases, 50 Haiku-sized tasks, each with a machine check) and <code>research.md</code> (matrix, measurements, fact-check ledger).</li>
+  </ul>
+</section>
+
+<section id="tokens">
+  <div class="sec-head"><div class="eyebrow">02</div><h2>Where your tokens go</h2></div>
+  <p>17 session transcripts, Jul 29 – Sep 1, 43,609 lines. Result sizes use a 4-chars-per-token heuristic; usage counters are the API's own numbers.</p>
+  <div class="two">
+    <div class="scroll"><table>
+      <thead><tr><th>Tool result</th><th class="num">calls</th><th class="num">est. tokens</th><th class="num">largest</th></tr></thead>
+      <tbody>
+        <tr><td class="tool">Bash</td><td class="num">3,658</td><td class="num">1,000,935</td><td class="num">4.6 K</td></tr>
+        <tr><td class="tool">Read</td><td class="num">335</td><td class="num">414,465</td><td class="num">17.0 K</td></tr>
+        <tr><td class="tool">Agent</td><td class="num">40</td><td class="num">22,527</td><td class="num">5.3 K</td></tr>
+        <tr><td class="tool">Edit + Write</td><td class="num">687</td><td class="num">28,974</td><td class="num">0.1 K</td></tr>
+        <tr><td class="tool">MCP engram</td><td class="num">89</td><td class="num">8,795</td><td class="num">0.3 K</td></tr>
+        <tr><td class="tool">MCP lean-ctx</td><td class="num">25</td><td class="num">6,201</td><td class="num">2.3 K</td></tr>
+      </tbody></table></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Usage (API counters)</th><th class="num">tokens</th></tr></thead>
+      <tbody>
+        <tr><td>Cache read</td><td class="num">1,367,028,738</td></tr>
+        <tr><td>Cache creation</td><td class="num">26,731,337</td></tr>
+        <tr><td>Uncached input</td><td class="num">42,398</td></tr>
+        <tr><td>Output</td><td class="num">8,605,438</td></tr>
+        <tr><td>Median final context / session</td><td class="num">167,348</td></tr>
+        <tr><td>Assistant text vs tool input</td><td class="num">4 % / 96 %</td></tr>
+      </tbody></table></div>
+  </div>
+  <h3>Cost split (input-token equivalents, output priced at 5× input)</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Component</th><th class="num">standard models (read 0.1×)</th><th class="num">Fable / Mythos 5.1 (read 0.025×)</th></tr></thead>
+    <tbody>
+      <tr><td>Cache reads</td><td class="num">137 M · 64 %</td><td class="num">34 M · 31 %</td></tr>
+      <tr><td>Cache writes (1.25×)</td><td class="num">33 M · 16 %</td><td class="num">33 M · 30 %</td></tr>
+      <tr><td>Output (×5)</td><td class="num">43 M · 20 %</td><td class="num">43 M · 39 %</td></tr>
+    </tbody></table></div>
+  <div class="callout">On Sonnet/Opus-class pricing, context volume dominates: compress tool results and clear old ones. On Fable/Mythos 5.1, output dominates: fewer lines written, fewer turns, terse prose. The plan measures both (<code>rtok stats --price</code>).</div>
+  <p>Bash by family is dominated by <code>sed</code> (217 K), <code>grep</code> (131 K) and <code>cd … &amp;&amp;</code> chains (435 K, which hide the real command). Eight of the ten largest single results are native Reads of 38–68 K characters.</p>
+</section>
+
+<section id="claims">
+  <div class="sec-head"><div class="eyebrow">03</div><h2>Claimed vs measured</h2></div>
+  <div class="legend"><span><i style="background:var(--claim)"></i>vendor claim</span><span><i style="background:var(--accent)"></i>your meter or independent</span><span><i style="background:var(--bad)"></i>independent, negative</span></div>
+  <div class="bars">
+    <div class="name">rtk<small>bash output filters</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:90%"></span><label style="--w:90%">60–90 %</label></div>
+      <div class="bar meas"><span style="width:40%"></span><label style="--w:40%">40 % of bash bytes (rtk gain, 5,725 cmds)</label></div>
+      <div class="bar meas neg"><span style="width:8%"></span><label style="--w:8%">bill +7.6 % low effort, 0 % high (JetBrains)</label></div>
+    </div>
+    <div class="name">headroom<small>API proxy</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:95%"></span><label style="--w:95%">up to 95 %</label></div>
+      <div class="bar meas"><span style="width:11%"></span><label style="--w:11%">11.3 % last 30 d · 3.2 % today (headroom savings)</label></div>
+    </div>
+    <div class="name">caveman<small>terse mode + proxy</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:65%"></span><label style="--w:65%">65 % output</label></div>
+      <div class="bar meas"><span style="width:8.5%"></span><label style="--w:8.5%">8.5 % agentic (JetBrains) · 0 % here, proxy inert</label></div>
+    </div>
+    <div class="name">lean-ctx<small>MCP read/search/shell</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:75%"></span><label style="--w:75%">75 % (own ratio)</label></div>
+      <div class="bar meas neg"><span style="width:3%"></span><label style="--w:3%">+3.1 K tokens injected every turn · 0 output saved</label></div>
+    </div>
+    <div class="name">claude-mem<small>LLM memory</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:87%"></span><label style="--w:87%">87 % (banner; its own reads only)</label></div>
+      <div class="bar meas"><span style="width:0%"></span><label style="--w:0%">not measurable; costs Claude calls to build</label></div>
+    </div>
+    <div class="name">ponytail<small>YAGNI prompt</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:22%"></span><label style="--w:22%">−22 % tokens, −54 % LOC (own bench, Haiku 4.5, n=4)</label></div>
+      <div class="bar meas"><span style="width:0%"></span><label style="--w:0%">no independent number</label></div>
+    </div>
+    <div class="name">codebase-memory-mcp<small>code graph</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:99%"></span><label style="--w:99%">99.2 % (5 queries)</label></div>
+      <div class="bar meas"><span style="width:0%"></span><label style="--w:0%">no independent number</label></div>
+    </div>
+    <div class="name">TOON<small>table format</small></div>
+    <div class="track">
+      <div class="bar claim"><span style="width:42.6%"></span><label style="--w:42.6%">−42.6 % vs JSON · accuracy 72.2 vs 71.4</label></div>
+      <div class="bar meas"><span style="width:0%"></span><label style="--w:0%">vendor bench only</label></div>
+    </div>
+  </div>
+  <p>Every meter measures a different slice: rtk counts bytes/4 of command output, headroom counts what its proxy removed, lean-ctx compares its own outputs against what native tools would have returned, claude-mem compares retrieval reads against the work it indexed. None of them is the invoice.</p>
+</section>
+
+<section id="matrix">
+  <div class="sec-head"><div class="eyebrow">04</div><h2>Comparison</h2></div>
+  <p>Stars, language and license from the GitHub API on 2026-09-01. Local-first, LLM-free and lossless are the three properties the unified app must keep by default.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Tool</th><th>Layer</th><th>Mechanism</th><th>Surface</th><th>Lang · license · stars</th><th>Local · LLM-free · lossless</th><th>Claimed</th><th>Measured</th></tr></thead>
+    <tbody>
+      <tr><td class="tool">rtk</td><td>command output</td><td>~80 filters, TOML custom filters, gain (bytes/4)</td><td>PreToolUse rewrite</td><td>Rust · Apache-2.0 · 78.2 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill bad">lossy</span></td><td>60–90 %</td><td>40 % bytes; bill +7.6 %/0 %</td></tr>
+      <tr><td class="tool">lean-ctx</td><td>reads, search, shell</td><td>78 MCP tools, 10 read modes, 95+ shell patterns, re-read dedup</td><td>MCP + deny hooks</td><td>Rust · Apache-2.0 · 3.7 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill warn">expand</span></td><td>75 %</td><td>+3.1 K/turn; 0 output</td></tr>
+      <tr><td class="tool">headroom</td><td>API request</td><td>JSON crusher, code compressor, cache-aligned live zone, CCR retrieve</td><td>proxy + MCP</td><td>Python 82 % · Apache-2.0 · 68.3 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill ok">retrieve</span></td><td>up to 95 %</td><td>11.3 % 30 d</td></tr>
+      <tr><td class="tool">caveman</td><td>prose + request</td><td>terse mode, shrink-hook, proxy, TOON, MCP compress/retrieve</td><td>prompt + proxy + MCP</td><td>Go · custom · 102 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill warn">issue #112</span></td><td>65 % output</td><td>8.5 % agentic; 0 here</td></tr>
+      <tr><td class="tool">ponytail</td><td>model output</td><td>YAGNI ladder prompt</td><td>prompt file</td><td>JS · MIT · 120 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill">n/a</span></td><td>−22 % tokens</td><td>none independent</td></tr>
+      <tr><td class="tool">token-optimizer</td><td>reads, bash, archive, compaction</td><td>delta reads, structure maps, bash compress, archive &gt;4 KB, checkpoints</td><td>Python hooks</td><td>Python · PolyForm-NC · 2.1 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill ok">archive</span></td><td>"$313/mo"</td><td>author's meter; 27 hooks here</td></tr>
+      <tr><td class="tool">codebase-memory-mcp</td><td>code graph</td><td>tree-sitter 162 langs → SQLite, Cypher-like queries</td><td>MCP</td><td>C · MIT · 41.7 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill">n/a</span></td><td>99.2 %</td><td>none</td></tr>
+      <tr><td class="tool">codegraph</td><td>code graph</td><td>.codegraph/codegraph.db, explore</td><td>CLI + MCP</td><td>C/TS · MIT · 69 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill">n/a</span></td><td>−62 % tokens</td><td>none; marked legacy</td></tr>
+      <tr><td class="tool">code-review-graph</td><td>code graph</td><td>tree-sitter → SQLite, impact radius, minimal context</td><td>MCP (30 tools)</td><td>Python · MIT · 31.1 k</td><td><span class="pill ok">local</span> <span class="pill warn">opt. embeddings</span> <span class="pill">n/a</span></td><td>—</td><td>none</td></tr>
+      <tr><td class="tool">serena</td><td>symbols</td><td>LSP-backed symbol tools</td><td>MCP</td><td>Python · MIT · 28.7 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill">n/a</span></td><td>—</td><td>none; most precise</td></tr>
+      <tr><td class="tool">claude-mem</td><td>memory</td><td>LLM-extracted observations, SQLite + Chroma, progressive disclosure</td><td>plugin + MCP + daemon</td><td>JS · Apache-2.0 · 92.9 k</td><td><span class="pill ok">local</span> <span class="pill bad">uses Claude</span> <span class="pill">n/a</span></td><td>87 %</td><td>costs tokens to build</td></tr>
+      <tr><td class="tool">engram</td><td>memory</td><td>agent-written notes, SQLite FTS5, HTTP + MCP</td><td>MCP</td><td>Go · MIT · 6.3 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill">n/a</span></td><td>—</td><td>18 tool descriptions/session</td></tr>
+      <tr><td class="tool">mem0 / OpenMemory</td><td>memory</td><td>LLM extraction + vectors</td><td>MCP (Docker, Qdrant)</td><td>Python · Apache-2.0 · 64.5 k</td><td><span class="pill warn">partly</span> <span class="pill bad">LLM</span> <span class="pill">n/a</span></td><td>—</td><td>—</td></tr>
+      <tr><td class="tool">OpenViking</td><td>context DB</td><td>L0/L1/L2 tiered loading, session compression</td><td>SDK + MCP</td><td>Python 78 % · AGPL-3.0 · 34.9 k</td><td><span class="pill ok">local</span> <span class="pill bad">LLM</span> <span class="pill">n/a</span></td><td>34–91 %</td><td>none</td></tr>
+      <tr><td class="tool">TOON</td><td>data format</td><td>tabular JSON → TOON</td><td>library</td><td>TS · MIT · 25.3 k</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill ok">lossless</span></td><td>−42.6 %</td><td>vendor bench</td></tr>
+      <tr><td class="tool">LLMLingua-2</td><td>prompt compression</td><td>small-model token pruning</td><td>library</td><td>Python · MIT · 6.6 k</td><td><span class="pill ok">local</span> <span class="pill warn">needs model</span> <span class="pill bad">lossy</span></td><td>2–20×</td><td>quality risk on code</td></tr>
+      <tr><td class="tool">bifrost</td><td>gateway</td><td>semantic response cache (redis, 0.9)</td><td>proxy</td><td>Go · Apache-2.0 · 7.7 k</td><td><span class="pill ok">local</span> <span class="pill warn">embeddings</span> <span class="pill bad">wrong hits</span></td><td>—</td><td>agent contexts never repeat</td></tr>
+      <tr><td class="tool">Anthropic native</td><td>platform</td><td>prompt caching, context editing, memory tool, deferred tools, auto-compact</td><td>API / Claude Code</td><td>—</td><td><span class="pill ok">free</span></td><td>—</td><td>align, do not fight</td></tr>
+      <tr><td class="tool">Your stack</td><td>all layers</td><td>10 tools, 81 hooks, 2 proxies (+ bifrost in Docker)</td><td>hooks + MCP + proxy</td><td>mixed</td><td><span class="pill ok">local</span> <span class="pill warn">mostly</span> <span class="pill warn">mixed</span></td><td>—</td><td>3–40 % per slice</td></tr>
+      <tr><td class="tool">Proposed rtok</td><td>all layers</td><td>10 plugins, 1 binary, 3 surfaces, stats + bench</td><td>hooks + MCP + proxy</td><td>Rust</td><td><span class="pill ok">local</span> <span class="pill ok">no LLM</span> <span class="pill ok">expand</span></td><td>none until measured</td><td>rtok stats / bench</td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="stack">
+  <div class="sec-head"><div class="eyebrow">05</div><h2>Your stack today vs. rtok</h2></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Aspect</th><th>Today</th><th>Proposed</th></tr></thead>
+    <tbody>
+      <tr><td>Hooks</td><td>81 across 16 events: token-optimizer 27 (Python), orca 12, caveman-proxy 11, holdmylid 10, lean-ctx 9, cbm 7, tokenbar 2, rtk 1, caveman shrink 1, codegraph 1</td><td>≤ 8 token-related hooks (<code>rtok hook &lt;event&gt;</code>); non-token hooks untouched</td></tr>
+      <tr><td>Per-call overhead</td><td>up to ~30 subprocesses per event chain, several Python</td><td>one Rust process, p95 &lt; 10 ms (tested)</td></tr>
+      <tr><td>Bash filtering</td><td>rtk + lean-ctx ctx_shell + token-optimizer bash_compress</td><td><code>cmd</code>: archive raw, delegate to rtk filters, measure, <code>expand</code></td></tr>
+      <tr><td>Reads</td><td>lean-ctx (78 tools, 3.1 K/turn) + token-optimizer read_cache + headroom audit</td><td><code>read</code>: 5 tools, outline/signatures via tree-sitter-tags, re-read dedup, no banner</td></tr>
+      <tr><td>Proxies</td><td>headroom :8788 → caveman :8787 → Anthropic; Docker: headroom → bifrost</td><td><code>rtok proxy :8790</code>: passthrough for ground truth, then cache-safe live-zone archive</td></tr>
+      <tr><td>Memory</td><td>claude-mem (LLM) + engram</td><td>one, agent-written, FTS5, titles-only at SessionStart</td></tr>
+      <tr><td>Code graph</td><td>code-review-graph + codebase-memory-mcp + serena (+ stale codegraph) ≈ 85 MCP tools</td><td><code>graph</code> adapter over one installed tool, 3 capped tools</td></tr>
+      <tr><td>Injection per turn</td><td>lean-ctx 3.1 K + engram + claude-mem + ponytail + caveman + nudges</td><td>one budget (800 tokens), byte-stable for the cache</td></tr>
+      <tr><td>Measurement</td><td>five meters, none the bill</td><td>proxy usage + transcripts; context-token-turns; <code>rtok bench</code> A/B</td></tr>
+      <tr><td>Reversibility</td><td>partial</td><td>every rewrite has <code>expand &lt;id&gt;</code></td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="arch">
+  <div class="sec-head"><div class="eyebrow">06</div><h2>Architecture</h2></div>
+  <p>Rust, one static binary, in-tree plugins behind one trait selected by Cargo features. No WASM, no subprocess plugins, no daemon in v1: hooks are per-invocation and must stay under 10 ms; MCP and proxy are long-running by nature.</p>
+<pre class="mermaid">
+flowchart LR
+  CC["Claude Code · Cursor · OpenCode"]
+  CC -- "hooks (stdin JSON)" --> H["rtok hook &lt;event&gt;"]
+  CC -- "MCP stdio" --> M["rtok mcp"]
+  CC -- "ANTHROPIC_BASE_URL" --> P["rtok proxy :8790"]
+  P --> API["api.anthropic.com"]
+  H --> BUS["EventBus → plugins"]
+  M --> BUS
+  P --> BUS
+  BUS --> DB[("rtok.db · SQLite + FTS5")]
+  BUS --> AR[("archive/ raw payloads")]
+  S["rtok stats · bench · doctor · setup"] --> DB
+</pre>
+  <div class="two">
+    <div>
+      <h3>Plugin trait</h3>
+<pre>trait Plugin {
+  fn manifest(&amp;self) -&gt; Manifest;        // id, Native|Adapter, surfaces
+  fn pre_tool(&amp;self, ev, cx) -&gt; Option&lt;PreToolDecision&gt;;
+  fn post_tool(&amp;self, ev, cx) -&gt; Option&lt;String&gt;;   // context only
+  fn session_start(&amp;self, ev, cx) -&gt; Option&lt;Injection&gt;;
+  fn prompt_submit(&amp;self, ev, cx) -&gt; Option&lt;Injection&gt;;
+  fn pre_compact(&amp;self, ev, cx);
+  fn mcp_tools(&amp;self) -&gt; Vec&lt;ToolDef&gt;;
+  fn proxy_filter(&amp;self, req: &amp;mut MessagesRequest, cx)
+      -&gt; Vec&lt;Measurement&gt;;
+}</pre>
+    </div>
+    <div>
+      <h3>Rules every plugin obeys</h3>
+      <ul class="plain">
+        <li><b>Measured or it does not exist.</b> <code>Measurement</code> rows are the only way savings enter the DB.</li>
+        <li><b>Lossless by default.</b> Originals live in <code>archive/</code>; <code>expand &lt;id&gt;</code> brings them back.</li>
+        <li><b>Budgeted injection.</b> One plugin owns SessionStart/UserPromptSubmit output, 800 tokens, byte-stable.</li>
+        <li><b>Cache-safe proxy.</b> Rewrite decisions are keyed by <code>tool_use_id</code> and persisted, so the frozen prefix never changes; system, tools and the last 4 turns are never touched.</li>
+        <li><b>Fail open.</b> Any error returns the unmodified input and still exits 0.</li>
+        <li><b>Adapter before native.</b> Wrap codebase-memory-mcp and rtk first; build in-tree only when measured.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="plugins">
+  <div class="sec-head"><div class="eyebrow">07</div><h2>Plugin catalogue (v0.1)</h2></div>
+  <div class="scroll"><table>
+    <thead><tr><th>id</th><th>kind</th><th>replaces</th><th>surface</th><th>mechanism</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">measure</td><td>native</td><td>rtk gain, headroom savings, lean-ctx gain, token-optimizer dashboard</td><td>stats · bench · proxy</td><td>transcript ingest + proxy usage; context-token-turns; A/B bench with <code>claude -p</code></td></tr>
+      <tr><td class="mono">cmd</td><td>native + adapter</td><td>rtk hook, ctx_shell, bash_compress</td><td>PreToolUse(Bash) → <code>rtok run</code></td><td>archive raw output, delegate to rtk filters when installed, TOML rules otherwise, trailer with expand id</td></tr>
+      <tr><td class="mono">read</td><td>native</td><td>lean-ctx ctx_read/search/tree, read_cache, structure_map</td><td>MCP read · search · tree</td><td>full/lines/map/signatures (tree-sitter-tags), re-read dedup, deny giant native Reads unless about to edit</td></tr>
+      <tr><td class="mono">archive</td><td>native</td><td>archive_result, headroom CCR, caveman retrieve</td><td>proxy live zone + expand</td><td>old large tool_results → pointer + head/tail, deterministic per tool_use_id</td></tr>
+      <tr><td class="mono">proxy</td><td>native</td><td>headroom proxy, caveman-proxy</td><td>ANTHROPIC_BASE_URL</td><td>passthrough with SSE, usage capture, cache-health report, compress mode</td></tr>
+      <tr><td class="mono">inject</td><td>native</td><td>shrink-hook, modes, lean-ctx banner, memory context</td><td>SessionStart · UserPromptSubmit</td><td>budget + priorities, byte-stable, modes as markdown</td></tr>
+      <tr><td class="mono">guard</td><td>native</td><td>refetch_guard, loop detection</td><td>PreToolUse</td><td>identical read/command within N turns → deny with pointer</td></tr>
+      <tr><td class="mono">memory</td><td>native (engram adapter first)</td><td>engram, claude-mem</td><td>MCP mem_save/search/get · PreCompact</td><td>agent-written notes, FTS5, titles-only recall, checkpoint across compaction</td></tr>
+      <tr><td class="mono">graph</td><td>adapter</td><td>codebase-memory-mcp, code-review-graph, serena, codegraph</td><td>MCP symbol · callers · outline</td><td>drives the installed tool, caps output at 2 K tokens</td></tr>
+      <tr><td class="mono">toon</td><td>native, off</td><td>caveman toon, TOON</td><td>proxy / MCP</td><td>tabular JSON → TOON (−42.6 % in vendor bench)</td></tr>
+    </tbody></table></div>
+</section>
+
+<section id="plan">
+  <div class="sec-head"><div class="eyebrow">08</div><h2>Implementation plan</h2></div>
+  <p>Full task list with per-task checks in <code>plan.md</code>. Haiku implements every task (≤ 200 LOC, ≤ 3 files, one machine check). Sonnet reviews at each gate. Opus only to change the plan. Each gate is a measurement, not a feeling.</p>
+  <div class="phase"><div class="id">P0</div><div><b>Scaffold</b><div class="g">cargo project, config, SQLite + FTS5, plugin trait + registry, estimator, hook I/O fixtures, CI</div></div><div class="n">7 tasks</div></div>
+  <div class="phase"><div class="id">P1</div><div><b>Measure</b><div class="g">transcript parser, <code>rtok stats</code> with context-token-turns, baseline snapshot, <code>rtok doctor</code>, optional count_tokens calibration · gate: baseline saved</div></div><div class="n">5</div></div>
+  <div class="phase"><div class="id">P2</div><div><b>Hook surface</b><div class="g">dispatcher, latency harness (p95 &lt; 10 ms), <code>setup claude</code> with backups, injection budget, compaction checkpoint · gate: additive install works</div></div><div class="n">5</div></div>
+  <div class="phase"><div class="id">P3</div><div><b>cmd plugin</b><div class="g"><code>rtok run</code>, rtk delegation, TOML rules for sed/grep/cat/cargo/pnpm, PreToolUse rewrite, expand, measurement · gate: Bash context-token-turns fall, expand rate &lt; 5 %</div></div><div class="n">6</div></div>
+  <div class="phase"><div class="id">P4</div><div><b>read plugin + MCP</b><div class="g"><code>rtok mcp</code>, read modes, tree-sitter-tags outline, dedup, search/tree, Read advice, registration · gate: lean-ctx off for a day, compare</div></div><div class="n">7</div></div>
+  <div class="phase"><div class="id">P5</div><div><b>proxy + archive</b><div class="g">passthrough with usage capture, lifecycle, live-zone rewrite, expand, cache-health · gate: ≥ 15 % fewer context-token-turns, expand &lt; 5 %</div></div><div class="n">5</div></div>
+  <div class="phase"><div class="id">P6</div><div><b>memory</b><div class="g">notes API, titles-only recall, import from engram/claude-mem · gate: injection + tool-description tokens fall, recall acceptable</div></div><div class="n">3</div></div>
+  <div class="phase"><div class="id">P7</div><div><b>modes + instruction hygiene</b><div class="g">terse/yagni as data, instruction audit · gate: A/B on output tokens</div></div><div class="n">2</div></div>
+  <div class="phase"><div class="id">P8</div><div><b>graph adapter</b><div class="g">detect + wrap codebase-memory-mcp/serena, 3 capped tools · gate: MCP description tokens saved</div></div><div class="n">1</div></div>
+  <div class="phase"><div class="id">P9</div><div><b>bench + migration</b><div class="g"><code>rtok bench</code> (6 tasks × 2 configs × 3 runs via <code>claude -p --settings</code>), baseline vs rtok, <code>setup claude --replace</code>, legacy/ folder, README · gate: lower cost per passed task</div></div><div class="n">5</div></div>
+  <div class="phase"><div class="id">P10</div><div><b>other hosts + release</b><div class="g">Cursor hooks, OpenCode plugin (the one host that can replace results), Codex MCP, cargo-dist + Homebrew</div></div><div class="n">4</div></div>
+  <div class="callout">If time is short: P1 → P2 → P5 passthrough → P3 → P4 → P5 compress → P9. Everything else waits until the bench shows the core pays for itself.</div>
+</section>
+
+<section id="skip">
+  <div class="sec-head"><div class="eyebrow">09</div><h2>Deliberately skipped in v0.1</h2></div>
+  <ul class="plain">
+    <li><b>LLM-based compression</b> (LLMLingua, claude-mem-style extraction): spends tokens to save tokens; no positive independent number for code.</li>
+    <li><b>Embeddings and semantic search:</b> no measured need; adds a model download and a daemon.</li>
+    <li><b>Own tree-sitter call graph:</b> three graph tools are already installed; adapter first, native only if the adapter is measured to cost more.</li>
+    <li><b>Semantic response cache (bifrost):</b> agent requests carry 100 K+ token contexts that never repeat at 0.9 similarity; a hit returns an answer to a different prompt.</li>
+    <li><b>WASM or subprocess plugins:</b> 3× slower or 100 ms per spawn; nothing in the catalogue needs another language yet.</li>
+    <li><b>Codex Responses-API proxy:</b> MCP only until Codex traffic is measured.</li>
+  </ul>
+</section>
+
+<section id="risks">
+  <div class="sec-head"><div class="eyebrow">10</div><h2>Risks and open questions</h2></div>
+  <ul class="plain">
+    <li><b>Cache busts from the proxy itself.</b> A rewrite that differs between turns invalidates the prefix and costs more than it saves. Mitigation: decisions keyed by tool_use_id, never touch the last 4 turns, cache-health report (T5.5) before enabling compress.</li>
+    <li><b>Hook order with legacy tools.</b> rtk's and rtok's PreToolUse rewrites both wrap Bash; run additive only until P9 replaces rtk's hook.</li>
+    <li><b>Tool search vs base URL.</b> Docs say setting <code>ANTHROPIC_BASE_URL</code> disables MCP tool search by default, yet deferred tools are visible here. <code>rtok doctor</code> settles it; if search is off, ~250 tool descriptions may be in every prompt.</li>
+    <li><b>Estimator error ±15 %.</b> Ratios between configs are safe; absolute token counts are not. The proxy's usage counters are the ground truth; calibrate with <code>count_tokens</code> when a key is present.</li>
+    <li><b>Fable/Mythos pricing.</b> The cost split assumes output at 5× input; adjust in <code>rtok stats --price</code>.</li>
+    <li><b>Ponytail/terse effects are model-dependent</b> and only self-benchmarked; keep them as data and A/B them (P7).</li>
+  </ul>
+</section>
+
+<section id="method">
+  <div class="sec-head"><div class="eyebrow">11</div><h2>Method and sources</h2></div>
+  <p>Eight Haiku research agents (compression, code graphs, memory, host surfaces, architecture, techniques, the token-optimizer plugin, and a transcript measurement script), then two Haiku adversarial fact-check agents: GitHub API metadata for 19 repositories and 27 documentation or blog claims against primary sources. Local ground truth: <code>settings.json</code>, <code>rtk gain</code>, <code>headroom savings</code>, <code>lean-ctx gain</code>, <code>caveman status</code>, the claude-mem banner, and 17 session transcripts.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Fact-check outcome</th><th>Items</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill bad">refuted</span></td><td>JetBrains rtk post (rtk did not save; +7.6 % on low effort); TOON figures (42.6 %, 72.2 vs 71.4); "headroom is Rust" (82 % Python); "OpenViking is Rust" (78 % Python); "37 hook events" (32)</td></tr>
+      <tr><td><span class="pill warn">partial / unverifiable</span></td><td><code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code> undocumented (settings key exists); cache invalidation order and 20-block lookback not in docs; <code>ENABLE_TOOL_SEARCH</code> values and 10 % trigger undocumented; no statement on an offline Claude tokenizer</td></tr>
+      <tr><td><span class="pill ok">confirmed</span></td><td>PostToolUse cannot modify results; PreToolUse <code>updatedInput</code> and <code>permissionDecision</code>; caching 1.25× / 2× / 0.1× (0.025× Fable/Mythos 5.1); context-editing strategies incl. <code>compact_20260112</code>; memory tool <code>memory_20250818</code>; Claude Code issue #81967; caveman #112; ponytail, codebase-memory-mcp, codegraph, lean-ctx README figures; caveman 65 % vs 8.5 % (JetBrains)</td></tr>
+    </tbody></table></div>
+  <footer>Star counts and languages: GitHub API, 2026-09-01. Token estimates: 4 chars/token unless stated. Files: <code>~/GitHub/rtok/plan.md</code>, <code>~/GitHub/rtok/research.md</code>.</footer>
+</section>
+</div>
