@@ -18,6 +18,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D12) and 
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
 | No daemon, no subprocess plugins, no WASM | plugins are in-tree modules behind Cargo features |
+| Every plugin is written here from scratch; no third-party tool on any code path (D6) | `Manifest` has no adapter kind; T0.8 Check greps `src/plugins` for retired tool names |
 | Every CLI flag is a config key; one precedence rule (D12) | `config/default.toml` (reference, embedded), `Config` typed sections, `tests/config_coverage.rs` walks the clap tree |
 
 ## 2. Layers
@@ -79,7 +80,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 
 ```rust
 pub trait Plugin: Send + Sync {
-    fn manifest(&self) -> Manifest;                                   // id, kind, surfaces, default_on
+    fn manifest(&self) -> Manifest;                                   // id, surfaces, default_on
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision>;   // Deny | Rewrite
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String>;          // additionalContext only
     fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection>;
@@ -116,15 +117,17 @@ The archive store (`~/.rtok/archive/`) joins `Ctx` in T3.1.
 - Any panic or error inside a plugin → that plugin's output is dropped, the event is logged
   with the error, and the hook still exits 0 with whatever the other plugins produced.
 
-## 5. Two kinds of plugin
+## 5. One kind of plugin
 
-- **Native** — the logic is here in Rust (`cmd` rules, `read`, `archive`, `inject`, `memory`).
-- **Adapter** — drives an installed tool and measures it (`graph` over codebase-memory-mcp,
-  `cmd` delegating to `rtk`). Decision D6: build native only when an adapter is *measured*
-  to cost more than it saves.
+Every plugin is native Rust written from scratch in this repo (decision D6). No plugin
+spawns, links, imports, or reads the data of a third-party tool. The tools rtok replaces are
+specs (`research.md`); their names appear in code only where rtok inspects them (`doctor`),
+retires them (`setup --replace`) or benches against them.
 
-The manifest's `kind` is informational today; it exists so `rtok plugins`, `rtok doctor` and
-the bench can group results by what actually did the work.
+Third parties extend rtok from outside: depend on the `rtok` library, implement `Plugin`,
+and build a binary with `Registry::from_plugins(vec![Box::new(Mine)], &config)` (T0.8).
+`docs/plugin-authoring.md` and `examples/` are the whole public surface; this repo ships no
+third-party plugins.
 
 ## 6. Compile-time and run-time selection
 
@@ -192,6 +195,7 @@ under 5 %.
 
 ## 11. Deliberately not here
 
-No LLM-based compression, no embeddings, no own tree-sitter call graph, no semantic response
-cache, no daemon, no WASM plugin host, no per-plugin config schema validation. Each is
-rejected on evidence in `plan.md` §0; re-open them only with a measurement.
+No LLM-based compression, no embeddings, no type-resolved call graph (the `graph` plugin is
+a tree-sitter-tags index), no semantic response cache, no daemon, no WASM plugin host, no
+adapters over third-party tools. Each is rejected on evidence or by decision in `plan.md` §0;
+re-open them only with a measurement.

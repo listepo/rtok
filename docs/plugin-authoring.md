@@ -7,8 +7,9 @@ fits in a single ≤ 200 LOC task. `examples/hello_plugin.rs` is the runnable re
 ## 0. Should it exist?
 
 Check `plan.md` §1 (catalogue) and §0 (decisions). If the method is not there, propose a plan
-change first. If an installed tool already does it, write an **adapter** and measure it before
-writing native code (D6).
+change first. Every plugin is written from scratch here: it must not shell out to, link, or
+read the data of a third-party tool (D6). The tool it replaces is the spec; `research.md`
+is the evidence.
 
 ## 1. Module
 
@@ -45,6 +46,14 @@ Implement only the trait methods your surfaces need; every method has a no-op de
 - `src/config.rs` → `CATALOGUE`: `("<id>", default_on)` in the same position.
 
 The `registry_matches_catalogue` test fails until all three agree.
+
+## 2b. Outside this repo
+
+A third-party plugin lives in its own crate: depend on the `rtok` library, implement
+`Plugin`, and build your own binary with
+`Registry::from_plugins(vec![Box::new(Mine)], &Config::load()?)` (T0.8). This repo ships no
+third-party plugins and no adapters; `examples/` shows the two minimal shapes (a hook plugin
+and an MCP-tool plugin).
 
 ## 3. Documentation next to the code
 

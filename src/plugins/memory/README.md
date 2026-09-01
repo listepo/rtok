@@ -5,7 +5,7 @@ progressive disclosure.
 
 | | |
 |---|---|
-| Kind | native (imports from engram / claude-mem until measured) |
+| Kind | native |
 | Surfaces | MCP `mem_save`, `mem_search`, `mem_get`; PreCompact checkpoint; SessionStart recall |
 | Replaces | engram, claude-mem |
 | Default | on |
@@ -27,8 +27,9 @@ progressive disclosure.
 
 ## Import
 
-`rtok memory import --engram <path>` / `--claude-mem <path>` copies observations read-only,
-deduped by body sha256.
+`rtok memory import <file.jsonl>` reads one note per line (`{kind, title, body, ts?, project?}`),
+deduped by body sha256. Export your previous memory tool to that shape yourself; rtok knows
+no third-party schema (D6).
 
 ## Tasks
 

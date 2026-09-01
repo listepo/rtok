@@ -25,7 +25,7 @@ Lowest to highest. Later layers override earlier ones key by key.
 Rules:
 
 - Positional per-call arguments (`hook <event>`, `expand <id>`, `run -- <cmd>`,
-  `setup <host>`, `--save-baseline <name>`) are not settings and have no key. Everything
+  `setup <host>`, `memory import <file>`, `--save-baseline <name>`) are not settings and have no key. Everything
   else does.
 - Flag `--foo-bar` on subcommand `baz` ↔ key `baz.foo_bar`. Plugin settings live under
   `plugins.<id>.<key>`.
@@ -146,11 +146,10 @@ enabled = true
 enabled  = true
 rewrite  = true                       # PreToolUse(Bash) → `rtok run -- …`
 shell    = ""                         # "" = $SHELL
-rtk      = "auto"                     # auto | never | always — delegate to rtk when installed
-rules    = "~/.rtok/rules.toml"       # fallback filter rules; missing → built-in rules/default.toml
+rules    = "~/.rtok/rules.toml"       # extra filter rules; missing → built-in rules/default.toml
 trailer_min_lines = 40                # add `[rtok <id> · N lines · expand …]` above this
 fail_tail_lines   = 80                # non-zero exit → last N lines verbatim
-never_wrap = ["rtok", "rtk", "sudo"]  # first-word deny list; heredocs, `&`, -i are always skipped
+never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&`, -i are always skipped
 
 [plugins.read]
 enabled          = true
@@ -189,14 +188,10 @@ recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
-[plugins.memory.import]               # rtok memory import
-engram     = ""                       # path to an engram DB (--engram)
-claude_mem = ""                       # path to a claude-mem DB (--claude-mem)
 
 [plugins.graph]
 enabled    = true
-backend    = "auto"                   # auto | codebase-memory-mcp | serena | none
-max_tokens = 2000
+max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"
 
 [plugins.toon]
 enabled  = false
@@ -219,7 +214,6 @@ min_rows = 5
 | `run` | `--shell`, `--no-trailer` | `plugins.cmd.shell`, `plugins.cmd.trailer_min_lines` |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps |
 | `filter` | `--cmd` | `filter.cmd` |
-| `memory import` | `--engram`, `--claude-mem` | `plugins.memory.import.*` |
 | `plugins` | `--json` | (output format only; follows `stats.format`) |
 
 The coverage test (T12.4) walks the clap command tree and fails if a non-positional flag

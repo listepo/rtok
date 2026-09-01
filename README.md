@@ -51,18 +51,22 @@ blocks the host.
 
 ## Plugins
 
-| id | kind | replaces | surface |
-|----|------|----------|---------|
-| [`measure`](src/plugins/measure/README.md) | native | rtk gain, headroom savings, lean-ctx gain | `stats`, `bench`, proxy |
-| [`cmd`](src/plugins/cmd/README.md) | native + adapter (rtk) | rtk hook, ctx_shell, bash_compress | PreToolUse(Bash) → `rtok run` |
-| [`read`](src/plugins/read/README.md) | native | lean-ctx read/search/tree, read_cache | MCP `read`, `search`, `tree` |
-| [`archive`](src/plugins/archive/README.md) | native | archive_result, headroom CCR | proxy compress, `expand` |
-| [`proxy`](src/plugins/proxy/README.md) | native | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` |
-| [`inject`](src/plugins/inject/README.md) | native | caveman/ponytail modes, lean-ctx banner | SessionStart, UserPromptSubmit |
-| [`guard`](src/plugins/guard/README.md) | native | refetch_guard | PreToolUse |
-| [`memory`](src/plugins/memory/README.md) | native | engram, claude-mem | MCP `mem_*`, PreCompact |
-| [`graph`](src/plugins/graph/README.md) | adapter | codebase-memory-mcp, serena, … | MCP `symbol`, `callers`, `outline` |
-| [`toon`](src/plugins/toon/README.md) | native, off | caveman toon | proxy, MCP |
+| id | replaces (spec only, never a dependency) | surface |
+|----|------------------------------------------|---------|
+| [`measure`](src/plugins/measure/README.md) | rtk gain, headroom savings, lean-ctx gain | `stats`, `bench`, proxy |
+| [`cmd`](src/plugins/cmd/README.md) | rtk hook, ctx_shell, bash_compress | PreToolUse(Bash) → `rtok run` |
+| [`read`](src/plugins/read/README.md) | lean-ctx read/search/tree, read_cache | MCP `read`, `search`, `tree` |
+| [`archive`](src/plugins/archive/README.md) | archive_result, headroom CCR | proxy compress, `expand` |
+| [`proxy`](src/plugins/proxy/README.md) | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` |
+| [`inject`](src/plugins/inject/README.md) | caveman/ponytail modes, lean-ctx banner | SessionStart, UserPromptSubmit |
+| [`guard`](src/plugins/guard/README.md) | refetch_guard | PreToolUse |
+| [`memory`](src/plugins/memory/README.md) | engram, claude-mem | MCP `mem_*`, PreCompact |
+| [`graph`](src/plugins/graph/README.md) | codebase-memory-mcp, serena, … | MCP `symbol`, `callers`, `outline` |
+| [`toon`](src/plugins/toon/README.md) (off by default) | caveman toon | proxy, MCP |
+
+Every plugin is written from scratch in this repo; rtok never runs, links or reads the tools
+it replaces (plan D6). Write your own against the public API:
+[`docs/plugin-authoring.md`](docs/plugin-authoring.md).
 
 Each plugin directory has a `README.md` (what and why) and an `AGENTS.md` (invariants and
 tasks for whoever works on it). Turn plugins off in `~/.rtok/config.toml`
@@ -127,5 +131,5 @@ Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, branch
 - Token counts from `rtok stats` are estimates (±15 %) unless they come from the proxy's
   `usage` rows.
 - Lossless means the original is on disk under `~/.rtok/archive/` and `rtok expand <id>`
-  returns it. rtk-filtered command output is regenerable, not archived raw.
+  returns it.
 - Nothing in this repo has produced a measured saving yet. The first number lands with P1.

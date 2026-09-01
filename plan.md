@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-01 (see `done.md`); next unblocked task: T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-01 (see `done.md`); next unblocked task: T0.8, then P12, then T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -12,7 +12,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D3 | **Measurement first.** Nothing ships until `rtok stats` reads real usage from session logs and the proxy. Every plugin logs before/after. Metric = *context-token-turns* (tokens × turns they stay in context), plus output tokens. | Vendor claims 60–95 %; your measured savings 3–40 %; JetBrains measured rtk at −7.6 % to 0 %. Nobody in the stack measures end to end. |
 | D4 | **Lossless by default.** Every compression keeps the original retrievable via `rtok expand <id>` / MCP `expand`. Lossy only where the source is regenerable (re-run the command). | Caveman issue #112 (silent code corruption); trust is the product. |
 | D5 | **Injection budget.** All SessionStart/UserPromptSubmit injections go through one plugin with a per-turn token cap (default 800) and a byte-stable prefix. | lean-ctx alone injects ~3.1 K tokens per turn; injections are re-read (cached) every turn. |
-| D6 | **Plugins are of two kinds:** *native* (Rust module) or *adapter* (drives an installed tool). Build native only when an adapter is measured to cost more than it saves. | YAGNI. Code graph = adapter over codebase-memory-mcp; filters = delegate to rtk when installed. |
+| D6 | **Every plugin is native, written from scratch in this repo. No third-party plugins.** A plugin never spawns, links, imports, or reads the data of another tool (rtk, lean-ctx, engram, claude-mem, codebase-memory-mcp, serena, headroom, caveman, …). The tools in `research.md` are the *spec* of what to rebuild and retire, not code to wrap. Third parties extend rtok from outside through the public plugin API (`rtok::plugin`, `Registry::from_plugins`, `docs/plugin-authoring.md`, `examples/`), never through this repo. Rewritten 2026-09-01 by user decision (was: native *or* adapter). | A runtime dependency on the tools the bench is meant to retire makes the measurement circular and the install fragile. One code path per method is what `Measurement` can attribute. |
 | D7 | **Prompt "modes" (terse, YAGNI) are data files, not code.** | Ponytail/caveman are markdown; measured effect must be A/B tested, not assumed. |
 | D8 | **One SQLite file** (`~/.rtok/rtok.db`, WAL): events, measurements, archive index, read cache, memory (FTS5). Raw archived payloads on disk under `~/.rtok/archive/`. | engram, claude-mem, codebase-memory-mcp all converge on SQLite (+FTS5). |
 | D9 | **Agents:** Haiku implements every task below (each task ≤ ~200 LOC, ≤ 3 files, one machine check). Sonnet reviews at each phase gate. Opus only to change this plan. | User constraint: low-cost models. |
@@ -20,7 +20,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D11 | **The proxy speaks both wire formats.** Anthropic Messages (`/v1/messages`) and OpenAI (`/v1/chat/completions`, `/v1/responses`) are `Wire` adapters behind one proxy; plugins that touch requests (`archive`, `toon`) and `usage` capture work on a normalised view of tool results, never on a specific JSON shape. Hosts point `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` at rtok. Added 2026-09-01 by user request. | Codex, OpenCode, Cursor-with-own-key and aider talk OpenAI; without it `measure` has no ground truth for them and `archive` cannot shrink their context. One proxy, two parsers is cheaper than two proxies. |
 | D12 | **One config file holds every setting; every CLI flag is a config key.** `~/.rtok/config.toml` (schema and reference file: `docs/config.md`, embedded as `config/default.toml`). Precedence: defaults < user file < `<git root>/.rtok.toml` < `RTOK_<SECTION>_<KEY>` env < flags. Positional per-call arguments (`hook <event>`, `expand <id>`, `run -- <cmd>`) have no key; everything else does, enforced by a test that walks the clap tree. `rtok config show --sources` tells where each value came from. Added 2026-09-01 by user request. | Hooks are spawned with a fixed command line, the proxy and MCP server run for hours, and a bench needs two reproducible configurations — none of that works with flags alone. One precedence rule beats per-flag special cases. |
 
-Non-goals for v0.1 (each rejected on evidence): LLM-based compression (LLMLingua, claude-mem style extraction) — costs tokens to save tokens; embeddings/semantic search — no measured need; own tree-sitter call graph — adapter first; semantic response cache (bifrost) — agent contexts never repeat at 0.9 similarity and a hit returns a wrong answer. (Formerly listed here: Codex Responses-API proxy. Moved into scope as P11 on 2026-09-01, decision D11.)
+Non-goals for v0.1 (each rejected on evidence): LLM-based compression (LLMLingua, claude-mem style extraction) — costs tokens to save tokens; embeddings/semantic search — no measured need; type-resolved (LSP-grade) call graph — the native `graph` plugin is a tree-sitter-tags index of definitions and reference sites, which is all `symbol`/`callers`/`outline` need; semantic response cache (bifrost) — agent contexts never repeat at 0.9 similarity and a hit returns a wrong answer. (Formerly listed here: Codex Responses-API proxy. Moved into scope as P11 on 2026-09-01, decision D11.)
 
 ## 1. Architecture
 
@@ -39,7 +39,7 @@ Plugin trait (final shape; T0.4 implements it):
 
 ```rust
 pub trait Plugin: Send + Sync {
-    fn manifest(&self) -> Manifest;                    // id, kind (Native|Adapter), surfaces, default_on
+    fn manifest(&self) -> Manifest;                    // id, surfaces, default_on
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> { None }
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> { None }   // additionalContext only
     fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection> { None }
@@ -52,20 +52,20 @@ pub trait Plugin: Send + Sync {
 
 `Ctx` gives every plugin: the DB handle, the token estimator, the archive store, config, session id. `Measurement { plugin, kind, before_bytes, after_bytes, est_before, est_after, ref_id }` is the only way savings enter the DB.
 
-Plugin catalogue (v0.1 scope):
+Plugin catalogue (v0.1 scope). Every plugin is native Rust written from scratch here (D6); the *spec* column names the tools whose behaviour it re-implements and P9 retires.
 
-| id | kind | replaces in your stack | surface | mechanism |
-|----|------|------------------------|---------|-----------|
-| `measure` | native | rtk gain, headroom savings, lean-ctx gain, token-optimizer dashboard | `stats`, `bench`, proxy | session JSONL ingest + proxy `usage`; context-token-turns |
-| `cmd` | native + adapter | rtk hook, lean-ctx ctx_shell, token-optimizer bash_compress | PreToolUse(Bash) → `rtok run` | archive raw output, delegate filtering to rtk if installed, else TOML rules; pointer trailer |
-| `read` | native | lean-ctx ctx_read/search/tree (78 tools), token-optimizer read_cache/structure_map | MCP `read`,`search`,`tree` + PreToolUse(Read) advice | modes full/lines/map/signatures via tree-sitter-tags; re-read dedup (hash → "unchanged") |
-| `archive` | native | token-optimizer archive_result, headroom CCR, caveman retrieve | proxy live zone + `expand` | replace old, large `tool_result` blocks with pointer + head/tail; deterministic per tool_use_id |
-| `proxy` | native | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL` | passthrough + SSE streaming; usage capture; never touches system, tools, or last 2 turns |
-| `inject` | native | caveman shrink-hook, ponytail/caveman modes, lean-ctx banner, engram/claude-mem SessionStart context | SessionStart, UserPromptSubmit | budgeted, byte-stable prefix; modes as markdown |
-| `guard` | native | token-optimizer refetch_guard/loop detection | PreToolUse | identical read/command within N turns → deny with pointer to prior result |
-| `memory` | native (engram adapter until T6 measured) | engram, claude-mem | MCP `mem_save/search/get`, PreCompact checkpoint | agent-written notes, SQLite FTS5, progressive disclosure |
-| `graph` | adapter | codebase-memory-mcp, code-review-graph, serena, codegraph | MCP `symbol`,`callers`,`outline` | shells to installed graph tool; caps output |
-| `toon` | native, off by default | caveman toon, TOON | proxy/MCP | tabular JSON → TOON (vendor bench: 42.6 % fewer tokens) |
+| id | spec (replaces; evidence in research.md) | surface | mechanism |
+|----|-------------------------------------------|---------|-----------|
+| `measure` | rtk gain, headroom savings, lean-ctx gain, token-optimizer dashboard | `stats`, `bench`, proxy | session JSONL ingest + proxy `usage`; context-token-turns |
+| `cmd` | rtk hook, lean-ctx ctx_shell, token-optimizer bash_compress | PreToolUse(Bash) → `rtok run` | archive raw output; per-family formatters + TOML rules written here; pointer trailer |
+| `read` | lean-ctx ctx_read/search/tree (78 tools), token-optimizer read_cache/structure_map | MCP `read`,`search`,`tree` + PreToolUse(Read) advice | modes full/lines/map/signatures via tree-sitter-tags; re-read dedup (hash → "unchanged") |
+| `archive` | token-optimizer archive_result, headroom CCR, caveman retrieve | proxy live zone + `expand` | replace old, large `tool_result` blocks with pointer + head/tail; deterministic per tool_use_id |
+| `proxy` | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` | passthrough + SSE streaming; usage capture; never touches system, tools, or last 2 turns |
+| `inject` | caveman shrink-hook, ponytail/caveman modes, lean-ctx banner, engram/claude-mem SessionStart context | SessionStart, UserPromptSubmit | budgeted, byte-stable prefix; modes as markdown |
+| `guard` | token-optimizer refetch_guard/loop detection | PreToolUse | identical read/command within N turns → deny with pointer to prior result |
+| `memory` | engram, claude-mem | MCP `mem_save/search/get`, PreCompact checkpoint | agent-written notes, SQLite FTS5, progressive disclosure |
+| `graph` | codebase-memory-mcp, code-review-graph, serena, codegraph | MCP `symbol`,`callers`,`outline` | own tree-sitter-tags index (definitions + reference sites) in SQLite; capped output |
+| `toon` (off by default) | caveman toon, TOON | proxy/MCP | tabular JSON → TOON (vendor bench: 42.6 % fewer tokens) |
 
 ## 2. Working agreement for agents
 
@@ -76,6 +76,7 @@ Plugin catalogue (v0.1 scope):
 - Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` green before every Check.
 - Anything unmeasurable is a bug in the plan: add a `Measurement` before adding a feature.
 - Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12); flag names in the tasks below imply the key `<subcommand>.<flag>` or `plugins.<id>.<flag>`.
+- No plugin shells out to, links, imports from, or reads the data of a third-party tool (D6). Port the *behaviour* described in `research.md`, never the code. Retired tools' names may appear only in `rtok doctor` (inspection), `rtok setup --replace` (retirement) and `rtok bench` (comparison). External plugins are written against the public API (`rtok::plugin`, `Registry::from_plugins`), outside this repo.
 
 ## 3. Phases and tasks
 
@@ -86,6 +87,10 @@ Format: **Tn.m title** · model · depends · files · do · **Check** (command 
 T0.1–T0.7 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (sonnet review: trait shape final; no plugin logic yet) is still open.
 
 Gate P0 (sonnet review): trait shape final; no plugin logic yet. **Status: open.**
+
+**T0.8 plugin SDK: one kind, external plugins, simple examples** · haiku · T0.4 · `src/plugin.rs`, `src/plugins/mod.rs`, `examples/` (+ the `Kind` row of each `src/plugins/<id>/README.md`, `docs/plugin-authoring.md`; mechanical, exceeds the 3-file rule once)
+Do: delete `Kind` and `Manifest::kind` (every plugin is native, D6). Add `Registry::from_plugins(Vec<Box<dyn Plugin>>, &Config)` so an external crate can embed the `rtok` library and register its own plugins; `Registry::new` becomes `from_plugins(plugins::all(), cfg)`. `pub use plugin::*` at the crate root; `///` docs on every public item in `plugin.rs`. Examples stay small (≤ 60 lines): `examples/hello_plugin.rs` (hook: deny, inject, measure — exists) and new `examples/mcp_tool.rs` (one plugin exposing one `ToolDef`, built through `from_plugins`, asserts the tool is listed). `make example` runs both.
+Check: `make check && make example` green; `cargo doc --no-deps 2>&1 | grep -c warning` → 0; `grep -rn "Kind" src examples docs` → nothing; `grep -rln "rtk\|engram\|claude-mem\|serena\|codebase-memory" src/plugins` → nothing.
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 
@@ -141,27 +146,27 @@ Gate P2: `rtok setup claude` installed alongside the legacy hooks (additive, not
 Do: run via `$SHELL -lc`, capture stdout+stderr (merged, ordered), preserve exit code, write raw output to `~/.rtok/archive/<id>` and an `archive` row; print output (unfiltered in this task) plus trailer `[rtok <id> · N lines · expand: rtok expand <id>]` only when > 40 lines.
 Check: `rtok run -- printf 'a\nb\n'` prints `a b`, exit 0, no trailer; `rtok run -- sh -c 'exit 3'` → exit 3.
 
-**T3.2 rtk delegation** · haiku · T3.1 · `src/plugins/cmd/rtk.rs`
-Do: if `rtk` is on PATH and the first argv word is in rtk's supported families (probe once with `rtk --help`, cache in DB for 24 h), execute `rtk <argv>` instead of the raw command, still archiving the raw output by running the raw command? No — run once: execute `rtk <argv>` and archive **its** output; mark measurement kind=`rtk`. Raw output is regenerable by re-running.
-Check: with rtk installed, `rtok run -- git status` produces rtk-formatted output and a measurement row; with `PATH` lacking rtk, falls back to T3.1 behaviour.
+**T3.2 rule engine** · haiku · T3.1 · `src/plugins/cmd/rules.rs`
+Do: pure function over `&str`: apply `Rule { match, max_lines, head, tail, drop = [regex], keep = [regex], dedupe }` to captured output. Keep-regexes always survive (`error|warning|panic|FAIL|Traceback` built in); drop-regexes remove lines; `dedupe` collapses consecutive repeats to `<line> (×N)`; then head/tail with `… N lines omitted (expand <id>)`. Non-zero exit → last 80 lines verbatim, no rule applied. No I/O, no subprocess.
+Check: unit tests: 300 `ok` lines + one `error:` line with `max_lines = 20` → ≤ 20 lines that include the error line; exit-3 input returns its last 80 lines untouched.
 
-**T3.3 filter rules (fallback when rtk absent or unsupported)** · haiku · T3.1 · `src/plugins/cmd/rules.rs`, `rules/default.toml`
-Do: TOML rules: `[[rule]] match = "^(grep|rg)\\b"`, `max_lines`, `head`, `tail`, `drop = [regex]`, `keep = [regex]`, `dedupe = true`. Ship rules for the families that dominate your logs: grep/rg, sed, cat, ls, find, cargo build/test, pnpm/npm/node test, pytest, make, curl. Always keep lines matching `error|warning|panic|FAIL|Traceback`. Non-zero exit → last 80 lines verbatim.
+**T3.3 family formatters + default rules** · haiku · T3.2 · `src/plugins/cmd/formatters.rs`, `rules/default.toml`, `tests/cmd_golden/`
+Do: written from scratch here (D6); the command families in `research.md` (rtk's list) are the spec, not the code. A formatter is `fn(argv: &[String], output: &str) -> Option<String>`; `None` falls back to the rules. Formatters: `cargo build|test|clippy` (per-target status, errors as file:line + message, test counts + failing names), `git status|diff|log` (compact paths, stat lines, one line per commit), `pytest|jest|vitest|go test` (pass/fail counts, failing names, first assertion line each), `ls|find|tree` (columns, depth cap). `rules/default.toml` covers grep/rg, sed, cat, make, curl, npm/pnpm/node. Never redact.
 Check: golden tests `tests/cmd_golden/*.{in,out}` for 10 families; a fixture with a fake AWS key must appear unchanged in output (no redaction surprises).
 
 **T3.4 PreToolUse(Bash) rewrite** · haiku · T2.1, T3.1 · `src/plugins/cmd/hook.rs`
-Do: return `updatedInput.command = "rtok run -- " + original` unless: already starts with `rtok`/`rtk`, contains heredoc `<<`, `sudo`, `&` background, `-i`/`--interactive`, or config `cmd.rewrite = false`. Emit `permissionDecisionReason` "wrapped by rtok".
-Check: fixture with `git status` → wrapped; fixture with `cat <<EOF` → untouched; fixture with `rtk git status` → untouched.
+Do: return `updatedInput.command = "rtok run -- " + original` unless: first word is in `plugins.cmd.never_wrap` (default `rtok`, `sudo`), contains heredoc `<<`, `&` background, `-i`/`--interactive`, or config `plugins.cmd.rewrite = false`. Emit `permissionDecisionReason` "wrapped by rtok".
+Check: fixture with `git status` → wrapped; fixture with `cat <<EOF` → untouched; fixture with `sudo ls` → untouched.
 
 **T3.5 `rtok expand <id>`** · haiku · T3.1 · `src/expand.rs`
 Do: print archived payload; `--lines a-b`; `--grep re`. Also exposed later as MCP tool (T4.1).
 Check: `rtok expand <id from T3.1>` prints the raw output; unknown id → exit 1 with message.
 
 **T3.6 measurement wiring** · haiku · T3.1–T3.4 · `src/plugins/cmd/mod.rs`
-Do: every run writes `Measurement { kind: rtk|rule|raw, before, after }`; `rtok stats --plugin cmd` shows per-family savings and archive hit count (how often `expand` was called — the honesty metric).
+Do: every run writes `Measurement { kind: formatter|rule|raw, before, after }`; `rtok stats --plugin cmd` shows per-family savings and archive hit count (how often `expand` was called — the honesty metric).
 Check: after 3 runs, `rtok stats --plugin cmd --json` has 3 rows with before ≥ after.
 
-Gate P3: disable `rtk hook claude` in settings (rtok wraps it), run one working day, `rtok stats --compare before-rtok`. Keep only if Bash context-token-turns fall and `expand` rate < 5 %.
+Gate P3: disable the legacy Bash-compression hooks in settings, run one working day, `rtok stats --compare before-rtok`. Keep only if Bash context-token-turns fall and `expand` rate < 5 %.
 
 ### P4 — `read` plugin + MCP server (goal: replace lean-ctx's 78 tools with 5 and the 3.1 K/turn banner with 0)
 
@@ -230,8 +235,8 @@ Do: inject the last 5 note titles + ids for the current project (≤ 200 tokens)
 Check: fixture with 20 notes → 5 titles, ≤ 200 tokens, byte-stable across runs.
 
 **T6.3 import** · haiku · T6.1 · `src/plugins/memory/import.rs`
-Do: `rtok memory import --engram <path>` and `--claude-mem <path>`: copy observations (title, body, ts, project) into `notes`. Read-only on sources.
-Check: import a copied engram DB → row count matches; re-import → no duplicates (dedupe by sha256 of body).
+Do: `rtok memory import <file.jsonl>`: one note per line `{kind, title, body, ts?, project?}`. Users export their previous memory tool to that shape themselves; rtok knows no third-party schema (D6). Dedupe by sha256 of body; print inserted/skipped/malformed counts; exit 0.
+Check: a 50-line fixture → 50 rows; re-import → 0 inserted, 50 skipped; one malformed line is counted, skipped, exit 0.
 
 Gate P6: disable engram + claude-mem plugins for a week; compare per-turn injection tokens and MCP tool-description tokens (`rtok doctor`). Revert if recall quality is noticeably worse (subjective, note it).
 
@@ -247,13 +252,17 @@ Check: on this machine, report lists ≥ 4 injectors and their token totals.
 
 Gate P7: A/B (P9 harness) `terse` on/off on 6 tasks; keep only if output tokens fall without task failures.
 
-### P8 — `graph` adapter
+### P8 — `graph` plugin (goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers)
 
-**T8.1 detect + wrap** · haiku · T4.1 · `src/plugins/graph.rs`
-Do: detect installed `codebase-memory-mcp` (or serena) binary; MCP tools `symbol(name)`, `callers(name)`, `outline(path)` that spawn the tool's MCP stdio, call the matching tool, and cap output to 2 K tokens (head + "N more, use expand"). Off when nothing is installed.
-Check: with codebase-memory-mcp installed and this repo indexed, `symbol("main")` returns a location; without it, tool list omits graph tools.
+**T8.1 symbol index** · haiku · T4.3, T4.5 · `src/plugins/graph/index.rs`, next `migrations/NNNN.sql`
+Do: table `symbols(path, name, kind, line, is_def, file_sha)`. Walk the repo respecting `.gitignore` (`ignore` crate from T4.5); run the T4.3 tags queries for definitions **and** reference sites per supported language; insert. Incremental: skip files whose sha256 is unchanged, delete rows of removed files. `rtok graph index [path]`, plus lazy indexing on the first tool call; PostToolUse(Edit|Write) marks that file stale (no indexing on the hook path).
+Check: index this crate → `symbols` contains `main` (def) and ≥ 1 reference to `Registry`; a second run inserts 0 rows; editing one fixture file re-indexes only that file.
 
-Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78).
+**T8.2 MCP tools** · haiku · T8.1, T4.1 · `src/plugins/graph/mod.rs`
+Do: `symbol(name)` → definitions (`path:line`, kind); `callers(name)` → reference sites grouped by file with the line text; `outline(path)` → definitions in one file (reuses `read` mode=map). Cap each response at `plugins.graph.max_tokens` (2 K): head + `N more, expand <id>`. Measurement per call (capped vs uncapped estimate).
+Check: `symbol("main")` → `src/main.rs`; `callers("estimate")` lists `src/plugin.rs`; a 500-hit fixture is capped and carries an archive id.
+
+Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78); index time on this repo < 2 s.
 
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures)
 
@@ -372,3 +381,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-01 | `README.md` exists now as a status page; T9.5 still replaces it with measured results. | Newcomers need install + layout before P9. |
 | 2026-09-01 | OpenAI API support added: decision D11, phase P11 (T11.1–T11.6), non-goal on the Codex Responses proxy withdrawn. | User request; OpenAI-API hosts (Codex, OpenCode, aider) were otherwise unmeasurable and uncompressible. |
 | 2026-09-01 | Config file designed (`docs/config.md`): decision D12, phase P12 (T12.1–T12.4), new `rtok config` subcommand, `core.inject_budget_tokens` moves to `plugins.inject.budget_tokens`. | User request: every CLI parameter must be settable in the config file. |
+| 2026-09-01 | No third-party plugins: D6 rewritten (all plugins native, written from scratch; research tools are specs). rtk delegation removed (T3.2 → rule engine, T3.3 → formatters); engram/claude-mem importers → generic JSONL (T6.3); graph adapter → own tree-sitter-tags index (T8.1–T8.2); `Kind` dropped and `Registry::from_plugins` + a second example added as the public plugin API (T0.8). | User decision: no runtime dependency on the tools rtok retires; one code path per method to measure; third parties extend through the public API, outside this repo. |
