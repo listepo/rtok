@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. Companion evidence: `research.md` (comparison, measurements, fact-check).
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-01 (see `done.md`); next unblocked task: T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -78,38 +78,11 @@ Plugin catalogue (v0.1 scope):
 
 Format: **Tn.m title** · model · depends · files · do · **Check** (command → expected).
 
-### P0 — Scaffold (goal: `rtok --version`, DB, plugin registry, hook I/O types)
+### P0 — Scaffold (goal: `rtok --version`, DB, plugin registry, hook I/O types) — **done 2026-09-01, moved to `done.md`**
 
-**T0.1 cargo project** · haiku · — · `Cargo.toml`, `src/main.rs`
-Do: `cargo init --name rtok`; binary name `rtok` via `[[bin]]`; clap derive with subcommands `hook`, `mcp`, `proxy`, `stats`, `bench`, `doctor`, `setup`, `run`, `expand`, `plugins` (all stubs printing "not implemented", exit 0). Rust pinned via `mise.toml` (no `rust-toolchain.toml`). `.gitignore`, `git init`, first commit.
-Status: scaffold, stubs, `mise.toml`, `.gitignore` and `git init` done 2026-09-01; first commit pending.
-Check: `cargo run -q -- --version` → `rtok 0.1.0`; `cargo run -q -- plugins` → exits 0.
+T0.1–T0.7 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (sonnet review: trait shape final; no plugin logic yet) is still open.
 
-**T0.2 config + paths** · haiku · T0.1 · `src/config.rs`
-Do: `~/.rtok/config.toml` (create with defaults if missing): `[core] db_path, archive_dir, estimator_chars_per_token = 3.5, inject_budget_tokens = 800`; `[plugins.<id>] enabled = bool` per catalogue id. Env override `RTOK_HOME`. Function `Config::load()`.
-Check: `RTOK_HOME=$(mktemp -d) cargo run -q -- plugins` creates `config.toml`; a unit test asserts default budget 800.
-
-**T0.3 SQLite store** · haiku · T0.2 · `src/store.rs`, `migrations/0001.sql`
-Do: rusqlite with `bundled` + `fts5`. WAL mode. Tables: `events(id, ts, session, event, tool, plugin, ms)`, `measurements(id, ts, session, plugin, kind, before_bytes, after_bytes, est_before, est_after, ref_id)`, `archive(id TEXT PK, ts, session, tool, bytes, path, sha256)`, `read_cache(session, path, sha256, ts, archive_id)`, `notes(id, ts, project, kind, title, body)` + `notes_fts` (FTS5 content table), `usage(id, ts, session, model, input, cache_create, cache_read, output)`. Migration runner keyed by filename.
-Check: `cargo test store::` → migration applies twice idempotently; FTS5 `MATCH` query returns an inserted note.
-
-**T0.4 plugin trait + registry** · haiku · T0.3 · `src/plugin.rs`, `src/plugins/mod.rs`
-Do: trait from §1; `Manifest { id, kind, surfaces: Vec<Surface>, default_on }`; registry built from Cargo features (`--features cmd,read,...`, default = all); `rtok plugins` prints a table (id, kind, enabled, surfaces) reading config.
-Check: `cargo run -q -- plugins` lists ≥ 10 ids; `cargo build --no-default-features --features measure` succeeds.
-
-**T0.5 token estimator** · haiku · T0.2 · `src/tokens.rs`
-Do: `estimate(text, class) -> u32` with classes `Code`, `Prose`, `Json`, `Cjk`; defaults 3.5 / 4.2 / 3.0 / 1.0 chars per token, loaded from config; `tokens_saved(before, after)`. Document ±15 % error in a doc comment.
-Check: unit tests on 3 fixtures; `estimate("", _) == 0`.
-
-**T0.6 hook I/O types** · haiku · T0.4 · `src/hooks/types.rs`, `tests/fixtures/hooks/*.json`
-Do: serde structs for Claude Code hook input (`session_id, transcript_path, cwd, hook_event_name, tool_name, tool_input, tool_response, prompt, source, trigger`) and output (`hookSpecificOutput { hookEventName, permissionDecision, permissionDecisionReason, updatedInput, additionalContext }`). Fixtures for PreToolUse(Bash), PreToolUse(Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact.
-Check: `cargo test hooks::types` round-trips every fixture unchanged (`serde_json::Value` equality).
-
-**T0.7 CI** · haiku · T0.1 · `.github/workflows/ci.yml`, `Makefile`
-Do: `make check` = fmt --check, clippy -D warnings, test. CI runs it on macOS + Linux.
-Check: `make check` exits 0 locally.
-
-Gate P0 (sonnet review): trait shape final; no plugin logic yet.
+Gate P0 (sonnet review): trait shape final; no plugin logic yet. **Status: open.**
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 
@@ -332,3 +305,14 @@ Check: `cargo dist plan` succeeds; tag `v0.1.0` builds artifacts in CI.
 ## 5. Order of value (if time is short)
 
 P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8 and P10 only after P9 shows the core pays for itself.
+
+## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
+
+| Date | Change | Why |
+|------|--------|-----|
+| 2026-09-01 | Estimator rates are `[estimator] code/prose/json/cjk` in config, not `core.estimator_chars_per_token`. | T0.5 needs four classes; one key per class is what `--calibrate` (T1.5) will rewrite. |
+| 2026-09-01 | Crate is a library plus a thin `src/main.rs`. | Tests, `examples/hello_plugin.rs` and every surface share one API; no code duplication in the bin. |
+| 2026-09-01 | Every plugin directory carries `README.md` (users) and `AGENTS.md` (invariants, owned files, Checks). | Per-plugin instructions keep the root `AGENTS.md` under 350 tokens while giving Haiku the constraints it needs per task. |
+| 2026-09-01 | Finished tasks move to `done.md`; `plan.md` keeps only open work. | The plan stays short enough to load every session. |
+| 2026-09-01 | `guard` and `toon` are in the catalogue and registry but have no numbered task yet. | Noted in their READMEs; add a task with a Check before implementing either. |
+| 2026-09-01 | `README.md` exists now as a status page; T9.5 still replaces it with measured results. | Newcomers need install + layout before P9. |
