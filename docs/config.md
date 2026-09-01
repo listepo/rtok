@@ -4,10 +4,11 @@ One file, `~/.rtok/config.toml`, holds every setting rtok has. **Every CLI flag 
 key**, so anything you can pass on the command line you can also make permanent, and
 `rtok config show --sources` always tells you where a value came from.
 
-Status: T12.1 is done — every table below is a typed section in `config.rs` (unknown key = error),
-`config/default.toml` is embedded and written verbatim by `rtok config init`, and
-`core.inject_budget_tokens` has moved to `plugins.inject.budget_tokens`. Layering,
-`config show --sources`, `config get/set/validate` and the flag-coverage test land in T12.2–T12.4.
+Status: T12.1–T12.2 are done — every table below is a typed section in `config/mod.rs` (unknown
+key = error), `config/default.toml` is embedded and written verbatim by `rtok config init`,
+`core.inject_budget_tokens` has moved to `plugins.inject.budget_tokens`, and layering
+(user < project < env < flags, `figment`-based) plus `config show [--sources] [--json]` and
+`config get <key>` are live. `config set`/`validate` and the flag-coverage test land in T12.3–T12.4.
 
 ## Precedence
 
@@ -90,6 +91,7 @@ upstream        = "https://api.anthropic.com"      # RTOK_UPSTREAM; chain behind
 openai_upstream = "https://api.openai.com"         # RTOK_OPENAI_UPSTREAM (D11)
 timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
+dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
 [stats]                               # rtok stats
 since           = "30d"
@@ -208,7 +210,7 @@ min_rows = 5
 | global | `--home <dir>` / `RTOK_HOME` | (selects the directory; not a key) |
 | global | `--log-level` | `core.log_level` |
 | `hook` | `--host` | `hook.host` |
-| `proxy` | `--port`, `--bind`, `--upstream`, `--openai-upstream`, `--mode`, `--timeout` | `proxy.*` |
+| `proxy` | `--port`, `--bind`, `--upstream`, `--openai-upstream`, `--mode`, `--timeout`, `--dry-run` | `proxy.*` |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |

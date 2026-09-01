@@ -23,19 +23,24 @@ graph = []
 toon = []
 
 [lints.rust]
+# Hand-written `unsafe` is forbidden. rustc only reports `UserProvided` blocks —
+# macro-expanded `unsafe` is not linted (generated code only).
 unsafe_code = "forbid"
 missing_debug_implementations = "allow"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
+# `unsafe_code = forbid` covers hand-written code; skip macro-expanded unsafe here.
+undocumented_unsafe_blocks = "allow"
 dbg_macro = "warn"
 todo = "warn"
 print_stdout = "allow"
 
 [dependencies]
 anyhow = "1.0.104"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-toml = "1.1.4"
+toml_edit = "0.22" # `config set` (T12.3) edits in place, preserving comments

@@ -6,7 +6,9 @@
 //!
 //! Every section is `#[serde(default, deny_unknown_fields)]`: a partial file keeps the
 //! defaults, and a typo is an error rather than a silently ignored key.
-//! Layering (user file < project file < env < flags) lands in T12.2.
+//! Layering (default < user file < project file < env < flags) is [`layers`] (T12.2).
+
+pub mod layers;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -15,7 +17,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// The annotated reference file, written verbatim by `rtok config init`.
-pub const DEFAULT_TOML: &str = include_str!("../config/default.toml");
+pub const DEFAULT_TOML: &str = include_str!("../../config/default.toml");
 
 /// Plugin catalogue: `(id, default_on)`. The registry's manifests must match this list
 /// (asserted by a test in `plugins`), and [`Plugins`] has one field per id.
@@ -119,6 +121,7 @@ section! {
         openai_upstream: String = s("https://api.openai.com"),
         timeout_s: u64 = 600,
         include_usage: bool = true,
+        dry_run: bool = false,
     }
 }
 
@@ -361,20 +364,39 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        Self::load_from(&Self::home_dir())
+        Self::load_with(None, None)
     }
 
-    /// Read `<home>/config.toml`, creating it from the reference file when absent.
+    /// Read `<home>/config.toml`, creating it from the reference file when absent, then apply
+    /// the full layering (user < project < env). Pins the user file to `home` so `RTOK_CONFIG`
+    /// cannot leak into tests. No flags — see [`layers::load`] for that.
     pub fn load_from(home: &Path) -> Result<Self> {
-        let path = Self::path_for(home);
-        if !path.exists() {
+        if !Self::path_for(home).exists() {
             Self::init(home, false)?;
         }
-        let text = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
-        let mut cfg =
-            toml::from_str::<Config>(&text).with_context(|| path.display().to_string())?;
-        cfg.finish(home);
-        Ok(cfg)
+        layers::load(home, Some(&Self::path_for(home)), None)
+    }
+
+    /// CLI entry: optional `--config` / `RTOK_CONFIG`, plus the `flag` Dict from clap `Some`s.
+    pub fn load_with(
+        config_file: Option<&Path>,
+        flags: Option<figment::value::Dict>,
+    ) -> Result<Self> {
+        let home = Self::home_dir();
+        Self::ensure_user_file(&home, config_file)?;
+        layers::load(&home, config_file, flags)
+    }
+
+    /// Create `<home>/config.toml` from the reference when neither `--config` nor `RTOK_CONFIG`
+    /// names a file and the user file is missing.
+    pub fn ensure_user_file(home: &Path, config_file: Option<&Path>) -> Result<()> {
+        if config_file.is_some() || std::env::var_os("RTOK_CONFIG").is_some() {
+            return Ok(());
+        }
+        if !Self::path_for(home).exists() {
+            Self::init(home, false)?;
+        }
+        Ok(())
     }
 
     /// Write the reference file verbatim, so its comments survive. Refuses to clobber
@@ -451,6 +473,14 @@ fn expand(path: &Path, home: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use figment::Figment;
+    use figment::providers::{Format, Toml};
+
+    /// Parse a TOML string into a `Config` the same way the layered loader does (T12.2: figment's
+    /// Toml provider, not the toml crate).
+    fn parse(s: &str) -> Result<Config> {
+        Figment::from(Toml::string(s)).extract().map_err(Into::into)
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("rtok-cfg-{name}-{}", std::process::id()));
@@ -461,7 +491,7 @@ mod tests {
     /// The Check for T12.1: the reference file is the defaults, exactly.
     #[test]
     fn default_toml_is_the_defaults() {
-        let parsed: Config = toml::from_str(DEFAULT_TOML).expect("default.toml parses");
+        let parsed: Config = parse(DEFAULT_TOML).expect("default.toml parses");
         assert_eq!(
             parsed,
             Config::default(),
@@ -513,7 +543,7 @@ mod tests {
     #[test]
     fn partial_file_keeps_defaults() {
         let cfg: Config =
-            toml::from_str("[plugins.cmd]\nrewrite = false\n[estimator]\ncode = 4.0\n").unwrap();
+            parse("[plugins.cmd]\nrewrite = false\n[estimator]\ncode = 4.0\n").unwrap();
         assert_eq!(cfg.plugins.inject.budget_tokens, 800);
         assert_eq!(cfg.estimator.code, 4.0);
         assert_eq!(cfg.estimator.prose, 4.2);
@@ -523,14 +553,14 @@ mod tests {
 
     #[test]
     fn unknown_key_is_an_error() {
-        let err = toml::from_str::<Config>("[proxy]\nprot = 1\n").unwrap_err();
+        let err = parse("[proxy]\nprot = 1\n").unwrap_err();
         assert!(err.to_string().contains("prot"), "{err}");
-        assert!(toml::from_str::<Config>("[nope]\nx = 1\n").is_err());
+        assert!(parse("[nope]\nx = 1\n").is_err());
     }
 
     #[test]
     fn legacy_budget_key_migrates() {
-        let mut cfg: Config = toml::from_str("[core]\ninject_budget_tokens = 250\n").unwrap();
+        let mut cfg: Config = parse("[core]\ninject_budget_tokens = 250\n").unwrap();
         cfg.finish(Path::new("/tmp/rtok-legacy"));
         assert_eq!(cfg.plugins.inject.budget_tokens, 250);
         assert_eq!(cfg.core.inject_budget_tokens, None);
