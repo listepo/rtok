@@ -2,9 +2,9 @@
 
 View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tasks and Checks; this file is the order to build each plugin. When a task moves to `done.md`, tick it here in the same commit.
 
-**Now:** T0.8, then P12 (config), then P13 (store), then the first plugin that is unblocked (`measure` T1.1). Every plugin below is **manifest only** until its first task.
+**Now:** P12 (config), then P13 (store), then T14.0 (per-plugin plan template), then the first plugin that is unblocked (`measure`: T14.1 design note, then T1.1). Every plugin below is **manifest only** until its first task, and every lane now starts at row 0 with its design note (D15) — survey the alternatives first, then build something better, never a Rust copy of the tool being retired.
 
-**Sequence if time is short** (`plan.md` §5): P12 → P13 → P1 `measure` → P2 hooks + `inject` → P5 `proxy` passthrough → P3 `cmd` → P4 `read` → P5 `archive` compress → P9 bench. `memory` / `graph` / `guard` / `toon` / P10 / P11 after the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. v0.2+ (LLM compression, embeddings, LSP `graph`, daemon, WASM) is [Later](#later-v02); do not start it in v0.1.
+**Sequence if time is short** (`plan.md` §5): P12 → P13 → T14.0 → P1 `measure` → P2 hooks + `inject` → P5 `proxy` passthrough → P3 `cmd` → P4 `read` → P5 `archive` compress → P9 bench. `memory` / `graph` / `guard` / `toon` / P10 / P11 after the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. v0.2+ (LLM compression, embeddings, LSP `graph`, daemon, WASM) is [Later](#later-v02); do not start it in v0.1.
 
 Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert rule after the plugin is in daily use.
 
@@ -15,7 +15,8 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | Task | What | Status |
 |------|------|--------|
 | T0.1–T0.7 | binary, config stub, rusqlite store, trait, estimator, hook types, CI | done 2026-09-01 |
-| T0.8 | public plugin API, drop `Kind`, `examples/mcp_tool.rs` | open |
+| T0.8 | public plugin API, drop `Kind`, `examples/mcp_tool.rs` | done 2026-09-02 |
+| T14.0 | plan template + `plugin_plans` structure test (D15) | open |
 | Gate P0 | trait shape final; no plugin logic yet | open |
 | P12 T12.1–T12.4 | clap + figment + toml_edit; every flag is a key (D12, D14) | open |
 | P13 T13.1–T13.4 | Diesel; `calls` / `tokens` / `logs` (D13) | open |
@@ -40,6 +41,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.1 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/measure/PLAN.md`. |
 | 1 | T1.1 | Parse host transcripts (Claude JSONL first) into tool calls, results, usage, turn index. |
 | 2 | T1.2 | `rtok stats`: per-tool sizes, Bash families, MCP groups, **context-token-turns**. |
 | 3 | T1.3 | `--save-baseline` / `--compare`. |
@@ -50,7 +52,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P1.** Baseline saved (`rtok stats --save-baseline before-rtok`); numbers in `research.md` §2.
 
-**Status.** Manifest only. First task: T1.1.
+**Status.** Manifest only. First task: T1.1. Blocked on T14.1 (design note, D15).
 
 ---
 
@@ -66,12 +68,13 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.6 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/inject/PLAN.md`. |
 | 1 | T2.4 | Sort by priority, emit until `plugins.inject.budget_tokens` (default 800), drop the rest. Same prefix bytes every turn. |
 | 2 | T7.1 | Modes as markdown (`modes/terse.md`, `modes/yagni.md`), not code. |
 
 **Gate P2 (shared).** Setup is additive; sessions still work. **Gate P7.** A/B `terse` on/off; keep only if output tokens fall without task failures.
 
-**Status.** Manifest only. First task: T2.4.
+**Status.** Manifest only. First task: T2.4. Blocked on T14.6 (design note, D15).
 
 ---
 
@@ -87,6 +90,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.2 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/cmd/PLAN.md`. |
 | 1 | T3.1 | Run via `$SHELL -lc`, archive raw stdout+stderr, pointer trailer when long. |
 | 2 | T3.2 | TOML rule engine (head/tail/dedupe/drop). Never redact. |
 | 3 | T3.3 | Family formatters (cargo, git, pytest/jest, ls/find) + `rules/default.toml`. |
@@ -97,7 +101,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P3.** One working day vs baseline; keep only if Bash context-token-turns fall and expand rate < 5 %.
 
-**Status.** Manifest only. First task: T3.1.
+**Status.** Manifest only. First task: T3.1. Blocked on T14.2 (design note, D15).
 
 ---
 
@@ -113,6 +117,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.3 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/read/PLAN.md`. |
 | 1 | T4.2 | `read` full/lines, size cap, root guard. |
 | 2 | T4.3 | map/signatures via tree-sitter-tags. |
 | 3 | T4.4 | Re-read dedup (sha256 → `unchanged since <id>`). |
@@ -122,7 +127,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P4.** Disable lean-ctx for one day; compare Read/MCP rows and injection tokens vs baseline.
 
-**Status.** Manifest only. First task: T4.2 (after T4.1).
+**Status.** Manifest only. First task: T4.2 (after T4.1). Blocked on T14.3 (design note, D15).
 
 ---
 
@@ -138,6 +143,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.5 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/proxy/PLAN.md`. |
 | 1 | T5.1 | Passthrough + SSE; insert `usage` + `calls`/`call_io`/`tokens`. |
 | 2 | T5.2 | Lifecycle, health, setup. |
 | 3 | T11.1 | `Wire` trait; Anthropic behind it. |
@@ -147,7 +153,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P5 (passthrough).** Two days of usage rows. **Gate P11.** Same for one OpenAI-API host.
 
-**Status.** Manifest only. First task: T5.1.
+**Status.** Manifest only. First task: T5.1. Blocked on T14.5 (design note, D15).
 
 ---
 
@@ -163,13 +169,14 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.4 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/archive/PLAN.md`. |
 | 1 | T5.3 | Compress mode: rewrite old/large tool results, keyed by `tool_use_id`, byte-stable. |
 | 2 | T5.4 | `expand` through the proxy; stop rewriting expanded ids. |
 | 3 | T11.4 | Same rewrite on OpenAI wires. |
 
 **Gate P5 (compress).** Two days compress after passthrough; keep only if context-token-turns fall ≥ 15 % and expand rate < 5 %.
 
-**Status.** Manifest only. First task: T5.3.
+**Status.** Manifest only. First task: T5.3. Blocked on T14.4 (design note, D15).
 
 ---
 
@@ -185,6 +192,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.8 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/memory/PLAN.md`. |
 | 1 | T6.1 | Notes API + FTS5 search. |
 | 2 | T2.5 | PreCompact checkpoint → `notes` kind=checkpoint; inject on compact SessionStart. |
 | 3 | T6.2 | SessionStart recall through `inject`. |
@@ -192,7 +200,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P6.** Disable engram + claude-mem for a week; compare injection and MCP description tokens. Revert if recall is worse.
 
-**Status.** Manifest only. Schema exists since T0.3. First task: T6.1.
+**Status.** Manifest only. Schema exists since T0.3. First task: T6.1. Blocked on T14.8 (design note, D15).
 
 ---
 
@@ -208,12 +216,13 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.9 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/graph/PLAN.md`. |
 | 1 | T8.1 | tree-sitter-tags index (definitions + reference sites). |
 | 2 | T8.2 | MCP `symbol`, `callers`, `outline`; cap + archive id. |
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
-**Status.** Manifest only. First task: T8.1.
+**Status.** Manifest only. First task: T8.1. Blocked on T14.9 (design note, D15).
 
 ---
 
@@ -229,11 +238,12 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.7 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/guard/PLAN.md`. |
 | 1 | T2.6 | Deny a Read/Bash that matches one in this session within `plugins.guard.window_turns` (default 8) when an archive id exists; reason names `rtok expand <id>`. Record a measurement. Never deny with no prior archive. |
 
 **Gate.** Same honesty rule as `cmd`: deny rate is visible in `stats --plugin guard`; expand on a denied id must still work.
 
-**Status.** Manifest only. First task: T2.6 (added 2026-09-02).
+**Status.** Manifest only. First task: T2.6 (added 2026-09-02). Blocked on T14.7 (design note, D15).
 
 ---
 
@@ -249,11 +259,12 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 | Order | Task | Plan |
 |-------|------|------|
+| 0 | T14.10 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/toon/PLAN.md`. |
 | 1 | T11.7 | Encode tabular JSON arrays/objects when `plugins.toon.enabled`. Deterministic. Measurement per block. Default off → request bytes identical. |
 
 **Gate P9.** Keep enabled only if cost per passed task falls and pass rate holds.
 
-**Status.** Manifest only. Off by default. First task: T11.7 (added 2026-09-02).
+**Status.** Manifest only. Off by default. First task: T11.7 (added 2026-09-02). Blocked on T14.10 (design note, D15).
 
 ---
 
