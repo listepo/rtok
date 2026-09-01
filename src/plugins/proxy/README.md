@@ -6,7 +6,7 @@ other plugins rewrite the request.
 | | |
 |---|---|
 | Kind | native |
-| Surfaces | `rtok proxy [--port 8790] [--upstream URL] [--mode passthrough\|compress]` |
+| Surfaces | `rtok proxy [--port 8790] [--upstream URL] [--mode passthrough\|compress]`; serves `ANTHROPIC_BASE_URL` and `OPENAI_BASE_URL` |
 | Replaces | headroom proxy, caveman-proxy |
 | Default | on |
 
@@ -14,6 +14,10 @@ other plugins rewrite the request.
 
 - Forwards `POST /v1/messages` (and everything else) to `RTOK_UPSTREAM`
   (default `https://api.anthropic.com`; may be another local proxy during A/B).
+- Wire formats (decision D11, phase P11): Anthropic Messages, OpenAI Chat Completions
+  (`/v1/chat/completions` → `RTOK_OPENAI_UPSTREAM`), OpenAI Responses (`/v1/responses`).
+  Each is a `Wire` adapter that exposes tool results and `usage` in one normalised shape;
+  `archive` and `toon` never see the raw format.
 - Streams SSE responses unchanged; parses `usage` from the final `message_delta` or the
   non-streaming body into the `usage` table.
 - `passthrough` mode changes zero bytes. `compress` mode runs every enabled plugin's
@@ -27,7 +31,8 @@ Code; `rtok doctor` flags this.
 
 ## Tasks
 
-T5.1 passthrough · T5.2 lifecycle/health/setup · T5.5 cache-health report (with `measure`).
+T5.1 passthrough · T5.2 lifecycle/health/setup · T5.5 cache-health report (with `measure`) ·
+T11.1 `Wire` adapter · T11.2 OpenAI Chat · T11.3 OpenAI Responses · T11.5 OpenAI host setup.
 
 ## Status
 

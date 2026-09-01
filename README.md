@@ -16,8 +16,9 @@ end to end. Measured, the stack saves 3–40 % and costs ~3 K injected tokens pe
 
 - runs as **one hook per event** in < 10 ms and fails open,
 - serves **five MCP tools** instead of seventy-eight,
-- sits as **one proxy hop** that records real `usage` and can shrink old tool results without
-  breaking the prompt cache,
+- sits as **one proxy hop** for both the Anthropic and the OpenAI API (`ANTHROPIC_BASE_URL`
+  / `OPENAI_BASE_URL`: Claude Code, Codex, OpenCode, aider) that records real `usage` and can
+  shrink old tool results without breaking the prompt cache,
 - keeps **one measurement table** so `rtok stats` can say what actually changed.
 
 ## Install
@@ -36,7 +37,7 @@ rtok --version              # rtok 0.1.0
 | `rtok plugins` | list plugins: id, kind, enabled, surfaces | done |
 | `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) | T2.1 |
 | `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools | T4.1 |
-| `rtok proxy` | `ANTHROPIC_BASE_URL` hop: usage capture, optional compress mode | T5.1 |
+| `rtok proxy` | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` hop: usage capture, optional compress mode | T5.1, P11 |
 | `rtok run -- <cmd>` | run a command, archive raw output, print the filtered version | T3.1 |
 | `rtok expand <id>` | print an archived payload | T3.5 |
 | `rtok stats` | measurements from session logs and the proxy | T1.2 |
@@ -55,7 +56,7 @@ blocks the host.
 | [`cmd`](src/plugins/cmd/README.md) | native + adapter (rtk) | rtk hook, ctx_shell, bash_compress | PreToolUse(Bash) → `rtok run` |
 | [`read`](src/plugins/read/README.md) | native | lean-ctx read/search/tree, read_cache | MCP `read`, `search`, `tree` |
 | [`archive`](src/plugins/archive/README.md) | native | archive_result, headroom CCR | proxy compress, `expand` |
-| [`proxy`](src/plugins/proxy/README.md) | native | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL` |
+| [`proxy`](src/plugins/proxy/README.md) | native | headroom proxy, caveman-proxy | `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` |
 | [`inject`](src/plugins/inject/README.md) | native | caveman/ponytail modes, lean-ctx banner | SessionStart, UserPromptSubmit |
 | [`guard`](src/plugins/guard/README.md) | native | refetch_guard | PreToolUse |
 | [`memory`](src/plugins/memory/README.md) | native | engram, claude-mem | MCP `mem_*`, PreCompact |

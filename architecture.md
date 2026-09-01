@@ -5,7 +5,7 @@ surfaces reach the plugins: Claude Code hooks, an MCP server, and an API proxy. 
 file records what every plugin did, before and after, so a saving is a row or it does not
 exist.
 
-This document describes the shape; `plan.md` holds the decisions (D1–D10) and the tasks;
+This document describes the shape; `plan.md` holds the decisions (D1–D11) and the tasks;
 `research.md` holds the evidence.
 
 ## 1. Principles the code enforces
@@ -24,7 +24,8 @@ This document describes the shape; `plan.md` holds the decisions (D1–D10) and 
 ```
 ┌────────────────────────────── surfaces ───────────────────────────────┐
 │  rtok hook <event>        rtok mcp              rtok proxy            │
-│  (stdin JSON → stdout)    (stdio JSON-RPC)      (ANTHROPIC_BASE_URL)  │
+│  (stdin JSON → stdout)    (stdio JSON-RPC)      (ANTHROPIC_BASE_URL,  │
+│                                                  OPENAI_BASE_URL)      │
 │  src/hooks/               src/mcp.rs            src/proxy/            │
 └──────────────┬───────────────────┬───────────────────────┬────────────┘
                │ HookInput         │ tools/list, call      │ MessagesRequest
@@ -66,6 +67,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/hooks/mod.rs` | dispatcher: merge plugin outputs, log `events`, fail open | T2.1 |
 | `src/mcp.rs` | rmcp stdio server built from `Plugin::mcp_tools()` | T4.1 |
 | `src/proxy/` | axum passthrough + `compress` mode via `Plugin::proxy_filter()` | T5.1 |
+| `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
@@ -172,6 +174,9 @@ under 5 %.
   payload differs, a field mapping into `HookInput`. The plugins do not change.
 - **New surface**: a new module under `src/` that builds a `Registry` and calls the trait;
   add a `Surface` variant so manifests can declare it.
+- **New API wire format** (e.g. Gemini): implement `Wire` in `src/proxy/<name>.rs` — route
+  match, tool-result accessor, usage parser for body and SSE — plus fixtures. Plugins do not
+  change; `usage.api` gets a new value.
 
 ## 10. Testing strategy
 

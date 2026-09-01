@@ -17,8 +17,9 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D8 | **One SQLite file** (`~/.rtok/rtok.db`, WAL): events, measurements, archive index, read cache, memory (FTS5). Raw archived payloads on disk under `~/.rtok/archive/`. | engram, claude-mem, codebase-memory-mcp all converge on SQLite (+FTS5). |
 | D9 | **Agents:** Haiku implements every task below (each task ≤ ~200 LOC, ≤ 3 files, one machine check). Sonnet reviews at each phase gate. Opus only to change this plan. | User constraint: low-cost models. |
 | D10 | **Retire, don't stack.** Phase 9 replaces the 81 legacy hooks with ≤ 8 and drops every tool the A/B bench cannot justify. | Duplicated responsibilities: 3 tools compress bash, 3 compress reads, 2 memories, 3–4 code graphs. |
+| D11 | **The proxy speaks both wire formats.** Anthropic Messages (`/v1/messages`) and OpenAI (`/v1/chat/completions`, `/v1/responses`) are `Wire` adapters behind one proxy; plugins that touch requests (`archive`, `toon`) and `usage` capture work on a normalised view of tool results, never on a specific JSON shape. Hosts point `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` at rtok. Added 2026-09-01 by user request. | Codex, OpenCode, Cursor-with-own-key and aider talk OpenAI; without it `measure` has no ground truth for them and `archive` cannot shrink their context. One proxy, two parsers is cheaper than two proxies. |
 
-Non-goals for v0.1 (each rejected on evidence): LLM-based compression (LLMLingua, claude-mem style extraction) — costs tokens to save tokens; embeddings/semantic search — no measured need; own tree-sitter call graph — adapter first; semantic response cache (bifrost) — agent contexts never repeat at 0.9 similarity and a hit returns a wrong answer; Codex Responses-API proxy — MCP only until measured demand.
+Non-goals for v0.1 (each rejected on evidence): LLM-based compression (LLMLingua, claude-mem style extraction) — costs tokens to save tokens; embeddings/semantic search — no measured need; own tree-sitter call graph — adapter first; semantic response cache (bifrost) — agent contexts never repeat at 0.9 similarity and a hit returns a wrong answer. (Formerly listed here: Codex Responses-API proxy. Moved into scope as P11 on 2026-09-01, decision D11.)
 
 ## 1. Architecture
 
@@ -287,16 +288,44 @@ Do: plugin using `tool.execute.after` to replace bash output with `rtok filter -
 Check: `printf '...' | rtok filter --cmd 'git status'` returns filtered text; plugin unit test with the OpenCode plugin API mock.
 
 **T10.3 Codex** · haiku · T4.7 · `src/setup/codex.rs`
-Do: MCP registration in `~/.codex/config.toml` only. Note in README: Responses-API proxy deferred.
+Do: MCP registration in `~/.codex/config.toml`. Proxy wiring for Codex is T11.5.
 Check: dry-run diff shows one `[mcp_servers.rtok]` block.
 
 **T10.4 release** · haiku · T0.7 · `dist-workspace.toml`, `.github/workflows/release.yml`
 Do: cargo-dist for macOS arm64/x64 + Linux x64, Homebrew tap formula; `rtok --version` prints git sha.
 Check: `cargo dist plan` succeeds; tag `v0.1.0` builds artifacts in CI.
 
+### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
+
+**T11.1 `Wire` adapter + Anthropic behind it** · haiku · T5.1, T5.3 · `src/proxy/wire.rs`, `src/proxy/anthropic.rs`
+Do: `trait Wire { fn matches(path) -> bool; fn tool_results(req: &mut Value) -> Vec<ToolResultRef>; fn usage_from_body(body) -> Option<Usage>; fn usage_from_sse(event) -> Option<Usage> }` where `ToolResultRef { id, content: &mut String/Value, turn }` and `Usage { input, cache_create, cache_read, output }`. Move every `/v1/messages`-specific line from T5.1/T5.3 into `anthropic.rs`; `archive` and `proxy` call only the trait.
+Check: all P5 tests pass unchanged; `grep -r '"tool_result"' src/plugins/archive.rs` finds nothing (format knowledge lives in the wire).
+
+**T11.2 OpenAI Chat Completions wire** · haiku · T11.1 · `src/proxy/openai_chat.rs`, `tests/fixtures/proxy/openai_chat_*.json`
+Do: route `POST /v1/chat/completions` to `RTOK_OPENAI_UPSTREAM` (default `https://api.openai.com`). Tool results = messages with `role: "tool"` keyed by `tool_call_id`. Usage from `usage.prompt_tokens`, `usage.completion_tokens`, `usage.prompt_tokens_details.cached_tokens` (→ `cache_read`; `cache_create = 0`). Streaming: SSE `data:` lines ending with `data: [DONE]`; when the request streams and lacks `stream_options.include_usage`, add it so the final chunk carries `usage` (this is the one byte-level change passthrough mode makes; documented). Non-streaming: usage from the body.
+Check: mock upstream fixture (streaming and non-streaming) → response bytes identical; `usage` row inserted with `api = openai_chat` and `cache_read` populated from `cached_tokens`.
+
+**T11.3 OpenAI Responses wire** · haiku · T11.1 · `src/proxy/openai_responses.rs`, `tests/fixtures/proxy/openai_responses_*.json`
+Do: route `POST /v1/responses`. Tool results = `input[]` items of type `function_call_output` keyed by `call_id`. Usage from `usage.input_tokens`, `usage.output_tokens`, `usage.input_tokens_details.cached_tokens`; streaming: final `response.completed` event. Respect `previous_response_id` (nothing to rewrite in the request when history is server-side — record usage only).
+Check: fixtures → identical bytes; `usage` row with `api = openai_responses`; a request with `previous_response_id` produces zero rewrites in compress mode.
+
+**T11.4 `archive` across wires** · haiku · T11.1–T11.3, T5.3 · `src/plugins/archive/mod.rs`, `tests/fixtures/proxy/*_6turns.json`
+Do: T5.3's rules (older than `keep_turns`, larger than `min_tokens`, keyed by the wire's tool-result id, persisted, byte-stable) applied through `Wire::tool_results` for all three formats. `expand` marks ids across formats.
+Check: a 6-turn fixture per format → only turns 1–2 large results rewritten; same request twice → byte-identical bodies; prefix before the first rewrite unchanged (same test as T5.3, parameterised over wires).
+
+**T11.5 setup for OpenAI hosts** · haiku · T5.2, T11.2 · `src/setup/codex.rs`, `src/setup/opencode.rs`, `src/doctor.rs`
+Do: `rtok setup codex --proxy` writes a `model_provider` with `base_url = http://127.0.0.1:8790/v1` in `~/.codex/config.toml` (backup, dry-run, idempotent, `--remove`); `rtok setup opencode --proxy` sets `OPENAI_BASE_URL` in its config; `rtok doctor` shows the `OPENAI_BASE_URL` chain next to the Anthropic one. Print how to revert.
+Check: each dry-run shows exactly one change; second run "no changes"; `rtok doctor` lists both chains.
+
+**T11.6 `usage.api` + per-API stats** · haiku · T11.2 · `migrations/0002.sql`, `src/measure/stats.rs`
+Do: migration adds `usage.api TEXT NOT NULL DEFAULT 'anthropic'` (`anthropic | openai_chat | openai_responses`); `rtok stats` prints usage totals and cache hit rate per API; `rtok stats --cache` (T5.5) handles OpenAI cached_tokens (no cache_create signal → busts detected from cache_read drops only).
+Check: `cargo test store::` still applies both migrations idempotently; fixture usage rows for two APIs → two rows in the stats table.
+
+Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for two days; every request has a `usage` row. Then compress for two days; keep only under the P5 gate rule (context-token-turns − 15 %, expand rate < 5 %). Record in research.md §2.
+
 ## 4. Definition of done for v0.1
 
-1. `rtok doctor` shows ≤ 8 token-related hooks, one MCP server for reads/memory/graph, one proxy hop.
+1. `rtok doctor` shows ≤ 8 token-related hooks, one MCP server for reads/memory/graph, one proxy hop (serving both Anthropic and OpenAI wire formats, D11).
 2. `rtok stats --compare before-rtok` over ≥ 5 working days shows lower context-token-turns per session and lower output tokens per passed bench task, with expand rate < 5 %.
 3. Every plugin has a `Measurement` path and appears in `rtok stats --plugin <id>`.
 4. Hook p95 < 10 ms; proxy adds < 20 ms per request (measured in T5.1 test).
@@ -304,7 +333,7 @@ Check: `cargo dist plan` succeeds; tag `v0.1.0` builds artifacts in CI.
 
 ## 5. Order of value (if time is short)
 
-P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8 and P10 only after P9 shows the core pays for itself.
+P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use.
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -316,3 +345,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-01 | Finished tasks move to `done.md`; `plan.md` keeps only open work. | The plan stays short enough to load every session. |
 | 2026-09-01 | `guard` and `toon` are in the catalogue and registry but have no numbered task yet. | Noted in their READMEs; add a task with a Check before implementing either. |
 | 2026-09-01 | `README.md` exists now as a status page; T9.5 still replaces it with measured results. | Newcomers need install + layout before P9. |
+| 2026-09-01 | OpenAI API support added: decision D11, phase P11 (T11.1–T11.6), non-goal on the Codex Responses proxy withdrawn. | User request; OpenAI-API hosts (Codex, OpenCode, aider) were otherwise unmeasurable and uncompressible. |
