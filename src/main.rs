@@ -1,4 +1,7 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+use rtok::config::Config;
+use rtok::plugins::Registry;
 
 /// Token-reduction CLI for AI coding agents. See plan.md for the task list.
 #[derive(Parser)]
@@ -31,7 +34,7 @@ enum Cmd {
     },
     /// Print an archived payload
     Expand { id: String },
-    /// List plugins
+    /// List plugins: id, kind, enabled, surfaces
     Plugins,
 }
 
@@ -52,11 +55,15 @@ impl Cmd {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
-    // T0.1 stub: every subcommand exits 0 so hooks fail open until implemented.
     match cli.cmd {
-        Cmd::Plugins => println!("no plugins registered yet (T0.4)"),
+        Cmd::Plugins => {
+            let config = Config::load()?;
+            print!("{}", Registry::new(&config).table());
+        }
+        // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),
     }
+    Ok(())
 }
