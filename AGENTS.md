@@ -2,6 +2,8 @@
 
 **What this is.** One Rust binary that reduces tokens for AI coding agents; every method is a plugin. Three surfaces: `rtok hook <event>` (Claude Code hooks), `rtok mcp` (MCP server), `rtok proxy` (`ANTHROPIC_BASE_URL`).
 
+**Before you start.** Use a low-cost model (Haiku) for simple jobs: subagents, background and one-off shell commands (build, test, git, cargo), API/HTTP calls, file listings. Reserve the expensive model for design, code that needs judgment, and reviews. Delegate, do not run cargo/git from the main context.
+
 **Read first.** `plan.md` — decisions D1–D10 and every open task with its Check. `done.md` — finished tasks. `architecture.md` — module map and plugin contract. `research.md` — evidence. Before touching a plugin, read its `src/plugins/<id>/AGENTS.md`. Do not add work that is not in `plan.md`; propose it as a plan change instead.
 
 **Toolchain.** Rust is pinned in `mise.toml`. Run everything as `mise exec -- cargo <cmd>` (or `mise activate` your shell). Never install or switch a global toolchain.
