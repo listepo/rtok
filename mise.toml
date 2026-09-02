@@ -3,4 +3,4 @@ git-cliff = "2.13.1"
 go = "1.27.0" # hugo resolves the hextra theme as a Go module (site/go.mod)
 hugo = "0.165.0"
 just = "1.58.0"
-rust = "1.97.1"
+rust = { version = "1.97.1", components = "rustfmt,clippy" } # CI otherwise installs the minimal profile
