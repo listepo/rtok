@@ -104,12 +104,21 @@ fn make(lang: Language, tags: &str, locals: &str) -> Option<Result<TagsConfigura
     Some(TagsConfiguration::new(lang, tags, locals).context("tags query"))
 }
 
+/// The upstream Rust tags query only sees bare and method calls; path-qualified calls
+/// (`tokens::estimate(..)`) are the common form, so `callers` (T8.2) needs this pattern too.
+#[cfg(feature = "lang-rust")]
+const RUST_SCOPED_CALL: &str = "
+(call_expression
+    function: (scoped_identifier
+        name: (identifier) @name)) @reference.call
+";
+
 fn config(path: &Path) -> Option<Result<TagsConfiguration>> {
     match path.extension()?.to_str()? {
         #[cfg(feature = "lang-rust")]
         "rs" => make(
             tree_sitter_rust::LANGUAGE.into(),
-            tree_sitter_rust::TAGS_QUERY,
+            &format!("{}{RUST_SCOPED_CALL}", tree_sitter_rust::TAGS_QUERY),
             "",
         ),
         #[cfg(feature = "lang-ts")]

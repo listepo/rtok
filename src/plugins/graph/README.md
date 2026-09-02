@@ -34,4 +34,6 @@ T8.1 symbol index · T8.2 MCP tools.
 
 ## Status
 
-T8.1 done 2026-09-02. Next: T8.2.
+T8.1 and T8.2 done 2026-09-02. Every tool call runs the incremental index first (unchanged
+files are skipped by sha256), so a file marked stale by PostToolUse(Edit|Write) is re-parsed on
+the next call. Gate P8 (description tokens vs the retired servers, index time) is open.

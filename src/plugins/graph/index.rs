@@ -71,13 +71,14 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::config::Config;
     use std::fs;
     use std::path::PathBuf;
 
-    fn cx(name: &str) -> (Ctx, PathBuf) {
+    /// Fresh DB + archive dir under the temp dir; shared with the `mod.rs` tool tests.
+    pub(crate) fn cx(name: &str) -> (Ctx, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-graph-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();

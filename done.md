@@ -359,6 +359,11 @@ Do: table `symbols(path, name, kind, line, is_def, file_sha)`. Walk the repo res
 Check: index this crate → `symbols` contains `main` (def) and ≥ 1 reference to `Registry`; a second run inserts 0 rows; editing one fixture file re-indexes only that file.
 Status: done 2026-09-02 · Check: `index_crate_has_main_def_and_registry_ref` finds `main` def and ≥1 `Registry` ref; `second_run_inserts_zero`; `edit_fixture_reindexes_only_that_file`. `make check` green. Deviation: also `migrations/0003.sql`, `src/store/{mod,schema}.rs`, `src/plugins/read/{mod,outline}.rs` (`tags()`/`TagHit`/`supported()`), `src/plugins/graph/mod.rs` (stale on Edit|Write), `src/cli.rs`, `Cargo.toml` (`graph = ["read"]`). Empty-tag files keep a sentinel sha row so the second run inserts 0.
 
+**T8.2 MCP tools** · T8.1, T4.1 · `src/plugins/graph/mod.rs`
+Do: `symbol(name)` → definitions (`path:line`, kind); `callers(name)` → reference sites grouped by file with the line text; `outline(path)` → definitions in one file (reuses `read` mode=map). Cap each response at `plugins.graph.max_tokens` (2 K): head + `N more, expand <id>`. Measurement per call (capped vs uncapped estimate).
+Check: `symbol("main")` → `src/main.rs`; `callers("estimate")` lists `src/plugin.rs`; a 500-hit fixture is capped and carries an archive id.
+Status: done 2026-09-02 · Check: `symbol_main_is_in_src_main_rs` → `src/main.rs:<line> function`; `callers_estimate_lists_src_plugin_rs` → group `src/plugin.rs` with the `tokens::estimate(...)` line text; `five_hundred_hits_are_capped_with_archive_id` → 500-hit fixture capped under `plugins.graph.max_tokens` with trailer `N more, expand <id>` whose archive holds all 501 lines, one `graph` measurement. `make check` green (121 tests). Deviation: the upstream tree-sitter-rust tags query has no pattern for path-qualified calls (`tokens::estimate(..)`), so `src/plugins/read/outline.rs` appends one (`RUST_SCOPED_CALL`); `Store::replace_symbols` now runs one transaction per file (autocommit inserts dominated index time); every tool call runs the incremental index first, so PostToolUse-stale files are re-parsed on the next call. Gate P8 index time, release binary on this repo: cold 0.48 s (61 files, 6 625 rows), warm 0.03 s.
+
 ## P9 — replace the current stack
 
 **T9.1 `rtok bench`** · T1.1 · `src/bench.rs`, `bench/tasks.toml`

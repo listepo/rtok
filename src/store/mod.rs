@@ -760,34 +760,37 @@ impl Store {
         rows: &[(String, String, i32, bool)],
     ) -> Result<usize> {
         let mut conn = self.lock()?;
-        diesel::delete(symbols::table.filter(symbols::path.eq(path))).execute(&mut *conn)?;
-        if rows.is_empty() {
-            // Keep file_sha so an unchanged tagless file is skipped next run.
-            diesel::insert_into(symbols::table)
-                .values((
-                    symbols::path.eq(path),
-                    symbols::name.eq(""),
-                    symbols::kind.eq(""),
-                    symbols::line.eq(0),
-                    symbols::is_def.eq(0),
-                    symbols::file_sha.eq(file_sha),
-                ))
-                .execute(&mut *conn)?;
-            return Ok(0);
-        }
-        for (name, kind, line, is_def) in rows {
-            diesel::insert_into(symbols::table)
-                .values((
-                    symbols::path.eq(path),
-                    symbols::name.eq(name),
-                    symbols::kind.eq(kind),
-                    symbols::line.eq(line),
-                    symbols::is_def.eq(i32::from(*is_def)),
-                    symbols::file_sha.eq(file_sha),
-                ))
-                .execute(&mut *conn)?;
-        }
-        Ok(rows.len())
+        // One transaction per file: thousands of autocommit inserts dominated index time.
+        Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            diesel::delete(symbols::table.filter(symbols::path.eq(path))).execute(conn)?;
+            if rows.is_empty() {
+                // Keep file_sha so an unchanged tagless file is skipped next run.
+                diesel::insert_into(symbols::table)
+                    .values((
+                        symbols::path.eq(path),
+                        symbols::name.eq(""),
+                        symbols::kind.eq(""),
+                        symbols::line.eq(0),
+                        symbols::is_def.eq(0),
+                        symbols::file_sha.eq(file_sha),
+                    ))
+                    .execute(conn)?;
+                return Ok(0);
+            }
+            for (name, kind, line, is_def) in rows {
+                diesel::insert_into(symbols::table)
+                    .values((
+                        symbols::path.eq(path),
+                        symbols::name.eq(name),
+                        symbols::kind.eq(kind),
+                        symbols::line.eq(line),
+                        symbols::is_def.eq(i32::from(*is_def)),
+                        symbols::file_sha.eq(file_sha),
+                    ))
+                    .execute(conn)?;
+            }
+            Ok(rows.len())
+        })?)
     }
 
     pub fn delete_symbols_missing(&self, keep: &[String]) -> Result<usize> {
@@ -817,6 +820,26 @@ impl Store {
         .bind::<Text, _>(file_path)
         .execute(&mut *conn)?;
         Ok(())
+    }
+
+    /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
+    pub fn symbol_defs(&self, name: &str) -> Result<Vec<(String, String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::name.eq(name).and(symbols::is_def.eq(1)))
+            .order((symbols::path.asc(), symbols::line.asc()))
+            .select((symbols::path, symbols::kind, symbols::line))
+            .load(&mut *conn)?)
+    }
+
+    /// Reference sites of `name` as `(path, line)`, ordered by path then line (T8.2 `callers`).
+    pub fn symbol_refs(&self, name: &str) -> Result<Vec<(String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::name.eq(name).and(symbols::is_def.eq(0)))
+            .order((symbols::path.asc(), symbols::line.asc()))
+            .select((symbols::path, symbols::line))
+            .load(&mut *conn)?)
     }
 
     pub fn has_symbol_def(&self, name: &str) -> Result<bool> {
