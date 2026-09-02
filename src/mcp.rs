@@ -142,6 +142,10 @@ fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
         "mem_get" => mem_get(cx, args),
         #[cfg(feature = "read")]
         "read" => read_file(cx, args),
+        #[cfg(feature = "read")]
+        "search" => search_files(cx, args),
+        #[cfg(feature = "read")]
+        "tree" => tree_files(cx, args),
         _ => format!("unknown tool: {name}"),
     }
 }
@@ -195,6 +199,27 @@ fn mem_search(cx: &Ctx, args: &Value) -> String {
                 .collect::<Vec<_>>()
         )
         .to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[cfg(feature = "read")]
+fn search_files(cx: &Ctx, args: &Value) -> String {
+    let pattern = args["pattern"].as_str().unwrap_or("");
+    let path = args["path"].as_str().unwrap_or(".");
+    let max = args["max"].as_u64().map(|n| n as u32);
+    match crate::plugins::read::search::search(cx, pattern, path, max) {
+        Ok(s) => s,
+        Err(e) => e.to_string(),
+    }
+}
+
+#[cfg(feature = "read")]
+fn tree_files(cx: &Ctx, args: &Value) -> String {
+    let path = args["path"].as_str().unwrap_or(".");
+    let depth = args["depth"].as_u64().map(|n| n as u32);
+    match crate::plugins::read::search::tree(cx, path, depth) {
+        Ok(s) => s,
         Err(e) => e.to_string(),
     }
 }

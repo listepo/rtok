@@ -10,6 +10,8 @@ use serde_json::json;
 
 use crate::plugin::{Ctx, Manifest, Plugin, Surface, ToolDef};
 
+pub mod search;
+
 pub struct Read;
 
 impl Plugin for Read {
@@ -22,11 +24,23 @@ impl Plugin for Read {
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {
-        vec![ToolDef {
-            name: "read",
-            description: "Read a file; mode full|lines; optional range a-b.",
-            input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
-        }]
+        vec![
+            ToolDef {
+                name: "read",
+                description: "Read a file; mode full|lines; optional range a-b.",
+                input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
+            },
+            ToolDef {
+                name: "search",
+                description: "Regex search files; path:line: snippet, max hits.",
+                input_schema: json!({"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"max":{"type":"integer"}},"required":["pattern"]}),
+            },
+            ToolDef {
+                name: "tree",
+                description: "Compact directory listing with sizes; depth cap.",
+                input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"depth":{"type":"integer"}}}),
+            },
+        ]
     }
 }
 
@@ -56,7 +70,7 @@ pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<Str
     cap(cx, numbered)
 }
 
-fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
+pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
     let abs = if path.is_absolute() {
         normalize(Path::new("/"), path)
     } else {
