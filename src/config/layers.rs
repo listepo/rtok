@@ -264,6 +264,17 @@ pub fn load(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Res
 
 /// One row per effective key, sorted, for `config show`/`config get`: `(dotted key, value as
 /// a display string, source layer name)`.
+/// Dotted keys present in [`Config::default()`], for the T12.4 coverage walk.
+pub fn leaf_keys() -> Vec<String> {
+    let mut keys: Vec<String> = env_leaf_table()
+        .values()
+        .map(|(dotted, _)| dotted.clone())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
     let table = env_leaf_table();
     let mut keys: Vec<&String> = table.values().map(|(dotted, _)| dotted).collect();

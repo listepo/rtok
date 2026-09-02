@@ -88,6 +88,51 @@ impl Ctx {
     pub fn record(&self, m: &Measurement) -> Result<()> {
         self.store.insert_measurement(&self.session, m)
     }
+
+    pub fn record_call(&self, surface: &str, kind: &str, name: Option<&str>) -> Result<i32> {
+        self.store
+            .upsert_session(&self.session, None, None, None, None)?;
+        self.store
+            .insert_call(&self.session, surface, kind, None, None, None, None, name)
+    }
+
+    pub fn record_tokens(
+        &self,
+        call_id: i32,
+        plugin: Option<&str>,
+        phase: &str,
+        source: &str,
+        tokens: i64,
+    ) -> Result<()> {
+        self.store
+            .insert_tokens(call_id, plugin, phase, source, tokens)
+    }
+
+    /// Never returns `Err` to a plugin (fail open). On DB error, append to `log_file`.
+    pub fn log(&self, level: &str, source: &str, name: &str, message: &str) {
+        if let Err(e) = self.store.insert_log(
+            level,
+            source,
+            name,
+            message,
+            Some(&self.session),
+            None,
+            None,
+        ) {
+            let path = &self.config.core.log_file;
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                use std::io::Write;
+                let _ = writeln!(f, "{level} {source}/{name}: {message} ({e})");
+            }
+        }
+    }
 }
 
 /// A before/after pair produced by one plugin action (decision D3).
@@ -107,6 +152,8 @@ pub struct Measurement {
     pub est_after: u32,
     /// Archive id (or other handle) that makes the saving reversible.
     pub ref_id: Option<String>,
+    /// Owning `calls.id` when the plugin has one (T13.3).
+    pub call_id: Option<i32>,
 }
 
 /// What a plugin may do to a PreToolUse event. First `Deny` wins; `Rewrite` is last-writer.
@@ -228,5 +275,17 @@ pub trait Plugin: Send + Sync {
     /// Rewrite an outgoing API request in place; return one measurement per change.
     fn proxy_filter(&self, _req: &mut MessagesRequest, _cx: &Ctx) -> Vec<Measurement> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_survives_db_failure() {
+        let cx = Ctx::in_memory("s").unwrap();
+        cx.store.set_query_only().unwrap();
+        cx.log("error", "plugin", "read", "boom");
     }
 }

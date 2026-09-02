@@ -36,6 +36,7 @@ impl Plugin for Hello {
                 est_before: before,
                 est_after: 0,
                 ref_id: None,
+                call_id: None,
             })
             .ok()?;
             return Some(PreToolDecision::Deny {
@@ -104,11 +105,7 @@ fn main() -> Result<()> {
         serde_json::to_string(&run(&Hello, &cx, &start))?
     );
 
-    let rows: i64 = cx.store.conn().query_row(
-        "SELECT count(*) FROM measurements WHERE plugin = 'hello'",
-        [],
-        |r| r.get(0),
-    )?;
+    let rows: i64 = cx.store.measurement_count("hello")?;
     println!("measurement rows: {rows}");
     assert_eq!(rows, 1, "the deny must leave exactly one measurement");
     Ok(())

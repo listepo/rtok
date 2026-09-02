@@ -58,12 +58,15 @@ and an MCP-tool plugin).
 
 ## 3. Documentation next to the code
 
+- `src/plugins/<id>/PLAN.md` — D15 design note (copy `docs/plugin-plan-template.md`). Lands
+  in the commit before the plugin's first implementation task. Required headings, ≥ 3
+  surveyed alternatives, one `Target:` and one `Falsified by:`. Checked by `cargo test plugin_plans`.
 - `src/plugins/<id>/README.md` — what it does, what it replaces, surfaces, mechanism, config
   keys, plan tasks, status. For users.
 - `src/plugins/<id>/AGENTS.md` — files it owns, invariants that must not break, allowed
   dependencies, the Checks. For whoever (human or model) edits it next.
 
-Copy the structure from an existing plugin; keep both under a screen.
+Copy the structure from an existing plugin; keep README and AGENTS.md under a screen.
 
 ## 4. Rules every plugin obeys
 

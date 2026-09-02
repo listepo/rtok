@@ -8,6 +8,9 @@ archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (dec
 log_level   = "warn"                  # error | warn | info | debug
 log_file    = "~/.rtok/rtok.log"      # hooks never write to stderr; they log here
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
+call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
+retain_calls_days    = 30             # 0 = keep `calls` forever
+log_to_db            = true           # also write `logs` rows; log_file is always written
 
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5

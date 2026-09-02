@@ -104,6 +104,40 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 8. Code graph queries instead of grep-and-read chains — plausible, unmeasured; adapter first.
 9. LLM-based compression — negative until proven; **v0.2+**, not v0.1 (`ideas.md` I-21).
 
+
+
+### Plugin design surveys (P14, 2026-09-02)
+
+Every alternative in `src/plugins/*/PLAN.md` with the survey date. Stars/versions for retired tools are from §4 (GitHub API 2026-09-01) unless noted.
+
+| Alternative | Version / date | Cited by |
+|-------------|----------------|----------|
+| rtk gain | rtk-ai · 2026-09-01 | measure, cmd, guard |
+| headroom savings / live zone / proxy / audit | 2026-09-01 | measure, read, archive, proxy |
+| token-optimizer dashboard / bash_compress / structure map / archive / refetch | 2026-09-01 | measure, cmd, read, archive, guard |
+| lean-ctx ctx_shell / read modes / banner / deny Grep | 2026-09-01 | cmd, read, inject, guard |
+| caveman shrink / proxy / TOON | 2026-09-01 | archive, proxy, toon |
+| engram | 2026-09-01 | inject, memory |
+| claude-mem | 2026-09-01 | inject, memory |
+| ponytail | 2026-09-01 | inject |
+| codebase-memory-mcp | 2026-09-01 | graph |
+| codegraph | 2026-09-01 | graph |
+| code-review-graph | 2026-09-01 | graph |
+| serena | 2026-09-01 | graph |
+| OpenViking | 2026-09-01 | memory |
+| bifrost | 2026-09-01 | proxy |
+| TOON (toon-format) | 2026-09-01 | toon |
+| Langfuse generation usage | 3.x · 2026-09-02 | measure (outside retired stack) |
+| cargo --message-format=json | rustc 1.90 · 2026-09-02 | cmd (outside) |
+| aider repo map (tree-sitter + PageRank) | 0.82 · 2026-09-02 | read (outside) |
+| Anthropic context editing / tool-result clearing | docs 2026-09-01 | archive (outside) |
+| LiteLLM | 1.7x · 2026-09-02 | proxy (outside) |
+| Lost in the Middle (Liu et al.) | arXiv 2307.03172 · 2023-07 | inject (outside) |
+| LangGraph recursion limit | 0.2x · 2026-09-02 | guard (outside) |
+| mem0 / OpenMemory | 2026-09-01 | memory (outside) |
+| Universal Ctags | 6.x · 2026-09-02 | graph (outside) |
+| minified JSON / CSV / JSONL | RFC 8259 / 4180 · 2026-09-02 | toon (outside) |
+
 ## 7. Fact-check ledger
 
 Checked 27 claims + 19 repos. Refuted: JetBrains rtk post (rtk did not save; +7.6 % on low effort), TOON numbers (42.6 %, 72.2 vs 71.4), "headroom is Rust" (82 % Python), "OpenViking is Rust" (78 % Python), "claude-mem is TypeScript" (JS per API), "37 hook events" (32). Partial/unverifiable: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (undocumented; settings key exists), cache invalidation order and 20-block lookback (not in docs), `ENABLE_TOOL_SEARCH` value range and 10 % trigger (undocumented), offline Claude tokenizer (docs silent; `count_tokens` is the only official path). Confirmed: PostToolUse cannot modify results; PreToolUse `updatedInput`; caching multipliers incl. 0.025× Fable/Mythos; context-editing names; memory tool name; issue #81967; caveman #112; ponytail bench figures; codebase-memory-mcp and codegraph README figures; lean-ctx README figures. GitHub reports NOASSERTION for caveman and token-optimizer licenses; token-optimizer's local LICENSE file is PolyForm Noncommercial 1.0.0.

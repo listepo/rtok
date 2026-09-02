@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8, see `done.md`); next unblocked task: P12 (T12.1), then P13, then T14.0, then T14.1 + T1.1.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1 done; next unblocked: T2.2.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -20,7 +20,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D11 | **The proxy speaks both wire formats.** Anthropic Messages (`/v1/messages`) and OpenAI (`/v1/chat/completions`, `/v1/responses`) are `Wire` adapters behind one proxy; plugins that touch requests (`archive`, `toon`) and `usage` capture work on a normalised view of tool results, never on a specific JSON shape. Hosts point `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` at rtok. Added 2026-09-01 by user request. | Codex, OpenCode, Cursor-with-own-key and aider talk OpenAI; without it `measure` has no ground truth for them and `archive` cannot shrink their context. One proxy, two parsers is cheaper than two proxies. |
 | D12 | **One config file holds every setting; every CLI flag is a config key.** `~/.rtok/config.toml` (schema and reference file: `docs/config.md`, embedded as `config/default.toml`). Precedence: defaults < user file < `<git root>/.rtok.toml` < `RTOK_<SECTION>_<KEY>` env < flags. Positional per-call arguments (`hook <event>`, `expand <id>`, `run -- <cmd>`) have no key; everything else does, enforced by a test that walks the clap tree. `rtok config show --sources` tells where each value came from. Added 2026-09-01 by user request. | Hooks are spawned with a fixed command line, the proxy and MCP server run for hours, and a bench needs two reproducible configurations — none of that works with flags alone. One precedence rule beats per-flag special cases. |
 | D13 | **Core persists through a sync ORM on bundled SQLite.** Diesel (`sqlite` + bundled `libsqlite3-sys` with FTS5) replaces rusqlite. Plugins never write SQL; `Store` is the only DB owner. Every surface action is a `calls` row carrying host agent, provider, model, and plugin. MCP calls and API request/response bodies are stored in `call_io` (inline under `core.call_io_inline_bytes`, else `archive`). Token counts are stored before and after each plugin run, plus MCP tokens for that plugin. Core, plugin, and module logs go to `logs` (and still to `core.log_file`). Hook path: metadata always, body only if under the inline cap — never archive, never fail the hook (D1). Added 2026-09-01 by user request. | Raw SQL in plugins cannot join MCP vs API vs hook or attribute tokens per plugin. Diesel is sync, so the ≤ 10 ms hook path stays blocking and fail-open. Async ORMs (SeaORM/SQLx) would need a runtime per hook. One schema is what `stats` can join. |
-| D14 | **CLI is clap 4 (derive); config layers are figment; TOML writes are toml_edit.** Do not hand-roll flag parsing, file/env merge, or comment-preserving edits. Clap owns the subcommand tree and the T12.4 coverage walk (`features = ["derive", "wrap_help"]`). Figment owns defaults < user file < project file < env < flags and per-key provenance for `config show --sources` (named providers `default`, `user`, `project`, `env`, `flag`). `toml_edit` owns `config set`. Not used: twelf (flattens every config key into root clap args — wrong for subcommands); config-rs (no per-key provenance); confique (no clap overlay). Added 2026-09-02 by user request. | Clap is the Rust CLI standard. Figment’s docs recommend this pairing and track which provider set each key — that is T12.2. |
+| D14 | **CLI is clap 4 (derive); config layers are figment; TOML writes are toml_edit.** Do not hand-roll flag parsing, file/env merge, or comment-preserving edits. Clap owns the subcommand tree and the T12.4 coverage walk (`features = ["derive", "wrap_help"]`). Figment owns defaults < user file < project file < env < flags and per-key provenance for `config show --sources` (named providers `default`, `user`, `project`, `env`, `flag`). Env is `RTOK_<SECTION>_<KEY>` looked up in a leaf table from `Config::default()`, not `Env::split("_")` (that would turn `proxy.openai_upstream` into `proxy.openai.upstream`). `toml_edit` owns `config set`. Not used: twelf (flattens every config key into root clap args — wrong for subcommands); config-rs (no per-key provenance); confique (no clap overlay). Added 2026-09-02 by user request. | Clap is the Rust CLI standard. Figment’s docs recommend this pairing and track which provider set each key — that is T12.2. |
 | D15 | **Every plugin is designed against alternatives before it is built.** Each of the ten catalogue plugins gets `src/plugins/<id>/PLAN.md`: the problem in measurable terms, ≥ 3 alternatives surveyed (≥ 1 from outside the stack rtok retires, with version and date), what each gets right and wrong, the mechanism rtok will use and why it beats them, the options rejected, one number the plugin's gate must beat, and what would falsify the design. A plugin's first implementation task does not start before its `PLAN.md` is merged (phase P14). Added 2026-09-02 by user request. | D6 says write every method from scratch; that only pays if the from-scratch version is designed to be better than what it retires, and copying a retired tool's behaviour caps rtok at that tool's quality. `research.md` compares the *installed* stack only, and a `roadmap.md` lane says what to build, not why it beats the field. |
 
 Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
@@ -72,18 +72,20 @@ Plugin catalogue (v0.1 scope). Every plugin is native Rust written from scratch 
 
 ## 2. Working agreement for agents
 
+- Task claim: each task has `Status:` (`open` | `in progress`) and `Model:` (`-` when open). Claim only if `Status: open`; set `in progress` and your model before work. Before you stop, unfinished tasks → `Status: open`, `Model: -`.
 - One task = one commit on branch `rtok/<task-id>`; merge when Check passes. Never skip the Check.
 - Read `research.md` §3 (hook contract) before any hook task. Hook input is JSON on stdin; output is JSON on stdout; exit 0. Exit 2 blocks (PreToolUse only). PostToolUse can only add context.
 - Fail open: any plugin error → log to DB and return the unmodified input/empty output. A hook that crashes must still exit 0 in ≤ 10 ms.
 - No new dependency without a one-line justification in the commit message. Allowed baseline: clap (derive, wrap_help), figment (toml, env), toml_edit, serde, serde_json, diesel (sqlite, bundled libsqlite3-sys with FTS5), regex, anyhow, tokio, hyper/axum, reqwest, rmcp, tree-sitter + tree-sitter-tags, sha2, time. Reason diesel replaces rusqlite: typed models for D13 `calls`/`tokens`/`logs`; sync, so hooks stay ≤ 10 ms. Reason figment + toml_edit replace a direct `toml` dep and a hand-rolled merger: D14.
 - Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` green before every Check.
+- CLI testing: unit tests for internal business logic; integration tests for end-to-end binary execution, argument parsing, and output formatting. Dev-deps (one-line reason in the first commit that adds each): **`assert_cmd`** — spawn the compiled binary; assert exit code, stdout, stderr; **`predicates`** — compose output matchers (contains, regex, …); **`assert_fs`** — temp files/dirs setup, teardown, and verification; **`trycmd`** — snapshot tests from plain text or Markdown command files under `tests/<name>/` (prefer over line-by-line assertions when CLI output is long or complex; files double as docs). Unit tests live next to the code; integration and snapshot tests under `tests/`. Allowed dev-deps baseline also includes `httpmock` (T5.0).
 - Anything unmeasurable is a bug in the plan: add a `Measurement` before adding a feature.
 - Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12); flag names in the tasks below imply the key `<subcommand>.<flag>` or `plugins.<id>.<flag>`.
 - No plugin shells out to, links, imports from, or reads the data of a third-party tool (D6). Port the *behaviour* described in `research.md`, never the code. Retired tools' names may appear only in `rtok doctor` (inspection), `rtok setup --replace` (retirement) and `rtok bench` (comparison). External plugins are written against the public API (`rtok::plugin`, `Registry::from_plugins`), outside this repo.
 
 ## 3. Phases and tasks
 
-Format: **Tn.m title** · model · depends · files · do · **Check** (command → expected).
+Format: **Tn.m title** · depends · files · do · **Check** (command → expected). End each task with `Status: open` and `Model: -` until claimed.
 
 ### P0 — Scaffold (goal: `rtok --version`, DB, plugin registry, hook I/O types) — **done 2026-09-01, moved to `done.md`**
 
@@ -93,33 +95,9 @@ Gate P0 (review): trait shape final; no plugin logic yet. **Status: open.**
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 
-**T1.1 session JSONL parser** · T0.3 · `src/measure/jsonl.rs`
-Do: parse Claude Code transcripts (`~/.claude/projects/**/*.jsonl`): `tool_use` (id, name, input), `tool_result` (tool_use_id, content), assistant text, `usage` (input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens), message index (turn). Spec reference: `scratchpad/token-research/measure_sessions.py` (port the logic, not the code). Skip malformed lines, count them.
-Check: `cargo test measure::jsonl` on a 200-line fixture → expected counts; running on your real logs reports 0 parse failures.
-
-**T1.2 `rtok stats`** · T1.1 · `src/measure/stats.rs`
-Do: per-tool result sizes (count, total, mean, p95, max), Bash by command family (strip leading `cd … &&`, env assignments), MCP server groups, usage totals, cache hit rate, median final context, and **context-token-turns** per tool: for each tool_result of T tokens at turn t in a session of N turns, ctt = T × (N − t). Output table (default) or `--json`. `--since 30d`.
-Check: `rtok stats --since 60d` reproduces H-measured.md within ±5 % on the same 17 sessions (Bash ≈ 1.0 M, Read ≈ 414 K est. tokens).
-
-**T1.3 baseline snapshot** · T1.2 · `src/measure/baseline.rs`
-Do: `rtok stats --save-baseline <name>` stores the report JSON in `measurements`; `rtok stats --compare <name>` prints deltas.
-Check: save, then compare → all deltas 0.
-
-**T1.4 `rtok doctor`** · T0.2 · `src/doctor.rs`
-Do: report: hooks in `~/.claude/settings.json` by event and by tool (count 81 today); MCP servers and their tool counts with estimated description tokens (read `~/.claude.json` / `.mcp.json`; count via T0.5); `ANTHROPIC_BASE_URL` chain (probe each hop's `/health` or TCP); whether MCP tool search is enabled (docs: setting a base URL disables it by default — flag it); `BASH_MAX_OUTPUT_LENGTH`; `autoCompactWindow`.
-Check: `rtok doctor` on this machine prints 81 hooks, lists lean-ctx (78 tools), and the 8788→8787 chain.
-
-**T1.5 estimator calibration (optional, needs API key)** · T0.5 · `src/tokens.rs`
-Do: `rtok stats --calibrate`: sample 30 archived tool results per class, call `POST /v1/messages/count_tokens`, fit chars-per-token per class, write to config. Skip silently without a key.
-Check: with a key, printed fit is within 2.5–4.5 chars/token per class; without a key, exit 0 and message "skipped".
-
-Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2.
+Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2. **Status: open** — `--save-baseline` works (T1.3); live 60d numbers are not the original 17-session H-measured slice.
 
 ### P2 — Hook surface (goal: one hook command per event, < 10 ms, budgeted injection)
-
-**T2.1 `rtok hook <event>` dispatcher** · T0.6, T13.3 · `src/hooks/mod.rs`
-Do: read stdin JSON, dispatch to enabled plugins in registry order, merge outputs (first `deny` wins; `updatedInput` last-writer; `additionalContext` concatenated under budget), write JSON, exit 0. Log a `calls` row (`surface=hook`, `kind=hook`, `host` from `core.host`) with elapsed ms; each plugin that runs is a child `calls` row `kind=plugin_run` with `tokens` phase `before`/`after` (estimator). `call_io` holds stdin/stdout JSON only when under `core.call_io_inline_bytes` (never archive on this path). Any panic → catch_unwind → empty output, exit 0. `events` is not written (superseded by `calls`).
-Check: `cat tests/fixtures/hooks/pre_tool_bash.json | rtok hook PreToolUse` → valid JSON, exit 0; malformed stdin → `{}` and exit 0; in-memory store has a `calls` row with `kind=hook`.
 
 **T2.2 latency harness** · T2.1 · `tests/latency.rs`
 Do: spawn `rtok hook PreToolUse` 200× with the fixture; assert p95 < 10 ms on this machine (release build).
@@ -206,9 +184,13 @@ Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats`
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
-**T5.1 passthrough proxy** · T0.3, T13.3 · `src/proxy/mod.rs`
+**T5.0 httpmock upstream harness** · T0.3 · `tests/proxy/mod.rs`, `tests/fixtures/proxy/`, `Cargo.toml` (dev-dep)
+Do: add `httpmock` as `[dev-dependencies]` (commit message: one-line reason). Shared helper `MockUpstream` spins a `MockServer` and serves Anthropic `POST /v1/messages` and OpenAI `POST /v1/chat/completions` + `POST /v1/responses` from `tests/fixtures/proxy/*` (non-streaming JSON bodies and SSE `text/event-stream` variants). Point rtok at `server.base_url()` via `proxy.upstream` / `proxy.openai_upstream` (or env). Helpers: `assert_passthrough_bytes`, `assert_upstream_called_once`. Fixture naming: `anthropic_messages_{stream|body}.json`, `openai_chat_{stream|body}.json`, `openai_responses_{stream|body}.json`.
+Check: `cargo test proxy_mock` green for all six fixture pairs; each test asserts client response bytes match the fixture; `mock.assert()` shows exactly one upstream hit per route.
+
+**T5.1 passthrough proxy** · T0.3, T13.3, T5.0 · `src/proxy/mod.rs`
 Do: axum on `127.0.0.1:8790`; forward `POST /v1/messages` (and everything else) to `RTOK_UPSTREAM` (default `https://api.anthropic.com`, may be `http://127.0.0.1:8788` to chain behind headroom during A/B). Stream SSE responses unchanged. Parse `usage` from the final `message_delta`/non-streaming body; insert `usage` row (session from `metadata.user_id` or header if present, else request hash). Also write `calls` (`kind=api_request`, `surface=proxy`, `provider`+`model` upserted from the request, `host` from `core.host`) with `call_io` (archive bodies over cap) and `tokens` `source=provider` from the same four counters. `usage.call_id` points at that row.
-Check: `RTOK_UPSTREAM=http://127.0.0.1:9999` with a mock upstream (test) → response bytes identical; `usage` row inserted with 4 counters; matching `calls`/`call_io`/`tokens` rows; `models.slug` equals the request `model`.
+Check: T5.0 harness with `MockUpstream` → response bytes identical; `usage` row inserted with 4 counters; matching `calls`/`call_io`/`tokens` rows; `models.slug` equals the request `model`.
 
 **T5.2 `rtok proxy` lifecycle** · T5.1 · `src/proxy/cli.rs`
 Do: `rtok proxy [--port] [--upstream] [--mode passthrough|compress]`; `rtok setup claude --proxy` sets `env.ANTHROPIC_BASE_URL` in settings.json (backup) and prints how to revert. `/health` endpoint.
@@ -316,13 +298,13 @@ Check: `cargo dist plan` succeeds; tag `v0.1.0` builds artifacts in CI.
 Do: `trait Wire { fn matches(path) -> bool; fn tool_results(req: &mut Value) -> Vec<ToolResultRef>; fn usage_from_body(body) -> Option<Usage>; fn usage_from_sse(event) -> Option<Usage> }` where `ToolResultRef { id, content: &mut String/Value, turn }` and `Usage { input, cache_create, cache_read, output }`. Move every `/v1/messages`-specific line from T5.1/T5.3 into `anthropic.rs`; `archive` and `proxy` call only the trait.
 Check: all P5 tests pass unchanged; `grep -r '"tool_result"' src/plugins/archive.rs` finds nothing (format knowledge lives in the wire).
 
-**T11.2 OpenAI Chat Completions wire** · T11.1 · `src/proxy/openai_chat.rs`, `tests/fixtures/proxy/openai_chat_*.json`
+**T11.2 OpenAI Chat Completions wire** · T11.1, T5.0 · `src/proxy/openai_chat.rs`, `tests/fixtures/proxy/openai_chat_*.json`
 Do: route `POST /v1/chat/completions` to `RTOK_OPENAI_UPSTREAM` (default `https://api.openai.com`). Tool results = messages with `role: "tool"` keyed by `tool_call_id`. Usage from `usage.prompt_tokens`, `usage.completion_tokens`, `usage.prompt_tokens_details.cached_tokens` (→ `cache_read`; `cache_create = 0`). Streaming: SSE `data:` lines ending with `data: [DONE]`; when the request streams and lacks `stream_options.include_usage`, add it so the final chunk carries `usage` (this is the one byte-level change passthrough mode makes; documented). Non-streaming: usage from the body.
-Check: mock upstream fixture (streaming and non-streaming) → response bytes identical; `usage` row inserted with `api = openai_chat` and `cache_read` populated from `cached_tokens`.
+Check: T5.0 `openai_chat_{stream|body}` fixtures via `MockUpstream` → response bytes identical; `usage` row inserted with `api = openai_chat` and `cache_read` populated from `cached_tokens`.
 
-**T11.3 OpenAI Responses wire** · T11.1 · `src/proxy/openai_responses.rs`, `tests/fixtures/proxy/openai_responses_*.json`
+**T11.3 OpenAI Responses wire** · T11.1, T5.0 · `src/proxy/openai_responses.rs`, `tests/fixtures/proxy/openai_responses_*.json`
 Do: route `POST /v1/responses`. Tool results = `input[]` items of type `function_call_output` keyed by `call_id`. Usage from `usage.input_tokens`, `usage.output_tokens`, `usage.input_tokens_details.cached_tokens`; streaming: final `response.completed` event. Respect `previous_response_id` (nothing to rewrite in the request when history is server-side — record usage only).
-Check: fixtures → identical bytes; `usage` row with `api = openai_responses`; a request with `previous_response_id` produces zero rewrites in compress mode.
+Check: T5.0 `openai_responses_{stream|body}` fixtures → identical bytes; `usage` row with `api = openai_responses`; a request with `previous_response_id` produces zero rewrites in compress mode.
 
 **T11.4 `archive` across wires** · T11.1–T11.3, T5.3 · `src/plugins/archive/mod.rs`, `tests/fixtures/proxy/*_6turns.json`
 Do: T5.3's rules (older than `keep_turns`, larger than `min_tokens`, keyed by the wire's tool-result id, persisted, byte-stable) applied through `Wire::tool_results` for all three formats. `expand` marks ids across formats.
@@ -347,19 +329,7 @@ Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for t
 
 Runs right after P0's gate: P1–P11 tasks that add flags then wire them through this instead of ad-hoc `clap` defaults. Implementation is clap + figment + toml_edit (D14), not a custom merge.
 
-T12.1 (typed schema + reference file) is done — see `done.md`.
-
-**T12.2 layering + precedence + `config show`** · T12.1 · `src/config/layers.rs`, `src/main.rs`, `Cargo.toml`
-Do: a `Figment` with named providers, merge order: `Serialized::defaults(Config::default())` (`default`) → `Toml::file` user (`user`; path from `RTOK_CONFIG` / `--config`) → `Toml::file` `<git root>/.rtok.toml` (`project`) → `Env::prefixed("RTOK_").split("_")` (`env`; lists comma-separated; map legacy `RTOK_UPSTREAM` / `RTOK_OPENAI_UPSTREAM`) → `Serialized` of clap `Option<T>` fields that are `Some` (`flag`). Extract `Config`. Provenance from figment metadata, not a side table. `rtok config show [--sources] [--json]` and `rtok config get <key>`. Drop the direct `toml` dependency (figment’s `toml` feature parses). Add `toml_edit` here (used by T12.3). Enable clap `wrap_help`. No hand-rolled deep-merge.
-Check: `RTOK_PROXY_PORT=1 rtok config show --sources | grep proxy.port` → `1 (env)`; `RTOK_PROXY_PORT=1 rtok proxy --port 2 --dry-run` reports port 2; a project `.rtok.toml` with `[plugins.read] allow_paths` shows as `(project)`; `grep -rn 'toml::' src` → nothing; `grep -rn figment src/config` finds the providers.
-
-**T12.3 `config validate` + `config set`** · T12.1 · `src/config/validate.rs`
-Do: `rtok config validate [path]` → unknown key, wrong type, out-of-range (`port` 1–65535, `keep_turns` ≥ 1, `budget_tokens` ≥ 0, `mode` enum) with file:line, exit 1. Elsewhere the same problems are one stderr warning and defaults are used — hooks never fail on config. `rtok config set <key> <value>` edits the user file in place preserving comments (`toml_edit`, D14 — the crate that round-trips TOML comments; figment does not write files).
-Check: a file with `[proxy] port = 70000` → exit 1 naming the line; `echo '{}' | RTOK_CONFIG=bad.toml rtok hook PreToolUse` → `{}` and exit 0; `set proxy.port 8791` then `get proxy.port` → 8791 and the comment above `[proxy]` is intact.
-
-**T12.4 flag ↔ key coverage test** · T12.2 · `tests/config_coverage.rs`
-Do: walk `Cli::command()` recursively; for every non-positional arg that is not in a tiny allow-list (`--config`, `--home`, `--help`, `--version`, `--json` where `stats.format` covers it, action flags `--remove`, `--replace`, `--calibrate`, `--cache`, `--force`) assert `<path>.<arg>` (dashes → underscores; `run`/`filter` args map under `plugins.cmd`) exists in `config/default.toml`. Also the reverse: every key in `default.toml` is read somewhere (grep the source for the key's last segment) so dead keys fail too.
-Check: `cargo test config_coverage` passes; adding `--foo` to any subcommand without a key fails the test.
+T12.1–T12.4 are done — see `done.md`.
 
 Gate P12 (review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults; merge is figment, CLI is clap, `config set` is toml_edit (D14).
 
@@ -482,21 +452,7 @@ INSERT INTO providers (id, slug, name) VALUES
   (1,'anthropic','Anthropic'),(2,'openai','OpenAI'),(3,'other','Other');
 ```
 
-**T13.1 Diesel replaces rusqlite** · T0.3 · `Cargo.toml`, `src/store/mod.rs`, `src/store/schema.rs`
-Do: convert `src/store.rs` to `src/store/mod.rs`. Depend on `diesel` 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`) and `libsqlite3-sys` bundled with FTS5 (confirm `notes_fts` still builds; enable `SQLITE_ENABLE_FTS5` if the bundle omits it). Drop rusqlite. Keep the filename-keyed migration runner and WAL/`synchronous=NORMAL`. `table!` macros for the six 0001 tables. `Store` holds `diesel::sqlite::SqliteConnection`. No `Store::conn()` leaking the driver. Existing `insert_measurement` and the three store tests pass unchanged in behaviour.
-Check: `grep -rn rusqlite Cargo.toml src tests` → nothing; `cargo test store::` green; `open_on_disk_uses_wal` still asserts WAL; `notes_fts` MATCH still finds an inserted note.
-
-**T13.2 schema 0002 + models** · T13.1 · `migrations/0002.sql`, `src/store/schema.rs`, `src/store/models.rs` (also `architecture.md` §7, mechanical)
-Do: apply the DDL above. Diesel `table!` + structs with associations (`Call` belongs_to host/provider/model/session, `has_many` tokens/logs, `has_one` call_io). `PRAGMA foreign_keys=ON` on open. Update `architecture.md` §7 table list to match. Do not drop `events`.
-Check: `cargo test store::` → migrate twice is 0; `sqlite_master` contains `hosts,providers,models,sessions,calls,call_io,tokens,logs`; seed `hosts` has 6 rows; inserting a `calls` row with a bad `host_id` fails.
-
-**T13.3 `Store`/`Ctx` write API** · T13.2 · `src/store/mod.rs`, `src/plugin.rs`
-Do: `Store` methods: `upsert_session`, `upsert_model(provider_slug, model_slug)`, `insert_call`, `insert_call_io` (inline or archive by cap; hook surface never archives), `insert_tokens`, `insert_log`, `purge_calls_older_than(days)` (0 = skip). `Ctx`: `record_call`, `record_tokens`, `log(level, source, name, message)` — `log` never returns `Err` to a plugin (fail open; on DB error write `log_file` only). `record` (measurements) sets `call_id` when the plugin supplies one. Plugins and surfaces still have no SQL.
-Check: one test inserts `kind=mcp_call` + `call_io` with args/result JSON + `tokens` before/after/mcp + a `logs` row `source=plugin`; round-trip equals; `insert_call_io` with a 70 KiB body and cap 64 KiB writes `archive` and nulls `request_json`; `Ctx::log` after a closed-DB failure still returns.
-
-**T13.4 config keys** · T12.1, T13.3 · `config/default.toml`, `docs/config.md`, `src/config.rs`
-Do: `[core] call_io_inline_bytes = 65536`, `retain_calls_days = 30` (0 = keep forever), `log_to_db = true`. Document: hook path never archives `call_io`; `log_file` is always written; `logs` table is written when `log_to_db`. `rtok stats` later joins `calls`/`tokens`; no new CLI in this task.
-Check: `cargo test config::` parses the three keys; `docs/config.md` has a row for each; T12.4 coverage still green once those tasks exist, otherwise the keys are present in `default.toml`.
+T13.1–T13.4 are done — see `done.md`.
 
 Gate P13 (review): no rusqlite; no SQL outside `src/store/`; hook-path tests never write `archive/` for `call_io`; a plugin_run has before and after token rows.
 
@@ -517,51 +473,9 @@ the design. Where the survey changes a task, amend it in §6 rather than silentl
 Shared Check for T14.1–T14.10: `cargo test plugin_plans` green; the `Target:` line matches that plugin's
 gate in `roadmap.md`; every surveyed alternative appears in `research.md` §6 with a date.
 
-**T14.0 plan template + structure test** · — · `docs/plugin-plan-template.md`, `tests/plugin_plans.rs`, `docs/plugin-authoring.md`
-Do: write the template (sections above, ≤ 1 screen). `tests/plugin_plans.rs` walks `src/plugins/*/`: for every `PLAN.md` that exists, assert the required `##` headings, ≥ 3 data rows in the alternatives table, exactly one `Target:` line and one `Falsified by:` line. It passes on a tree with no `PLAN.md` and tightens as each lands — so it never blocks an unrelated task. Add `PLAN.md` to the per-plugin docs list in `docs/plugin-authoring.md` §3.
-Check: `cargo test plugin_plans` green with zero `PLAN.md`; green after adding one complete file; red when a heading, a table row, or the `Target:` line is removed.
+T14.0–T14.10 are done — see `done.md`. Shared Check `cargo test plugin_plans` green; ten `PLAN.md` files; alternatives dated in `research.md` §6.
 
-**T14.1 `measure` design** · T14.0 · `src/plugins/measure/PLAN.md`
-Do: survey how agent tooling actually counts savings — the four retired dashboards plus at least one outside source (LLM-observability token accounting such as Langfuse/Helicone/OpenLLMetry, or a published agent-benchmark cost methodology). Answer: is **context-token-turns** the right primary number, or is cost per passed bench task the honest one and CTT only a diagnostic? Decide what `stats` reports first and what it refuses to claim without proxy `usage`.
-Check: shared Check; `Target:` is stated as a metric definition plus the P1 gate's baseline requirement.
-
-**T14.2 `cmd` design** · T14.0 · `src/plugins/cmd/PLAN.md`
-Do: survey command-output reduction: the three retired filters plus at least one outside source (structured runner output — `cargo --message-format=json`, `pytest -q`, `jest --reporters` — or a log-compression/dedupe algorithm). Answer: does a per-family formatter beat one generic head/tail/dedupe rule, and at what output size does the crossover sit? Decide the error-first rule: what must never be dropped when a command fails.
-Check: shared Check; `Target:` is a % cut on a named command corpus at a stated expand rate.
-
-**T14.3 `read` design** · T14.0 · `src/plugins/read/PLAN.md`
-Do: survey file-reading strategies: lean-ctx modes and token-optimizer's structure map, plus at least one outside source (aider's tree-sitter + PageRank repo map, ctags, or an LSP outline). Answer: for the first look at an unknown repo, does a ranked repo map beat per-file signatures, and is the ranking worth its build cost at v0.1? Decide the mode set (`full` / `lines` / `map` / `signatures`) and the re-read dedup contract.
-Check: shared Check; `Target:` is tokens for “understand this repo” on a fixture repo vs the retired stack.
-
-**T14.4 `archive` design** · T14.0 · `src/plugins/archive/PLAN.md`
-Do: survey live-context shrinking: the three retired archivers plus at least one outside source (provider-native context editing / tool-result clearing, or a published context-management study). Answer: what head/tail and age/size thresholds keep expand rate < 5 %, and when is a provider-native mechanism strictly better than rewriting the request ourselves? Decide the pointer format and the determinism rule per `tool_use_id`.
-Check: shared Check; `Target:` is the P5-compress gate number (context-token-turns fall, expand rate ceiling).
-
-**T14.5 `proxy` design** · T14.0 · `src/plugins/proxy/PLAN.md`
-Do: survey proxy/gateway designs: the two retired proxies plus at least one outside source (LiteLLM, bifrost, OpenRouter, or an SSE-passthrough implementation). Answer: exactly which request mutations break prompt caching on each wire, and what a cache miss costs relative to the bytes any rewrite saves — this is the rule every other plugin's `proxy_filter` obeys. Decide the failure policy: what the proxy does when upstream is slow, streaming, or errors mid-stream.
-Check: shared Check; `Target:` is the added-latency budget (< 20 ms) plus a cache-hit-rate floor.
-
-**T14.6 `inject` design** · T14.0 · `src/plugins/inject/PLAN.md`
-Do: survey session-context injection: the four retired injectors plus at least one outside source (evidence on instruction dilution / lost-in-the-middle, or another agent's system-prompt budget). Answer: is byte-stability sufficient for cache safety across turns, and does more injected context measurably help or hurt at 800 tokens? Decide priority ordering and what happens to a dropped `Injection` (silent, or one line saying it was dropped).
-Check: shared Check; `Target:` is the per-turn budget plus a byte-stability assertion.
-
-**T14.7 `guard` design** · T14.0 · `src/plugins/guard/PLAN.md`
-Do: survey duplicate/loop suppression: token-optimizer's refetch guard plus at least one outside source (an agent framework's loop detection or repetition penalty). Answer: is denying the right move at all, or is rewriting the call into `expand <id>` strictly better (the model gets its answer, we still save)? Decide the false-deny budget and the window semantics.
-Check: shared Check; `Target:` is a max false-deny rate with the deny rate visible in `stats --plugin guard`.
-
-**T14.8 `memory` design** · T14.0 · `src/plugins/memory/PLAN.md`
-Do: survey agent memory: the two retired memories plus at least one outside source (mem0, MemGPT/Letta, or a retrieval evaluation). Answer: does zero-LLM memory (the agent writes its own notes, FTS5 retrieves) recall as well as LLM extraction, and by what metric would we know? Decide what is stored, what is never stored, and how recall stays inside the `inject` budget.
-Check: shared Check; `Target:` is a recall statement on a fixture note set plus the P6 injection-token comparison.
-
-**T14.9 `graph` design** · T14.0 · `src/plugins/graph/PLAN.md`
-Do: survey code-structure indexes: the four retired graph servers plus at least one outside source (ctags, an LSP call-hierarchy, or aider's repo map). Answer: what tree-sitter-tags cannot see (dynamic dispatch, macros, generated code), whether that is acceptable at v0.1, and which three tools are worth their description tokens. Decide the index refresh trigger and the output cap.
-Check: shared Check; `Target:` is MCP description tokens plus a hit rate on a fixture symbol set.
-
-**T14.10 `toon` design** · T14.0 · `src/plugins/toon/PLAN.md`
-Do: survey compact encodings for tabular tool results: TOON plus at least one outside source (CSV/JSONL, minified JSON, or a study of model accuracy on non-JSON encodings). Answer: on rtok's own captured tool-result corpus, at what array size and uniformity does the encoding actually win, and does answer accuracy hold when it does? Decide the detection rule for “tabular enough” and keep the plugin off by default until P9 says otherwise.
-Check: shared Check; `Target:` is a bytes-saved threshold with an accuracy no-regression condition on the P9 set.
-
-Gate P14 (review): `ls src/plugins/*/PLAN.md | wc -l` → 10; every `Target:` matches a `roadmap.md` gate; no plugin was implemented before its `PLAN.md` merged (`git log` order); any design that contradicted a task produced a §6 amendment.
+Gate P14 (review): `ls src/plugins/*/PLAN.md | wc -l` → 10; every `Target:` matches a `roadmap.md` gate; no plugin was implemented before its `PLAN.md` merged (`git log` order); any design that contradicted a task produced a §6 amendment. **Status: open** — files exist (10 PLAN.md, Targets match gates); `git log` order is pending commits.
 
 ### Later versions (v0.2+) — deferred, not rejected — added 2026-09-02
 
@@ -614,5 +528,7 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-02 | CLI + config crates: decision D14. clap 4 (derive, wrap_help) stays the CLI; figment replaces hand-rolled layering and the direct `toml` dep; toml_edit is the `config set` writer. T12.2/T12.3/Gate P12 name the crates. | User request: use the best Rust tools for CLIs and configs. |
 | 2026-09-02 | T12.2 env mapping is **not** `Env::split("_")`. Keys contain underscores (`proxy.openai_upstream`, `plugins.inject.budget_tokens`), and splitting every `_` would produce `proxy.openai.upstream`. Instead `Env::prefixed("RTOK_")` is filtered through a table built from `Config::default()`: `PROXY_OPENAI_UPSTREAM` → `proxy.openai_upstream`. Unknown names (`RTOK_HOME`, `RTOK_CONFIG`) are dropped rather than becoming unknown keys under `deny_unknown_fields`. Comma-separated list values are split by a thin wrapper for keys whose default is an array, since figment's `Env` does not split values. | The naive split silently mis-targets 20+ keys and would make `RTOK_HOME` a parse error. |
 | 2026-09-02 | `[proxy] dry_run = false` added to `config/default.toml` and `docs/config.md`. `rtok proxy --dry-run` prints the effective proxy settings and exits — the T12.2 Check needs it, and it is a setting, not an action, so D12 requires a key. | T12.2 Check: `RTOK_PROXY_PORT=1 rtok proxy --port 2 --dry-run` must report port 2. |
+| 2026-09-02 | T5.0 `httpmock` upstream harness added before T5.1; T11.2/T11.3 Checks point at shared `tests/fixtures/proxy/*` mocks. | User request: use httpmock for Anthropic and OpenAI API proxy tests instead of ad-hoc fixtures per task. |
 | 2026-09-02 | Per-plugin design research: decision D15, phase P14 (T14.0–T14.10). Every catalogue plugin gets its own plan, `src/plugins/<id>/PLAN.md`, surveying ≥ 3 alternatives (≥ 1 outside the retired stack), naming the mechanism that beats them, and setting the number its `roadmap.md` gate must beat. Each T14.x is scheduled immediately before its plugin's first implementation task, not as a batch. | User request: research and investigate alternatives for each internal plugin and make it better, with an individual plan per plugin. |
 | 2026-09-02 | `CHANGELOG.md` is generated by git-cliff (`make changelog`, `cliff.toml`, tool pinned in `mise.toml`); commit subjects `<task-id>:`/`plan:`/`docs:`/`ci:` are the grouping. T10.4 (release) runs it before tagging. | User request; the `<task-id>: <title>` commit rule already carries the information, so no hand-written changelog. |
+| 2026-09-02 | CLI testing stack in §2: unit tests + integration (`assert_cmd`, `predicates`, `assert_fs`, `trycmd` for Markdown/plain snapshot cases). | User request: standard Rust CLI test crates instead of ad-hoc shell in Checks. |

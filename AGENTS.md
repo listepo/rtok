@@ -8,7 +8,9 @@
 
 **Toolchain.** Rust is pinned in `mise.toml`. Run everything as `mise exec -- cargo <cmd>` (or `mise activate` your shell). Never install or switch a global toolchain.
 
-**Workflow.** Take the next unblocked task in `plan.md`. Branch `rtok/<task-id>`. Stay within ≤ 200 LOC and ≤ 3 files. Run the task's Check verbatim, then `make check`. Commit as `<task-id>: <title>`. Move the task from `plan.md` to `done.md` with `Status: done <date>` and the Check result. New plugin: follow `docs/plugin-authoring.md`.
+**CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` §2.
+
+**Workflow.** Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model, branch `rtok/<task-id>`. ≤200 LOC, ≤3 files. Check, `make check`, commit `<task-id>: <title>`. Done → `done.md` with `Status: done <date>`. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md`.
 
 **Rules that never bend.**
 - Fail open: a hook exits 0 in ≤ 10 ms even on error, with unmodified input.

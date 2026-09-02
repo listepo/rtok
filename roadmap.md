@@ -2,7 +2,7 @@
 
 View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tasks and Checks; this file is the order to build each plugin. When a task moves to `done.md`, tick it here in the same commit.
 
-**Now:** P12 (config), then P13 (store), then T14.0 (per-plugin plan template), then the first plugin that is unblocked (`measure`: T14.1 design note, then T1.1). Every plugin below is **manifest only** until its first task, and every lane now starts at row 0 with its design note (D15) — survey the alternatives first, then build something better, never a Rust copy of the tool being retired.
+**Now:** T1.1 (JSONL parser). P12, P13, and P14 (T14.0–T14.10 design notes) are done 2026-09-02. Every plugin below is **manifest only** until its first task, and every lane now starts at row 0 with its design note (D15) — survey the alternatives first, then build something better, never a Rust copy of the tool being retired.
 
 **Sequence if time is short** (`plan.md` §5): P12 → P13 → T14.0 → P1 `measure` → P2 hooks + `inject` → P5 `proxy` passthrough → P3 `cmd` → P4 `read` → P5 `archive` compress → P9 bench. `memory` / `graph` / `guard` / `toon` / P10 / P11 after the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. v0.2+ (LLM compression, embeddings, LSP `graph`, daemon, WASM) is [Later](#later-v02); do not start it in v0.1.
 
@@ -16,11 +16,11 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 |------|------|--------|
 | T0.1–T0.7 | binary, config stub, rusqlite store, trait, estimator, hook types, CI | done 2026-09-01 |
 | T0.8 | public plugin API, drop `Kind`, `examples/mcp_tool.rs` | done 2026-09-02 |
-| T14.0 | plan template + `plugin_plans` structure test (D15) | open |
+| T14.0 | plan template + `plugin_plans` structure test (D15) | done 2026-09-02 |
 | Gate P0 | trait shape final; no plugin logic yet | open |
-| P12 T12.1–T12.4 | clap + figment + toml_edit; every flag is a key (D12, D14) | open |
-| P13 T13.1–T13.4 | Diesel; `calls` / `tokens` / `logs` (D13) | open |
-| T2.1 | `rtok hook <event>` dispatcher, fail open ≤ 10 ms | open · needs T13.3 |
+| P12 T12.1–T12.4 | clap + figment + toml_edit; every flag is a key (D12, D14) | done 2026-09-02 |
+| P13 T13.1–T13.4 | Diesel; `calls` / `tokens` / `logs` (D13) | done 2026-09-02 |
+| T2.1 | `rtok hook <event>` dispatcher, fail open ≤ 10 ms | done 2026-09-02 |
 | T2.2 | latency harness | open |
 | T2.3 | `rtok setup claude` | open |
 | T4.1 | `rtok mcp` stdio server | open · needs T13.3 |
@@ -42,9 +42,9 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | Order | Task | Plan |
 |-------|------|------|
 | 0 | T14.1 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/measure/PLAN.md`. |
-| 1 | T1.1 | Parse host transcripts (Claude JSONL first) into tool calls, results, usage, turn index. |
-| 2 | T1.2 | `rtok stats`: per-tool sizes, Bash families, MCP groups, **context-token-turns**. |
-| 3 | T1.3 | `--save-baseline` / `--compare`. |
+| 1 | T1.1 | Parse host transcripts (Claude JSONL first) into tool calls, results, usage, turn index. · done 2026-09-02 |
+| 2 | T1.2 | `rtok stats`: per-tool sizes, Bash families, MCP groups, **context-token-turns**. · done 2026-09-02 |
+| 3 | T1.3 | `--save-baseline` / `--compare`. · done 2026-09-02 |
 | 4 | T1.5 | Optional `--calibrate` via `count_tokens`. |
 | 5 | T5.5 | Cache-health from proxy `usage`. |
 | 6 | T9.1 | `rtok bench` A/B harness (shared with P9). |
@@ -52,7 +52,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P1.** Baseline saved (`rtok stats --save-baseline before-rtok`); numbers in `research.md` §2.
 
-**Status.** Manifest only. First task: T1.1. Blocked on T14.1 (design note, D15).
+**Status.** Manifest only. First task: T1.1. T14.1 done 2026-09-02.
 
 ---
 
@@ -74,7 +74,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P2 (shared).** Setup is additive; sessions still work. **Gate P7.** A/B `terse` on/off; keep only if output tokens fall without task failures.
 
-**Status.** Manifest only. First task: T2.4. Blocked on T14.6 (design note, D15).
+**Status.** Manifest only. First task: T2.4. T14.6 done 2026-09-02.
 
 ---
 
@@ -101,7 +101,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P3.** One working day vs baseline; keep only if Bash context-token-turns fall and expand rate < 5 %.
 
-**Status.** Manifest only. First task: T3.1. Blocked on T14.2 (design note, D15).
+**Status.** Manifest only. First task: T3.1. T14.2 done 2026-09-02.
 
 ---
 
@@ -127,7 +127,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P4.** Disable lean-ctx for one day; compare Read/MCP rows and injection tokens vs baseline.
 
-**Status.** Manifest only. First task: T4.2 (after T4.1). Blocked on T14.3 (design note, D15).
+**Status.** Manifest only. First task: T4.2 (after T4.1). T14.3 done 2026-09-02.
 
 ---
 
@@ -144,6 +144,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | Order | Task | Plan |
 |-------|------|------|
 | 0 | T14.5 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/proxy/PLAN.md`. |
+| 0b | T5.0 | `httpmock` upstream harness + `tests/fixtures/proxy/*` for Anthropic and OpenAI wires. |
 | 1 | T5.1 | Passthrough + SSE; insert `usage` + `calls`/`call_io`/`tokens`. |
 | 2 | T5.2 | Lifecycle, health, setup. |
 | 3 | T11.1 | `Wire` trait; Anthropic behind it. |
@@ -153,7 +154,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P5 (passthrough).** Two days of usage rows. **Gate P11.** Same for one OpenAI-API host.
 
-**Status.** Manifest only. First task: T5.1. Blocked on T14.5 (design note, D15).
+**Status.** Manifest only. First task: T5.1. T14.5 done 2026-09-02.
 
 ---
 
@@ -176,7 +177,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P5 (compress).** Two days compress after passthrough; keep only if context-token-turns fall ≥ 15 % and expand rate < 5 %.
 
-**Status.** Manifest only. First task: T5.3. Blocked on T14.4 (design note, D15).
+**Status.** Manifest only. First task: T5.3. T14.4 done 2026-09-02.
 
 ---
 
@@ -200,7 +201,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P6.** Disable engram + claude-mem for a week; compare injection and MCP description tokens. Revert if recall is worse.
 
-**Status.** Manifest only. Schema exists since T0.3. First task: T6.1. Blocked on T14.8 (design note, D15).
+**Status.** Manifest only. Schema exists since T0.3. First task: T6.1. T14.8 done 2026-09-02.
 
 ---
 
@@ -222,7 +223,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
-**Status.** Manifest only. First task: T8.1. Blocked on T14.9 (design note, D15).
+**Status.** Manifest only. First task: T8.1. T14.9 done 2026-09-02.
 
 ---
 
@@ -243,7 +244,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate.** Same honesty rule as `cmd`: deny rate is visible in `stats --plugin guard`; expand on a denied id must still work.
 
-**Status.** Manifest only. First task: T2.6 (added 2026-09-02). Blocked on T14.7 (design note, D15).
+**Status.** Manifest only. First task: T2.6 (added 2026-09-02). T14.7 done 2026-09-02.
 
 ---
 
@@ -264,7 +265,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P9.** Keep enabled only if cost per passed task falls and pass rate holds.
 
-**Status.** Manifest only. Off by default. First task: T11.7 (added 2026-09-02). Blocked on T14.10 (design note, D15).
+**Status.** Manifest only. Off by default. First task: T11.7 (added 2026-09-02). T14.10 done 2026-09-02.
 
 ---
 

@@ -9,6 +9,7 @@
 //! Layering (default < user file < project file < env < flags) is [`layers`] (T12.2).
 
 pub mod layers;
+pub mod validate;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -74,6 +75,9 @@ section! {
         log_level: String = s("warn"),
         log_file: PathBuf = p("~/.rtok/rtok.log"),
         session_env: String = s("CLAUDE_SESSION_ID"),
+        call_io_inline_bytes: u32 = 65536,
+        retain_calls_days: u32 = 30,
+        log_to_db: bool = true,
         /// Removed in T12.1: it is now `plugins.inject.budget_tokens`. Accepted from an old
         /// file with a warning, then dropped.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -385,6 +389,20 @@ impl Config {
         let home = Self::home_dir();
         Self::ensure_user_file(&home, config_file)?;
         layers::load(&home, config_file, flags)
+    }
+
+    /// Warn and use defaults. Hooks (T12.3) never fail on a bad file.
+    pub fn load_lenient(config_file: Option<&Path>, flags: Option<figment::value::Dict>) -> Self {
+        match Self::load_with(config_file, flags) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("rtok: config ignored ({e}); using defaults");
+                let home = Self::home_dir();
+                let mut c = Self::default();
+                c.finish(&home);
+                c
+            }
+        }
     }
 
     /// Create `<home>/config.toml` from the reference when neither `--config` nor `RTOK_CONFIG`
