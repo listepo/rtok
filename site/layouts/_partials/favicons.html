@@ -1,0 +1,4 @@
+{{- /* Overrides the theme partial, which also asks for .ico and .png variants and a
+       webmanifest this site does not ship — every one of them was a 404 per page.
+       Every current browser reads an SVG favicon. */ -}}
+<link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml" />

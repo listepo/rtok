@@ -17,6 +17,10 @@ source = "content"
 target = "content"
 
 [[module.mounts]]
+source = "assets"
+target = "assets"
+
+[[module.mounts]]
 source = "../architecture.md"
 target = "assets/repo/architecture.md"
 
@@ -83,7 +87,13 @@ default = "system"
 
 [params.navbar]
 displayTitle = true
-displayLogo = false
+displayLogo = true
+
+[params.navbar.logo]
+path = "logo.svg"
+dark = "logo-dark.svg"
+width = 24
+height = 24
 
 [params.footer]
 enable = true
@@ -95,7 +105,7 @@ enable = true
 base = "https://github.com/listepo/rtok/edit/main"
 
 [params.page]
-width = "normal"
+width = "wide"
 
 [params.toc]
 displayTags = false

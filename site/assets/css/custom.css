@@ -1,0 +1,37 @@
+/* rtok site styles. hextra derives every primary shade from these three variables,
+   so one hue swap rebrands buttons, links, cards and the search box. */
+:root {
+  --primary-hue: 20deg;
+  --primary-saturation: 88%;
+  --primary-lightness: 44%;
+}
+
+.dark {
+  --primary-hue: 20deg;
+  --primary-saturation: 88%;
+  --primary-lightness: 58%;
+}
+
+/* Repo tables (architecture.md, docs/config.md) have two prose-heavy columns and
+   inline code. Left to shrink into the content column they wrap to one word per
+   line, so let them keep their natural width and scroll inside their own box. */
+.content table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.content table td,
+.content table th {
+  min-width: 10rem;
+}
+
+/* Long flags and paths (`--no-default-features`) break mid-token otherwise. */
+.content :where(code):not(pre code) {
+  overflow-wrap: anywhere;
+}
+
+/* The mounted repo pages open with a dense paragraph; give it room to breathe. */
+.content > p:first-of-type {
+  font-size: 1.05em;
+  line-height: 1.75;
+}

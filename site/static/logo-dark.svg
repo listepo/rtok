@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="rtok">
+  <title>rtok</title>
+  <rect x="3" y="4.4" width="18" height="2.6" rx="1.3" fill="#f8fafc"/>
+  <rect x="3" y="10.7" width="11" height="2.6" rx="1.3" fill="#f47433"/>
+  <rect x="3" y="17" width="6.5" height="2.6" rx="1.3" fill="#f47433"/>
+  <path d="M20.8 10.6 17.4 12 20.8 13.4" fill="none" stroke="#f47433" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
