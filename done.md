@@ -288,6 +288,11 @@ Do: rmcp stdio server exposing tools from all plugins' `mcp_tools()`; register `
 Check: `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | rtok mcp` lists `expand`; test asserts every description ≤ 60 tokens; a fixture `tools/call` inserts `calls` + `call_io` + three `tokens` rows.
 Status: done 2026-09-02 · Check: `tools_list_includes_expand` stdout contains expand; `descriptions_at_most_60_tokens`; `tools_call_writes_calls_io_and_three_token_rows` — 1 `mcp_call` + 1 `call_io` + 3 `tokens`. `make check` green. Deviation: also `cli.rs`, `lib.rs`, `store/mod.rs` (`host_id`, counts), `tests/mcp.rs`; host slug is `[hook] host` (no `core.host`); one-shot `tools/list` without initialize. New dep: `rmcp` (MCP types + JSON-RPC).
 
+**T4.2 `read` tool: full/lines** · T4.1 · `src/plugins/read/mod.rs`
+Do: `read(path, mode=full|lines, range?)` with line numbers, size cap (default 20 K chars, then head/tail + archive id). Root guard: path must be under cwd or config `allow_paths`.
+Check: read a 3-line fixture → 3 numbered lines; a 100 KB file → capped output + archive id; `../etc/passwd` → error.
+Status: done 2026-09-02 · Check: `three_lines_are_numbered`; `hundred_kb_is_capped_with_archive_id`; `dotdot_etc_passwd_is_err`. `make check` green. Deviation: also `src/mcp.rs` (dispatch).
+
 ## P5 — `proxy` + `archive`
 
 **T5.0 httpmock upstream harness** · T0.3 · `tests/proxy/mod.rs`, `tests/fixtures/proxy/`, `Cargo.toml` (dev-dep)

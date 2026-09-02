@@ -140,6 +140,8 @@ fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
         "mem_search" => mem_search(cx, args),
         #[cfg(feature = "memory")]
         "mem_get" => mem_get(cx, args),
+        #[cfg(feature = "read")]
+        "read" => read_file(cx, args),
         _ => format!("unknown tool: {name}"),
     }
 }
@@ -193,6 +195,17 @@ fn mem_search(cx: &Ctx, args: &Value) -> String {
                 .collect::<Vec<_>>()
         )
         .to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[cfg(feature = "read")]
+fn read_file(cx: &Ctx, args: &Value) -> String {
+    let path = args["path"].as_str().unwrap_or("");
+    let mode = args["mode"].as_str().unwrap_or("");
+    let range = args["range"].as_str();
+    match crate::plugins::read::read(cx, path, mode, range) {
+        Ok(s) => s,
         Err(e) => e.to_string(),
     }
 }
