@@ -1,0 +1,11 @@
+argv: git diff
+exit: 0
+---
+diff --git a/src/lib.rs b/src/lib.rs
+index 111..222 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,3 +1,4 @@
+ fn f() {}
++fn g() {}
+ 1 file changed, 1 insertion(+)

@@ -1,0 +1,21 @@
+src/a.rs:1: hit 0
+src/a.rs:1: hit 1
+src/a.rs:1: hit 2
+src/a.rs:1: hit 3
+src/a.rs:1: hit 4
+src/a.rs:1: hit 5
+src/a.rs:1: hit 6
+src/a.rs:1: hit 7
+src/a.rs:1: hit 8
+src/a.rs:1: hit 9
+… 30 lines omitted (expand deadbeef)
+src/a.rs:1: hit 40
+src/a.rs:1: hit 41
+src/a.rs:1: hit 42
+src/a.rs:1: hit 43
+src/a.rs:1: hit 44
+src/a.rs:1: hit 45
+src/a.rs:1: hit 46
+src/a.rs:1: hit 47
+src/a.rs:1: hit 48
+src/a.rs:1: hit 49

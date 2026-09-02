@@ -1,0 +1,6 @@
+argv: npm test
+exit: 0
+---
+> foo@1.0.0 test
+> node test.js
+ok

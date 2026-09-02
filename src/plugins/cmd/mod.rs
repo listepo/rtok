@@ -7,6 +7,7 @@ use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface}
 
 pub mod hook;
 
+pub mod formatters;
 pub mod rules;
 pub mod run;
 

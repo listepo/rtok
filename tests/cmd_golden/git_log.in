@@ -1,0 +1,14 @@
+argv: git log
+exit: 0
+---
+commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Author: Dev <dev@example.com>
+Date:   Wed Sep 2 00:00:00 2026
+
+    T3.3: formatters
+
+commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Author: Dev <dev@example.com>
+Date:   Tue Sep 1 00:00:00 2026
+
+    T3.2: rules

@@ -6,7 +6,7 @@ use crate::tokens::Class;
 use anyhow::{Result, bail};
 use std::process::Command;
 
-use super::rules::{self, Rule};
+use super::formatters;
 
 fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
@@ -50,12 +50,7 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
         .first()
         .map(|a| a.rsplit('/').next().unwrap_or(a).to_string())
         .unwrap_or_else(|| "other".into());
-    let filtered = rules::apply(&before, code, &Rule::default(), &id);
-    let kind = if filtered.len() < before.len() {
-        "rule"
-    } else {
-        "raw"
-    };
+    let (filtered, kind) = formatters::compress(args, &before, code, &id);
     print!("{filtered}");
     if !filtered.is_empty() && !filtered.ends_with('\n') {
         println!();

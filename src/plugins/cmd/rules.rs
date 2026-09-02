@@ -131,6 +131,45 @@ pub fn apply(output: &str, exit: i32, rule: &Rule, archive_id: &str) -> String {
     picked.join("\n")
 }
 
+/// Built-in [`rules/default.toml`](../../../rules/default.toml).
+pub fn defaults() -> Vec<Rule> {
+    parse(include_str!("../../../rules/default.toml"))
+}
+
+fn parse(s: &str) -> Vec<Rule> {
+    let doc = s.parse::<toml_edit::DocumentMut>().unwrap_or_default();
+    let mut out = Vec::new();
+    for (k, v) in doc.iter() {
+        let Some(t) = v.as_table() else { continue };
+        let num = |key: &str, d: u32| {
+            t.get(key)
+                .and_then(|i| i.as_integer())
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(d)
+        };
+        let strs = |key: &str| {
+            t.get(key)
+                .and_then(|i| i.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        out.push(Rule {
+            match_cmd: k.to_string(),
+            max_lines: num("max_lines", 40),
+            head: num("head", 10),
+            tail: num("tail", 10),
+            drop: strs("drop"),
+            keep: strs("keep"),
+            dedupe: t.get("dedupe").and_then(|i| i.as_bool()).unwrap_or(true),
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

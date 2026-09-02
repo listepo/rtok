@@ -1,0 +1,12 @@
+argv: cargo test
+exit: 0
+---
+   Compiling foo v0.1.0
+    Finished test
+test a::ok_one ... ok
+test a::bad ... FAILED
+test a::ok_two ... ok
+
+failures:
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

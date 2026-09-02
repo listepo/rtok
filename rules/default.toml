@@ -1,0 +1,73 @@
+# Fallback filters when no family formatter matches (plan T3.3). Never redact.
+
+[grep]
+max_lines = 40
+head = 10
+tail = 10
+drop = ["Binary file"]
+keep = ["error|warning"]
+dedupe = true
+
+[rg]
+max_lines = 40
+head = 10
+tail = 10
+drop = ["Binary file"]
+keep = ["error|warning"]
+dedupe = true
+
+[sed]
+max_lines = 40
+head = 10
+tail = 10
+drop = []
+keep = ["error"]
+dedupe = true
+
+[cat]
+max_lines = 80
+head = 20
+tail = 20
+drop = []
+keep = []
+dedupe = false
+
+[make]
+max_lines = 40
+head = 8
+tail = 16
+drop = []
+keep = ["error|Error|***"]
+dedupe = true
+
+[curl]
+max_lines = 40
+head = 10
+tail = 10
+drop = []
+keep = ["error|HTTP|curl:"]
+dedupe = true
+
+[npm]
+max_lines = 40
+head = 8
+tail = 16
+drop = []
+keep = ["error|ERR!|npm ERR"]
+dedupe = true
+
+[pnpm]
+max_lines = 40
+head = 8
+tail = 16
+drop = []
+keep = ["error|ERR_PNPM"]
+dedupe = true
+
+[node]
+max_lines = 40
+head = 8
+tail = 16
+drop = []
+keep = ["Error|error"]
+dedupe = true

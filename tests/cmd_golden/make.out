@@ -1,0 +1,4 @@
+cc -c a.c
+cc -c b.c
+*** Error code 1
+make: stopped in /tmp/proj

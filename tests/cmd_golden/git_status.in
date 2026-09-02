@@ -1,0 +1,10 @@
+argv: git status
+exit: 0
+---
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+	modified:   src/lib.rs
+
+Untracked files:
+	tmp.txt
