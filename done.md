@@ -361,6 +361,11 @@ Do: with backup: remove hook entries whose command matches a legacy list (`rtk h
 Check: dry-run on a copy of today's settings shows 8 remaining rtok hooks + non-token hooks; JSON stays valid.
 Status: done 2026-09-02 · Check: `dry_run_keeps_eight_rtok_and_non_token_hooks` — 8 rtok hooks remain; orca/holdmylid/tokenbar/cbm/serena kept; legacy commands and lean-ctx/code-review-graph gone; `ANTHROPIC_BASE_URL` 8790; JSON valid. `--replace` without `--yes` errors. `make check` green. Deviation: also `cli.rs` (`--yes`, `--replace`) and `setup/mod.rs`.
 
+**T9.4 legacy stack folder** · — · `legacy/`
+Do: in `~/GitHub/reduce-token` (separate directory, not this repo): move `docker-compose.yml`, `bifrost-config/`, `caveman/`, `headroom/`, `.env.example` into `legacy/` with a README line "kept for A/B; bifrost semantic cache retired (see research.md)".
+Check: `docker compose -f legacy/docker-compose.yml config` still validates.
+Status: done 2026-09-02 · Check: `ANTHROPIC_API_KEY=dummy REPO_DIR=/tmp docker compose -f ~/GitHub/reduce-token/legacy/docker-compose.yml config` validates (compose interpolates those two vars). `legacy/README.md` has the A/B line. Deviation: `~/GitHub/reduce-token` is not a git repo, so the move is filesystem-only; root README notes the stack lives in `legacy/`.
+
 ## P10 — other hosts
 
 **T10.1 Cursor** · T2.1 · `src/setup/cursor.rs`
