@@ -281,6 +281,15 @@ Do: `rtok doctor --instructions`: token count of `~/.claude/CLAUDE.md` + project
 Check: on this machine, report lists ≥ 4 injectors and their token totals.
 Status: done 2026-09-02 · Check: `instructions_lists_four_injectors` — four named MCP injectors plus CLAUDE.md files, each with a token total; duplicates and >1000 flagged. `make check` green.
 
+**T12.5 `.env` files** · T12.2 · `src/config/layers.rs` — added 2026-09-02 (user request)
+Do: a `dotenv` layer between `project` and `env`: `RTOK_*` lines from the nearest `.env` walking up from the working directory, then `<home>/.env` (dotenvy syntax; project file wins). Parse only — nothing is exported into rtok's environment, so commands run by `rtok run` never see the file. Shell variables still win; other keys in a project `.env` are ignored. Malformed file = one stderr line, not an error (fail open). Document in `docs/config.md` precedence.
+Check: `.env` with `RTOK_PROXY_PORT=8799` → `rtok proxy --dry-run` prints `port = 8799` and `config show` names the source `dotenv`; the same key exported in the shell wins; a non-`RTOK_` key in a project `.env` changes nothing.
+Status: done 2026-09-02 · Check: project `.env` with `RTOK_PROXY_PORT=8799` (plus a `DATABASE_URL` line) → `rtok proxy --dry-run` from a subdirectory prints `port = 8799`; with `RTOK_PROXY_PORT=8800` exported it prints `port = 8800`; `<home>/.env` `RTOK_PROXY_MODE=compress` shows as `proxy.mode = compress` in `config show`; `entries()` names the source `dotenv` and `env` respectively (`dotenv_layer_sits_between_project_and_env`); `dotenv_files_take_rtok_keys_project_first` proves parse-only (the key never reaches the process environment) and that non-`RTOK_` keys are dropped; `malformed_dotenv_is_skipped_not_fatal`. `make check` green (107 lib tests). Deviation: `dotenvy 0.15` is a new dependency (reason in the commit); `git_root` and the `.env` lookup share one `find_up` helper; `RtokEnv` gained a provenance `name` so one provider type serves both the `dotenv` and `env` layers.
+
+Runs right after P0's gate: P1–P11 tasks that add flags then wire them through this instead of ad-hoc `clap` defaults. Implementation is clap + figment + toml_edit (D14), not a custom merge.
+
+T12.1–T12.4 are done — see `done.md`.
+
 ## P4 — `read` plugin + MCP server
 
 **T4.1 `rtok mcp`** · T0.4, T13.3 · `src/mcp.rs`

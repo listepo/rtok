@@ -20,10 +20,14 @@ Lowest to highest. Later layers override earlier ones key by key.
    overridable with `RTOK_CONFIG=<path>` or `--config <path>`).
 3. **Project file** — `<git root>/.rtok.toml`, if present. Same schema; typically only
    `[plugins.read] allow_paths`, `[plugins.cmd] rules`, `[plugins.inject] modes`.
-4. **Environment** — `RTOK_<SECTION>_<KEY>` in upper snake case, e.g. `RTOK_PROXY_PORT=8791`,
+4. **`.env` files** — `RTOK_*` lines (same names as the environment layer) from the nearest
+   `.env` at or above the working directory, then `~/.rtok/.env`; the project file wins.
+   Parsed only, never exported: commands run through `rtok run` do not inherit them, and other
+   keys in a project's `.env` are ignored. A malformed file is reported on stderr and skipped.
+5. **Environment** — `RTOK_<SECTION>_<KEY>` in upper snake case, e.g. `RTOK_PROXY_PORT=8791`,
    `RTOK_PLUGINS_CMD_REWRITE=false`, `RTOK_STATS_SINCE=7d`. Lists are comma-separated.
    Existing short names stay as aliases: `RTOK_UPSTREAM`, `RTOK_OPENAI_UPSTREAM`.
-5. **Command-line flags** — `rtok proxy --port 8791`.
+6. **Command-line flags** — `rtok proxy --port 8791`.
 
 Rules:
 

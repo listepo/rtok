@@ -1,8 +1,9 @@
 //! Config layering + precedence (plan T12.2, decision D14).
 //!
-//! Five providers, lowest to highest, each named for [`entries`]'s provenance column:
+//! Six providers, lowest to highest, each named for [`entries`]'s provenance column:
 //! `default` (`Config::default()`) < `user` (`~/.rtok/config.toml` or `--config`/`RTOK_CONFIG`)
-//! < `project` (`<git root>/.rtok.toml`) < `env` (`RTOK_*`) < `flag` (CLI `Option<T>` fields).
+//! < `project` (`<git root>/.rtok.toml`) < `dotenv` (`RTOK_*` lines in `.env` files, T12.5)
+//! < `env` (`RTOK_*`) < `flag` (CLI `Option<T>` fields).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -51,15 +52,62 @@ impl Provider for FlagsProvider {
 
 /// Walk up from `start` looking for a `.git` entry (no subprocess). `None` outside a repo.
 fn git_root(start: &Path) -> Option<PathBuf> {
+    find_up(start, ".git")
+}
+
+/// The nearest directory at or above `start` that contains `name`.
+fn find_up(start: &Path, name: &str) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
-        if dir.join(".git").exists() {
+        if dir.join(name).exists() {
             return Some(dir);
         }
         if !dir.pop() {
             return None;
         }
     }
+}
+
+/// `RTOK_*` pairs (prefix stripped, uppercased) from the nearest `.env` at or above `cwd`,
+/// then `<home>/.env`; the first file to define a key wins. Parse only: nothing is put into
+/// the process environment, so `rtok run` children never inherit a project's `.env`, and
+/// non-`RTOK_` keys are ignored. A malformed file is one stderr line, not an error (fail open).
+fn dotenv_pairs(home: &Path, cwd: Option<&Path>) -> Vec<(String, String)> {
+    let mut files: Vec<PathBuf> = cwd
+        .and_then(|c| find_up(c, ".env"))
+        .map(|d| d.join(".env"))
+        .into_iter()
+        .collect();
+    files.push(home.join(".env"));
+    let mut out: Vec<(String, String)> = Vec::new();
+    for path in files {
+        let iter = match dotenvy::from_path_iter(&path) {
+            Ok(it) => it,
+            Err(dotenvy::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                eprintln!("rtok: {}: {e}", path.display());
+                continue;
+            }
+        };
+        for item in iter {
+            match item {
+                Ok((k, v)) => {
+                    let Some(suffix) = k.strip_prefix("RTOK_") else {
+                        continue;
+                    };
+                    let suffix = suffix.to_uppercase();
+                    if !out.iter().any(|(s, _)| *s == suffix) {
+                        out.push((suffix, v));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rtok: {}: {e}", path.display());
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// `RTOK_<SECTION>_<KEY...>` → `section.key...`, plus whether the default value is an array
@@ -106,6 +154,8 @@ const LEGACY_ALIASES: &[(&str, &str)] = &[
 /// `deny_unknown_fields`), and splits comma-separated values into an array for keys whose
 /// default is an array.
 struct RtokEnv {
+    /// Provenance name: `env` (process) or `dotenv` (`.env` files) — same resolution, two layers.
+    name: &'static str,
     table: BTreeMap<String, (String, bool)>,
     /// `RTOK_`-stripped, uppercased names. Empty in tests so ambient env cannot leak.
     vars: Vec<(String, String)>,
@@ -114,6 +164,7 @@ struct RtokEnv {
 impl RtokEnv {
     fn from_process() -> Self {
         Self {
+            name: "env",
             table: env_leaf_table(),
             vars: Env::prefixed("RTOK_")
                 .iter()
@@ -122,14 +173,31 @@ impl RtokEnv {
         }
     }
 
+    fn from_dotenv(home: &Path, cwd: Option<&Path>) -> Self {
+        Self {
+            name: "dotenv",
+            table: env_leaf_table(),
+            vars: dotenv_pairs(home, cwd),
+        }
+    }
+
     #[cfg(test)]
     fn from_pairs(pairs: &[(&str, &str)]) -> Self {
         Self {
+            name: "env",
             table: env_leaf_table(),
             vars: pairs
                 .iter()
                 .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
                 .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    fn from_dotenv_pairs(pairs: &[(&str, &str)]) -> Self {
+        Self {
+            name: "dotenv",
+            ..Self::from_pairs(pairs)
         }
     }
 
@@ -183,7 +251,7 @@ fn insert_dotted(dict: &mut Dict, key: &str, value: Value) {
 
 impl Provider for RtokEnv {
     fn metadata(&self) -> Metadata {
-        Metadata::named("env")
+        Metadata::named(self.name)
     }
 
     fn data(&self) -> Result<FMap<Profile, Dict>, figment::Error> {
@@ -201,12 +269,14 @@ impl Provider for RtokEnv {
 /// picks the user file (else `RTOK_CONFIG` env or `<home>/config.toml`); `flags` is the `flag`
 /// layer, built by the caller from only the `Some` CLI options.
 pub fn figment(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Figment {
+    let cwd = std::env::current_dir().ok();
     assemble(
         home,
         config_file,
         flags,
         RtokEnv::from_process(),
-        std::env::current_dir().ok().as_deref(),
+        cwd.as_deref(),
+        RtokEnv::from_dotenv(home, cwd.as_deref()),
     )
 }
 
@@ -216,6 +286,7 @@ fn assemble(
     flags: Option<Dict>,
     env: RtokEnv,
     cwd: Option<&Path>,
+    dotenv: RtokEnv,
 ) -> Figment {
     let user_path = config_file
         .map(PathBuf::from)
@@ -229,7 +300,7 @@ fn assemble(
         fig = fig.merge(Named(Toml::file(root.join(".rtok.toml")), "project"));
     }
 
-    fig = fig.merge(env);
+    fig = fig.merge(dotenv).merge(env);
 
     if let Some(flags) = flags {
         fig = fig.merge(FlagsProvider(flags));
@@ -361,6 +432,7 @@ mod tests {
             flags,
             RtokEnv::from_pairs(env),
             None,
+            RtokEnv::from_dotenv_pairs(&[]),
         )
     }
 
@@ -419,6 +491,7 @@ mod tests {
             None,
             RtokEnv::from_pairs(&[("PLUGINS_READ_ALLOW_PATHS", "/a,/b")]),
             None,
+            RtokEnv::from_dotenv_pairs(&[]),
         );
         let cfg: Config = figment.extract().unwrap();
         assert_eq!(cfg.plugins.read.allow_paths.len(), 2);
@@ -429,9 +502,78 @@ mod tests {
             None,
             RtokEnv::from_pairs(&[("HOME", "/tmp/rtok-layers-home-probe")]),
             None,
+            RtokEnv::from_dotenv_pairs(&[]),
         );
         assert!(figment.extract::<Config>().is_ok());
 
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn dotenv_files_take_rtok_keys_project_first() {
+        let home = tmp("dotenv-home");
+        let proj = tmp("dotenv-proj");
+        let sub = proj.join("a").join("b");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(
+            home.join(".env"),
+            "RTOK_PROXY_PORT=8801\nRTOK_PROXY_MODE=compress\nRTOK_T125_LEAK=1\n",
+        )
+        .unwrap();
+        std::fs::write(
+            proj.join(".env"),
+            "# project\nRTOK_PROXY_PORT=8799\nDATABASE_URL=postgres://x\n",
+        )
+        .unwrap();
+        let pairs = dotenv_pairs(&home, Some(&sub));
+        assert_eq!(
+            pairs,
+            vec![
+                ("PROXY_PORT".to_string(), "8799".to_string()),
+                ("PROXY_MODE".to_string(), "compress".to_string()),
+                ("T125_LEAK".to_string(), "1".to_string()),
+            ]
+        );
+        assert!(std::env::var_os("RTOK_T125_LEAK").is_none(), "parse only");
+        assert_eq!(dotenv_pairs(&home, None)[0].1, "8801");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&proj);
+    }
+
+    #[test]
+    fn dotenv_layer_sits_between_project_and_env() {
+        let home = tmp("dotenv-layer");
+        let with = |env: &[(&str, &str)]| {
+            let figment = assemble(
+                &home,
+                Some(&Config::path_for(&home)),
+                None,
+                RtokEnv::from_pairs(env),
+                None,
+                RtokEnv::from_dotenv_pairs(&[("PROXY_PORT", "8799")]),
+            );
+            let rows = entries(&figment);
+            let port = rows.iter().find(|(k, ..)| k == "proxy.port").unwrap();
+            (port.1.clone(), port.2.clone())
+        };
+        assert_eq!(with(&[]), ("8799".to_string(), "dotenv".to_string()));
+        assert_eq!(
+            with(&[("PROXY_PORT", "8800")]),
+            ("8800".to_string(), "env".to_string())
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn malformed_dotenv_is_skipped_not_fatal() {
+        let home = tmp("dotenv-bad");
+        std::fs::write(
+            home.join(".env"),
+            "RTOK_PROXY_PORT=8799\nthis line is not valid\nRTOK_PROXY_MODE=compress\n",
+        )
+        .unwrap();
+        let pairs = dotenv_pairs(&home, None);
+        assert_eq!(pairs.first().map(|p| p.0.as_str()), Some("PROXY_PORT"));
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -451,6 +593,7 @@ mod tests {
             None,
             RtokEnv::from_pairs(&[]),
             Some(&repo),
+            RtokEnv::from_dotenv_pairs(&[]),
         );
         let rows = entries(&figment);
         let key = rows
