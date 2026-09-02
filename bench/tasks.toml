@@ -1,0 +1,31 @@
+# T9.1 — six small fixture-repo edits. `check` is a shell command.
+
+[[tasks]]
+id = "add-fn"
+prompt = "Add a function foo that returns 1."
+check = "true"
+
+[[tasks]]
+id = "fix-bug"
+prompt = "Fix the off-by-one bug in the counter."
+check = "true"
+
+[[tasks]]
+id = "write-test"
+prompt = "Write a unit test for foo."
+check = "true"
+
+[[tasks]]
+id = "rename"
+prompt = "Rename foo to bar across the crate."
+check = "true"
+
+[[tasks]]
+id = "explain"
+prompt = "Explain the module in one paragraph."
+check = "true"
+
+[[tasks]]
+id = "run-tests"
+prompt = "Run the test suite and fix failures."
+check = "true"

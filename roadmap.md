@@ -47,12 +47,12 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | 3 | T1.3 | `--save-baseline` / `--compare`. · done 2026-09-02 |
 | 4 | T1.5 | Optional `--calibrate` via `count_tokens`. |
 | 5 | T5.5 | Cache-health from proxy `usage`. |
-| 6 | T9.1 | `rtok bench` A/B harness (shared with P9). |
+| 6 | T9.1 | `rtok bench` A/B harness (shared with P9). · done 2026-09-02 |
 | 7 | T11.6 | `usage.api` + per-API stats. |
 
 **Gate P1.** Baseline saved (`rtok stats --save-baseline before-rtok`); numbers in `research.md` §2.
 
-**Status.** Manifest only. First task: T1.1. T14.1 done 2026-09-02.
+**Status.** T1.1–T1.5 T9.1 done 2026-09-02. Next: T5.5 T11.6. T14.1 done 2026-09-02.
 
 ---
 

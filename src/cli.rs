@@ -58,7 +58,20 @@ enum Cmd {
         calibrate: bool,
     },
     /// A/B benchmark of host configurations
-    Bench,
+    Bench {
+        /// Task list TOML
+        #[arg(long)]
+        tasks: Option<std::path::PathBuf>,
+        /// Repeats per task × config
+        #[arg(long)]
+        runs: Option<u32>,
+        /// Print the schedule and exit
+        #[arg(long)]
+        dry_run: bool,
+        /// Per-run timeout in seconds
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
     /// Inspect hooks, MCP servers and the proxy chain
     Doctor {
         /// Also run the instruction-file audit (T7.2)
@@ -153,26 +166,6 @@ enum ConfigCmd {
     },
     /// Edit one key in the user file, preserving comments
     Set { key: String, value: String },
-}
-
-impl Cmd {
-    fn name(&self) -> &'static str {
-        match self {
-            Cmd::Hook { .. } => "hook",
-            Cmd::Mcp => "mcp",
-            Cmd::Proxy { .. } => "proxy",
-            Cmd::Stats { .. } => "stats",
-            Cmd::Bench => "bench",
-            Cmd::Doctor { .. } => "doctor",
-            Cmd::Setup { .. } => "setup",
-            Cmd::Run { .. } => "run",
-            Cmd::Expand { .. } => "expand",
-            Cmd::Plugins => "plugins",
-            Cmd::Config { .. } => "config",
-            #[cfg(feature = "memory")]
-            Cmd::Memory { .. } => "memory",
-        }
-    }
 }
 
 pub fn run() -> Result<()> {
@@ -281,6 +274,18 @@ pub fn run() -> Result<()> {
                 print!("{}", report.to_table());
             }
         }
+        Cmd::Bench {
+            tasks,
+            runs,
+            dry_run,
+            timeout,
+        } => {
+            let cfg = Config::load_with(
+                config_file.as_deref(),
+                bench_flags(tasks, runs, dry_run, timeout),
+            )?;
+            print!("{}", crate::bench::run(&cfg)?);
+        }
         Cmd::Doctor { instructions } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
             print!("{}", crate::doctor::run(&cfg)?);
@@ -355,8 +360,8 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
-        other => eprintln!("rtok {}: not implemented", other.name()),
+        #[cfg(not(feature = "cmd"))]
+        Cmd::Run { .. } => eprintln!("rtok run: not implemented"),
     }
     Ok(())
 }
@@ -386,6 +391,40 @@ fn stats_flags(
     }
     let mut flags = Dict::new();
     flags.insert("stats".into(), Value::from(stats));
+    Some(flags)
+}
+
+fn bench_flags(
+    tasks: Option<std::path::PathBuf>,
+    runs: Option<u32>,
+    dry_run: bool,
+    timeout: Option<u64>,
+) -> Option<figment::value::Dict> {
+    if tasks.is_none() && runs.is_none() && !dry_run && timeout.is_none() {
+        return None;
+    }
+    use figment::value::{Dict, Value};
+    let mut bench = Dict::new();
+    if let Some(p) = tasks {
+        bench.insert(
+            "tasks".into(),
+            Value::from(p.to_string_lossy().into_owned()),
+        );
+    }
+    if let Some(n) = runs {
+        bench.insert("runs".into(), Value::from(i64::from(n)));
+    }
+    if dry_run {
+        bench.insert("dry_run".into(), Value::from(true));
+    }
+    if let Some(s) = timeout {
+        bench.insert(
+            "timeout_s".into(),
+            Value::from(i64::try_from(s).unwrap_or(i64::MAX)),
+        );
+    }
+    let mut flags = Dict::new();
+    flags.insert("bench".into(), Value::from(bench));
     Some(flags)
 }
 

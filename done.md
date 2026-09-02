@@ -322,6 +322,11 @@ Status: done 2026-09-02 · Check: `cargo test proxy_mock` — 6 tests green; byt
 
 ## P9 — replace the current stack
 
+**T9.1 `rtok bench`** · T1.1 · `src/bench.rs`, `bench/tasks.toml`
+Do: run `claude -p "<task>" --output-format json --settings <A|B.json>` for each task × n runs (default 3), collect `usage`/`total_cost_usd` from the result JSON and the transcript, print per-config mean input/cache/output tokens and cost, and the task pass rate (each task has a shell `check`). Tasks: 6 small edits on a fixture repo (add a function, fix a bug, write a test, rename, explain a module, run tests).
+Check: `rtok bench --dry-run` lists 6 tasks × 2 configs × 3 runs; a real run produces a table.
+Status: done 2026-09-02 · Check: dry-run 36 lines (`add-fn a 1` … `run-tests b 3`); `dry_run_lists_six_by_two_by_three`; `real_run_prints_a_table`. `make check` green. Deviation: also `src/cli.rs`, `src/lib.rs`. `claude -p` is skipped when the settings file is missing so tests do not call the network.
+
 **T9.3 `rtok setup claude --replace`** · T2.3 · `src/setup/migrate.rs`
 Do: with backup: remove hook entries whose command matches a legacy list (`rtk hook`, `lean-ctx hook`, `caveman-proxy`, `caveman shrink-hook`, token-optimizer `python-launcher.sh`), remove `ANTHROPIC_BASE_URL` pointing at 8788/8787 (set 8790), disable MCP servers `lean-ctx`, `code-review-graph` (keep serena optional), keep everything unrelated (orca, holdmylid, tokenbar, cbm). Print the diff; require `--yes`.
 Check: dry-run on a copy of today's settings shows 8 remaining rtok hooks + non-token hooks; JSON stays valid.

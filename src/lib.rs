@@ -11,6 +11,7 @@
 //! - [`doctor`]  — `rtok doctor`
 //! - [`measure`] — JSONL ingest, `rtok stats` (P1)
 
+pub mod bench;
 pub mod cli;
 pub mod config;
 pub mod doctor;
