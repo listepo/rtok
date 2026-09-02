@@ -41,8 +41,11 @@ use crate::config::Config;
 use crate::plugin::Ctx;
 use crate::plugins::Registry;
 use crate::store::Store;
+use wire::{Wire, WireRequest};
 
+pub mod anthropic;
 pub mod cli;
+pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
 /// in-memory read well above them.
@@ -135,10 +138,20 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
 
     // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
     let parsed = serde_json::from_slice::<Value>(&request_body).ok();
-    let recorded = record(&state, &path, parsed.as_ref(), &headers, &request_body);
+    let wire = wire::for_path(&path);
+    let recorded = record(
+        &state,
+        wire,
+        &path,
+        parsed.as_ref(),
+        &headers,
+        &request_body,
+    );
     // From here on `request_body` is what upstream sees (and what `call_io` records).
-    let request_body = if state.mode == "compress" && path == "/v1/messages" {
-        compress(&state, parsed, recorded.as_ref(), request_body)
+    let request_body = if state.mode == "compress" {
+        wire.map_or(request_body.clone(), |wire| {
+            compress(&state, wire, parsed, recorded.as_ref(), request_body)
+        })
     } else {
         request_body
     };
@@ -210,6 +223,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
             &recorder,
             &recorded,
             start,
+            wire,
             content_type.as_deref(),
             &request_body,
             &buf,
@@ -237,6 +251,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
 /// no change at all → the original bytes go through untouched.
 fn compress(
     state: &ProxyState,
+    wire: &'static dyn Wire,
     parsed: Option<Value>,
     recorded: Option<&Recorded>,
     original: Bytes,
@@ -258,21 +273,25 @@ fn compress(
         }
     };
     cx.call_id = Some(r.call_id);
-    let mut changed = false;
-    for p in state.registry.enabled() {
-        for m in p.proxy_filter(&mut body, &cx) {
-            changed = true;
-            if let Err(e) = cx.record(&m) {
-                log(
-                    &state.store,
-                    &r.session,
-                    Some(r.call_id),
-                    "error",
-                    &format!("measurement: {e}"),
-                );
+    let changed = {
+        let mut changed = false;
+        let mut request = WireRequest::new(wire, &mut body);
+        for p in state.registry.enabled() {
+            for m in p.proxy_filter(&mut request, &cx) {
+                changed = true;
+                if let Err(e) = cx.record(&m) {
+                    log(
+                        &state.store,
+                        &r.session,
+                        Some(r.call_id),
+                        "error",
+                        &format!("measurement: {e}"),
+                    );
+                }
             }
         }
-    }
+        changed
+    };
     if !changed {
         return original;
     }
@@ -284,16 +303,19 @@ fn compress(
 /// One request's bookkeeping: session, host, provider+model, and the `calls` row.
 fn record(
     state: &ProxyState,
+    wire: Option<&'static dyn Wire>,
     path: &str,
     body: Option<&Value>,
     headers: &HeaderMap,
     raw: &[u8],
 ) -> Option<Recorded> {
-    let session = session_for(body, headers, raw);
+    let session = session_for(wire, body, headers, raw);
     let model = body
         .and_then(|v| v.get("model").and_then(Value::as_str))
         .map(str::to_string);
-    let provider = provider_for_path(path);
+    let provider = wire
+        .map(Wire::provider)
+        .or_else(|| matches!(path, "/v1/chat/completions" | "/v1/responses").then_some("openai"));
     let result = (|| -> Result<Recorded> {
         state
             .store
@@ -342,6 +364,7 @@ async fn finish(
     state: &ProxyState,
     recorded: &Option<Recorded>,
     start: Instant,
+    wire: Option<&'static dyn Wire>,
     content_type: Option<&str>,
     request_body: &[u8],
     response_body: &[u8],
@@ -374,7 +397,7 @@ async fn finish(
     ) {
         log_err("call_io", e);
     }
-    match parse_usage(content_type, response_body) {
+    match wire.and_then(|wire| wire::usage_from_response(wire, content_type, response_body)) {
         Some(usage) => {
             if let Err(e) = state.store.insert_usage(
                 &r.session,
@@ -439,14 +462,22 @@ struct Recorded {
     call_id: i32,
 }
 
-fn session_for(body: Option<&Value>, headers: &HeaderMap, raw: &[u8]) -> String {
-    if let Some(s) = body
-        .and_then(|v| v.get("metadata"))
-        .and_then(|m| m.get("user_id"))
+fn session_for(
+    wire: Option<&dyn Wire>,
+    body: Option<&Value>,
+    headers: &HeaderMap,
+    raw: &[u8],
+) -> String {
+    if let Some(session) = wire.and_then(|wire| body.and_then(|body| wire.session_id(body))) {
+        return session.to_string();
+    }
+    if let Some(session) = body
+        .and_then(|body| body.get("metadata"))
+        .and_then(|metadata| metadata.get("user_id"))
         .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+        .filter(|id| !id.is_empty())
     {
-        return s.to_string();
+        return session.to_string();
     }
     for name in ["x-rtok-session", "x-session-id"] {
         if let Some(v) = headers
@@ -460,16 +491,6 @@ fn session_for(body: Option<&Value>, headers: &HeaderMap, raw: &[u8]) -> String 
     let mut h = Sha256::new();
     h.update(raw);
     format!("{:x}", h.finalize())
-}
-
-fn provider_for_path(path: &str) -> Option<&'static str> {
-    if path == "/v1/messages" {
-        Some("anthropic")
-    } else if path == "/v1/chat/completions" || path == "/v1/responses" {
-        Some("openai")
-    } else {
-        None
-    }
 }
 
 fn upstream_url(base: &str, path: &str, query: Option<&str>) -> Result<String> {
@@ -517,93 +538,4 @@ fn error_response(status: StatusCode, message: &str) -> AxumResponse {
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(body))
         .expect("static error response")
-}
-
-/// The four Anthropic counters (T5.1 Check: "usage row inserted with 4 counters").
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct Counters {
-    input: i64,
-    cache_create: i64,
-    cache_read: i64,
-    output: i64,
-}
-
-/// Extract usage from an Anthropic response: the JSON body's top-level `usage`, or from
-/// SSE events (`message_start` carries input/cache counters, the final `message_delta`
-/// carries `output_tokens`). Anything missing stays 0 — never guess.
-fn parse_usage(content_type: Option<&str>, body: &[u8]) -> Option<Counters> {
-    let text = std::str::from_utf8(body).ok()?;
-    let is_sse = content_type
-        .map(|c| c.contains("text/event-stream"))
-        .unwrap_or(false);
-    if is_sse {
-        let mut counters = Counters::default();
-        let mut found = false;
-        for line in text.lines() {
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(v) = serde_json::from_str::<Value>(data) else {
-                continue;
-            };
-            if let Some(u) = usage_block(&v) {
-                found = true;
-                counters.merge(&u);
-            }
-        }
-        found.then_some(counters)
-    } else {
-        let v: Value = serde_json::from_slice(body).ok()?;
-        usage_block(&v).map(|u| {
-            let mut c = Counters::default();
-            c.merge(&u);
-            c
-        })
-    }
-}
-
-/// A `usage` object: top level, or nested under `message` (Anthropic `message_start`).
-fn usage_block(v: &Value) -> Option<UsageBlock> {
-    v.get("usage")
-        .or_else(|| v.get("message").and_then(|m| m.get("usage")))
-        .filter(|u| u.is_object())
-        .map(|u| UsageBlock {
-            input: int_field(u, "input_tokens"),
-            cache_create: int_field(u, "cache_creation_input_tokens"),
-            cache_read: int_field(u, "cache_read_input_tokens"),
-            output: int_field(u, "output_tokens"),
-        })
-}
-
-#[derive(Debug, Default)]
-struct UsageBlock {
-    input: Option<i64>,
-    cache_create: Option<i64>,
-    cache_read: Option<i64>,
-    output: Option<i64>,
-}
-
-fn int_field(u: &Value, key: &str) -> Option<i64> {
-    u.get(key).and_then(Value::as_i64)
-}
-
-impl Counters {
-    fn merge(&mut self, b: &UsageBlock) {
-        if let Some(v) = b.input {
-            self.input = v;
-        }
-        if let Some(v) = b.cache_create {
-            self.cache_create = v;
-        }
-        if let Some(v) = b.cache_read {
-            self.cache_read = v;
-        }
-        if let Some(v) = b.output {
-            self.output = v;
-        }
-    }
 }

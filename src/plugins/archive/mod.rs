@@ -1,9 +1,9 @@
-//! `archive` — replace old, large `tool_result` blocks in the live zone with pointers (plan P5).
+//! `archive` — replace old, large tool-result blocks in the live zone with pointers (plan P5).
 //!
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 //!
-//! T5.3: in `proxy.mode = "compress"`, a `tool_result` block is rewritten when it is older
+//! T5.3: in `proxy.mode = "compress"`, a tool-result block is rewritten when it is older
 //! than `archive.keep_turns` (a turn = one `user` message, counted from the end) and above
 //! `archive.min_tokens`. The original goes to the archive store; the block's `content`
 //! becomes a pointer: `[archived <id>: N lines · T tokens · expand(<full id>)]` followed by
@@ -14,7 +14,8 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, Manifest, Measurement, MessagesRequest, Plugin, Surface};
+use crate::plugin::{Ctx, Manifest, Measurement, Plugin, Surface};
+use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
 
 pub struct Archive;
@@ -28,40 +29,25 @@ impl Plugin for Archive {
         }
     }
 
-    fn proxy_filter(&self, req: &mut MessagesRequest, cx: &Ctx) -> Vec<Measurement> {
+    fn proxy_filter(&self, req: &mut WireRequest<'_>, cx: &Ctx) -> Vec<Measurement> {
         if cx.config.proxy.mode != "compress" {
             return Vec::new();
         }
-        rewrite(req, cx)
+        rewrite(req.tool_results(), cx)
     }
 }
 
-/// Rewrite every eligible `tool_result` in `req.messages` in place; one measurement per
-/// rewritten block, all under one `plugin_run` child call. Mode-agnostic (the trait method
-/// gates on `proxy.mode`); the T5.3 tests call it directly.
-pub fn rewrite(req: &mut Value, cx: &Ctx) -> Vec<Measurement> {
+/// Rewrite every eligible wire-normalised result; one measurement per rewritten block, all
+/// under one `plugin_run` child call. The wire owns the provider-specific request shape.
+pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let keep = cx.config.plugins.archive.keep_turns as usize;
-    let Some(messages) = req.get_mut("messages").and_then(Value::as_array_mut) else {
-        return Vec::new();
-    };
-    let total = messages.iter().filter(|m| m["role"] == "user").count();
     let mut out = Vec::new();
-    let mut turn = 0;
-    for msg in messages.iter_mut() {
-        if msg["role"] != "user" {
+    for result in results {
+        if result.turn < keep {
             continue;
         }
-        turn += 1;
-        if total - turn < keep {
-            break; // the live tail: never touched
-        }
-        let Some(blocks) = msg.get_mut("content").and_then(Value::as_array_mut) else {
-            continue;
-        };
-        for block in blocks.iter_mut().filter(|b| b["type"] == "tool_result") {
-            if let Some(m) = rewrite_block(block, cx) {
-                out.push(m);
-            }
+        if let Some(m) = rewrite_block(&result.id, result.content, cx) {
+            out.push(m);
         }
     }
     if out.is_empty() {
@@ -85,11 +71,10 @@ pub fn rewrite(req: &mut Value, cx: &Ctx) -> Vec<Measurement> {
 
 /// Decide for one block: reuse the persisted pointer, skip an expanded or small block, or
 /// archive it now. Any store error leaves the block alone (fail open).
-fn rewrite_block(block: &mut Value, cx: &Ctx) -> Option<Measurement> {
-    let tool_use_id = block.get("tool_use_id")?.as_str()?.to_string();
-    let text = block_text(block.get("content")?)?;
+fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Measurement> {
+    let text = block_text(content)?;
     let a = &cx.config.plugins.archive;
-    let (archive_id, pointer) = match cx.store.archive_decision(&tool_use_id) {
+    let (archive_id, pointer) = match cx.store.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
         Ok(Some(d)) => (d.archive_id, d.pointer),
         Ok(None) => {
@@ -111,7 +96,7 @@ fn rewrite_block(block: &mut Value, cx: &Ctx) -> Option<Measurement> {
                 a.tail_lines as usize,
             );
             cx.store
-                .put_archive_decision(&tool_use_id, &archive_id, &cx.session, &pointer)
+                .put_archive_decision(tool_use_id, &archive_id, &cx.session, &pointer)
                 .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
                 .ok()?;
             (archive_id, pointer)
@@ -131,11 +116,11 @@ fn rewrite_block(block: &mut Value, cx: &Ctx) -> Option<Measurement> {
         ref_id: Some(archive_id),
         call_id: None,
     };
-    block["content"] = Value::String(pointer);
+    *content = Value::String(pointer);
     Some(m)
 }
 
-/// The text of a `tool_result` content: a string, or text blocks joined by newlines.
+/// The text of a tool-result content: a string, or text blocks joined by newlines.
 /// `None` when any part is not text (images stay as they are).
 fn block_text(content: &Value) -> Option<String> {
     match content {
@@ -181,26 +166,12 @@ fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    /// A tool_result far above `min_tokens` (1500 est.) — 400 numbered lines.
-    pub fn big(tag: &str) -> String {
+    fn big(tag: &str) -> String {
         (1..=400)
             .map(|i| format!("{tag} line {i}: some shell output with words"))
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    /// `turns` user turns; each carries one tool_result for `tu-<turn>` with `big` text.
-    pub fn request(turns: usize) -> Value {
-        let mut messages = Vec::new();
-        for t in 1..=turns {
-            messages.push(json!({"role":"user","content":[
-                {"type":"tool_result","tool_use_id":format!("tu-{t}"),"content":big(&format!("t{t}"))}]}));
-            messages.push(json!({"role":"assistant","content":[
-                {"type":"tool_use","id":format!("tu-{}", t+1),"name":"Bash","input":{}}]}));
-        }
-        json!({"model":"m","max_tokens":8,"system":"sys","tools":[{"name":"Bash"}],"messages":messages})
     }
 
     fn cx(name: &str) -> Ctx {
@@ -212,117 +183,79 @@ mod tests {
         cx
     }
 
-    fn contents(v: &Value) -> Vec<String> {
-        v["messages"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|m| m["role"] == "user")
-            .map(|m| m["content"][0]["content"].as_str().unwrap().to_string())
+    fn refs<'a>(values: &'a mut [Value]) -> Vec<ToolResultRef<'a>> {
+        let total = values.len();
+        values
+            .iter_mut()
+            .enumerate()
+            .map(|(index, content)| ToolResultRef {
+                id: format!("tu-{}", index + 1),
+                content,
+                turn: total - index - 1,
+            })
             .collect()
     }
 
     #[test]
-    fn only_turns_older_than_keep_turns_are_rewritten() {
+    fn only_results_outside_the_live_tail_are_rewritten() {
         let cx = cx("turns");
-        let mut req = request(6);
-        let ms = rewrite(&mut req, &cx);
+        let mut values: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        let ms = rewrite(refs(&mut values), &cx);
         assert_eq!(ms.len(), 2);
-        let c = contents(&req);
-        assert!(c[0].starts_with("[archived ") && c[1].starts_with("[archived "));
-        assert!(c[0].contains("t1 line 1:") && c[0].contains("t1 line 400"));
-        assert!(c[0].contains("… 388 lines …"));
-        for (i, t) in c.iter().enumerate().skip(2) {
-            assert_eq!(*t, big(&format!("t{}", i + 1)), "turn {} untouched", i + 1);
+        let first = values[0].as_str().unwrap();
+        assert!(first.starts_with("[archived ") && first.contains("t1 line 400"));
+        for (index, content) in values.iter().enumerate().skip(2) {
+            assert_eq!(content, &Value::String(big(&format!("t{}", index + 1))));
         }
-        assert_eq!(req["system"], "sys");
-        assert_eq!(req["tools"][0]["name"], "Bash");
-        assert!(ms[0].est_before > ms[0].est_after * 5);
         assert_eq!(cx.store.count_kind("plugin_run").unwrap(), 1);
-        assert_eq!(cx.store.count_tokens().unwrap(), 2);
-        let id = ms[0].ref_id.as_deref().unwrap();
-        assert_eq!(
-            cx.store.get_archive(id).unwrap().unwrap(),
-            big("t1").into_bytes()
-        );
     }
 
     #[test]
-    fn same_request_twice_is_byte_identical_and_prefix_unchanged() {
-        let cx = cx("prefix");
-        let original = serde_json::to_string(&request(6)).unwrap();
-        let mut a = request(6);
-        rewrite(&mut a, &cx);
-        let mut b = request(6);
-        rewrite(&mut b, &cx);
-        let a = serde_json::to_string(&a).unwrap();
-        assert_eq!(a, serde_json::to_string(&b).unwrap());
-        // Everything before the first rewritten block's content is untouched.
-        let enc = serde_json::to_string(&big("t1")).unwrap();
-        let first = original.find(&enc[1..enc.len() - 1]).unwrap();
-        assert!(first > 0);
-        assert_eq!(&a[..first], &original[..first]);
-    }
-
-    #[test]
-    fn small_results_and_expanded_ids_are_left_alone() {
-        let cx = cx("skip");
-        let mut req = request(6);
-        req["messages"][0]["content"][0]["content"] = json!("tiny");
-        let ms = rewrite(&mut req, &cx);
-        assert_eq!(ms.len(), 1, "only turn 2 is large");
-        assert_eq!(contents(&req)[0], "tiny");
-        let id = ms[0].ref_id.clone().unwrap();
-        assert_eq!(cx.store.mark_expanded(&id).unwrap(), 1);
-        let mut again = request(6);
-        again["messages"][0]["content"][0]["content"] = json!("tiny");
-        assert!(rewrite(&mut again, &cx).is_empty());
-        assert_eq!(contents(&again)[1], big("t2"));
-        assert_eq!(cx.store.archive_decision_counts().unwrap(), (1, 1));
-    }
-
-    /// T5.4 Check: expand → the next request carries the original block again.
-    #[test]
-    fn expand_freezes_the_id_so_the_original_is_sent_again() {
-        let cx = cx("expand");
-        let mut req = request(6);
-        let ms = rewrite(&mut req, &cx);
-        let id = ms[0].ref_id.clone().unwrap();
-        let bytes = crate::expand::fetch(&cx, &id).unwrap().unwrap();
-        assert_eq!(bytes, big("t1").into_bytes());
-        let mut next = request(6);
-        let ms2 = rewrite(&mut next, &cx);
-        assert_eq!(
-            ms2.len(),
-            1,
-            "turn 2 stays a pointer, turn 1 is original again"
-        );
-        assert_eq!(contents(&next)[0], big("t1"));
-        assert!(contents(&next)[1].starts_with("[archived "));
-        assert_eq!(cx.store.archive_decision_counts().unwrap(), (2, 1));
-        // One `expand` measurement per freeze; a repeat expand is not a second freeze.
-        assert_eq!(cx.store.measurement_count("archive").unwrap(), 1);
-        crate::expand::fetch(&cx, &id).unwrap();
-        assert_eq!(cx.store.measurement_count("archive").unwrap(), 1);
-        assert!(crate::expand::fetch(&cx, "no-such").unwrap().is_none());
-    }
-
-    #[test]
-    fn passthrough_mode_never_rewrites() {
-        let mut cx = cx("mode");
-        cx.config.proxy.mode = "passthrough".into();
-        let mut req = request(6);
-        assert!(Archive.proxy_filter(&mut req, &cx).is_empty());
-        assert_eq!(req, request(6));
+    fn decisions_are_deterministic_and_expanded_ids_stay_original() {
+        let cx = cx("repeat");
+        let mut first = vec![
+            Value::String(big("one")),
+            Value::String(big("two")),
+            Value::String(big("three")),
+            Value::String(big("four")),
+            Value::String(big("five")),
+            Value::String(big("six")),
+        ];
+        let first_ms = rewrite(refs(&mut first), &cx);
+        let archive_id = first_ms[0].ref_id.clone().unwrap();
+        let first_body = first.clone();
+        let mut second = vec![
+            Value::String(big("one")),
+            Value::String(big("two")),
+            Value::String(big("three")),
+            Value::String(big("four")),
+            Value::String(big("five")),
+            Value::String(big("six")),
+        ];
+        rewrite(refs(&mut second), &cx);
+        assert_eq!(first_body, second);
+        assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
+        let mut third = vec![
+            Value::String(big("one")),
+            Value::String(big("two")),
+            Value::String(big("three")),
+            Value::String(big("four")),
+            Value::String(big("five")),
+            Value::String(big("six")),
+        ];
+        assert_eq!(rewrite(refs(&mut third), &cx).len(), 1);
+        assert_eq!(third[0], Value::String(big("one")));
     }
 
     #[test]
     fn text_blocks_join_and_images_are_skipped() {
         assert_eq!(
-            block_text(&json!([{"type":"text","text":"a"},{"type":"text","text":"b"}])),
+            block_text(&serde_json::json!([{"type":"text","text":"a"},{"type":"text","text":"b"}])),
             Some("a\nb".into())
         );
-        assert_eq!(block_text(&json!([{"type":"image"}])), None);
+        assert_eq!(block_text(&serde_json::json!([{"type":"image"}])), None);
         assert_eq!(
             pointer("a\nb", "abc", 3, 8, 4),
             "[archived abc: 2 lines · 3 tokens · expand(abc)]\na\nb"

@@ -8,6 +8,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::config::Config;
+use crate::proxy::wire::WireRequest;
 use crate::store::Store;
 use crate::tokens::{self, Class};
 
@@ -220,9 +221,6 @@ pub struct ToolDef {
     pub input_schema: Value,
 }
 
-/// `POST /v1/messages` body. Typed in T5.1; a raw JSON value until then.
-pub type MessagesRequest = Value;
-
 // Event views: borrowed slices of a hook input (built by `hooks::types::HookInput`).
 
 /// A tool call about to run.
@@ -297,8 +295,8 @@ pub trait Plugin: Send + Sync {
         Vec::new()
     }
 
-    /// Rewrite an outgoing API request in place; return one measurement per change.
-    fn proxy_filter(&self, _req: &mut MessagesRequest, _cx: &Ctx) -> Vec<Measurement> {
+    /// Rewrite the selected wire's normalised tool results; return one measurement per change.
+    fn proxy_filter(&self, _req: &mut WireRequest<'_>, _cx: &Ctx) -> Vec<Measurement> {
         Vec::new()
     }
 }
