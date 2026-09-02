@@ -140,12 +140,6 @@ Gate P9 (review + your decision): adopt config B if cost per passed task is lowe
 
 ### P10 — other hosts + release
 
-**T10.4 release** · T0.7 · `dist-workspace.toml`, `.github/workflows/release.yml`
-Do: cargo-dist for macOS arm64/x64 + Linux x64, Homebrew tap formula; `rtok --version` prints git sha.
-Check: `cargo dist plan` succeeds; tag `v0.1.0` builds artifacts in CI.
-Status: in progress
-Model: claude-fable-5-1
-
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 
 **T11.1 `Wire` adapter + Anthropic behind it** · T5.1, T5.3 · `src/proxy/wire.rs`, `src/proxy/anthropic.rs`

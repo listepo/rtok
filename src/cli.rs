@@ -10,9 +10,12 @@ use crate::plugins::Registry;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 
+/// `0.1.0 (1a2b3c4d5)` — the sha comes from `build.rs` (T10.4).
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("RTOK_GIT_SHA"), ")");
+
 /// Token-reduction CLI for AI coding agents. See plan.md for the task list.
 #[derive(Parser)]
-#[command(name = "rtok", version, about)]
+#[command(name = "rtok", version = VERSION, about)]
 pub struct Cli {
     /// User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
     #[arg(long, global = true, value_name = "PATH")]

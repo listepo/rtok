@@ -2,6 +2,7 @@
 name = "rtok"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/listepo/rtok" # cargo-dist hosting + Homebrew tap (T10.4)
 description = "Token-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods"
 
 [[bin]]
@@ -72,3 +73,8 @@ tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
 
 [dev-dependencies]
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
