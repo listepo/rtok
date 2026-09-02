@@ -143,13 +143,15 @@ mod tests {
     #[test]
     fn twenty_notes_recall_five_titles_under_budget_stable() {
         let cx = Ctx::in_memory("t62").unwrap();
+        // `recall` filters by the project derived from the working directory, so the notes
+        // must be saved the same way — a hard-coded name only matched a checkout called `rtok`.
         for i in 0..20 {
             mem_save(
                 &cx,
                 "note",
                 &format!("title-{i}"),
                 &format!("body-{i} secret"),
-                Some("rtok"),
+                None,
             )
             .unwrap();
         }

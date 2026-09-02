@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # hugo.toml sets enableGitInfo; last-modified needs full history
-      - uses: jdx/mise-action@v2 # installs the Hugo version pinned in mise.toml
+      - uses: jdx/mise-action@v2 # installs the Hugo, Go and just versions pinned in mise.toml
       - run: just site # --panicOnWarning: a broken mount or link fails the build
       - uses: actions/upload-pages-artifact@v3
         with:
