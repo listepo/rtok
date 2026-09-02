@@ -238,6 +238,11 @@ Do: migration adds `usage.api TEXT NOT NULL DEFAULT 'anthropic'` (`anthropic | o
 Check: `cargo test store::` still applies migrations idempotently (0001–0003); fixture usage rows for two APIs → two rows in the stats table.
 Status: done 2026-09-03 · Check: `cargo test --lib store::` → 6 passed, including `migration_is_idempotent` (second migrate = 0 with 0001–0005) and `two_apis_are_two_stats_rows`. `two_apis_print_as_two_table_rows` prints two api lines in `rtok stats` table. `openai_cache_read_drop_is_a_bust_without_create` covers OpenAI cache_read-drop busts. `just check` green. Deviations: migration is `0005.sql` (0003 is T8.1 symbols; 0004 is archive_decisions). Also `src/store/mod.rs`, `src/proxy/{mod,wire}.rs`, `src/measure/cache.rs`, `src/cli.rs`.
 
+**T11.7 `toon` on Wire tool results** · T11.1, T5.3 · `src/plugins/toon/mod.rs`
+Do: `proxy_filter` on the normalised `Wire` view (D11): tabular JSON arrays/objects → TOON when `plugins.toon.enabled` (default **false**). Encoder written here (D6), deterministic. Archive the original JSON first; the encoded block references the archive id. Record `Measurement` per rewritten block. Off → request bytes identical to passthrough.
+Check: default off, fixture request bytes identical; enabled on a 3×4 JSON table → `after_bytes` < `before_bytes` and a measurement row; decode of the TOON recovers the same keys.
+Status: done 2026-09-03 · Check: `cargo test --lib plugins::toon` → 3 passed: `default_off_leaves_bytes_identical` (enabled=false, request JSON unchanged), `encodes_3x4_table_and_decode_recovers_keys` (`after_bytes` < `before_bytes`, one measurement, decode recovers keys a,b,c,d), `round_trip_values`. `just check` green. Deviation: encoder+tests live in `src/plugins/toon/mod.rs` (over the 200 LOC budget because decode and three tests sit in the same file). Default remains off (`min_rows = 5`).
+
 ## P12 — Config file (D12, D14)
 
 **T12.1 typed schema + reference file** · T0.2 · `src/config.rs`, `config/default.toml`, `docs/config.md`
