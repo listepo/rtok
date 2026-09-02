@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1 done; next unblocked: T2.2.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.2 done; next unblocked: T2.3.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Finished tasks move from here to `done.md` verbatim, with their Check output.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -98,10 +98,6 @@ Gate P0 (review): trait shape final; no plugin logic yet. **Status: open.**
 Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2. **Status: open** — `--save-baseline` works (T1.3); live 60d numbers are not the original 17-session H-measured slice.
 
 ### P2 — Hook surface (goal: one hook command per event, < 10 ms, budgeted injection)
-
-**T2.2 latency harness** · T2.1 · `tests/latency.rs`
-Do: spawn `rtok hook PreToolUse` 200× with the fixture; assert p95 < 10 ms on this machine (release build).
-Check: `cargo test --release latency` passes.
 
 **T2.3 `rtok setup claude`** · T2.1 · `src/setup/claude.rs`
 Do: add hook entries to `~/.claude/settings.json` (backup to `settings.json.bak-<ts>` first): PreToolUse(Bash|Read), PostToolUse(*), UserPromptSubmit, SessionStart, PreCompact, PostCompact — each a single `rtok hook <event>` command, `timeout: 5`. Idempotent (skip if present). `--dry-run` prints the diff. `--remove` deletes rtok entries only.

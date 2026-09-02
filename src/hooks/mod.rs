@@ -81,7 +81,6 @@ fn pre_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
     };
     let mut rewrite: Option<PreToolDecision> = None;
     for p in registry.enabled() {
-        plugin_run(cx, p.manifest().id, stdin_est(cx, ev.tool_name));
         let got = panic::catch_unwind(AssertUnwindSafe(|| p.pre_tool(&ev, cx)))
             .ok()
             .flatten();
@@ -121,7 +120,6 @@ fn post_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
     };
     let mut parts = Vec::new();
     for p in registry.enabled() {
-        plugin_run(cx, p.manifest().id, stdin_est(cx, ev.tool_name));
         if let Ok(Some(s)) = panic::catch_unwind(AssertUnwindSafe(|| p.post_tool(&ev, cx))) {
             parts.push(s);
         }
@@ -143,7 +141,6 @@ fn post_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
 fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
     let mut inj = Vec::new();
     for p in registry.enabled() {
-        plugin_run(cx, p.manifest().id, 0);
         let one = panic::catch_unwind(AssertUnwindSafe(|| {
             if let Some(ev) = input.session_start() {
                 p.session_start(&ev, cx)
@@ -183,26 +180,6 @@ fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput 
         }),
         ..HookOutput::default()
     }
-}
-
-fn plugin_run(cx: &Ctx, id: &str, tokens: i64) {
-    if let Ok(call_id) = cx.store.insert_call(
-        &cx.session,
-        "hook",
-        "plugin_run",
-        None,
-        None,
-        None,
-        Some(id),
-        Some(id),
-    ) {
-        let _ = cx.record_tokens(call_id, Some(id), "before", "estimator", tokens);
-        let _ = cx.record_tokens(call_id, Some(id), "after", "estimator", tokens);
-    }
-}
-
-fn stdin_est(cx: &Ctx, name: &str) -> i64 {
-    i64::from(cx.estimate(name, Class::Code))
 }
 
 fn cap_budget(cx: &Ctx, text: &str) -> String {

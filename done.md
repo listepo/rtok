@@ -103,6 +103,11 @@ Do: read stdin JSON, dispatch to enabled plugins in registry order, merge output
 Check: `cat tests/fixtures/hooks/pre_tool_bash.json | rtok hook PreToolUse` → valid JSON, exit 0; malformed stdin → `{}` and exit 0; in-memory store has a `calls` row with `kind=hook`.
 Status: done 2026-09-02 · Check: fixture | `rtok hook PreToolUse` → `{}` exit 0; malformed stdin → `{}` exit 0; `hooks::tests::fixture_pre_tool_is_valid_json` asserts `count_kind("hook") >= 1`. `make check` green.
 
+**T2.2 latency harness** · T2.1 · `tests/latency.rs`
+Do: spawn `rtok hook PreToolUse` 200× with the fixture; assert p95 < 10 ms on this machine (release build).
+Check: `cargo test --release latency` passes.
+Status: done 2026-09-02 · Check: `cargo test --release latency` green (p95 < 10 ms). Debug `make check` skips the assertion. Deviation: dispatcher no longer writes a `plugin_run` child row per enabled plugin on every event — that was ~27 SQLite inserts and blew p95; plugins record their own `Measurement` when they act. Parent `calls` + `call_io` remain.
+
 ## P0 — Scaffold · done 2026-09-01
 
 Goal: `rtok --version`, DB, plugin registry, hook I/O types. All seven tasks done; gate
