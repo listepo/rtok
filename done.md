@@ -335,6 +335,15 @@ Do: `rtok proxy [--port] [--upstream] [--mode passthrough|compress]`; `rtok setu
 Check: `curl :8790/health` → `{"ok":true,"mode":"passthrough"}`.
 Status: done 2026-09-02 · Check: `proxy_health_reports_ok_and_mode` → `{"ok":true,"mode":"passthrough"}`; `proxy_env_dry_run_then_apply_is_idempotent` writes `env.ANTHROPIC_BASE_URL` to :8790 with revert text. `make check` green. Deviation: also `src/proxy/mod.rs` (`/health` route, `ProxyState.mode`), `src/cli.rs` (`--upstream`/`--mode`/`setup --proxy`), `src/config/layers.rs` (`proxy_flags`), `tests/proxy.rs`, `tests/config_coverage.rs` (`proxy --mode` → `proxy.mode`).
 
+## P8 — `graph` plugin
+
+Goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers.
+
+**T8.1 symbol index** · T4.3, T4.5 · `src/plugins/graph/index.rs`, next `migrations/NNNN.sql`
+Do: table `symbols(path, name, kind, line, is_def, file_sha)`. Walk the repo respecting `.gitignore` (`ignore` crate from T4.5); run the T4.3 tags queries for definitions **and** reference sites per supported language; insert. Incremental: skip files whose sha256 is unchanged, delete rows of removed files. `rtok graph index [path]`, plus lazy indexing on the first tool call; PostToolUse(Edit|Write) marks that file stale (no indexing on the hook path).
+Check: index this crate → `symbols` contains `main` (def) and ≥ 1 reference to `Registry`; a second run inserts 0 rows; editing one fixture file re-indexes only that file.
+Status: done 2026-09-02 · Check: `index_crate_has_main_def_and_registry_ref` finds `main` def and ≥1 `Registry` ref; `second_run_inserts_zero`; `edit_fixture_reindexes_only_that_file`. `make check` green. Deviation: also `migrations/0003.sql`, `src/store/{mod,schema}.rs`, `src/plugins/read/{mod,outline}.rs` (`tags()`/`TagHit`/`supported()`), `src/plugins/graph/mod.rs` (stale on Edit|Write), `src/cli.rs`, `Cargo.toml` (`graph = ["read"]`). Empty-tag files keep a sentinel sha row so the second run inserts 0.
+
 ## P9 — replace the current stack
 
 **T9.1 `rtok bench`** · T1.1 · `src/bench.rs`, `bench/tasks.toml`

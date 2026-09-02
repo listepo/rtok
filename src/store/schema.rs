@@ -183,6 +183,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    symbols (id) {
+        id -> Integer,
+        path -> Text,
+        name -> Text,
+        kind -> Text,
+        line -> Integer,
+        is_def -> Integer,
+        file_sha -> Text,
+    }
+}
+
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
 diesel::joinable!(calls -> hosts (host_id));
@@ -210,4 +222,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     call_io,
     tokens,
     logs,
+    symbols,
 );

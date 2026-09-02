@@ -143,6 +143,12 @@ enum Cmd {
         #[command(subcommand)]
         action: MemoryCmd,
     },
+    /// Symbol index (`rtok graph index`)
+    #[cfg(feature = "graph")]
+    Graph {
+        #[command(subcommand)]
+        action: GraphCmd,
+    },
 }
 
 #[cfg(feature = "memory")]
@@ -150,6 +156,13 @@ enum Cmd {
 enum MemoryCmd {
     /// Import `{kind,title,body}` JSONL; dedupe by body sha256
     Import { file: std::path::PathBuf },
+}
+
+#[cfg(feature = "graph")]
+#[derive(Subcommand)]
+enum GraphCmd {
+    /// Walk a tree and insert definitions + references
+    Index { path: Option<PathBuf> },
 }
 
 #[derive(Subcommand)]
@@ -396,6 +409,18 @@ pub fn run() -> Result<()> {
                     println!("{}", crate::plugins::memory::import::run(&cfg, &file)?);
                 }
             }
+        }
+        #[cfg(feature = "graph")]
+        Cmd::Graph { action } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let GraphCmd::Index { path } = action;
+            let cx = crate::plugin::Ctx::open(cfg, "graph")?;
+            let root = path.unwrap_or(std::env::current_dir()?);
+            let r = crate::plugins::graph::index::run(&cx, &root)?;
+            println!(
+                "indexed {} files · {} rows · {} skipped",
+                r.indexed, r.inserted, r.skipped
+            );
         }
         #[cfg(not(feature = "cmd"))]
         Cmd::Run { .. } => eprintln!("rtok run: not implemented"),

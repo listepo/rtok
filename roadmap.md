@@ -223,7 +223,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
-**Status.** Manifest only. First task: T8.1. T14.9 done 2026-09-02.
+**Status.** T8.1 done 2026-09-02. Next: T8.2. T14.9 done 2026-09-02.
 
 ---
 

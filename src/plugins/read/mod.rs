@@ -14,7 +14,7 @@ use crate::plugin::{
 
 pub mod cache;
 pub mod hook;
-mod outline;
+pub(crate) mod outline;
 pub mod search;
 
 pub struct Read;

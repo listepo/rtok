@@ -16,12 +16,15 @@ use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
 
-use schema::{archive, call_io, calls, hosts, logs, measurements, notes, read_cache, tokens};
+use schema::{
+    archive, call_io, calls, hosts, logs, measurements, notes, read_cache, symbols, tokens,
+};
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001.sql", include_str!("../../migrations/0001.sql")),
     ("0002.sql", include_str!("../../migrations/0002.sql")),
+    ("0003.sql", include_str!("../../migrations/0003.sql")),
 ];
 
 pub struct Store {
@@ -635,6 +638,104 @@ impl Store {
         Ok(())
     }
 
+    pub fn symbol_count(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        let rows: Vec<Count> = sql_query("SELECT COUNT(*) AS n FROM symbols").load(&mut *conn)?;
+        Ok(rows.first().map(|r| r.n).unwrap_or(0))
+    }
+
+    pub fn symbol_sha(&self, path: &str) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::path.eq(path))
+            .select(symbols::file_sha)
+            .first::<String>(&mut *conn)
+            .optional()?)
+    }
+
+    pub fn replace_symbols(
+        &self,
+        path: &str,
+        file_sha: &str,
+        rows: &[(String, String, i32, bool)],
+    ) -> Result<usize> {
+        let mut conn = self.lock()?;
+        diesel::delete(symbols::table.filter(symbols::path.eq(path))).execute(&mut *conn)?;
+        if rows.is_empty() {
+            // Keep file_sha so an unchanged tagless file is skipped next run.
+            diesel::insert_into(symbols::table)
+                .values((
+                    symbols::path.eq(path),
+                    symbols::name.eq(""),
+                    symbols::kind.eq(""),
+                    symbols::line.eq(0),
+                    symbols::is_def.eq(0),
+                    symbols::file_sha.eq(file_sha),
+                ))
+                .execute(&mut *conn)?;
+            return Ok(0);
+        }
+        for (name, kind, line, is_def) in rows {
+            diesel::insert_into(symbols::table)
+                .values((
+                    symbols::path.eq(path),
+                    symbols::name.eq(name),
+                    symbols::kind.eq(kind),
+                    symbols::line.eq(line),
+                    symbols::is_def.eq(i32::from(*is_def)),
+                    symbols::file_sha.eq(file_sha),
+                ))
+                .execute(&mut *conn)?;
+        }
+        Ok(rows.len())
+    }
+
+    pub fn delete_symbols_missing(&self, keep: &[String]) -> Result<usize> {
+        let mut conn = self.lock()?;
+        let have: Vec<String> = symbols::table
+            .select(symbols::path)
+            .distinct()
+            .load(&mut *conn)?;
+        let mut n = 0usize;
+        for p in have {
+            if !keep.iter().any(|k| k == &p) {
+                n += diesel::delete(symbols::table.filter(symbols::path.eq(&p)))
+                    .execute(&mut *conn)?;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Drop rows for this path (absolute or repo-relative). No indexing on the hook path.
+    pub fn mark_symbols_stale(&self, file_path: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "DELETE FROM symbols WHERE path = ? OR ? LIKE '%/' || path OR path LIKE '%/' || ?",
+        )
+        .bind::<Text, _>(file_path)
+        .bind::<Text, _>(file_path)
+        .bind::<Text, _>(file_path)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    pub fn has_symbol_def(&self, name: &str) -> Result<bool> {
+        let mut conn = self.lock()?;
+        let n: i64 = symbols::table
+            .filter(symbols::name.eq(name).and(symbols::is_def.eq(1)))
+            .count()
+            .get_result(&mut *conn)?;
+        Ok(n > 0)
+    }
+
+    pub fn symbol_ref_count(&self, name: &str) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::name.eq(name).and(symbols::is_def.eq(0)))
+            .count()
+            .get_result(&mut *conn)?)
+    }
+
     pub fn purge_calls_older_than(&self, days: i64) -> Result<usize> {
         if days <= 0 {
             return Ok(0);
@@ -666,7 +767,7 @@ impl Store {
 
 type Spill = (Option<String>, Option<String>, i64, Option<String>);
 
-fn hex_sha256(bytes: &[u8]) -> String {
+pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     format!("{:x}", h.finalize())

@@ -34,4 +34,4 @@ T8.1 symbol index · T8.2 MCP tools.
 
 ## Status
 
-Manifest only. First task: T8.1 (after T4.3 outline grammars and T4.5 `search`).
+T8.1 done 2026-09-02. Next: T8.2.

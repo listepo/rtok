@@ -6,10 +6,44 @@ use anyhow::{Context, Result};
 use tree_sitter::Language;
 use tree_sitter_tags::{TagsConfiguration, TagsContext};
 
-/// Definitions as `kind name line`, or verbatim definition lines.
-pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
+/// One tags-query hit (definition or reference).
+#[derive(Debug, Clone)]
+pub struct TagHit {
+    pub kind: String,
+    pub name: String,
+    pub line: usize,
+    pub is_def: bool,
+    pub line_text: String,
+}
+
+/// True when `path` has a tags-supported extension (cheap; does not parse).
+pub fn supported(path: &Path) -> bool {
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    match ext {
+        #[cfg(feature = "lang-rust")]
+        "rs" => true,
+        #[cfg(feature = "lang-ts")]
+        "ts" | "tsx" => true,
+        #[cfg(feature = "lang-js")]
+        "js" | "mjs" | "cjs" => true,
+        #[cfg(feature = "lang-python")]
+        "py" => true,
+        #[cfg(feature = "lang-dart")]
+        "dart" => true,
+        #[cfg(feature = "lang-c")]
+        "c" | "h" => true,
+        #[cfg(feature = "lang-go")]
+        "go" => true,
+        _ => false,
+    }
+}
+
+/// Definitions and references from the grammar's tags query. Unknown language → empty.
+pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
     let Some(cfg) = config(path) else {
-        return Ok(fallback(src));
+        return Ok(Vec::new());
     };
     let cfg = cfg?;
     let mut ctx = TagsContext::new();
@@ -18,29 +52,41 @@ pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let mut out = Vec::new();
     for tag in tags.flatten() {
-        if !tag.is_definition {
-            continue;
-        }
         let Some(name) = src.get(tag.name_range.clone()) else {
             continue;
         };
+        let line_text = src.get(tag.line_range.clone()).unwrap_or("").to_string();
+        out.push(TagHit {
+            kind: cfg.syntax_type_name(tag.syntax_type_id).to_string(),
+            name: name.to_string(),
+            line: tag.span.start.row + 1,
+            is_def: tag.is_definition,
+            line_text,
+        });
+    }
+    Ok(out)
+}
+
+/// Definitions as `kind name line`, or verbatim definition lines.
+pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
+    let defs: Vec<TagHit> = tags(path, src)?.into_iter().filter(|h| h.is_def).collect();
+    if defs.is_empty() {
+        return Ok(fallback(src));
+    }
+    let mut out = Vec::new();
+    for hit in defs {
         if mode == "signatures" {
-            let line = src.get(tag.line_range.clone()).unwrap_or("").trim_end();
-            out.push(line.to_string());
+            out.push(hit.line_text.trim_end().to_string());
         } else {
-            let line = src.get(tag.line_range.clone()).unwrap_or("");
-            let kw = line
+            let kw = hit
+                .line_text
                 .split_whitespace()
                 .next()
-                .unwrap_or_else(|| cfg.syntax_type_name(tag.syntax_type_id));
-            out.push(format!("{} {name} {}", kw, tag.span.start.row + 1));
+                .unwrap_or(hit.kind.as_str());
+            out.push(format!("{} {} {}", kw, hit.name, hit.line));
         }
     }
-    if out.is_empty() {
-        Ok(fallback(src))
-    } else {
-        Ok(out.join("\n"))
-    }
+    Ok(out.join("\n"))
 }
 
 fn fallback(src: &str) -> String {
