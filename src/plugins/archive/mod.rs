@@ -11,6 +11,8 @@
 //! `tool_use_id` before the request is forwarded, so the pointer is byte-identical on every
 //! later request (the frozen prefix stays cacheable) and an `expand`ed id (T5.4) is never
 //! rewritten again. `system`, `tools` and the last `keep_turns` turns are never touched.
+//! T11.4 applies the same rewrite through `Wire::tool_results` for Anthropic Messages,
+//! OpenAI Chat Completions, and OpenAI Responses.
 
 use serde_json::Value;
 
@@ -260,5 +262,69 @@ mod tests {
             pointer("a\nb", "abc", 3, 8, 4),
             "[archived abc: 2 lines · 3 tokens · expand(abc)]\na\nb"
         );
+    }
+
+    fn six_turn_wires() -> [(&'static str, &'static dyn crate::proxy::wire::Wire); 3] {
+        use crate::proxy::anthropic::ANTHROPIC;
+        use crate::proxy::openai_chat::OPENAI_CHAT;
+        use crate::proxy::openai_responses::OPENAI_RESPONSES;
+        [
+            ("anthropic_messages_6turns.json", &ANTHROPIC),
+            ("openai_chat_6turns.json", &OPENAI_CHAT),
+            ("openai_responses_6turns.json", &OPENAI_RESPONSES),
+        ]
+    }
+
+    fn load_six_turn(name: &str) -> Value {
+        let path = format!("{}/tests/fixtures/proxy/{name}", env!("CARGO_MANIFEST_DIR"));
+        serde_json::from_slice(&std::fs::read(&path).expect(name)).expect(name)
+    }
+
+    fn result_texts(wire: &dyn crate::proxy::wire::Wire, req: &mut Value) -> Vec<String> {
+        wire.tool_results(req)
+            .into_iter()
+            .map(|result| result.content.as_str().expect("string payload").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn six_turn_fixtures_archive_only_turns_1_and_2_on_every_wire() {
+        for (name, wire) in six_turn_wires() {
+            let cx = cx(name);
+            let original = load_six_turn(name);
+            let original_bytes = serde_json::to_vec(&original).unwrap();
+            let mut first = original.clone();
+            let ms = rewrite(wire.tool_results(&mut first), &cx);
+            assert_eq!(ms.len(), 2, "{name}");
+            let rewritten = serde_json::to_vec(&first).unwrap();
+            let pos = rewritten
+                .windows(10)
+                .position(|window| window == b"[archived ")
+                .expect(name);
+            assert_eq!(&original_bytes[..pos], &rewritten[..pos], "{name} prefix");
+            let mut second = original.clone();
+            rewrite(wire.tool_results(&mut second), &cx);
+            assert_eq!(first, second, "{name} deterministic");
+            let texts = result_texts(wire, &mut first);
+            assert_eq!(texts.len(), 6, "{name}");
+            assert!(
+                texts[0].starts_with("[archived ") && texts[1].starts_with("[archived "),
+                "{name}"
+            );
+            for (index, text) in texts.iter().enumerate().skip(2) {
+                assert!(
+                    text.starts_with(&format!("t{} line 1:", index + 1)),
+                    "{name} turn {}",
+                    index + 1
+                );
+            }
+            let archive_id = ms[0].ref_id.clone().unwrap();
+            assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
+            let mut expanded = original.clone();
+            assert_eq!(rewrite(wire.tool_results(&mut expanded), &cx).len(), 1);
+            let live = result_texts(wire, &mut expanded);
+            assert!(live[0].starts_with("t1 line 1:"), "{name} expand");
+            assert!(live[1].starts_with("[archived "), "{name} turn 2 stays");
+        }
     }
 }

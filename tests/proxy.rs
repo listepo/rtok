@@ -665,3 +665,139 @@ async fn proxy_compress_rewrites_old_tool_results_identically() {
     );
     task.abort();
 }
+
+const T114_SESSION: &str = "sess-t114";
+const ANTHROPIC_6TURNS: &[u8] = include_bytes!("fixtures/proxy/anthropic_messages_6turns.json");
+const OPENAI_CHAT_6TURNS: &[u8] = include_bytes!("fixtures/proxy/openai_chat_6turns.json");
+const OPENAI_RESPONSES_6TURNS: &[u8] =
+    include_bytes!("fixtures/proxy/openai_responses_6turns.json");
+
+struct T114Case {
+    label: &'static str,
+    path: &'static str,
+    fixture: &'static [u8],
+    openai: bool,
+}
+
+fn t114_cases() -> [T114Case; 3] {
+    [
+        T114Case {
+            label: "anthropic",
+            path: "/v1/messages",
+            fixture: ANTHROPIC_6TURNS,
+            openai: false,
+        },
+        T114Case {
+            label: "chat",
+            path: "/v1/chat/completions",
+            fixture: OPENAI_CHAT_6TURNS,
+            openai: true,
+        },
+        T114Case {
+            label: "responses",
+            path: "/v1/responses",
+            fixture: OPENAI_RESPONSES_6TURNS,
+            openai: true,
+        },
+    ]
+}
+
+fn t114_upstream(path: &str) -> MockUpstream {
+    match path {
+        "/v1/messages" => MockUpstream::anthropic_messages_body(),
+        "/v1/chat/completions" => MockUpstream::openai_chat_body(),
+        "/v1/responses" => MockUpstream::openai_responses_body(),
+        _ => unreachable!(),
+    }
+}
+
+fn t114_texts<'a>(path: &str, body: &'a serde_json::Value) -> Vec<&'a str> {
+    match path {
+        "/v1/messages" => body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "user")
+            .map(|m| m["content"][0]["content"].as_str().unwrap())
+            .collect(),
+        "/v1/chat/completions" => body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .map(|m| m["content"].as_str().unwrap())
+            .collect(),
+        "/v1/responses" => body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["type"] == "function_call_output")
+            .map(|item| item["output"].as_str().unwrap())
+            .collect(),
+        _ => unreachable!(),
+    }
+}
+
+#[tokio::test]
+async fn proxy_compress_archives_six_turns_on_each_wire() {
+    for case in t114_cases() {
+        let up = t114_upstream(case.path);
+        let (addr, state, task) = if case.openai {
+            openai_server(&format!("t114-{}", case.label), &up, "compress").await
+        } else {
+            t51_server(&format!("t114-{}", case.label), &up, "compress").await
+        };
+        let request = serde_json::to_vec(
+            &serde_json::from_slice::<serde_json::Value>(case.fixture).expect(case.label),
+        )
+        .expect(case.label);
+        for _ in 0..2 {
+            let resp = openai_post(&addr, case.path, request.clone()).await;
+            assert_eq!(resp.status(), reqwest::StatusCode::OK, "{}", case.label);
+            up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+        }
+        let rows = t51_usage_n(&state.store, T114_SESSION, 2).await;
+        let sent: Vec<Vec<u8>> = rows
+            .iter()
+            .map(|u| {
+                state
+                    .store
+                    .call_io_request(u.call_id.expect("call id") as i32)
+                    .expect("call_io")
+                    .expect("request")
+            })
+            .collect();
+        assert_eq!(sent[0], sent[1], "{} byte-identical", case.label);
+        let pos = sent[0]
+            .windows(10)
+            .position(|window| window == b"[archived ")
+            .expect(case.label);
+        assert_eq!(&request[..pos], &sent[0][..pos], "{} prefix", case.label);
+        let body: serde_json::Value = serde_json::from_slice(&sent[0]).expect("json");
+        let contents = t114_texts(case.path, &body);
+        assert_eq!(contents.len(), 6, "{}", case.label);
+        assert!(
+            contents[0].starts_with("[archived ") && contents[1].starts_with("[archived "),
+            "{}",
+            case.label
+        );
+        for (i, c) in contents.iter().enumerate().skip(2) {
+            assert!(
+                c.starts_with(&format!("t{} line 1:", i + 1)),
+                "{} turn {}",
+                case.label,
+                i + 1
+            );
+        }
+        assert_eq!(
+            state
+                .store
+                .measurement_count("archive")
+                .expect("measurements"),
+            4,
+            "{}",
+            case.label
+        );
+        task.abort();
+    }
+}
