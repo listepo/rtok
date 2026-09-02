@@ -13,4 +13,4 @@
 network call and must exit 0 with "skipped" when no API key is present.
 
 **Checks** are in `plan.md` under T1.1–T1.5, T5.5, T9.1. Run the task's Check verbatim, then
-`make check`.
+`just check`.

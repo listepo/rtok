@@ -1,4 +1,4 @@
-//! The smallest complete plugin, end to end. Run: `make example`.
+//! The smallest complete plugin, end to end. Run: `just example`.
 //!
 //! `Hello` denies destructive `rm -rf` commands, injects one line at session start,
 //! and records a `Measurement` — because a saving that is not a row does not exist.

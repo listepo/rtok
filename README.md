@@ -109,6 +109,7 @@ src/plugins/<id>/      one module per plugin (+ README.md, AGENTS.md)
 src/hooks/             hook I/O types, dispatcher
 examples/hello_plugin.rs
 tests/fixtures/hooks/  real hook payloads
+site/                  Hugo docs site (mounts this repo's markdown, never copies it)
 ```
 
 Full picture: [`architecture.md`](architecture.md). Writing a plugin:
@@ -118,19 +119,26 @@ Full picture: [`architecture.md`](architecture.md). Writing a plugin:
 ## Development
 
 ```bash
-make check      # fmt --check, clippy -D warnings, tests, single-feature build
-make example    # run examples/hello_plugin.rs
-make fmt        # apply rustfmt
-make changelog  # regenerate CHANGELOG.md from git history (git-cliff, cliff.toml)
+just check      # fmt --check, clippy -D warnings, tests, single-feature build
+just example    # run examples/hello_plugin.rs
+just fmt        # apply rustfmt
+just changelog  # regenerate CHANGELOG.md from git history (git-cliff, cliff.toml)
+just site       # build the docs site into site/public
+just site-serve # docs site at http://localhost:1313 with live reload
 ```
 
+The docs site at <https://listepo.github.io/rtok/> is built from this repository: the
+reference pages and the per-plugin pages are Hugo mounts of `architecture.md`,
+`docs/*.md`, `roadmap.md`, `CHANGELOG.md` and `src/plugins/*/README.md`, so editing those
+files edits the site. Only the landing page and the guide pages live in `site/content`.
+
 Commit subjects are `<task-id>: <title>` or `<area>: <title>` (`plan:`, `docs:`, `ci:`);
-`cliff.toml` groups them into the changelog by that prefix. Run `make changelog` before
+`cliff.toml` groups them into the changelog by that prefix. Run `just changelog` before
 tagging a release.
 
 Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, stay on `main`
 (no feature branches), stay within ≤ 200 LOC and ≤ 3 files, run the task's Check verbatim, then
-`make check`, commit as `<task-id>: <title>` on `main`. Same commit: mark the task done and
+`just check`, commit as `<task-id>: <title>` on `main`. Same commit: mark the task done and
 move it from `plan.md` to `done.md`. Implemented work still listed in `plan.md` is unfinished.
 
 ## Caveats

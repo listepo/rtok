@@ -1,7 +1,7 @@
 //! The smallest MCP-tool plugin, registered from outside the catalogue.
 //!
 //! This is the shape a third-party crate uses (D6): depend on the `rtok` library, implement
-//! `Plugin`, and build a registry with `Registry::from_plugins`. Run: `make example`.
+//! `Plugin`, and build a registry with `Registry::from_plugins`. Run: `just example`.
 
 use anyhow::Result;
 use rtok::config::Config;

@@ -10,7 +10,7 @@
 
 **CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` §2.
 
-**Workflow.** Claim only `open`; set `in progress` + model. `main` only. ≤200 LOC, ≤3 files. Check, `make check`, commit `<task-id>: <title>` on `main` and move the task to `done.md` (`Status: done <date>` + Check) — work still in `plan.md` is unfinished. Stop → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md`.
+**Workflow.** Claim only `open`; set `in progress` + model. `main` only. ≤200 LOC, ≤3 files. Check, `just check`, commit `<task-id>: <title>` on `main` and move the task to `done.md` (`Status: done <date>` + Check) — work still in `plan.md` is unfinished. Stop → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md`.
 
 **Rules that never bend.**
 - Fail open: a hook exits 0 in ≤ 10 ms even on error, with unmodified input.

@@ -20,5 +20,5 @@ jobs:
       # Installs the Rust version pinned in mise.toml — same toolchain as local.
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
-      - run: make check
-      - run: make example
+      - run: just check
+      - run: just example

@@ -195,7 +195,7 @@ under 5 %.
 - Fixture-driven: hook payloads in `tests/fixtures/hooks/`, golden filter cases in
   `tests/cmd_golden/`, per-language outline fixtures for `read`.
 - Latency harness (`tests/latency.rs`, T2.2) asserts p95 < 10 ms for a hook round trip.
-- `make check` = `fmt --check` + `clippy --all-targets --all-features -D warnings` + tests +
+- `just check` = `fmt --check` + `clippy --all-targets --all-features -D warnings` + tests +
   the single-feature build; CI runs it on macOS and Linux with the toolchain from `mise.toml`.
 - `examples/hello_plugin.rs` runs in CI and asserts a measurement row was written.
 

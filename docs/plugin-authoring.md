@@ -100,7 +100,7 @@ fn denies_rm_rf() {
 }
 ```
 
-Then the task's Check from `plan.md` (see `roadmap.md` for order), then `make check`.
+Then the task's Check from `plan.md` (see `roadmap.md` for order), then `just check`.
 
 ## 6. Ship
 
