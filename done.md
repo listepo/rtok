@@ -118,6 +118,13 @@ Do: SessionStart/UserPromptSubmit collect `Injection { plugin, text, priority }`
 Check: unit test: three injections of 500 tokens, budget 800 → two emitted, one dropped and measured; two consecutive runs produce identical bytes.
 Status: done 2026-09-02 · Check: `cargo test inject` — three 500-token injections at budget 800 emit two, drop one, `measurement_count("inject")` = 2 across two identical runs. Deviation: file is `src/plugins/inject/mod.rs`; a candidate that starts under budget may overshoot so the T2.4 Check (500+500 at 800) holds.
 
+## P3 — `cmd` plugin
+
+**T3.1 `rtok run -- <cmd>`** · T0.3 · `src/plugins/cmd/run.rs`
+Do: run via `$SHELL -lc`, capture stdout+stderr (merged, ordered), preserve exit code, write raw output to `~/.rtok/archive/<id>` and an `archive` row; print output (unfiltered in this task) plus trailer `[rtok <id> · N lines · expand: rtok expand <id>]` only when > 40 lines.
+Check: `rtok run -- printf 'a\nb\n'` prints `a b`, exit 0, no trailer; `rtok run -- sh -c 'exit 3'` → exit 3.
+Status: done 2026-09-02 · Check: `printf 'a\nb\n'` → stdout `a\nb\n` exit 0 no trailer; `sh -c 'exit 3'` → exit 3. Deviation: also `Store::put_archive`, `cmd/mod.rs`, `cli.rs`.
+
 
 
 ## P0 — Scaffold · done 2026-09-01

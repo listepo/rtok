@@ -272,6 +272,29 @@ impl Store {
         Ok((None, None, n, Some(sha)))
     }
 
+    /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
+    pub fn put_archive(&self, session: &str, body: &[u8], dir: &Path) -> Result<String> {
+        let sha = hex_sha256(body);
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join(&sha);
+        std::fs::write(&path, body)?;
+        let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
+        let mut conn = self.lock()?;
+        diesel::insert_into(archive::table)
+            .values((
+                archive::id.eq(&sha),
+                archive::session.eq(session),
+                archive::tool.eq(Some("cmd")),
+                archive::bytes.eq(n),
+                archive::path.eq(path.to_string_lossy().as_ref()),
+                archive::sha256.eq(&sha),
+            ))
+            .on_conflict(archive::id)
+            .do_nothing()
+            .execute(&mut *conn)?;
+        Ok(sha)
+    }
+
     pub fn insert_tokens(
         &self,
         call_id: i32,

@@ -267,6 +267,12 @@ pub fn run() -> Result<()> {
                 other => bail!("unknown host: {other}"),
             }
         }
+        #[cfg(feature = "cmd")]
+        Cmd::Run { command } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let code = crate::plugins::cmd::run::run(&cfg, &command)?;
+            std::process::exit(code);
+        }
         // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),
     }
