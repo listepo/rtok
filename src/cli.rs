@@ -97,7 +97,7 @@ enum Cmd {
     },
     /// Install hooks, MCP server and proxy into a host
     Setup {
-        /// Host (`claude`, `cursor`, `codex`; OpenCode installs via `hosts/opencode`)
+        /// Host (`claude`, `cursor`, `codex`, `opencode`)
         host: String,
         /// Print the planned edits and exit
         #[arg(long)]
@@ -405,8 +405,19 @@ pub fn run() -> Result<()> {
                         println!("{hooks}");
                     }
                 }
-                // Codex has no hooks; the MCP block is the whole install (proxy: T11.5).
-                "codex" => println!("{}", crate::setup::codex::run(&cfg, remove)?),
+                // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
+                "codex" => {
+                    let mut lines = vec![crate::setup::codex::run(&cfg, remove)?];
+                    if cfg.setup.proxy {
+                        lines.push(crate::setup::codex::register_proxy(&cfg, remove)?);
+                    }
+                    if lines.iter().all(|s| s == "no changes") {
+                        println!("no changes");
+                    } else {
+                        println!("{}", lines.join("\n"));
+                    }
+                }
+                "opencode" => println!("{}", crate::setup::opencode::run(&cfg, remove)?),
                 other => bail!("unknown host: {other}"),
             }
         }

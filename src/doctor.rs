@@ -43,11 +43,18 @@ pub fn run(cfg: &Config) -> Result<String> {
             s.name, s.cmd
         ));
     }
-    let chain = proxy_chain(
-        settings.as_ref(),
-        Duration::from_millis(cfg.doctor.probe_timeout_ms.max(300)),
-    );
-    out.push_str(&format!("proxy {}\n", chain));
+    let timeout = Duration::from_millis(cfg.doctor.probe_timeout_ms.max(300));
+    let anthropic = settings
+        .as_ref()
+        .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| std::env::var("ANTHROPIC_BASE_URL").ok());
+    out.push_str(&format!("proxy {}\n", proxy_chain(anthropic, timeout)));
+    out.push_str(&format!(
+        "proxy openai {}\n",
+        proxy_chain(openai_seed(cfg, settings.as_ref()), timeout)
+    ));
     let base_owned = std::env::var("ANTHROPIC_BASE_URL").ok().or_else(|| {
         settings
             .as_ref()
@@ -340,13 +347,44 @@ fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> 
     (tools.len(), tokens)
 }
 
-fn proxy_chain(settings: Option<&Value>, timeout: Duration) -> String {
+fn nonempty(s: Option<String>) -> Option<String> {
+    s.filter(|v| !v.is_empty())
+}
+
+fn openai_seed(cfg: &Config, settings: Option<&Value>) -> Option<String> {
+    nonempty(std::env::var("OPENAI_BASE_URL").ok())
+        .or_else(|| {
+            settings
+                .and_then(|s| s.pointer("/env/OPENAI_BASE_URL"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            read_json(&cfg.setup.opencode.config_path)
+                .as_ref()
+                .and_then(|s| s.pointer("/env/OPENAI_BASE_URL"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            let doc: toml_edit::DocumentMut = std::fs::read_to_string(&cfg.setup.codex.config_path)
+                .ok()?
+                .parse()
+                .ok()?;
+            doc.get("model_providers")?
+                .get("rtok")?
+                .get("base_url")?
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn proxy_chain(seed: Option<String>, timeout: Duration) -> String {
     let mut hops = Vec::new();
-    let mut url = settings
-        .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| std::env::var("ANTHROPIC_BASE_URL").ok());
+    let mut url = nonempty(seed);
     let mut seen = 0;
     while let Some(u) = url.take() {
         if seen > 4 {
@@ -449,6 +487,42 @@ mod tests {
             .filter(|l| l.starts_with("  ") && l.contains("tokens"))
             .count();
         assert!(n >= 4, "{s}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lists_anthropic_and_openai_proxy_chains() {
+        let dir = std::env::temp_dir().join(format!("rtok-t115-doctor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8790"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("opencode.json"),
+            r#"{"env":{"OPENAI_BASE_URL":"http://127.0.0.1:8790/v1"}}"#,
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg.setup.opencode.config_path = dir.join("opencode.json");
+        cfg.setup.codex.config_path = dir.join("missing-codex.toml");
+        let s = run(&cfg).unwrap();
+        assert!(
+            s.lines().any(|l| l.starts_with("proxy ")
+                && !l.starts_with("proxy openai")
+                && l.contains("8790")),
+            "{s}"
+        );
+        assert!(
+            s.lines()
+                .any(|l| l.starts_with("proxy openai ") && l.contains("8790")),
+            "{s}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
