@@ -14,6 +14,7 @@ use crate::plugin::{
 
 pub mod cache;
 pub mod hook;
+mod outline;
 pub mod search;
 
 pub struct Read;
@@ -40,7 +41,7 @@ impl Plugin for Read {
         vec![
             ToolDef {
                 name: "read",
-                description: "Read a file; mode full|lines; optional range a-b.",
+                description: "Read a file; mode full|lines|map|signatures; optional range a-b.",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
             },
             ToolDef {
@@ -57,35 +58,38 @@ impl Plugin for Read {
     }
 }
 
-/// Numbered file contents. `mode=lines` honours `range` (`a-b`, 1-based inclusive).
 pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let abs = resolve(&cwd, Path::new(path), &cx.config.plugins.read.allow_paths)?;
     let raw = std::fs::read_to_string(&abs)?;
-    let mut rows: Vec<(usize, &str)> = raw.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
     let mode = if mode.is_empty() {
         cx.config.plugins.read.default_mode.as_str()
     } else {
         mode
     };
-    if mode == "lines"
-        && let Some(spec) = range
-        && let Some((a, b)) = spec.split_once('-')
-        && let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>())
-    {
-        rows.retain(|(n, _)| *n >= a && *n <= b);
-    }
-    let numbered = rows
-        .iter()
-        .map(|(n, l)| format!("{n}:{l}"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let body = if mode == "map" || mode == "signatures" {
+        outline::render(&abs, &raw, mode)?
+    } else {
+        let mut rows: Vec<(usize, &str)> =
+            raw.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
+        if mode == "lines"
+            && let Some(spec) = range
+            && let Some((a, b)) = spec.split_once('-')
+            && let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>())
+        {
+            rows.retain(|(n, _)| *n >= a && *n <= b);
+        }
+        rows.iter()
+            .map(|(n, l)| format!("{n}:{l}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
-    if let Some(hit) = cache::hit(cx, &key, numbered.as_bytes(), rows.len()) {
+    if let Some(hit) = cache::hit(cx, &key, body.as_bytes(), body.lines().count()) {
         return Ok(hit);
     }
-    let _ = cache::remember(cx, &key, numbered.as_bytes());
-    cap(cx, numbered)
+    let _ = cache::remember(cx, &key, body.as_bytes());
+    cap(cx, body)
 }
 
 pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
@@ -193,6 +197,20 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("outside cwd"), "{err}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn map_src_main_lists_fn_main() {
+        let dir = std::env::temp_dir().join(format!("rtok-read-mapmain-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let mut c = Config::default();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        let cx = Ctx::open(c, "mapmain").unwrap();
+        let out = read(&cx, "src/main.rs", "map", None).unwrap();
+        assert!(out.contains("fn main"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
 }

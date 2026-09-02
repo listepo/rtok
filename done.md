@@ -313,6 +313,11 @@ Do: on `read`, hash content; if same session already returned this sha256 for th
 Check: two identical reads → second response < 80 chars and a measurement row; edit fixture between reads → full content again.
 Status: done 2026-09-02 · Check: `two_identical_reads_second_is_short`; `edit_fixture_between_reads_is_full`. `make check` green. Deviation: also `mod.rs`, `store/mod.rs` (`clear_read_cache`). Archive id is 64 hex so the hit line uses an 8-char prefix to stay under 80 chars; full id is `Measurement.ref_id`.
 
+**T4.3 `read` map/signatures via tree-sitter-tags** · T4.2 · `src/plugins/read/outline.rs`
+Do: features `lang-rust, lang-ts, lang-js, lang-python, lang-dart, lang-c, lang-go` (default all); `mode=map` → definitions (kind, name, line) from each grammar's tags query; `mode=signatures` → definition lines verbatim. Unknown language → fall back to `lines 1-60` + note.
+Check: `read(src/main.rs, mode=map)` on this crate lists `fn main`; golden tests per language on 20-line fixtures.
+Status: done 2026-09-02 · Check: `map_src_main_lists_fn_main` contains `fn main`; `golden_per_language` (rs/ts/js/py/dart/c/go) plus `unknown_language_falls_back`. `make check` green. Deviation: also `mod.rs` (mode dispatch, MCP description), `Cargo.toml` (optional grammars). Fixtures are padded to 20 lines in-test rather than separate files. New deps: `tree-sitter`/`tree-sitter-tags` (parser + definition tags); `tree-sitter-{rust,javascript,typescript,python,c,go,dart}` behind `lang-*`.
+
 ## P5 — `proxy` + `archive`
 
 **T5.0 httpmock upstream harness** · T0.3 · `tests/proxy/mod.rs`, `tests/fixtures/proxy/`, `Cargo.toml` (dev-dep)

@@ -13,7 +13,7 @@ path = "src/main.rs"
 default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon"]
 measure = []
 cmd = []
-read = []
+read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go"]
 archive = []
 proxy = []
 inject = []
@@ -21,6 +21,13 @@ guard = []
 memory = []
 graph = []
 toon = []
+lang-rust = ["dep:tree-sitter-rust"]
+lang-ts = ["dep:tree-sitter-typescript"]
+lang-js = ["dep:tree-sitter-javascript"]
+lang-python = ["dep:tree-sitter-python"]
+lang-dart = ["dep:tree-sitter-dart"]
+lang-c = ["dep:tree-sitter-c"]
+lang-go = ["dep:tree-sitter-go"]
 
 [lints.rust]
 # Hand-written `unsafe` is forbidden. rustc only reports `UserProvided` blocks —
@@ -53,6 +60,15 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "t
 axum = "0.8.9"
 futures-util = "0.3.34"
 reqwest = { version = "0.13.4", default-features = false, features = ["stream", "rustls"] }
+tree-sitter = { version = "0.25", optional = true } # parser for map/signatures (T4.3)
+tree-sitter-tags = { version = "0.25", optional = true } # definition tags from grammar queries (T4.3)
+tree-sitter-rust = { version = "0.24.2", optional = true } # lang-rust tags (T4.3)
+tree-sitter-javascript = { version = "0.23", optional = true } # lang-js tags (T4.3)
+tree-sitter-typescript = { version = "0.23", optional = true } # lang-ts tags (T4.3)
+tree-sitter-python = { version = "0.23", optional = true } # lang-python tags (T4.3)
+tree-sitter-c = { version = "0.23", optional = true } # lang-c tags (T4.3)
+tree-sitter-go = { version = "0.23", optional = true } # lang-go tags (T4.3)
+tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
 
 [dev-dependencies]
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)

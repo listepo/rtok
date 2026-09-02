@@ -119,7 +119,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 |-------|------|------|
 | 0 | T14.3 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/read/PLAN.md`. |
 | 1 | T4.2 | `read` full/lines, size cap, root guard. |
-| 2 | T4.3 | map/signatures via tree-sitter-tags. |
+| 2 | T4.3 | done 2026-09-02 · map/signatures via tree-sitter-tags. |
 | 3 | T4.4 | Re-read dedup (sha256 → `unchanged since <id>`). |
 | 4 | T4.5 | `search` + `tree`. |
 | 5 | T4.6 | PreToolUse(Read) advice. |
@@ -127,7 +127,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P4.** Disable lean-ctx for one day; compare Read/MCP rows and injection tokens vs baseline.
 
-**Status.** T4.2 T4.4 T4.5 T4.6 T4.7 done 2026-09-02. Next: T4.3. T14.3 done 2026-09-02.
+**Status.** T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 done 2026-09-02. Next: Gate P4. T14.3 done 2026-09-02.
 
 ---
 
@@ -213,7 +213,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Surfaces.** MCP tools. Index in SQLite.
 
-**Blocked by.** T4.3 (grammars) and T4.5 (`search`); T4.1 for MCP.
+**Blocked by.** T4.3 (grammars, done) and T4.5 (`search`, done); T4.1 for MCP.
 
 | Order | Task | Plan |
 |-------|------|------|
