@@ -18,6 +18,7 @@ pub mod hooks;
 pub mod measure;
 pub mod plugin;
 pub mod plugins;
+pub mod setup;
 pub mod store;
 pub mod tokens;
 

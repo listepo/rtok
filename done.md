@@ -108,6 +108,11 @@ Do: spawn `rtok hook PreToolUse` 200× with the fixture; assert p95 < 10 ms on t
 Check: `cargo test --release latency` passes.
 Status: done 2026-09-02 · Check: `cargo test --release latency` green (p95 < 10 ms). Debug `make check` skips the assertion. Deviation: dispatcher no longer writes a `plugin_run` child row per enabled plugin on every event — that was ~27 SQLite inserts and blew p95; plugins record their own `Measurement` when they act. Parent `calls` + `call_io` remain.
 
+**T2.3 `rtok setup claude`** · T2.1 · `src/setup/claude.rs`
+Do: add hook entries to `~/.claude/settings.json` (backup to `settings.json.bak-<ts>` first): PreToolUse(Bash|Read), PostToolUse(*), UserPromptSubmit, SessionStart, PreCompact, PostCompact — each a single `rtok hook <event>` command, `timeout: 5`. Idempotent (skip if present). `--dry-run` prints the diff. `--remove` deletes rtok entries only.
+Check: `rtok setup claude --dry-run` shows exactly 7 additions; run twice → second run "no changes".
+Status: done 2026-09-02 · Check: `--dry-run` prints `7 additions`; apply twice → second `no changes`. `--remove` keeps foreign hooks. Deviation: 4 files (`src/setup/{mod,claude}.rs`, `cli.rs`, `lib.rs`); PreToolUse is two matcher entries (Bash, Read) so the 7-count lands.
+
 ## P0 — Scaffold · done 2026-09-01
 
 Goal: `rtok --version`, DB, plugin registry, hook I/O types. All seven tasks done; gate

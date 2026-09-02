@@ -66,7 +66,16 @@ enum Cmd {
         instructions: bool,
     },
     /// Install hooks, MCP server and proxy into a host
-    Setup,
+    Setup {
+        /// Host (`claude`, later `cursor` / `codex` / `opencode`)
+        host: String,
+        /// Print the planned edits and exit
+        #[arg(long)]
+        dry_run: bool,
+        /// Delete rtok hook entries only
+        #[arg(long)]
+        remove: bool,
+    },
     /// Execute a command, archive its raw output, print the filtered version
     Run {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -122,7 +131,7 @@ impl Cmd {
             Cmd::Stats { .. } => "stats",
             Cmd::Bench => "bench",
             Cmd::Doctor { .. } => "doctor",
-            Cmd::Setup => "setup",
+            Cmd::Setup { .. } => "setup",
             Cmd::Run { .. } => "run",
             Cmd::Expand { .. } => "expand",
             Cmd::Plugins => "plugins",
@@ -247,6 +256,17 @@ pub fn run() -> Result<()> {
             }
             eprintln!("rtok proxy: not implemented");
         }
+        Cmd::Setup {
+            host,
+            dry_run,
+            remove,
+        } => {
+            let cfg = Config::load_with(config_file.as_deref(), setup_flags(dry_run))?;
+            match host.as_str() {
+                "claude" => println!("{}", crate::setup::claude::run(&cfg, remove)?),
+                other => bail!("unknown host: {other}"),
+            }
+        }
         // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),
     }
@@ -278,6 +298,18 @@ fn stats_flags(
     }
     let mut flags = Dict::new();
     flags.insert("stats".into(), Value::from(stats));
+    Some(flags)
+}
+
+fn setup_flags(dry_run: bool) -> Option<figment::value::Dict> {
+    if !dry_run {
+        return None;
+    }
+    use figment::value::{Dict, Value};
+    let mut setup = Dict::new();
+    setup.insert("dry_run".into(), Value::from(true));
+    let mut flags = Dict::new();
+    flags.insert("setup".into(), Value::from(setup));
     Some(flags)
 }
 
