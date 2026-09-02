@@ -7,7 +7,8 @@
 //! receives them, never before (a spawned task does the bookkeeping afterwards).
 //! `/v1/chat/completions` goes to `proxy.openai_upstream` (T11.2), adding
 //! `stream_options.include_usage` to streaming requests that omit it so the final
-//! chunk reports usage. `/v1/responses` still goes to `proxy.upstream` until T11.3.
+//! chunk reports usage. `/v1/responses` goes there too (T11.3) and needs no shaping —
+//! it reports usage on its final `response.completed` event unasked.
 //!
 //! Bookkeeping per request (all fail-open, logged, never alter the response):
 //! one `calls` row (`kind = api_request`, `surface = proxy`) with provider+model
@@ -47,6 +48,7 @@ use wire::{Wire, WireRequest};
 pub mod anthropic;
 pub mod cli;
 pub mod openai_chat;
+pub mod openai_responses;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the

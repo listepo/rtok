@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use super::anthropic::ANTHROPIC;
 use super::openai_chat::OPENAI_CHAT;
+use super::openai_responses::OPENAI_RESPONSES;
 
 /// A provider request/response shape supported by the proxy.
 pub trait Wire: Send + Sync {
@@ -89,8 +90,15 @@ impl<'a> WireRequest<'a> {
 
 /// The wire matching `path`, if this build understands it.
 pub fn for_path(path: &str) -> Option<&'static dyn Wire> {
-    const WIRES: [&(dyn Wire + 'static); 2] = [&ANTHROPIC, &OPENAI_CHAT];
+    const WIRES: [&(dyn Wire + 'static); 3] = [&ANTHROPIC, &OPENAI_CHAT, &OPENAI_RESPONSES];
     WIRES.into_iter().find(|wire| wire.matches(path))
+}
+
+/// Read a non-empty string field, which is how both OpenAI wires carry the session id.
+pub(super) fn str_field<'a>(body: &'a Value, name: &str) -> Option<&'a str> {
+    body.get(name)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
 }
 
 /// Read an integer usage counter, treating an absent or non-integer field as zero.

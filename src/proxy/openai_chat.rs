@@ -2,7 +2,7 @@
 
 use serde_json::{Map, Value};
 
-use super::wire::{ToolResultRef, Usage, Wire, int_field};
+use super::wire::{ToolResultRef, Usage, Wire, int_field, str_field};
 
 pub static OPENAI_CHAT: OpenAiChat = OpenAiChat;
 
@@ -18,9 +18,7 @@ impl Wire for OpenAiChat {
     }
 
     fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
-        body.get("user")
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
+        str_field(body, "user")
     }
 
     /// Chat Completions carries each tool result as its own `role: "tool"` message,

@@ -299,19 +299,21 @@ const T112_MODEL: &str = "gpt-4o";
 
 /// Points `proxy.openai_upstream` (not `proxy.upstream`) at the mock, so a request that
 /// reaches the fixture proves the OpenAI wire picked the OpenAI upstream.
-async fn t112_server(
+async fn openai_server(
     label: &str,
     up: &MockUpstream,
+    mode: &str,
 ) -> (
     String,
     Arc<ProxyState>,
     tokio::task::JoinHandle<std::io::Result<()>>,
 ) {
-    let dir = std::env::temp_dir().join(format!("rtok-proxy-t112-{label}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t11-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut cfg = Config::load_from(&dir).expect("config");
     cfg.proxy.upstream = "http://127.0.0.1:1".to_string(); // Anthropic upstream must go unused
     cfg.proxy.openai_upstream = up.base_url();
+    cfg.proxy.mode = mode.to_string();
     let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -321,20 +323,29 @@ async fn t112_server(
     (addr, state, task)
 }
 
-async fn t112_post(addr: &str, body: serde_json::Value) -> reqwest::Response {
+async fn openai_post(addr: &str, path: &str, body: Vec<u8>) -> reqwest::Response {
     reqwest::Client::new()
-        .post(format!("http://{addr}/v1/chat/completions"))
+        .post(format!("http://{addr}{path}"))
         .header("content-type", "application/json")
-        .body(serde_json::to_vec(&body).expect("request json"))
+        .body(body)
         .send()
         .await
         .expect("request through the proxy")
 }
 
+async fn t112_post(addr: &str, body: serde_json::Value) -> reqwest::Response {
+    openai_post(
+        addr,
+        "/v1/chat/completions",
+        serde_json::to_vec(&body).expect("request json"),
+    )
+    .await
+}
+
 #[tokio::test]
 async fn proxy_openai_chat_body_records_usage_with_cached_tokens() {
     let up = MockUpstream::openai_chat_body();
-    let (addr, state, task) = t112_server("body", &up).await;
+    let (addr, state, task) = openai_server("chat-body", &up, "passthrough").await;
     let resp = t112_post(
         &addr,
         serde_json::json!({"model": T112_MODEL, "user": T112_SESSION,
@@ -360,7 +371,7 @@ async fn proxy_openai_chat_body_records_usage_with_cached_tokens() {
 #[tokio::test]
 async fn proxy_openai_chat_stream_is_byte_identical_and_adds_include_usage() {
     let up = MockUpstream::openai_chat_stream();
-    let (addr, state, task) = t112_server("stream", &up).await;
+    let (addr, state, task) = openai_server("chat-stream", &up, "passthrough").await;
     let resp = t112_post(
         &addr,
         serde_json::json!({"model": T112_MODEL, "user": T112_SESSION, "stream": true,
@@ -391,6 +402,183 @@ async fn proxy_openai_chat_stream_is_byte_identical_and_adds_include_usage() {
     assert_eq!(
         sent["messages"][0]["content"], "hi",
         "nothing else rewritten"
+    );
+    task.abort();
+}
+
+// ── T11.3: OpenAI Responses wire — own upstream, body/SSE usage, server-side history ──
+
+const T113_SESSION: &str = "sess-t113";
+const T113_MODEL: &str = "gpt-4.1";
+const T113_COLLIDING_CALL: &str = "call-shared-across-wires";
+const T113_NEW_CALL: &str = "call-responses-only";
+
+fn t113_previous_response_request() -> Vec<u8> {
+    let output = (1..=400)
+        .map(|i| format!("old line {i}: some tool output with words"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    serde_json::to_vec(&serde_json::json!({
+        "model": T113_MODEL,
+        "user": T113_SESSION,
+        "previous_response_id": "resp_previous",
+        "input": [
+            {"type": "function_call_output", "call_id": "call-old", "output": output},
+            {"role": "user", "content": "one"},
+            {"role": "user", "content": "two"},
+            {"role": "user", "content": "three"}
+        ]
+    }))
+    .expect("request json")
+}
+
+fn t113_regular_noncanonical_request() -> Vec<u8> {
+    let output = (1..=400)
+        .map(|i| format!("old line {i}: some tool output with words"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let output = serde_json::to_string(&output).expect("output json");
+    format!(
+        r#"{{  "user" : "{T113_SESSION}", "input" : [
+          {{ "type" : "function_call_output", "call_id" : "{T113_COLLIDING_CALL}", "output" : {output} }},
+          {{ "type" : "function_call_output", "call_id" : "{T113_NEW_CALL}", "output" : {output} }},
+          {{ "role" : "user", "content" : "one" }},
+          {{ "role" : "user", "content" : "two" }},
+          {{ "role" : "user", "content" : "three" }}
+        ], "model" : "{T113_MODEL}" }}"#
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+async fn proxy_openai_responses_body_records_usage_without_rewriting_previous_response() {
+    let up = MockUpstream::openai_responses_body();
+    let (addr, state, task) = openai_server("responses-body", &up, "compress").await;
+    let request = t113_previous_response_request();
+    let resp = openai_post(&addr, "/v1/responses", request.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("response body"));
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T113_SESSION).await;
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (10, 0, 7, 2),
+        "cache_read comes from input_tokens_details.cached_tokens; no cache_create on this wire"
+    );
+    assert_eq!(u.model.as_deref(), Some(T113_MODEL));
+    let sent = state
+        .store
+        .call_io_request(u.call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    assert_eq!(
+        sent, request,
+        "previous_response_id must produce zero rewrites"
+    );
+    assert_eq!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements"),
+        0
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_openai_responses_compress_is_byte_exact_and_ignores_archive_decisions() {
+    let up = MockUpstream::openai_responses_body();
+    let (addr, state, task) = openai_server("responses-compress", &up, "compress").await;
+    let archive_dir =
+        std::env::temp_dir().join(format!("rtok-proxy-t113-collision-{}", std::process::id()));
+    let archive_id = state
+        .store
+        .put_archive("other-session", b"unrelated output", &archive_dir)
+        .expect("seed archive");
+    let collision_pointer = "[archived unrelated]";
+    state
+        .store
+        .put_archive_decision(
+            T113_COLLIDING_CALL,
+            &archive_id,
+            "other-session",
+            collision_pointer,
+        )
+        .expect("seed colliding archive decision");
+
+    let request = t113_regular_noncanonical_request();
+    let resp = openai_post(&addr, "/v1/responses", request.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("response body"));
+
+    let rows = t51_usage(&state.store, T113_SESSION).await;
+    let sent = state
+        .store
+        .call_io_request(rows[0].call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    assert_eq!(
+        sent, request,
+        "T11.3 must preserve noncanonical Responses JSON byte-for-byte"
+    );
+    assert_eq!(
+        state
+            .store
+            .archive_decision(T113_COLLIDING_CALL)
+            .expect("colliding decision")
+            .expect("seeded decision")
+            .pointer,
+        collision_pointer,
+        "a decision from another API/session must not be reused"
+    );
+    assert!(
+        state
+            .store
+            .archive_decision(T113_NEW_CALL)
+            .expect("new decision")
+            .is_none(),
+        "T11.3 must not create Responses archive decisions"
+    );
+    assert_eq!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements"),
+        0
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_openai_responses_stream_is_byte_identical_and_records_usage() {
+    let up = MockUpstream::openai_responses_stream();
+    let (addr, state, task) = openai_server("responses-stream", &up, "passthrough").await;
+    let request = serde_json::to_vec(&serde_json::json!({
+        "model": T113_MODEL, "user": T113_SESSION, "stream": true, "input": "hi"
+    }))
+    .expect("request json");
+    let resp = openai_post(&addr, "/v1/responses", request.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("response body"));
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T113_SESSION).await;
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (10, 0, 7, 2),
+        "usage decoded from response.completed, cache_read from cached_tokens"
+    );
+    let sent = state
+        .store
+        .call_io_request(u.call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    assert_eq!(
+        sent, request,
+        "Responses requests need no passthrough shaping"
     );
     task.abort();
 }
