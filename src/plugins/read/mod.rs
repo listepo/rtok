@@ -8,8 +8,9 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Result, bail};
 use serde_json::json;
 
-use crate::plugin::{Ctx, Manifest, Plugin, Surface, ToolDef};
+use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface, ToolDef};
 
+pub mod hook;
 pub mod search;
 
 pub struct Read;
@@ -21,6 +22,10 @@ impl Plugin for Read {
             surfaces: &[Surface::Mcp, Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
+        hook::pre_tool(ev, cx)
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {
