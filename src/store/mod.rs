@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
 
-use schema::{archive, call_io, calls, logs, measurements, tokens};
+use schema::{archive, call_io, calls, logs, measurements, notes, tokens};
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -307,6 +307,39 @@ impl Store {
             return Ok(None);
         };
         Ok(Some(std::fs::read(&path).with_context(|| path)?))
+    }
+
+    /// Insert a note (T2.5 checkpoints, later memory).
+    pub fn insert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        let mut conn = self.lock()?;
+        diesel::insert_into(notes::table)
+            .values((
+                notes::project.eq(project),
+                notes::kind.eq(kind),
+                notes::title.eq(title),
+                notes::body.eq(body),
+            ))
+            .returning(notes::id)
+            .get_result(&mut *conn)
+            .map_err(Into::into)
+    }
+
+    /// Newest note body for `kind`, if any.
+    pub fn latest_note(&self, kind: &str) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        notes::table
+            .filter(notes::kind.eq(kind))
+            .order(notes::id.desc())
+            .select(notes::body)
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     pub fn insert_tokens(

@@ -1,6 +1,8 @@
 //! Budgeted SessionStart / UserPromptSubmit injection (plan T2.4, D5).
 
-use crate::plugin::{Ctx, Injection, Manifest, Measurement, Plugin, Surface};
+use crate::plugin::{
+    Ctx, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart, Surface,
+};
 use crate::tokens::Class;
 
 /// Catalogue plugin `inject`.
@@ -13,6 +15,18 @@ impl Plugin for Inject {
             surfaces: &[Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+        if ev.source == "compact" {
+            super::checkpoint::offer(cx)
+        } else {
+            None
+        }
+    }
+
+    fn pre_compact(&self, ev: &PreCompact, cx: &Ctx) {
+        let _ = super::checkpoint::save(ev.transcript_path, cx);
     }
 }
 

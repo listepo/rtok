@@ -6,7 +6,7 @@
 pub mod types;
 
 use crate::config::Config;
-use crate::plugin::{Ctx, PreToolDecision};
+use crate::plugin::{Ctx, PreToolDecision, SessionStart};
 use crate::plugins::Registry;
 use crate::tokens::Class;
 use std::io::{Read, Write};
@@ -52,7 +52,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
-        "SessionStart" | "UserPromptSubmit" => inject_event(input, cx, &registry),
+        "SessionStart" | "UserPromptSubmit" | "PostCompact" => inject_event(input, cx, &registry),
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
@@ -146,6 +146,8 @@ fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput 
                 p.session_start(&ev, cx)
             } else if let Some(ev) = input.prompt_submit() {
                 p.prompt_submit(&ev, cx)
+            } else if input.hook_event_name == "PostCompact" {
+                p.session_start(&SessionStart { source: "compact" }, cx)
             } else {
                 None
             }

@@ -22,6 +22,10 @@ pub mod proxy;
 #[cfg(feature = "inject")]
 pub mod inject;
 
+/// Not a catalogue plugin (plan T2.5). Used by `inject` on PreCompact / compact restore.
+#[cfg(feature = "inject")]
+pub mod checkpoint;
+
 #[cfg(feature = "guard")]
 pub mod guard;
 
