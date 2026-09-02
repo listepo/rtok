@@ -80,6 +80,7 @@ fn config_key(path: &[&str], long: &str) -> String {
     let name = match name.as_str() {
         "timeout" => "timeout_s",
         "compare" => "baseline",
+        "mode" => "modes",
         _ => name.as_str(),
     };
     match path {

@@ -75,6 +75,9 @@ enum Cmd {
         /// Delete rtok hook entries only
         #[arg(long)]
         remove: bool,
+        /// Enable prompt modes (`terse,yagni`)
+        #[arg(long, value_delimiter = ',')]
+        mode: Vec<String>,
     },
     /// Execute a command, archive its raw output, print the filtered version
     Run {
@@ -278,8 +281,9 @@ pub fn run() -> Result<()> {
             host,
             dry_run,
             remove,
+            mode,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), setup_flags(dry_run))?;
+            let cfg = Config::load_with(config_file.as_deref(), setup_flags(dry_run, &mode))?;
             match host.as_str() {
                 "claude" => println!("{}", crate::setup::claude::run(&cfg, remove)?),
                 other => bail!("unknown host: {other}"),
@@ -329,13 +333,25 @@ fn stats_flags(
     Some(flags)
 }
 
-fn setup_flags(dry_run: bool) -> Option<figment::value::Dict> {
-    if !dry_run {
+fn setup_flags(dry_run: bool, mode: &[String]) -> Option<figment::value::Dict> {
+    if !dry_run && mode.is_empty() {
         return None;
     }
     use figment::value::{Dict, Value};
     let mut setup = Dict::new();
-    setup.insert("dry_run".into(), Value::from(true));
+    if dry_run {
+        setup.insert("dry_run".into(), Value::from(true));
+    }
+    if !mode.is_empty() {
+        setup.insert(
+            "modes".into(),
+            Value::from(
+                mode.iter()
+                    .map(|s| Value::from(s.as_str()))
+                    .collect::<Vec<_>>(),
+            ),
+        );
+    }
     let mut flags = Dict::new();
     flags.insert("setup".into(), Value::from(setup));
     Some(flags)
