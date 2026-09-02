@@ -8,8 +8,11 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Result, bail};
 use serde_json::json;
 
-use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface, ToolDef};
+use crate::plugin::{
+    Ctx, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface, ToolDef,
+};
 
+pub mod cache;
 pub mod hook;
 pub mod search;
 
@@ -26,6 +29,11 @@ impl Plugin for Read {
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
         hook::pre_tool(ev, cx)
+    }
+
+    fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> {
+        cache::invalidate(ev, cx);
+        None
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {
@@ -72,6 +80,11 @@ pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<Str
         .map(|(n, l)| format!("{n}:{l}"))
         .collect::<Vec<_>>()
         .join("\n");
+    let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
+    if let Some(hit) = cache::hit(cx, &key, numbered.as_bytes(), rows.len()) {
+        return Ok(hit);
+    }
+    let _ = cache::remember(cx, &key, numbered.as_bytes());
     cap(cx, numbered)
 }
 

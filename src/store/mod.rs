@@ -459,6 +459,17 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Drop cache rows for `path` and `path\t…` mode/range keys (T4.4).
+    pub fn clear_read_cache(&self, session: &str, path: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query("DELETE FROM read_cache WHERE session = ? AND (path = ? OR path LIKE ?)")
+            .bind::<Text, _>(session)
+            .bind::<Text, _>(path)
+            .bind::<Text, _>(format!("{path}\t%"))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Hook/call rows in this session at or after `ts` (window for `guard`).
     pub fn calls_since(&self, session: &str, ts: i64) -> Result<i64> {
         let mut conn = self.lock()?;
