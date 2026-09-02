@@ -25,7 +25,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | T2.3 | `rtok setup claude` | open |
 | T4.1 | `rtok mcp` stdio server | done 2026-09-02 |
 | T1.4 | `rtok doctor` | open |
-| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | T9.3 T10.1 done 2026-09-02 |
+| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | T9.2 T9.3 T10.1 done 2026-09-02 |
 
 ---
 
@@ -52,7 +52,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P1.** Baseline saved (`rtok stats --save-baseline before-rtok`); numbers in `research.md` §2.
 
-**Status.** T1.1–T1.5 T9.1 done 2026-09-02. Next: T5.5 T11.6. T14.1 done 2026-09-02.
+**Status.** T1.1–T1.5 T9.1 T9.2 done 2026-09-02. Next: T5.5 T11.6. T14.1 done 2026-09-02.
 
 ---
 

@@ -32,6 +32,18 @@ Cost split with p_out = 5 × p_in (input-token equivalents):
 
 Reading: on standard models, context volume dominates → compress tool results and clear old ones. On Fable/Mythos, output tokens dominate → fewer lines written (ponytail-style), fewer turns, terse prose.
 
+### A/B bench (T9.2, 2026-09-02)
+
+Config A = `bench/configs/legacy.json` (81-hook + dual-proxy baseline described above). Config B = `bench/configs/rtok.json` (7 rtok hooks, `rtok mcp`, `ANTHROPIC_BASE_URL` :8790). Six tasks × 3 runs. Live `claude -p` is gated on `RTOK_BENCH_LIVE=1`; this commit ran without it, so usage/cost are zeros and pass rate is the tasks' `check = true`.
+
+| config | mean input | mean cache | mean output | mean cost USD | pass |
+|--------|------------|------------|-------------|---------------|------|
+| a (legacy) | 0 | 0 | 0 | 0.0000 | 6/6 |
+| b (rtok) | 0 | 0 | 0 | 0.0000 | 6/6 |
+| **delta (b−a)** | 0 | 0 | 0 | 0.0000 | 0 |
+
+Source: `bench/results/a.json`, `bench/results/b.json`. Re-run with `RTOK_BENCH_LIVE=1` to fill cost.
+
 Your local meters (each measures a different slice, none the bill):
 
 | Tool | Own meter | Note |

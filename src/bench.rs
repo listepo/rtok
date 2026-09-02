@@ -89,6 +89,7 @@ fn table(tasks: &[Task], cfg: &Config) -> String {
             }
         }
     }
+    write_results(&by, tasks.len(), cfg);
     let mut s = format!(
         "{:<8} {:>10} {:>10} {:>10} {:>10} {:>8}\n",
         "config", "input", "cache", "output", "cost", "pass"
@@ -108,9 +109,42 @@ fn table(tasks: &[Task], cfg: &Config) -> String {
     s
 }
 
+fn write_results(by: &BTreeMap<String, Acc>, tasks: usize, cfg: &Config) {
+    if cfg!(test) {
+        return;
+    }
+    let dir = cfg
+        .bench
+        .tasks
+        .parent()
+        .unwrap_or(Path::new("bench"))
+        .join("results");
+    let _ = std::fs::create_dir_all(&dir);
+    let live = std::env::var("RTOK_BENCH_LIVE").is_ok();
+    for (name, a) in by {
+        let n = a.n.max(1) as f64;
+        let v = serde_json::json!({
+            "config": name,
+            "runs": a.n,
+            "mean_input": a.input as f64 / n,
+            "mean_cache": a.cache as f64 / n,
+            "mean_output": a.output as f64 / n,
+            "mean_cost_usd": a.cost / n,
+            "pass": a.pass,
+            "tasks": tasks,
+            "live": live,
+        });
+        let path = dir.join(format!("{name}.json"));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&v).unwrap_or_default() + "\n",
+        );
+    }
+}
+
 /// `(input, cache, output, cost)` from `claude -p` JSON, or zeros if it cannot run.
 fn one(prompt: &str, settings: &Path) -> (u64, u64, u64, f64) {
-    if !settings.exists() {
+    if !settings.exists() || std::env::var("RTOK_BENCH_LIVE").is_err() {
         return (0, 0, 0, 0.0);
     }
     let out = Command::new("claude")

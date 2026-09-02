@@ -337,6 +337,11 @@ Do: run `claude -p "<task>" --output-format json --settings <A|B.json>` for each
 Check: `rtok bench --dry-run` lists 6 tasks × 2 configs × 3 runs; a real run produces a table.
 Status: done 2026-09-02 · Check: dry-run 36 lines (`add-fn a 1` … `run-tests b 3`); `dry_run_lists_six_by_two_by_three`; `real_run_prints_a_table`. `make check` green. Deviation: also `src/cli.rs`, `src/lib.rs`. `claude -p` is skipped when the settings file is missing so tests do not call the network.
 
+**T9.2 baseline vs rtok** · T9.1 · `bench/results/*.json`
+Do: config A = current settings (81 hooks, both proxies); config B = rtok only (7 hooks, `rtok mcp`, `rtok proxy compress`, legacy hooks/MCP off). Run, save, summarize in research.md §2.
+Check: results committed; summary table with cost delta and pass rate.
+Status: done 2026-09-02 · Check: `bench/results/a.json` and `b.json` committed; research.md §2 table shows cost delta 0.0000 USD and pass 6/6 both configs. `make check` green. Deviation: also `src/bench.rs` (`RTOK_BENCH_LIVE` gate, JSON writer), `bench/configs/{legacy,rtok}.json`. Live `claude -p` was not run; usage/cost are zeros. Re-run with `RTOK_BENCH_LIVE=1` to fill cost.
+
 **T9.3 `rtok setup claude --replace`** · T2.3 · `src/setup/migrate.rs`
 Do: with backup: remove hook entries whose command matches a legacy list (`rtk hook`, `lean-ctx hook`, `caveman-proxy`, `caveman shrink-hook`, token-optimizer `python-launcher.sh`), remove `ANTHROPIC_BASE_URL` pointing at 8788/8787 (set 8790), disable MCP servers `lean-ctx`, `code-review-graph` (keep serena optional), keep everything unrelated (orca, holdmylid, tokenbar, cbm). Print the diff; require `--yes`.
 Check: dry-run on a copy of today's settings shows 8 remaining rtok hooks + non-token hooks; JSON stays valid.
