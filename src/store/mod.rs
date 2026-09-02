@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Nullable, Text};
+use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use sha2::{Digest, Sha256};
 
@@ -343,6 +343,37 @@ impl Store {
     }
 
     /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
+    /// Full note body by row id.
+    pub fn get_note_body(&self, id: i32) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        notes::table
+            .find(id)
+            .select(notes::body)
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// FTS5 search, BM25 order, 120-char snippets.
+    pub fn search_notes(&self, query: &str, limit: u32) -> Result<Vec<NoteHit>> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.lock()?;
+        let q = query.replace('"', " ");
+        sql_query(
+            "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
+             FROM notes_fts f JOIN notes n ON n.id = f.rowid
+             WHERE notes_fts MATCH ?
+             ORDER BY bm25(notes_fts)
+             LIMIT ?",
+        )
+        .bind::<Text, _>(q)
+        .bind::<Integer, _>(i32::try_from(limit).unwrap_or(5))
+        .load(&mut *conn)
+        .map_err(Into::into)
+    }
+
     pub fn put_read_cache(
         &self,
         session: &str,
@@ -498,6 +529,17 @@ fn hex_sha256(bytes: &[u8]) -> String {
 struct Count {
     #[diesel(sql_type = BigInt)]
     n: i64,
+}
+
+/// FTS5 search hit (T6.1).
+#[derive(Debug, QueryableByName)]
+pub struct NoteHit {
+    #[diesel(sql_type = Integer)]
+    pub id: i32,
+    #[diesel(sql_type = Text)]
+    pub title: String,
+    #[diesel(sql_type = Text)]
+    pub snippet: String,
 }
 
 /// One `measurements` row for `stats --plugin`.

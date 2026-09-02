@@ -257,6 +257,11 @@ Do: every run writes `Measurement { kind: formatter|rule|raw, before, after }`; 
 Check: after 3 runs, `rtok stats --plugin cmd --json` has 3 rows with before ≥ after.
 Status: done 2026-09-02 · Check: `three_runs_stats_plugin_cmd_json_has_rows` — 3 `rtok run` → `plugin_json` 3 rows, each before ≥ after. `make check` green. Deviation: 4 files (`cmd/run.rs`, `store/mod.rs`, `measure/stats.rs`, `cli.rs`); kind is `raw`/`rule` until T3.3 formatters.
 
+**T6.1 notes API** · T0.3 · `src/plugins/memory/mod.rs`
+Do: MCP tools `mem_save(kind, title, body, project?)`, `mem_search(query, limit=5)` → ids + titles + 120-char snippets (FTS5 `bm25`), `mem_get(id)` → full body. Project = git root name of cwd.
+Check: save 3, search returns the right one first, get returns the full body.
+Status: done 2026-09-02 · Check: save 3 notes, search `"walrus"` returns that title first, `mem_get` returns the full body. `make check` green. Deviation: also `store/mod.rs` (`search_notes`, `get_note_body`, `NoteHit`). MCP stdio comes in T4.1.
+
 **T7.1 modes as data** · T2.4 · `modes/terse.md`, `modes/yagni.md`, `src/plugins/inject.rs`
 Do: copy the intent of caveman (terse output) and ponytail (YAGNI ladder) into ≤ 250-token markdown files under `~/.rtok/modes/`; `rtok setup --mode terse,yagni` enables; injected once per session via `inject` (priority 5), not per prompt.
 Check: `rtok hook SessionStart` output contains the mode text once; UserPromptSubmit output does not.
