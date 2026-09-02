@@ -1,0 +1,8 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_s"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"ok"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_s","usage":{"input_tokens":10,"output_tokens":2}}}

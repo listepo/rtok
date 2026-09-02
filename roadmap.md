@@ -144,7 +144,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | Order | Task | Plan |
 |-------|------|------|
 | 0 | T14.5 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/proxy/PLAN.md`. |
-| 0b | T5.0 | `httpmock` upstream harness + `tests/fixtures/proxy/*` for Anthropic and OpenAI wires. |
+| 0b | T5.0 | done 2026-09-02 · `httpmock` harness + six `tests/fixtures/proxy/*` wires. |
 | 1 | T5.1 | Passthrough + SSE; insert `usage` + `calls`/`call_io`/`tokens`. |
 | 2 | T5.2 | Lifecycle, health, setup. |
 | 3 | T11.1 | `Wire` trait; Anthropic behind it. |

@@ -288,4 +288,11 @@ Do: rmcp stdio server exposing tools from all plugins' `mcp_tools()`; register `
 Check: `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | rtok mcp` lists `expand`; test asserts every description ≤ 60 tokens; a fixture `tools/call` inserts `calls` + `call_io` + three `tokens` rows.
 Status: done 2026-09-02 · Check: `tools_list_includes_expand` stdout contains expand; `descriptions_at_most_60_tokens`; `tools_call_writes_calls_io_and_three_token_rows` — 1 `mcp_call` + 1 `call_io` + 3 `tokens`. `make check` green. Deviation: also `cli.rs`, `lib.rs`, `store/mod.rs` (`host_id`, counts), `tests/mcp.rs`; host slug is `[hook] host` (no `core.host`); one-shot `tools/list` without initialize. New dep: `rmcp` (MCP types + JSON-RPC).
 
+## P5 — `proxy` + `archive`
+
+**T5.0 httpmock upstream harness** · T0.3 · `tests/proxy/mod.rs`, `tests/fixtures/proxy/`, `Cargo.toml` (dev-dep)
+Do: add `httpmock` as `[dev-dependencies]` (commit message: one-line reason). Shared helper `MockUpstream` spins a `MockServer` and serves Anthropic `POST /v1/messages` and OpenAI `POST /v1/chat/completions` + `POST /v1/responses` from `tests/fixtures/proxy/*` (non-streaming JSON bodies and SSE `text/event-stream` variants). Point rtok at `server.base_url()` via `proxy.upstream` / `proxy.openai_upstream` (or env). Helpers: `assert_passthrough_bytes`, `assert_upstream_called_once`. Fixture naming: `anthropic_messages_{stream|body}.json`, `openai_chat_{stream|body}.json`, `openai_responses_{stream|body}.json`.
+Check: `cargo test proxy_mock` green for all six fixture pairs; each test asserts client response bytes match the fixture; `mock.assert()` shows exactly one upstream hit per route.
+Status: done 2026-09-02 · Check: `cargo test proxy_mock` — 6 tests green; bytes match fixtures; `mock.assert()` one hit each. `make check` green. Deviation: crate root is `tests/proxy.rs` (Cargo). New dep: `httpmock` (mock Anthropic/OpenAI upstreams).
+
 
