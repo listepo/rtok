@@ -163,6 +163,7 @@ section! {
         claude_json: PathBuf = p("~/.claude.json"),
         mcp_json: PathBuf = p(".mcp.json"),
         probe_timeout_ms: u64 = 500,
+        mcp_timeout_ms: u64 = 15000,
         instruction_warn_tokens: u32 = 1000,
         instructions: bool = false,
     }

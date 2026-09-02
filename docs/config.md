@@ -118,6 +118,7 @@ settings_path   = "~/.claude/settings.json"
 claude_json     = "~/.claude.json"
 mcp_json        = ".mcp.json"
 probe_timeout_ms = 500                # per proxy hop /health probe
+mcp_timeout_ms  = 15000               # per MCP server tools/list (uvx/npx servers start slowly)
 instruction_warn_tokens = 1000        # --instructions: flag files above this
 instructions    = false               # run the instruction audit by default (--instructions)
 

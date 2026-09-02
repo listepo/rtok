@@ -5,10 +5,11 @@ use crate::tokens::{self, Class};
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::Duration;
 
 pub fn run(cfg: &Config) -> Result<String> {
@@ -21,11 +22,25 @@ pub fn run(cfg: &Config) -> Result<String> {
     }
     out.push_str("mcp\n");
     let claude = read_json(&cfg.doctor.claude_json);
-    let servers = mcp_servers(claude.as_ref(), Path::new(&cfg.doctor.mcp_json));
-    for (name, cmd) in &servers {
-        let (n_tools, desc_tokens) = list_tools(cmd, Duration::from_secs(2), &cfg.estimator);
+    let mut servers = mcp_servers(claude.as_ref(), Path::new(&cfg.doctor.mcp_json));
+    // rtok's own MCP surface, so the P6/P8 gates compare like with like.
+    // Not under test: current_exe would be the test binary.
+    if !cfg!(test)
+        && let Ok(exe) = std::env::current_exe()
+    {
+        servers.push(Server {
+            name: "rtok".into(),
+            cmd: exe.display().to_string(),
+            args: vec!["mcp".into()],
+            env: BTreeMap::new(),
+        });
+    }
+    let timeout = Duration::from_millis(cfg.doctor.mcp_timeout_ms.max(500));
+    for s in &servers {
+        let (n_tools, desc_tokens) = list_tools(s, timeout, &cfg.estimator);
         out.push_str(&format!(
-            "  {name} ({n_tools} tools, ~{desc_tokens} desc tokens) {cmd}\n"
+            "  {} ({n_tools} tools, ~{desc_tokens} desc tokens) {}\n",
+            s.name, s.cmd
         ));
     }
     let chain = proxy_chain(
@@ -213,8 +228,17 @@ fn read_json(path: &Path) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
-fn mcp_servers(claude: Option<&Value>, mcp_json: &Path) -> Vec<(String, String)> {
-    let mut out = Vec::new();
+/// One `mcpServers` entry. `args`/`env` matter: spawning the bare `command` made every
+/// `uvx`/`npx`-launched server (serena, mobile, engram) report 0 tools.
+struct Server {
+    name: String,
+    cmd: String,
+    args: Vec<String>,
+    env: BTreeMap<String, String>,
+}
+
+fn mcp_servers(claude: Option<&Value>, mcp_json: &Path) -> Vec<Server> {
+    let mut out: Vec<Server> = Vec::new();
     for src in [claude, read_json(mcp_json).as_ref()] {
         let Some(map) = src
             .and_then(|v| v.get("mcpServers"))
@@ -223,22 +247,42 @@ fn mcp_servers(claude: Option<&Value>, mcp_json: &Path) -> Vec<(String, String)>
             continue;
         };
         for (name, spec) in map {
-            let cmd = spec
-                .get("command")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if !out.iter().any(|(n, _)| n == name) {
-                out.push((name.clone(), cmd));
+            if out.iter().any(|s| &s.name == name) {
+                continue;
             }
+            let args = spec
+                .get("args")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            let env = spec
+                .get("env")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect();
+            out.push(Server {
+                name: name.clone(),
+                cmd: spec
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                args,
+                env,
+            });
         }
     }
-    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
 
-fn list_tools(cmd: &str, timeout: Duration, est: &crate::config::Estimator) -> (usize, u32) {
-    if cmd.is_empty() || !Path::new(cmd).is_file() {
+fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> (usize, u32) {
+    if s.cmd.is_empty() {
         return (0, 0);
     }
     let payload = concat!(
@@ -249,7 +293,9 @@ fn list_tools(cmd: &str, timeout: Duration, est: &crate::config::Estimator) -> (
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
         "\n"
     );
-    let mut child = match Command::new(cmd)
+    let mut child = match Command::new(&s.cmd)
+        .args(&s.args)
+        .envs(&s.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -258,44 +304,40 @@ fn list_tools(cmd: &str, timeout: Duration, est: &crate::config::Estimator) -> (
         Ok(c) => c,
         Err(_) => return (0, 0),
     };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(payload.as_bytes());
+    // Keep stdin open until we have the answer: some servers exit on EOF before replying,
+    // and slow starters (uvx, npx) need the full timeout rather than a wait-for-exit.
+    let mut stdin = child.stdin.take();
+    if let Some(si) = stdin.as_mut() {
+        let _ = si.write_all(payload.as_bytes());
     }
-    let start = std::time::Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if start.elapsed() > timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return (0, 0);
+    let (tx, rx) = mpsc::channel::<Value>();
+    let stdout = child.stdout.take();
+    std::thread::spawn(move || {
+        let Some(so) = stdout else { return };
+        for line in BufReader::new(so).lines().map_while(Result::ok) {
+            if let Ok(v) = serde_json::from_str::<Value>(&line)
+                && let Some(tools) = v.pointer("/result/tools")
+            {
+                let _ = tx.send(tools.clone());
+                return;
             }
-            Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-            Err(_) => return (0, 0),
         }
-    }
-    let mut buf = Vec::new();
-    if let Some(mut so) = child.stdout.take() {
-        let _ = so.read_to_end(&mut buf);
-    }
-    let text = String::from_utf8_lossy(&buf);
-    for line in text.lines().rev() {
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let Some(tools) = v.pointer("/result/tools").and_then(Value::as_array) else {
-            continue;
-        };
-        let tokens: u32 = tools
-            .iter()
-            .map(|t| {
-                let d = t.get("description").and_then(Value::as_str).unwrap_or("");
-                tokens::estimate(d, Class::Prose, est)
-            })
-            .sum();
-        return (tools.len(), tokens);
-    }
-    (0, 0)
+    });
+    let tools = rx.recv_timeout(timeout).ok();
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let Some(tools) = tools.as_ref().and_then(Value::as_array) else {
+        return (0, 0);
+    };
+    let tokens: u32 = tools
+        .iter()
+        .map(|t| {
+            let d = t.get("description").and_then(Value::as_str).unwrap_or("");
+            tokens::estimate(d, Class::Prose, est)
+        })
+        .sum();
+    (tools.len(), tokens)
 }
 
 fn proxy_chain(settings: Option<&Value>, timeout: Duration) -> String {
@@ -359,6 +401,19 @@ mod tests {
         let c = count_hooks(Some(&s));
         assert_eq!(c.total, 3);
         assert_eq!(c.by_event["PreToolUse"], 3);
+    }
+
+    #[test]
+    fn mcp_servers_keep_args_and_env() {
+        let c = json!({"mcpServers":{
+            "serena":{"command":"/usr/bin/uvx","args":["--from","serena-agent","serena"],"env":{"A":"1"}},
+            "bare":{"command":"x"}}});
+        let s = mcp_servers(Some(&c), Path::new("/nonexistent/.mcp.json"));
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].name, "bare");
+        assert!(s[0].args.is_empty());
+        assert_eq!(s[1].args, ["--from", "serena-agent", "serena"]);
+        assert_eq!(s[1].env["A"], "1");
     }
 
     #[test]
