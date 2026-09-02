@@ -3,7 +3,9 @@
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Manifest, Plugin, Surface};
+use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
+
+pub mod hook;
 
 pub mod rules;
 pub mod run;
@@ -17,5 +19,9 @@ impl Plugin for Cmd {
             surfaces: &[Surface::Hook, Surface::Cli],
             default_on: true,
         }
+    }
+
+    fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
+        hook::pre_tool(ev, cx)
     }
 }
