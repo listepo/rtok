@@ -57,6 +57,9 @@ pub struct Ctx {
     pub store: Store,
     /// Host session id; every measurement is attributed to it.
     pub session: String,
+    /// The `calls` row this dispatch runs under (the API request in the proxy), when the
+    /// surface has one. `record_call` / `record_plugin_run` nest their rows under it.
+    pub call_id: Option<i32>,
 }
 
 impl Ctx {
@@ -67,6 +70,7 @@ impl Ctx {
             config,
             store,
             session: session.into(),
+            call_id: None,
         })
     }
 
@@ -76,6 +80,7 @@ impl Ctx {
             config: Config::default(),
             store: Store::open_in_memory()?,
             session: session.into(),
+            call_id: None,
         })
     }
 
@@ -90,10 +95,30 @@ impl Ctx {
     }
 
     pub fn record_call(&self, surface: &str, kind: &str, name: Option<&str>) -> Result<i32> {
+        self.insert_call(surface, kind, None, name)
+    }
+
+    /// A `plugin_run` row for `plugin`, nested under [`Ctx::call_id`] when set.
+    pub fn record_plugin_run(&self, surface: &str, plugin: &str) -> Result<i32> {
+        self.insert_call(surface, "plugin_run", Some(plugin), None)
+    }
+
+    fn insert_call(
+        &self,
+        surface: &str,
+        kind: &str,
+        plugin: Option<&str>,
+        name: Option<&str>,
+    ) -> Result<i32> {
         self.store
             .upsert_session(&self.session, None, None, None, None)?;
-        self.store
-            .insert_call(&self.session, surface, kind, None, None, None, None, name)
+        let id =
+            self.store
+                .insert_call(&self.session, surface, kind, None, None, None, plugin, name)?;
+        if let Some(parent) = self.call_id {
+            self.store.set_call_parent(id, parent)?;
+        }
+        Ok(id)
     }
 
     pub fn record_tokens(

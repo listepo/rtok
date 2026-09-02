@@ -114,10 +114,6 @@ Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats`
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
-**T5.3 live-zone archive rewrite** · T5.1 · `src/plugins/archive.rs`
-Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archive.keep_turns` (default 4 turns from the end), (b) larger than `archive.min_tokens` (default 1,500 est.), replace content with `[archived <id>: first 8 lines … last 4 lines · N tokens · expand(<id>)]`. **Decisions are keyed by `tool_use_id` and persisted**, so the same block is rewritten identically on every later request (frozen prefix stays byte-stable). Never touch `system`, `tools`, the last `keep_turns` turns, or any `tool_result` whose id was `expand`ed. Record measurement per rewritten block. Child `calls` row `kind=plugin_run` plugin=`archive` with `tokens` phase `before` (est. of the block) and `after` (est. of the pointer).
-Check: fixture request with 6 turns → only turns 1–2 large results rewritten; sending the same request twice yields byte-identical rewritten bodies; unit test proves the prefix up to the first rewritten block is unchanged.
-
 **T5.4 `expand` through the proxy** · T5.3, T4.1 · `src/plugins/archive.rs`
 Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); mark id as expanded → T5.3 stops rewriting it from the next request on. Track expand rate.
 Check: expand → next fixture request contains the original block again.

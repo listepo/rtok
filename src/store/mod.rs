@@ -25,6 +25,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0001.sql", include_str!("../../migrations/0001.sql")),
     ("0002.sql", include_str!("../../migrations/0002.sql")),
     ("0003.sql", include_str!("../../migrations/0003.sql")),
+    ("0004.sql", include_str!("../../migrations/0004.sql")),
 ];
 
 pub struct Store {
@@ -198,6 +199,15 @@ impl Store {
             .get_result(&mut *conn)?)
     }
 
+    /// Nest a `plugin_run` row under the hook, MCP call or API request it ran in.
+    pub fn set_call_parent(&self, id: i32, parent: i32) -> Result<()> {
+        let mut conn = self.lock()?;
+        diesel::update(calls::table.filter(calls::id.eq(id)))
+            .set(calls::parent_id.eq(parent))
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     pub fn set_call_ms(&self, id: i32, ms: f64) -> Result<()> {
         let mut conn = self.lock()?;
         diesel::update(calls::table.filter(calls::id.eq(id)))
@@ -290,6 +300,8 @@ impl Store {
                     archive::path.eq(path.to_string_lossy().as_ref()),
                     archive::sha256.eq(&sha),
                 ))
+                .on_conflict(archive::id)
+                .do_nothing() // the same body twice (T5.3 repeat requests) is one archive row
                 .execute(&mut *conn)?;
             return Ok((None, Some(sha), n, Some(hex_sha256(body))));
         }
@@ -317,6 +329,80 @@ impl Store {
             .do_nothing()
             .execute(&mut *conn)?;
         Ok(sha)
+    }
+
+    /// T5.3: the persisted decision for a `tool_use_id`, if the archive plugin made one.
+    pub fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
+        let mut conn = self.lock()?;
+        let rows: Vec<ArchiveDecision> = sql_query(
+            "SELECT archive_id, pointer, expanded_ts IS NOT NULL AS expanded
+             FROM archive_decisions WHERE tool_use_id = ?",
+        )
+        .bind::<Text, _>(tool_use_id)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().next())
+    }
+
+    /// T5.3: persist a decision. First writer wins — the pointer must never change.
+    pub fn put_archive_decision(
+        &self,
+        tool_use_id: &str,
+        archive_id: &str,
+        session: &str,
+        pointer: &str,
+    ) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT OR IGNORE INTO archive_decisions (tool_use_id, archive_id, session, pointer)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind::<Text, _>(tool_use_id)
+        .bind::<Text, _>(archive_id)
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(pointer)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    /// T5.4: an `expand <id>` freezes every decision pointing at that archive id. Returns
+    /// how many decisions changed (0 = the id was not a live-zone pointer).
+    pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
+        let mut conn = self.lock()?;
+        Ok(sql_query(
+            "UPDATE archive_decisions SET expanded_ts = unixepoch()
+             WHERE archive_id = ? AND expanded_ts IS NULL",
+        )
+        .bind::<Text, _>(archive_id)
+        .execute(&mut *conn)?)
+    }
+
+    /// `(decisions, expanded)` — the expand rate is the archive plugin's honesty metric (T5.4).
+    pub fn archive_decision_counts(&self) -> Result<(i64, i64)> {
+        let mut conn = self.lock()?;
+        let rows: Vec<Count> =
+            sql_query("SELECT COUNT(*) AS n FROM archive_decisions").load(&mut *conn)?;
+        let total = rows.first().map(|r| r.n).unwrap_or(0);
+        let rows: Vec<Count> =
+            sql_query("SELECT COUNT(*) AS n FROM archive_decisions WHERE expanded_ts IS NOT NULL")
+                .load(&mut *conn)?;
+        Ok((total, rows.first().map(|r| r.n).unwrap_or(0)))
+    }
+
+    /// The request bytes recorded for a call (inline `call_io.request_json`, else the archive).
+    pub fn call_io_request(&self, call_id: i32) -> Result<Option<Vec<u8>>> {
+        let row: Option<(Option<String>, Option<String>)> = {
+            let mut conn = self.lock()?;
+            call_io::table
+                .find(call_id)
+                .select((call_io::request_json, call_io::request_archive))
+                .first(&mut *conn)
+                .optional()?
+        };
+        match row {
+            Some((Some(json), _)) => Ok(Some(json.into_bytes())),
+            Some((None, Some(id))) => self.get_archive(&id),
+            _ => Ok(None),
+        }
     }
 
     /// Path and bytes for `rtok expand <id>`. `None` if the id is unknown.
@@ -799,6 +885,17 @@ pub struct MeasRow {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
+}
+
+/// T5.3 archive decision: the frozen pointer text for one `tool_use_id`.
+#[derive(Debug, QueryableByName)]
+pub struct ArchiveDecision {
+    #[diesel(sql_type = Text)]
+    pub archive_id: String,
+    #[diesel(sql_type = Text)]
+    pub pointer: String,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub expanded: bool,
 }
 
 /// One `usage` row (proxy ground truth, T5.1).

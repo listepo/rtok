@@ -163,6 +163,7 @@ fn t51_request() -> Vec<u8> {
 async fn t51_server(
     label: &str,
     up: &MockUpstream,
+    mode: &str,
 ) -> (
     String,
     Arc<ProxyState>,
@@ -172,6 +173,7 @@ async fn t51_server(
     let _ = std::fs::remove_dir_all(&dir);
     let mut cfg = Config::load_from(&dir).expect("config");
     cfg.proxy.upstream = up.base_url();
+    cfg.proxy.mode = mode.to_string();
     let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -191,11 +193,11 @@ async fn t51_post(addr: &str, body: Vec<u8>) -> reqwest::Response {
         .expect("request through the proxy")
 }
 
-/// The recorder task writes rows after the body was forwarded; poll briefly for them.
-async fn t51_usage(state: &Store, session: &str) -> Vec<UsageRow> {
+/// The recorder task writes rows after the body was forwarded; poll briefly for `n` of them.
+async fn t51_usage_n(state: &Store, session: &str, n: usize) -> Vec<UsageRow> {
     for _ in 0..400 {
         let rows = state.usage_rows(session).expect("usage read");
-        if !rows.is_empty() {
+        if rows.len() >= n {
             return rows;
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -203,10 +205,14 @@ async fn t51_usage(state: &Store, session: &str) -> Vec<UsageRow> {
     panic!("usage row for {session} never appeared");
 }
 
+async fn t51_usage(state: &Store, session: &str) -> Vec<UsageRow> {
+    t51_usage_n(state, session, 1).await
+}
+
 #[tokio::test]
 async fn proxy_passthrough_body_records_usage_rows() {
     let up = MockUpstream::anthropic_messages_body();
-    let (addr, state, task) = t51_server("body", &up).await;
+    let (addr, state, task) = t51_server("body", &up, "passthrough").await;
     let resp = t51_post(&addr, t51_request()).await;
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
     let bytes = resp.bytes().await.expect("response body");
@@ -241,7 +247,7 @@ async fn proxy_passthrough_body_records_usage_rows() {
 #[tokio::test]
 async fn proxy_passthrough_stream_is_byte_identical_and_records_usage() {
     let up = MockUpstream::anthropic_messages_stream();
-    let (addr, state, task) = t51_server("stream", &up).await;
+    let (addr, state, task) = t51_server("stream", &up, "passthrough").await;
     let resp = t51_post(&addr, t51_request()).await;
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
     assert!(
@@ -273,7 +279,7 @@ async fn proxy_passthrough_stream_is_byte_identical_and_records_usage() {
 #[tokio::test]
 async fn proxy_health_reports_ok_and_mode() {
     let up = MockUpstream::anthropic_messages_body();
-    let (addr, _state, task) = t51_server("health", &up).await;
+    let (addr, _state, task) = t51_server("health", &up, "passthrough").await;
     let resp = reqwest::Client::new()
         .get(format!("http://{addr}/health"))
         .send()
@@ -283,5 +289,90 @@ async fn proxy_health_reports_ok_and_mode() {
     let body = resp.text().await.expect("health body");
     let v: serde_json::Value = serde_json::from_str(&body).expect("json");
     assert_eq!(v, serde_json::json!({"ok": true, "mode": "passthrough"}));
+    task.abort();
+}
+
+// ── T5.3: compress mode — old, large tool_results become pointers; repeat is byte-identical ──
+
+const T53_SESSION: &str = "sess-t53";
+
+/// Six user turns, each carrying one 400-line tool_result (well above `archive.min_tokens`).
+fn t53_request() -> Vec<u8> {
+    let mut messages = Vec::new();
+    for t in 1..=6 {
+        let text = (1..=400)
+            .map(|i| format!("t{t} line {i}: some shell output with words"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        messages.push(serde_json::json!({"role":"user","content":[
+            {"type":"tool_result","tool_use_id":format!("tu-{t}"),"content":text}]}));
+        messages.push(serde_json::json!({"role":"assistant","content":[
+            {"type":"tool_use","id":format!("tu-{}", t + 1),"name":"Bash","input":{}}]}));
+    }
+    serde_json::to_vec(&serde_json::json!({
+        "model": T51_MODEL, "max_tokens": 8, "system": "sys", "tools": [{"name": "Bash"}],
+        "messages": messages, "metadata": {"user_id": T53_SESSION}
+    }))
+    .expect("request json")
+}
+
+#[tokio::test]
+async fn proxy_compress_rewrites_old_tool_results_identically() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = t51_server("compress", &up, "compress").await;
+    for _ in 0..2 {
+        let resp = t51_post(&addr, t53_request()).await;
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+    }
+    let rows = t51_usage_n(&state.store, T53_SESSION, 2).await;
+    let sent: Vec<String> = rows
+        .iter()
+        .map(|u| {
+            let id = u.call_id.expect("call id") as i32;
+            let bytes = state
+                .store
+                .call_io_request(id)
+                .expect("call_io")
+                .expect("request");
+            String::from_utf8(bytes).expect("utf-8")
+        })
+        .collect();
+    assert_eq!(
+        sent[0], sent[1],
+        "same request twice → byte-identical upstream bodies"
+    );
+    let body: serde_json::Value = serde_json::from_str(&sent[0]).expect("json");
+    let contents: Vec<&str> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .map(|m| m["content"][0]["content"].as_str().unwrap())
+        .collect();
+    assert_eq!(contents.len(), 6);
+    assert!(contents[0].starts_with("[archived ") && contents[1].starts_with("[archived "));
+    for (i, c) in contents.iter().enumerate().skip(2) {
+        assert!(
+            c.starts_with(&format!("t{} line 1:", i + 1)),
+            "turn {} untouched",
+            i + 1
+        );
+        assert!(!c.contains("[archived"));
+    }
+    assert_eq!(body["system"], "sys");
+    assert_eq!(body["tools"][0]["name"], "Bash");
+    assert_eq!(state.store.count_kind("api_request").expect("calls"), 2);
+    assert_eq!(
+        state.store.count_kind("plugin_run").expect("plugin runs"),
+        2
+    );
+    assert_eq!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements"),
+        4
+    );
     task.abort();
 }

@@ -38,6 +38,8 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
+use crate::plugin::Ctx;
+use crate::plugins::Registry;
 use crate::store::Store;
 
 pub mod cli;
@@ -55,6 +57,9 @@ pub struct ProxyState {
     inline_cap: usize,
     archive_dir: Option<PathBuf>,
     pub mode: String,
+    /// `compress` mode (T5.3): every enabled plugin's `proxy_filter` runs on `/v1/messages`.
+    registry: Registry,
+    cfg: Config,
 }
 
 impl ProxyState {
@@ -75,6 +80,8 @@ impl ProxyState {
             inline_cap: cfg.core.call_io_inline_bytes as usize,
             archive_dir: Some(cfg.core.archive_dir.clone()),
             mode: cfg.proxy.mode.clone(),
+            registry: Registry::new(cfg),
+            cfg: cfg.clone(),
         })
     }
 }
@@ -129,6 +136,12 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
     let parsed = serde_json::from_slice::<Value>(&request_body).ok();
     let recorded = record(&state, &path, parsed.as_ref(), &headers, &request_body);
+    // From here on `request_body` is what upstream sees (and what `call_io` records).
+    let request_body = if state.mode == "compress" && path == "/v1/messages" {
+        compress(&state, parsed, recorded.as_ref(), request_body)
+    } else {
+        request_body
+    };
 
     let target = match upstream_url(&state.upstream, &path, query.as_deref()) {
         Ok(u) => u,
@@ -217,6 +230,55 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         Ok(r) => r,
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
+}
+
+/// `compress` mode: run every enabled plugin's `proxy_filter` over the parsed body and
+/// forward the re-serialised result. Fail open: no parse, no `calls` row, a store error, or
+/// no change at all → the original bytes go through untouched.
+fn compress(
+    state: &ProxyState,
+    parsed: Option<Value>,
+    recorded: Option<&Recorded>,
+    original: Bytes,
+) -> Bytes {
+    let (Some(mut body), Some(r)) = (parsed, recorded) else {
+        return original;
+    };
+    let mut cx = match Ctx::open(state.cfg.clone(), r.session.clone()) {
+        Ok(cx) => cx,
+        Err(e) => {
+            log(
+                &state.store,
+                &r.session,
+                Some(r.call_id),
+                "error",
+                &format!("ctx: {e}"),
+            );
+            return original;
+        }
+    };
+    cx.call_id = Some(r.call_id);
+    let mut changed = false;
+    for p in state.registry.enabled() {
+        for m in p.proxy_filter(&mut body, &cx) {
+            changed = true;
+            if let Err(e) = cx.record(&m) {
+                log(
+                    &state.store,
+                    &r.session,
+                    Some(r.call_id),
+                    "error",
+                    &format!("measurement: {e}"),
+                );
+            }
+        }
+    }
+    if !changed {
+        return original;
+    }
+    serde_json::to_vec(&body)
+        .map(Bytes::from)
+        .unwrap_or(original)
 }
 
 /// One request's bookkeeping: session, host, provider+model, and the `calls` row.

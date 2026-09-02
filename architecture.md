@@ -100,7 +100,7 @@ path.
 `Ctx` is the whole world a plugin sees:
 
 ```rust
-pub struct Ctx { pub config: Config, pub store: Store, pub session: String }
+pub struct Ctx { pub config: Config, pub store: Store, pub session: String, pub call_id: Option<i32> } // call_id: owning `calls` row (proxy api_request), parent of `record_plugin_run` rows
 impl Ctx {
     fn estimate(&self, text: &str, class: Class) -> u32;   // tokens, ±15 %
     fn plugin_cfg(&self, id: &str) -> Option<&PluginCfg>;  // [plugins.<id>] table
