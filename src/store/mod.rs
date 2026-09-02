@@ -343,6 +343,25 @@ impl Store {
     }
 
     /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
+    /// Newest note titles for SessionStart recall (T6.2). Never bodies.
+    pub fn list_note_titles(
+        &self,
+        project: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<(i32, String)>> {
+        let mut conn = self.lock()?;
+        let lim = i64::from(limit.max(1));
+        let mut q = notes::table
+            .order(notes::id.desc())
+            .limit(lim)
+            .select((notes::id, notes::title))
+            .into_boxed();
+        if let Some(p) = project {
+            q = q.filter(notes::project.eq(p));
+        }
+        q.load(&mut *conn).map_err(Into::into)
+    }
+
     /// Full note body by row id.
     pub fn get_note_body(&self, id: i32) -> Result<Option<String>> {
         let mut conn = self.lock()?;

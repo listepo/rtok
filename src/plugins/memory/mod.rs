@@ -1,6 +1,7 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
-use crate::plugin::{Ctx, Manifest, Plugin, Surface, ToolDef};
+use crate::plugin::{Ctx, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef};
+use crate::tokens::Class;
 use serde_json::json;
 
 pub struct Memory;
@@ -33,6 +34,10 @@ impl Plugin for Memory {
             },
         ]
     }
+
+    fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+        recall(cx)
+    }
 }
 
 /// Git directory name of `cwd`, if any.
@@ -46,6 +51,30 @@ pub fn project_name(cwd: &std::path::Path) -> Option<String> {
             return None;
         }
     }
+}
+
+fn recall(cx: &Ctx) -> Option<Injection> {
+    let n = cx.config.plugins.memory.recall_titles.max(1);
+    let cap = cx.config.plugins.memory.recall_tokens.max(1);
+    let project = std::env::current_dir().ok().and_then(|d| project_name(&d));
+    let rows = cx.store.list_note_titles(project.as_deref(), n).ok()?;
+    if rows.is_empty() {
+        return None;
+    }
+    let mut lines = vec!["notes".to_string()];
+    for (id, title) in &rows {
+        lines.push(format!("{id} {title}"));
+    }
+    let mut text = lines.join("\n");
+    while cx.estimate(&text, Class::Prose) > cap && lines.len() > 1 {
+        lines.pop();
+        text = lines.join("\n");
+    }
+    Some(Injection {
+        plugin: "memory",
+        text,
+        priority: 10,
+    })
 }
 
 pub fn mem_save(
@@ -107,5 +136,27 @@ mod tests {
         assert!(hits[0].snippet.len() <= 120);
         let body = mem_get(&cx, a).unwrap().unwrap();
         assert_eq!(body, "the walrus journal lives here");
+    }
+
+    #[test]
+    fn twenty_notes_recall_five_titles_under_budget_stable() {
+        let cx = Ctx::in_memory("t62").unwrap();
+        for i in 0..20 {
+            mem_save(
+                &cx,
+                "note",
+                &format!("title-{i}"),
+                &format!("body-{i} secret"),
+                Some("rtok"),
+            )
+            .unwrap();
+        }
+        let a = recall(&cx).unwrap();
+        let b = recall(&cx).unwrap();
+        assert_eq!(a.text, b.text);
+        assert!(!a.text.contains("secret"), "{}", a.text);
+        assert_eq!(a.text.lines().count(), 6, "{}", a.text);
+        assert!(cx.estimate(&a.text, Class::Prose) <= 200);
+        assert_eq!(a.priority, 10);
     }
 }
