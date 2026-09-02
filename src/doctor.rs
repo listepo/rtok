@@ -58,7 +58,120 @@ pub fn run(cfg: &Config) -> Result<String> {
             .map(|v| v.to_string())
             .unwrap_or_else(|| "(unset)".into())
     ));
+    if cfg.doctor.instructions {
+        out.push_str(&instruction_audit(cfg, settings.as_ref(), claude.as_ref()));
+    }
     Ok(out)
+}
+
+const INJECTORS: &[&str] = &[
+    "lean-ctx",
+    "engram",
+    "ponytail",
+    "claude-mem",
+    "token-optimizer",
+    "caveman",
+    "headroom",
+];
+
+struct Source {
+    name: String,
+    path: String,
+    text: String,
+}
+
+fn instruction_audit(cfg: &Config, settings: Option<&Value>, claude: Option<&Value>) -> String {
+    let mut srcs = Vec::new();
+    if let Some(dir) = cfg.doctor.settings_path.parent() {
+        push_file(&mut srcs, "claude-user", &dir.join("CLAUDE.md"));
+    }
+    if let Some(root) = git_root() {
+        push_file(&mut srcs, "claude-project", &root.join("CLAUDE.md"));
+        push_file(&mut srcs, "agents-project", &root.join("AGENTS.md"));
+    }
+    let blob = format!(
+        "{}{}",
+        settings.map(Value::to_string).unwrap_or_default(),
+        claude.map(Value::to_string).unwrap_or_default()
+    );
+    for name in INJECTORS {
+        if blob.contains(name) {
+            let path = find_skill(name).unwrap_or_else(|| format!("mcp:{name}"));
+            let text = std::fs::read_to_string(&path).unwrap_or_default();
+            srcs.push(Source {
+                name: (*name).into(),
+                path,
+                text,
+            });
+        }
+    }
+    let mut out = String::from("instructions\n");
+    let warn_at = cfg.doctor.instruction_warn_tokens;
+    for s in &srcs {
+        let n = tokens::estimate(&s.text, Class::Prose, &cfg.estimator);
+        let flag = if n > warn_at { " WARN" } else { "" };
+        out.push_str(&format!("  {} {n} tokens {}{flag}\n", s.name, s.path));
+    }
+    for (sent, names) in duplicates(&srcs) {
+        out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
+    }
+    out
+}
+
+fn push_file(srcs: &mut Vec<Source>, name: &str, path: &Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let disp = path.display().to_string();
+    if srcs.iter().any(|s| s.path == disp) {
+        return;
+    }
+    srcs.push(Source {
+        name: name.into(),
+        path: disp,
+        text,
+    });
+}
+
+fn git_root() -> Option<std::path::PathBuf> {
+    let mut p = std::env::current_dir().ok()?;
+    loop {
+        if p.join(".git").exists() {
+            return Some(p);
+        }
+        if !p.pop() {
+            return None;
+        }
+    }
+}
+
+fn find_skill(name: &str) -> Option<String> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let p = home.join(".claude/skills").join(name).join("SKILL.md");
+    p.is_file().then(|| p.display().to_string())
+}
+
+fn duplicates(srcs: &[Source]) -> Vec<(String, Vec<String>)> {
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for s in srcs {
+        for line in s.text.lines() {
+            let t = line.trim();
+            if t.len() < 40 {
+                continue;
+            }
+            map.entry(t.to_string()).or_default().push(s.name.clone());
+        }
+    }
+    map.into_iter()
+        .filter_map(|(sent, mut names)| {
+            names.sort();
+            names.dedup();
+            (names.len() > 1).then_some((sent.chars().take(60).collect(), names))
+        })
+        .collect()
 }
 
 struct HookCount {
@@ -252,5 +365,35 @@ mod tests {
     fn hostport_strips_loopback() {
         assert_eq!(hostport("http://127.0.0.1:8788"), "8788");
         assert_eq!(hostport("http://127.0.0.1:8787/w/claude"), "8787");
+    }
+
+    #[test]
+    fn instructions_lists_four_injectors() {
+        let dir = std::env::temp_dir().join("rtok-t72-instructions");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CLAUDE.md"),
+            "user claude md padding for a long enough line xx\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("claude.json"),
+            r#"{"mcpServers":{"lean-ctx":{"command":"/bin/true"},"engram":{"command":"/bin/true"},"ponytail":{"command":"/bin/true"},"claude-mem":{"command":"/bin/true"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("settings.json"), "{}").unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("claude.json");
+        cfg.doctor.instructions = true;
+        let s = run(&cfg).unwrap();
+        assert!(s.contains("instructions"), "{s}");
+        let n = s
+            .lines()
+            .filter(|l| l.starts_with("  ") && l.contains("tokens"))
+            .count();
+        assert!(n >= 4, "{s}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
