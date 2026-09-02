@@ -5,6 +5,7 @@
 
 use crate::plugin::{Manifest, Plugin, Surface};
 
+pub mod rules;
 pub mod run;
 
 pub struct Cmd;
