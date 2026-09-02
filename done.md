@@ -281,4 +281,11 @@ Do: `rtok doctor --instructions`: token count of `~/.claude/CLAUDE.md` + project
 Check: on this machine, report lists ≥ 4 injectors and their token totals.
 Status: done 2026-09-02 · Check: `instructions_lists_four_injectors` — four named MCP injectors plus CLAUDE.md files, each with a token total; duplicates and >1000 flagged. `make check` green.
 
+## P4 — `read` plugin + MCP server
+
+**T4.1 `rtok mcp`** · T0.4, T13.3 · `src/mcp.rs`
+Do: rmcp stdio server exposing tools from all plugins' `mcp_tools()`; register `expand` from T3.5. Tool descriptions ≤ 60 tokens each (measured by T0.5 in a test). Every `tools/call` writes `calls` (`kind=mcp_call`, `plugin` from the `ToolDef`, `host` from `core.host`) with full arguments and result in `call_io` (archive if over cap — MCP is not the hook path). `tokens`: phase `before` = estimate of arguments, phase `after` = estimate of result, phase `mcp` on the owning plugin (same after count, so `stats --plugin` includes MCP).
+Check: `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | rtok mcp` lists `expand`; test asserts every description ≤ 60 tokens; a fixture `tools/call` inserts `calls` + `call_io` + three `tokens` rows.
+Status: done 2026-09-02 · Check: `tools_list_includes_expand` stdout contains expand; `descriptions_at_most_60_tokens`; `tools_call_writes_calls_io_and_three_token_rows` — 1 `mcp_call` + 1 `call_io` + 3 `tokens`. `make check` green. Deviation: also `cli.rs`, `lib.rs`, `store/mod.rs` (`host_id`, counts), `tests/mcp.rs`; host slug is `[hook] host` (no `core.host`); one-shot `tools/list` without initialize. New dep: `rmcp` (MCP types + JSON-RPC).
+
 

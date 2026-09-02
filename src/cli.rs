@@ -310,6 +310,10 @@ pub fn run() -> Result<()> {
             let code = crate::plugins::cmd::run::run(&cfg, &command)?;
             std::process::exit(code);
         }
+        Cmd::Mcp => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            crate::mcp::run(&cfg)?;
+        }
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;

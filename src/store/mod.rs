@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
 
-use schema::{archive, call_io, calls, logs, measurements, notes, read_cache, tokens};
+use schema::{archive, call_io, calls, hosts, logs, measurements, notes, read_cache, tokens};
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -207,6 +207,25 @@ impl Store {
             .filter(calls::kind.eq(kind))
             .count()
             .get_result(&mut *conn)?)
+    }
+
+    pub fn host_id(&self, slug: &str) -> Result<Option<i32>> {
+        let mut conn = self.lock()?;
+        Ok(hosts::table
+            .filter(hosts::slug.eq(slug))
+            .select(hosts::id)
+            .first(&mut *conn)
+            .optional()?)
+    }
+
+    pub fn count_call_io(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(call_io::table.count().get_result(&mut *conn)?)
+    }
+
+    pub fn count_tokens(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(tokens::table.count().get_result(&mut *conn)?)
     }
 
     pub fn insert_call_io(

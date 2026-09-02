@@ -16,6 +16,7 @@ pub mod config;
 pub mod doctor;
 pub mod expand;
 pub mod hooks;
+pub mod mcp;
 pub mod measure;
 pub mod plugin;
 pub mod plugins;

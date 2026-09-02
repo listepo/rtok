@@ -23,7 +23,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | T2.1 | `rtok hook <event>` dispatcher, fail open ≤ 10 ms | done 2026-09-02 |
 | T2.2 | latency harness | open |
 | T2.3 | `rtok setup claude` | open |
-| T4.1 | `rtok mcp` stdio server | open · needs T13.3 |
+| T4.1 | `rtok mcp` stdio server | done 2026-09-02 |
 | T1.4 | `rtok doctor` | open |
 | T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | after P9 |
 
