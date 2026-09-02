@@ -32,7 +32,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-01 | token-optimizer dashboard; rtk `gain`; headroom `savings` | `measure` | Local HTML/`rtok stats` dashboard (per-plugin, per-day, context-token-turns), not only table/`--json`. | Catalogue names the dashboard as spec; P1 ships CLI stats first. Promote when T1.2 exists and a UI would change a decision. |
+| I-01 | token-optimizer dashboard; rtk `gain`; headroom `savings` | TUI (`measure`) | **promoted P15** — ratatui `rtok tui` (not HTML); per-plugin, per-day CTT dashboard. | T1.2 done; promoted 2026-09-02 → P15 T15.1–T15.9, D17. |
 | I-02 | research.md §8 | `measure` | `rtok stats --price` with per-model input/cache/output rates (Fable/Mythos 0.025× cache read). | Open question; T1.2 has no price table. |
 | I-03 | Cursor, Codex, aider transcripts | `measure` | Ingest host logs beyond Claude Code JSONL (Cursor, Codex, OpenCode). | T1.1 is Claude JSONL first. Other hosts get `usage` via the proxy (P11). |
 | I-04 | Anthropic deferred tools / `ENABLE_TOOL_SEARCH` | `doctor` | Detect whether `ANTHROPIC_BASE_URL` disabled MCP tool search; report how to keep deferred tools. | research.md §8; T1.4 can grow a Check later. |
@@ -105,6 +105,8 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 ---
 
 ## Promoted
+
+| I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
 
 | ID | Became | Date |
 |----|--------|------|

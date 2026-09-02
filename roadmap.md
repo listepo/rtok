@@ -285,12 +285,35 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 ---
 
+## TUI (operator surface — not a plugin)
+
+**Replaces.** token-optimizer dashboard, rtk `gain`, headroom `savings` (I-01 promoted).
+
+**Goal.** `rtok tui` — ratatui dashboard over the same `Store` / `stats` / `doctor` data as the CLI (D17).
+
+**Surfaces.** `rtok tui` only (v0.2+).
+
+| # | Task | What |
+|---|------|------|
+| 1 | T15.1 | ratatui + crossterm scaffold, event loop |
+| 2 | T15.2 | header · tabs · footer shell |
+| 3 | T15.3 | Overview tab (CTT, bars, sparkline) |
+| 4 | T15.4 | Plugins tab (toggle enabled) |
+| 5 | T15.5 | Calls tab (P13 rows + detail) |
+| 6 | T15.6 | Doctor tab |
+| 7 | T15.7 | Logs tab |
+| 8 | T15.8–T15.9 | CLI, `[tui]` config, TTY guard |
+
+**Gate P15.** Overview numbers match `rtok stats --json`; `q` restores terminal.
+
+
 ## Later (v0.2+)
 
 Not v0.1 work. Same plugins, extra backends. Promote from `ideas.md` Later when v0.1 is done
 (`plan.md` Later versions).
 
 | Plugin / area | v0.2 plan | Ideas |
+| TUI | `rtok tui` ratatui dashboard: Overview, Plugins, Calls, Doctor, Logs (P15). | I-01 |
 |---------------|-----------|-------|
 | `memory` | Optional LLM extractor (claude-mem style) and embeddings beside FTS5. Default off. Progressive disclosure stays. | I-21, I-22, I-13 |
 | `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. | I-24, I-22, I-14, I-15 |

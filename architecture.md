@@ -26,6 +26,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D14) and 
 ```
 ┌────────────────────────────── surfaces ───────────────────────────────┐
 │  rtok hook <event>        rtok mcp              rtok proxy            │
+│  rtok tui (v0.2)          ratatui operator dashboard (D17)            │
 │  (stdin JSON → stdout)    (stdio JSON-RPC)      (ANTHROPIC_BASE_URL,  │
 │                                                  OPENAI_BASE_URL)      │
 │  src/hooks/               src/mcp.rs            src/proxy/            │
@@ -71,6 +72,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/mcp.rs` | rmcp stdio server built from `Plugin::mcp_tools()` | T4.1 |
 | `src/proxy/` | axum passthrough + `compress` mode via `Plugin::proxy_filter()` | T5.1 |
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
+| `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | v0.2 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
@@ -181,7 +183,7 @@ under 5 %.
   a fixture, and a trait method with a default body.
 - **New host** (Cursor, OpenCode, Codex): a `src/setup/<host>.rs` installer plus, if the
   payload differs, a field mapping into `HookInput`. The plugins do not change.
-- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait;
+- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait; operator TUI (`src/tui/`, D17) reads `Store`/`stats`/`doctor` and does not enter the plugin trait;
   add a `Surface` variant so manifests can declare it.
 - **New API wire format** (e.g. Gemini): implement `Wire` in `src/proxy/<name>.rs` — route
   match, tool-result accessor, usage parser for body and SSE — plus fixtures. Plugins do not
@@ -200,7 +202,7 @@ under 5 %.
 ## 11. Not in v0.1
 
 v0.1 has no LLM-based compression, embeddings, type-resolved call graph (the `graph` plugin
-is a tree-sitter-tags index), semantic response cache, daemon, or WASM plugin host. Those
+is a tree-sitter-tags index), semantic response cache, daemon, WASM plugin host, or ratatui TUI (`rtok tui`, P15). Those
 are **v0.2+** (`plan.md` Later versions, `ideas.md` Later, `roadmap.md` Later), not discarded.
 Adapters over third-party tools stay out of *this repo* at every version (D6); a later WASM
 host loads plugins that live outside this repo.
