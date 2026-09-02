@@ -297,11 +297,24 @@ pub fn plugin_json(cfg: &Config, plugin: &str) -> Result<String> {
             })
         })
         .collect();
-    Ok(serde_json::to_string_pretty(&json!({
+    let mut out = json!({
         "plugin": plugin,
         "archive_hits": archive_hits,
         "rows": rows,
-    }))?)
+    });
+    if plugin == "archive" {
+        // T5.4 honesty metric: how often a live-zone pointer had to be expanded.
+        let (decisions, expanded) = store.archive_decision_counts()?;
+        let rate = if decisions > 0 {
+            expanded as f64 / decisions as f64
+        } else {
+            0.0
+        };
+        out["decisions"] = json!(decisions);
+        out["expanded"] = json!(expanded);
+        out["expand_rate"] = json!(rate);
+    }
+    Ok(serde_json::to_string_pretty(&out)?)
 }
 
 #[cfg(test)]

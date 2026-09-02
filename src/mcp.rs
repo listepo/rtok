@@ -152,7 +152,7 @@ fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
 
 fn expand_text(cx: &Ctx, args: &Value) -> String {
     let id = args["id"].as_str().unwrap_or("");
-    match cx.store.get_archive(id) {
+    match crate::expand::fetch(cx, id) {
         Ok(Some(bytes)) => {
             let text = String::from_utf8_lossy(&bytes);
             slice(&text, args["lines"].as_str(), args["grep"].as_str())

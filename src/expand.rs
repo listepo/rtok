@@ -1,12 +1,37 @@
-//! `rtok expand <id>` (plan T3.5).
+//! `rtok expand <id>` (plan T3.5) and the shared fetch used by the MCP `expand` tool (T5.4).
 
 use crate::config::Config;
+use crate::plugin::{Ctx, Measurement};
+use crate::tokens::Class;
 use anyhow::{Result, bail};
+
+/// Read an archived payload. When the id is a live-zone pointer (T5.3) this freezes it:
+/// the archive plugin sends the original from the next request on, and one `expand`
+/// measurement records the cost — `rtok stats --plugin archive` derives the expand rate.
+pub fn fetch(cx: &Ctx, id: &str) -> Result<Option<Vec<u8>>> {
+    let Some(bytes) = cx.store.get_archive(id)? else {
+        return Ok(None);
+    };
+    if cx.store.mark_expanded(id)? > 0 {
+        let n = bytes.len() as u64;
+        cx.record(&Measurement {
+            plugin: "archive",
+            kind: "expand",
+            before_bytes: 0,
+            after_bytes: n,
+            est_before: 0,
+            est_after: cx.estimate(&String::from_utf8_lossy(&bytes), Class::Code),
+            ref_id: Some(id.to_string()),
+            call_id: cx.call_id,
+        })?;
+    }
+    Ok(Some(bytes))
+}
 
 /// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is substring.
 pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> Result<()> {
-    let cx = crate::plugin::Ctx::open(cfg.clone(), "expand")?;
-    let Some(bytes) = cx.store.get_archive(id)? else {
+    let cx = Ctx::open(cfg.clone(), "expand")?;
+    let Some(bytes) = fetch(&cx, id)? else {
         bail!("unknown archive id: {id}");
     };
     if lines.is_none() && grep.is_none() {

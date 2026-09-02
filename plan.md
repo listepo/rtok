@@ -114,10 +114,6 @@ Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats`
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
-**T5.4 `expand` through the proxy** · T5.3, T4.1 · `src/plugins/archive.rs`
-Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); mark id as expanded → T5.3 stops rewriting it from the next request on. Track expand rate.
-Check: expand → next fixture request contains the original block again.
-
 **T5.5 cache-health report** · T5.1 · `src/measure/cache.rs`
 Do: `rtok stats --cache`: per session, cache_read vs cache_creation per turn, detect "cache busts" (turn where cache_creation > 20 K and cache_read drops), attribute to tools-array or system-prompt changes when the proxy saw them.
 Check: fixture with an injected tools-array change → one bust flagged with cause `tools`.

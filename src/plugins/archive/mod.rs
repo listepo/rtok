@@ -281,6 +281,32 @@ mod tests {
         assert_eq!(cx.store.archive_decision_counts().unwrap(), (1, 1));
     }
 
+    /// T5.4 Check: expand → the next request carries the original block again.
+    #[test]
+    fn expand_freezes_the_id_so_the_original_is_sent_again() {
+        let cx = cx("expand");
+        let mut req = request(6);
+        let ms = rewrite(&mut req, &cx);
+        let id = ms[0].ref_id.clone().unwrap();
+        let bytes = crate::expand::fetch(&cx, &id).unwrap().unwrap();
+        assert_eq!(bytes, big("t1").into_bytes());
+        let mut next = request(6);
+        let ms2 = rewrite(&mut next, &cx);
+        assert_eq!(
+            ms2.len(),
+            1,
+            "turn 2 stays a pointer, turn 1 is original again"
+        );
+        assert_eq!(contents(&next)[0], big("t1"));
+        assert!(contents(&next)[1].starts_with("[archived "));
+        assert_eq!(cx.store.archive_decision_counts().unwrap(), (2, 1));
+        // One `expand` measurement per freeze; a repeat expand is not a second freeze.
+        assert_eq!(cx.store.measurement_count("archive").unwrap(), 1);
+        crate::expand::fetch(&cx, &id).unwrap();
+        assert_eq!(cx.store.measurement_count("archive").unwrap(), 1);
+        assert!(crate::expand::fetch(&cx, "no-such").unwrap().is_none());
+    }
+
     #[test]
     fn passthrough_mode_never_rewrites() {
         let mut cx = cx("mode");
