@@ -345,6 +345,11 @@ Do: MCP `expand(id, lines?)` returns the archived original (from T5.3 store); ma
 Check: expand → next fixture request contains the original block again.
 Status: done 2026-09-02 · Check: `expand_freezes_the_id_so_the_original_is_sent_again` — rewrite → `expand::fetch(id)` returns the original bytes and freezes the decision → the next 6-turn request carries turn 1 verbatim while turn 2 stays a pointer; `archive_decision_counts` = (2, 1); one `expand` measurement per freeze, none on a repeat. `make check` green (115 tests). Deviation: the shared fetch lives in `src/expand.rs` (`expand::fetch`, used by both `rtok expand` and the MCP `expand` tool), not `src/plugins/archive.rs`; expand rate is reported by `rtok stats --plugin archive` as `decisions` / `expanded` / `expand_rate` from `archive_decisions`.
 
+**T5.5 cache-health report** · T5.1 · `src/measure/cache.rs`
+Do: `rtok stats --cache`: per session, cache_read vs cache_creation per turn, detect "cache busts" (turn where cache_creation > 20 K and cache_read drops), attribute to tools-array or system-prompt changes when the proxy saw them.
+Check: fixture with an injected tools-array change → one bust flagged with cause `tools`.
+Status: done 2026-09-02 · Check: `tools_change_is_one_bust_with_cause_tools` — four proxy turns with the tools array grown at turn 3 (cache_create 31 K, cache_read 30 K → 200) → exactly one bust, `(turn 3, "tools")`, and the table line `bust turn 3 cause=tools`; `system_change_unknown_and_no_drop` covers cause `system`, `unknown` (no recorded body) and no bust when cache_read keeps growing. `make check` green (117 tests). `rtok stats --cache` prints per-session turns / cache_read / cache_create / busts (JSON with `--json`); `--cache` is an action flag (T12.4 allow-list), no config key. Bust threshold is the constant `BUST_CREATE_TOKENS = 20_000`. `usage_rows` now orders by `ts, id` so same-second turns keep request order.
+
 ## P8 — `graph` plugin
 
 Goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers.

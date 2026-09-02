@@ -114,10 +114,6 @@ Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats`
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
-**T5.5 cache-health report** · T5.1 · `src/measure/cache.rs`
-Do: `rtok stats --cache`: per session, cache_read vs cache_creation per turn, detect "cache busts" (turn where cache_creation > 20 K and cache_read drops), attribute to tools-array or system-prompt changes when the proxy saw them.
-Check: fixture with an injected tools-array change → one bust flagged with cause `tools`.
-
 Gate P5: run proxy in passthrough for two days (usage ground truth), then `compress` for two days; compare cache_read per turn, output tokens, expand rate. Keep `compress` only if context-token-turns fall ≥ 15 % with expand rate < 5 %.
 
 ### P6 — `memory` plugin (goal: one memory instead of two, zero LLM cost)

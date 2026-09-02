@@ -670,12 +670,26 @@ impl Store {
         Ok(())
     }
 
+    /// Sessions that have usage rows, oldest first (`rtok stats --cache`, T5.5).
+    pub fn usage_sessions(&self) -> Result<Vec<String>> {
+        #[derive(QueryableByName)]
+        struct S {
+            #[diesel(sql_type = Text)]
+            session: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<S> =
+            sql_query("SELECT session FROM usage GROUP BY session ORDER BY MIN(ts), MIN(id)")
+                .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| r.session).collect())
+    }
+
     /// Usage rows for one session, newest first (proxy Check, later `stats`).
     pub fn usage_rows(&self, session: &str) -> Result<Vec<UsageRow>> {
         let mut conn = self.lock()?;
         sql_query(
             "SELECT session, model, input, cache_create, cache_read, output, call_id
-             FROM usage WHERE session = ? ORDER BY ts DESC",
+             FROM usage WHERE session = ? ORDER BY ts DESC, id DESC",
         )
         .bind::<Text, _>(session)
         .load::<UsageRow>(&mut *conn)

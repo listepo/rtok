@@ -67,6 +67,9 @@ enum Cmd {
         /// Fit chars-per-token via count_tokens (skipped without an API key)
         #[arg(long)]
         calibrate: bool,
+        /// Cache health per session from proxy usage rows: busts and their cause
+        #[arg(long)]
+        cache: bool,
     },
     /// A/B benchmark of host configurations
     Bench {
@@ -264,6 +267,7 @@ pub fn run() -> Result<()> {
             save_baseline,
             compare,
             calibrate,
+            cache,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
@@ -271,6 +275,10 @@ pub fn run() -> Result<()> {
             )?;
             if calibrate {
                 println!("{}", crate::tokens::calibrate_or_skip(&cfg));
+                return Ok(());
+            }
+            if cache {
+                print!("{}", crate::measure::cache::run(&cfg)?);
                 return Ok(());
             }
             if crate::config::CATALOGUE
