@@ -1,4 +1,5 @@
 [tools]
 git-cliff = "2.13.1"
+hugo = "0.165.0"
 just = "1.58.0"
 rust = "1.97.1"

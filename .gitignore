@@ -2,3 +2,9 @@
 .serena/
 .reasonix/
 ~/.rtok/rtok.log
+
+# Hugo docs site (site/)
+/site/public/
+/site/resources/
+/site/_vendor/
+/site/.hugo_build.lock

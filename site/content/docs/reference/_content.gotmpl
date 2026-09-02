@@ -1,0 +1,28 @@
+{{/*
+  Reference pages come straight from the repository markdown mounted at assets/repo.
+  The repo files carry no front matter, so title, weight and the edit link live here.
+*/}}
+{{ $pages := slice
+  (dict "path" "architecture"     "title" "Architecture"     "file" "repo/architecture.md"           "edit" "architecture.md")
+  (dict "path" "configuration"    "title" "Configuration"    "file" "repo/docs/config.md"            "edit" "docs/config.md")
+  (dict "path" "plugin-authoring" "title" "Plugin authoring" "file" "repo/docs/plugin-authoring.md"  "edit" "docs/plugin-authoring.md")
+  (dict "path" "roadmap"          "title" "Roadmap"          "file" "repo/roadmap.md"                "edit" "roadmap.md")
+  (dict "path" "changelog"        "title" "Changelog"        "file" "repo/CHANGELOG.md"              "edit" "CHANGELOG.md")
+}}
+
+{{ range $i, $p := $pages }}
+  {{ $r := resources.Get $p.file }}
+  {{ with $r }}
+    {{/* Hextra renders the page title as the h1, so drop the leading h1 in the source file. */}}
+    {{ $body := replaceRE `\A#\s+[^\n]*\n` "" .Content }}
+    {{ $.AddPage (dict
+      "path" $p.path
+      "title" $p.title
+      "weight" (add $i 1)
+      "params" (dict "editURL" (printf "https://github.com/listepo/rtok/edit/main/%s" $p.edit))
+      "content" (dict "value" $body "mediaType" "text/markdown")
+    ) }}
+  {{ else }}
+    {{ errorf "reference adapter: %q not found under assets" $p.file }}
+  {{ end }}
+{{ end }}

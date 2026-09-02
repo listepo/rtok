@@ -1,0 +1,15 @@
+{{/*
+  One page per plugin, from src/plugins/<id>/README.md mounted at assets/repo/plugins.
+  Adding a plugin directory with a README adds a page — no list to keep in sync here.
+*/}}
+{{ range $r := resources.Match "repo/plugins/*/README.md" }}
+  {{ $id := path.Base (path.Dir $r.Name) }}
+  {{/* Hextra renders the page title as the h1, so drop the leading h1 in the source file. */}}
+  {{ $body := replaceRE `\A#\s+[^\n]*\n` "" $r.Content }}
+  {{ $.AddPage (dict
+    "path" $id
+    "title" $id
+    "params" (dict "editURL" (printf "https://github.com/listepo/rtok/edit/main/src/plugins/%s/README.md" $id))
+    "content" (dict "value" $body "mediaType" "text/markdown")
+  ) }}
+{{ end }}

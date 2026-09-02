@@ -1,0 +1,101 @@
+baseURL = "https://listepo.github.io/rtok/"
+title = "rtok"
+locale = "en-us"
+enableRobotsTXT = true
+enableGitInfo = true
+disableKinds = ["taxonomy", "term"] # no tags/categories on a docs site
+
+# Repo markdown is the single source of truth. It is mounted read-only into assets/repo and
+# turned into pages by the _content.gotmpl adapters, which supply the titles and ordering the
+# repo files have no front matter for. Nothing is copied; editing the repo file edits the page.
+[module]
+[[module.imports]]
+path = "github.com/imfing/hextra"
+
+[[module.mounts]]
+source = "content"
+target = "content"
+
+[[module.mounts]]
+source = "../architecture.md"
+target = "assets/repo/architecture.md"
+
+[[module.mounts]]
+source = "../roadmap.md"
+target = "assets/repo/roadmap.md"
+
+[[module.mounts]]
+source = "../CHANGELOG.md"
+target = "assets/repo/CHANGELOG.md"
+
+[[module.mounts]]
+source = "../docs"
+target = "assets/repo/docs"
+
+[[module.mounts]]
+source = "../src/plugins"
+target = "assets/repo/plugins"
+files = "/**/README.md"
+
+[markup.goldmark.renderer]
+unsafe = true
+
+[markup.highlight]
+noClasses = false
+
+[markup.tableOfContents]
+startLevel = 2
+endLevel = 3
+
+[[menu.main]]
+name = "Docs"
+pageRef = "/docs"
+weight = 1
+
+[[menu.main]]
+name = "Plugins"
+pageRef = "/docs/plugins"
+weight = 2
+
+[[menu.main]]
+name = "Reference"
+pageRef = "/docs/reference"
+weight = 3
+
+[[menu.main]]
+name = "Search"
+weight = 4
+[menu.main.params]
+type = "search"
+
+[[menu.main]]
+name = "GitHub"
+url = "https://github.com/listepo/rtok"
+weight = 5
+[menu.main.params]
+icon = "github"
+
+[params]
+description = "Token reduction for AI coding agents, in one Rust binary."
+
+[params.theme]
+default = "system"
+
+[params.navbar]
+displayTitle = true
+displayLogo = false
+
+[params.footer]
+enable = true
+displayCopyright = false
+displayPoweredBy = false
+
+[params.editURL]
+enable = true
+base = "https://github.com/listepo/rtok/edit/main"
+
+[params.page]
+width = "normal"
+
+[params.toc]
+displayTags = false
