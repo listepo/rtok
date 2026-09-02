@@ -295,4 +295,11 @@ Do: add `httpmock` as `[dev-dependencies]` (commit message: one-line reason). Sh
 Check: `cargo test proxy_mock` green for all six fixture pairs; each test asserts client response bytes match the fixture; `mock.assert()` shows exactly one upstream hit per route.
 Status: done 2026-09-02 · Check: `cargo test proxy_mock` — 6 tests green; bytes match fixtures; `mock.assert()` one hit each. `make check` green. Deviation: crate root is `tests/proxy.rs` (Cargo). New dep: `httpmock` (mock Anthropic/OpenAI upstreams).
 
+## P9 — replace the current stack
+
+**T9.3 `rtok setup claude --replace`** · T2.3 · `src/setup/migrate.rs`
+Do: with backup: remove hook entries whose command matches a legacy list (`rtk hook`, `lean-ctx hook`, `caveman-proxy`, `caveman shrink-hook`, token-optimizer `python-launcher.sh`), remove `ANTHROPIC_BASE_URL` pointing at 8788/8787 (set 8790), disable MCP servers `lean-ctx`, `code-review-graph` (keep serena optional), keep everything unrelated (orca, holdmylid, tokenbar, cbm). Print the diff; require `--yes`.
+Check: dry-run on a copy of today's settings shows 8 remaining rtok hooks + non-token hooks; JSON stays valid.
+Status: done 2026-09-02 · Check: `dry_run_keeps_eight_rtok_and_non_token_hooks` — 8 rtok hooks remain; orca/holdmylid/tokenbar/cbm/serena kept; legacy commands and lean-ctx/code-review-graph gone; `ANTHROPIC_BASE_URL` 8790; JSON valid. `--replace` without `--yes` errors. `make check` green. Deviation: also `cli.rs` (`--yes`, `--replace`) and `setup/mod.rs`.
+
 

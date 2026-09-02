@@ -25,7 +25,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | T2.3 | `rtok setup claude` | open |
 | T4.1 | `rtok mcp` stdio server | done 2026-09-02 |
 | T1.4 | `rtok doctor` | open |
-| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | after P9 |
+| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | T9.3 done 2026-09-02 |
 
 ---
 
