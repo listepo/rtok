@@ -303,6 +303,11 @@ Do: for native `Read` of a file > `read.native_max_bytes` (default 32 K) that wa
 Check: fixture Read of a 100 KB path → deny with reason; 2 KB path → no output.
 Status: done 2026-09-02 · Check: `hundred_kb_is_denied`; `two_kb_is_silent`. `make check` green. Deviation: also `read/mod.rs`. Edit-window skip is a stub (always not-recent).
 
+**T4.7 register MCP** · T2.3, T4.1 · `src/setup/claude.rs`
+Do: `rtok setup claude --mcp` adds `rtok` to `~/.claude.json` mcpServers (stdio, command `rtok mcp`), idempotent, backup.
+Check: dry-run shows one server entry; second run "no changes".
+Status: done 2026-09-02 · Check: dry-run `mcpServers.rtok: rtok mcp`; second apply `no changes`. `mcp_dry_run_then_apply_is_idempotent`. `make check` green. Deviation: also `src/cli.rs` (`--mcp` → `setup.mcp`).
+
 ## P5 — `proxy` + `archive`
 
 **T5.0 httpmock upstream harness** · T0.3 · `tests/proxy/mod.rs`, `tests/fixtures/proxy/`, `Cargo.toml` (dev-dep)

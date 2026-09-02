@@ -84,6 +84,9 @@ enum Cmd {
         /// Remove legacy token hooks and retarget the proxy
         #[arg(long)]
         replace: bool,
+        /// Register `rtok mcp` in the host MCP map
+        #[arg(long)]
+        mcp: bool,
     },
     /// Execute a command, archive its raw output, print the filtered version
     Run {
@@ -305,11 +308,27 @@ pub fn run() -> Result<()> {
             mode,
             yes,
             replace,
+            mcp,
         } => {
-            let cfg = Config::load_with(config_file.as_deref(), setup_flags(dry_run, yes, &mode))?;
+            let cfg = Config::load_with(
+                config_file.as_deref(),
+                setup_flags(dry_run, yes, mcp, &mode),
+            )?;
             match host.as_str() {
                 "claude" if replace => println!("{}", crate::setup::migrate::run(&cfg)?),
-                "claude" => println!("{}", crate::setup::claude::run(&cfg, remove)?),
+                "claude" => {
+                    let hooks = crate::setup::claude::run(&cfg, remove)?;
+                    if cfg.setup.mcp && !remove {
+                        let mcp = crate::setup::claude::register_mcp(&cfg)?;
+                        if hooks == "no changes" && mcp == "no changes" {
+                            println!("no changes");
+                        } else {
+                            println!("{hooks}\n{mcp}");
+                        }
+                    } else {
+                        println!("{hooks}");
+                    }
+                }
                 other => bail!("unknown host: {other}"),
             }
         }
@@ -370,8 +389,13 @@ fn stats_flags(
     Some(flags)
 }
 
-fn setup_flags(dry_run: bool, yes: bool, mode: &[String]) -> Option<figment::value::Dict> {
-    if !dry_run && !yes && mode.is_empty() {
+fn setup_flags(
+    dry_run: bool,
+    yes: bool,
+    mcp: bool,
+    mode: &[String],
+) -> Option<figment::value::Dict> {
+    if !dry_run && !yes && !mcp && mode.is_empty() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -381,6 +405,9 @@ fn setup_flags(dry_run: bool, yes: bool, mode: &[String]) -> Option<figment::val
     }
     if yes {
         setup.insert("yes".into(), Value::from(true));
+    }
+    if mcp {
+        setup.insert("mcp".into(), Value::from(true));
     }
     if !mode.is_empty() {
         setup.insert(

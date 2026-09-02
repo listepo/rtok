@@ -127,7 +127,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P4.** Disable lean-ctx for one day; compare Read/MCP rows and injection tokens vs baseline.
 
-**Status.** T4.2 T4.5 T4.6 done 2026-09-02. Next: T4.3 T4.4 T4.7. T14.3 done 2026-09-02.
+**Status.** T4.2 T4.5 T4.6 T4.7 done 2026-09-02. Next: T4.3 T4.4. T14.3 done 2026-09-02.
 
 ---
 

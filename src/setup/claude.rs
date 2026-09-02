@@ -174,6 +174,39 @@ fn strip_ours(root: &mut Value) -> String {
     }
 }
 
+/// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
+pub fn register_mcp(cfg: &Config) -> Result<String> {
+    let path = &cfg.doctor.claude_json;
+    let mut root = read_settings(path)?;
+    if !root.is_object() {
+        root = json!({});
+    }
+    let entry = json!({"type": "stdio", "command": "rtok", "args": ["mcp"]});
+    let servers = root
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| json!({}));
+    if !servers.is_object() {
+        *servers = json!({});
+    }
+    if servers.get("rtok") == Some(&entry) {
+        return Ok("no changes".into());
+    }
+    servers["rtok"] = entry;
+    if !cfg.setup.dry_run {
+        if cfg.setup.backup {
+            backup(path)?;
+        }
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).ok();
+        }
+        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
+            .with_context(|| path.display().to_string())?;
+    }
+    Ok("mcpServers.rtok: rtok mcp".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,6 +232,27 @@ mod tests {
         let report = run(&cfg(path.clone(), true), false).unwrap();
         assert!(report.contains("7 additions"), "{report}");
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn mcp_dry_run_then_apply_is_idempotent() {
+        let dir = std::env::temp_dir().join(format!("rtok-mcp-setup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("claude.json");
+        let mut c = Config::default();
+        c.doctor.claude_json = path.clone();
+        c.setup.backup = false;
+        c.setup.dry_run = true;
+        let dry = register_mcp(&c).unwrap();
+        assert!(dry.contains("mcpServers.rtok"), "{dry}");
+        assert!(!path.exists());
+        c.setup.dry_run = false;
+        assert!(register_mcp(&c).unwrap().contains("rtok mcp"));
+        assert_eq!(register_mcp(&c).unwrap(), "no changes");
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"mcp\""), "{raw}");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
