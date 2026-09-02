@@ -34,6 +34,10 @@ example:
     {{cargo}} run -q --example hello_plugin
     {{cargo}} run -q --example mcp_tool
 
+# T9.5: execute every README bash fence marked `# check`.
+readme-check:
+    python3 -c 'import re; from pathlib import Path; print("".join(block[len("# check\\n"):] for block in re.findall(r"```bash\\n(.*?)\\n```", Path("README.md").read_text(), re.S) if block.startswith("# check\\n")), end="")' | bash -euo pipefail
+
 # T10.4 check: cargo-dist can plan a release from dist-workspace.toml
 dist-plan:
     {{dist}} plan
