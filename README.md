@@ -130,7 +130,8 @@ tagging a release.
 
 Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, stay on `main`
 (no feature branches), stay within ≤ 200 LOC and ≤ 3 files, run the task's Check verbatim, then
-`make check`, commit as `<task-id>: <title>` on `main`, move the task to `done.md`.
+`make check`, commit as `<task-id>: <title>` on `main`. Same commit: mark the task done and
+move it from `plan.md` to `done.md`. Implemented work still listed in `plan.md` is unfinished.
 
 ## Caveats
 

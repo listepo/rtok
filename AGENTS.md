@@ -10,7 +10,7 @@
 
 **CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` §2.
 
-**Workflow.** Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model. Work on `main` only — no feature branches. ≤200 LOC, ≤3 files. Check, `make check`, commit `<task-id>: <title>` on `main`. Done → `done.md` with `Status: done <date>`. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md`.
+**Workflow.** Claim only `open`; set `in progress` + model. `main` only. ≤200 LOC, ≤3 files. Check, `make check`, commit `<task-id>: <title>` on `main` and move the task to `done.md` (`Status: done <date>` + Check) — work still in `plan.md` is unfinished. Stop → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md`.
 
 **Rules that never bend.**
 - Fail open: a hook exits 0 in ≤ 10 ms even on error, with unmodified input.
@@ -19,6 +19,7 @@
 - Injected context stays under the budget and byte-stable across turns.
 - PostToolUse can only add context; it cannot change tool results.
 - No new dependency without a one-line reason in the commit message.
+- Don't duplicate code or logic: reuse an existing helper, or extract one shared helper at the responsible layer.
 
 **Models.** Any provider. **Low-cost** for mechanical work, and for any task a cheap model can finish. **Mid-tier** for coding; pick the cheaper mid model when the task is small. **High-performance** for research and investigation only after the user confirms — do not switch up on your own.
 

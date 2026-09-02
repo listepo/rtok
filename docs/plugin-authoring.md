@@ -82,6 +82,8 @@ Copy the structure from an existing plugin; keep README and AGENTS.md under a sc
    walk or a network call is not.
 6. **No new dependency** without a one-line reason in the commit message, and only from the
    baseline list in `plan.md` §2.
+7. **Don't duplicate.** Reuse an existing helper, or extract one shared helper at the
+   layer that owns the behaviour.
 
 ## 5. Test
 
@@ -102,5 +104,6 @@ Then the task's Check from `plan.md` (see `roadmap.md` for order), then `make ch
 
 ## 6. Ship
 
-Commit `<task-id>: <title>` on `main` (no feature branch), move the task from `plan.md` to
-`done.md` with the date and the Check output.
+Commit `<task-id>: <title>` on `main` (no feature branch). Same commit: mark the task done
+and move it from `plan.md` to `done.md` with the date and the Check output. Implemented
+work still listed in `plan.md` is unfinished.
