@@ -115,6 +115,7 @@ Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats`
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
 Gate P5: run proxy in passthrough for two days (usage ground truth), then `compress` for two days; compare cache_read per turn, output tokens, expand rate. Keep `compress` only if context-token-turns fall ≥ 15 % with expand rate < 5 %.
+Replay 2026-09-02 (first half, estimate): `rtok stats` now applies the `archive` policy (keep 4 turns, ≥ 1 500 tokens, 8 + 4 lines) to every tool result in the transcripts and reports `archive replay (estimate) ctt before → after`. On this machine: 569 sessions, 1 771 results qualify, context-token-turns 11.66 G → 8.33 G, −28.6 % (last 14 days: −28.4 %), so the ≥ 15 % bar clears with margin before any live run. Still open, needs live traffic: the proxy has served no requests here yet (`rtok stats --cache` shows no usage rows), so expand rate (< 5 %) and cache_read per turn are unmeasured. To run it: point `ANTHROPIC_BASE_URL` at `rtok proxy` (T5.2 `setup --proxy`), two days `passthrough`, two days `--mode compress`, then `rtok stats --cache` and `rtok stats --plugin archive --json` (`expand_rate`).
 
 ### P6 — `memory` plugin (goal: one memory instead of two, zero LLM cost)
 

@@ -82,7 +82,13 @@ mod tests {
         let transcripts = home.join("tx");
         std::fs::create_dir_all(&transcripts).unwrap();
         std::fs::write(transcripts.join("s.jsonl"), "{}\n").unwrap();
-        let report = stats::collect(&transcripts, Duration::from_secs(86400), "").unwrap();
+        let report = stats::collect(
+            &transcripts,
+            Duration::from_secs(86400),
+            "",
+            stats::Replay::from_cfg(&crate::config::Config::default()),
+        )
+        .unwrap();
         save(&home, "before-rtok", &report).unwrap();
         let text = compare(&home, "before-rtok", &report).unwrap();
         assert!(text.contains("Δ0"), "{text}");

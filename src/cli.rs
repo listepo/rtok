@@ -296,6 +296,7 @@ pub fn run() -> Result<()> {
                 &cfg.stats.transcripts_dir,
                 since,
                 &cfg.stats.plugin,
+                crate::measure::stats::Replay::from_cfg(&cfg),
             )?;
             if let Some(name) = save_baseline {
                 let p = crate::measure::baseline::save(&cfg.home, &name, &report)?;

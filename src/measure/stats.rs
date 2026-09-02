@@ -40,6 +40,35 @@ pub struct Report {
     pub usage_output: u64,
     pub cache_hit_rate: f64,
     pub median_final_context: u64,
+    /// Gate P5 replay: context-token-turns as recorded, and as they would be with the
+    /// `archive` policy applied to every tool result (estimate: bytes/4, pointer = head + tail lines).
+    #[serde(default)]
+    pub ctt_total: u64,
+    #[serde(default)]
+    pub ctt_archive: u64,
+    #[serde(default)]
+    pub archive_candidates: u64,
+}
+
+/// The `[plugins.archive]` knobs the replay needs, so `collect` stays usable without a `Config`.
+#[derive(Debug, Clone, Copy)]
+pub struct Replay {
+    pub keep_turns: u64,
+    pub min_tokens: u64,
+    pub head_lines: usize,
+    pub tail_lines: usize,
+}
+
+impl Replay {
+    pub fn from_cfg(cfg: &Config) -> Self {
+        let a = &cfg.plugins.archive;
+        Self {
+            keep_turns: u64::from(a.keep_turns),
+            min_tokens: u64::from(a.min_tokens),
+            head_lines: a.head_lines as usize,
+            tail_lines: a.tail_lines as usize,
+        }
+    }
 }
 
 impl Report {
@@ -62,6 +91,14 @@ impl Report {
             self.cache_hit_rate * 100.0,
             self.median_final_context
         ));
+        if self.ctt_total > 0 {
+            let pct =
+                100.0 * (self.ctt_total as f64 - self.ctt_archive as f64) / self.ctt_total as f64;
+            s.push_str(&format!(
+                "archive replay (estimate) ctt {} → {}  -{pct:.1}%  over {} results\n",
+                self.ctt_total, self.ctt_archive, self.archive_candidates
+            ));
+        }
         s.push_str(&format_section("tool", &self.tools));
         s.push_str(&format_section("bash", &self.bash_families));
         s.push_str(&format_section("mcp", &self.mcp_groups));
@@ -94,7 +131,7 @@ pub fn parse_since(s: &str) -> Result<Duration> {
     })
 }
 
-pub fn collect(dir: &Path, since: Duration, plugin: &str) -> Result<Report> {
+pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Result<Report> {
     let cutoff = SystemTime::now()
         .checked_sub(since)
         .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -122,7 +159,7 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str) -> Result<Report> {
                 continue;
             }
             let parsed = jsonl::parse_path(&p)?;
-            fold_session(&parsed, plugin, &mut report, &mut finals);
+            fold_session(&parsed, plugin, replay, &mut report, &mut finals);
         }
     }
     finish_rows(&mut report.tools);
@@ -143,7 +180,13 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str) -> Result<Report> {
     Ok(report)
 }
 
-fn fold_session(parsed: &Parsed, plugin: &str, report: &mut Report, finals: &mut Vec<u64>) {
+fn fold_session(
+    parsed: &Parsed,
+    plugin: &str,
+    replay: Replay,
+    report: &mut Report,
+    finals: &mut Vec<u64>,
+) {
     report.sessions += 1;
     report.lines += parsed.lines;
     report.malformed += parsed.malformed;
@@ -170,6 +213,12 @@ fn fold_session(parsed: &Parsed, plugin: &str, report: &mut Report, finals: &mut
         let tokens = est_tokens(bytes);
         let remain = n.saturating_sub(u64::from(r.turn));
         let ctt = tokens.saturating_mul(remain);
+        let after = replay_ctt(&r.content, tokens, remain, replay);
+        report.ctt_total += ctt;
+        report.ctt_archive += after;
+        if after != ctt {
+            report.archive_candidates += 1;
+        }
         add(&mut report.tools, name, bytes, tokens, ctt);
         if name == "Bash" {
             let fam = id_family
@@ -195,6 +244,23 @@ fn fold_session(parsed: &Parsed, plugin: &str, report: &mut Report, finals: &mut
                 + u64::from(last.cache_read_input_tokens),
         );
     }
+}
+
+/// What `ctt` becomes when the `archive` plugin (T5.3) swaps this result for its pointer
+/// after `keep_turns`: full size while young, head + tail lines afterwards.
+fn replay_ctt(content: &str, tokens: u64, remain: u64, rp: Replay) -> u64 {
+    if tokens < rp.min_tokens || remain <= rp.keep_turns {
+        return tokens.saturating_mul(remain);
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let kept: usize = lines
+        .iter()
+        .take(rp.head_lines)
+        .chain(lines.iter().rev().take(rp.tail_lines))
+        .map(|l| l.len() + 1)
+        .sum();
+    let pointer = est_tokens(kept as u64 + 64); // + the `[archived …]` line itself
+    tokens.saturating_mul(rp.keep_turns) + pointer.saturating_mul(remain - rp.keep_turns)
 }
 
 fn add(map: &mut BTreeMap<String, SizeRow>, name: &str, bytes: u64, tokens: u64, ctt: u64) {
@@ -361,7 +427,13 @@ mod tests {
             json!({"type":"assistant","message":{"content":[{"type":"text","text":"done"}],"usage":{"input_tokens":20,"cache_read_input_tokens":80,"output_tokens":2}}})
         )
         .unwrap();
-        let r = collect(&dir, Duration::from_secs(86400 * 60), "").unwrap();
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
         assert_eq!(r.sessions, 1);
         let bash = r.tools.get("Bash").unwrap();
         assert_eq!(bash.count, 1);
@@ -370,6 +442,24 @@ mod tests {
         assert_eq!(r.bash_families.get("sed").unwrap().count, 1);
         assert_eq!(r.usage_cache_read, 80);
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn archive_replay_keeps_young_turns_and_shrinks_old_ones() {
+        let rp = Replay {
+            keep_turns: 2,
+            min_tokens: 100,
+            head_lines: 1,
+            tail_lines: 1,
+        };
+        let content = "x".repeat(50) + "\n" + &"y".repeat(500) + "\n" + &"z".repeat(50);
+        let tokens = est_tokens(content.len() as u64);
+        assert_eq!(replay_ctt(&content, tokens, 2, rp), tokens * 2); // within keep_turns
+        assert_eq!(replay_ctt(&content, 10, 5, rp), 50); // below min_tokens
+        let after = replay_ctt(&content, tokens, 5, rp);
+        let pointer = est_tokens(51 + 51 + 64); // head line, tail line, pointer line
+        assert_eq!(after, tokens * 2 + pointer * 3);
+        assert!(after < tokens * 5);
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
