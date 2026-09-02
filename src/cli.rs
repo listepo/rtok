@@ -24,7 +24,12 @@ pub struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
-    Hook { event: String },
+    Hook {
+        event: String,
+        /// Overlay `[hook] host` (`claude` | `cursor`)
+        #[arg(long)]
+        host: Option<String>,
+    },
     /// Serve MCP tools over stdio
     Mcp,
     /// Local API proxy for ANTHROPIC_BASE_URL
@@ -80,7 +85,7 @@ enum Cmd {
     },
     /// Install hooks, MCP server and proxy into a host
     Setup {
-        /// Host (`claude`, later `cursor` / `codex` / `opencode`)
+        /// Host (`claude`, `cursor`; later `codex` / `opencode`)
         host: String,
         /// Print the planned edits and exit
         #[arg(long)]
@@ -216,8 +221,8 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Hook { event } => {
-            let cfg = Config::load_lenient(config_file.as_deref(), None);
+        Cmd::Hook { event, host } => {
+            let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
             crate::hooks::run(&event, io::stdin(), io::stdout(), &cfg);
             let _ = io::stdout().flush();
         }
@@ -325,6 +330,19 @@ pub fn run() -> Result<()> {
                     let hooks = crate::setup::claude::run(&cfg, remove)?;
                     if cfg.setup.mcp && !remove {
                         let mcp = crate::setup::claude::register_mcp(&cfg)?;
+                        if hooks == "no changes" && mcp == "no changes" {
+                            println!("no changes");
+                        } else {
+                            println!("{hooks}\n{mcp}");
+                        }
+                    } else {
+                        println!("{hooks}");
+                    }
+                }
+                "cursor" => {
+                    let hooks = crate::setup::cursor::run(&cfg, remove)?;
+                    if cfg.setup.mcp && !remove {
+                        let mcp = crate::setup::cursor::register_mcp(&cfg)?;
                         if hooks == "no changes" && mcp == "no changes" {
                             println!("no changes");
                         } else {
@@ -460,6 +478,16 @@ fn setup_flags(
     }
     let mut flags = Dict::new();
     flags.insert("setup".into(), Value::from(setup));
+    Some(flags)
+}
+
+fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
+    let host = host?;
+    use figment::value::{Dict, Value};
+    let mut hook = Dict::new();
+    hook.insert("host".into(), Value::from(host));
+    let mut flags = Dict::new();
+    flags.insert("hook".into(), Value::from(hook));
     Some(flags)
 }
 

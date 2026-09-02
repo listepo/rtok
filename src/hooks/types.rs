@@ -46,6 +46,34 @@ pub struct HookInput {
 }
 
 impl HookInput {
+    /// Cursor `beforeShellExecution`: top-level `command` + `conversation_id`.
+    /// Claude PreToolUse: `tool_name=Bash` + `tool_input.command`.
+    pub fn adapt_cursor(&mut self, event: &str) {
+        if self.session_id.is_empty()
+            && let Some(id) = self.extra.get("conversation_id").and_then(|v| v.as_str())
+        {
+            self.session_id = id.to_string();
+        }
+        if self.tool_name.is_some() {
+            if self.hook_event_name.is_empty() {
+                self.hook_event_name = event.to_string();
+            }
+            return;
+        }
+        if let Some(cmd) = self
+            .extra
+            .get("command")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+        {
+            self.tool_name = Some("Bash".into());
+            self.tool_input = Some(serde_json::json!({"command": cmd}));
+            self.hook_event_name = "PreToolUse".into();
+        } else if self.hook_event_name.is_empty() {
+            self.hook_event_name = event.to_string();
+        }
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,

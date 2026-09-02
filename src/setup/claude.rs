@@ -51,7 +51,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     Ok(report)
 }
 
-fn read_settings(path: &Path) -> Result<Value> {
+pub(crate) fn read_settings(path: &Path) -> Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
     }
@@ -62,7 +62,7 @@ fn read_settings(path: &Path) -> Result<Value> {
     serde_json::from_str(&raw).with_context(|| path.display().to_string())
 }
 
-fn backup(path: &Path) -> Result<()> {
+pub(crate) fn backup(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
@@ -176,7 +176,11 @@ fn strip_ours(root: &mut Value) -> String {
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    let path = &cfg.doctor.claude_json;
+    register_stdio_mcp(&cfg.doctor.claude_json, cfg)
+}
+
+/// Write `mcpServers.rtok` stdio entry at `path` (Claude `~/.claude.json` or Cursor `mcp.json`).
+pub(crate) fn register_stdio_mcp(path: &Path, cfg: &Config) -> Result<String> {
     let mut root = read_settings(path)?;
     if !root.is_object() {
         root = json!({});

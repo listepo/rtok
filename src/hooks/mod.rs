@@ -28,7 +28,9 @@ fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
         Ok(v) => v,
         Err(_) => return b"{}".to_vec(),
     };
-    if input.hook_event_name.is_empty() {
+    if cfg.hook.host == "cursor" {
+        input.adapt_cursor(event);
+    } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
     let session = if input.session_id.is_empty() {
