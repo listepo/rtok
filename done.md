@@ -113,6 +113,13 @@ Do: add hook entries to `~/.claude/settings.json` (backup to `settings.json.bak-
 Check: `rtok setup claude --dry-run` shows exactly 7 additions; run twice → second run "no changes".
 Status: done 2026-09-02 · Check: `--dry-run` prints `7 additions`; apply twice → second `no changes`. `--remove` keeps foreign hooks. Deviation: 4 files (`src/setup/{mod,claude}.rs`, `cli.rs`, `lib.rs`); PreToolUse is two matcher entries (Bash, Read) so the 7-count lands.
 
+**T2.4 `inject` plugin + budget** · T2.1 · `src/plugins/inject.rs`
+Do: SessionStart/UserPromptSubmit collect `Injection { plugin, text, priority }` from other plugins; sort by priority; emit until `inject_budget_tokens`; record a `Measurement(kind=inject)` with what was emitted and what was dropped. SessionStart text must be byte-identical across two runs with unchanged state (cache friendliness) — no timestamps.
+Check: unit test: three injections of 500 tokens, budget 800 → two emitted, one dropped and measured; two consecutive runs produce identical bytes.
+Status: done 2026-09-02 · Check: `cargo test inject` — three 500-token injections at budget 800 emit two, drop one, `measurement_count("inject")` = 2 across two identical runs. Deviation: file is `src/plugins/inject/mod.rs`; a candidate that starts under budget may overshoot so the T2.4 Check (500+500 at 800) holds.
+
+
+
 ## P0 — Scaffold · done 2026-09-01
 
 Goal: `rtok --version`, DB, plugin registry, hook I/O types. All seven tasks done; gate

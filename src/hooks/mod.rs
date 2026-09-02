@@ -156,19 +156,13 @@ fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput 
             inj.push(i);
         }
     }
-    inj.sort_by_key(|b| std::cmp::Reverse(b.priority));
-    let mut parts = Vec::new();
-    let mut used = 0u32;
-    let budget = cx.config.plugins.inject.budget_tokens;
-    for i in inj {
-        let t = cx.estimate(&i.text, Class::Prose);
-        if used + t > budget {
-            continue;
-        }
-        used += t;
-        parts.push(i.text);
-    }
-    let text = parts.join("\n");
+    #[cfg(feature = "inject")]
+    let text = crate::plugins::inject::apply(cx, inj);
+    #[cfg(not(feature = "inject"))]
+    let text = {
+        let _ = inj;
+        String::new()
+    };
     if text.is_empty() {
         return HookOutput::default();
     }
