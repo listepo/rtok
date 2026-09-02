@@ -128,9 +128,9 @@ Commit subjects are `<task-id>: <title>` or `<area>: <title>` (`plan:`, `docs:`,
 `cliff.toml` groups them into the changelog by that prefix. Run `make changelog` before
 tagging a release.
 
-Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, branch
-`rtok/<task-id>`, stay within ≤ 200 LOC and ≤ 3 files, run the task's Check verbatim, then
-`make check`, commit as `<task-id>: <title>`, move the task to `done.md`.
+Workflow (from `AGENTS.md`): take the next unblocked task in `plan.md`, stay on `main`
+(no feature branches), stay within ≤ 200 LOC and ≤ 3 files, run the task's Check verbatim, then
+`make check`, commit as `<task-id>: <title>` on `main`, move the task to `done.md`.
 
 ## Caveats
 

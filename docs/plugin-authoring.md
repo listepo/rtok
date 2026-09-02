@@ -102,5 +102,5 @@ Then the task's Check from `plan.md` (see `roadmap.md` for order), then `make ch
 
 ## 6. Ship
 
-Branch `rtok/<task-id>`, commit `<task-id>: <title>`, move the task from `plan.md` to
+Commit `<task-id>: <title>` on `main` (no feature branch), move the task from `plan.md` to
 `done.md` with the date and the Check output.
