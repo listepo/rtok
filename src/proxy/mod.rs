@@ -1,0 +1,539 @@
+//! `src/proxy` — the local API proxy (plan P5). `rtok proxy` serves here.
+//!
+//! T5.1 scope: passthrough. Every request is forwarded byte-identical to
+//! `proxy.upstream` (default `https://api.anthropic.com`; point it at
+//! `http://127.0.0.1:8788` to chain behind another proxy during A/B). SSE responses
+//! stream through unchanged — chunks are tee'd into a buffer *while* the client
+//! receives them, never before (a spawned task does the bookkeeping afterwards).
+//! OpenAI wire routing arrives in P11; until then `/v1/chat/completions` and
+//! `/v1/responses` also go to `proxy.upstream` untouched.
+//!
+//! Bookkeeping per request (all fail-open, logged, never alter the response):
+//! one `calls` row (`kind = api_request`, `surface = proxy`) with provider+model
+//! upserted from the request body; `call_io` with request/response bytes (inline
+//! under `core.call_io_inline_bytes`, else archived); a `tokens` row
+//! (`source = provider`) with the four counters; and one `usage` row whose
+//! `call_id` points at the `calls` row. Session id: `metadata.user_id`, else the
+//! `x-rtok-session` header, else the sha256 of the request body.
+
+use std::io;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use axum::Router;
+use axum::body::{Body, Bytes};
+use axum::extract::State;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderMap, HeaderName, Request, Response, StatusCode};
+use axum::response::Response as AxumResponse;
+use futures_util::StreamExt;
+use futures_util::stream::unfold;
+use reqwest::Client;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+
+use crate::config::Config;
+use crate::store::Store;
+
+/// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
+/// in-memory read well above them.
+const MAX_REQUEST_BYTES: usize = 256 * 1024 * 1024;
+
+/// Shared server state: the DB, the upstream client and the effective `[proxy]` settings.
+pub struct ProxyState {
+    pub store: Store,
+    client: Client,
+    upstream: String,
+    host_id: Option<i32>,
+    inline_cap: usize,
+    archive_dir: Option<PathBuf>,
+}
+
+impl ProxyState {
+    pub fn new(cfg: &Config) -> Result<Self> {
+        let store = Store::open(&cfg.core.db_path)?;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(cfg.proxy.timeout_s.max(1)))
+            .build()
+            .context("reqwest client")?;
+        // Host agent: the `[hook] host` setting (T5.1 says `core.host`, which T12 removed —
+        // see plan.md §6 amendment in the T5.1 commit). Unknown slugs fall back to `other` (6).
+        let host_id = store.host_id(&cfg.hook.host)?.or(Some(6));
+        Ok(Self {
+            store,
+            client,
+            upstream: cfg.proxy.upstream.trim_end_matches('/').to_string(),
+            host_id,
+            inline_cap: cfg.core.call_io_inline_bytes as usize,
+            archive_dir: Some(cfg.core.archive_dir.clone()),
+        })
+    }
+}
+
+/// The axum app: one fallback handler forwards every method and path upstream.
+pub fn app(state: Arc<ProxyState>) -> Router {
+    Router::new().fallback(proxy).with_state(state)
+}
+
+/// `rtok proxy` (cli.rs): run until killed.
+pub fn serve_blocking(cfg: Config) -> Result<()> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("tokio runtime")?;
+    rt.block_on(serve(&cfg))
+}
+
+/// Bind `bind:port` and serve. Tests bind their own ephemeral listener and call
+/// [`app`] directly instead.
+pub async fn serve(cfg: &Config) -> Result<()> {
+    let state = Arc::new(ProxyState::new(cfg)?);
+    let addr = format!("{}:{}", cfg.proxy.bind, cfg.proxy.port);
+    let listener = TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("bind {addr}"))?;
+    axum::serve(listener, app(state))
+        .await
+        .context("proxy server")
+}
+
+async fn proxy(State(state): State<Arc<ProxyState>>, req: Request<Body>) -> AxumResponse {
+    handle(state, req).await
+}
+
+async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
+    let start = Instant::now();
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().map(str::to_string);
+    let (parts, body) = req.into_parts();
+    let headers = parts.headers.clone();
+
+    let request_body = match axum::body::to_bytes(body, MAX_REQUEST_BYTES).await {
+        Ok(b) => b,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
+    };
+
+    // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
+    let parsed = serde_json::from_slice::<Value>(&request_body).ok();
+    let recorded = record(&state, &path, parsed.as_ref(), &headers, &request_body);
+
+    let target = match upstream_url(&state.upstream, &path, query.as_deref()) {
+        Ok(u) => u,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
+    };
+
+    let mut rb = state.client.request(method.clone(), target);
+    for (name, value) in headers.iter() {
+        if !hop_by_hop(name.as_str()) {
+            rb = rb.header(name, value);
+        }
+    }
+    let upstream = match rb.body(request_body.clone()).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            log_err(
+                &state,
+                &recorded,
+                start,
+                &format!("upstream {method} {path}: {e}"),
+            );
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                &format!("rtok proxy: upstream error: {e}"),
+            );
+        }
+    };
+
+    let content_type = upstream
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let status = upstream.status();
+    let mut out_headers: Vec<(HeaderName, axum::http::HeaderValue)> = Vec::new();
+    for (name, value) in upstream.headers().iter() {
+        if !hop_by_hop(name.as_str()) {
+            out_headers.push((name.clone(), value.clone()));
+        }
+    }
+
+    // Tee the upstream body: forward each chunk to the client *and* buffer it for the
+    // `call_io`/`usage` rows, which the spawned task writes after the stream ends.
+    let (tx, rx) = mpsc::channel::<Result<Bytes, io::Error>>(32);
+    let recorder = state.clone();
+    let body_stream = upstream.bytes_stream();
+    tokio::spawn(async move {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut stream = body_stream;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    buf.extend_from_slice(&bytes);
+                    if tx.send(Ok(bytes)).await.is_err() {
+                        break; // client went away; record what we have
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(io::Error::other(e))).await;
+                    break;
+                }
+            }
+        }
+        drop(tx);
+        finish(
+            &recorder,
+            &recorded,
+            start,
+            content_type.as_deref(),
+            &request_body,
+            &buf,
+        )
+        .await;
+    });
+
+    let client_stream = unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|item| (item, rx))
+    });
+    let response_body = Body::from_stream(client_stream);
+
+    let mut response = Response::builder().status(status);
+    for (name, value) in out_headers {
+        response = response.header(name, value);
+    }
+    match response.body(response_body) {
+        Ok(r) => r,
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+}
+
+/// One request's bookkeeping: session, host, provider+model, and the `calls` row.
+fn record(
+    state: &ProxyState,
+    path: &str,
+    body: Option<&Value>,
+    headers: &HeaderMap,
+    raw: &[u8],
+) -> Option<Recorded> {
+    let session = session_for(body, headers, raw);
+    let model = body
+        .and_then(|v| v.get("model").and_then(Value::as_str))
+        .map(str::to_string);
+    let provider = provider_for_path(path);
+    let result = (|| -> Result<Recorded> {
+        state
+            .store
+            .upsert_session(&session, state.host_id, None, None, Some("proxy"))?;
+        let (provider_id, model_id) = match (provider, model.as_deref()) {
+            (Some(p), Some(m)) => {
+                let (pid, mid) = state.store.upsert_model(p, m)?;
+                (Some(pid), Some(mid))
+            }
+            _ => (None, None),
+        };
+        let call_id = state.store.insert_call(
+            &session,
+            "proxy",
+            "api_request",
+            state.host_id,
+            provider_id,
+            model_id,
+            None,
+            Some(path),
+        )?;
+        Ok(Recorded {
+            session: session.clone(),
+            model,
+            call_id,
+        })
+    })();
+    match result {
+        Ok(r) => Some(r),
+        Err(e) => {
+            log(
+                &state.store,
+                &session,
+                None,
+                "error",
+                &format!("record {path}: {e}"),
+            );
+            None
+        }
+    }
+}
+
+/// After the body was fully forwarded: `calls.ms`, `call_io`, then `usage` + provider
+/// `tokens` when the response carried a usage block. All best-effort.
+async fn finish(
+    state: &ProxyState,
+    recorded: &Option<Recorded>,
+    start: Instant,
+    content_type: Option<&str>,
+    request_body: &[u8],
+    response_body: &[u8],
+) {
+    let Some(r) = recorded else { return };
+    let session = r.session.clone();
+    let log_err = |what: &str, e: anyhow::Error| {
+        let _ = state.store.insert_log(
+            "error",
+            "module",
+            "proxy",
+            &format!("{what}: {e:#}"),
+            Some(&session),
+            Some(r.call_id),
+            None,
+        );
+    };
+    if let Err(e) = state
+        .store
+        .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0)
+    {
+        log_err("set_call_ms", e);
+    }
+    if let Err(e) = state.store.insert_call_io(
+        r.call_id,
+        Some(request_body),
+        Some(response_body),
+        state.inline_cap,
+        state.archive_dir.as_deref(),
+    ) {
+        log_err("call_io", e);
+    }
+    match parse_usage(content_type, response_body) {
+        Some(usage) => {
+            if let Err(e) = state.store.insert_usage(
+                &r.session,
+                r.model.as_deref(),
+                usage.input,
+                usage.cache_create,
+                usage.cache_read,
+                usage.output,
+                r.call_id,
+            ) {
+                log_err("usage", e);
+            }
+            if let Err(e) = state.store.insert_provider_tokens(
+                r.call_id,
+                usage.input,
+                usage.cache_create,
+                usage.cache_read,
+                usage.output,
+            ) {
+                log_err("tokens", e);
+            }
+        }
+        None => log(
+            &state.store,
+            &session,
+            Some(r.call_id),
+            "info",
+            "no usage in upstream response",
+        ),
+    }
+}
+
+fn log_err(state: &ProxyState, recorded: &Option<Recorded>, start: Instant, msg: &str) {
+    let session = recorded
+        .as_ref()
+        .map(|r| r.session.clone())
+        .unwrap_or_else(|| "?".to_string());
+    let call_id = recorded.as_ref().map(|r| r.call_id);
+    if let Some(r) = recorded {
+        let _ = state
+            .store
+            .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0);
+    }
+    log(&state.store, &session, call_id, "error", msg);
+}
+
+fn log(store: &Store, session: &str, call_id: Option<i32>, level: &str, message: &str) {
+    let _ = store.insert_log(
+        level,
+        "module",
+        "proxy",
+        message,
+        Some(session),
+        call_id,
+        None,
+    );
+}
+
+struct Recorded {
+    session: String,
+    model: Option<String>,
+    call_id: i32,
+}
+
+fn session_for(body: Option<&Value>, headers: &HeaderMap, raw: &[u8]) -> String {
+    if let Some(s) = body
+        .and_then(|v| v.get("metadata"))
+        .and_then(|m| m.get("user_id"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        return s.to_string();
+    }
+    for name in ["x-rtok-session", "x-session-id"] {
+        if let Some(v) = headers
+            .get(HeaderName::from_static(name))
+            .and_then(|v| v.to_str().ok())
+            .filter(|v| !v.is_empty())
+        {
+            return v.to_string();
+        }
+    }
+    let mut h = Sha256::new();
+    h.update(raw);
+    format!("{:x}", h.finalize())
+}
+
+fn provider_for_path(path: &str) -> Option<&'static str> {
+    if path == "/v1/messages" {
+        Some("anthropic")
+    } else if path == "/v1/chat/completions" || path == "/v1/responses" {
+        Some("openai")
+    } else {
+        None
+    }
+}
+
+fn upstream_url(base: &str, path: &str, query: Option<&str>) -> Result<String> {
+    if base.is_empty() {
+        anyhow::bail!("proxy.upstream is empty");
+    }
+    let mut url = format!("{base}{path}");
+    if let Some(q) = query {
+        url.push('?');
+        url.push_str(q);
+    }
+    Ok(url)
+}
+
+/// Headers that must not be forwarded (HTTP/1.1 hop-by-hop + framing). `content-length`
+/// is dropped because the proxy re-chunks; the body bytes themselves are untouched.
+fn hop_by_hop(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+            | "content-length"
+            | "host"
+    )
+}
+
+fn error_response(status: StatusCode, message: &str) -> AxumResponse {
+    let body = format!(
+        r#"{{"type":"error","error":{{"type":"{}","message":{}}}}}"#,
+        if status == StatusCode::BAD_GATEWAY {
+            "upstream_error"
+        } else {
+            "invalid_request_error"
+        },
+        serde_json::to_string(message).unwrap_or_else(|_| "\"proxy error\"".to_string())
+    );
+    Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .expect("static error response")
+}
+
+/// The four Anthropic counters (T5.1 Check: "usage row inserted with 4 counters").
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Counters {
+    input: i64,
+    cache_create: i64,
+    cache_read: i64,
+    output: i64,
+}
+
+/// Extract usage from an Anthropic response: the JSON body's top-level `usage`, or from
+/// SSE events (`message_start` carries input/cache counters, the final `message_delta`
+/// carries `output_tokens`). Anything missing stays 0 — never guess.
+fn parse_usage(content_type: Option<&str>, body: &[u8]) -> Option<Counters> {
+    let text = std::str::from_utf8(body).ok()?;
+    let is_sse = content_type
+        .map(|c| c.contains("text/event-stream"))
+        .unwrap_or(false);
+    if is_sse {
+        let mut counters = Counters::default();
+        let mut found = false;
+        for line in text.lines() {
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(data) else {
+                continue;
+            };
+            if let Some(u) = usage_block(&v) {
+                found = true;
+                counters.merge(&u);
+            }
+        }
+        found.then_some(counters)
+    } else {
+        let v: Value = serde_json::from_slice(body).ok()?;
+        usage_block(&v).map(|u| {
+            let mut c = Counters::default();
+            c.merge(&u);
+            c
+        })
+    }
+}
+
+/// A `usage` object: top level, or nested under `message` (Anthropic `message_start`).
+fn usage_block(v: &Value) -> Option<UsageBlock> {
+    v.get("usage")
+        .or_else(|| v.get("message").and_then(|m| m.get("usage")))
+        .filter(|u| u.is_object())
+        .map(|u| UsageBlock {
+            input: int_field(u, "input_tokens"),
+            cache_create: int_field(u, "cache_creation_input_tokens"),
+            cache_read: int_field(u, "cache_read_input_tokens"),
+            output: int_field(u, "output_tokens"),
+        })
+}
+
+#[derive(Debug, Default)]
+struct UsageBlock {
+    input: Option<i64>,
+    cache_create: Option<i64>,
+    cache_read: Option<i64>,
+    output: Option<i64>,
+}
+
+fn int_field(u: &Value, key: &str) -> Option<i64> {
+    u.get(key).and_then(Value::as_i64)
+}
+
+impl Counters {
+    fn merge(&mut self, b: &UsageBlock) {
+        if let Some(v) = b.input {
+            self.input = v;
+        }
+        if let Some(v) = b.cache_create {
+            self.cache_create = v;
+        }
+        if let Some(v) = b.cache_read {
+            self.cache_read = v;
+        }
+        if let Some(v) = b.output {
+            self.output = v;
+        }
+    }
+}

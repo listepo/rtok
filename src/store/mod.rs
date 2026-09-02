@@ -140,7 +140,9 @@ impl Store {
         Ok(())
     }
 
-    pub fn upsert_model(&self, provider_slug: &str, model_slug: &str) -> Result<i32> {
+    /// Upsert provider + model; returns `(provider_id, model_id)`. Proxy ground truth:
+    /// the request `model` must resolve to a `models` row (plan T5.1 Check).
+    pub fn upsert_model(&self, provider_slug: &str, model_slug: &str) -> Result<(i32, i32)> {
         let mut conn = self.lock()?;
         sql_query("INSERT INTO providers (slug, name) VALUES (?, ?) ON CONFLICT(slug) DO NOTHING")
             .bind::<Text, _>(provider_slug)
@@ -162,7 +164,7 @@ impl Store {
                 .bind::<diesel::sql_types::Integer, _>(provider_id)
                 .bind::<Text, _>(model_slug)
                 .load(&mut *conn)?;
-        Ok(i32::try_from(mid.first().context("model")?.n)?)
+        Ok((provider_id, i32::try_from(mid.first().context("model")?.n)?))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -520,6 +522,93 @@ impl Store {
         Ok(())
     }
 
+    /// Proxy ground truth (plan T5.1): one `usage` row per API request. Raw SQL — the
+    /// `usage` table predates P13's Diesel schema and has no model.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_usage(
+        &self,
+        session: &str,
+        model: Option<&str>,
+        input: i64,
+        cache_create: i64,
+        cache_read: i64,
+        output: i64,
+        call_id: i32,
+    ) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO usage (session, model, input, cache_create, cache_read, output, call_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Nullable<Text>, _>(model)
+        .bind::<BigInt, _>(input)
+        .bind::<BigInt, _>(cache_create)
+        .bind::<BigInt, _>(cache_read)
+        .bind::<BigInt, _>(output)
+        .bind::<Integer, _>(call_id)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    /// Provider counters for an api_request (plan T5.1): one `tokens` row,
+    /// `phase = 'after'`, `source = 'provider'`, carrying the four Anthropic counters
+    /// (the `tokens` total is their sum).
+    pub fn insert_provider_tokens(
+        &self,
+        call_id: i32,
+        input: i64,
+        cache_create: i64,
+        cache_read: i64,
+        output: i64,
+    ) -> Result<()> {
+        let total = input
+            .saturating_add(cache_create)
+            .saturating_add(cache_read)
+            .saturating_add(output);
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO tokens (call_id, phase, source, tokens, input, output, cache_create, cache_read)
+             VALUES (?, 'after', 'provider', ?, ?, ?, ?, ?)",
+        )
+        .bind::<Integer, _>(call_id)
+        .bind::<BigInt, _>(total)
+        .bind::<BigInt, _>(input)
+        .bind::<BigInt, _>(output)
+        .bind::<BigInt, _>(cache_create)
+        .bind::<BigInt, _>(cache_read)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    /// Usage rows for one session, newest first (proxy Check, later `stats`).
+    pub fn usage_rows(&self, session: &str) -> Result<Vec<UsageRow>> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "SELECT session, model, input, cache_create, cache_read, output, call_id
+             FROM usage WHERE session = ? ORDER BY ts DESC",
+        )
+        .bind::<Text, _>(session)
+        .load::<UsageRow>(&mut *conn)
+        .map_err(Into::into)
+    }
+
+    /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
+    pub fn model_slug_of_call(&self, call_id: i32) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        #[derive(QueryableByName)]
+        struct Slug {
+            #[diesel(sql_type = Text)]
+            slug: String,
+        }
+        let rows: Vec<Slug> = sql_query(
+            "SELECT m.slug AS slug FROM models m JOIN calls c ON c.model_id = m.id WHERE c.id = ?",
+        )
+        .bind::<Integer, _>(call_id)
+        .load(&mut *conn)?;
+        Ok(rows.first().map(|r| r.slug.clone()))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn insert_log(
         &self,
@@ -609,6 +698,25 @@ pub struct MeasRow {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
+}
+
+/// One `usage` row (proxy ground truth, T5.1).
+#[derive(Debug, QueryableByName)]
+pub struct UsageRow {
+    #[diesel(sql_type = Text)]
+    pub session: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub model: Option<String>,
+    #[diesel(sql_type = BigInt)]
+    pub input: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_create: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_read: i64,
+    #[diesel(sql_type = BigInt)]
+    pub output: i64,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub call_id: Option<i64>,
 }
 
 #[cfg(test)]

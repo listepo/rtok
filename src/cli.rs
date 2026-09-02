@@ -304,7 +304,7 @@ pub fn run() -> Result<()> {
                 println!("dry_run = {}", cfg.proxy.dry_run);
                 return Ok(());
             }
-            eprintln!("rtok proxy: not implemented");
+            crate::proxy::serve_blocking(cfg)?;
         }
         Cmd::Setup {
             host,

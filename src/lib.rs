@@ -21,6 +21,7 @@ pub mod mcp;
 pub mod measure;
 pub mod plugin;
 pub mod plugins;
+pub mod proxy;
 pub mod setup;
 pub mod store;
 pub mod tokens;

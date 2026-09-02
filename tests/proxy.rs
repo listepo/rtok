@@ -140,3 +140,132 @@ fn proxy_mock_openai_responses_body() {
 fn proxy_mock_openai_responses_stream() {
     roundtrip(MockUpstream::openai_responses_stream(), "/v1/responses");
 }
+
+// ── T5.1: passthrough proxy — identical bytes plus usage/calls/call_io/tokens rows ──
+
+use std::sync::Arc;
+
+use rtok::config::Config;
+use rtok::proxy::{ProxyState, app};
+use rtok::store::Store;
+use rtok::store::UsageRow;
+
+const T51_MODEL: &str = "claude-sonnet-4-20250514";
+const T51_SESSION: &str = "sess-t51";
+
+fn t51_request() -> Vec<u8> {
+    format!(
+        r#"{{"model":"{T51_MODEL}","max_tokens":8,"messages":[{{"role":"user","content":"hi"}}],"metadata":{{"user_id":"{T51_SESSION}"}}}}"#
+    )
+    .into_bytes()
+}
+
+async fn t51_server(
+    label: &str,
+    up: &MockUpstream,
+) -> (
+    String,
+    Arc<ProxyState>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+) {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t51-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = up.base_url();
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+    (addr, state, task)
+}
+
+async fn t51_post(addr: &str, body: Vec<u8>) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("request through the proxy")
+}
+
+/// The recorder task writes rows after the body was forwarded; poll briefly for them.
+async fn t51_usage(state: &Store, session: &str) -> Vec<UsageRow> {
+    for _ in 0..400 {
+        let rows = state.usage_rows(session).expect("usage read");
+        if !rows.is_empty() {
+            return rows;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("usage row for {session} never appeared");
+}
+
+#[tokio::test]
+async fn proxy_passthrough_body_records_usage_rows() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = t51_server("body", &up).await;
+    let resp = t51_post(&addr, t51_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let bytes = resp.bytes().await.expect("response body");
+    up.assert_passthrough_bytes(&bytes);
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T51_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row");
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (10, 0, 0, 2),
+        "usage row carries the four provider counters"
+    );
+    assert_eq!(u.model.as_deref(), Some(T51_MODEL));
+    let call_id = u.call_id.expect("usage.call_id points at the calls row") as i32;
+    assert_eq!(
+        state
+            .store
+            .model_slug_of_call(call_id)
+            .expect("slug")
+            .as_deref(),
+        Some(T51_MODEL),
+        "models.slug must equal the request model"
+    );
+    assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
+    assert_eq!(state.store.count_call_io().expect("call_io"), 1);
+    assert_eq!(state.store.count_tokens().expect("tokens"), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_passthrough_stream_is_byte_identical_and_records_usage() {
+    let up = MockUpstream::anthropic_messages_stream();
+    let (addr, state, task) = t51_server("stream", &up).await;
+    let resp = t51_post(&addr, t51_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| c.contains("text/event-stream"))
+            .unwrap_or(false),
+        "SSE content-type must pass through"
+    );
+    let bytes = resp.bytes().await.expect("response body");
+    up.assert_passthrough_bytes(&bytes);
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T51_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row");
+    let u = &rows[0];
+    // The fixture's message_start carries no usage; the final message_delta has output only.
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (0, 0, 0, 2),
+        "usage merged from SSE message_delta"
+    );
+    assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
+    assert_eq!(state.store.count_call_io().expect("call_io"), 1);
+    task.abort();
+}
