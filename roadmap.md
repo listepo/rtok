@@ -25,7 +25,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | T2.3 | `rtok setup claude` | open |
 | T4.1 | `rtok mcp` stdio server | done 2026-09-02 |
 | T1.4 | `rtok doctor` | open |
-| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | T9.2 T9.3 T9.4 T10.1 done 2026-09-02 |
+| T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | T9.2 T9.3 T9.4 T10.1 T10.2 done 2026-09-02 |
 
 ---
 
@@ -101,7 +101,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P3.** One working day vs baseline; keep only if Bash context-token-turns fall and expand rate < 5 %.
 
-**Status.** Manifest only. First task: T3.1. T14.2 done 2026-09-02.
+**Status.** T3.1–T3.6 T10.2 done 2026-09-02. Next: — . T14.2 done 2026-09-02.
 
 ---
 

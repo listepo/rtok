@@ -373,4 +373,9 @@ Do: write `~/.cursor/hooks.json` entries (beforeShellExecution → `rtok hook Pr
 Check: fixture Cursor payload → wrapped command JSON.
 Status: done 2026-09-02 · Check: `cursor_payload_wraps_command` — Cursor `command: ls -la` becomes `updatedInput.command` containing `rtok run -- ls -la`; `dry_run_then_apply_is_idempotent` writes `hooks.json` with `rtok hook PreToolUse --host cursor`. `make check` green. Deviation: also `cli.rs` (`--host` → `hook.host`, `setup cursor`), `hooks/mod.rs`+`types.rs` (`adapt_cursor`), `setup/mod.rs`, `claude.rs` (`read_settings`/`backup`/`register_stdio_mcp` shared).
 
+**T10.2 OpenCode** · T3.1 · `hosts/opencode/rtok.ts`
+Do: plugin using `tool.execute.after` to replace bash output with `rtok filter --stdin` (new subcommand: filter text from stdin without executing). This is the one host where post-execution replacement is possible.
+Check: `printf '...' | rtok filter --cmd 'git status'` returns filtered text; plugin unit test with the OpenCode plugin API mock.
+Status: done 2026-09-02 · Check: `printf_git_status_returns_filtered_text` and `git_status_from_stdin_drops_boilerplate` drop git-status boilerplate; `opencode_plugin_unit_test_with_api_mock` runs `hosts/opencode/rtok.test.ts` against a `createPlugin` mock. `make check` green. Deviation: also `src/cli.rs` (`filter --stdin/--cmd`), `src/plugins/cmd/{filter,mod}.rs` (reuses `formatters::compress`), `tests/filter.rs`, `tests/config_coverage.rs` (`--stdin` allow-list).
+
 

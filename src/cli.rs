@@ -1,6 +1,6 @@
 //! Clap tree. `tests/config_coverage.rs` walks [`Cli::command`] (plan T12.4).
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use crate::config::Config;
@@ -119,6 +119,15 @@ enum Cmd {
     Run {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
+    },
+    /// Filter text from stdin without executing
+    Filter {
+        /// Read the payload from stdin (OpenCode `tool.execute.after`)
+        #[arg(long)]
+        stdin: bool,
+        /// Command family hint (`git status`, `cargo test`, …)
+        #[arg(long, default_value = "")]
+        cmd: String,
     },
     /// Print an archived payload
     Expand {
@@ -393,6 +402,14 @@ pub fn run() -> Result<()> {
             let code = crate::plugins::cmd::run::run(&cfg, &command)?;
             std::process::exit(code);
         }
+        #[cfg(feature = "cmd")]
+        Cmd::Filter { stdin: _, cmd } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let hint = if cmd.is_empty() { cfg.filter.cmd } else { cmd };
+            let mut buf = String::new();
+            let _ = io::stdin().read_to_string(&mut buf);
+            print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));
+        }
         Cmd::Mcp => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::mcp::run(&cfg)?;
@@ -424,6 +441,12 @@ pub fn run() -> Result<()> {
         }
         #[cfg(not(feature = "cmd"))]
         Cmd::Run { .. } => eprintln!("rtok run: not implemented"),
+        #[cfg(not(feature = "cmd"))]
+        Cmd::Filter { .. } => {
+            let mut buf = String::new();
+            let _ = io::stdin().read_to_string(&mut buf);
+            print!("{buf}");
+        }
     }
     Ok(())
 }

@@ -36,8 +36,8 @@ never_wrap = ["rtok", "sudo"]    # first-word deny list for the rewrite
 See `roadmap.md` § `cmd`. Checks in `plan.md`.
 
 T3.1 `rtok run` · T3.2 rule engine · T3.3 formatters + default rules · T3.4 PreToolUse rewrite ·
-T3.5 `rtok expand` · T3.6 measurement wiring · T10.2 `rtok filter --stdin` (OpenCode).
+T3.1–T3.6 done 2026-09-02 · T10.2 `rtok filter --stdin` (OpenCode).
 
 ## Status
 
-Manifest only. First task: T3.1.
+T3.1–T3.6 T10.2 done 2026-09-02.
