@@ -398,4 +398,7 @@ Do: plugin using `tool.execute.after` to replace bash output with `rtok filter -
 Check: `printf '...' | rtok filter --cmd 'git status'` returns filtered text; plugin unit test with the OpenCode plugin API mock.
 Status: done 2026-09-02 · Check: `printf_git_status_returns_filtered_text` and `git_status_from_stdin_drops_boilerplate` drop git-status boilerplate; `opencode_plugin_unit_test_with_api_mock` runs `hosts/opencode/rtok.test.ts` against a `createPlugin` mock. `make check` green. Deviation: also `src/cli.rs` (`filter --stdin/--cmd`), `src/plugins/cmd/{filter,mod}.rs` (reuses `formatters::compress`), `tests/filter.rs`, `tests/config_coverage.rs` (`--stdin` allow-list).
 
-
+**T10.3 Codex** · T4.7 · `src/setup/codex.rs`
+Do: MCP registration in `~/.codex/config.toml`. Proxy wiring for Codex is T11.5.
+Check: dry-run diff shows one `[mcp_servers.rtok]` block.
+Status: done 2026-09-02 · Check: `rtok setup codex --dry-run` prints exactly one block, `+ [mcp_servers.rtok]` / `command = "rtok"` / `args = ["mcp"]`, and leaves the file untouched (`dry_run_shows_one_block_and_touches_nothing`); apply keeps the user's comments and other `[mcp_servers.*]` tables, second run `no changes`, `--remove` strips the block (`apply_keeps_comments_and_other_servers_and_is_idempotent`, `missing_file_is_created_on_apply`). `make check` green (104 lib tests). Deviation: edits go through `toml_edit` (already a dependency) with an implicit `[mcp_servers]` header, matching Codex's own files; also `src/cli.rs` (`setup codex`, host doc) and `src/setup/mod.rs`. Codex has no hook events, so the MCP block is the whole install; proxy wiring stays T11.5.
