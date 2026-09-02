@@ -5,8 +5,9 @@
 //! `http://127.0.0.1:8788` to chain behind another proxy during A/B). SSE responses
 //! stream through unchanged — chunks are tee'd into a buffer *while* the client
 //! receives them, never before (a spawned task does the bookkeeping afterwards).
-//! OpenAI wire routing arrives in P11; until then `/v1/chat/completions` and
-//! `/v1/responses` also go to `proxy.upstream` untouched.
+//! `/v1/chat/completions` goes to `proxy.openai_upstream` (T11.2), adding
+//! `stream_options.include_usage` to streaming requests that omit it so the final
+//! chunk reports usage. `/v1/responses` still goes to `proxy.upstream` until T11.3.
 //!
 //! Bookkeeping per request (all fail-open, logged, never alter the response):
 //! one `calls` row (`kind = api_request`, `surface = proxy`) with provider+model
@@ -45,6 +46,7 @@ use wire::{Wire, WireRequest};
 
 pub mod anthropic;
 pub mod cli;
+pub mod openai_chat;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
@@ -56,6 +58,8 @@ pub struct ProxyState {
     pub store: Store,
     client: Client,
     upstream: String,
+    /// Where the OpenAI wires go; Anthropic paths keep using `upstream` (D11).
+    openai_upstream: String,
     host_id: Option<i32>,
     inline_cap: usize,
     archive_dir: Option<PathBuf>,
@@ -79,6 +83,7 @@ impl ProxyState {
             store,
             client,
             upstream: cfg.proxy.upstream.trim_end_matches('/').to_string(),
+            openai_upstream: cfg.proxy.openai_upstream.trim_end_matches('/').to_string(),
             host_id,
             inline_cap: cfg.core.call_io_inline_bytes as usize,
             archive_dir: Some(cfg.core.archive_dir.clone()),
@@ -86,6 +91,15 @@ impl ProxyState {
             registry: Registry::new(cfg),
             cfg: cfg.clone(),
         })
+    }
+
+    /// The upstream owning `wire`. Paths this build has no wire for keep the Anthropic
+    /// default, which is what they did before P11 (`/v1/responses` until T11.3).
+    fn upstream_for(&self, wire: Option<&'static dyn Wire>) -> &str {
+        match wire.map(Wire::provider) {
+            Some("openai") => &self.openai_upstream,
+            _ => &self.upstream,
+        }
     }
 }
 
@@ -155,8 +169,13 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     } else {
         request_body
     };
+    // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`).
+    let request_body = match wire {
+        Some(wire) => prepare(&state, wire, request_body),
+        None => request_body,
+    };
 
-    let target = match upstream_url(&state.upstream, &path, query.as_deref()) {
+    let target = match upstream_url(state.upstream_for(wire), &path, query.as_deref()) {
         Ok(u) => u,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
     };
@@ -249,6 +268,18 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
 /// `compress` mode: run every enabled plugin's `proxy_filter` over the parsed body and
 /// forward the re-serialised result. Fail open: no parse, no `calls` row, a store error, or
 /// no change at all → the original bytes go through untouched.
+/// Let the wire shape the outgoing request (T11.2). Fail open: an unparseable or
+/// unchanged body is forwarded exactly as it arrived.
+fn prepare(state: &ProxyState, wire: &'static dyn Wire, original: Bytes) -> Bytes {
+    let Ok(mut body) = serde_json::from_slice::<Value>(&original) else {
+        return original;
+    };
+    if !wire.prepare_request(&mut body, state.cfg.proxy.include_usage) {
+        return original;
+    }
+    serde_json::to_vec(&body).map_or(original, Bytes::from)
+}
+
 fn compress(
     state: &ProxyState,
     wire: &'static dyn Wire,

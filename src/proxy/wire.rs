@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 use super::anthropic::ANTHROPIC;
+use super::openai_chat::OPENAI_CHAT;
 
 /// A provider request/response shape supported by the proxy.
 pub trait Wire: Send + Sync {
@@ -23,6 +24,13 @@ pub trait Wire: Send + Sync {
 
     /// Usage from one decoded SSE data event.
     fn usage_from_sse(&self, event: &Value) -> Option<Usage>;
+
+    /// Provider-specific request shaping applied in both proxy modes, before forwarding.
+    /// `include_usage` is `[proxy] include_usage`; wires that need no shaping ignore it.
+    /// Returns whether `body` changed — only then is the request re-serialised.
+    fn prepare_request(&self, _body: &mut Value, _include_usage: bool) -> bool {
+        false
+    }
 }
 
 /// A wire-normalised tool result. `turn` is the number of user turns that follow it.
@@ -81,7 +89,13 @@ impl<'a> WireRequest<'a> {
 
 /// The wire matching `path`, if this build understands it.
 pub fn for_path(path: &str) -> Option<&'static dyn Wire> {
-    ANTHROPIC.matches(path).then_some(&ANTHROPIC)
+    const WIRES: [&(dyn Wire + 'static); 2] = [&ANTHROPIC, &OPENAI_CHAT];
+    WIRES.into_iter().find(|wire| wire.matches(path))
+}
+
+/// Read an integer usage counter, treating an absent or non-integer field as zero.
+pub(super) fn int_field(usage: &Value, name: &str) -> i64 {
+    usage.get(name).and_then(Value::as_i64).unwrap_or_default()
 }
 
 /// Decode JSON or SSE response usage through the selected provider wire.

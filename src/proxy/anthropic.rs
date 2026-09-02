@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, Usage, Wire};
+use super::wire::{ToolResultRef, Usage, Wire, int_field};
 
 pub static ANTHROPIC: Anthropic = Anthropic;
 
@@ -87,10 +87,6 @@ fn usage_block(value: &Value) -> Option<Usage> {
             cache_read: int_field(usage, "cache_read_input_tokens"),
             output: int_field(usage, "output_tokens"),
         })
-}
-
-fn int_field(usage: &Value, name: &str) -> i64 {
-    usage.get(name).and_then(Value::as_i64).unwrap_or_default()
 }
 
 #[cfg(test)]
