@@ -146,7 +146,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | 0 | T14.5 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/proxy/PLAN.md`. |
 | 0b | T5.0 | done 2026-09-02 · `httpmock` harness + six `tests/fixtures/proxy/*` wires. |
 | 1 | T5.1 | Passthrough + SSE; insert `usage` + `calls`/`call_io`/`tokens`. |
-| 2 | T5.2 | Lifecycle, health, setup. |
+| 2 | T5.2 | done 2026-09-02 · Lifecycle, health, setup. |
 | 3 | T11.1 | `Wire` trait; Anthropic behind it. |
 | 4 | T11.2 | OpenAI Chat Completions. |
 | 5 | T11.3 | OpenAI Responses. |
@@ -154,7 +154,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P5 (passthrough).** Two days of usage rows. **Gate P11.** Same for one OpenAI-API host.
 
-**Status.** Manifest only. First task: T5.1. T14.5 done 2026-09-02.
+**Status.** T5.0 T5.1 T5.2 done 2026-09-02. Next: T5.3 / T11.1. T14.5 done 2026-09-02.
 
 ---
 

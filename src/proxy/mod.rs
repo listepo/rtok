@@ -28,6 +28,7 @@ use axum::extract::State;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderMap, HeaderName, Request, Response, StatusCode};
 use axum::response::Response as AxumResponse;
+use axum::routing::get;
 use futures_util::StreamExt;
 use futures_util::stream::unfold;
 use reqwest::Client;
@@ -38,6 +39,8 @@ use tokio::sync::mpsc;
 
 use crate::config::Config;
 use crate::store::Store;
+
+pub mod cli;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
 /// in-memory read well above them.
@@ -51,6 +54,7 @@ pub struct ProxyState {
     host_id: Option<i32>,
     inline_cap: usize,
     archive_dir: Option<PathBuf>,
+    pub mode: String,
 }
 
 impl ProxyState {
@@ -70,13 +74,17 @@ impl ProxyState {
             host_id,
             inline_cap: cfg.core.call_io_inline_bytes as usize,
             archive_dir: Some(cfg.core.archive_dir.clone()),
+            mode: cfg.proxy.mode.clone(),
         })
     }
 }
 
-/// The axum app: one fallback handler forwards every method and path upstream.
+/// The axum app: `/health` plus a fallback that forwards every other path upstream.
 pub fn app(state: Arc<ProxyState>) -> Router {
-    Router::new().fallback(proxy).with_state(state)
+    Router::new()
+        .route("/health", get(cli::health))
+        .fallback(proxy)
+        .with_state(state)
 }
 
 /// `rtok proxy` (cli.rs): run until killed.

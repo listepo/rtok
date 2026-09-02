@@ -37,6 +37,12 @@ enum Cmd {
         /// Override `[proxy] port`
         #[arg(long)]
         port: Option<u16>,
+        /// Override `[proxy] upstream`
+        #[arg(long)]
+        upstream: Option<String>,
+        /// Override `[proxy] mode` (`passthrough` | `compress`)
+        #[arg(long)]
+        mode: Option<String>,
         /// Print effective `[proxy]` settings and exit
         #[arg(long)]
         dry_run: bool,
@@ -105,6 +111,9 @@ enum Cmd {
         /// Register `rtok mcp` in the host MCP map
         #[arg(long)]
         mcp: bool,
+        /// Set `env.ANTHROPIC_BASE_URL` to this proxy
+        #[arg(long)]
+        proxy: bool,
     },
     /// Execute a command, archive its raw output, print the filtered version
     Run {
@@ -295,9 +304,16 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
             print!("{}", crate::doctor::run(&cfg)?);
         }
-        Cmd::Proxy { port, dry_run } => {
-            let cfg =
-                Config::load_with(config_file.as_deref(), layers::proxy_flags(port, dry_run))?;
+        Cmd::Proxy {
+            port,
+            upstream,
+            mode,
+            dry_run,
+        } => {
+            let cfg = Config::load_with(
+                config_file.as_deref(),
+                layers::proxy_flags(port, dry_run, upstream, mode),
+            )?;
             if cfg.proxy.dry_run {
                 println!("bind = {}", cfg.proxy.bind);
                 println!("port = {}", cfg.proxy.port);
@@ -319,24 +335,27 @@ pub fn run() -> Result<()> {
             yes,
             replace,
             mcp,
+            proxy,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
-                setup_flags(dry_run, yes, mcp, &mode),
+                setup_flags(dry_run, yes, mcp, proxy, &mode),
             )?;
             match host.as_str() {
                 "claude" if replace => println!("{}", crate::setup::migrate::run(&cfg)?),
                 "claude" => {
                     let hooks = crate::setup::claude::run(&cfg, remove)?;
+                    let mut lines = vec![hooks];
                     if cfg.setup.mcp && !remove {
-                        let mcp = crate::setup::claude::register_mcp(&cfg)?;
-                        if hooks == "no changes" && mcp == "no changes" {
-                            println!("no changes");
-                        } else {
-                            println!("{hooks}\n{mcp}");
-                        }
+                        lines.push(crate::setup::claude::register_mcp(&cfg)?);
+                    }
+                    if cfg.setup.proxy && !remove {
+                        lines.push(crate::proxy::cli::register_proxy(&cfg)?);
+                    }
+                    if lines.iter().all(|s| s == "no changes") {
+                        println!("no changes");
                     } else {
-                        println!("{hooks}");
+                        println!("{}", lines.join("\n"));
                     }
                 }
                 "cursor" => {
@@ -450,9 +469,10 @@ fn setup_flags(
     dry_run: bool,
     yes: bool,
     mcp: bool,
+    proxy: bool,
     mode: &[String],
 ) -> Option<figment::value::Dict> {
-    if !dry_run && !yes && !mcp && mode.is_empty() {
+    if !dry_run && !yes && !mcp && !proxy && mode.is_empty() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -465,6 +485,9 @@ fn setup_flags(
     }
     if mcp {
         setup.insert("mcp".into(), Value::from(true));
+    }
+    if proxy {
+        setup.insert("proxy".into(), Value::from(true));
     }
     if !mode.is_empty() {
         setup.insert(

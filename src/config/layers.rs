@@ -239,13 +239,24 @@ fn assemble(
 }
 
 /// Clap `Option<T>` overlay for `rtok proxy` (`flag` layer). Only `Some` / `--dry-run`.
-pub fn proxy_flags(port: Option<u16>, dry_run: bool) -> Option<Dict> {
+pub fn proxy_flags(
+    port: Option<u16>,
+    dry_run: bool,
+    upstream: Option<String>,
+    mode: Option<String>,
+) -> Option<Dict> {
     let mut proxy = Dict::new();
     if let Some(port) = port {
         proxy.insert("port".into(), Value::from(i64::from(port)));
     }
     if dry_run {
         proxy.insert("dry_run".into(), Value::from(true));
+    }
+    if let Some(upstream) = upstream {
+        proxy.insert("upstream".into(), Value::from(upstream));
+    }
+    if let Some(mode) = mode {
+        proxy.insert("mode".into(), Value::from(mode));
     }
     if proxy.is_empty() {
         return None;
@@ -383,7 +394,7 @@ mod tests {
         assert_eq!(port.1, "1234");
         assert_eq!(port.2, "env");
 
-        let flags = proxy_flags(Some(4321), false);
+        let flags = proxy_flags(Some(4321), false, None, None);
         let rows = entries(&fig(&home, &[("PROXY_PORT", "1234")], flags));
         let port = rows.iter().find(|(k, ..)| k == "proxy.port").unwrap();
         assert_eq!(port.1, "4321");

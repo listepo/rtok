@@ -269,3 +269,19 @@ async fn proxy_passthrough_stream_is_byte_identical_and_records_usage() {
     assert_eq!(state.store.count_call_io().expect("call_io"), 1);
     task.abort();
 }
+
+#[tokio::test]
+async fn proxy_health_reports_ok_and_mode() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, _state, task) = t51_server("health", &up).await;
+    let resp = reqwest::Client::new()
+        .get(format!("http://{addr}/health"))
+        .send()
+        .await
+        .expect("health");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let body = resp.text().await.expect("health body");
+    let v: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(v, serde_json::json!({"ok": true, "mode": "passthrough"}));
+    task.abort();
+}

@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T9.1 T9.2 T9.3 T10.1 done; next unblocked: T5.2 / T8.1 / T9.4 / T10.2.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T9.1 T9.2 T9.3 T10.1 done; next unblocked: T8.1 / T9.4 / T10.2.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -113,10 +113,6 @@ Gate P3: disable the legacy Bash-compression hooks in settings, run one working 
 Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats` Read/MCP rows and injection tokens per turn vs baseline.
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
-
-**T5.2 `rtok proxy` lifecycle** · T5.1 · `src/proxy/cli.rs`
-Do: `rtok proxy [--port] [--upstream] [--mode passthrough|compress]`; `rtok setup claude --proxy` sets `env.ANTHROPIC_BASE_URL` in settings.json (backup) and prints how to revert. `/health` endpoint.
-Check: `curl :8790/health` → `{"ok":true,"mode":"passthrough"}`.
 
 **T5.3 live-zone archive rewrite** · T5.1 · `src/plugins/archive.rs`
 Do: in `compress` mode: for `tool_result` blocks that are (a) older than `archive.keep_turns` (default 4 turns from the end), (b) larger than `archive.min_tokens` (default 1,500 est.), replace content with `[archived <id>: first 8 lines … last 4 lines · N tokens · expand(<id>)]`. **Decisions are keyed by `tool_use_id` and persisted**, so the same block is rewritten identically on every later request (frozen prefix stays byte-stable). Never touch `system`, `tools`, the last `keep_turns` turns, or any `tool_result` whose id was `expand`ed. Record measurement per rewritten block. Child `calls` row `kind=plugin_run` plugin=`archive` with `tokens` phase `before` (est. of the block) and `after` (est. of the pointer).
