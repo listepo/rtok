@@ -82,7 +82,15 @@ enum Cmd {
         command: Vec<String>,
     },
     /// Print an archived payload
-    Expand { id: String },
+    Expand {
+        id: String,
+        /// Inclusive 1-based range `a-b`
+        #[arg(long)]
+        lines: Option<String>,
+        /// Substring filter
+        #[arg(long)]
+        grep: Option<String>,
+    },
     /// List plugins: id, enabled, surfaces
     Plugins,
     /// The one config file
@@ -272,6 +280,10 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let code = crate::plugins::cmd::run::run(&cfg, &command)?;
             std::process::exit(code);
+        }
+        Cmd::Expand { id, lines, grep } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
         }
         // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),

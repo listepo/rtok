@@ -295,6 +295,20 @@ impl Store {
         Ok(sha)
     }
 
+    /// Path and bytes for `rtok expand <id>`. `None` if the id is unknown.
+    pub fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        let mut conn = self.lock()?;
+        let path: Option<String> = archive::table
+            .find(id)
+            .select(archive::path)
+            .first(&mut *conn)
+            .optional()?;
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        Ok(Some(std::fs::read(&path).with_context(|| path)?))
+    }
+
     pub fn insert_tokens(
         &self,
         call_id: i32,

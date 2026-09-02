@@ -22,6 +22,8 @@ const ALLOW: &[&str] = &[
     "cache",
     "force",
     "sources", // action: annotates `config show`; not a stored setting
+    "lines",   // expand slice; not a stored setting (T3.5)
+    "grep",    // expand filter; not a stored setting (T3.5)
 ];
 
 #[test]
