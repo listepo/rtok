@@ -296,7 +296,7 @@ section! {
     /// `[plugins.guard]`
     Guard {
         enabled: bool = true,
-        window_turns: u32 = 5,
+        window_turns: u32 = 8,
     }
 }
 

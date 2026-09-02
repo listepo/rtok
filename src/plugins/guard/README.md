@@ -24,7 +24,7 @@ Denials are lossless because the earlier result is archived; the model can alway
 ```toml
 [plugins.guard]
 enabled = true
-window_turns = 5
+window_turns = 8
 ```
 
 ## Tasks

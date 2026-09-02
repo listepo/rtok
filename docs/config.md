@@ -187,7 +187,7 @@ modes         = []                    # same as [setup].modes; setup writes here
 
 [plugins.guard]
 enabled      = true
-window_turns = 5
+window_turns = 8
 
 [plugins.memory]
 enabled        = true

@@ -10,13 +10,13 @@ use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Text};
+use diesel::sql_types::{BigInt, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
 
-use schema::{archive, call_io, calls, logs, measurements, notes, tokens};
+use schema::{archive, call_io, calls, logs, measurements, notes, read_cache, tokens};
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -340,6 +340,56 @@ impl Store {
             .first(&mut *conn)
             .optional()
             .map_err(Into::into)
+    }
+
+    /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
+    pub fn put_read_cache(
+        &self,
+        session: &str,
+        path: &str,
+        sha256: &str,
+        archive_id: Option<&str>,
+    ) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO read_cache (session, path, sha256, archive_id) VALUES (?, ?, ?, ?)
+             ON CONFLICT(session, path) DO UPDATE SET
+               sha256 = excluded.sha256,
+               ts = unixepoch(),
+               archive_id = excluded.archive_id",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(path)
+        .bind::<Text, _>(sha256)
+        .bind::<Nullable<Text>, _>(archive_id)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    /// `(archive_id, ts)` for a prior Read/Bash in this session.
+    pub fn get_read_cache(
+        &self,
+        session: &str,
+        path: &str,
+    ) -> Result<Option<(Option<String>, i64)>> {
+        let mut conn = self.lock()?;
+        read_cache::table
+            .find((session, path))
+            .select((read_cache::archive_id, read_cache::ts))
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Hook/call rows in this session at or after `ts` (window for `guard`).
+    pub fn calls_since(&self, session: &str, ts: i64) -> Result<i64> {
+        let mut conn = self.lock()?;
+        let rows: Vec<Count> =
+            sql_query("SELECT COUNT(*) AS n FROM calls WHERE session_id = ? AND ts >= ?")
+                .bind::<Text, _>(session)
+                .bind::<BigInt, _>(ts)
+                .load(&mut *conn)?;
+        Ok(rows.first().map(|r| r.n).unwrap_or(0))
     }
 
     pub fn insert_tokens(

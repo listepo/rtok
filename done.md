@@ -125,6 +125,11 @@ Do: PreCompact: read `transcript_path`, extract last 20 turns' user prompts (≤
 Check: fixture transcript → checkpoint note with 3 paths; SessionStart(compact) output contains them and stays under budget.
 Status: done 2026-09-02 · Check: `cargo test --lib plugins::checkpoint` — fixture JSONL → note with `src/a.rs`, `src/b.rs`, `src/c.rs`; SessionStart(compact) `additionalContext` contains them and stays ≤ `checkpoint_tokens`. `make check` green. Deviation: 5 files (`checkpoint.rs`, `inject/mod.rs`, `plugins/mod.rs`, `store/mod.rs`, `hooks/mod.rs`) — store note helpers + PostCompact restore through `inject`. Checkpoint is not a catalogue plugin.
 
+**T2.6 `guard` deny duplicate Read/Bash** · T2.1, T3.1 · `src/plugins/guard/mod.rs`
+Do: PreToolUse(Read) and PreToolUse(Bash): if the same path or command already ran in this session within `plugins.guard.window_turns` (default 8) and an archive id exists, `Deny` with a reason that names `rtok expand <id>`. Record `Measurement`. Never deny when there is no prior archive. Config keys in the same commit (D12).
+Check: two identical Read fixtures in one session → second is Deny naming the archive id; a different path → allow; `stats --plugin guard` has a row.
+Status: done 2026-09-02 · Check: `cargo test --lib plugins::guard` — first Read allow, PostToolUse archives, second identical Read Deny names `rtok expand <id>`, different path allow, `measurement_count("guard") >= 1`. `make check` green. Deviation: also `store/mod.rs` (read_cache helpers) and default `window_turns` 5→8 in config/docs.
+
 **T3.1 `rtok run -- <cmd>`** · T0.3 · `src/plugins/cmd/run.rs`
 Do: run via `$SHELL -lc`, capture stdout+stderr (merged, ordered), preserve exit code, write raw output to `~/.rtok/archive/<id>` and an `archive` row; print output (unfiltered in this task) plus trailer `[rtok <id> · N lines · expand: rtok expand <id>]` only when > 40 lines.
 Check: `rtok run -- printf 'a\nb\n'` prints `a b`, exit 0, no trailer; `rtok run -- sh -c 'exit 3'` → exit 3.
