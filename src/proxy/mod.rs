@@ -435,6 +435,7 @@ async fn finish(
             if let Err(e) = state.store.insert_usage(
                 &r.session,
                 r.model.as_deref(),
+                wire.map(Wire::api).unwrap_or("anthropic"),
                 usage.input,
                 usage.cache_create,
                 usage.cache_read,

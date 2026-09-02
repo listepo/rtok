@@ -4,7 +4,8 @@
 //! A turn is one `usage` row (one API request). A *bust* is a turn whose
 //! `cache_creation_input_tokens` exceeds [`BUST_CREATE_TOKENS`] while
 //! `cache_read_input_tokens` fell below the previous turn's — the frozen prefix was
-//! re-written. The cause comes from the request bodies the proxy recorded (`call_io`): a
+//! re-written. OpenAI busts on cache_read drops only (T11.6). The cause comes from
+//! the request bodies the proxy recorded (`call_io`): a
 //! changed `tools` array → `tools`, a changed `system` prompt → `system`, otherwise
 //! `unknown` (no body on record, or the change was inside `messages`).
 
@@ -79,7 +80,11 @@ pub fn analyse(rows: &[UsageRow], body: impl Fn(i64) -> Option<Vec<u8>>) -> Vec<
     let mut prev: Option<&UsageRow> = None;
     for r in rows {
         let bust = prev
-            .filter(|p| r.cache_create > BUST_CREATE_TOKENS && r.cache_read < p.cache_read)
+            .filter(|p| {
+                let drop = r.cache_read < p.cache_read;
+                let openai = r.api == "openai_chat" || r.api == "openai_responses";
+                drop && (openai || r.cache_create > BUST_CREATE_TOKENS)
+            })
             .map(|p| cause(load(p.call_id).as_ref(), load(r.call_id).as_ref()).to_string());
         turns.push(Turn {
             call_id: r.call_id,
@@ -170,6 +175,7 @@ mod tests {
         UsageRow {
             session: "sess".into(),
             model: Some("m".into()),
+            api: "anthropic".into(),
             input: 100,
             cache_create,
             cache_read,
@@ -213,7 +219,7 @@ mod tests {
         ] {
             let id = call(&store, s, body);
             store
-                .insert_usage(s, Some("m"), 100, create, read, 5, id)
+                .insert_usage(s, Some("m"), "anthropic", 100, create, read, 5, id)
                 .unwrap();
         }
         let r = report(&store).unwrap();
@@ -245,5 +251,24 @@ mod tests {
         let rows = [row(1, 0, 0), row(2, 500, 40_000), row(3, 25_000, 45_000)];
         assert!(analyse(&rows, |_| None).iter().all(|t| t.bust.is_none()));
         assert!(table(&[]).contains("no usage rows"));
+    }
+
+    #[test]
+    fn openai_cache_read_drop_is_a_bust_without_create() {
+        let openai = |create, read| UsageRow {
+            session: "sess".into(),
+            model: Some("m".into()),
+            api: "openai_chat".into(),
+            input: 100,
+            cache_create: create,
+            cache_read: read,
+            output: 5,
+            call_id: Some(1),
+        };
+        let turns = analyse(&[openai(0, 100), openai(0, 10)], |_| None);
+        assert!(turns[0].bust.is_none());
+        assert!(turns[1].bust.is_some());
+        let turns = analyse(&[row(1, 0, 100), row(2, 0, 10)], |_| None);
+        assert!(turns.iter().all(|t| t.bust.is_none()));
     }
 }

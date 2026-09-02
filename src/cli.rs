@@ -295,12 +295,15 @@ pub fn run() -> Result<()> {
                 return Ok(());
             }
             let since = crate::measure::stats::parse_since(&cfg.stats.since)?;
-            let report = crate::measure::stats::collect(
+            let mut report = crate::measure::stats::collect(
                 &cfg.stats.transcripts_dir,
                 since,
                 &cfg.stats.plugin,
                 crate::measure::stats::Replay::from_cfg(&cfg),
             )?;
+            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path) {
+                let _ = crate::measure::stats::attach_api(&mut report, &store);
+            }
             if let Some(name) = save_baseline {
                 let p = crate::measure::baseline::save(&cfg.home, &name, &report)?;
                 println!("{}", p.display());

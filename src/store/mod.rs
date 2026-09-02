@@ -26,6 +26,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0002.sql", include_str!("../../migrations/0002.sql")),
     ("0003.sql", include_str!("../../migrations/0003.sql")),
     ("0004.sql", include_str!("../../migrations/0004.sql")),
+    ("0005.sql", include_str!("../../migrations/0005.sql")),
 ];
 
 pub struct Store {
@@ -618,6 +619,7 @@ impl Store {
         &self,
         session: &str,
         model: Option<&str>,
+        api: &str,
         input: i64,
         cache_create: i64,
         cache_read: i64,
@@ -626,11 +628,12 @@ impl Store {
     ) -> Result<()> {
         let mut conn = self.lock()?;
         sql_query(
-            "INSERT INTO usage (session, model, input, cache_create, cache_read, output, call_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO usage (session, model, api, input, cache_create, cache_read, output, call_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind::<Text, _>(session)
         .bind::<Nullable<Text>, _>(model)
+        .bind::<Text, _>(api)
         .bind::<BigInt, _>(input)
         .bind::<BigInt, _>(cache_create)
         .bind::<BigInt, _>(cache_read)
@@ -688,12 +691,48 @@ impl Store {
     pub fn usage_rows(&self, session: &str) -> Result<Vec<UsageRow>> {
         let mut conn = self.lock()?;
         sql_query(
-            "SELECT session, model, input, cache_create, cache_read, output, call_id
+            "SELECT session, model, api, input, cache_create, cache_read, output, call_id
              FROM usage WHERE session = ? ORDER BY ts DESC, id DESC",
         )
         .bind::<Text, _>(session)
         .load::<UsageRow>(&mut *conn)
         .map_err(Into::into)
+    }
+
+    pub fn usage_by_api(&self) -> Result<Vec<ApiUsage>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            api: String,
+            #[diesel(sql_type = BigInt)]
+            input: i64,
+            #[diesel(sql_type = BigInt)]
+            cache_create: i64,
+            #[diesel(sql_type = BigInt)]
+            cache_read: i64,
+            #[diesel(sql_type = BigInt)]
+            output: i64,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT api,
+                    COALESCE(SUM(input),0) AS input,
+                    COALESCE(SUM(cache_create),0) AS cache_create,
+                    COALESCE(SUM(cache_read),0) AS cache_read,
+                    COALESCE(SUM(output),0) AS output
+             FROM usage GROUP BY api ORDER BY api",
+        )
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| ApiUsage {
+                api: r.api,
+                input: r.input,
+                cache_create: r.cache_create,
+                cache_read: r.cache_read,
+                output: r.output,
+            })
+            .collect())
     }
 
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
@@ -935,6 +974,16 @@ pub struct ArchiveDecision {
     pub expanded: bool,
 }
 
+/// Aggregated usage totals grouped by API (T11.6).
+#[derive(Debug, Clone)]
+pub struct ApiUsage {
+    pub api: String,
+    pub input: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+    pub output: i64,
+}
+
 /// One `usage` row (proxy ground truth, T5.1).
 #[derive(Debug, QueryableByName)]
 pub struct UsageRow {
@@ -942,6 +991,8 @@ pub struct UsageRow {
     pub session: String,
     #[diesel(sql_type = Nullable<Text>)]
     pub model: Option<String>,
+    #[diesel(sql_type = Text)]
+    pub api: String,
     #[diesel(sql_type = BigInt)]
     pub input: i64,
     #[diesel(sql_type = BigInt)]
@@ -1155,5 +1206,44 @@ mod tests {
         assert!(io[0].request_archive.is_some());
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn two_apis_are_two_stats_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s1", None, None, None, Some("proxy"))
+            .unwrap();
+        let id1 = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        let id2 = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        store
+            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
+            .unwrap();
+        store
+            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
+            .unwrap();
+        assert_eq!(store.usage_by_api().unwrap().len(), 2);
     }
 }

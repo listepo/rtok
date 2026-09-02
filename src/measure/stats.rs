@@ -48,6 +48,17 @@ pub struct Report {
     pub ctt_archive: u64,
     #[serde(default)]
     pub archive_candidates: u64,
+    #[serde(default)]
+    pub api: BTreeMap<String, ApiRow>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ApiRow {
+    pub input: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+    pub output: i64,
+    pub hit: f64,
 }
 
 /// The `[plugins.archive]` knobs the replay needs, so `collect` stays usable without a `Config`.
@@ -91,6 +102,23 @@ impl Report {
             self.cache_hit_rate * 100.0,
             self.median_final_context
         ));
+        if !self.api.is_empty() {
+            s.push_str(&format!(
+                "{:<24} {:>8} {:>12} {:>10} {:>6} {:>6}\n",
+                "api", "input", "cache_create", "cache_read", "output", "hit"
+            ));
+            for (api, r) in &self.api {
+                s.push_str(&format!(
+                    "{:<24} {:>8} {:>12} {:>10} {:>6} {:>5.1}%\n",
+                    api,
+                    r.input,
+                    r.cache_create,
+                    r.cache_read,
+                    r.output,
+                    r.hit * 100.0
+                ));
+            }
+        }
         if self.ctt_total > 0 {
             let pct =
                 100.0 * (self.ctt_total as f64 - self.ctt_archive as f64) / self.ctt_total as f64;
@@ -129,6 +157,31 @@ pub fn parse_since(s: &str) -> Result<Duration> {
         "h" => Duration::from_secs(n * 3600),
         _ => bail!("bad --since unit in {s}"),
     })
+}
+
+pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
+    for row in store.usage_by_api()? {
+        let denom = row
+            .cache_read
+            .saturating_add(row.cache_create)
+            .saturating_add(row.input);
+        let hit = if denom == 0 {
+            0.0
+        } else {
+            row.cache_read as f64 / denom as f64
+        };
+        report.api.insert(
+            row.api,
+            ApiRow {
+                input: row.input,
+                cache_create: row.cache_create,
+                cache_read: row.cache_read,
+                output: row.output,
+                hit,
+            },
+        );
+    }
+    Ok(())
 }
 
 pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Result<Report> {
@@ -467,5 +520,53 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
+    }
+
+    #[test]
+    fn two_apis_print_as_two_table_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s1", None, None, None, Some("proxy"))
+            .unwrap();
+        let id1 = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        let id2 = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        store
+            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
+            .unwrap();
+        store
+            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
+            .unwrap();
+        let mut report = Report::default();
+        attach_api(&mut report, &store).unwrap();
+        let table = report.to_table();
+        let names: Vec<&str> = table
+            .lines()
+            .filter(|l| l.starts_with("anthropic") || l.starts_with("openai_chat"))
+            .collect();
+        assert_eq!(names.len(), 2, "{table}");
+        assert!(names.iter().any(|l| l.starts_with("anthropic")));
+        assert!(names.iter().any(|l| l.starts_with("openai_chat")));
     }
 }

@@ -233,6 +233,11 @@ Do: `rtok setup codex --proxy` writes a `model_provider` with `base_url = http:/
 Check: each dry-run shows exactly one change; second run "no changes"; `rtok doctor` lists both chains.
 Status: done 2026-09-03 · Check: `proxy_dry_run_shows_one_change_and_touches_nothing` / OpenCode dry-run counterpart → one `[model_providers.rtok]` or `env.OPENAI_BASE_URL` change, file untouched; apply then second apply `"no changes"`; `--remove` strips. `lists_anthropic_and_openai_proxy_chains` → `rtok doctor` prints both `proxy` and `proxy openai` lines. `just check` green (118 lib tests). Deviations: also `src/setup/mod.rs` (`openai_proxy_url`, `pub mod opencode`) and `src/cli.rs` (codex `--proxy` dispatch, host `opencode`). Codex writes `model_provider = "rtok"` plus `[model_providers.rtok] base_url`; OpenCode writes `env.OPENAI_BASE_URL` with `/v1`.
 
+**T11.6 `usage.api` + per-API stats** · T11.2, T13.2 · `migrations/0003.sql`, `src/measure/stats.rs`
+Do: migration adds `usage.api TEXT NOT NULL DEFAULT 'anthropic'` (`anthropic | openai_chat | openai_responses`); `rtok stats` prints usage totals and cache hit rate per API; `rtok stats --cache` (T5.5) handles OpenAI cached_tokens (no cache_create signal → busts detected from cache_read drops only).
+Check: `cargo test store::` still applies migrations idempotently (0001–0003); fixture usage rows for two APIs → two rows in the stats table.
+Status: done 2026-09-03 · Check: `cargo test --lib store::` → 6 passed, including `migration_is_idempotent` (second migrate = 0 with 0001–0005) and `two_apis_are_two_stats_rows`. `two_apis_print_as_two_table_rows` prints two api lines in `rtok stats` table. `openai_cache_read_drop_is_a_bust_without_create` covers OpenAI cache_read-drop busts. `just check` green. Deviations: migration is `0005.sql` (0003 is T8.1 symbols; 0004 is archive_decisions). Also `src/store/mod.rs`, `src/proxy/{mod,wire}.rs`, `src/measure/cache.rs`, `src/cli.rs`.
+
 ## P12 — Config file (D12, D14)
 
 **T12.1 typed schema + reference file** · T0.2 · `src/config.rs`, `config/default.toml`, `docs/config.md`

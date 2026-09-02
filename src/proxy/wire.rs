@@ -32,6 +32,17 @@ pub trait Wire: Send + Sync {
     fn prepare_request(&self, _body: &mut Value, _include_usage: bool) -> bool {
         false
     }
+
+    /// `usage.api` discriminator (T11.6). Distinct from `provider` (openai_chat vs openai_responses).
+    fn api(&self) -> &'static str {
+        if self.matches("/v1/responses") {
+            "openai_responses"
+        } else if self.matches("/v1/chat/completions") {
+            "openai_chat"
+        } else {
+            "anthropic"
+        }
+    }
 }
 
 /// A wire-normalised tool result. `turn` is the number of user turns that follow it.
