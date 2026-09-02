@@ -4,8 +4,11 @@
 //! comparable to that baseline. Usage counters are the API numbers from the transcript.
 
 use super::jsonl::{self, Parsed};
+use crate::config::Config;
+use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -273,6 +276,32 @@ fn strip_prefix_cd(s: &str) -> Option<&str> {
 fn mcp_group(name: &str) -> Option<&str> {
     let rest = name.strip_prefix("mcp__")?;
     Some(rest.split("__").next().unwrap_or(rest))
+}
+
+/// SQLite measurements for a catalogue plugin (`rtok stats --plugin cmd --json`).
+pub fn plugin_json(cfg: &Config, plugin: &str) -> Result<String> {
+    let store = Store::open(&cfg.core.db_path)?;
+    let rows = store.list_measurements(plugin)?;
+    let archive_hits = rows.iter().filter(|r| r.kind == "expand").count();
+    let rows: Vec<serde_json::Value> = rows
+        .into_iter()
+        .filter(|r| r.kind != "expand")
+        .map(|r| {
+            json!({
+                "kind": r.kind,
+                "before": r.before_bytes,
+                "after": r.after_bytes,
+                "est_before": r.est_before,
+                "est_after": r.est_after,
+                "ref_id": r.ref_id,
+            })
+        })
+        .collect();
+    Ok(serde_json::to_string_pretty(&json!({
+        "plugin": plugin,
+        "archive_hits": archive_hits,
+        "rows": rows,
+    }))?)
 }
 
 #[cfg(test)]

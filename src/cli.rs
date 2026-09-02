@@ -217,6 +217,16 @@ pub fn run() -> Result<()> {
                 println!("{}", crate::tokens::calibrate_or_skip(&cfg));
                 return Ok(());
             }
+            if crate::config::CATALOGUE
+                .iter()
+                .any(|(id, _)| *id == cfg.stats.plugin)
+            {
+                print!(
+                    "{}",
+                    crate::measure::stats::plugin_json(&cfg, &cfg.stats.plugin)?
+                );
+                return Ok(());
+            }
             let since = crate::measure::stats::parse_since(&cfg.stats.since)?;
             let report = crate::measure::stats::collect(
                 &cfg.stats.transcripts_dir,

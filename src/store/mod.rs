@@ -392,6 +392,24 @@ impl Store {
         Ok(rows.first().map(|r| r.n).unwrap_or(0))
     }
 
+    /// Measurement rows for `rtok stats --plugin <id>` (T3.6).
+    pub fn list_measurements(&self, plugin: &str) -> Result<Vec<MeasRow>> {
+        let mut conn = self.lock()?;
+        measurements::table
+            .filter(measurements::plugin.eq(plugin))
+            .order(measurements::id.asc())
+            .select((
+                measurements::kind,
+                measurements::before_bytes,
+                measurements::after_bytes,
+                measurements::est_before,
+                measurements::est_after,
+                measurements::ref_id,
+            ))
+            .load::<MeasRow>(&mut *conn)
+            .map_err(Into::into)
+    }
+
     pub fn insert_tokens(
         &self,
         call_id: i32,
@@ -480,6 +498,17 @@ fn hex_sha256(bytes: &[u8]) -> String {
 struct Count {
     #[diesel(sql_type = BigInt)]
     n: i64,
+}
+
+/// One `measurements` row for `stats --plugin`.
+#[derive(Debug, Queryable)]
+pub struct MeasRow {
+    pub kind: String,
+    pub before_bytes: i64,
+    pub after_bytes: i64,
+    pub est_before: i32,
+    pub est_after: i32,
+    pub ref_id: Option<String>,
 }
 
 #[cfg(test)]
