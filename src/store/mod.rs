@@ -362,6 +362,15 @@ impl Store {
         q.load(&mut *conn).map_err(Into::into)
     }
 
+    /// All note bodies (for import dedupe, T6.3).
+    pub fn note_bodies(&self) -> Result<Vec<String>> {
+        let mut conn = self.lock()?;
+        notes::table
+            .select(notes::body)
+            .load(&mut *conn)
+            .map_err(Into::into)
+    }
+
     /// Full note body by row id.
     pub fn get_note_body(&self, id: i32) -> Result<Option<String>> {
         let mut conn = self.lock()?;

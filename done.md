@@ -267,6 +267,11 @@ Do: inject the last 5 note titles + ids for the current project (≤ 200 tokens)
 Check: fixture with 20 notes → 5 titles, ≤ 200 tokens, byte-stable across runs.
 Status: done 2026-09-02 · Check: 20 notes → 6-line recall (header + 5 titles), no bodies, ≤ 200 tokens, byte-stable. `make check` green. Deviation: implemented in `memory/mod.rs` (not `inject.rs`) plus `Store::list_note_titles`.
 
+**T6.3 import** · T6.1 · `src/plugins/memory/import.rs`
+Do: `rtok memory import <file.jsonl>`: one note per line `{kind, title, body, ts?, project?}`. Users export their previous memory tool to that shape themselves; rtok knows no third-party schema (D6). Dedupe by sha256 of body; print inserted/skipped/malformed counts; exit 0.
+Check: a 50-line fixture → 50 rows; re-import → 0 inserted, 50 skipped; one malformed line is counted, skipped, exit 0.
+Status: done 2026-09-02 · Check: `fifty_then_reimport_then_malformed_exits_ok` — 50 inserted, re-import 50 skipped, extra bad line malformed=1. `make check` green. Deviation: also `cli.rs` (`rtok memory import`) and `Store::note_bodies`.
+
 **T7.1 modes as data** · T2.4 · `modes/terse.md`, `modes/yagni.md`, `src/plugins/inject.rs`
 Do: copy the intent of caveman (terse output) and ponytail (YAGNI ladder) into ≤ 250-token markdown files under `~/.rtok/modes/`; `rtok setup --mode terse,yagni` enables; injected once per session via `inject` (priority 5), not per prompt.
 Check: `rtok hook SessionStart` output contains the mode text once; UserPromptSubmit output does not.

@@ -1,5 +1,7 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
+pub mod import;
+
 use crate::plugin::{Ctx, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef};
 use crate::tokens::Class;
 use serde_json::json;

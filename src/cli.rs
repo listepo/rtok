@@ -101,6 +101,19 @@ enum Cmd {
         #[command(subcommand)]
         action: ConfigCmd,
     },
+    /// Notes (`mem_save` / import)
+    #[cfg(feature = "memory")]
+    Memory {
+        #[command(subcommand)]
+        action: MemoryCmd,
+    },
+}
+
+#[cfg(feature = "memory")]
+#[derive(Subcommand)]
+enum MemoryCmd {
+    /// Import `{kind,title,body}` JSONL; dedupe by body sha256
+    Import { file: std::path::PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -147,6 +160,8 @@ impl Cmd {
             Cmd::Expand { .. } => "expand",
             Cmd::Plugins => "plugins",
             Cmd::Config { .. } => "config",
+            #[cfg(feature = "memory")]
+            Cmd::Memory { .. } => "memory",
         }
     }
 }
@@ -298,6 +313,15 @@ pub fn run() -> Result<()> {
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
+        }
+        #[cfg(feature = "memory")]
+        Cmd::Memory { action } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            match action {
+                MemoryCmd::Import { file } => {
+                    println!("{}", crate::plugins::memory::import::run(&cfg, &file)?);
+                }
+            }
         }
         // Stubs exit 0 so hooks fail open until each surface lands (plan P2–P5).
         other => eprintln!("rtok {}: not implemented", other.name()),
