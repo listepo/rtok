@@ -88,10 +88,11 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 | caveman (JuliusBrussee) | prose + request | terse mode, shrink-hook, proxy record/compress, TOON, MCP compress/retrieve | prompt + proxy + MCP | Go · custom · 102 k | ✓ · ✓ · ~ | 65 % output | 8.5 % agentic (JetBrains); 0 here (proxy inert); issue #112 corrupts inline code |
 | ponytail (DietrichGebert) | model output | YAGNI ladder prompt | prompt file | JS · MIT · 120 k | ✓ · ✓ · n/a | −54 % LOC, −22 % tokens (own bench, Haiku 4.5, n=4) | none independent |
 | token-optimizer (alexgreensh) | reads, bash, archive, compaction, coaching | delta reads, structure maps, bash compress (111 cmds), archive >4 KB, checkpoints, quality nudges | hooks (Python subprocess) | Python · PolyForm-NC · 2.1 k | ✓ · ✓ · ✓ (archive) | "$313/mo" | author's own meter only; 27 hooks on your machine |
-| codebase-memory-mcp (DeusData) | code graph | tree-sitter 162 langs → SQLite (LZ4), Cypher-like queries | MCP | C · MIT · 41.7 k | ✓ · ✓ · n/a | 99.2 % on 5 queries; Linux kernel 3 min | none independent |
-| codegraph (colbymchenry) | code graph | `.codegraph/codegraph.db` (SQLite+FTS5), `explore` | CLI + MCP | C/TS · MIT · 69 k | ✓ · ✓ · n/a | −88 % tool calls, −62 % tokens | none; you marked it legacy |
-| code-review-graph (tirth8205) | code graph | tree-sitter → SQLite, impact radius, minimal context | MCP (30 tools) | Python · MIT · 31.1 k | ✓ · optional embeddings · n/a | — | none |
-| serena (oraios) | symbols | LSP-backed symbol tools | MCP | Python · MIT · 28.7 k | ✓ · ✓ · n/a | — | none; most precise |
+| codebase-memory-mcp (DeusData) | code graph | tree-sitter 158 grammars + hybrid LSP (11 langs) → SQLite (zstd), 15 tools, Cypher-like queries | MCP | C · MIT · 42.1 k (v0.7.0, 2026-09-04) | ✓ · ✓ · n/a | 99.2 % on 5 queries; Linux kernel 3 min | exits on start here (0 tools, `doctor` 2026-09-02); 281 MB binary, 141 MB cache |
+| codegraph (colbymchenry) | code graph | `.codegraph/codegraph.db` (SQLite+FTS5), one `codegraph_explore` tool | CLI + MCP | C/TS · MIT · 69.4 k (2026-09-04) | ✓ · ✓ · n/a | −88 % tool calls, −62 % tokens (7 repos) | 97 MB `.codegraph/` for one repo (cross-code); no binary here |
+| code-review-graph (tirth8205) | code graph | tree-sitter → SQLite, impact radius, minimal context, communities | MCP (30 tools) | Python · MIT · 31.2 k (2.3.7, 2026-09-04) | ✓ · optional embeddings · n/a | 65× median (36–376×, 6 repos) | 30 tools ~2 295 desc tokens (`doctor`); F1 0.69 against its own edges (own README) |
+| graphify (safishamsi) | code graph | 37 tree-sitter grammars + LLM extraction for docs → JSON, Leiden communities, HTML map | CLI + MCP + plugin | Python · Apache-2.0/MIT · 114 k (v8, 2026-09-04) | ✓ · ✗ (docs layer) · n/a | “code maps for free” | not installed; none |
+| serena (oraios) | symbols | LSP-backed symbol tools | MCP | Python · MIT · 28.7 k (2026-09-04) | ✓ · ✓ · n/a | — | 22 tools ~1 494 desc tokens; times out at 30 s here; most precise |
 | claude-mem (thedotmack) | memory | LLM-extracted observations, SQLite+Chroma, progressive disclosure | plugin + MCP + daemon | JS · Apache-2.0 · 92.9 k | ✓ · ✗ (uses Claude) · n/a | 87 % (own banner) | costs tokens to build memory |
 | engram (Gentleman-Programming) | memory | agent-written notes, SQLite FTS5, HTTP+MCP | MCP | Go · MIT · 6.3 k | ✓ · ✓ · n/a | — | 18 tools' descriptions per session |
 | mem0 / OpenMemory | memory | LLM extraction + vectors | MCP (Docker, Qdrant) | Python · Apache-2.0 · 64.5 k | ~ · ✗ · n/a | — | not local-first by default |
@@ -113,7 +114,7 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 | Reads | lean-ctx (78 tools, 3.1 K/turn) + token-optimizer read_cache + headroom audit | `read` (5 tools, no banner, dedup) |
 | Proxies | headroom :8788 → caveman :8787 (inert on Max) → Anthropic; Docker: headroom → bifrost | `rtok proxy :8790` (passthrough → compress), chainable for A/B |
 | Memory | claude-mem (LLM) + engram | one, agent-written, FTS5 |
-| Code graph | code-review-graph + codebase-memory-mcp + serena (+codegraph stale) ≈ 85 MCP tools | `graph` adapter over one installed tool |
+| Code graph | code-review-graph + codebase-memory-mcp + serena (+codegraph stale) ≈ 85 MCP tools | `graph`: native tags index, 3 tools (D6; was “adapter” before D6 was rewritten) |
 | Injection per turn | lean-ctx 3.1 K + engram + claude-mem + ponytail + caveman + token-optimizer nudges | one budget (800 tokens), byte-stable |
 | Measurement | 5 incompatible meters, none the bill | usage from proxy + transcripts; context-token-turns; A/B bench |
 | Reversibility | partial (headroom retrieve, token-optimizer expand) | every rewrite has `expand <id>` |
@@ -146,10 +147,11 @@ Every alternative in `src/plugins/*/PLAN.md` with the survey date. Stars/version
 | engram | 2026-09-01 | inject, memory |
 | claude-mem | 2026-09-01 | inject, memory |
 | ponytail | 2026-09-01 | inject |
-| codebase-memory-mcp | 2026-09-01 | graph |
-| codegraph | 2026-09-01 | graph |
-| code-review-graph | 2026-09-01 | graph |
-| serena | 2026-09-01 | graph |
+| codebase-memory-mcp | v0.7.0 · 2026-09-04 | graph |
+| codegraph | 2026-09-04 | graph |
+| code-review-graph | 2.3.7 · 2026-09-04 | graph |
+| graphify | v8 · 2026-09-04 | graph |
+| serena | 2026-09-04 | graph |
 | OpenViking | 2026-09-01 | memory |
 | bifrost | 2026-09-01 | proxy |
 | TOON (toon-format) | 2026-09-01 | toon |

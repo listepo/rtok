@@ -66,8 +66,10 @@ that v0.1 does not schedule.
 |----|-------------|------|-------------|---------------------------|
 | I-13 | claude-mem progressive disclosure; engram 18-tool banner | `memory` | Titles → ids → bodies strictly; never inject bodies at SessionStart (research.md §6 #7). | T6.2 already goes through `inject`. Spell the ladder as a Check if T6.2 is too loose. |
 | I-14 | codebase-memory-mcp Cypher-like queries | `graph` | A small query language over the tags index (beyond `symbol`/`callers`/`outline`). | T8.2 is three tools. Cypher is a fourth surface; promote only if those three miss a measured query. |
-| I-15 | code-review-graph impact radius | `graph` | `impact(path)` / changed-symbol fan-out for reviews. | Same as I-14: extra MCP tool, extra description tokens. |
+| I-15 | code-review-graph impact radius | `graph` | `impact(path)` / changed-symbol fan-out for reviews. | Same as I-14: extra MCP tool, extra description tokens. Drafted as T8.7 in `src/plugins/graph/PLAN.md` v0.2 (2026-09-04), not yet in `plan.md`. |
 | I-16 | codebase-memory-mcp 162 langs, LZ4 blobs | `graph` | More grammars + compressed index payloads. | T8.1 is tree-sitter-tags on this repo first; langs are data. |
+| I-28 | aider repo map (tree-sitter + PageRank, 1 K budget) | `inject`, `graph` | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inject` budget. | D5 budget is 800 tokens and `memory` recall already takes 200; needs a P7-style A/B before it takes any of it. Survey: `src/plugins/graph/PLAN.md` v0.2. |
+| I-29 | codebase-memory-mcp `detect_dead_code` | `graph` | Definitions with zero reference sites in the index. | One query once T8.5 edges exist, but pub API, trait impls and macros make it noisy; no measured need. |
 
 ### Hosts and product
 
