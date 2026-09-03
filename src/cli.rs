@@ -463,8 +463,8 @@ pub fn run() -> Result<()> {
             let root = path.unwrap_or(std::env::current_dir()?);
             let r = crate::plugins::graph::index::run(&cx, &root)?;
             println!(
-                "indexed {} files · {} rows · {} skipped",
-                r.indexed, r.inserted, r.skipped
+                "indexed {} files · {} rows · {} skipped · {} read",
+                r.indexed, r.inserted, r.skipped, r.read
             );
         }
         #[cfg(not(feature = "cmd"))]

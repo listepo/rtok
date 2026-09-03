@@ -29,6 +29,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0004.sql", include_str!("../../migrations/0004.sql")),
     ("0005.sql", include_str!("../../migrations/0005.sql")),
     ("0006.sql", include_str!("../../migrations/0006.sql")),
+    ("0007.sql", include_str!("../../migrations/0007.sql")),
 ];
 
 pub struct Store {
@@ -815,13 +816,25 @@ impl Store {
             .get_result(&mut *conn)?)
     }
 
-    pub fn symbol_sha(&self, root: &str, path: &str) -> Result<Option<String>> {
+    /// What the index knows about one file: `(sha256, mtime_nanos, size)` (T8.4). A caller
+    /// whose stat matches is skipped without the file being opened.
+    pub fn symbol_stat(&self, root: &str, path: &str) -> Result<Option<(String, i64, i64)>> {
         let mut conn = self.lock()?;
         Ok(symbols::table
             .filter(symbols::root.eq(root).and(symbols::path.eq(path)))
-            .select(symbols::file_sha)
-            .first::<String>(&mut *conn)
+            .select((symbols::file_sha, symbols::mtime, symbols::size))
+            .first::<(String, i64, i64)>(&mut *conn)
             .optional()?)
+    }
+
+    /// Record a new stat for a file whose content hashed the same (T8.4): the rows stand,
+    /// only the freshness key moves, so the next run skips it on the stat alone.
+    pub fn touch_symbols(&self, root: &str, path: &str, mtime: i64, size: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        diesel::update(symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))))
+            .set((symbols::mtime.eq(mtime), symbols::size.eq(size)))
+            .execute(&mut *conn)?;
+        Ok(())
     }
 
     pub fn replace_symbols(
@@ -829,6 +842,7 @@ impl Store {
         root: &str,
         path: &str,
         file_sha: &str,
+        stat: (i64, i64),
         rows: &[(String, String, i32, bool)],
     ) -> Result<usize> {
         let mut conn = self.lock()?;
@@ -849,6 +863,8 @@ impl Store {
                         symbols::line.eq(0),
                         symbols::is_def.eq(0),
                         symbols::file_sha.eq(file_sha),
+                        symbols::mtime.eq(stat.0),
+                        symbols::size.eq(stat.1),
                     ))
                     .execute(conn)?;
                 return Ok(0);
@@ -863,6 +879,8 @@ impl Store {
                         symbols::line.eq(line),
                         symbols::is_def.eq(i32::from(*is_def)),
                         symbols::file_sha.eq(file_sha),
+                        symbols::mtime.eq(stat.0),
+                        symbols::size.eq(stat.1),
                     ))
                     .execute(conn)?;
             }

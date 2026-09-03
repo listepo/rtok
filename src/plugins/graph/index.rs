@@ -15,6 +15,20 @@ pub struct Report {
     pub indexed: u32,
     pub inserted: usize,
     pub skipped: u32,
+    /// Files whose bytes were read (T8.4). A warm run over an untouched tree reads none.
+    pub read: u32,
+}
+
+/// `(mtime_nanos, size)` — the freshness key. Nanos keep two edits in the same second apart;
+/// an unreadable timestamp reads as 0, which never matches a stored stat, so the file is read.
+fn stat_key(md: &std::fs::Metadata) -> (i64, i64) {
+    let mtime = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0);
+    (mtime, md.len() as i64)
 }
 
 /// Canonical absolute path as one string: the index key of a root, and the match key of a
@@ -49,11 +63,21 @@ pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
             .to_string_lossy()
             .replace('\\', "/");
         keep.insert(rel.clone());
+        let stat = entry.metadata().as_ref().map(stat_key).unwrap_or((0, 0));
+        let known = cx.store.symbol_stat(&rk, &rel)?;
+        // Same mtime and size: git's rule for "unchanged". Nothing is opened.
+        if known.as_ref().is_some_and(|(_, m, s)| (*m, *s) == stat) && stat != (0, 0) {
+            report.skipped += 1;
+            continue;
+        }
         let Ok(src) = std::fs::read_to_string(path) else {
             continue;
         };
+        report.read += 1;
         let sha = store::hex_sha256(src.as_bytes());
-        if cx.store.symbol_sha(&rk, &rel)?.as_deref() == Some(sha.as_str()) {
+        if known.as_ref().is_some_and(|(h, _, _)| h == &sha) {
+            // Touched but not changed: move the freshness key so the next run skips on stat.
+            cx.store.touch_symbols(&rk, &rel, stat.0, stat.1)?;
             report.skipped += 1;
             continue;
         }
@@ -65,7 +89,7 @@ pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
             .into_iter()
             .map(|h| (h.name, h.kind, h.line as i32, h.is_def))
             .collect();
-        let n = cx.store.replace_symbols(&rk, &rel, &sha, &rows)?;
+        let n = cx.store.replace_symbols(&rk, &rel, &sha, stat, &rows)?;
         report.indexed += 1;
         report.inserted += n;
     }
@@ -157,6 +181,31 @@ pub(crate) mod tests {
             cx.store.has_symbol_def(&kb, "beta").unwrap(),
             "a's stale mark dropped b's src/main.rs"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.4: a warm run over an untouched tree opens no file; rewriting identical bytes
+    /// costs one read and no rows. The 3 000-file wall time is a release measurement
+    /// (`done.md`); at this size the cold run is one transaction per file and would put
+    /// ~90 s of fixture setup into every `just check`.
+    #[test]
+    fn warm_run_reads_nothing_and_touch_inserts_zero() {
+        const FILES: usize = 20;
+        let (cx, dir) = cx("stat");
+        for i in 0..FILES {
+            fs::write(dir.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
+        }
+        let cold = run(&cx, &dir).unwrap();
+        assert_eq!(cold.read as usize, FILES, "cold run reads every file");
+        let warm = run(&cx, &dir).unwrap();
+        assert_eq!(warm.read, 0, "warm run must not open a file");
+        assert_eq!(warm.skipped as usize, FILES);
+        assert_eq!(warm.inserted, 0);
+        fs::write(dir.join("f0.rs"), "fn f0() {}\n").unwrap();
+        let touched = run(&cx, &dir).unwrap();
+        assert_eq!(touched.read, 1, "only the touched file is read");
+        assert_eq!(touched.inserted, 0, "identical bytes must not re-insert");
+        assert_eq!(run(&cx, &dir).unwrap().read, 0, "new stat was recorded");
         let _ = fs::remove_dir_all(dir);
     }
 

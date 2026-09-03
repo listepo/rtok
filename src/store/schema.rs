@@ -193,6 +193,8 @@ diesel::table! {
         is_def -> Integer,
         file_sha -> Text,
         root -> Text,
+        mtime -> BigInt,
+        size -> BigInt,
     }
 }
 

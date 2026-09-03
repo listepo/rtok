@@ -70,6 +70,7 @@ that v0.1 does not schedule.
 | I-16 | codebase-memory-mcp 162 langs, LZ4 blobs | `graph` | More grammars + compressed index payloads. | T8.1 is tree-sitter-tags on this repo first; langs are data. |
 | I-28 | aider repo map (tree-sitter + PageRank, 1 K budget) | `inject`, `graph` | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inject` budget. | D5 budget is 800 tokens and `memory` recall already takes 200; needs a P7-style A/B before it takes any of it. Survey: `src/plugins/graph/PLAN.md` v0.2. |
 | I-29 | codebase-memory-mcp `detect_dead_code` | `graph` | Definitions with zero reference sites in the index. | One query once T8.5 edges exist, but pub API, trait impls and macros make it noisy; no measured need. |
+| I-30 | codebase-memory-mcp (Linux kernel in 3 min) | `graph` | Batch the cold index: one transaction per N files instead of per file. | Measured 2026-09-04 (T8.4, release): 3 000 files cold 27.2 s, warm 0.053 s. Only the warm path is gated (P8b), and the cold path is paid once per repo, so this is not a task yet. |
 
 ### Hosts and product
 
