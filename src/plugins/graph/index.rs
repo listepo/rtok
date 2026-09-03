@@ -85,16 +85,45 @@ pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
             Ok(h) => h,
             Err(_) => continue,
         };
-        let rows: Vec<(String, String, i32, bool)> = hits
-            .into_iter()
-            .map(|h| (h.name, h.kind, h.line as i32, h.is_def))
-            .collect();
+        let rows = scoped(&hits);
         let n = cx.store.replace_symbols(&rk, &rel, &sha, stat, &rows)?;
         report.indexed += 1;
         report.inserted += n;
     }
     let _ = cx.store.delete_symbols_missing(&rk, &keep);
     Ok(report)
+}
+
+/// Rows for one file, each reference tagged with the innermost definition enclosing it
+/// (T8.5). Ties break to the smaller span, so a nested `fn` wins over the `impl` around it;
+/// a reference outside every definition gets `""`, which reads as file level.
+fn scoped(hits: &[outline::TagHit]) -> Vec<(String, String, i32, bool, i32, String)> {
+    let defs: Vec<(usize, usize, &str)> = hits
+        .iter()
+        .filter(|h| h.is_def)
+        .map(|h| (h.line, h.end_line.max(h.line), h.name.as_str()))
+        .collect();
+    hits.iter()
+        .map(|h| {
+            let scope = if h.is_def {
+                String::new()
+            } else {
+                defs.iter()
+                    .filter(|(s, e, _)| *s <= h.line && h.line <= *e)
+                    .min_by_key(|(s, e, _)| e - s)
+                    .map(|(_, _, n)| n.to_string())
+                    .unwrap_or_default()
+            };
+            (
+                h.name.clone(),
+                h.kind.clone(),
+                h.line as i32,
+                h.is_def,
+                h.end_line as i32,
+                scope,
+            )
+        })
+        .collect()
 }
 
 /// Index `root` only when it has no rows yet (first tool call in that repo).
@@ -234,6 +263,35 @@ pub(crate) mod tests {
         let k = canon(&dir);
         assert!(cx.store.has_symbol_def(&k, "gamma").unwrap());
         assert!(cx.store.has_symbol_def(&k, "beta").unwrap());
+        let _ = fs::remove_dir_all(dir);
+    }
+    /// T8.5: a reference's scope is the definition that encloses it, so `callers` names the
+    /// caller rather than a line number. A call outside every definition is file level.
+    #[test]
+    fn references_carry_their_enclosing_definition() {
+        let (cx, dir) = cx("scope");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nstatic S: u8 = top();\n",
+        )
+        .unwrap();
+        run(&cx, &dir).unwrap();
+        let k = canon(&dir);
+        let scope = |n: &str| {
+            cx.store
+                .symbol_ref_groups(&k, n)
+                .unwrap()
+                .into_iter()
+                .map(|(p, s, c, _)| format!("{p}/{s}x{c}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(scope("c"), ["chain.rs/bx1"], "c is called by b");
+        assert_eq!(scope("b"), ["chain.rs/ax1"], "b is called by a");
+        assert_eq!(
+            scope("top"),
+            ["chain.rs/x1"],
+            "file-level call has no scope"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

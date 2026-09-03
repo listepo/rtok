@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -135,12 +135,6 @@ Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `a
 Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after Gate P8 closed on token count alone. Order is T8.3 → T8.4 → T8.8 → T8.5 → T8.6 → T8.7: the two defects first, the measurement before the edges, the edges before what consumes them.
 
 Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 definition recall ≥ 0.9 (met at 1.0; reference recall is 0.351, see §6); on the P9 task set, tasks touching ≥ 3 files use fewer tool calls with `symbol` than at v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
-
-**T8.5 call edges** · T8.3 · `src/plugins/read/outline.rs`, `src/plugins/graph/index.rs`, `migrations/0008.sql`
-Do: `TagHit` carries the definition's `end_line` (from the tag's byte range); at index time every row stores `end_line`, and each reference stores `scope` — the innermost definition enclosing it in the same file, `''` at file level. `callers(name)` groups by scope: `src/plugin.rs  estimate ×3 (L41)`, same cap.
-Check: fixture `fn a(){b()} fn b(){c()}` → `callers("c")` names `b`, `callers("b")` names `a`; a file-level call reports the file; `callers("estimate")` on this repo is not larger than at v0.1.
-Status: open
-Model: -
 
 **T8.6 `symbol` returns the definition** · T8.5 · `src/plugins/graph/mod.rs`, `config/default.toml`, `docs/config.md`
 Do: after each `path:line kind`, the definition's source from `line` to `end_line`, at most `plugins.graph.body_lines` (default 40) per definition, whole definitions first, the same cap and `expand <id>` for the rest. codegraph's one-call explore without a fifth tool.

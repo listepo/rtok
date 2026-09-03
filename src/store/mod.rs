@@ -30,6 +30,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0005.sql", include_str!("../../migrations/0005.sql")),
     ("0006.sql", include_str!("../../migrations/0006.sql")),
     ("0007.sql", include_str!("../../migrations/0007.sql")),
+    ("0008.sql", include_str!("../../migrations/0008.sql")),
 ];
 
 pub struct Store {
@@ -843,7 +844,7 @@ impl Store {
         path: &str,
         file_sha: &str,
         stat: (i64, i64),
-        rows: &[(String, String, i32, bool)],
+        rows: &[(String, String, i32, bool, i32, String)],
     ) -> Result<usize> {
         let mut conn = self.lock()?;
         // One transaction per file: thousands of autocommit inserts dominated index time.
@@ -869,7 +870,7 @@ impl Store {
                     .execute(conn)?;
                 return Ok(0);
             }
-            for (name, kind, line, is_def) in rows {
+            for (name, kind, line, is_def, end_line, scope) in rows {
                 diesel::insert_into(symbols::table)
                     .values((
                         symbols::root.eq(root),
@@ -881,6 +882,8 @@ impl Store {
                         symbols::file_sha.eq(file_sha),
                         symbols::mtime.eq(stat.0),
                         symbols::size.eq(stat.1),
+                        symbols::end_line.eq(end_line),
+                        symbols::scope.eq(scope),
                     ))
                     .execute(conn)?;
             }
@@ -945,6 +948,37 @@ impl Store {
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::line))
             .load(&mut *conn)?)
+    }
+
+    /// Reference sites of `name` collapsed to one row per calling definition (T8.5):
+    /// `(path, scope, count, first line)`, `scope` empty at file level. The grouping is the
+    /// call edge — the same rows ungrouped are `symbol_refs`.
+    pub fn symbol_ref_groups(
+        &self,
+        root: &str,
+        name: &str,
+    ) -> Result<Vec<(String, String, i64, i32)>> {
+        let mut conn = self.lock()?;
+        let rows: Vec<(String, String, i64, Option<i32>)> = symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::name.eq(name))
+                    .and(symbols::is_def.eq(0)),
+            )
+            .group_by((symbols::path, symbols::scope))
+            .order((symbols::path.asc(), symbols::scope.asc()))
+            .select((
+                symbols::path,
+                symbols::scope,
+                diesel::dsl::count_star(),
+                diesel::dsl::min(symbols::line),
+            ))
+            .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|(p, s, n, l)| (p, s, n, l.unwrap_or(0)))
+            .collect())
     }
 
     pub fn has_symbol_def(&self, root: &str, name: &str) -> Result<bool> {

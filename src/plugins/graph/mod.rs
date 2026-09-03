@@ -92,27 +92,23 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     cap(cx, text)
 }
 
-/// `callers(name)`: reference sites grouped by file, `  line: text` under each path.
+/// `callers(name)`: one line per calling definition, `path  scope xN (Lline)` (T8.5).
+/// v0.1 printed every site with its source line; the edge is what the caller needs, and it
+/// costs a fraction of the bytes.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index::run(cx, root)?;
-    let rows = cx.store.symbol_refs(&index::canon(root), name)?;
+    let rows = cx.store.symbol_ref_groups(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no references to {name}"));
     }
     let mut out = String::new();
-    let mut file: Option<(String, Vec<String>)> = None;
-    for (path, line) in rows {
-        if file.as_ref().is_none_or(|(p, _)| *p != path) {
-            out.push_str(&path);
-            out.push('\n');
-            file = Some((path.clone(), file_lines(root, &path)));
-        }
-        let text = file
-            .as_ref()
-            .and_then(|(_, lines)| lines.get(line.max(1) as usize - 1))
-            .map(|l| l.trim())
-            .unwrap_or("");
-        out.push_str(&format!("  {line}: {text}\n"));
+    for (path, scope, n, line) in rows {
+        let scope = if scope.is_empty() {
+            String::new()
+        } else {
+            format!("  {scope}")
+        };
+        out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
     }
     cap(cx, out)
 }
@@ -121,12 +117,6 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
     let text = crate::plugins::read::read(cx, path, "map", None)?;
     cap(cx, text)
-}
-
-fn file_lines(root: &Path, rel: &str) -> Vec<String> {
-    std::fs::read_to_string(root.join(rel))
-        .map(|s| s.lines().map(str::to_string).collect())
-        .unwrap_or_default()
 }
 
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
@@ -195,16 +185,16 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T8.5: the caller is a definition, not a line number. `Ctx::estimate` calls the free
+    /// `tokens::estimate`, so `src/plugin.rs` must report `estimate` as the calling scope.
     #[test]
     fn callers_estimate_lists_src_plugin_rs() {
         let (cx, dir) = cx("callers");
         let out = callers(&cx, &crate_root(), "estimate").unwrap();
-        let mut lines = out.lines();
-        assert!(lines.any(|l| l == "src/plugin.rs"), "{out}");
-        let site = lines.next().unwrap_or("");
         assert!(
-            site.starts_with("  ") && site.contains("estimate"),
-            "{site}"
+            out.lines()
+                .any(|l| l.starts_with("src/plugin.rs  estimate \u{d7}")),
+            "{out}"
         );
         let _ = fs::remove_dir_all(dir);
     }
@@ -212,11 +202,11 @@ mod tests {
     #[test]
     fn five_hundred_hits_are_capped_with_archive_id() {
         let (cx, dir) = cx("cap");
-        let mut src = String::from("fn zeta() {}\nfn main() {\n");
-        for _ in 0..500 {
-            src.push_str("    zeta();\n");
+        // 500 distinct callers, not 500 calls: grouping collapses the latter to one line.
+        let mut src = String::from("fn zeta() {}\n");
+        for i in 0..500 {
+            src.push_str(&format!("fn c{i}() {{ zeta(); }}\n"));
         }
-        src.push_str("}\n");
         fs::write(dir.join("zeta.rs"), &src).unwrap();
         let out = callers(&cx, &dir, "zeta").unwrap();
         let trailer = out.lines().last().unwrap();
@@ -227,7 +217,7 @@ mod tests {
             .get_archive(id)
             .unwrap()
             .expect("archived full text");
-        assert_eq!(String::from_utf8(full).unwrap().lines().count(), 501);
+        assert_eq!(String::from_utf8(full).unwrap().lines().count(), 500);
         let max = cx.config.plugins.graph.max_tokens;
         let est = cx.estimate(&out, Class::Code);
         assert!(est <= max, "{est} > {max}");

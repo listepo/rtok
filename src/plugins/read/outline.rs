@@ -12,6 +12,9 @@ pub struct TagHit {
     pub kind: String,
     pub name: String,
     pub line: usize,
+    /// Last line of the tagged node, from the tag's byte range (T8.5). A reference spans
+    /// one line, so `end_line == line`; a definition covers its whole body.
+    pub end_line: usize,
     pub is_def: bool,
     pub line_text: String,
 }
@@ -50,6 +53,11 @@ pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
     let (tags, _) = ctx
         .generate_tags(&cfg, src.as_bytes(), None)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+    // Byte offset of each line start; `partition_point` turns a byte into a 1-based line.
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(src.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    let line_of = |b: usize| starts.partition_point(|&s| s <= b).max(1);
     let mut out = Vec::new();
     for tag in tags.flatten() {
         let Some(name) = src.get(tag.name_range.clone()) else {
@@ -60,6 +68,7 @@ pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
             kind: cfg.syntax_type_name(tag.syntax_type_id).to_string(),
             name: name.to_string(),
             line: tag.span.start.row + 1,
+            end_line: line_of(tag.range.end.saturating_sub(1)),
             is_def: tag.is_definition,
             line_text,
         });

@@ -195,6 +195,8 @@ diesel::table! {
         root -> Text,
         mtime -> BigInt,
         size -> BigInt,
+        end_line -> Integer,
+        scope -> Text,
     }
 }
 
