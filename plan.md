@@ -130,6 +130,48 @@ Gate P7: A/B (P9 harness) `terse` on/off on 6 tasks; keep only if output tokens 
 Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78); index time on this repo < 2 s. **Status: done 2026-09-03.** Check: Result 2026-09-02 (passed) — index 0.48 s cold / 0.03 s warm; retiring three servers saves ~4 493 description tokens vs rtok's ~117.
 Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `args`/`env` and a 15 s timeout (it ran the bare `command` with a 2 s wait, so every `uvx`/`npx` server read as 0 tools), measured on this machine: code-review-graph 30 tools ~2 295 desc tokens, serena 22 ~1 494, lean-ctx 12 ~704, codebase-memory-mcp 0 (the binary exits on start; Claude Code reports the same connection failure). rtok's whole MCP surface: 10 tools ~117 desc tokens. Retiring the three measurable servers saves ~4 493 description tokens per request and rtok adds ~117 (descriptions only; input schemas not counted). Index on this repo, release binary: 0.48 s cold (61 files, 6 625 rows), 0.03 s warm.
 
+### P8b — `graph` quality (goal: the same ≤ 4 tools answer with the code, across repos, with a published recall) — added 2026-09-04
+
+Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after Gate P8 closed on token count alone. Order is T8.3 → T8.4 → T8.8 → T8.5 → T8.6 → T8.7: the two defects first, the measurement before the edges, the edges before what consumes them.
+
+Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 recall ≥ 0.9; on the P9 task set, tasks touching ≥ 3 files use fewer tool calls with `symbol` than at v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
+
+**T8.3 per-root index** · T8.1 · `migrations/0006.sql`, `src/store/mod.rs`, `src/plugins/graph/index.rs`
+Do: column `root` on `symbols` (the canonical root the call indexed, today the cwd of `rtok mcp`). Every symbol query, `delete_symbols_missing` and `mark_symbols_stale` are scoped to it; the stale mark matches `root || '/' || path` exactly instead of a suffix `LIKE`; `keep` becomes a set.
+Check: index two fixture roots into one store → indexing B leaves A's row count unchanged; `symbol("main")` under A never lists B's file; stale-marking A's `src/main.rs` keeps B's rows.
+Status: open
+Model: -
+
+**T8.4 stat-gated freshness** · T8.3 · `migrations/0007.sql`, `src/store/mod.rs`, `src/plugins/graph/index.rs`
+Do: store `mtime` and `size` per file (git's index rule); a file whose stat matches is skipped without being read; sha256 only when the stat differs, so unchanged content with a new mtime re-hashes but inserts 0. `Report` counts files actually read.
+Check: 3 000-file fixture → warm `run` reads 0 files; `touch` alone inserts 0 rows; editing one file re-parses only that file; warm wall time on the release binary recorded in `done.md` (< 100 ms).
+Status: open
+Model: -
+
+**T8.8 labelled hit rate** · T8.2 · `tests/graph_truth.rs`, `tests/fixtures/graph_truth.toml`, `research.md`
+Do: 30 symbols of this repo labelled by hand from `rg` output (definition file per symbol, reference files that must appear), independent of the index that is being scored. The test computes recall and prints precision; the numbers go to `research.md` §2 with a date. Labels carry no line numbers so ordinary edits do not invalidate them.
+Check: recall ≥ 0.9 over the labelled set; every miss named in `src/plugins/graph/PLAN.md` under "Known misses" with the construct that caused it.
+Status: open
+Model: -
+
+**T8.5 call edges** · T8.3 · `src/plugins/read/outline.rs`, `src/plugins/graph/index.rs`, `migrations/0008.sql`
+Do: `TagHit` carries the definition's `end_line` (from the tag's byte range); at index time every row stores `end_line`, and each reference stores `scope` — the innermost definition enclosing it in the same file, `''` at file level. `callers(name)` groups by scope: `src/plugin.rs  estimate ×3 (L41)`, same cap.
+Check: fixture `fn a(){b()} fn b(){c()}` → `callers("c")` names `b`, `callers("b")` names `a`; a file-level call reports the file; `callers("estimate")` on this repo is not larger than at v0.1.
+Status: open
+Model: -
+
+**T8.6 `symbol` returns the definition** · T8.5 · `src/plugins/graph/mod.rs`, `config/default.toml`, `docs/config.md`
+Do: after each `path:line kind`, the definition's source from `line` to `end_line`, at most `plugins.graph.body_lines` (default 40) per definition, whole definitions first, the same cap and `expand <id>` for the rest. codegraph's one-call explore without a fifth tool.
+Check: `symbol("cap")` contains the body of `cap` verbatim; a 500-definition fixture is still capped with an archive id whose text holds every definition; one `graph` measurement per call.
+Status: open
+Model: -
+
+**T8.7 `impact(name, depth)`** · T8.5 · `src/plugins/graph/mod.rs`, `src/store/mod.rs`
+Do: breadth-first walk of `scope` edges up to `depth` (default 2, max 4), one `depth  path  scope` line per reached definition, capped like the rest. Fourth and last tool; description ≤ 25 tokens.
+Check: chain fixture → `impact("c", 2)` reaches `b` at 1 and `a` at 2, `depth = 1` omits `a`, a cycle terminates; `rtok doctor` shows the graph surface ≤ 4 tools and ≤ 150 description tokens.
+Status: open
+Model: -
+
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
 
 Gate P9 (review + your decision): adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only.
@@ -352,3 +394,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-03 | Gate P14 `git log` order: all ten `PLAN.md` files were added in `830e049` (2026-09-02) in the same commit as measure + hook implementation. T14 scheduled each design immediately before that plugin's first impl, not as a batch; history is not rewritten. | Closing the gate honestly requires recording the batch, not pretending PLAN-before-code. |
 | 2026-09-03 | `guard` PLAN Mechanism was rewrite-to-expand; T2.6 is `Deny` with `rtok expand <id>` in the reason. Mechanism (and Rejected) now match T2.6. | A design that contradicted a task must produce a §6 amendment (P14). |
 | 2026-09-03 | Gate P0 "trait shape final; no plugin logic yet" was true at T0.8 (`c9b6f81`). Later tasks extended `Plugin` (e.g. `proxy_filter` takes `WireRequest`) and added plugin logic. The review closes as that scaffold freeze, not as a claim about HEAD. | Cannot empty plugins or freeze the trait without undoing P1–P11. |
+| 2026-09-04 | P8b (T8.3–T8.8) added to `graph` after Gate P8 closed on description tokens alone. The re-survey found two defects the gate could not see: `symbols` has no `root`, so a second repo evicts the first, and every tool call re-reads and re-hashes the whole tree. T8.5–T8.7 answer what codegraph and code-review-graph do that three tools do not, within one added tool. | User request to compare the field and plan the next step; survey and rejected options in `src/plugins/graph/PLAN.md` (2026-09-04). |

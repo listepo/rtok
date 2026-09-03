@@ -220,10 +220,18 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | 0 | T14.9 | **Design first (D15).** Survey ≥ 3 alternatives (≥ 1 outside the retired stack), name what beats them, set the `Target:` this lane's gate must beat → `src/plugins/graph/PLAN.md`. |
 | 1 | T8.1 | tree-sitter-tags index (definitions + reference sites). |
 | 2 | T8.2 | MCP `symbol`, `callers`, `outline`; cap + archive id. |
+| 3 | T8.3 | `root` column: two repos in one store stop evicting each other. |
+| 4 | T8.4 | stat gate (mtime + size) before sha256; warm call reads nothing. |
+| 5 | T8.8 | hand-labelled recall on 30 symbols, published in `research.md`. |
+| 6 | T8.5 | `end_line` + `scope`: a caller is the enclosing definition, not a line. |
+| 7 | T8.6 | `symbol` returns the definition body (`plugins.graph.body_lines`). |
+| 8 | T8.7 | `impact(name, depth)` over the scope edges; fourth and last tool. |
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
-**Status.** T8.1 done 2026-09-02. Next: T8.2. T14.9 done 2026-09-02.
+**Gate P8b.** Graph surface ≤ 150 description tokens; warm tool call < 100 ms on a 3 000-file repo; T8.8 recall ≥ 0.9; fewer tool calls per multi-file task on the P9 set.
+
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. Next: T8.3 (P8b, promoted 2026-09-04 from the v0.2 survey in `src/plugins/graph/PLAN.md`).
 
 ---
 
