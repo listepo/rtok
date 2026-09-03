@@ -265,6 +265,8 @@ Do: walk `Cli::command()` recursively; for every non-positional arg that is not 
 Check: `cargo test config_coverage` passes; adding `--foo` to any subcommand without a key fails the test.
 Status: done 2026-09-02 · `cargo test config_coverage` passes. Deviations: allow-list also includes `--sources` (annotates `config show`, not a stored key); reverse check skips 1–2 character leaves (`bench.configs.a`) to avoid matching noise; `timeout` → `timeout_s`, `run`/`filter` flags map under `plugins.cmd` as specified.
 
+Gate P12 (review) · Status: done 2026-09-03 · Check: clap `filter --cmd` has no local default (`Option<String>` → config `filter.cmd`); `docs/config.md` mapping table matches clap (dropped advertised `--home`/`--log-level`/`--bind`/`--openai-upstream`/`--timeout`/`--shell`/`--no-trailer`/`plugins --json`); merge figment, CLI clap, `config set` toml_edit.
+
 **T13.1 Diesel replaces rusqlite** · T0.3 · `Cargo.toml`, `src/store/mod.rs`, `src/store/schema.rs`
 Do: convert `src/store.rs` to `src/store/mod.rs`. Depend on `diesel` 2.2 (`sqlite`, `returning_clauses_for_sqlite_3_35`) and `libsqlite3-sys` bundled with FTS5 (confirm `notes_fts` still builds; enable `SQLITE_ENABLE_FTS5` if the bundle omits it). Drop rusqlite. Keep the filename-keyed migration runner and WAL/`synchronous=NORMAL`. `table!` macros for the six 0001 tables. `Store` holds `diesel::sqlite::SqliteConnection`. No `Store::conn()` leaking the driver. Existing `insert_measurement` and the three store tests pass unchanged in behaviour.
 Check: `grep -rn rusqlite Cargo.toml src tests` → nothing; `cargo test store::` green; `open_on_disk_uses_wal` still asserts WAL; `notes_fts` MATCH still finds an inserted note.

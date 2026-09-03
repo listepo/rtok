@@ -142,7 +142,7 @@ Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for t
 
 ### P12 — Config file (goal: every setting in one file, one precedence rule, no flag without a key) — added 2026-09-01 (D12)
 
-Gate P12 (review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults; merge is figment, CLI is clap, `config set` is toml_edit (D14).
+Gate P12 (review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults; merge is figment, CLI is clap, `config set` is toml_edit (D14). **Status: done 2026-09-03.** Check: `filter --cmd` is `Option<String>` (absent → `filter.cmd` from figment); mapping table lists only clap-defined flags plus env `RTOK_HOME`; D14 crates unchanged (`layers.rs` figment, `cli.rs` clap, `validate.rs` toml_edit).
 
 ### P13 — ORM + action store (goal: every MCP call, API request, plugin run, and log is a typed row) — added 2026-09-01 (D13)
 

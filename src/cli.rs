@@ -132,8 +132,8 @@ enum Cmd {
         #[arg(long)]
         stdin: bool,
         /// Command family hint (`git status`, `cargo test`, …)
-        #[arg(long, default_value = "")]
-        cmd: String,
+        #[arg(long)]
+        cmd: Option<String>,
     },
     /// Print an archived payload
     Expand {
@@ -433,7 +433,7 @@ pub fn run() -> Result<()> {
         #[cfg(feature = "cmd")]
         Cmd::Filter { stdin: _, cmd } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let hint = if cmd.is_empty() { cfg.filter.cmd } else { cmd };
+            let hint = cmd.unwrap_or(cfg.filter.cmd);
             let mut buf = String::new();
             let _ = io::stdin().read_to_string(&mut buf);
             print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));

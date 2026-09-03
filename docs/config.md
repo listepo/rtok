@@ -215,18 +215,15 @@ min_rows = 5
 | Subcommand | Flag | Key |
 |-----------|------|-----|
 | global | `--config <path>` | (selects the file; not a key) |
-| global | `--home <dir>` / `RTOK_HOME` | (selects the directory; not a key) |
-| global | `--log-level` | `core.log_level` |
+| global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
 | `hook` | `--host` | `hook.host` |
-| `proxy` | `--port`, `--bind`, `--upstream`, `--openai-upstream`, `--mode`, `--timeout`, `--dry-run` | `proxy.*` |
+| `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
-| `run` | `--shell`, `--no-trailer` | `plugins.cmd.shell`, `plugins.cmd.trailer_min_lines` |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps |
 | `filter` | `--cmd` | `filter.cmd` |
-| `plugins` | `--json` | (output format only; follows `stats.format`) |
 
 The coverage test (T12.4) walks the clap command tree and fails if a non-positional flag
 appears without a key in `config/default.toml`, so this table cannot silently drift.
