@@ -127,7 +127,7 @@ Gate P7: A/B (P9 harness) `terse` on/off on 6 tasks; keep only if output tokens 
 
 ### P8 — `graph` plugin (goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers)
 
-Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78); index time on this repo < 2 s.
+Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78); index time on this repo < 2 s. **Status: done 2026-09-03.** Check: Result 2026-09-02 (passed) — index 0.48 s cold / 0.03 s warm; retiring three servers saves ~4 493 description tokens vs rtok's ~117.
 Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `args`/`env` and a 15 s timeout (it ran the bare `command` with a 2 s wait, so every `uvx`/`npx` server read as 0 tools), measured on this machine: code-review-graph 30 tools ~2 295 desc tokens, serena 22 ~1 494, lean-ctx 12 ~704, codebase-memory-mcp 0 (the binary exits on start; Claude Code reports the same connection failure). rtok's whole MCP surface: 10 tools ~117 desc tokens. Retiring the three measurable servers saves ~4 493 description tokens per request and rtok adds ~117 (descriptions only; input schemas not counted). Index on this repo, release binary: 0.48 s cold (61 files, 6 625 rows), 0.03 s warm.
 
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
