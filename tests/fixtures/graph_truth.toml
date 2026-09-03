@@ -1,0 +1,191 @@
+# T8.8 ground truth for the `graph` index (2026-09-04).
+#
+# Hand-picked from this repo and labelled from a plain-text scan (`fn|struct|enum|trait` for
+# definitions, identifier-with-`(`/`::`/`{` for references, comment lines dropped), never from
+# the tags index this file scores -- an index measured against its own edges is an upper bound,
+# not a number (code-review-graph"s own README makes that mistake).
+#
+# `defs` is complete: every file in this repo that defines the name, so precision is computable.
+# `refs` is a must-appear subset, so it stays valid as the repo changes. No line numbers, for
+# the same reason. Names that collide with std or third-party methods (`metadata`, `line`,
+# `merge`, `extract`) are deliberately excluded: a hit there would not prove anything.
+
+[[symbol]]
+name = "Manifest"
+kind = "struct"
+defs = ["src/plugin.rs"]
+refs = ["examples/hello_plugin.rs", "examples/mcp_tool.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/mod.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/measure/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/mod.rs", "src/plugins/proxy/mod.rs", "src/plugins/read/mod.rs", "src/plugins/toon/mod.rs"]
+
+[[symbol]]
+name = "Measurement"
+kind = "struct"
+defs = ["src/plugin.rs"]
+refs = ["examples/hello_plugin.rs", "src/expand.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/run.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/read/cache.rs", "src/plugins/toon/mod.rs"]
+
+[[symbol]]
+name = "Registry"
+kind = "struct"
+defs = ["src/plugins/mod.rs"]
+refs = ["examples/mcp_tool.rs", "src/cli.rs", "src/hooks/mod.rs", "src/mcp.rs", "src/proxy/mod.rs"]
+
+[[symbol]]
+name = "ToolDef"
+kind = "struct"
+defs = ["src/plugin.rs"]
+refs = ["examples/mcp_tool.rs", "src/mcp.rs", "src/plugins/graph/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/read/mod.rs"]
+
+[[symbol]]
+name = "Injection"
+kind = "struct"
+defs = ["src/plugin.rs"]
+refs = ["examples/hello_plugin.rs", "src/plugins/checkpoint.rs", "src/plugins/inject/mod.rs", "src/plugins/memory/mod.rs"]
+
+[[symbol]]
+name = "PostToolUse"
+kind = "struct"
+defs = ["src/plugin.rs"]
+refs = ["src/hooks/types.rs", "src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
+
+[[symbol]]
+name = "ToolResultRef"
+kind = "struct"
+defs = ["src/proxy/wire.rs"]
+refs = ["src/plugins/archive/mod.rs", "src/proxy/anthropic.rs", "src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
+
+[[symbol]]
+name = "Replay"
+kind = "struct"
+defs = ["src/measure/stats.rs"]
+refs = ["src/cli.rs", "src/measure/baseline.rs"]
+
+[[symbol]]
+name = "Surface"
+kind = "enum"
+defs = ["src/plugin.rs"]
+refs = ["examples/hello_plugin.rs", "examples/mcp_tool.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/mod.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/measure/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/mod.rs", "src/plugins/proxy/mod.rs", "src/plugins/read/mod.rs", "src/plugins/toon/mod.rs"]
+
+[[symbol]]
+name = "PreToolDecision"
+kind = "enum"
+defs = ["src/plugin.rs"]
+refs = ["examples/hello_plugin.rs", "src/hooks/mod.rs", "src/plugins/cmd/hook.rs", "src/plugins/guard/mod.rs", "src/plugins/read/hook.rs"]
+
+[[symbol]]
+name = "Wire"
+kind = "trait"
+defs = ["src/proxy/wire.rs"]
+refs = ["src/proxy/mod.rs"]
+
+[[symbol]]
+name = "mark_symbols_stale"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
+
+[[symbol]]
+name = "symbol_defs"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
+
+[[symbol]]
+name = "insert_note"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs", "src/plugins/memory/mod.rs"]
+
+[[symbol]]
+name = "put_read_cache"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
+
+[[symbol]]
+name = "get_read_cache"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
+
+[[symbol]]
+name = "upsert_session"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/mcp.rs", "src/measure/cache.rs", "src/measure/stats.rs", "src/plugin.rs", "src/proxy/mod.rs"]
+
+[[symbol]]
+name = "openai_proxy_url"
+kind = "fn"
+defs = ["src/setup/mod.rs"]
+refs = ["src/setup/codex.rs", "src/setup/opencode.rs"]
+
+[[symbol]]
+name = "adapt_cursor"
+kind = "fn"
+defs = ["src/hooks/types.rs"]
+refs = ["src/hooks/mod.rs", "src/setup/cursor.rs"]
+
+[[symbol]]
+name = "call_ids_of_kind"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/hooks/mod.rs", "src/plugins/archive/mod.rs"]
+
+[[symbol]]
+name = "put_archive_decision"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/archive/mod.rs", "tests/proxy.rs"]
+
+[[symbol]]
+name = "count_call_io"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/mcp.rs", "tests/proxy.rs"]
+
+[[symbol]]
+name = "insert_call_io"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/hooks/mod.rs", "src/mcp.rs", "src/measure/cache.rs", "src/proxy/mod.rs"]
+
+[[symbol]]
+name = "int_field"
+kind = "fn"
+defs = ["src/proxy/wire.rs"]
+refs = ["src/proxy/anthropic.rs", "src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
+
+[[symbol]]
+name = "str_field"
+kind = "fn"
+defs = ["src/proxy/wire.rs"]
+refs = ["src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
+
+[[symbol]]
+name = "read_settings"
+kind = "fn"
+defs = ["src/setup/claude.rs"]
+refs = ["src/proxy/cli.rs", "src/setup/cursor.rs", "src/setup/opencode.rs"]
+
+[[symbol]]
+name = "plugin_json"
+kind = "fn"
+defs = ["src/measure/stats.rs"]
+refs = ["src/cli.rs", "src/plugins/cmd/run.rs"]
+
+[[symbol]]
+name = "open_in_memory"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["src/measure/cache.rs", "src/measure/stats.rs", "src/plugin.rs"]
+
+[[symbol]]
+name = "measurement_count"
+kind = "fn"
+defs = ["src/store/mod.rs"]
+refs = ["examples/hello_plugin.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/read/cache.rs", "tests/proxy.rs"]
+
+[[symbol]]
+name = "calibrate_or_skip"
+kind = "fn"
+defs = ["src/tokens.rs"]
+refs = ["src/cli.rs"]

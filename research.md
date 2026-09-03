@@ -22,6 +22,23 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Median final context | 167 K tokens per session |
 | rtk-wrapped commands visible in transcripts | 3 of 3,658 (the PreToolUse rewrite happens after the transcript records the call, so this under-counts) |
 
+### `graph` index accuracy (T8.8, 2026-09-04)
+
+30 symbols of this repo labelled by hand from a plain-text scan, independent of the index that is
+being scored: definition files complete per symbol, reference files a must-appear subset, no line
+numbers. `tests/graph_truth.rs` re-measures on every run.
+
+| Metric | Value |
+|--------|-------|
+| Definitions found | 30 / 30, recall 1.000, precision 1.000 |
+| References found | 40 / 114, recall 0.351 |
+| All sites | 70 / 144, recall 0.486 |
+| Cause of every miss | type positions 64, macro bodies 9, path-qualified calls 1 |
+
+The reference number is a property of the tree-sitter Rust tags query, not of rtok's storage: it
+captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
+else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
+
 Cost split with p_out = 5 × p_in (input-token equivalents):
 
 | Component | Standard cache read 0.1× | Fable/Mythos 5.1 read 0.025× |

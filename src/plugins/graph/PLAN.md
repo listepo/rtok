@@ -85,6 +85,24 @@ Check: chain fixture `impact("c", 2)` → `b` (1), `a` (2); `depth = 1` omits `a
 
 Gate P8b (after T8.7): graph surface ≤ 150 description tokens (`doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 recall ≥ 0.9; on the P9 bench, tasks touching ≥ 3 files use fewer tool calls with v0.2 `symbol` than with v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
 
+### Known misses (T8.8, measured 2026-09-04)
+
+`tests/graph_truth.rs` scores 30 hand-labelled symbols of this repo, 144 sites in all. Definitions
+are found completely, 30/30 with precision 1.000. References are found for 40 of 114, recall 0.351.
+All 74 misses come from three constructs the tree-sitter Rust tags query does not capture:
+
+| Construct | Misses | Example |
+|-----------|--------|---------|
+| Type positions | 64 | `Vec<ToolDef>`, `Surface::Mcp`, `Manifest { .. }`, `fn f(m: Manifest)` |
+| Anything inside a macro body | 9 | `assert_eq!(cx.store.measurement_count("graph"), 1)` |
+| Path-qualified calls | 1 | `crate::measure::stats::plugin_json(&cfg, x)` |
+
+The query captures references only for a plain call, a field-expression method call, a macro
+invocation, and an `impl` trait or type. Macro arguments parse as an opaque `token_tree`, so no
+query can reach into them; type positions and `scoped_identifier` calls would need rtok's own
+query on top of the grammar's. Recorded as I-31; not attempted in v0.2, where every task is about
+what the index already holds.
+
 ### Rejected in this round
 
 - A separate `explore` tool (codegraph) — the same result is `symbol` with a body; a fifth tool is description tokens for nothing.

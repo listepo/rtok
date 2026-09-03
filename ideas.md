@@ -71,6 +71,7 @@ that v0.1 does not schedule.
 | I-28 | aider repo map (tree-sitter + PageRank, 1 K budget) | `inject`, `graph` | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inject` budget. | D5 budget is 800 tokens and `memory` recall already takes 200; needs a P7-style A/B before it takes any of it. Survey: `src/plugins/graph/PLAN.md` v0.2. |
 | I-29 | codebase-memory-mcp `detect_dead_code` | `graph` | Definitions with zero reference sites in the index. | One query once T8.5 edges exist, but pub API, trait impls and macros make it noisy; no measured need. |
 | I-30 | codebase-memory-mcp (Linux kernel in 3 min) | `graph` | Batch the cold index: one transaction per N files instead of per file. | Measured 2026-09-04 (T8.4, release): 3 000 files cold 27.2 s, warm 0.053 s. Only the warm path is gated (P8b), and the cold path is paid once per repo, so this is not a task yet. |
+| I-31 | T8.8 measurement | `graph` | rtok's own tags query on top of the grammar's, for type positions and `scoped_identifier` calls. | Measured 2026-09-04: reference recall 0.351, and 65 of 74 misses are these two constructs. A hand-written query per language is real maintenance; no task has yet needed a type reference. Macro bodies stay unreachable either way. |
 
 ### Hosts and product
 
