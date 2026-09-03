@@ -91,9 +91,9 @@ Format: **Tn.m title** · depends · files · do · **Check** (command → expec
 
 ### P0 — Scaffold (goal: `rtok --version`, DB, plugin registry, hook I/O types) — **done 2026-09-01, moved to `done.md`**
 
-T0.1–T0.8 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (review: trait shape final; no plugin logic yet) is still open.
+T0.1–T0.8 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (review: trait shape final; no plugin logic yet) closed as the scaffold freeze (see §6).
 
-Gate P0 (review): trait shape final; no plugin logic yet. **Status: open.**
+Gate P0 (review): trait shape final; no plugin logic yet. **Status: done 2026-09-03 (historical).** Check: trait is `Plugin` in `src/plugin.rs`; "no plugin logic yet" held at T0.8 (`c9b6f81`). Later tasks extended the trait and added plugin logic by design — §6.
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 
@@ -351,3 +351,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-03 | Gate P13 "no SQL outside `src/store/`" is the runtime rule: plugins and surfaces have no `sql_query` / rusqlite. Schema lives in `migrations/*.sql` and is applied only via `Store::MIGRATIONS` (`include_str!`). Files are not moved into `src/store/` — Diesel's conventional layout. | Literal reading would require relocating migration files; that is not a second SQL client. |
 | 2026-09-03 | Gate P14 `git log` order: all ten `PLAN.md` files were added in `830e049` (2026-09-02) in the same commit as measure + hook implementation. T14 scheduled each design immediately before that plugin's first impl, not as a batch; history is not rewritten. | Closing the gate honestly requires recording the batch, not pretending PLAN-before-code. |
 | 2026-09-03 | `guard` PLAN Mechanism was rewrite-to-expand; T2.6 is `Deny` with `rtok expand <id>` in the reason. Mechanism (and Rejected) now match T2.6. | A design that contradicted a task must produce a §6 amendment (P14). |
+| 2026-09-03 | Gate P0 "trait shape final; no plugin logic yet" was true at T0.8 (`c9b6f81`). Later tasks extended `Plugin` (e.g. `proxy_filter` takes `WireRequest`) and added plugin logic. The review closes as that scaffold freeze, not as a claim about HEAD. | Cannot empty plugins or freeze the trait without undoing P1–P11. |
