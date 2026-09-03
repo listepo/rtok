@@ -136,6 +136,8 @@ Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after 
 
 Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 definition recall ≥ 0.9 (met at 1.0; reference recall is 0.351, see §6); on the P9 task set, tasks touching ≥ 3 files use fewer tool calls with `symbol` than at v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
 
+**Status 2026-09-04: three of four clauses measured and passed; the gate stays open on the fourth.** Surface: 4 tools, **62** description tokens (bar 150), asserted by `graph_surface_is_four_tools_under_150_tokens`. Warm tool calls on a generated 3 000-file repo (9 000 rows), release build, after a 22.1 s cold index: `symbol` **23 ms**, `callers` **24 ms**, `impact` **26 ms** (bar 100 ms) — re-measured after T8.5–T8.7, since those changed what a call does. Definition recall **1.000** with precision 1.000 (bar 0.9); reference recall 0.351, published, see §6. The fourth clause needs the P9 task set run twice, which has not happened; until it does, T8.6 and T8.7 stand unjudged and their revert conditions remain live.
+
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
 
 Gate P9 (review + your decision): adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only.

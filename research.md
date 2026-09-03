@@ -39,6 +39,21 @@ The reference number is a property of the tree-sitter Rust tags query, not of rt
 captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
 else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
 
+### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04)
+
+Release build. The 3 000-file repo is generated, each file one function calling two others.
+
+| Measurement | Value | P8b bar |
+|-------------|-------|---------|
+| Tools, description tokens | 4, 62 | ≤ 150 |
+| Cold index, 3 000 files / 9 000 rows | 22.1 s | not gated |
+| Warm `symbol` / `callers` / `impact` | 23 / 24 / 26 ms | < 100 ms |
+| Definition recall, precision | 1.000, 1.000 | ≥ 0.9 |
+| Reference recall | 0.351 | published, not gated |
+
+The fourth clause — fewer tool calls per multi-file task on the P9 set — is not measured, so
+the gate is open. `callers("estimate")` on this repo fell from 1 959 bytes at v0.1 to 793.
+
 Cost split with p_out = 5 × p_in (input-token equivalents):
 
 | Component | Standard cache read 0.1× | Fable/Mythos 5.1 read 0.025× |
