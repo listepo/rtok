@@ -74,7 +74,7 @@ fn labelled_symbols_are_found() {
             .symbol_defs(&key, &t.name)
             .unwrap()
             .into_iter()
-            .map(|(p, _, _)| p)
+            .map(|(p, ..)| p)
             .collect();
         let refs: HashSet<String> = cx
             .store

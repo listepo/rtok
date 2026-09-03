@@ -47,12 +47,12 @@ impl Plugin for Graph {
         vec![
             ToolDef {
                 name: "symbol",
-                description: "Definitions of a symbol: path:line kind.",
+                description: "Definitions of a symbol with their source: path:line kind, then the body.",
                 input_schema: name.clone(),
             },
             ToolDef {
                 name: "callers",
-                description: "Reference sites of a symbol grouped by file, with the line text.",
+                description: "Which definitions reference a symbol: path, calling definition, count.",
                 input_schema: name,
             },
             ToolDef {
@@ -77,19 +77,32 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
     .unwrap_or_else(|e| e.to_string())
 }
 
-/// `symbol(name)`: one `path:line kind` per definition.
+/// `symbol(name)`: `path:line kind` per definition, then that definition's source from
+/// `line` to `end_line`, at most `plugins.graph.body_lines` lines each (T8.6). One call
+/// answers "what is this and what does it do", which took a `symbol` plus a `read` at v0.1.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index::run(cx, root)?;
     let rows = cx.store.symbol_defs(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no definition of {name}"));
     }
-    let text = rows
-        .iter()
-        .map(|(path, kind, line)| format!("{path}:{line} {kind}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    cap(cx, text)
+    let budget = cx.config.plugins.graph.body_lines as usize;
+    let mut out = String::new();
+    for (path, kind, line, end_line) in &rows {
+        out.push_str(&format!("{path}:{line} {kind}\n"));
+        let src = std::fs::read_to_string(root.join(path)).unwrap_or_default();
+        let first = (*line).max(1) as usize - 1;
+        let last = (*end_line).max(*line) as usize;
+        let body: Vec<&str> = src.lines().skip(first).take(last - first).collect();
+        for l in body.iter().take(budget) {
+            out.push_str(l);
+            out.push('\n');
+        }
+        if body.len() > budget {
+            out.push_str(&format!("  … {} more lines\n", body.len() - budget));
+        }
+    }
+    cap(cx, out)
 }
 
 /// `callers(name)`: one line per calling definition, `path  scope xN (Lline)` (T8.5).
@@ -171,6 +184,49 @@ mod tests {
 
     fn crate_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// T8.6: one call gives the definition and its source. The `cap` body is read back
+    /// verbatim from the file, so the test cannot pass on a stale or paraphrased index.
+    #[test]
+    fn symbol_returns_the_definition_body() {
+        let (cx, dir) = cx("body");
+        let out = symbol(&cx, &crate_root(), "cap").unwrap();
+        let src = fs::read_to_string(crate_root().join("src/plugins/graph/mod.rs")).unwrap();
+        let head = src
+            .lines()
+            .find(|l| l.starts_with("fn cap(cx: &Ctx"))
+            .unwrap();
+        assert!(out.contains(head), "{out}");
+        assert!(
+            out.lines().any(|l| l.contains("src/plugins/graph/mod.rs:")),
+            "{out}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.6: bodies make `symbol` far larger than v0.1, so the cap and the archive matter
+    /// more, not less. 500 one-line definitions of the same name must still fit the budget.
+    #[test]
+    fn five_hundred_definitions_are_capped_with_archive_id() {
+        let (cx, dir) = cx("defcap");
+        // One file, not 500: the index runs a transaction per file, and 500 of them put
+        // ~13 s of fixture setup into every `just check` for nothing this test measures.
+        let src = "fn dup() {\n    ();\n}\n".repeat(500);
+        fs::write(dir.join("d.rs"), &src).unwrap();
+        let out = symbol(&cx, &dir, "dup").unwrap();
+        let trailer = out.lines().last().unwrap();
+        assert!(trailer.contains(" more, expand "), "{trailer}");
+        let id = trailer.rsplit(' ').next().unwrap();
+        let full = String::from_utf8(cx.store.get_archive(id).unwrap().unwrap()).unwrap();
+        assert_eq!(
+            full.lines().filter(|l| l.starts_with("fn dup()")).count(),
+            500,
+            "the archive holds every definition"
+        );
+        assert!(cx.estimate(&out, Class::Code) <= cx.config.plugins.graph.max_tokens);
+        assert_eq!(cx.store.measurement_count("graph").unwrap(), 1);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

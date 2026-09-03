@@ -921,7 +921,7 @@ impl Store {
     }
 
     /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
-    pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32)>> {
+    pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
         let mut conn = self.lock()?;
         Ok(symbols::table
             .filter(
@@ -931,7 +931,12 @@ impl Store {
                     .and(symbols::is_def.eq(1)),
             )
             .order((symbols::path.asc(), symbols::line.asc()))
-            .select((symbols::path, symbols::kind, symbols::line))
+            .select((
+                symbols::path,
+                symbols::kind,
+                symbols::line,
+                symbols::end_line,
+            ))
             .load(&mut *conn)?)
     }
 

@@ -204,6 +204,7 @@ search_limit   = 5
 [plugins.graph]
 enabled    = true
 max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"
+body_lines = 40                       # symbol(): source lines shown per definition
 
 [plugins.toon]
 enabled  = false

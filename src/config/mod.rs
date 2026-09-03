@@ -317,6 +317,7 @@ section! {
     Graph {
         enabled: bool = true,
         max_tokens: u32 = 2000,
+        body_lines: u32 = 40,
     }
 }
 
