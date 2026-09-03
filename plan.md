@@ -102,7 +102,7 @@ Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the n
 ### P2 — Hook surface (goal: one hook command per event, < 10 ms, budgeted injection)
 
 
-Gate P2: `rtok setup claude` installed alongside the legacy hooks (additive, nothing removed yet); `rtok doctor` shows 88 hooks; sessions still work.
+Gate P2: `rtok setup claude` installed alongside the legacy hooks (additive, nothing removed yet); `rtok doctor` shows 88 hooks; sessions still work. **Status: done 2026-09-03.** Check: 7 additions (81→88), second `setup claude` → `no changes`; doctor `hooks 88`; 7 `rtok hook` commands beside the original 81; `settings.json` still parses; proxy chain still 8788→8787; backup `settings.json.bak-*`.
 
 ### P3 — `cmd` plugin (goal: every Bash output archived, filtered, measured)
 

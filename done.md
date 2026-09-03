@@ -134,6 +134,8 @@ Do: PreToolUse(Read) and PreToolUse(Bash): if the same path or command already r
 Check: two identical Read fixtures in one session → second is Deny naming the archive id; a different path → allow; `stats --plugin guard` has a row.
 Status: done 2026-09-02 · Check: `cargo test --lib plugins::guard` — first Read allow, PostToolUse archives, second identical Read Deny names `rtok expand <id>`, different path allow, `measurement_count("guard") >= 1`. `make check` green. Deviation: also `store/mod.rs` (read_cache helpers) and default `window_turns` 5→8 in config/docs.
 
+Gate P2 · Status: done 2026-09-03 · Check: `rtok setup claude` → 7 additions; doctor `hooks 88`; second setup `no changes`; 7 `rtok hook` commands kept beside the original 81; settings JSON valid; proxy 8788→8787 unchanged.
+
 **T3.1 `rtok run -- <cmd>`** · T0.3 · `src/plugins/cmd/run.rs`
 Do: run via `$SHELL -lc`, capture stdout+stderr (merged, ordered), preserve exit code, write raw output to `~/.rtok/archive/<id>` and an `archive` row; print output (unfiltered in this task) plus trailer `[rtok <id> · N lines · expand: rtok expand <id>]` only when > 40 lines.
 Check: `rtok run -- printf 'a\nb\n'` prints `a b`, exit 0, no trailer; `rtok run -- sh -c 'exit 3'` → exit 3.
