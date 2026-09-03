@@ -408,6 +408,13 @@ Do: `rtok stats --cache`: per session, cache_read vs cache_creation per turn, de
 Check: fixture with an injected tools-array change → one bust flagged with cause `tools`.
 Status: done 2026-09-02 · Check: `tools_change_is_one_bust_with_cause_tools` — four proxy turns with the tools array grown at turn 3 (cache_create 31 K, cache_read 30 K → 200) → exactly one bust, `(turn 3, "tools")`, and the table line `bust turn 3 cause=tools`; `system_change_unknown_and_no_drop` covers cause `system`, `unknown` (no recorded body) and no bust when cache_read keeps growing. `make check` green (117 tests). `rtok stats --cache` prints per-session turns / cache_read / cache_create / busts (JSON with `--json`); `--cache` is an action flag (T12.4 allow-list), no config key. Bust threshold is the constant `BUST_CREATE_TOKENS = 20_000`. `usage_rows` now orders by `ts, id` so same-second turns keep request order.
 
+## P8b — `graph` quality (D15 re-survey 2026-09-04)
+
+**T8.3 per-root index** · T8.1 · `migrations/0006.sql`, `src/store/mod.rs`, `src/plugins/graph/index.rs`
+Do: column `root` on `symbols` (the canonical root the call indexed, today the cwd of `rtok mcp`). Every symbol query, `delete_symbols_missing` and `mark_symbols_stale` are scoped to it; the stale mark matches `root || '/' || path` exactly instead of a suffix `LIKE`; `keep` becomes a set.
+Check: index two fixture roots into one store → indexing B leaves A's row count unchanged; `symbol("main")` under A never lists B's file; stale-marking A's `src/main.rs` keeps B's rows.
+Status: done 2026-09-04 · Check: `two_roots_do_not_evict_each_other` — indexing B leaves A's row count equal, `symbol_defs(A, "main")` is 1 row, A never answers `beta`, and marking A's `src/main.rs` stale keeps B's identically-named file. `just check` green (126 lib tests). Deviation: also `src/store/schema.rs` (the `root` column) and `src/plugins/graph/mod.rs` (query call sites, `post_tool` canonicalises the edited path). The root key is `index::canon` — one helper for both the root and the stale-mark path, so the two never disagree. `migrations/0006.sql` deletes the pre-T8.3 rows: they are a derived cache with no recoverable root, rebuilt on the next call. `has_symbol_def` / `symbol_ref_count` now delegate to `symbol_defs` / `symbol_refs` instead of repeating the filter.
+
 ## P8 — `graph` plugin
 
 Goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers.

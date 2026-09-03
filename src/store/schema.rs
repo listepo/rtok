@@ -192,6 +192,7 @@ diesel::table! {
         line -> Integer,
         is_def -> Integer,
         file_sha -> Text,
+        root -> Text,
     }
 }
 

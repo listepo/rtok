@@ -36,7 +36,7 @@ impl Plugin for Graph {
             return None;
         }
         if let Some(p) = ev.tool_input.get("file_path").and_then(|v| v.as_str()) {
-            let _ = cx.store.mark_symbols_stale(p);
+            let _ = cx.store.mark_symbols_stale(&index::canon(Path::new(p)));
         }
         None
     }
@@ -80,7 +80,7 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
 /// `symbol(name)`: one `path:line kind` per definition.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index::run(cx, root)?;
-    let rows = cx.store.symbol_defs(name)?;
+    let rows = cx.store.symbol_defs(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no definition of {name}"));
     }
@@ -95,7 +95,7 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// `callers(name)`: reference sites grouped by file, `  line: text` under each path.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index::run(cx, root)?;
-    let rows = cx.store.symbol_refs(name)?;
+    let rows = cx.store.symbol_refs(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no references to {name}"));
     }

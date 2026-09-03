@@ -3,6 +3,7 @@
 pub mod models;
 pub mod schema;
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -27,6 +28,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0003.sql", include_str!("../../migrations/0003.sql")),
     ("0004.sql", include_str!("../../migrations/0004.sql")),
     ("0005.sql", include_str!("../../migrations/0005.sql")),
+    ("0006.sql", include_str!("../../migrations/0006.sql")),
 ];
 
 pub struct Store {
@@ -803,16 +805,20 @@ impl Store {
         Ok(())
     }
 
-    pub fn symbol_count(&self) -> Result<i64> {
-        let mut conn = self.lock()?;
-        let rows: Vec<Count> = sql_query("SELECT COUNT(*) AS n FROM symbols").load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.n).unwrap_or(0))
-    }
-
-    pub fn symbol_sha(&self, path: &str) -> Result<Option<String>> {
+    /// Rows indexed under one repo root (T8.3). Every symbol call is scoped to a root, so
+    /// two repos in the one store (D8) never evict or answer for each other.
+    pub fn symbol_count(&self, root: &str) -> Result<i64> {
         let mut conn = self.lock()?;
         Ok(symbols::table
-            .filter(symbols::path.eq(path))
+            .filter(symbols::root.eq(root))
+            .count()
+            .get_result(&mut *conn)?)
+    }
+
+    pub fn symbol_sha(&self, root: &str, path: &str) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::root.eq(root).and(symbols::path.eq(path)))
             .select(symbols::file_sha)
             .first::<String>(&mut *conn)
             .optional()?)
@@ -820,6 +826,7 @@ impl Store {
 
     pub fn replace_symbols(
         &self,
+        root: &str,
         path: &str,
         file_sha: &str,
         rows: &[(String, String, i32, bool)],
@@ -827,11 +834,15 @@ impl Store {
         let mut conn = self.lock()?;
         // One transaction per file: thousands of autocommit inserts dominated index time.
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            diesel::delete(symbols::table.filter(symbols::path.eq(path))).execute(conn)?;
+            diesel::delete(
+                symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))),
+            )
+            .execute(conn)?;
             if rows.is_empty() {
                 // Keep file_sha so an unchanged tagless file is skipped next run.
                 diesel::insert_into(symbols::table)
                     .values((
+                        symbols::root.eq(root),
                         symbols::path.eq(path),
                         symbols::name.eq(""),
                         symbols::kind.eq(""),
@@ -845,6 +856,7 @@ impl Store {
             for (name, kind, line, is_def) in rows {
                 diesel::insert_into(symbols::table)
                     .values((
+                        symbols::root.eq(root),
                         symbols::path.eq(path),
                         symbols::name.eq(name),
                         symbols::kind.eq(kind),
@@ -858,70 +870,71 @@ impl Store {
         })?)
     }
 
-    pub fn delete_symbols_missing(&self, keep: &[String]) -> Result<usize> {
+    pub fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize> {
         let mut conn = self.lock()?;
         let have: Vec<String> = symbols::table
+            .filter(symbols::root.eq(root))
             .select(symbols::path)
             .distinct()
             .load(&mut *conn)?;
         let mut n = 0usize;
         for p in have {
-            if !keep.iter().any(|k| k == &p) {
-                n += diesel::delete(symbols::table.filter(symbols::path.eq(&p)))
-                    .execute(&mut *conn)?;
+            if !keep.contains(&p) {
+                n += diesel::delete(
+                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&p))),
+                )
+                .execute(&mut *conn)?;
             }
         }
         Ok(n)
     }
 
-    /// Drop rows for this path (absolute or repo-relative). No indexing on the hook path.
-    pub fn mark_symbols_stale(&self, file_path: &str) -> Result<()> {
+    /// Drop rows for one canonical absolute file path. No indexing on the hook path.
+    /// Matched as `root || '/' || path` so a same-named file in another repo survives.
+    pub fn mark_symbols_stale(&self, abs_path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "DELETE FROM symbols WHERE path = ? OR ? LIKE '%/' || path OR path LIKE '%/' || ?",
-        )
-        .bind::<Text, _>(file_path)
-        .bind::<Text, _>(file_path)
-        .bind::<Text, _>(file_path)
-        .execute(&mut *conn)?;
+        sql_query("DELETE FROM symbols WHERE ? = root || '/' || path")
+            .bind::<Text, _>(abs_path)
+            .execute(&mut *conn)?;
         Ok(())
     }
 
     /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
-    pub fn symbol_defs(&self, name: &str) -> Result<Vec<(String, String, i32)>> {
+    pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32)>> {
         let mut conn = self.lock()?;
         Ok(symbols::table
-            .filter(symbols::name.eq(name).and(symbols::is_def.eq(1)))
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::name.eq(name))
+                    .and(symbols::is_def.eq(1)),
+            )
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::kind, symbols::line))
             .load(&mut *conn)?)
     }
 
     /// Reference sites of `name` as `(path, line)`, ordered by path then line (T8.2 `callers`).
-    pub fn symbol_refs(&self, name: &str) -> Result<Vec<(String, i32)>> {
+    pub fn symbol_refs(&self, root: &str, name: &str) -> Result<Vec<(String, i32)>> {
         let mut conn = self.lock()?;
         Ok(symbols::table
-            .filter(symbols::name.eq(name).and(symbols::is_def.eq(0)))
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::name.eq(name))
+                    .and(symbols::is_def.eq(0)),
+            )
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::line))
             .load(&mut *conn)?)
     }
 
-    pub fn has_symbol_def(&self, name: &str) -> Result<bool> {
-        let mut conn = self.lock()?;
-        let n: i64 = symbols::table
-            .filter(symbols::name.eq(name).and(symbols::is_def.eq(1)))
-            .count()
-            .get_result(&mut *conn)?;
-        Ok(n > 0)
+    pub fn has_symbol_def(&self, root: &str, name: &str) -> Result<bool> {
+        Ok(!self.symbol_defs(root, name)?.is_empty())
     }
 
-    pub fn symbol_ref_count(&self, name: &str) -> Result<i64> {
-        let mut conn = self.lock()?;
-        Ok(symbols::table
-            .filter(symbols::name.eq(name).and(symbols::is_def.eq(0)))
-            .count()
-            .get_result(&mut *conn)?)
+    pub fn symbol_ref_count(&self, root: &str, name: &str) -> Result<i64> {
+        Ok(self.symbol_refs(root, name)?.len() as i64)
     }
 
     pub fn purge_calls_older_than(&self, days: i64) -> Result<usize> {

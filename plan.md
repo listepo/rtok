@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -135,12 +135,6 @@ Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `a
 Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after Gate P8 closed on token count alone. Order is T8.3 → T8.4 → T8.8 → T8.5 → T8.6 → T8.7: the two defects first, the measurement before the edges, the edges before what consumes them.
 
 Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 recall ≥ 0.9; on the P9 task set, tasks touching ≥ 3 files use fewer tool calls with `symbol` than at v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
-
-**T8.3 per-root index** · T8.1 · `migrations/0006.sql`, `src/store/mod.rs`, `src/plugins/graph/index.rs`
-Do: column `root` on `symbols` (the canonical root the call indexed, today the cwd of `rtok mcp`). Every symbol query, `delete_symbols_missing` and `mark_symbols_stale` are scoped to it; the stale mark matches `root || '/' || path` exactly instead of a suffix `LIKE`; `keep` becomes a set.
-Check: index two fixture roots into one store → indexing B leaves A's row count unchanged; `symbol("main")` under A never lists B's file; stale-marking A's `src/main.rs` keeps B's rows.
-Status: open
-Model: -
 
 **T8.4 stat-gated freshness** · T8.3 · `migrations/0007.sql`, `src/store/mod.rs`, `src/plugins/graph/index.rs`
 Do: store `mtime` and `size` per file (git's index rule); a file whose stat matches is skipped without being read; sha256 only when the stat differs, so unchanged content with a new mtime re-hashes but inserts 0. `Report` counts files actually read.
