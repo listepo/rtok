@@ -32,6 +32,20 @@ Cost split with p_out = 5 × p_in (input-token equivalents):
 
 Reading: on standard models, context volume dominates → compress tool results and clear old ones. On Fable/Mythos, output tokens dominate → fewer lines written (ponytail-style), fewer turns, terse prose.
 
+### `rtok stats --save-baseline before-rtok` (2026-09-03)
+
+Gate P1. Default `[stats] since = 30d` (not the 17-session slice above). File: `~/.rtok/measurements/before-rtok.json`. `--compare before-rtok` → all Δ0. Estimator: 4 chars/token. No rtok hooks in `settings.json` at save time. Proxy `usage` empty (`api` {}).
+
+| Item | Value |
+|------|-------|
+| Sessions / lines | 580 / 181 303 (0 malformed) |
+| Tool results, est. tokens | 13.03 M total; Bash 7.71 M (59 %), Read 3.07 M (24 %), WebSearch 0.70 M, MCP lean-ctx `ctx_read` 0.48 M |
+| Bash by family | sed 1.71 M, cd 1.20 M, cat 0.93 M, grep 0.93 M, git 0.35 M |
+| MCP groups | lean-ctx 0.86 M, engram 36 K |
+| Cache | read 8 124 M, creation 235 M, uncached input 1.52 M → 97.2 % hit rate |
+| Median final context | 65 882 tokens per session |
+| Archive replay (estimate) | CTT 11.81 G → 8.42 G (−28.7 %); 1 803 candidates |
+
 ### A/B bench (T9.2, 2026-09-02)
 
 Config A = `bench/configs/legacy.json` (81-hook + dual-proxy baseline described above). Config B = `bench/configs/rtok.json` (7 rtok hooks, `rtok mcp`, `ANTHROPIC_BASE_URL` :8790). Six tasks × 3 runs. Live `claude -p` is gated on `RTOK_BENCH_LIVE=1`; this commit ran without it, so usage/cost are zeros and pass rate is the tasks' `check = true`.

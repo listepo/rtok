@@ -97,7 +97,7 @@ Gate P0 (review): trait shape final; no plugin logic yet. **Status: done 2026-09
 
 ### P1 — Measure (goal: a baseline you can trust before changing anything)
 
-Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2. **Status: open** — `--save-baseline` works (T1.3); live 60d numbers are not the original 17-session H-measured slice.
+Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2. **Status: done 2026-09-03.** Check: `~/.rtok/measurements/before-rtok.json` (580 sessions, 181 303 lines, Bash 7.71 M / Read 3.07 M est. tokens, 30d); `--compare` all Δ0; numbers in `research.md` §2. Slice is not the original 17-session H-measured table.
 
 ### P2 — Hook surface (goal: one hook command per event, < 10 ms, budgeted injection)
 
