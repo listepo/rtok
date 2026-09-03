@@ -24,6 +24,6 @@ The property that beats the table: determinism per `tool_use_id` plus an expand-
 - Rewriting the cached prefix (tools array / system prompt) — breaks prompt cache (D, T14.5).
 - LLMLingua-style pruning in v0.1 — quality risk on code (`research.md` §6.9).
 
-Target: context-token-turns fall ≥ 15 % vs passthrough with expand rate < 5 % (P5 compress gate).
+Target: Two days compress after passthrough; keep only if context-token-turns fall ≥ 15 % and expand rate < 5 %.
 
 Falsified by: expand rate ≥ 5 % after two days, or a cache-hit-rate drop that costs more than the CTT save.

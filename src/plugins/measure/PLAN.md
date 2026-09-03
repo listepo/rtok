@@ -24,6 +24,6 @@ The property that beats the table: one number, from the same store the plugins w
 - Treating chars/4 as the product metric — it is an estimator class, not the bill.
 - Shipping rewrite plugins before `--save-baseline` exists — Gate P1.
 
-Target: context-token-turns defined; `rtok stats --save-baseline before-rtok` stored before any rewrite plugin ships (P1 gate: baseline saved; numbers in `research.md` §2).
+Target: Baseline saved (`rtok stats --save-baseline before-rtok`); numbers in `research.md` §2.
 
 Falsified by: after a week of proxy `usage`, CTT rankings contradict cost-per-passed-task on the P9 set and we still steer by CTT.

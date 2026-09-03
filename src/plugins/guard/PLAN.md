@@ -15,15 +15,15 @@ Agents re-fetch the same file or re-run the same command. token-optimizer's refe
 
 ## Mechanism
 
-Do not deny. Rewrite the duplicate call into `expand <id>` of the last matching archive (same tool + normalized args in a 20-turn window). Deny only if there is no archive id (true loop with no payload). False-deny budget: visible in `stats --plugin guard`; keep the plugin only if false-deny stays under 1 % of guarded calls on a working day.
+Deny the duplicate Read/Bash call (`PreToolDecision::Deny`) when the same path or command already ran in this session within `plugins.guard.window_turns` and an archive id exists; the reason names `rtok expand <id>` (T2.6). Never deny when there is no prior archive. Deny rate is visible in `stats --plugin guard`; expand on that id must still work. False-deny budget: keep the plugin only if false-deny stays under 1 % of guarded calls on a working day.
 
-The property that beats the table: the model still gets the bytes; we still save the re-fetch.
+The property that beats the table: the bytes stay behind `expand <id>` instead of a silent re-fetch; a wrong deny is measurable.
 
 ## Rejected
 
-- Hard deny as the default — the model retries or invents.
+- Rewrite-to-expand as the default — T2.6 is Deny with an expand pointer; a rewrite would change the tool the host runs.
 - Repetition-penalty on sampled tokens — wrong layer; we see tools, not logits.
 
-Target: max false-deny rate < 1 % of guarded calls; deny rate visible in `stats --plugin guard`; expand on a denied id still works (guard gate).
+Target: Same honesty rule as `cmd`: deny rate is visible in `stats --plugin guard`; expand on a denied id must still work.
 
 Falsified by: a working day where expand on a guarded id fails, or false-deny ≥ 1 %.

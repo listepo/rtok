@@ -24,6 +24,6 @@ The property that beats the table: no extraction tax, and recall is a Check, not
 - LLM extractors in v0.1 (claude-mem, mem0 default) — they spend the tokens we are trying to save.
 - Injecting bodies at SessionStart — technique #7 says titles → ids → bodies.
 
-Target: fixture-note recall (id returned for a planted query) and injection tokens below engram+claude-mem (P6 gate: compare injection and MCP description tokens; revert if recall is worse).
+Target: Disable engram + claude-mem for a week; compare injection and MCP description tokens. Revert if recall is worse.
 
 Falsified by: fixture recall below the LLM-extractor baseline on the same notes, or memory injection exceeds the 800-token budget.

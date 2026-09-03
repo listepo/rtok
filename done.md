@@ -65,6 +65,8 @@ Do: survey compact encodings for tabular tool results: TOON plus at least one ou
 Check: shared Check; `Target:` is a bytes-saved threshold with an accuracy no-regression condition on the P9 set.
 Status: done 2026-09-02 · `src/plugins/toon/PLAN.md`. Off until P9; tabular detection rule. Target: P9 cost/pass-rate.
 
+Gate P14 (review) · Status: done 2026-09-03 · Check: 10 PLAN.md; every `Target:` is a verbatim `roadmap.md` gate sentence (`every_target_matches_a_roadmap_gate`); guard Mechanism is T2.6 Deny. §6: PLAN files batched in `830e049` with measure impl; cannot satisfy PLAN-before-code `git log` order.
+
 ## P1 — Measure
 
 Goal: a baseline you can trust before changing anything.

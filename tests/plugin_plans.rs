@@ -144,3 +144,23 @@ fn plugin_plans_missing_falsified_fails() {
     let body = COMPLETE.replace("Falsified by: 2\n", "");
     assert!(check(&body).unwrap_err().contains("Falsified by:"));
 }
+
+#[test]
+fn every_target_matches_a_roadmap_gate() {
+    let roadmap = include_str!("../roadmap.md");
+    let files = plan_files();
+    assert_eq!(files.len(), 10, "want 10 PLAN.md files");
+    for p in &files {
+        let body = fs::read_to_string(p).unwrap();
+        let target = body
+            .lines()
+            .find(|l| l.trim().starts_with("Target:"))
+            .unwrap_or_else(|| panic!("{} missing Target:", p.display()));
+        let rest = target.trim().trim_start_matches("Target:").trim();
+        assert!(
+            roadmap.contains(rest),
+            "{} Target is not a roadmap.md gate: {rest}",
+            p.display()
+        );
+    }
+}

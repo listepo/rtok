@@ -24,6 +24,6 @@ The property that beats the table: lossless by default (D2) with a measured expa
 - One generic head/tail for all families — cargo JSON and pytest `-q` are cheaper and keep errors.
 - Delegating to rtk at runtime (D6) — rtk is the spec, not a subprocess.
 
-Target: ≥ 40 % byte cut on a named Bash corpus (rtk's measured 40 % of bash bytes, `research.md` §4) at expand rate < 5 % (P3 gate).
+Target: One working day vs baseline; keep only if Bash context-token-turns fall and expand rate < 5 %.
 
 Falsified by: expand rate ≥ 5 % on a working day, or a failed command whose error line was stripped.

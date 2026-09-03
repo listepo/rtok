@@ -24,6 +24,6 @@ The property that beats the table: `usage` lands in `calls`/`tokens` on both Ant
 - Semantic response cache (bifrost 0.9) in v0.1 — a hit is a wrong answer for agents.
 - Buffering a full stream before forwarding — blows the 20 ms budget.
 
-Target: added latency < 20 ms per request (T5.1) plus a cache-hit-rate floor from proxy `usage` (P5 passthrough gate: two days of usage rows).
+Target: Two days of usage rows.
 
 Falsified by: p95 added latency ≥ 20 ms, or a documented cache miss caused by rtok rewriting the prefix.

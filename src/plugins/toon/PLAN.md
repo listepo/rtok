@@ -24,6 +24,6 @@ The property that beats the table: a detection rule plus a bench gate, not a glo
 - Encoding every JSON tool result — nested/code blobs lose.
 - Default-on in v0.1 — P9 has not run.
 
-Target: bytes saved on tabular results with no pass-rate regression on the P9 task set; stay off until that holds (P9 gate: keep enabled only if cost per passed task falls and pass rate holds).
+Target: Keep enabled only if cost per passed task falls and pass rate holds.
 
 Falsified by: P9 pass rate drops, or TOON loses to minified JSON on rtok's captured corpus at the detection threshold.

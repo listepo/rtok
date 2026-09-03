@@ -25,6 +25,6 @@ The property that beats the table: three tools, < 2 s index of this repo, measur
 - Shipping serena as a subprocess (D6).
 - Cypher-like query language in v0.1 — three named tools are enough.
 
-Target: MCP description tokens below the four retired servers; index this repo in < 2 s; hit rate on a fixture symbol set (P8 gate).
+Target: Description-token savings vs the four servers; index this repo in < 2 s.
 
 Falsified by: index of this repo ≥ 2 s, or fixture symbols that tags should see (plain fn/impl) are misses.

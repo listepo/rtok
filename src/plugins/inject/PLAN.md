@@ -25,6 +25,6 @@ The property that beats the table: a hard budget plus byte-stability, so cache a
 - Silent drops — we cannot debug a missing note.
 - Unbounded concatenation of plugin banners — the current stack.
 
-Target: ≤ 800 tokens per turn and byte-identical injections across turns (P2 inject contract).
+Target: Setup is additive; sessions still work.
 
 Falsified by: two consecutive turns with identical plugin inputs produce different injection bytes, or 800-token injections raise output tokens / fail tasks vs 0-token.

@@ -24,6 +24,6 @@ The property that beats the table: five tools, no banner, re-read stub — descr
 - Porting aider PageRank for v0.1 — build cost fails the hook ≤ 10 ms / MCP-on-demand rule; v0.2 if P4 still loses.
 - 78-tool surface — description tokens dominate the save.
 
-Target: first-look tokens for this repo below lean-ctx's 3.1 K/turn injection; P4 gate compares Read/MCP rows and injection tokens vs baseline.
+Target: Disable lean-ctx for one day; compare Read/MCP rows and injection tokens vs baseline.
 
 Falsified by: `map`+`signatures` first-look uses more tokens than native Read on the fixture repo, or a re-read serves stale bytes.
