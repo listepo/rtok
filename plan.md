@@ -265,7 +265,7 @@ INSERT INTO providers (id, slug, name) VALUES
 
 T13.1–T13.4 are done — see `done.md`.
 
-Gate P13 (review): no rusqlite; no SQL outside `src/store/`; hook-path tests never write `archive/` for `call_io`; a plugin_run has before and after token rows.
+Gate P13 (review): no rusqlite; no SQL outside `src/store/`; hook-path tests never write `archive/` for `call_io`; a plugin_run has before and after token rows. **Status: done 2026-09-03.** Check: no `rusqlite` in the tree; `oversized_hook_call_io_does_not_archive`; `only_results_outside_the_live_tail_are_rewritten` asserts before/after `tokens` phases. Runtime SQL is `src/store/` only; `migrations/*.sql` are included by `Store` (see §6).
 
 ### P14 — per-plugin design research (goal: every plugin beats the field on a named number before a line of it is written) — added 2026-09-02 (D15)
 
@@ -348,3 +348,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-02 | An implemented task is unfinished until it is marked done and moved from `plan.md` to `done.md` (verbatim + Check). Same commit as the implementation. `AGENTS.md`, plan §2, `docs/plugin-authoring.md`. | User request: all implemented tasks should mark as done and move to done.md. |
 | 2026-09-02 | T11.2's Check asks for a `usage` row with `api = openai_chat`, but `usage.api` is added by T11.6, which depends on T11.2. T11.2 verified the other two clauses (identical response bytes, `cache_read` from `cached_tokens`); the per-API assertion moves to T11.6, whose Check already covers "fixture usage rows for two APIs → two rows in the stats table". Until then an OpenAI row is identifiable only via `calls.provider = openai`. | Writing the column early would pull T11.6's migration into T11.2, i.e. implement a task out of order. |
 | 2026-09-02 | `Wire` gained `prepare_request(&mut Value, include_usage) -> bool` (default no-op) for provider request shaping in both proxy modes; `int_field` moved from `anthropic.rs` to `wire.rs`. T11.2 needs `stream_options.include_usage` on OpenAI streaming requests, and the wire is the layer that owns request shape — the alternative was a path match inside `mod.rs`. | Keeps format knowledge in the wire (T11.1's premise) and avoids duplicating `int_field` per wire. |
+| 2026-09-03 | Gate P13 "no SQL outside `src/store/`" is the runtime rule: plugins and surfaces have no `sql_query` / rusqlite. Schema lives in `migrations/*.sql` and is applied only via `Store::MIGRATIONS` (`include_str!`). Files are not moved into `src/store/` — Diesel's conventional layout. | Literal reading would require relocating migration files; that is not a second SQL client. |

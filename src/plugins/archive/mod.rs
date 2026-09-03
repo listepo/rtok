@@ -212,6 +212,11 @@ mod tests {
             assert_eq!(content, &Value::String(big(&format!("t{}", index + 1))));
         }
         assert_eq!(cx.store.count_kind("plugin_run").unwrap(), 1);
+        let ids = cx.store.call_ids_of_kind("plugin_run").unwrap();
+        assert_eq!(ids.len(), 1);
+        let phases = cx.store.token_phases(ids[0]).unwrap();
+        assert!(phases.iter().any(|p| p == "before"), "{phases:?}");
+        assert!(phases.iter().any(|p| p == "after"), "{phases:?}");
     }
 
     #[test]

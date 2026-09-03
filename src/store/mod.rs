@@ -225,6 +225,32 @@ impl Store {
             .get_result(&mut *conn)?)
     }
 
+    pub fn call_ids_of_kind(&self, kind: &str) -> Result<Vec<i32>> {
+        let mut conn = self.lock()?;
+        Ok(calls::table
+            .filter(calls::kind.eq(kind))
+            .select(calls::id)
+            .load(&mut *conn)?)
+    }
+
+    pub fn call_io_archives(&self, call_id: i32) -> Result<(Option<String>, Option<String>)> {
+        let mut conn = self.lock()?;
+        Ok(call_io::table
+            .filter(call_io::call_id.eq(call_id))
+            .select((call_io::request_archive, call_io::response_archive))
+            .first::<(Option<String>, Option<String>)>(&mut *conn)
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+
+    pub fn token_phases(&self, call_id: i32) -> Result<Vec<String>> {
+        let mut conn = self.lock()?;
+        Ok(tokens::table
+            .filter(tokens::call_id.eq(call_id))
+            .select(tokens::phase)
+            .load(&mut *conn)?)
+    }
+
     pub fn host_id(&self, slug: &str) -> Result<Option<i32>> {
         let mut conn = self.lock()?;
         Ok(hosts::table

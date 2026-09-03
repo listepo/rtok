@@ -217,6 +217,23 @@ mod tests {
     }
 
     #[test]
+    fn oversized_hook_call_io_does_not_archive() {
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["pad"] = serde_json::Value::String("x".repeat(70_000));
+        let stdin = serde_json::to_vec(&v).unwrap();
+        assert!(stdin.len() > 65_536);
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let cx = Ctx::in_memory("b1e2c3d4-0000-4000-8000-000000000002").unwrap();
+        let _ = dispatch(&stdin, &input, &cx);
+        let ids = cx.store.call_ids_of_kind("hook").unwrap();
+        assert!(!ids.is_empty());
+        let (req, res) = cx.store.call_io_archives(ids[0]).unwrap();
+        assert!(req.is_none(), "{req:?}");
+        assert!(res.is_none(), "{res:?}");
+    }
+
+    #[test]
     fn malformed_stdin_is_empty_object() {
         let cfg = Config::default();
         let mut out = Vec::new();
