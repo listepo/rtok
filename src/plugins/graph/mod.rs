@@ -10,6 +10,7 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -56,6 +57,11 @@ impl Plugin for Graph {
                 input_schema: name,
             },
             ToolDef {
+                name: "impact",
+                description: "What breaks if a symbol changes: callers, their callers, up to depth.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"depth":{"type":"integer"}},"required":["name"]}),
+            },
+            ToolDef {
                 name: "outline",
                 description: "Definitions in one file (read mode=map).",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
@@ -71,6 +77,12 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
     match name {
         "symbol" => symbol(cx, &root, arg("name")),
         "callers" => callers(cx, &root, arg("name")),
+        "impact" => impact(
+            cx,
+            &root,
+            arg("name"),
+            args["depth"].as_u64().unwrap_or(2) as u32,
+        ),
         "outline" => outline(cx, arg("path")),
         _ => Ok(format!("unknown tool: {name}")),
     }
@@ -122,6 +134,40 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
             format!("  {scope}")
         };
         out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
+    }
+    cap(cx, out)
+}
+
+/// `impact(name, depth)`: breadth-first walk of the `scope` edges T8.5 stored — who calls
+/// `name`, who calls them, and so on (T8.7). One `depth  path  scope` line per definition
+/// reached. A definition is expanded once, so a call cycle terminates.
+pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
+    index::run(cx, root)?;
+    let key = index::canon(root);
+    let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
+    let mut frontier = vec![name.to_string()];
+    let mut out = String::new();
+    for d in 1..=depth.clamp(1, 4) {
+        let mut next = Vec::new();
+        for from in &frontier {
+            for (path, scope, ..) in cx.store.symbol_ref_groups(&key, from)? {
+                // A file-level reference has no definition to walk on from; it is still a
+                // place the change lands, so it is reported and not expanded.
+                if scope.is_empty() {
+                    out.push_str(&format!("{d}  {path}  (file)\n"));
+                } else if seen.insert(scope.clone()) {
+                    out.push_str(&format!("{d}  {path}  {scope}\n"));
+                    next.push(scope);
+                }
+            }
+        }
+        frontier = next;
+        if frontier.is_empty() {
+            break;
+        }
+    }
+    if out.is_empty() {
+        return Ok(format!("nothing reaches {name}"));
     }
     cap(cx, out)
 }
@@ -278,6 +324,59 @@ mod tests {
         let est = cx.estimate(&out, Class::Code);
         assert!(est <= max, "{est} > {max}");
         assert_eq!(cx.store.measurement_count("graph").unwrap(), 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.7: `impact` walks the edges `callers` only reports one hop of. Depth bounds the
+    /// walk, and `x`/`y` calling each other must not loop.
+    #[test]
+    fn impact_walks_the_call_chain_and_terminates() {
+        let (cx, dir) = cx("impact");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn x() {\n    y();\n    c();\n}\nfn y() {\n    x();\n}\n",
+        )
+        .unwrap();
+        let at = |out: &str, n: &str| {
+            out.lines()
+                .find(|l| l.ends_with(&format!("  {n}")))
+                .map(|l| l[..1].to_string())
+        };
+        let two = impact(&cx, &dir, "c", 2).unwrap();
+        assert_eq!(at(&two, "b").as_deref(), Some("1"), "{two}");
+        assert_eq!(at(&two, "a").as_deref(), Some("2"), "{two}");
+        let one = impact(&cx, &dir, "c", 1).unwrap();
+        assert_eq!(at(&one, "b").as_deref(), Some("1"), "{one}");
+        assert_eq!(at(&one, "a"), None, "depth 1 must stop at the callers");
+        // x calls y, y calls x, both reach c: the walk visits each once and returns.
+        let deep = impact(&cx, &dir, "c", 4).unwrap();
+        assert_eq!(
+            deep.lines().filter(|l| l.ends_with("  x")).count(),
+            1,
+            "{deep}"
+        );
+        assert_eq!(
+            impact(&cx, &dir, "no_such_fn", 2).unwrap(),
+            "nothing reaches no_such_fn"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Gate P8b: four tools, and the whole graph surface under 150 description tokens.
+    #[test]
+    fn graph_surface_is_four_tools_under_150_tokens() {
+        let (cx, dir) = cx("surface");
+        let tools = Graph.mcp_tools();
+        assert_eq!(tools.len(), 4);
+        let n: u32 = tools
+            .iter()
+            .map(|t| crate::tokens::estimate(t.description, Class::Prose, &cx.config.estimator))
+            .sum();
+        println!(
+            "graph surface: {} tools, {n} description tokens",
+            tools.len()
+        );
+        assert!(n <= 150, "graph descriptions are {n} tokens");
         let _ = fs::remove_dir_all(dir);
     }
 

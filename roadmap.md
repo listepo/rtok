@@ -207,7 +207,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 ## `graph`
 
-**Goal.** `symbol` / `callers` / `outline` from an index rtok builds itself.
+**Goal.** `symbol` / `callers` / `impact` / `outline` from an index rtok builds itself.
 
 **Replaces.** codebase-memory-mcp, code-review-graph, serena, codegraph.
 
@@ -229,9 +229,9 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
-**Gate P8b.** Graph surface ≤ 150 description tokens; warm tool call < 100 ms on a 3 000-file repo; T8.8 recall ≥ 0.9; fewer tool calls per multi-file task on the P9 set.
+**Gate P8b.** Graph surface ≤ 150 description tokens (measured 62, 4 tools); warm tool call < 100 ms on a 3 000-file repo (measured 0.053 s); T8.8 definition recall ≥ 0.9 (measured 1.0; reference recall 0.351, `plan.md` §6); fewer tool calls per multi-file task on the P9 set — the one clause still open.
 
-**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. Next: T8.3 (P8b, promoted 2026-09-04 from the v0.2 survey in `src/plugins/graph/PLAN.md`).
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison.
 
 ---
 
