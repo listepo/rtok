@@ -93,9 +93,24 @@ guard is `if(${BUILD_SHELL})`, so it only fails when that variable is true — a
 passing `-DBUILD_SHELL=OFF`. `cargo clean -p lbug` (7 759 files, 788 MiB) fixed it and the next
 `just check` was green. If that error reappears, it is a stale cmake cache, not the source.
 
-## P17 — build size · task done 2026-09-04 (gate: p95 clause sits on the bar)
+## P17 — build size · tasks done 2026-09-05 (gate: p95 clause sits on the bar)
 
 Goal: what a contributor compiles and what a user downloads stop growing with the dependency list. Plan: `plan.md` P17. Numbers: `research.md` §2 "Build size (T17.1, Gate P17)".
+
+**T17.2 pin cargo-cache** · T17.1 · `mise.toml`
+Do: `[tools]` gains `"cargo:cargo-cache"` at the version this machine already resolves. `just cache` and `just cache-autoclean` call it through `mise exec --`, the form every pinned tool in the justfile uses, but the tool was only ever installed globally — a fresh clone cannot run either recipe. cargo-dist stays unpinned on purpose; the justfile says why.
+Check: the tool resolves from the repository's own config, not a global install; `just cache` prints the cargo-home summary and `just cache-autoclean` is exercised with `--dry-run` so nothing is deleted from a cargo home other sessions share; `just check` green.
+Status: done 2026-09-05
+Model: Opus 5
+Check result: before the change `mise ls` listed `cargo:cargo-cache 0.8.3` as a global install and
+`mise ls --current` did not list it at all; after, it resolves from `~/GitHub/rtok/mise.toml`.
+`just cache` prints the summary — cargo home 2.17 GB, of which 1.49 GB is 1 848 crate source
+checkouts and 284 MB is 2 091 crate archives — and `cargo-cache --autoclean --dry-run` completes
+without removing anything, which is how it was exercised: this cargo home is shared with other
+sessions, so a real autoclean was not run. `just check` green (12 test binaries).
+Worth knowing: adding a tool to `[tools]` changes `PATH`, and cargo fingerprints build scripts
+against it, so the next `just check` rebuilt every crate with a build script — including lbug's
+C++, about nine minutes. One-time, but it is why a one-line toolchain edit is not a free check.
 
 **T17.1 dev, release and dist profiles** · — · `Cargo.toml`, `research.md`
 Do: `[profile.dev] debug = "line-tables-only"` (backtraces keep `file:line`; the DWARF that dominates every artifact goes). `[profile.dev.package.lbug] opt-level = 2, debug = false` so `cmake-rs` reads `OPT_LEVEL`/`DEBUG` and configures the bundled C++ as a release build instead of a 2 GB `-g` one. `[profile.release] strip = "symbols"`. `[profile.dist]` gains `codegen-units = 1` beside its `lto = "thin"`, since the shipped binary is built once. Nothing sets `panic = "abort"`.
