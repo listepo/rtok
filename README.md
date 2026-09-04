@@ -22,7 +22,8 @@ brew install listepo/tap/rtok
 Either way you also get `rtok-update`; run it to move to the newest release.
 
 The binaries are not codesigned or notarised. Downloading an archive through a browser will make
-macOS quarantine it; the installer above and Homebrew are not affected.
+macOS quarantine it; the installer above and Homebrew are not affected. What turning that on would
+involve is written down in [docs/release.md](docs/release.md).
 
 Building from source works on any platform Rust supports:
 
