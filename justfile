@@ -46,6 +46,11 @@ dist-plan:
 dist-generate:
     {{dist}} generate
 
+# T18.2: release the version in Cargo.toml, or the next one if that is already tagged.
+# Same script the Bump workflow runs, so local and CI cannot disagree.
+release level="patch" *flags:
+    tools/release.sh {{level}} {{flags}}
+
 # regenerate CHANGELOG.md from git history (git-cliff, config in cliff.toml)
 changelog:
     {{cliff}} -o CHANGELOG.md

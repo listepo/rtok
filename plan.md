@@ -180,12 +180,6 @@ T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and 
 
 Gate P18: the Release workflow, started from the Actions tab with no argument, produces a GitHub Release whose tag is one patch above the last; its `aarch64-apple-darwin` and `x86_64-apple-darwin` archives download, extract and run `rtok --version` on macOS, printing that tag; the README install line puts `rtok` on `PATH` under both bash and zsh; running the workflow a second time yields the next patch with nothing hand-edited; `just check` green.
 
-**T18.2 the next patch, computed** · T18.1 · `.github/workflows/bump.yml`, `justfile`
-Do: one `workflow_dispatch` entry point that reads the version in `Cargo.toml`, raises the patch (level selectable, `patch` by default), regenerates `CHANGELOG.md` with git-cliff, commits `release: v<next>` with `Cargo.lock` updated, and starts the release for that version. `just release` does the same locally for anyone without Actions access. Neither path takes a version as an argument.
-Check: on a scratch branch, the bump step run locally takes 0.0.1 → 0.0.2 in `Cargo.toml` and `Cargo.lock`, writes the changelog and makes one commit; `dist plan` at that commit announces `v0.0.2`; a second run gives 0.0.3; `just check` green.
-Status: open
-Model: -
-
 **T18.3 install in one line** · T18.1 · `README.md`
 Do: the README Install section leads with the shell installer for macOS and Linux and the Homebrew tap, with the source build kept below for contributors. State plainly that the binary is unsigned.
 Check: `just readme-check` green; the installer line, pasted into a clean bash and a clean zsh on macOS, exits 0, puts `rtok` on `PATH` and prints the released version.

@@ -34,5 +34,7 @@ commit_parsers = [
   { message = "^plan:", group = "<!-- 1 -->Plan" },
   { message = "^docs:", group = "<!-- 2 -->Docs" },
   { message = "^(ci|build|chore|deps):", group = "<!-- 3 -->Tooling" },
+  # T18.2: `release: vX.Y.Z` is bookkeeping the next release would otherwise list.
+  { message = "^release:", skip = true },
   { message = ".*", group = "<!-- 4 -->Other" },
 ]
