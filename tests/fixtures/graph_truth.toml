@@ -79,13 +79,15 @@ refs = ["src/proxy/mod.rs"]
 [[symbol]]
 name = "mark_symbols_stale"
 kind = "fn"
-defs = ["src/store/symbols.rs"]
+# T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs.
+defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]
 name = "symbol_defs"
 kind = "fn"
-defs = ["src/store/symbols.rs"]
+# T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs.
+defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]

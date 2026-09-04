@@ -22,6 +22,8 @@ inject = []
 guard = []
 memory = []
 graph = ["read"]
+# Opt-in only (P8c): the symbol index moves to LadybugDB. Never in `default` until Gate P8c says so.
+graph-lbug = ["graph", "dep:lbug"]
 toon = []
 lang-rust = ["dep:tree-sitter-rust"]
 lang-ts = ["dep:tree-sitter-typescript"]
@@ -51,6 +53,7 @@ clap = { version = "4.5", features = ["derive", "wrap_help"] }
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
 libsqlite3-sys = { version = "0.30", features = ["bundled"] } # FTS5 in the SQLite bundle
+lbug = { version = "0.20", optional = true } # LadybugDB, the P8c graph backend (D18); off unless `graph-lbug`
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10" # call_io archive checksums (T13.3)

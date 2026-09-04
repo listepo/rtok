@@ -1,4 +1,5 @@
 [tools]
+cmake = "3.31.12" # lbug builds liblbug from its bundled C++ (T8.11); 3.x, since 4.x rejects third_party minimums
 git-cliff = "2.13.1"
 go = "1.27.0" # hugo resolves the hextra theme as a Go module (site/go.mod)
 hugo = "0.165.0"

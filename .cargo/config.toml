@@ -1,0 +1,7 @@
+# T8.11 (P8c). `lbug`'s build.rs prefers a prebuilt liblbug: with nothing set it asks the
+# GitHub API for the *latest* release and downloads that tarball with no checksum, and if its
+# bundled downloader is ever missing it fetches the downloader itself from `refs/heads/main`.
+# Gate P8c (5) forbids an unpinned fetch, so force the source build of the crate's own
+# `lbug-src` — no network, and the C++ is the version crates.io shipped. cmake is in mise.toml.
+[env]
+LBUG_BUILD_FROM_SOURCE = "1"

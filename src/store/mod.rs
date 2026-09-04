@@ -3,7 +3,11 @@
 pub mod models;
 pub mod otel;
 pub mod schema;
+// T8.11 (P8c): one `impl Store` per backend, selected here and nowhere else.
+#[cfg(not(feature = "graph-lbug"))]
 mod symbols;
+#[cfg(feature = "graph-lbug")]
+mod symbols_lbug;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -35,6 +39,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
+    #[cfg(feature = "graph-lbug")]
+    graph: symbols_lbug::Graph,
 }
 
 impl Store {
@@ -47,18 +53,23 @@ impl Store {
         let mut conn =
             SqliteConnection::establish(url).with_context(|| path.display().to_string())?;
         conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
-        Self::init(conn)
+        Self::init(conn, path.parent())
     }
 
     /// Fresh in-memory store for tests and examples.
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(SqliteConnection::establish(":memory:")?)
+        Self::init(SqliteConnection::establish(":memory:")?, None)
     }
 
-    fn init(mut conn: SqliteConnection) -> Result<Self> {
+    /// `dir` is where a second store may live beside `rtok.db`; `None` means in-memory (T8.11).
+    fn init(mut conn: SqliteConnection, dir: Option<&Path>) -> Result<Self> {
         conn.batch_execute("PRAGMA foreign_keys = ON;")?;
+        #[cfg(not(feature = "graph-lbug"))]
+        let _ = dir;
         let store = Self {
             conn: Mutex::new(conn),
+            #[cfg(feature = "graph-lbug")]
+            graph: symbols_lbug::Graph::open(dir)?,
         };
         store.migrate()?;
         Ok(store)
