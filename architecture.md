@@ -73,6 +73,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/proxy/` | axum passthrough + `compress` mode via `Plugin::proxy_filter()` | T5.1 |
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | v0.2 |
+| `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |

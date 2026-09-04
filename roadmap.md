@@ -239,7 +239,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8c.** Contract byte-identical under `default` and `graph-lbug`; hook p95 ≤ 10 ms; warm calls < 100 ms; `impact(4)` on 10 000 edges ≥ 2× faster on `lbug` than the SQLite CTE; clean `just check` ≤ 2× and a reproducible build; sizes published. Loser deleted (D18).
 
-**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; next: T8.9.
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; T8.9 done 2026-09-04; next: T8.10.
 
 ---
 
@@ -322,6 +322,31 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 **Gate P15.** Overview numbers match `rtok stats --json`; `q` restores terminal.
 
+
+## OpenTelemetry (export surface — not a plugin)
+
+**Replaces.** Nothing installed exports: token-optimizer, rtk and headroom keep private ledgers. Field reference: OpenLLMetry / Langfuse SDKs (Python-side instrumentation, no hook shape).
+
+**Goal.** Every ledger row is a span, log or sum in any OTLP backend — Jaeger, Grafana, SigNoz, Maple — with nothing on the hook path (D19). Design: `src/otel/PLAN.md`.
+
+**Surfaces.** `rtok otel flush | status`; timers in `proxy` and `mcp`; `Stop` / `SessionEnd` spawn a detached flush.
+
+| # | Task | What |
+|---|------|------|
+| 1 | T16.1 | `[otel]` keys + `OTEL_EXPORTER_OTLP_*` fallback |
+| 2 | T16.2 | `otel_export` watermarks, row readers, `call_detail` |
+| 3 | T16.3 | OTLP/HTTP JSON encoder, derived ids |
+| 4 | T16.4 | ledger → GenAI semconv spans, events, log records |
+| 5 | T16.5 | `flush` + `rtok otel`, httpmock tests |
+| 6 | T16.6 | proxy / mcp timers, hook spawn |
+| 7 | T16.7 | cumulative sums: tokens, saved, calls |
+| 8 | T16.8 | `docs/otel.md` recipes, live check |
+
+**Gate P16.** Mock collector sees every row once and never twice; hook p95 ≤ 10 ms with an endpoint set; one real session is one trace in Jaeger with `invoke_agent` → `execute_tool` / `chat {model}` and token attributes, logs on the same trace; Grafana, SigNoz, Maple verified once; §2 unchanged.
+
+**Status.** Added 2026-09-04 (D19); next: T16.1.
+
+---
 
 ## Later (v0.2+)
 
