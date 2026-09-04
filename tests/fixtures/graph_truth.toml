@@ -79,13 +79,13 @@ refs = ["src/proxy/mod.rs"]
 [[symbol]]
 name = "mark_symbols_stale"
 kind = "fn"
-defs = ["src/store/mod.rs"]
+defs = ["src/store/symbols.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]
 name = "symbol_defs"
 kind = "fn"
-defs = ["src/store/mod.rs"]
+defs = ["src/store/symbols.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]

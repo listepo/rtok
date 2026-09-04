@@ -64,6 +64,17 @@ Status: done 2026-09-04 — `docs/otel.md` written (keys, env fallback, flush tr
 Model: Claude Fable 5.1
 
 
+## P8c — `graph` on LadybugDB · in progress (D18)
+
+Goal: the same four tools, byte-identical, on an embedded graph store — kept only if it wins on numbers. Plan: `plan.md` P8c, survey `src/plugins/graph/PLAN.md` v0.3. T8.9 (the contract these tasks are judged against) is recorded under P8b below, where it was written.
+
+**T8.10 symbol store seam** · T8.9 · `src/store/mod.rs`, `src/store/symbols.rs`
+Do: move the eleven `symbol_*` methods (`symbol_count` … `symbol_ref_count`, `mark_symbols_stale`) verbatim from `src/store/mod.rs` into `src/store/symbols.rs` as a second `impl Store` block; `mod.rs` gains `mod symbols;`. No trait and no signature change: T8.11's backend is a sibling file selected by `cfg`, and one `impl Store` per file is the whole seam.
+Check: `just check` green; `tests/graph_contract.rs` untouched; `git diff --stat` shows `src/store/mod.rs` only shrank and nothing outside `src/store/` changed.
+Status: done 2026-09-04 · Check: `just check` green (12 `test result: ok`, 183 tests, exit 0); `tests/graph_contract.rs` untouched; `src/store/mod.rs` only shrank (−193 lines, +2: `mod symbols;` and the one-line `use schema::{…}` rustfmt collapsed after `symbols` left it). Deviation on the third clause: one file outside `src/store/` changed. `tests/fixtures/graph_truth.toml` labels `mark_symbols_stale` and `symbol_defs` with the file they are defined in, so the move made the labels wrong and `labelled_symbols_are_found` failed on definition precision 0.933 (28/30). Both `defs` entries were repointed to `src/store/symbols.rs` — the labels now state the truth, and precision is back to 1.000. The eleven methods moved byte-for-byte; the only edits are the module header (`use` lines and `impl Store {`) and the closing brace.
+Model: Opus 5
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.
