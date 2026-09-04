@@ -1,6 +1,6 @@
 [package]
 name = "rtok"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 repository = "https://github.com/listepo/rtok" # cargo-dist hosting + Homebrew tap (T10.4)
 homepage = "https://listepo.github.io/rtok/" # dist asks for it when building the Homebrew formula

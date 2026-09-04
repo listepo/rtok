@@ -174,6 +174,24 @@ Gate P17: release and debug `rtok` bytes, `liblbug.a` bytes and the `lbug` build
 
 T17.1 is done (`done.md`). Of the gate, only the p95 clause is unsettled: `PostToolUse` measures 10.07 ms stripped against 9.83 ms unstripped on the same machine, i.e. on the bar rather than under it, and the interleaved A/B places that drift outside this change. It is the p95 that P8/P16 own; re-measure it there on a quiet machine before calling P17 passed.
 
+### P18 — release (goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed) — added 2026-09-04
+
+T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and `dist-workspace.toml` has never met a runner. The runner half is not the problem — dist 0.32 already plans `macos-14` for `aarch64-apple-darwin` and `macos-15-intel` for `x86_64-apple-darwin`, both current images. What is missing is the entry point (nothing creates a tag), the numbering (versions are hand-edited), and the install path a macOS user would actually use (README only documents `cargo install --path .`). Versions restart at 0.0.1 and every release is the next patch. Codesigning and notarisation are out of scope: they need Apple Developer credentials this repo does not have, so downloads are Gatekeeper-quarantined via a browser and clean via the installer.
+
+Gate P18: the Release workflow, started from the Actions tab with no argument, produces a GitHub Release whose tag is one patch above the last; its `aarch64-apple-darwin` and `x86_64-apple-darwin` archives download, extract and run `rtok --version` on macOS, printing that tag; the README install line puts `rtok` on `PATH` under both bash and zsh; running the workflow a second time yields the next patch with nothing hand-edited; `just check` green.
+
+**T18.2 the next patch, computed** · T18.1 · `.github/workflows/bump.yml`, `justfile`
+Do: one `workflow_dispatch` entry point that reads the version in `Cargo.toml`, raises the patch (level selectable, `patch` by default), regenerates `CHANGELOG.md` with git-cliff, commits `release: v<next>` with `Cargo.lock` updated, and starts the release for that version. `just release` does the same locally for anyone without Actions access. Neither path takes a version as an argument.
+Check: on a scratch branch, the bump step run locally takes 0.0.1 → 0.0.2 in `Cargo.toml` and `Cargo.lock`, writes the changelog and makes one commit; `dist plan` at that commit announces `v0.0.2`; a second run gives 0.0.3; `just check` green.
+Status: open
+Model: -
+
+**T18.3 install in one line** · T18.1 · `README.md`
+Do: the README Install section leads with the shell installer for macOS and Linux and the Homebrew tap, with the source build kept below for contributors. State plainly that the binary is unsigned.
+Check: `just readme-check` green; the installer line, pasted into a clean bash and a clean zsh on macOS, exits 0, puts `rtok` on `PATH` and prints the released version.
+Status: open
+Model: -
+
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
 
 Gate P9 (review + your decision): adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only.
@@ -379,6 +397,7 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-02 | `ideas.md`: parking lot for propositions inspired by alternative tools (`research.md` §4–§5) that are not tasks yet. Promote only with a Check in this file. | User request: store improvement/missing-feature ideas relevant to other tools. |
 | 2026-09-02 | `roadmap.md`: one build plan per internal plugin, derived from this file. T2.6 `guard` and T11.7 `toon` added so every catalogue plugin has a numbered task and Check. | User request: roadmap based on the plan, a plan for each internal plugin. |
 | 2026-09-02 | D9 + `AGENTS.md` Models: high-perf for research/investigate (user must confirm); mid-tier for coding; low-cost when the task fits. | User request: model routing by job class. |
+| 2026-09-04 | Phase P18 (T18.1–T18.3): release. Versions restart at 0.0.1 and each release is the next patch, computed by the workflow; the release is startable from the Actions tab; README installs a released binary in one line. | User request: update the macOS release action, bump the patch after each release starting from 0.0.1, use a tool to create the release, and refresh the bash/zsh self-install script. T10.4 shipped the config but no release was ever cut. |
 | 2026-09-04 | Phase P17 (T17.1): build size. Dev profile drops full DWARF, `lbug`'s C++ builds optimised even in dev, release strips symbols. | User request after D18 put a 2 GB debug C++ library and 8.7 GB of dev artifacts in the tree on a volume already 98 % full. |
 | 2026-09-02 | D9 rewritten: drop Haiku/Sonnet/Opus. Tasks no longer name a model; implementer is a small/cheap model from any provider; gates are a mid-tier review; only a frontier model edits this plan. `AGENTS.md` matches. | User request: do not lock agents to Claude models. |
 | 2026-09-02 | CLI + config crates: decision D14. clap 4 (derive, wrap_help) stays the CLI; figment replaces hand-rolled layering and the direct `toml` dep; toml_edit is the `config set` writer. T12.2/T12.3/Gate P12 name the crates. | User request: use the best Rust tools for CLIs and configs. |

@@ -17,3 +17,8 @@ publish-jobs = ["homebrew"]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
+# T18.1: start a release from the Actions tab. dist creates the tag itself, so `bump.yml` only has
+# to land the version commit; a tag push still triggers the workflow for anyone releasing by hand.
+dispatch-releases = true
+# T18.1: ship `rtok-update` beside `rtok` so an installed binary can update itself.
+install-updater = true
