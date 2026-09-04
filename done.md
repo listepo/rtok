@@ -22,6 +22,13 @@ Status: done 2026-09-04 — `store::otel` tests: fresh mark 0, upsert, `calls_af
 Model: Claude Fable 5.1
 
 
+**T16.3 OTLP/HTTP JSON encoder** · — · `src/lib.rs`, `src/otel/mod.rs`, `src/otel/otlp.rs`
+Do: pure types `Resource`, `Span { trace_id, span_id, parent, name, kind, start_ns, end_ns, attrs, events, status }`, `LogRecord`, `Sum`, and `traces(&Resource, &[Span])`, `logs(..)`, `metrics(..)` → `serde_json::Value` in the OTLP 1.x JSON encoding: ids lowercase hex (32 / 16 chars), every int64 a decimal string, `kind` / `severityNumber` / `aggregationTemporality` integers, attributes `{key, value: {stringValue | intValue | boolValue | doubleValue}}`, one `scope { name: "rtok", version }`; `trace_id(session) = sha256("rtok:session:" + id)[..16]`, `span_id(kind, id) = sha256("rtok:" + kind + ":" + id)[..8]`. No I/O.
+Check: unit tests pin the shape against the spec example: `resourceSpans[0].scopeSpans[0].spans[0].traceId` is 32 hex chars, `spanId` 16, `startTimeUnixNano` a string, `kind` 1 for INTERNAL and 3 for CLIENT; same for `resourceLogs` and `resourceMetrics`; ids stable across calls, different between sessions.
+Status: done 2026-09-04 — `otel::otlp` tests green: traceId 32 hex / spanId 16 hex, `startTimeUnixNano` a string, kind 1 vs 3, parentSpanId absent on a root, status code 2 with message; logs `severityNumber` + optional traceId; metrics `aggregationTemporality` 2, `isMonotonic` true, `asInt` a string; ids stable per session and distinct per kind.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.
