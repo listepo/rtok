@@ -63,6 +63,14 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
             }
             HookOutput::default()
         }
+        "SessionEnd" => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let _ = cx.store.end_session(&cx.session, now);
+            HookOutput::default()
+        }
         _ => HookOutput::default(),
     };
     let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
@@ -73,6 +81,9 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
         let _ = cx
             .store
             .insert_call_io(id, Some(stdin), Some(&bytes), cap, None);
+    }
+    if matches!(input.hook_event_name.as_str(), "Stop" | "SessionEnd") {
+        crate::otel::export::spawn_child(cx);
     }
     bytes
 }

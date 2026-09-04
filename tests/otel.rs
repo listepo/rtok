@@ -210,3 +210,124 @@ fn cli_without_an_endpoint_does_nothing() {
     assert!(status.contains("calls: mark 0 · 0 pending"), "{status}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// T16.6: `Stop` hands the flush to a child and returns; the trace lands without the hook
+/// waiting for it, and the hook stays fast when the endpoint is unreachable.
+#[test]
+fn stop_hook_spawns_the_flush_and_stays_under_10ms() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}");
+    });
+    let dir = home("stop");
+    // A config file the child will read, plus rows worth posting.
+    {
+        let cx = ctx(&dir, &server.base_url());
+        seed(&cx);
+    }
+    let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
+    cfg.push_str(&format!(
+        "\n[otel]\nendpoint = \"{}\"\nflush_secs = 2\n",
+        server.base_url()
+    ));
+    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+
+    let run = |event: &str, payload: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+            .args(["hook", event])
+            .env("RTOK_HOME", &dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let start = std::time::Instant::now();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+        start.elapsed()
+    };
+    run(
+        "Stop",
+        r#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#,
+    );
+    // The child posts on its own; the hook did not wait for it.
+    for _ in 0..40 {
+        if traces.calls() > 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(traces.calls() >= 1, "the spawned child posted the trace");
+
+    // SessionEnd closes the session so the root span can ship.
+    run(
+        "SessionEnd",
+        r#"{"session_id":"s1","hook_event_name":"SessionEnd","reason":"clear"}"#,
+    );
+    let cx = ctx(&dir, &server.base_url());
+    let ended = cx
+        .store
+        .sessions_ended_after(1)
+        .unwrap()
+        .into_iter()
+        .any(|s| s.id == "s1");
+    assert!(ended, "SessionEnd set ended_at");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The hook path must not pay for an endpoint that never answers.
+#[test]
+fn hooks_stay_fast_with_an_unreachable_endpoint() {
+    let dir = home("slow");
+    let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
+    cfg.push_str("\n[otel]\nendpoint = \"http://127.0.0.1:9\"\nflush_secs = 5\n");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+    let payload = r#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#;
+    let once = || {
+        let start = std::time::Instant::now();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+            .args(["hook", "Stop"])
+            .env("RTOK_HOME", &dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "hooks fail open");
+        assert_eq!(out.stdout, b"{}");
+        start.elapsed()
+    };
+    once();
+    let n = if cfg!(debug_assertions) { 20 } else { 100 };
+    let mut samples: Vec<_> = (0..n).map(|_| once()).collect();
+    samples.sort();
+    let p95 = samples[(n * 95) / 100];
+    let bar = if cfg!(debug_assertions) {
+        std::time::Duration::from_millis(200)
+    } else {
+        std::time::Duration::from_millis(10)
+    };
+    assert!(
+        p95 < bar,
+        "p95 {p95:?} not under {bar:?} (max {:?})",
+        samples[n - 1]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

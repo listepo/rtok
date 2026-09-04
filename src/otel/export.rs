@@ -3,12 +3,13 @@
 
 use std::fmt;
 use std::fmt::Write as _;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 
 use super::{map, otlp};
-use crate::config::Endpoint;
+use crate::config::{Config, Endpoint};
 use crate::plugin::Ctx;
 
 /// Rows per stream per flush; the rest goes next time.
@@ -191,4 +192,64 @@ pub fn status(cx: &Ctx) -> Result<String> {
         writeln!(out, "last: {} {} {}", l.level, l.name, l.message)?;
     }
     Ok(out)
+}
+
+// ── triggers (T16.6 wires them in; none of them runs on the hook path) ──────
+
+/// `proxy`: flush every `flush_secs` on the server's runtime. No-op without an endpoint.
+pub fn spawn_tick(cfg: &Config) {
+    if cfg.otel.resolve().is_none() {
+        return;
+    }
+    let cfg = cfg.clone();
+    tokio::spawn(async move {
+        let Ok(cx) = Ctx::open(cfg.clone(), "otel") else {
+            return;
+        };
+        let period = Duration::from_secs(u64::from(cfg.otel.flush_secs.max(1)));
+        let mut iv = tokio::time::interval(period);
+        iv.tick().await; // the first tick completes at once
+        loop {
+            iv.tick().await;
+            flush(&cx).await;
+        }
+    });
+}
+
+/// `mcp`: the same tick on a plain thread, since the stdio loop is synchronous.
+pub fn spawn_ticker(cfg: &Config) {
+    if cfg.otel.resolve().is_none() {
+        return;
+    }
+    let cfg = cfg.clone();
+    std::thread::spawn(move || {
+        let Ok(cx) = Ctx::open(cfg.clone(), "otel") else {
+            return;
+        };
+        let period = Duration::from_secs(u64::from(cfg.otel.flush_secs.max(1)));
+        loop {
+            std::thread::sleep(period);
+            flush_blocking(&cx);
+        }
+    });
+}
+
+/// Hooks (`Stop`, `SessionEnd`): hand the flush to a detached `rtok otel flush` and return
+/// in about a millisecond. The child inherits the environment; `RTOK_HOME` names the config.
+pub fn spawn_child(cx: &Ctx) {
+    if cx.config.otel.resolve().is_none() {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut cmd = Command::new(exe);
+    cmd.args(["otel", "flush"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if !cx.config.home.as_os_str().is_empty() {
+        cmd.env("RTOK_HOME", &cx.config.home);
+    }
+    let _ = cmd.spawn();
 }

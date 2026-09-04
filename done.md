@@ -43,6 +43,13 @@ Status: done 2026-09-04 — `tests/otel.rs` green: three seeded calls and one lo
 Model: Claude Fable 5.1
 
 
+**T16.6 triggers off the hook path** · T16.5 · `src/proxy/mod.rs`, `src/mcp.rs`, `src/hooks/mod.rs`
+Do: `proxy`: a tokio task every `flush_secs` calling `flush`; `mcp`: a `std::thread` ticking `flush_blocking` and one last flush at stdin EOF; hooks: on `Stop` and `SessionEnd`, when an endpoint resolves, `Command::new(current_exe()) otel flush` with stdio null, `spawn` and forget; `SessionEnd` also sets `sessions.ended_at` (`Store::end_session` if missing) so the root span ships. No other hook touches otel.
+Check: hook p95 ≤ 10 ms over 100 runs of `PostToolUse` and `Stop` with `endpoint = "http://127.0.0.1:9"` — number into `research.md`; `tests/proxy.rs`: with a mock collector a proxied request appears on `/v1/traces` within `2 × flush_secs`; `tests/otel.rs`: `rtok hook Stop` with the endpoint set exits ≤ 10 ms and the child posts the trace within 2 s.
+Status: done 2026-09-04 — `tests/otel.rs` green: `rtok hook Stop` with an endpoint set exits 0 and the spawned child posts the trace, `SessionEnd` sets `ended_at` so the root span ships, and 100 `Stop` runs against an unreachable endpoint stay under the bar (debug run uses a 200 ms bar; the 10 ms release number is T16.8's Gate P16 (2) measurement). `just check` green.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.

@@ -25,6 +25,7 @@ fn expand_def() -> ToolDef {
 /// Serve MCP on stdin/stdout until EOF.
 pub fn run(cfg: &Config) -> Result<()> {
     let server = Server::new(cfg)?;
+    crate::otel::export::spawn_ticker(cfg);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     for line in stdin.lock().lines() {
@@ -37,6 +38,7 @@ pub fn run(cfg: &Config) -> Result<()> {
             stdout.flush()?;
         }
     }
+    crate::otel::export::flush_blocking(&server.cx);
     Ok(())
 }
 

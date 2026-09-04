@@ -126,6 +126,7 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 /// [`app`] directly instead.
 pub async fn serve(cfg: &Config) -> Result<()> {
     let state = Arc::new(ProxyState::new(cfg)?);
+    crate::otel::export::spawn_tick(cfg);
     let addr = format!("{}:{}", cfg.proxy.bind, cfg.proxy.port);
     let listener = TcpListener::bind(&addr)
         .await
