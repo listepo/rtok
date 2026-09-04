@@ -63,6 +63,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/config.rs` | `Config::load()`, defaults, `[plugins.<id>]`, `CATALOGUE` | T0.2 |
 | `src/config/layers.rs`, `validate.rs`, `config/default.toml` | figment providers (D14); `rtok config show/validate/set` (see `docs/config.md`) | P12 |
 | `src/store/` + `migrations/` | Diesel models; `Store::open`; `insert_call`/`tokens`/`log`; `insert_measurement` | T0.3, P13 |
+| `src/store/symbols.rs` / `symbols_lbug.rs` | The `graph` symbol index, one `impl Store` per backend; `cfg` picks SQLite or LadybugDB (`graph-lbug`) | T8.10, T8.11, T8.12 |
 | `src/plugin.rs` | the contract (§4) | T0.4 |
 | `src/plugins/mod.rs` | feature-gated module list, `all()`, `Registry` | T0.4 |
 | `src/plugins/<id>/` | one plugin: `mod.rs` + `README.md` (what/why) + `AGENTS.md` (how to work on it) | per plugin |

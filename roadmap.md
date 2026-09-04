@@ -239,7 +239,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8c.** Contract byte-identical under `default` and `graph-lbug`; hook p95 ≤ 10 ms; warm calls < 100 ms; `impact(4)` on 10 000 edges ≥ 2× faster on `lbug` than the SQLite CTE; clean `just check` ≤ 2× and a reproducible build; sizes published. Loser deleted (D18).
 
-**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; T8.9 done 2026-09-04; next: T8.10.
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; T8.9, T8.10, T8.11 and T8.12 done 2026-09-04, so the LadybugDB backend is complete and `tests/graph_contract.rs` is byte-identical under both builds; next: T8.13. The build is pinned to lbug's bundled source (`.cargo/config.toml`, cmake in `mise.toml`) because the crate's default path downloads an unchecksummed latest release — Gate P8c (5) evidence is in `done.md` under T8.11.
 
 ---
 
