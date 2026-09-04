@@ -79,7 +79,23 @@ tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
 [dev-dependencies]
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
 
+# T17.1. No profile may set `panic = "abort"`: `hooks::dispatch` fails open through five
+# `catch_unwind` sites, and aborting would break the rule that a hook exits 0 on error.
+[profile.dev]
+# Backtraces keep `file:line`; the full DWARF that dominated every artifact goes.
+debug = "line-tables-only"
+
+# lbug builds a C++ library through cmake, which reads OPT_LEVEL/DEBUG. Unoptimised with `-g`
+# it is a 2.0 GB `liblbug.a` kept once per feature set. Nothing here is ours to debug.
+[profile.dev.package.lbug]
+opt-level = 2
+debug = false
+
+[profile.release]
+strip = "symbols"
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
+codegen-units = 1 # the shipped binary is built once; trade build time for size

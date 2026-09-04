@@ -92,6 +92,79 @@ proven is that the bytes satisfy the OTLP/HTTP JSON spec as an independent imple
 reads it; what is not proven is that each of those four UIs renders them. `docs/otel.md`
 carries the four recipes to run when Docker is available.
 
+### Build size (T17.1, Gate P17, 2026-09-04)
+
+macOS arm64, this machine. Every "before" is a cold build of the same commit with the profile
+lines removed; every "after" a cold build with them in. Sizes are `stat -f%z` bytes.
+
+**Release, default features** (`[profile.release] strip = "symbols"`):
+
+| Artifact | Before | After | Δ |
+|---|---|---|---|
+| `target/release/rtok` | 22 374 576 B (21.34 MiB) | 19 157 712 B (18.27 MiB) | **−14.4 %** |
+
+Release build time is unchanged at 1m30s — stripping happens after linking.
+
+Latency, since Gate P17 asks for it: `rtok hook PostToolUse`, 100 spawn-to-exit runs after 10
+warmups, the two binaries interleaved run-for-run so they see the same machine.
+
+| Release binary | p50 | p95 | max |
+|---|---|---|---|
+| stripped (this profile) | 8.16 ms | 10.07 ms | 19.21 ms |
+| unstripped (same commit, `strip = "none"`) | 8.33 ms | 9.83 ms | 12.91 ms |
+
+Stripping does not cost latency — it is marginally faster at the median, and the p95 gap is inside
+the noise (four repeat rounds of the stripped binary gave p95 9.83, 10.07, 10.70, 10.83, 10.91 ms).
+What the table does not show is a comfortable margin: p95 sits *on* the 10 ms bar today, against
+8.89 ms recorded by the same harness at Gate P16 earlier the same day. The interleaved A/B places
+that drift outside the profile change — the unstripped binary drifted with it — so it is the
+machine or the grown `rtok.db`, and it is the p95 that P8/P16 own, not P17.
+
+**Dev, `--features graph-lbug`.** The whole debug footprint was one C++ library. `lbug` builds
+`liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev
+defaults that is `CMAKE_BUILD_TYPE=Debug`, `-O0 -g`. `[profile.dev.package.lbug] opt-level = 2,
+debug = false` flips it to Release, `-O3 -DNDEBUG`.
+
+| Artifact | Before | After | Δ |
+|---|---|---|---|
+| `liblbug.a` | 2 169 748 672 B (2.02 GiB) | 83 940 608 B (80.1 MiB) | **−96.1 %** (25.8×) |
+| `lbug` build directory | 4.3 GiB | 358 MiB | **−92 %** |
+| cold `cargo build --features graph-lbug` | 3m36s | 8m36s | +5m00s |
+
+Five minutes of `-O3` bought back 3.9 GiB, once per feature set. One `cargo clean -p lbug -p rtok`
+before the measurement freed **24.5 GiB across 34 028 files** on a volume that was 98 % full.
+
+**Dev, Rust debuginfo, default features.** Measured as an isolated A/B — three cold builds into
+three empty `CARGO_TARGET_DIR`s, `--config profile.dev.debug=…`, nothing else varied:
+
+| `debug` | `target/debug/rtok` | target dir | cold build |
+|---|---|---|---|
+| `true` (cargo default) | 62 500 520 B | 1 479 MiB | 1m50s |
+| `"line-tables-only"` (chosen) | 60 378 600 B | 1 211 MiB | 2m00s |
+| `false` | 54 364 592 B | 945 MiB | 1m13s |
+
+`line-tables-only` gives up 268 MiB of the 534 MiB that `debug = false` would, and keeps what the
+fail-open rule depends on. Checked, not assumed: a crate compiled with exactly that flag still
+returns `Err` from `catch_unwind`, and `RUST_BACKTRACE=1` still prints `panicked at src/lib.rs:1:14`
+with `at ./src/lib.rs:1:14`, `:2:14`, `:6:18`, `:5:42` on the frames. Only variable names and types
+are gone. **No profile may set `panic = "abort"`** — `hooks::dispatch` fails open through five
+`catch_unwind` sites, and an abort would exit non-zero.
+
+The first "before" for the dev binary was misleading: `target/debug/rtok` held 45 135 464 B from an
+older feature set, which made the new binary look 12 MB *larger*. Only the isolated A/B above is
+the real comparison. Any size measurement in a shared `CARGO_TARGET_DIR` is a stale artifact until
+proven otherwise.
+
+**Packaging `liblbug` differently does not help.** A `.framework` is a directory around the same
+Mach-O — same bytes, plus a plist. An `.xcframework` is strictly larger by construction: one slice
+per platform/arch, and it has no representation for the Linux x86_64 target `dist` ships (T10.4).
+A `.dylib` (`LBUG_SHARED=1`) is the only variant that removes bytes — static linking with
+`+whole-archive` copies lbug into `rtok` *and* into each of ~12 test binaries — but it costs the
+single static binary of D1, `lbug`'s `build.rs` emits no `-rpath` so those test binaries would not
+find it at runtime, and `LBUG_SHARED` is a build-time env var while `.cargo/config.toml [env]` is
+global, so "dylib in dev, static in release" is not expressible and toggling it forces a full C++
+rebuild (`rerun-if-env-changed`). At 80 MiB rather than 2.02 GiB the premise is gone anyway.
+
 ### `rtok stats --save-baseline before-rtok` (2026-09-03)
 
 Gate P1. Default `[stats] since = 30d` (not the 17-session slice above). File: `~/.rtok/measurements/before-rtok.json`. `--compare before-rtok` → all Δ0. Estimator: 4 chars/token. No rtok hooks in `settings.json` at save time. Proxy `usage` empty (`api` {}).
