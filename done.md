@@ -88,6 +88,13 @@ Deviation (files): five beyond the three planned, each forced by the above. `.ca
 Deviation (schema): `File` holds a file's freshness key once instead of repeating it on every symbol row as SQLite does, but a file that parses to no tags still writes one empty `Symbol` row, exactly as the SQLite path does — otherwise `symbol_count` would answer a different number under each backend and `index::run`'s "already indexed" test would flip. `symbol_defs`, `symbol_refs` and `symbol_ref_groups` are `unimplemented!("T8.12")` as the task specifies; they compile and lint, and no test reaches them because `just test` runs default features.
 Model: Opus 5
 
+**T8.12 `lbug` store: reads** · T8.11 · `src/store/symbols_lbug.rs`
+Do: `symbol_defs`, `symbol_refs`, `symbol_ref_groups`, `has_symbol_def`, `symbol_ref_count` in Cypher with the same tuple shapes and the same ordering (`path, line`; `path, scope`). This is the task after which the backend is complete.
+Check: `cargo test --features graph-lbug --test graph_contract` green with the file untouched; `cargo test --features graph-lbug --lib graph` green; `tests/graph_truth.rs` reports the same numbers under both builds (definitions 30/30, references 40/114).
+Status: done 2026-09-04 · Check: `cargo test --features graph-lbug --test graph_contract` — 3 passed, `tests/graph_contract.rs` untouched, so the four tools are byte-exact on LadybugDB. `cargo test --features graph-lbug --lib graph` — 14 passed. `tests/graph_truth.rs` under both builds: `72/146 sites, recall 0.493 · definitions 32/32 recall 1.000 precision 1.000 · references 40/114 recall 0.351` — identical, and the reference figure is the 40/114 the Check names. Definitions read 32/32 rather than the Check's 30/30 because T8.10 and T8.11 added the second labelled definition of `mark_symbols_stale` and `symbol_defs` (one file per backend), which is two more labelled sites, not a change in behaviour. `just check` green (12 `test result: ok`). `min(s.line)` may come back wider than the `INT32` it aggregates, so one helper narrows it; nothing else differs from the SQLite ordering.
+Model: Opus 5
+
+
 
 ## P14 — per-plugin design research · done 2026-09-02
 

@@ -98,6 +98,11 @@ fn int(v: Option<&Value>) -> i64 {
     }
 }
 
+/// Line numbers are `INT32` in both stores; an aggregate may still come back wider.
+fn small(v: Option<&Value>) -> i32 {
+    i32::try_from(int(v)).unwrap_or(0)
+}
+
 fn text(v: Option<&Value>) -> String {
     match v {
         Some(Value::String(t)) => t.clone(),
@@ -240,13 +245,36 @@ impl Store {
     }
 
     /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
-    pub fn symbol_defs(&self, _root: &str, _name: &str) -> Result<Vec<(String, String, i32, i32)>> {
-        unimplemented!("T8.12 writes the reads")
+    pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
+        let rows = self.graph.rows(
+            "MATCH (s:Symbol) WHERE s.root = $root AND s.name = $name AND s.is_def = 1
+             RETURN s.path, s.kind, s.line, s.end_line ORDER BY s.path, s.line",
+            vec![("root", s(root)), ("name", s(name))],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                (
+                    text(r.first()),
+                    text(r.get(1)),
+                    small(r.get(2)),
+                    small(r.get(3)),
+                )
+            })
+            .collect())
     }
 
     /// Reference sites of `name` as `(path, line)`, ordered by path then line (T8.2 `callers`).
-    pub fn symbol_refs(&self, _root: &str, _name: &str) -> Result<Vec<(String, i32)>> {
-        unimplemented!("T8.12 writes the reads")
+    pub fn symbol_refs(&self, root: &str, name: &str) -> Result<Vec<(String, i32)>> {
+        let rows = self.graph.rows(
+            "MATCH (s:Symbol) WHERE s.root = $root AND s.name = $name AND s.is_def = 0
+             RETURN s.path, s.line ORDER BY s.path, s.line",
+            vec![("root", s(root)), ("name", s(name))],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|r| (text(r.first()), small(r.get(1))))
+            .collect())
     }
 
     /// Reference sites of `name` collapsed to one row per calling definition (T8.5):
@@ -254,10 +282,25 @@ impl Store {
     /// call edge — the same rows ungrouped are `symbol_refs`.
     pub fn symbol_ref_groups(
         &self,
-        _root: &str,
-        _name: &str,
+        root: &str,
+        name: &str,
     ) -> Result<Vec<(String, String, i64, i32)>> {
-        unimplemented!("T8.12 writes the reads")
+        let rows = self.graph.rows(
+            "MATCH (s:Symbol) WHERE s.root = $root AND s.name = $name AND s.is_def = 0
+             RETURN s.path, s.scope, count(s), min(s.line) ORDER BY s.path, s.scope",
+            vec![("root", s(root)), ("name", s(name))],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                (
+                    text(r.first()),
+                    text(r.get(1)),
+                    int(r.get(2)),
+                    small(r.get(3)),
+                )
+            })
+            .collect())
     }
 
     pub fn has_symbol_def(&self, root: &str, name: &str) -> Result<bool> {
