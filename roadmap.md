@@ -226,12 +226,20 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | 6 | T8.5 | `end_line` + `scope`: a caller is the enclosing definition, not a line. |
 | 7 | T8.6 | `symbol` returns the definition body (`plugins.graph.body_lines`). |
 | 8 | T8.7 | `impact(name, depth)` over the scope edges; fourth and last tool. |
+| 9 | T8.9 | contract through `rtok mcp`: four tools byte-exact, two roots, edit, delete. |
+| 10 | T8.10 | `symbol_*` methods move to `src/store/symbols.rs`; one `impl Store` per file is the seam. |
+| 11 | T8.11 | `lbug` behind `graph-lbug`: open `graph.lbdb`, index writes in Cypher. |
+| 12 | T8.12 | `lbug` reads; contract green under the feature. |
+| 13 | T8.13 | `impact` as one query: SQLite `WITH RECURSIVE` vs `lbug` `*1..depth` path. |
+| 14 | T8.14 | P8c bench under both builds; numbers to `research.md`; gate decides, loser deleted. |
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
 **Gate P8b.** Graph surface ≤ 150 description tokens (measured 62, 4 tools); warm tool call < 100 ms on a 3 000-file repo (measured 0.053 s); T8.8 definition recall ≥ 0.9 (measured 1.0; reference recall 0.351, `plan.md` §6); fewer tool calls per multi-file task on the P9 set — the one clause still open.
 
-**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison.
+**Gate P8c.** Contract byte-identical under `default` and `graph-lbug`; hook p95 ≤ 10 ms; warm calls < 100 ms; `impact(4)` on 10 000 edges ≥ 2× faster on `lbug` than the SQLite CTE; clean `just check` ≤ 2× and a reproducible build; sizes published. Loser deleted (D18).
+
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; next: T8.9.
 
 ---
 

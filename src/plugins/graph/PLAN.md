@@ -109,3 +109,64 @@ what the index already holds.
 - Communities / hub nodes / wiki generation (code-review-graph, graphify) — unvalidated, and useless under a 2 K cap.
 - Per-repo databases (all four) — D8 is one SQLite file; a `root` column gives the same isolation.
 - Storing line text in the index — `callers` reads it from disk on demand; the file is the source of truth.
+
+## v0.3 backend survey — LadybugDB (2026-09-04, D18)
+
+The user asked for LadybugDB under the graph plugin. This is the D15 survey for that decision:
+what it is, what it costs, the one thing it can win, and the gate that decides.
+
+### What it is
+
+LadybugDB is the MIT community fork of Kùzu, an embedded property-graph database with Cypher.
+Kùzu Inc. archived `kuzudb/kuzu` on 2025-10-10 at 0.11.3 (Apple acquired the company); the fork
+was created 2025-10-07 under the `LadybugDB` org and is led by Arun Sharma. As of 2026-09-04:
+core 0.20.2 (released 2026-09-02, five releases in 40 days, 1.7 k stars, 88 open issues); Rust
+crate `lbug` 0.20.2 (2026-09-01), repo `LadybugDB/ladybug-rust`. Storage is one `.lbdb` file
+plus a WAL; one read-write `Database` per process; a `Connection` is not thread-safe; in-memory
+when the path is empty. Cypher has `-[:R*1..4]->` variable-length paths, `SHORTEST` and
+`ACYCLIC`. Not to be confused with Ladybug Tools (PyPI `ladybug`, daylighting) or the Ladybird
+browser.
+
+### Backend alternatives
+
+| Backend | Version | Date | Gets right | Gets wrong |
+|---------|---------|------|------------|------------|
+| LadybugDB `lbug` | 0.20.2 | 2026-09-04 | active fork; Cypher path patterns; single file + WAL; MIT | `build.rs` compiles ~212 K SLoC of C++ (cmake) or pulls a 78 MB prebuilt `liblbug.a` from a mutable branch with no checksum (ladybug-rust #27, closed "not planned"); docs.rs broken since 0.16.1; one RW process per DB; a second file beside `rtok.db` (D8); a run of fixed segfaults through 0.17–0.20 |
+| Kùzu `kuzu` | 0.11.3 | 2025-10-10 | the same engine with more history | archived; no fixes |
+| SQLite `WITH RECURSIVE` | bundled (Diesel) | 2026-09-04 | zero new dependency; one query for a depth-bounded walk; `Store` already owns it | per-hop joins on a name index, not adjacency lists; no path semantics the CTE does not spell out |
+| petgraph | 0.8.2 | 2025-06 | pure Rust; BFS and shortest path in memory | no persistence: rebuild 9 000 rows per process or serialise them yourself |
+| indradb | 5.0.0 | 2025-08-16 | pure-Rust API; pluggable stores | last commit 13 months ago; `sled` is "not production-ready", RocksDB is C++ again |
+| cozo | — | 2024-12-04 | Datalog with recursive rules | 21 months without a commit |
+
+### What a graph store can and cannot win here
+
+The index is 9 000 rows for 3 000 files; every v0.2 query is one indexed lookup, and a warm call
+is 23–26 ms, almost all of it the directory walk no store can remove. `symbol`, `callers` and
+`outline` cannot get faster by changing the store. `impact` can: the Rust BFS issues one
+`symbol_ref_groups` per frontier definition, so a fan-out-10 walk at depth 4 is 10 000 lookups,
+while a path pattern is one query. That is the single clause where LadybugDB can beat SQLite —
+and a `WITH RECURSIVE` can contest it with no dependency at all, so the gate measures both.
+
+### Mechanism (P8c)
+
+Same four tools, byte for byte: `tests/graph_contract.rs` (T8.9) pins them through `rtok mcp`,
+so the acceptance test never names a store. The seam is one file: the eleven `symbol_*` methods
+move to `src/store/symbols.rs` (T8.10) and `src/store/symbols_lbug.rs` is the `cfg`-selected
+sibling under feature `graph-lbug` (T8.11–T8.12). No trait — one `impl Store` per file. Cypher
+lives in `src/store/` only; the plugin calls the same methods (D13). Ledgers stay in `rtok.db`;
+`graph.lbdb` is a derived cache beside it (D8 as narrowed by D18). `impact` becomes one query on
+both sides (T8.13); T8.14 measures and Gate P8c decides.
+
+Bar for Gate P8c — clauses (1)–(6) in `plan.md` P8c: contract byte-identical under both builds;
+hook p95 ≤ 10 ms; warm calls < 100 ms; `impact(4)` on 10 000 edges ≥ 2× faster than the SQLite
+CTE; clean `just check` ≤ 2× and a reproducible build; sizes published.
+
+P8c is falsified by clause (4) lost or tied: then the graph store adds a C++ toolchain and a
+second file for nothing the CTE does not do, and its code is deleted.
+
+### Rejected in this round
+
+- Replacing `rtok.db` wholesale with LadybugDB — the ledgers are relational and Diesel-typed (D13); nothing in `calls`, `usage` or `measurements` is a graph.
+- A `SymbolIndex` trait with dynamic dispatch — one `impl Store` per `cfg`-selected file is the whole seam; a trait is an interface for a backend that has not earned its place.
+- Exposing Cypher as a fifth tool (I-14 stays rejected) — the surface is four tools and 62 description tokens; the store is not the model's business.
+- Linking the prebuilt `liblbug.a` by default — an unpinned download in `build.rs` is not a reproducible build: from source, or pinned with a checksum, or the gate fails.
