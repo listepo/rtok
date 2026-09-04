@@ -6,7 +6,25 @@ measured, and shortened payloads stay retrievable by id.
 
 ## Install
 
-Install the Rust version pinned by this repository, then build the binary:
+macOS on Apple silicon or Intel, and Linux x86-64. The script is POSIX `sh`, so it behaves the
+same whether your shell is bash or zsh; it puts `rtok` in `~/.cargo/bin`.
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh
+```
+
+Or with Homebrew:
+
+```bash
+brew install listepo/tap/rtok
+```
+
+Either way you also get `rtok-update`; run it to move to the newest release.
+
+The binaries are not codesigned or notarised. Downloading an archive through a browser will make
+macOS quarantine it; the installer above and Homebrew are not affected.
+
+Building from source works on any platform Rust supports:
 
 ```bash
 git clone https://github.com/listepo/rtok && cd rtok

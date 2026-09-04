@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -174,17 +174,11 @@ Gate P17: release and debug `rtok` bytes, `liblbug.a` bytes and the `lbug` build
 
 T17.1 is done (`done.md`). Of the gate, only the p95 clause is unsettled: `PostToolUse` measures 10.07 ms stripped against 9.83 ms unstripped on the same machine, i.e. on the bar rather than under it, and the interleaved A/B places that drift outside this change. It is the p95 that P8/P16 own; re-measure it there on a quiet machine before calling P17 passed.
 
-### P18 — release (goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed) — added 2026-09-04
+### P18 — release (goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed) — added 2026-09-04; tasks done, gate needs the first real release
 
 T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and `dist-workspace.toml` has never met a runner. The runner half is not the problem — dist 0.32 already plans `macos-14` for `aarch64-apple-darwin` and `macos-15-intel` for `x86_64-apple-darwin`, both current images. What is missing is the entry point (nothing creates a tag), the numbering (versions are hand-edited), and the install path a macOS user would actually use (README only documents `cargo install --path .`). Versions restart at 0.0.1 and every release is the next patch. Codesigning and notarisation are out of scope: they need Apple Developer credentials this repo does not have, so downloads are Gatekeeper-quarantined via a browser and clean via the installer.
 
 Gate P18: the Release workflow, started from the Actions tab with no argument, produces a GitHub Release whose tag is one patch above the last; its `aarch64-apple-darwin` and `x86_64-apple-darwin` archives download, extract and run `rtok --version` on macOS, printing that tag; the README install line puts `rtok` on `PATH` under both bash and zsh; running the workflow a second time yields the next patch with nothing hand-edited; `just check` green.
-
-**T18.3 install in one line** · T18.1 · `README.md`
-Do: the README Install section leads with the shell installer for macOS and Linux and the Homebrew tap, with the source build kept below for contributors. State plainly that the binary is unsigned.
-Check: `just readme-check` green; the installer line, pasted into a clean bash and a clean zsh on macOS, exits 0, puts `rtok` on `PATH` and prints the released version.
-Status: open
-Model: -
 
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
 
