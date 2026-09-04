@@ -147,7 +147,7 @@ fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
         #[cfg(feature = "read")]
         "tree" => tree_files(cx, args),
         #[cfg(feature = "graph")]
-        "symbol" | "callers" | "outline" => crate::plugins::graph::call(cx, name, args),
+        "symbol" | "callers" | "impact" | "outline" => crate::plugins::graph::call(cx, name, args),
         _ => format!("unknown tool: {name}"),
     }
 }
