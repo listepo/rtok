@@ -3,4 +3,5 @@
 
 pub mod export;
 pub mod map;
+pub mod metrics;
 pub mod otlp;

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 
-use super::{map, otlp};
+use super::{map, metrics, otlp};
 use crate::config::{Config, Endpoint};
 use crate::plugin::Ctx;
 
@@ -20,6 +20,7 @@ pub struct Report {
     pub enabled: bool,
     pub spans: usize,
     pub logs: usize,
+    pub points: usize,
     pub posted: usize,
     pub error: Option<String>,
 }
@@ -31,8 +32,8 @@ impl fmt::Display for Report {
         }
         write!(
             f,
-            "otel: {} spans · {} logs · {} posts",
-            self.spans, self.logs, self.posted
+            "otel: {} spans · {} logs · {} metric points · {} posts",
+            self.spans, self.logs, self.points, self.posted
         )?;
         if let Some(e) = &self.error {
             write!(f, "\notel: error: {e}")?;
@@ -124,6 +125,15 @@ async fn flush_into(cx: &Ctx, ep: &Endpoint, rep: &mut Report) -> Result<()> {
             store.otel_advance("logs", i64::from(r.id))?;
         }
     }
+
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let sums = metrics::sums(store, now_ns)?;
+    post(&client, ep, "/v1/metrics", &otlp::metrics(&res, &sums)).await?;
+    rep.points = sums.iter().map(|m| m.points.len()).sum();
+    rep.posted += 1;
     Ok(())
 }
 

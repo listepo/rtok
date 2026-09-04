@@ -130,20 +130,26 @@ fn every_row_posts_once_and_the_marks_advance() {
             .body_includes(r#""stringValue":"hello""#);
         then.status(200).body("{}");
     });
+    // Metrics are whole-table sums: posted on every flush, with no watermark (T16.7).
+    let sums = server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}");
+    });
     let dir = home("ok");
     let cx = ctx(&dir, &server.base_url());
     seed(&cx);
     let r = flush_blocking(&cx);
     assert_eq!(r.error, None, "{r}");
-    assert_eq!((r.enabled, r.spans, r.logs, r.posted), (true, 3, 1, 2));
+    assert_eq!((r.enabled, r.spans, r.logs, r.posted), (true, 3, 1, 3));
     traces.assert_calls(1);
     logs.assert_calls(1);
     assert_eq!(cx.store.otel_mark("calls").unwrap(), 3);
     assert_eq!(cx.store.otel_mark("logs").unwrap(), 1);
     let r = flush_blocking(&cx);
-    assert_eq!((r.spans, r.logs, r.posted), (0, 0, 0));
+    assert_eq!((r.spans, r.logs, r.posted), (0, 0, 1));
     traces.assert_calls(1);
     logs.assert_calls(1);
+    sums.assert_calls(2);
     // An ended session ships its root span; a second flush does not repeat it.
     cx.store.end_session("s1", 1_700_000_000).unwrap();
     let root = server.mock(|when, then| {
@@ -329,5 +335,44 @@ fn hooks_stay_fast_with_an_unreachable_endpoint() {
         "p95 {p95:?} not under {bar:?} (max {:?})",
         samples[n - 1]
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T16.7: the sums are whole-table aggregates — no watermark, repeated every flush.
+#[test]
+fn metrics_repeat_the_totals_every_flush() {
+    let server = MockServer::start();
+    let metrics = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/metrics")
+            .body_includes("rtok.tokens")
+            .body_includes("rtok.tokens.saved")
+            .body_includes("rtok.calls")
+            .body_includes(r#""isMonotonic":true"#)
+            .body_includes(r#""aggregationTemporality":2"#)
+            .body_includes(r#""asInt":"100""#)
+            .body_includes(r#""asInt":"2""#);
+        then.status(200).body("{}");
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}");
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}");
+    });
+    let dir = home("metrics");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    // 4 token types × 1 model, 1 saved row, 3 call rows.
+    assert_eq!(r.points, 8);
+    metrics.assert_calls(1);
+    // No watermark: a second flush posts the same totals again.
+    let r = flush_blocking(&cx);
+    assert_eq!((r.spans, r.logs, r.points), (0, 0, 8));
+    metrics.assert_calls(2);
     let _ = std::fs::remove_dir_all(&dir);
 }

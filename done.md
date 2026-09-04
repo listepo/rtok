@@ -50,6 +50,13 @@ Status: done 2026-09-04 — `tests/otel.rs` green: `rtok hook Stop` with an endp
 Model: Claude Fable 5.1
 
 
+**T16.7 metrics** · T16.5 · `src/otel/metrics.rs`, `src/otel/export.rs`, `tests/otel.rs`
+Do: each flush also POSTs `/v1/metrics` with cumulative monotonic sums computed from the ledgers (`aggregationTemporality = 2`, `startTimeUnixNano` = first row's `ts`): `rtok.tokens` `{gen_ai.token.type ∈ input | output | cache_read | cache_creation, gen_ai.request.model, gen_ai.provider.name}` from `usage`; `rtok.tokens.saved` `{rtok.plugin, rtok.kind}` = Σ(`est_before − est_after`) from `measurements`; `rtok.calls` `{rtok.surface, rtok.kind, rtok.ok}`. No watermark: whole-table sums are idempotent.
+Check: httpmock `/v1/metrics` body holds the three sums with `isMonotonic: true`, temporality 2 and values equal to `rtok stats --json` on the same DB; a second flush repeats the values with a later `timeUnixNano`.
+Status: done 2026-09-04 — `metrics_repeat_the_totals_every_flush` green: `/v1/metrics` carries the three sums with `isMonotonic: true`, temporality 2 and `asInt` strings matching the seeded ledger (input 100, saved 2); 8 data points, and a second flush repeats them with a later `timeUnixNano` while traces and logs post nothing. `just check` green.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.

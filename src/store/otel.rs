@@ -3,6 +3,8 @@
 
 use anyhow::Result;
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 
 use super::Store;
@@ -44,6 +46,53 @@ pub struct CallMeasurement {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
+}
+
+/// `usage` summed per model and wire (T16.7).
+#[derive(Debug, QueryableByName)]
+pub struct TokenTotal {
+    #[diesel(sql_type = Nullable<Text>)]
+    pub model: Option<String>,
+    #[diesel(sql_type = Text)]
+    pub api: String,
+    #[diesel(sql_type = BigInt)]
+    pub input: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_create: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_read: i64,
+    #[diesel(sql_type = BigInt)]
+    pub output: i64,
+}
+
+/// `measurements` saved tokens per plugin and kind (T16.7).
+#[derive(Debug, QueryableByName)]
+pub struct SavedTotal {
+    #[diesel(sql_type = Text)]
+    pub plugin: String,
+    #[diesel(sql_type = Text)]
+    pub kind: String,
+    #[diesel(sql_type = BigInt)]
+    pub saved: i64,
+}
+
+/// `calls` counted per surface, kind and outcome (T16.7).
+#[derive(Debug, QueryableByName)]
+pub struct CallTotal {
+    #[diesel(sql_type = Text)]
+    pub surface: String,
+    #[diesel(sql_type = Text)]
+    pub kind: String,
+    #[diesel(sql_type = Integer)]
+    pub ok: i32,
+    #[diesel(sql_type = BigInt)]
+    pub n: i64,
+}
+
+#[derive(QueryableByName)]
+struct Ts {
+    #[diesel(sql_type = BigInt)]
+    ts: i64,
 }
 
 fn clamp(id: i64) -> i32 {
@@ -88,6 +137,45 @@ impl Store {
             .select(LogRow::as_select())
             .first(&mut *conn)
             .optional()?)
+    }
+
+    pub fn otel_token_totals(&self) -> Result<Vec<TokenTotal>> {
+        let mut conn = self.lock()?;
+        Ok(sql_query(
+            "SELECT model, api,
+                    COALESCE(SUM(input),0) AS input,
+                    COALESCE(SUM(cache_create),0) AS cache_create,
+                    COALESCE(SUM(cache_read),0) AS cache_read,
+                    COALESCE(SUM(output),0) AS output
+             FROM usage GROUP BY model, api ORDER BY model, api",
+        )
+        .load(&mut *conn)?)
+    }
+
+    pub fn otel_saved_totals(&self) -> Result<Vec<SavedTotal>> {
+        let mut conn = self.lock()?;
+        Ok(sql_query(
+            "SELECT plugin, kind, COALESCE(SUM(est_before - est_after),0) AS saved
+             FROM measurements GROUP BY plugin, kind ORDER BY plugin, kind",
+        )
+        .load(&mut *conn)?)
+    }
+
+    pub fn otel_call_totals(&self) -> Result<Vec<CallTotal>> {
+        let mut conn = self.lock()?;
+        Ok(sql_query(
+            "SELECT surface, kind, ok, COUNT(*) AS n
+             FROM calls GROUP BY surface, kind, ok ORDER BY surface, kind, ok",
+        )
+        .load(&mut *conn)?)
+    }
+
+    /// Earliest `calls.ts`, the sums' start time; 0 on an empty ledger.
+    pub fn otel_first_ts(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        let rows: Vec<Ts> =
+            sql_query("SELECT COALESCE(MIN(ts),0) AS ts FROM calls").load(&mut *conn)?;
+        Ok(rows.first().map(|r| r.ts).unwrap_or(0))
     }
 
     /// Last value posted for `stream`; 0 before the first successful flush.
