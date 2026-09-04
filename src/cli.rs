@@ -164,6 +164,19 @@ enum Cmd {
         #[command(subcommand)]
         action: GraphCmd,
     },
+    /// OpenTelemetry export (`rtok otel flush | status`)
+    Otel {
+        #[command(subcommand)]
+        action: OtelCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtelCmd {
+    /// Post rows past the watermarks to the endpoint, once
+    Flush,
+    /// Endpoint, watermarks, pending rows, last exporter log line
+    Status,
 }
 
 #[cfg(feature = "memory")]
@@ -466,6 +479,14 @@ pub fn run() -> Result<()> {
                 "indexed {} files · {} rows · {} skipped · {} read",
                 r.indexed, r.inserted, r.skipped, r.read
             );
+        }
+        Cmd::Otel { action } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let cx = crate::plugin::Ctx::open(cfg, "otel")?;
+            match action {
+                OtelCmd::Flush => println!("{}", crate::otel::export::flush_blocking(&cx)),
+                OtelCmd::Status => print!("{}", crate::otel::export::status(&cx)?),
+            }
         }
         #[cfg(not(feature = "cmd"))]
         Cmd::Run { .. } => eprintln!("rtok run: not implemented"),

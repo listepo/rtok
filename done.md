@@ -36,6 +36,13 @@ Status: done 2026-09-04 — `otel::map` tests green: a PostToolUse row becomes `
 Model: Claude Fable 5.1
 
 
+**T16.5 exporter and `rtok otel`** · T16.4 · `src/otel/export.rs`, `src/cli.rs`, `tests/otel.rs`
+Do: `pub async fn flush(cx: &Ctx) -> Result<Report { spans, logs, posted, skipped, error }>`: at most 1 000 rows per stream after each mark, encoded and POSTed to `<endpoint>/v1/traces` and `/v1/logs` with `Content-Type: application/json` and the resolved headers, each mark advanced only after a 2xx, one `logs` row (`source = otel`) on any failure — never panics, never waits longer than `flush_secs`; `flush_blocking(cx)` runs it on a current-thread tokio runtime (no `reqwest/blocking`); `rtok otel flush` prints the report, `rtok otel status [--json]` prints the resolved endpoint, marks vs `max(id)` per stream and the last `otel` log line; both exit 0 with `otel: no endpoint` when off.
+Check: `tests/otel.rs` (httpmock): three `calls` rows with `call_io` and one `logs` row → one POST each to `/v1/traces` and `/v1/logs` whose bodies hold the expected span names and attributes; a second flush posts nothing; a 500 leaves both marks and writes the `logs` row; `rtok otel status --json` shows the marks; endpoint unset → exit 0, nothing posted.
+Status: done 2026-09-04 — `tests/otel.rs` green: three seeded calls and one log row post once to `/v1/traces` and `/v1/logs` with the expected span names and usage attributes, the marks advance to 3 and 1, a second flush posts nothing, an ended session ships one root span and only once; a 500 leaves both marks at 0, writes the `error/flush` log row and leaves 3 calls + 2 logs pending; `rtok otel flush` and `status` exit 0 with no endpoint. `just check` green.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.
