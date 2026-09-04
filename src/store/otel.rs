@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
 
 use super::Store;
 use super::models::{Call, CallIo, LogRow, Session, TokenRow};
@@ -49,7 +50,46 @@ fn clamp(id: i64) -> i32 {
     i32::try_from(id).unwrap_or(i32::MAX)
 }
 
+fn host_slug(conn: &mut SqliteConnection, id: i32) -> Result<Option<String>> {
+    Ok(hosts::table
+        .find(id)
+        .select(hosts::slug)
+        .first::<String>(conn)
+        .optional()?)
+}
+
 impl Store {
+    pub fn host_slug(&self, id: i32) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        host_slug(&mut conn, id)
+    }
+
+    /// Rows past the `calls` and `logs` marks — what the next flushes will post.
+    pub fn otel_pending(&self) -> Result<(i64, i64)> {
+        let (c, l) = (self.otel_mark("calls")?, self.otel_mark("logs")?);
+        let mut conn = self.lock()?;
+        let calls = calls::table
+            .filter(calls::id.gt(clamp(c)))
+            .count()
+            .get_result::<i64>(&mut *conn)?;
+        let logs = logs::table
+            .filter(logs::id.gt(clamp(l)))
+            .count()
+            .get_result::<i64>(&mut *conn)?;
+        Ok((calls, logs))
+    }
+
+    /// Newest `logs` row from `source`, e.g. the exporter's last failure.
+    pub fn last_log(&self, source: &str) -> Result<Option<LogRow>> {
+        let mut conn = self.lock()?;
+        Ok(logs::table
+            .filter(logs::source.eq(source))
+            .order(logs::id.desc())
+            .select(LogRow::as_select())
+            .first(&mut *conn)
+            .optional()?)
+    }
+
     /// Last value posted for `stream`; 0 before the first successful flush.
     pub fn otel_mark(&self, stream: &str) -> Result<i64> {
         let mut conn = self.lock()?;
@@ -150,11 +190,7 @@ impl Store {
             ))
             .load::<CallMeasurement>(&mut *conn)?;
         let host = match call.host_id {
-            Some(id) => hosts::table
-                .find(id)
-                .select(hosts::slug)
-                .first::<String>(&mut *conn)
-                .optional()?,
+            Some(id) => host_slug(&mut conn, id)?,
             None => None,
         };
         let provider = match call.provider_id {
