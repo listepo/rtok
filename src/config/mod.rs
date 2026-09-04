@@ -216,6 +216,55 @@ section! {
     Filter { cmd: String = String::new() }
 }
 
+section! {
+    /// `[otel]` — OpenTelemetry export (D19, P16). Off until `endpoint` resolves.
+    Otel {
+        endpoint: String = String::new(),
+        headers: String = String::new(),
+        service_name: String = s("rtok"),
+        content: bool = true,
+        content_bytes: u32 = 65536,
+        flush_secs: u32 = 5,
+    }
+}
+
+/// Where a flush posts: `[otel] endpoint`, else `OTEL_EXPORTER_OTLP_ENDPOINT`; same for headers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Endpoint {
+    /// Base URL without a trailing slash; `/v1/traces` etc. are appended.
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+}
+
+impl Otel {
+    /// `None` when neither the key nor the env var names an endpoint — export is off.
+    pub fn resolve(&self) -> Option<Endpoint> {
+        self.resolve_with(|k| std::env::var(k).ok())
+    }
+
+    pub fn resolve_with(&self, env: impl Fn(&str) -> Option<String>) -> Option<Endpoint> {
+        let pick = |key: &str, var: &str| -> String {
+            if key.trim().is_empty() {
+                env(var).unwrap_or_default()
+            } else {
+                key.to_string()
+            }
+        };
+        let url = pick(&self.endpoint, "OTEL_EXPORTER_OTLP_ENDPOINT");
+        let url = url.trim().trim_end_matches('/').to_string();
+        if url.is_empty() {
+            return None;
+        }
+        let headers = pick(&self.headers, "OTEL_EXPORTER_OTLP_HEADERS")
+            .split(',')
+            .filter_map(|kv| kv.split_once('='))
+            .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            .filter(|(k, _)| !k.is_empty())
+            .collect();
+        Some(Endpoint { url, headers })
+    }
+}
+
 // ── plugins ─────────────────────────────────────────────────────────────────
 
 section! {
@@ -346,6 +395,7 @@ pub struct Config {
     pub setup: Setup,
     pub expand: Expand,
     pub filter: Filter,
+    pub otel: Otel,
     pub plugins: Plugins,
     /// Directory the config was loaded from; not part of the file.
     #[serde(skip)]
@@ -509,6 +559,31 @@ mod tests {
     }
 
     /// The Check for T12.1: the reference file is the defaults, exactly.
+    #[test]
+    fn otel_is_off_until_an_endpoint_resolves() {
+        let o = Otel::default();
+        assert_eq!(o.resolve_with(|_| None), None);
+        let env = |k: &str| match k {
+            "OTEL_EXPORTER_OTLP_ENDPOINT" => Some("http://localhost:4318/".to_string()),
+            "OTEL_EXPORTER_OTLP_HEADERS" => Some("a=1, b=x=y".to_string()),
+            _ => None,
+        };
+        let e = o.resolve_with(env).unwrap();
+        assert_eq!(e.url, "http://localhost:4318");
+        assert_eq!(
+            e.headers,
+            vec![("a".into(), "1".into()), ("b".into(), "x=y".into())]
+        );
+        let o = Otel {
+            endpoint: "https://otel.example/".into(),
+            headers: "signoz-ingestion-key=k".into(),
+            ..Otel::default()
+        };
+        let e = o.resolve_with(env).unwrap();
+        assert_eq!(e.url, "https://otel.example");
+        assert_eq!(e.headers, vec![("signoz-ingestion-key".into(), "k".into())]);
+    }
+
     #[test]
     fn default_toml_is_the_defaults() {
         let parsed: Config = parse(DEFAULT_TOML).expect("default.toml parses");

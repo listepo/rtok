@@ -4,6 +4,17 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P16 — OpenTelemetry export · in progress (D19)
+
+Goal: every ledger row is a span, log or sum in Jaeger, Grafana, SigNoz and Maple, with nothing on the hook path. Plan: `plan.md` P16, design `src/otel/PLAN.md`.
+
+**T16.1 `[otel]` config** · — · `src/config/mod.rs`, `config/default.toml`, `docs/config.md`
+Do: `section! { Otel { endpoint: String = "", headers: String = "", service_name: String = "rtok", content: bool = true, content_bytes: u32 = 65536, flush_secs: u32 = 5 } }` and `Config.otel`; `Otel::resolve() -> Option<Endpoint { url, headers: Vec<(String, String)> }>`: empty `endpoint` → `OTEL_EXPORTER_OTLP_ENDPOINT`, empty `headers` → `OTEL_EXPORTER_OTLP_HEADERS` (`k=v,k2=v2`), `None` when both are empty, trailing `/` stripped. Same keys in `config/default.toml` and `docs/config.md` (D12).
+Check: `default_toml_is_the_defaults` and `config_coverage` green; unit tests: empty → `None`; env fallback; `a=1,b=2` → two pairs; `rtok config show` prints `[otel]`.
+Status: done 2026-09-04 — `default_toml_is_the_defaults`, `config_coverage` and `otel_is_off_until_an_endpoint_resolves` green; `[otel]` in `config/default.toml` and `docs/config.md`; `just check` green.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.

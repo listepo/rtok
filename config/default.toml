@@ -89,6 +89,14 @@ max_lines = 0                         # 0 = unlimited   (--lines a-b is per call
 [filter]                              # rtok filter --stdin (T10.2)
 cmd = ""                              # command family hint when the caller knows it (--cmd)
 
+[otel]                                # OpenTelemetry export (D19); off until endpoint resolves
+endpoint      = ""                    # OTLP/HTTP base URL, e.g. "http://localhost:4318"; "" = $OTEL_EXPORTER_OTLP_ENDPOINT
+headers       = ""                    # "k=v,k2=v2", e.g. "signoz-ingestion-key=…"; "" = $OTEL_EXPORTER_OTLP_HEADERS
+service_name  = "rtok"                # resource service.name
+content       = true                  # gen_ai.input/output.messages, tool arguments and results on spans
+content_bytes = 65536                 # per attribute; beyond it rtok.archive.id → `rtok expand <id>`
+flush_secs    = 5                     # proxy / mcp flush interval, and the POST timeout
+
 # ── plugins ─────────────────────────────────────────────────────────────────
 
 [plugins.measure]
