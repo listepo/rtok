@@ -15,6 +15,13 @@ Status: done 2026-09-04 — `default_toml_is_the_defaults`, `config_coverage` an
 Model: Claude Fable 5.1
 
 
+**T16.2 export watermark and row readers** · T16.1 · `migrations/0009.sql`, `src/store/schema.rs`, `src/store/otel.rs` (`mod.rs` gains `mod otel;`)
+Do: `otel_export(stream TEXT PRIMARY KEY, mark BIGINT NOT NULL DEFAULT 0)`; a second `impl Store` in `src/store/otel.rs`: `otel_mark(stream) -> i64`, `otel_advance(stream, mark)`, `calls_after(id, limit) -> Vec<Call>`, `logs_after(id, limit) -> Vec<LogRow>`, `sessions_ended_after(ts) -> Vec<Session>` (`>=`, ties resend, never lost), and `call_detail(call_id) -> CallDetail { io, usage, tokens, measurements, host, provider, model }` — the one read a span needs. Diesel only, no `sql_query` (P13).
+Check: store unit tests: fresh DB → mark 0; advance then read; `calls_after` returns ascending ids above the mark and honours the limit; `call_detail` joins what `insert_call_io` + `insert_usage` + `insert_measurement` wrote for the call and resolves the three slugs.
+Status: done 2026-09-04 — `store::otel` tests: fresh mark 0, upsert, `calls_after` ascending + limit, `sessions_ended_after` includes the tie, `call_detail` joins io/usage/tokens/measurements and resolves provider + model; `just check` green (a disk-full ENOSPC was cleared first: `cargo clean -p rtok` freed 24 GiB of stale artifacts).
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.

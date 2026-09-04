@@ -75,6 +75,14 @@ diesel::table! {
         cache_read -> BigInt,
         output -> BigInt,
         call_id -> Nullable<Integer>,
+        api -> Text,
+    }
+}
+
+diesel::table! {
+    otel_export (stream) {
+        stream -> Text,
+        mark -> BigInt,
     }
 }
 

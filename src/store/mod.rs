@@ -1,6 +1,7 @@
 //! One SQLite file (plan T0.3, T13.1, decision D8): WAL mode, FTS5, migrations keyed by filename.
 
 pub mod models;
+pub mod otel;
 pub mod schema;
 
 use std::collections::HashSet;
@@ -31,6 +32,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0006.sql", include_str!("../../migrations/0006.sql")),
     ("0007.sql", include_str!("../../migrations/0007.sql")),
     ("0008.sql", include_str!("../../migrations/0008.sql")),
+    ("0009.sql", include_str!("../../migrations/0009.sql")),
 ];
 
 pub struct Store {
