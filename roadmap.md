@@ -344,7 +344,7 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 **Gate P16.** Mock collector sees every row once and never twice; hook p95 ≤ 10 ms with an endpoint set; one real session is one trace in Jaeger with `invoke_agent` → `execute_tool` / `chat {model}` and token attributes, logs on the same trace; Grafana, SigNoz, Maple verified once; §2 unchanged.
 
-**Status.** Added 2026-09-04 (D19); next: T16.1.
+**Status.** Added 2026-09-04 (D19). T16.1–T16.8 done 2026-09-04, so the phase is implemented; Gate P16 passed on tests, latency and the dependency baseline, and stays open on one clause: no OTLP backend UI was exercised because Docker is blocked on this machine (`research.md` §2).
 
 ---
 

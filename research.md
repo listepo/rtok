@@ -64,6 +64,34 @@ Cost split with p_out = 5 × p_in (input-token equivalents):
 
 Reading: on standard models, context volume dominates → compress tool results and clear old ones. On Fable/Mythos, output tokens dominate → fewer lines written (ponytail-style), fewer turns, terse prose.
 
+### OpenTelemetry export (Gate P16, 2026-09-04)
+
+Release binary, macOS arm64, 100 runs per event, spawn-to-exit measured from Python.
+"Endpoint set" points at a local OTLP receiver that answers 200.
+
+| Hook event | No endpoint | Endpoint set | Delta | Bar |
+|---|---|---|---|---|
+| `PostToolUse` p95 | 8.89 ms | 9.70 ms | +0.81 ms | 10 ms |
+| `Stop` p95 | 8.36 ms | 8.97 ms | +0.61 ms | 10 ms |
+
+`Stop` is the event that spawns the detached `rtok otel flush`; 0.61 ms is what that spawn
+costs. `PostToolUse` never touches the exporter, so its delta is the extra `[otel]` section in
+the config plus noise.
+
+Payload, checked by an independent receiver that re-implements the OTLP JSON rules
+(`tools/otlp_validator.py`, not the Rust encoder): **0 problems** over one session's
+traffic — 205 spans, 3 metric streams, ids 32/16 lowercase hex, every int64 a decimal string,
+numeric `kind` / `severityNumber` / `aggregationTemporality`. Bodies: 93.8 KB for the first
+batch, 889 B per incremental flush, 1.4 KB per metrics post. Span names seen:
+`execute_tool Read`, `hook UserPromptSubmit`, `hook Stop`, `hook SessionEnd`,
+`invoke_agent agent` (the root, once `SessionEnd` sets `ended_at`).
+
+**Gate P16 clause (3) is open.** Jaeger, Grafana, SigNoz and Maple were not exercised: Docker
+is blocked by this machine's shell allowlist, so no collector image could be started. What is
+proven is that the bytes satisfy the OTLP/HTTP JSON spec as an independent implementation
+reads it; what is not proven is that each of those four UIs renders them. `docs/otel.md`
+carries the four recipes to run when Docker is available.
+
 ### `rtok stats --save-baseline before-rtok` (2026-09-03)
 
 Gate P1. Default `[stats] since = 30d` (not the 17-session slice above). File: `~/.rtok/measurements/before-rtok.json`. `--compare before-rtok` → all Δ0. Estimator: 4 chars/token. No rtok hooks in `settings.json` at save time. Proxy `usage` empty (`api` {}).

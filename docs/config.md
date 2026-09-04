@@ -219,6 +219,11 @@ enabled  = false
 min_rows = 5
 ```
 
+## OpenTelemetry
+
+`[otel]` turns on the exporter (`docs/otel.md`). Off until `endpoint` or
+`OTEL_EXPORTER_OTLP_ENDPOINT` names a collector; nothing runs on the hook path.
+
 ## Mapping table (flags → keys)
 
 | Subcommand | Flag | Key |

@@ -57,6 +57,13 @@ Status: done 2026-09-04 — `metrics_repeat_the_totals_every_flush` green: `/v1/
 Model: Claude Fable 5.1
 
 
+**T16.8 docs and live check** · T16.6, T16.7 · `docs/otel.md`, `README.md`, `research.md`
+Do: `docs/otel.md`: keys and env fallback, the span / attribute table from `src/otel/PLAN.md`, one copy-paste recipe each — Jaeger v2 (`docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:2`), Grafana (`docker run --rm -p 3000:3000 -p 4318:4318 grafana/otel-lgtm`), SigNoz (compose; cloud `headers = "signoz-ingestion-key=…"`), Maple (its OTLP URL and key header); README link. Run the Jaeger recipe once and the other three where reachable; trace id and what each UI showed, dated, into `research.md` §2 — Gate P16 (3).
+Check: each recipe pasted verbatim starts and receives the trace from `rtok otel flush`; `research.md` §2 has the P16 rows; `rtok doctor` unaffected.
+Status: done 2026-09-04 — `docs/otel.md` written (keys, env fallback, flush triggers, the span and attribute table, and copy-paste recipes for Jaeger v2, Grafana `otel-lgtm` and Cloud, SigNoz self-hosted and Cloud, Maple), linked from `README.md` and `docs/config.md`; `research.md` §2 carries the P16 measurements. The four Docker recipes were NOT run: `docker` is blocked by this machine's shell allowlist, so Gate P16 (3) stays open on the four UIs and is recorded that way in `plan.md` and `research.md`. What replaced it: an independent OTLP receiver validated one real session's bytes with 0 problems.
+Model: Claude Fable 5.1
+
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.

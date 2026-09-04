@@ -76,7 +76,9 @@ rtok stats --compare before-rtok
 | `toon` | proxy, MCP | optionally encodes tabular JSON; disabled by default |
 
 Plugin details and configuration live in [`docs/config.md`](docs/config.md),
-[`architecture.md`](architecture.md), and each `src/plugins/<id>/README.md`.
+[`architecture.md`](architecture.md), and each `src/plugins/<id>/README.md`. Every call rtok
+records can be exported as OpenTelemetry traces, logs and metrics to Jaeger, Grafana, SigNoz or
+Maple — see [`docs/otel.md`](docs/otel.md).
 
 ## Measured results
 
