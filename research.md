@@ -120,6 +120,19 @@ What the table does not show is a comfortable margin: p95 sits *on* the 10 ms ba
 that drift outside the profile change — the unstripped binary drifted with it — so it is the
 machine or the grown `rtok.db`, and it is the p95 that P8/P16 own, not P17.
 
+Re-measured 2026-09-05 with `cargo test --release --test latency -- --nocapture`, which now times
+`PostToolUse` beside `PreToolUse` (200 runs each, fresh `RTOK_HOME`, so the grown database is out
+of the picture). Three rounds at a 1-minute load average of 14 → 36 (other sessions compiling):
+
+| Event | p50 | p95 | max |
+|---|---|---|---|
+| `PostToolUse` | 8.51 / 7.93 / 7.58 ms | 13.58 / 11.06 / 11.98 ms | 39.9 / 19.4 / 16.5 ms |
+| `PreToolUse` | 7.45 / 8.09 / 7.73 ms | 10.29 / 11.65 / 12.28 ms | 22.3 / 21.0 / 17.0 ms |
+
+The median holds where T17.1 measured it and the empty-home `PreToolUse` test drifts by the same
+amount as `PostToolUse`, so the drift is the machine, not the database and not the profile. The
+clause is still unsettled: this was not a quiet machine, and the bar has to be re-run on one.
+
 **Dev, `--features graph-lbug`.** The whole debug footprint was one C++ library. `lbug` builds
 `liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev
 defaults that is `CMAKE_BUILD_TYPE=Debug`, `-O0 -g`. `[profile.dev.package.lbug] opt-level = 2,
