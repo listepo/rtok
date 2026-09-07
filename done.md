@@ -114,6 +114,14 @@ and `git_tag_enable = false` — the docs say tags are the record for unpublishe
 merged release PR is the test, and the failure mode is a second PR proposing the same version,
 not a wrong release. Deviation: four files plus the bookkeeping, one more than the rule —
 `docs/release.md` gained the paragraph that explains the second entry point.
+Follow-up, same day: the first push of this task fired the `release` job, not `release-pr` — the
+commit *body* contained the literal `release: vX.Y.Z`, and `contains(head_commit.message, …)` is
+not line-anchored — and `release.sh --no-bump` dispatched dist Release run 34150922080 for
+v0.0.1. Cancelled during build-local-artifacts; `git ls-remote --tags` and `gh release list`
+stayed empty, so nothing was published. Fix: a `gate` job runs
+`git log -1 --format=%B | grep -qxE 'release: v[0-9]+\.[0-9]+\.[0-9]+'` and both jobs branch on
+its output; checked locally against a squash message, a merge-commit message (both match) and
+the T18.5 commit (no match); `actionlint` clean.
 
 ## P17 — build size · tasks done 2026-09-05 (gate: p95 clause sits on the bar)
 

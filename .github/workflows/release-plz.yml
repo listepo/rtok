@@ -24,9 +24,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Is this push the merge of a release PR? Only a line that *is* the PR title counts — the
+  # squash title, or the title line GitHub adds to a merge commit — never a mention inside a
+  # sentence (the commit that added this workflow said "release: vX.Y.Z" in its body and
+  # dispatched a release; `contains()` is not line-anchored, `grep -x` is).
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      merged: ${{ steps.check.outputs.merged }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: check
+        run: |
+          if git log -1 --format=%B | grep -qxE 'release: v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "merged=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "merged=false" >>"$GITHUB_OUTPUT"
+          fi
+
   release-pr:
     # The merge of the release PR itself has nothing new to propose.
-    if: "!contains(github.event.head_commit.message, 'release: v')"
+    needs: gate
+    if: needs.gate.outputs.merged != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -41,8 +60,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
 
   release:
-    # Merge or squash: both carry the PR title "release: vX.Y.Z" in the commit message.
-    if: "contains(github.event.head_commit.message, 'release: v')"
+    # Merge or squash: both carry the PR title "release: vX.Y.Z" as its own line.
+    needs: gate
+    if: needs.gate.outputs.merged == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
