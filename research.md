@@ -86,11 +86,32 @@ batch, 889 B per incremental flush, 1.4 KB per metrics post. Span names seen:
 `execute_tool Read`, `hook UserPromptSubmit`, `hook Stop`, `hook SessionEnd`,
 `invoke_agent agent` (the root, once `SessionEnd` sets `ended_at`).
 
-**Gate P16 clause (3) is open.** Jaeger, Grafana, SigNoz and Maple were not exercised: Docker
-is blocked by this machine's shell allowlist, so no collector image could be started. What is
-proven is that the bytes satisfy the OTLP/HTTP JSON spec as an independent implementation
-reads it; what is not proven is that each of those four UIs renders them. `docs/otel.md`
-carries the four recipes to run when Docker is available.
+**Gate P16 clause (3), 2026-09-04: open.** Jaeger, Grafana, SigNoz and Maple were not
+exercised: Docker was blocked by this machine's shell allowlist. What was proven is that the
+bytes satisfy the OTLP/HTTP JSON spec as an independent implementation reads it.
+
+**Clause (3), 2026-09-07: two of four backends verified; two remain.** Docker allowed
+(`lean-ctx allow docker`), the two `docs/otel.md` recipes run against a copy of the live
+ledger (the `p17-bench` session: 780 hook calls, no `usage` or measurement rows), one
+`rtok otel flush` each, checked through the backends' own APIs rather than by eye:
+
+| Backend | Traces | Logs | Metrics | Flush report |
+|---|---|---|---|---|
+| Jaeger 2.11.0 (`jaegertracing/jaeger`) | 2 traces, 780 spans; `execute_tool` spans carry `gen_ai.tool.call.arguments` / `result` | 404 | 404 | `780 spans · 0 logs · 0 metric points · 1 posts · not served: logs, metrics` |
+| Grafana `otel-lgtm` (Tempo, Loki, Prometheus) | trace `ca4564baad2314a1f53c431f7a5dc802` in Tempo | accepted, 0 rows sent (the ledger had none pending) | `rtok_calls_total` in Prometheus; no `rtok_tokens_total` because the ledger has no `usage` rows | `780 spans · 0 logs · 2 metric points · 2 posts` |
+
+Two findings. Jaeger 2.x has no logs or metrics pipeline over OTLP/HTTP: `/v1/logs` and
+`/v1/metrics` answer 404. Before this run the exporter treated that as a failure, logged one
+`logs` row per flush, and re-sent that row on the next flush — pending grew by one per flush
+(every 5 s under `mcp` / `proxy`), unboundedly. A 404 is now "stream not served": skipped,
+watermark kept, nothing logged, named in the report (`tests/otel.rs`,
+`a_404_stream_is_skipped_not_logged`). Second, `rtok_tokens_total` needs `usage` rows, which
+only the proxy or an imported transcript write; hooks alone produce `rtok_calls_total`.
+
+Still open: the clause asks for one real Claude Code session (hooks + MCP + proxy) as one
+trace with an `invoke_agent` root and `chat {model}` spans — this ledger has no ended session
+and no proxy traffic, and rtok is not on this machine's PATH — and for SigNoz and Maple, which
+need an account or an API key.
 
 ### Build size (T17.1, Gate P17, 2026-09-04)
 

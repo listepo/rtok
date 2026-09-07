@@ -190,6 +190,8 @@ Gate P9 (review + your decision): adopt config B if cost per passed task is lowe
 
 Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for two days; every request has a `usage` row. Then compress for two days; keep only under the P5 gate rule (context-token-turns − 15 %, expand rate < 5 %). Record in research.md §2.
 
+**Status 2026-09-07: clause (3) half closed.** Docker allowed; Jaeger 2.11 and Grafana `otel-lgtm` each render the flushed ledger (780 `execute_tool` spans in both; `rtok_calls_total` in Prometheus), dated in `research.md` §2. The run found and fixed an exporter loop: Jaeger 2.x answers 404 to `/v1/logs` and `/v1/metrics`, and each failed flush logged a row the next flush re-sent, so pending grew by one per flush — a 404 is now "not served", skipped without a log row (`tests/otel.rs`, seven tests). Still open: one real hooks + MCP + proxy session as one trace (`invoke_agent` root, `chat {model}` spans; the ledger used has neither an ended session nor proxy traffic), and SigNoz and Maple (account / API key). The gate stays open on those.
+
 ### P12 — Config file (goal: every setting in one file, one precedence rule, no flag without a key) — added 2026-09-01 (D12)
 
 Gate P12 (review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults; merge is figment, CLI is clap, `config set` is toml_edit (D14). **Status: done 2026-09-03.** Check: `filter --cmd` is `Option<String>` (absent → `filter.cmd` from figment); mapping table lists only clap-defined flags plus env `RTOK_HOME`; D14 crates unchanged (`layers.rs` figment, `cli.rs` clap, `validate.rs` toml_edit).
