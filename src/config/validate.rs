@@ -15,23 +15,27 @@ use super::Config;
 /// Parse `path` and return human-readable errors (`file:line: …`). Empty = valid.
 pub fn issues(path: &Path) -> Result<Vec<String>> {
     let text = std::fs::read_to_string(path).with_context(|| path.display().to_string())?;
+    Ok(issues_in(path, &text))
+}
+
+/// [`issues`] over text already in hand (`set` checks before it writes).
+fn issues_in(path: &Path, text: &str) -> Vec<String> {
     let doc: DocumentMut = match text.parse() {
         Ok(d) => d,
-        Err(e) => {
-            return Ok(vec![format!("{}:{e}", path.display())]);
-        }
+        Err(e) => return vec![format!("{}:{e}", path.display())],
     };
     let schema = FigValue::serialize(Config::default())
         .expect("Config serializes")
         .into_dict()
         .expect("Config is a table");
     let mut errors = Vec::new();
-    check_table(path, &text, "", doc.as_table(), &schema, &mut errors);
-    Ok(errors)
+    check_table(path, text, "", doc.as_table(), &schema, &mut errors);
+    errors
 }
 
 /// Edit `<home>/config.toml` at `key` (dotted), preserving comments. Creates the
-/// reference file when it is missing.
+/// reference file when it is missing. Refuses a write that would fail [`issues`]
+/// (unknown plugin id, `enabled = "yes"`, …) so the file never stops loading.
 pub fn set(home: &Path, key: &str, raw: &str) -> Result<PathBuf> {
     if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
         bail!("empty key");
@@ -43,7 +47,12 @@ pub fn set(home: &Path, key: &str, raw: &str) -> Result<PathBuf> {
     let text = std::fs::read_to_string(&path)?;
     let mut doc: DocumentMut = text.parse().with_context(|| path.display().to_string())?;
     assign(&mut doc, key, parse_value(raw))?;
-    std::fs::write(&path, doc.to_string())?;
+    let text = doc.to_string();
+    let errs = issues_in(&path, &text);
+    if !errs.is_empty() {
+        bail!("{}", errs.join("\n"));
+    }
+    std::fs::write(&path, text)?;
     Ok(path)
 }
 
@@ -215,6 +224,45 @@ mod tests {
             "{errs:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugin_enabled_is_validated() {
+        let dir = tmp("plug");
+        let path = dir.join("bad.toml");
+        std::fs::write(
+            &path,
+            "[plugins.cmd]\nenabled = \"yes\"\n[plugins.nope]\nenabled = true\n",
+        )
+        .unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("plugins.cmd.enabled") && e.contains("bool")),
+            "{errs:?}"
+        );
+        assert!(
+            errs.iter().any(|e| e.contains("unknown key: plugins.nope")),
+            "{errs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_refuses_a_value_the_loader_would_reject() {
+        let home = tmp("setbad");
+        Config::init(&home, false).unwrap();
+        let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
+        assert!(set(&home, "plugins.nope.enabled", "true").is_err());
+        assert!(set(&home, "plugins.cmd.enabled", "yes").is_err());
+        assert_eq!(
+            std::fs::read_to_string(Config::path_for(&home)).unwrap(),
+            before
+        );
+        set(&home, "plugins.cmd.enabled", "false").unwrap();
+        let cfg = Config::load_from(&home).unwrap();
+        assert!(!cfg.plugin_enabled("cmd", true));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

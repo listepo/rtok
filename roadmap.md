@@ -232,6 +232,9 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | 12 | T8.12 | `lbug` reads; contract green under the feature. |
 | 13 | T8.13 | `impact` as one query: SQLite `WITH RECURSIVE` vs `lbug` `*1..depth` path. |
 | 14 | T8.14 | P8c bench under both builds; numbers to `research.md`; gate decides, loser deleted. |
+| 15 | T8.15 | `plugins.graph.auto_index` (default on: every call walks) and `plugins.graph.watch` (`off` \| `notify` \| `watchman`). |
+| 16 | T8.16 | watcher thread inside `rtok mcp` on `notify`: quiet period, then `index::run`; one writer per store under `graph-lbug`. |
+| 17 | T8.17 | `watchman_client` as a second event source behind `graph-watchman`; falls back to `notify`. |
 
 **Gate P8.** Description-token savings vs the four servers; index this repo in < 2 s.
 
@@ -239,7 +242,9 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8c.** Contract byte-identical under `default` and `graph-lbug`; hook p95 ≤ 10 ms; warm calls < 100 ms; `impact(4)` on 10 000 edges ≥ 2× faster on `lbug` than the SQLite CTE; clean `just check` ≤ 2× and a reproducible build; sizes published. Loser deleted (D18).
 
-**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; T8.9, T8.10, T8.11 and T8.12 done 2026-09-04, so the LadybugDB backend is complete and `tests/graph_contract.rs` is byte-identical under both builds; next: T8.13. The build is pinned to lbug's bundled source (`.cargo/config.toml`, cmake in `mise.toml`) because the crate's default path downloads an unchecksummed latest release — Gate P8c (5) evidence is in `done.md` under T8.11.
+**Gate P8d.** An edit is visible in `symbol` within 1 s with `auto_index = false` and the call reading 0 files; idle `rtok mcp` with the watcher on costs ≤ 50 ms CPU / 60 s and ≤ 2 MB RSS; `watchman` passes the same test and falls back to `notify` without one; hook p95 unchanged; binary bytes published. Watcher stays opt-in if idle cost is lost; `watchman_client` removed if it does not beat `notify`.
+
+**Status.** T8.1, T8.2, T14.9 done 2026-09-02; Gate P8 passed 2026-09-03. T8.3–T8.8 done 2026-09-04, so every P8b task is implemented; the gate itself waits on the P9 task-set comparison. P8c (LadybugDB backend, D18) added 2026-09-04; T8.9, T8.10, T8.11 and T8.12 done 2026-09-04, so the LadybugDB backend is complete and `tests/graph_contract.rs` is byte-identical under both builds; next: T8.13. P8d (freshness: `auto_index` knob, `notify` watcher in `rtok mcp`, optional `watchman`) added 2026-09-05, T8.15–T8.17 open; the parser stays tree-sitter-tags, richer queries remain I-31 / I-24. The build is pinned to lbug's bundled source (`.cargo/config.toml`, cmake in `mise.toml`) because the crate's default path downloads an unchecksummed latest release — Gate P8c (5) evidence is in `done.md` under T8.11.
 
 ---
 

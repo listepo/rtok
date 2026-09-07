@@ -11,6 +11,8 @@
   lose their rows; rows are scoped to the canonical root, so one store holds many repos.
 - Every response is capped at `plugins.graph.max_tokens` and carries an archive id when truncated.
 - Indexing never runs on the hook path; PostToolUse(Edit|Write) only marks a file stale.
+- One writer per store: a watcher (P8d) is a thread inside `rtok mcp`, never a second process —
+  `graph-lbug` allows one read-write `Database` per process.
 - Schema changes are a new `migrations/NNNN.sql`, never an edit to an applied one.
 - The plugin never writes SQL or Cypher (D13). Storage is `src/store/symbols.rs`, or
   `src/store/symbols_lbug.rs` under `graph-lbug`; both expose the same `symbol_*` methods.
@@ -19,4 +21,4 @@
 - A tool listed by `mcp_tools()` is routed in `src/mcp.rs` `invoke` — `tools/list` and
   `tools/call` must agree (T8.9 found `impact` listed and unreachable).
 
-**Checks**: `plan.md` T8.9–T8.14; earlier ones in `done.md`.
+**Checks**: `plan.md` T8.13–T8.17; earlier ones in `done.md`.
