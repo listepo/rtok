@@ -192,6 +192,35 @@ fn a_failure_keeps_the_marks_and_is_logged() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A backend with no logs or metrics pipeline (Jaeger) answers 404: the stream is skipped,
+/// its mark stays, nothing is logged — a logged error would be re-sent by every later flush —
+/// and the traces still ship.
+#[test]
+fn a_404_stream_is_skipped_not_logged() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}");
+    });
+    // No /v1/logs or /v1/metrics mock: httpmock answers 404.
+    let dir = home("nf");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    assert_eq!((r.spans, r.logs, r.points, r.posted), (3, 0, 0, 1));
+    assert_eq!(r.skipped, ["logs", "metrics"]);
+    assert!(r.to_string().ends_with("not served: logs, metrics"), "{r}");
+    traces.assert_calls(1);
+    assert_eq!(cx.store.otel_mark("calls").unwrap(), 3);
+    assert_eq!(cx.store.otel_mark("logs").unwrap(), 0);
+    assert!(cx.store.last_log("otel").unwrap().is_none(), "no error row");
+    flush_blocking(&cx);
+    let (calls, logs) = cx.store.otel_pending().unwrap();
+    assert_eq!((calls, logs), (0, 1), "pending logs do not grow per flush");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn cli_without_an_endpoint_does_nothing() {
     let dir = home("cli");

@@ -1,5 +1,8 @@
 //! T16.5 (D19): read past each watermark, encode, POST, advance on 2xx. Never panics: a
 //! failure is one `logs` row (`source = otel`), the marks stay, and the report says so.
+//! A 404 on `/v1/logs` or `/v1/metrics` is a backend without that pipeline (Jaeger): the
+//! stream is skipped, its mark stays, nothing is logged — else every flush would add the
+//! `logs` row that the next flush fails on.
 
 use std::fmt;
 use std::fmt::Write as _;
@@ -22,6 +25,8 @@ pub struct Report {
     pub logs: usize,
     pub points: usize,
     pub posted: usize,
+    /// Streams the backend answered 404 to (`logs`, `metrics`).
+    pub skipped: Vec<&'static str>,
     pub error: Option<String>,
 }
 
@@ -35,6 +40,9 @@ impl fmt::Display for Report {
             "otel: {} spans · {} logs · {} metric points · {} posts",
             self.spans, self.logs, self.points, self.posted
         )?;
+        if !self.skipped.is_empty() {
+            write!(f, " · not served: {}", self.skipped.join(", "))?;
+        }
         if let Some(e) = &self.error {
             write!(f, "\notel: error: {e}")?;
         }
@@ -98,7 +106,9 @@ async fn flush_into(cx: &Ctx, ep: &Endpoint, rep: &mut Report) -> Result<()> {
             let d = store.call_detail(c)?;
             spans.push(map::call_span(c, &d, &cx.config.otel));
         }
-        post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await?;
+        if !post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await? {
+            return Err(anyhow!("/v1/traces: HTTP 404 (not an OTLP/HTTP endpoint)"));
+        }
         rep.spans = spans.len();
         rep.posted += 1;
         if let Some(c) = calls.last() {
@@ -118,11 +128,14 @@ async fn flush_into(cx: &Ctx, ep: &Endpoint, rep: &mut Report) -> Result<()> {
     let rows = store.logs_after(lmark, BATCH)?;
     if !rows.is_empty() {
         let recs: Vec<_> = rows.iter().map(map::log_record).collect();
-        post(&client, ep, "/v1/logs", &otlp::logs(&res, &recs)).await?;
-        rep.logs = recs.len();
-        rep.posted += 1;
-        if let Some(r) = rows.last() {
-            store.otel_advance("logs", i64::from(r.id))?;
+        if post(&client, ep, "/v1/logs", &otlp::logs(&res, &recs)).await? {
+            rep.logs = recs.len();
+            rep.posted += 1;
+            if let Some(r) = rows.last() {
+                store.otel_advance("logs", i64::from(r.id))?;
+            }
+        } else {
+            rep.skipped.push("logs");
         }
     }
 
@@ -131,18 +144,22 @@ async fn flush_into(cx: &Ctx, ep: &Endpoint, rep: &mut Report) -> Result<()> {
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
     let sums = metrics::sums(store, now_ns)?;
-    post(&client, ep, "/v1/metrics", &otlp::metrics(&res, &sums)).await?;
-    rep.points = sums.iter().map(|m| m.points.len()).sum();
-    rep.posted += 1;
+    if post(&client, ep, "/v1/metrics", &otlp::metrics(&res, &sums)).await? {
+        rep.points = sums.iter().map(|m| m.points.len()).sum();
+        rep.posted += 1;
+    } else {
+        rep.skipped.push("metrics");
+    }
     Ok(())
 }
 
+/// `Ok(false)`: HTTP 404, the backend has no pipeline for this stream.
 async fn post(
     client: &reqwest::Client,
     ep: &Endpoint,
     path: &str,
     body: &serde_json::Value,
-) -> Result<()> {
+) -> Result<bool> {
     let mut req = client
         .post(format!("{}{path}", ep.url))
         .header("content-type", "application/json")
@@ -152,12 +169,15 @@ async fn post(
     }
     let resp = req.send().await.map_err(|e| anyhow!("{path}: {e}"))?;
     let status = resp.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
         let text: String = text.chars().take(200).collect();
         return Err(anyhow!("{path}: HTTP {status} {text}"));
     }
-    Ok(())
+    Ok(true)
 }
 
 /// `flush` on a current-thread runtime: the CLI, `mcp`'s thread and the hook-spawned child.

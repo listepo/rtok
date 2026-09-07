@@ -84,7 +84,9 @@ docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:2.11.0
 ```
 
 `endpoint = "http://localhost:4318"`, then open <http://localhost:16686> and pick the `rtok`
-service. Jaeger stores traces and logs; the metrics stream is accepted and ignored.
+service. Jaeger 2.x serves traces only: it answers 404 to `/v1/logs` and `/v1/metrics`, which
+`rtok otel flush` reports as `not served: logs, metrics` and skips. The `logs` watermark stays
+put, so `rtok otel status` keeps counting pending log rows — expected, not an error.
 
 ### Grafana
 
@@ -138,6 +140,10 @@ the messages without extra mapping.
 - Rows keep piling up — the watermark only advances on a 2xx. Check the collector's own log;
   a wrong path (`/v1/traces` is appended to the base URL) or a missing key is the usual cause.
 - Traces but no prompts — `content = false`, or the body was longer than `content_bytes`.
+- `not served: logs, metrics` — the backend has no pipeline for that stream (Jaeger); rtok
+  skips it without logging, since a logged error would itself be a pending log row.
+- `rtok_calls_total` but no `rtok_tokens_total` — the ledger has no `usage` rows; tokens come
+  from the proxy or an imported transcript, hooks alone only count calls.
 
 ## Checking the payload without a backend
 
