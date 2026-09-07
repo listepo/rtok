@@ -130,8 +130,38 @@ of the picture). Three rounds at a 1-minute load average of 14 → 36 (other ses
 | `PreToolUse` | 7.45 / 8.09 / 7.73 ms | 10.29 / 11.65 / 12.28 ms | 22.3 / 21.0 / 17.0 ms |
 
 The median holds where T17.1 measured it and the empty-home `PreToolUse` test drifts by the same
-amount as `PostToolUse`, so the drift is the machine, not the database and not the profile. The
-clause is still unsettled: this was not a quiet machine, and the bar has to be re-run on one.
+amount as `PostToolUse`, so the drift is the machine, not the database and not the profile.
+
+**Gate P17 p95 clause: passed 2026-09-07** on a quiet machine (1-minute load 2.9–3.4), same
+test, three rounds, release profile:
+
+| Event | p50 | p95 | max |
+|---|---|---|---|
+| `PostToolUse` | 5.63 / 5.60 / 5.64 ms | **8.17 / 7.24 / 7.86 ms** | 16.2 / 10.3 / 17.9 ms |
+| `PreToolUse` | 5.49 / 5.54 / 5.46 ms | **6.41 / 6.94 / 5.79 ms** | 8.6 / 13.4 / 6.7 ms |
+
+Where a hook's milliseconds go (spawn-to-exit p50, same harness, same quiet machine; the
+in-process figures are `Instant` around the call):
+
+| Step | p50 | How measured |
+|---|---|---|
+| harness floor (`/usr/bin/true`) | 1.3–1.5 ms | same `Command` + three pipes |
+| empty Rust binary | 1.9 ms | scratch crate, `strip = "symbols"` |
+| … linking Security.framework + CoreFoundation | **3.2–3.5 ms** | same crate, one `#[link]` block |
+| `rtok --version` (release) | 3.3–4.2 ms | exits inside `Cli::parse` |
+| `rtok --version` (dist: thin LTO, 1 cgu, 17.4 MB) | 3.3 ms | −0.1 to −0.2 ms vs release |
+| `Config::load_lenient`, real 7 KB file | 0.26 ms | in-process |
+| `Store::open` + close (WAL) | 0.52–0.59 ms | in-process; `TRUNCATE` would be 0.24 ms |
+| `hooks::run PostToolUse` (in-process, whole hook) | 1.07–1.30 ms | includes the store line |
+| `rtok hook PostToolUse` (release, spawn-to-exit) | 5.5–5.7 ms | |
+
+Reading: the hook's own work is ~1.3 ms; process startup is ~4 ms, of which 1.3–1.5 ms is the
+dyld cost of Security.framework and CoreFoundation, linked because reqwest 0.13's `rustls`
+feature hard-depends on `rustls-platform-verifier` (the crate has no webpki-roots feature any
+more). Nothing on the hook path uses them. Dropping the link means a different TLS root story
+for `proxy` and `otel` — an `ideas.md` entry (I-32), not a P17 task. Config loading and the
+store are already small; `WAL` costs 0.3 ms per short-lived process over `TRUNCATE`, kept
+because `mcp` and `proxy` write concurrently with hooks.
 
 **Dev, `--features graph-lbug`.** The whole debug footprint was one C++ library. `lbug` builds
 `liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev

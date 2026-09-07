@@ -81,6 +81,7 @@ that v0.1 does not schedule.
 | I-18 | token-optimizer coaching / quality nudges | `inject` | Prompt nudges (“don’t re-read”, “use expand”). | Nudges are re-read every turn (D5). Lean-ctx’s 3.1 K banner is the cautionary tale. Promote only with a P7-style A/B. |
 | I-19 | `log`/`tracing` in every alternative CLI | core | Dedicated `tracing` logger: levels (`error`–`trace`), `core.log_file`, no stderr on the hook path; `Ctx::log` stays the DB path (D13). | Config already has `log_level` / `log_file`; P13 writes the `logs` table. File+level subscriber is not a numbered task. |
 | I-20 | clap ecosystem | CLI | Shell completions (`clap_complete`) and a man page (`clap_mangen`). | D14 is clap + figment. Completions are polish after T12.4. |
+| I-32 | Gate P17 latency breakdown (`research.md` §2, 2026-09-07) | `hook` / core | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook spawn (a hook's own work is ~1.3 ms) and only `proxy` / `otel` TLS uses them, through reqwest 0.13's mandatory `rustls-platform-verifier`. Options: a webpki-roots `ClientConfig` via `use_preconfigured_tls` plus `-dead_strip_dylibs`, or a second tiny hook binary. | Either changes the TLS trust story (corporate CAs) or breaks the one-binary rule (§1); needs a user decision. p95 passes the 10 ms bar without it on a quiet machine. |
 
 ---
 
