@@ -7,9 +7,11 @@
 # dist creates the tag and the GitHub Release itself (dispatch-releases in dist-workspace.toml),
 # so this script's job ends at "the version commit is on the remote, the workflow is running".
 #
-# Usage: tools/release.sh [patch|minor|major] [--dry-run|--local]
+# Usage: tools/release.sh [patch|minor|major] [--dry-run|--local|--no-bump]
 #   --dry-run  print the version that would be released and change nothing
 #   --local    make the version commit but neither push nor start the workflow
+#   --no-bump  release the version in Cargo.toml only if it is untagged; never raise it
+#              (release-plz.yml after a merged release PR, T18.5)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -41,6 +43,10 @@ if git rev-parse -q --verify "refs/tags/v$current" >/dev/null; then
 fi
 
 echo "current $current -> release v$version"
+if [ "$mode" = "--no-bump" ] && [ "$version" != "$current" ]; then
+  echo "v$current is already released; the next version comes from a release PR"
+  exit 0
+fi
 # The workflow reads this to know which tag to dispatch. Not a `&&` one-liner: when the variable
 # is unset the test fails, and under `set -e` a failing top-level list ends the script.
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

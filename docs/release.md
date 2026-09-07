@@ -22,6 +22,20 @@ It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANG
 and dispatches the dist **Release** workflow, which builds three targets, creates the tag and the
 GitHub Release, and pushes the Homebrew formula to `listepo/homebrew-tap`.
 
+**Or merge the release PR** (T18.5). On every push to `main`, `.github/workflows/release-plz.yml`
+runs [release-plz](https://release-plz.dev) with [`release-plz.toml`](../release-plz.toml): it keeps
+one pull request titled `release: v<version>` open with the next version in `Cargo.toml` and the
+`CHANGELOG.md` section for it (same `cliff.toml` groups as `just changelog`). The version is patch
+unless a commit since the last tag is `feat` (minor) or breaking (major); a version that was never
+tagged — `0.0.1` today — is kept, not raised. Merging the PR (merge commit or squash, so the title
+is in the commit message) runs `tools/release.sh patch --no-bump`, which dispatches **Release** for
+the version now in `Cargo.toml` and refuses to raise it. release-plz creates neither the tag nor
+the GitHub Release: dist does, and the `v*` tag dist pushes is how release-plz learns the version
+is out (`publish = false`, so tags are its only record). The PR is opened with `GITHUB_TOKEN`,
+which means `ci.yml` does not run on it; add a `RELEASE_PLZ_TOKEN` secret (fine-grained PAT,
+contents and pull requests write) if you want CI there. Both entry points end in the same script
+and the same workflow, so they cannot disagree on the version.
+
 | Target | Runner | Archive |
 |---|---|---|
 | `aarch64-apple-darwin` | `macos-14` | `rtok-aarch64-apple-darwin.tar.xz` |

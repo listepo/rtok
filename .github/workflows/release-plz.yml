@@ -1,0 +1,56 @@
+# T18.5 (P18). A second way in: release-plz keeps a "release: vX.Y.Z" pull request open on main
+# with the next version and the changelog; merging it starts the dist Release workflow through
+# the same tools/release.sh as bump.yml. Nobody types a version: patch unless a commit since the
+# last tag says feat (minor) or breaking (major), and the first release keeps 0.0.1.
+#
+# release-plz creates neither the tag nor the GitHub Release — dist does both from release.yml —
+# and reads the tag dist pushes to learn that a version is out (release-plz.toml). The PR is
+# opened with GITHUB_TOKEN so there is no secret to manage; the cost is that ci.yml does not run
+# on it (GitHub never starts workflows from GITHUB_TOKEN events). Set RELEASE_PLZ_TOKEN (a
+# fine-grained PAT: contents + pull requests, write) to get CI on the release PR.
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # the release branch
+  pull-requests: write # the release PR
+  actions: write # dispatch release.yml after the merge
+
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    # The merge of the release PR itself has nothing new to propose.
+    if: "!contains(github.event.head_commit.message, 'release: v')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # tags and history decide the next version
+      # cargo from mise.toml, same as local and ci.yml
+      - uses: jdx/mise-action@v2
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || secrets.GITHUB_TOKEN }}
+
+  release:
+    # Merge or squash: both carry the PR title "release: vX.Y.Z" in the commit message.
+    if: "contains(github.event.head_commit.message, 'release: v')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Start the dist Release workflow for the merged version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --no-bump: dispatch the version Cargo.toml already carries; never raise it here.
+        run: tools/release.sh patch --no-bump
