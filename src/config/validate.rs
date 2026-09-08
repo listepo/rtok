@@ -196,6 +196,9 @@ fn check_leaf(
                     "{at}: {dotted} must be full, lines, map, or signatures"
                 ));
             }
+            "plugins.graph.watch" if !matches!(s, "off" | "notify" | "watchman") => {
+                errors.push(format!("{at}: {dotted} must be off, notify, or watchman"));
+            }
             _ => {}
         }
     }

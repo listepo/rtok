@@ -71,6 +71,19 @@ impl Plugin for Graph {
     }
 }
 
+/// Walk or not (T8.15): `auto_index = true` is today's behaviour — every call
+/// walks and the stat gate skips unchanged files. `false` indexes a root with no
+/// rows once (`index::ensure`) and never walks again; re-indexing is
+/// `rtok graph index` or the P8d watcher, and a hook-staled file reads as
+/// missing until then.
+pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
+    if cx.config.plugins.graph.auto_index {
+        index::run(cx, root)
+    } else {
+        index::ensure(cx, root)
+    }
+}
+
 /// MCP dispatch for the three tools (`mcp.rs` `invoke`). Errors become the result text.
 pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -94,7 +107,7 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
 /// `line` to `end_line`, at most `plugins.graph.body_lines` lines each (T8.6). One call
 /// answers "what is this and what does it do", which took a `symbol` plus a `read` at v0.1.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
-    index::run(cx, root)?;
+    index_for(cx, root)?;
     let rows = cx.store.symbol_defs(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no definition of {name}"));
@@ -122,7 +135,7 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// v0.1 printed every site with its source line; the edge is what the caller needs, and it
 /// costs a fraction of the bytes.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
-    index::run(cx, root)?;
+    index_for(cx, root)?;
     let rows = cx.store.symbol_ref_groups(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no references to {name}"));
@@ -143,7 +156,7 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// `name`, who calls them, and so on (T8.7). One `depth  path  scope` line per definition
 /// reached. A definition is expanded once, so a call cycle terminates.
 pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
-    index::run(cx, root)?;
+    index_for(cx, root)?;
     let rows = cx.store.symbol_impact(&index::canon(root), name, depth)?;
     if rows.is_empty() {
         return Ok(format!("nothing reaches {name}"));
@@ -400,6 +413,44 @@ mod tests {
         bfs.sort();
         assert!(!cte.is_empty(), "fan-out-10 must reach sink");
         assert_eq!(cte, bfs, "query vs BFS");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.15: with `auto_index = false` an edit is invisible until `rtok graph index`
+    /// (which is `index::run`). The call itself opens no file.
+    #[test]
+    fn auto_index_false_is_stale_until_explicit_index() {
+        let (mut cx, dir) = cx("noauto");
+        cx.config.plugins.graph.auto_index = false;
+        fs::write(dir.join("a.rs"), "fn alpha() {}\n").unwrap();
+        let first = symbol(&cx, &dir, "alpha").unwrap();
+        assert!(first.contains("a.rs:1"), "{first}");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        fs::write(dir.join("a.rs"), "// bump\nfn alpha() {}\n").unwrap();
+        let stale = symbol(&cx, &dir, "alpha").unwrap();
+        assert!(
+            stale.contains("a.rs:1"),
+            "must still report the old line: {stale}"
+        );
+        let r = index_for(&cx, &dir).unwrap();
+        assert_eq!(r.read, 0, "the call must open no file");
+        index::run(&cx, &dir).unwrap(); // what `rtok graph index` does
+        let fresh = symbol(&cx, &dir, "alpha").unwrap();
+        assert!(
+            fresh.contains("a.rs:2"),
+            "explicit index shows the new line: {fresh}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.15: a root with no rows is still indexed once with `auto_index = false`.
+    #[test]
+    fn auto_index_false_empty_root_still_answers() {
+        let (mut cx, dir) = cx("noauto-empty");
+        cx.config.plugins.graph.auto_index = false;
+        fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
+        let out = symbol(&cx, &dir, "main").unwrap();
+        assert!(out.contains("main.rs:1"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
 

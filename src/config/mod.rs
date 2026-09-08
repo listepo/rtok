@@ -375,6 +375,8 @@ section! {
         enabled: bool = true,
         max_tokens: u32 = 2000,
         body_lines: u32 = 40,
+        auto_index: bool = true,
+        watch: String = s("off"),
     }
 }
 

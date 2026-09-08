@@ -4,6 +4,17 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P8d — `graph` freshness · in progress (T8.15 done 2026-09-08, T8.16–T8.17 open)
+
+Goal: the index follows the working tree without a tool call paying for the walk. Plan: `plan.md` P8d.
+
+**T8.15 `auto_index` and `watch` keys** · T8.4 · `src/config/mod.rs`, `src/plugins/graph/mod.rs`, `docs/config.md`
+Do: `plugins.graph.auto_index: bool = true` and `plugins.graph.watch: String = "off"` (`off` | `notify` | `watchman`; validated like other enums in `config/validate.rs`). `auto_index = true` is today's behaviour. `false`: `symbol` / `callers` / `impact` call `index::ensure` instead of `index::run`, so a root with no rows is still indexed once and everything after that is `rtok graph index` or the watcher; a file the hook marked stale reads as missing until then, which `docs/config.md` says in one line.
+Check: `tests/graph_contract.rs` green under both values; a unit test with `auto_index = false`: edit a fixture definition's line, `symbol` still reports the old line and `Report.read` of the call is 0, `rtok graph index` then shows the new one; an empty root with `auto_index = false` still answers `symbol("main")`; `rtok config set plugins.graph.watch bogus` is rejected.
+Status: done 2026-09-08
+Model: Muse Spark 1.3 Contributor
+Check result: `tests/graph_contract.rs` 3 passed with defaults; new `auto_index_false_is_stale_until_explicit_index` (old line, `index_for` read 0, `index::run` shows new line) and `auto_index_false_empty_root_still_answers` green; `config_coverage` + `default_toml_is_the_defaults` green; `rtok config set plugins.graph.watch bogus` exits 1, `notify` accepted; `just check` green. Deviation (Check wording vs semantics): under `auto_index = false` the contract's `edited_and_deleted_files_are_reflected` fails with the old counts (2 passed, 1 failed) — that staleness is exactly what this task specifies, and the T8.16 watcher (Gate P8d (1)) is what makes edits visible again with `Report.read == 0`. Extra files beyond the task list: `config/default.toml` (the keys themselves or `default_toml_is_the_defaults` fails) and `src/config/validate.rs` (the `watch` enum the Do requires).
+
 ## P19 — web dashboard · in progress (D20)
 
 Goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses. Plan: `plan.md` P19.

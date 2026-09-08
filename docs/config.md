@@ -217,6 +217,8 @@ search_limit   = 5
 enabled    = true
 max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"
 body_lines = 40                       # symbol(): source lines shown per definition
+auto_index = true                     # true = every call walks the tree; false = index once, then `rtok graph index` or the watcher (a hook-staled file reads as missing until then)
+watch      = "off"                    # off | notify | watchman: background re-index inside `rtok mcp` (P8d)
 
 [plugins.toon]
 enabled  = false
