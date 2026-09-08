@@ -22,6 +22,13 @@ Status: done 2026-09-08
 Model: Cursor Grok 4.6
 Check result: `cargo test dashboard::` — `snapshot_lists_catalogue_and_hides_stats_on_measure` green; `tests/dashboard.rs` `dashboard_health_and_index` green (`/health` ok, `/` serves the Slint canvas host). `just check` green at T19.1.
 
+**T19.3 Slint WASM UI** · files: `crates/rtok-webui/**`
+Do: one `.slint` app, plugin list, per-plugin page, `TokenStatsWidget`; `web_sys::WebSocket` to `/ws`.
+**Check:** `wasm-pack build crates/rtok-webui --dev --target web` (or skip if wasm-pack missing; crate still present).
+Status: done 2026-09-08
+Model: Cursor Grok 4.6
+Check result: `crates/rtok-webui` present (`ui/app.slint` + `web_sys::WebSocket` client). `wasm-pack` is not on PATH, so the WASM pack step is skipped as the Check allows; `cargo check` in that crate compiles the `.slint` (native lib). `just dashboard` still serves `/ws` and warns until `wasm-pack` is installed.
+
 ## P18 — release · tasks done 2026-09-04 (gate needs the first real release)
 
 Goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed. Plan: `plan.md` P18.

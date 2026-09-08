@@ -215,12 +215,6 @@ Gate P18: the Release workflow, started from the Actions tab with no argument, p
 
 Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + `tower-http` ServeDir, Slint on wasm32 (official web renderer). Not a catalogue plugin — it does not save tokens.
 
-**T19.3 Slint WASM UI** · files: `crates/rtok-webui/**`
-Do: one `.slint` app, plugin list, per-plugin page, `TokenStatsWidget`; `web_sys::WebSocket` to `/ws`.
-**Check:** `wasm-pack build crates/rtok-webui --dev --target web` (or skip if wasm-pack missing; crate still present).
-Status: in progress
-Model: Cursor Grok 4.6
-
 Gate P19: `just dashboard` (or `rtok dashboard`) listens on the configured host/port; browser `/` loads the Slint canvas when `pkg/` exists; `/ws` pushes a snapshot whose `plugins` length matches the catalogue; a `saves_tokens` page includes input/output/est_before/est_after.
 
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
