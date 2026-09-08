@@ -127,7 +127,11 @@ p95 is owed by the change itself. Measured anyway on this machine:
 `cargo test --release --test latency` p95 14.8/14.9 ms (Pre/PostToolUse,
 n=200) at load ~9, and 10.1/10.6 ms at load ~11 — both over the 10 ms bar
 with p50 ~8.3 ms and 633 ms scheduler-stall maxima, i.e. machine load, as in
-Gate P17 (7–8 ms p95 at load ~3). Re-run on a quiet machine for the gate row.
+Gate P17 (7–8 ms p95 at load ~3). Resolved 2026-09-09: the straddle is the
+harness itself — cargo runs both latency tests in parallel (2×200 spawns
+contend). Serialized (`-- --test-threads=1`) at load ~4–6: Pre p50 7.22 ms
+p95 8.25 ms, Post p50 7.18 ms p95 8.25 ms — pass with margin (row in the
+Gate P17 section). Gate P8d (4) takes that row.
 Gate P8d (5): release `rtok` 19 764 144 B pre-`notify` (scratch worktree at
 `54f2445^`) vs 19 867 968 B (18.9 MiB) default with `notify` (+103 824 B,
 +0.5 %) vs 20 429 392 B (19.5 MiB) with `--features graph-watchman`
@@ -233,6 +237,16 @@ test, three rounds, release profile:
 |---|---|---|---|
 | `PostToolUse` | 5.63 / 5.60 / 5.64 ms | **8.17 / 7.24 / 7.86 ms** | 16.2 / 10.3 / 17.9 ms |
 | `PreToolUse` | 5.49 / 5.54 / 5.46 ms | **6.41 / 6.94 / 5.79 ms** | 8.6 / 13.4 / 6.7 ms |
+
+Re-measured 2026-09-09: the straddle is the harness running both tests in
+parallel (cargo default; 2×200 spawns contend with each other). Serialized
+(`-- --test-threads=1`), one round at load ~4–6, release, fresh homes:
+`PreToolUse` p50 7.22 ms p95 8.25 ms max 14.5 ms, `PostToolUse` p50 7.18 ms
+p95 8.25 ms max 10.6 ms — both pass with margin. Parallel rounds on the
+same machine straddle the bar (9.5–11.2 ms): scheduler noise, not the
+binary — the hook path is unchanged since Gate P17 passed it. Gate P8d (4)
+takes this row: hook p95 ≤ 10 ms holds when the harness does not load the
+machine it measures.
 
 Where a hook's milliseconds go (spawn-to-exit p50, same harness, same quiet machine; the
 in-process figures are `Instant` around the call):
