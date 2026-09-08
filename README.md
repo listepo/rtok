@@ -13,16 +13,18 @@ same whether your shell is bash or zsh; it puts `rtok` in `~/.cargo/bin`.
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/rtok/releases/latest/download/rtok-installer.sh | sh
 ```
 
-Or with Homebrew:
+Or with [ketch](https://github.com/listepo/ketch) — it installs straight from these
+GitHub Release archives, no tap or formula:
 
 ```bash
-brew install listepo/tap/rtok
+curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash
+ketch install listepo/rtok
 ```
 
-Either way you also get `rtok-update`; run it to move to the newest release.
+The dist installer also gives you `rtok-update`; run it to move to the newest release.
 
 The binaries are not codesigned or notarised. Downloading an archive through a browser will make
-macOS quarantine it; the installer above and Homebrew are not affected. What turning that on would
+macOS quarantine it; the installer above and ketch are not affected. What turning that on would
 involve is written down in [docs/release.md](docs/release.md).
 
 Building from source works on any platform Rust supports:
