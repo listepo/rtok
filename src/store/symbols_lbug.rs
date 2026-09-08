@@ -55,6 +55,8 @@ impl Graph {
                  scope STRING, PRIMARY KEY(id))",
         )
         .map_err(oops)?;
+        conn.query("CREATE REL TABLE IF NOT EXISTS CALLS(FROM Symbol TO Symbol)")
+            .map_err(oops)?;
         Ok(())
     }
 
@@ -78,6 +80,29 @@ impl Graph {
                 Err(e)
             }
         }
+    }
+
+    /// Caller def → callee def for every reference in `root` (T8.13). `MERGE` so two
+    /// sites in one function do not abort the index (`let _ = delete_symbols_missing`).
+    fn materialize_calls(&self, root: &str) -> Result<()> {
+        self.tx(|conn| {
+            run(
+                conn,
+                "MATCH (a:Symbol)-[e:CALLS]->(:Symbol) WHERE a.root = $root DELETE e",
+                vec![("root", s(root))],
+            )?;
+            run(
+                conn,
+                "MATCH (r:Symbol), (callee:Symbol), (caller:Symbol)
+                 WHERE r.root = $root AND r.is_def = 0 AND r.scope <> ''
+                   AND callee.root = $root AND callee.is_def = 1 AND callee.name = r.name
+                   AND caller.root = $root AND caller.is_def = 1
+                   AND caller.name = r.scope AND caller.path = r.path
+                 MERGE (caller)-[:CALLS]->(callee)",
+                vec![("root", s(root))],
+            )?;
+            Ok(())
+        })
     }
 }
 
@@ -163,7 +188,7 @@ impl Store {
         self.graph.tx(|conn| {
             run(
                 conn,
-                "MATCH (s:Symbol) WHERE s.root = $root AND s.path = $path DELETE s",
+                "MATCH (s:Symbol) WHERE s.root = $root AND s.path = $path DETACH DELETE s",
                 vec![("root", s(root)), ("path", s(path))],
             )?;
             run(
@@ -219,7 +244,7 @@ impl Store {
             )?;
             n += int(gone.first().and_then(|r| r.first())) as usize;
             self.graph.rows(
-                "MATCH (s:Symbol) WHERE s.root = $root AND s.path = $path DELETE s",
+                "MATCH (s:Symbol) WHERE s.root = $root AND s.path = $path DETACH DELETE s",
                 vec![("root", s(root)), ("path", s(&p))],
             )?;
             self.graph.rows(
@@ -227,6 +252,7 @@ impl Store {
                 vec![("key", s(&key(root, &p)))],
             )?;
         }
+        self.graph.materialize_calls(root)?;
         Ok(n)
     }
 
@@ -234,7 +260,7 @@ impl Store {
     /// Matched as `root || '/' || path` so a same-named file in another repo survives.
     pub fn mark_symbols_stale(&self, abs_path: &str) -> Result<()> {
         self.graph.rows(
-            "MATCH (s:Symbol) WHERE concat(s.root, '/', s.path) = $abs DELETE s",
+            "MATCH (s:Symbol) WHERE concat(s.root, '/', s.path) = $abs DETACH DELETE s",
             vec![("abs", s(abs_path))],
         )?;
         self.graph.rows(
@@ -309,5 +335,53 @@ impl Store {
 
     pub fn symbol_ref_count(&self, root: &str, name: &str) -> Result<i64> {
         Ok(self.symbol_refs(root, name)?.len() as i64)
+    }
+
+    /// Callers of `name` out to `depth`, each `(path, scope)` at its first depth (T8.13).
+    /// Depth 1 is the reference sites (a definition of `name` is not required). Further
+    /// hops walk `CALLS` backward from those calling definitions.
+    pub fn symbol_impact(
+        &self,
+        root: &str,
+        name: &str,
+        depth: u32,
+    ) -> Result<Vec<(u32, String, String)>> {
+        let depth = depth.clamp(1, 4);
+        self.graph.materialize_calls(root)?;
+        let hop1 = self.graph.rows(
+            "MATCH (r:Symbol)
+             WHERE r.root = $root AND r.name = $n AND r.is_def = 0
+             RETURN DISTINCT r.path, r.scope
+             ORDER BY r.path, r.scope",
+            vec![("root", s(root)), ("n", s(name))],
+        )?;
+        let mut out: Vec<(u32, String, String)> = hop1
+            .iter()
+            .map(|r| (1, text(r.first()), text(r.get(1))))
+            .collect();
+        if depth > 1 {
+            let d1 = depth - 1;
+            let q = format!(
+                "MATCH (r:Symbol), (start:Symbol)
+                 WHERE r.root = $root AND r.name = $n AND r.is_def = 0 AND r.scope <> ''
+                   AND start.root = $root AND start.is_def = 1
+                   AND start.name = r.scope AND start.path = r.path
+                 MATCH p = (anc:Symbol)-[:CALLS* ACYCLIC 1..{d1}]->(start)
+                 WHERE anc.root = $root AND anc.is_def = 1
+                 RETURN min(1 + length(p)), anc.path, anc.name
+                 ORDER BY min(1 + length(p)), anc.path, anc.name"
+            );
+            let rows = self
+                .graph
+                .rows(&q, vec![("root", s(root)), ("n", s(name))])?;
+            out.extend(
+                rows.iter()
+                    .map(|r| (int(r.first()) as u32, text(r.get(1)), text(r.get(2)))),
+            );
+        }
+        out.sort_by(|a, b| (a.0, &a.1, &a.2).cmp(&(b.0, &b.1, &b.2)));
+        let mut seen = HashSet::new();
+        out.retain(|(_, p, s)| seen.insert((p.clone(), s.clone())));
+        Ok(out)
     }
 }

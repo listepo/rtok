@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::Text;
+use diesel::sql_types::{Integer, Text};
 
 use super::Store;
 use super::schema::symbols;
@@ -197,5 +197,52 @@ impl Store {
 
     pub fn symbol_ref_count(&self, root: &str, name: &str) -> Result<i64> {
         Ok(self.symbol_refs(root, name)?.len() as i64)
+    }
+
+    /// Callers of `name` out to `depth`, each `(path, scope)` at its first depth (T8.13).
+    pub fn symbol_impact(
+        &self,
+        root: &str,
+        name: &str,
+        depth: u32,
+    ) -> Result<Vec<(u32, String, String)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Integer)]
+            depth: i32,
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Text)]
+            scope: String,
+        }
+        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "WITH RECURSIVE walk(depth, path, scope, seen) AS (
+                SELECT 1, path, scope, ',' || scope || ','
+                FROM symbols
+                WHERE root = ? AND name = ? AND is_def = 0 AND name != ''
+                UNION ALL
+                SELECT w.depth + 1, s.path, s.scope, w.seen || s.scope || ','
+                FROM walk w
+                JOIN symbols s
+                  ON s.root = ? AND s.name = w.scope AND s.is_def = 0 AND s.name != ''
+                WHERE w.depth < ? AND w.scope != ''
+                  AND instr(w.seen, ',' || s.scope || ',') = 0
+            )
+            SELECT MIN(depth) AS depth, path, scope
+            FROM walk
+            GROUP BY path, scope
+            ORDER BY depth, path, scope",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(depth)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.depth as u32, r.path, r.scope))
+            .collect())
     }
 }

@@ -10,6 +10,7 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
+#[cfg(test)]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -143,20 +144,40 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// reached. A definition is expanded once, so a call cycle terminates.
 pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
     index::run(cx, root)?;
-    let key = index::canon(root);
+    let rows = cx.store.symbol_impact(&index::canon(root), name, depth)?;
+    if rows.is_empty() {
+        return Ok(format!("nothing reaches {name}"));
+    }
+    let mut out = String::new();
+    for (d, path, scope) in rows {
+        if scope.is_empty() {
+            out.push_str(&format!("{d}  {path}  (file)\n"));
+        } else {
+            out.push_str(&format!("{d}  {path}  {scope}\n"));
+        }
+    }
+    cap(cx, out)
+}
+
+/// T8.7 BFS, kept as the T8.14 baseline. Not used on the tool path after T8.13.
+#[cfg(test)]
+pub(crate) fn impact_bfs(
+    store: &crate::store::Store,
+    root: &str,
+    name: &str,
+    depth: u32,
+) -> Result<Vec<(u32, String, String)>> {
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
     let mut frontier = vec![name.to_string()];
-    let mut out = String::new();
+    let mut out = Vec::new();
     for d in 1..=depth.clamp(1, 4) {
         let mut next = Vec::new();
         for from in &frontier {
-            for (path, scope, ..) in cx.store.symbol_ref_groups(&key, from)? {
-                // A file-level reference has no definition to walk on from; it is still a
-                // place the change lands, so it is reported and not expanded.
+            for (path, scope, ..) in store.symbol_ref_groups(root, from)? {
                 if scope.is_empty() {
-                    out.push_str(&format!("{d}  {path}  (file)\n"));
+                    out.push((d, path, String::new()));
                 } else if seen.insert(scope.clone()) {
-                    out.push_str(&format!("{d}  {path}  {scope}\n"));
+                    out.push((d, path, scope.clone()));
                     next.push(scope);
                 }
             }
@@ -166,10 +187,7 @@ pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
             break;
         }
     }
-    if out.is_empty() {
-        return Ok(format!("nothing reaches {name}"));
-    }
-    cap(cx, out)
+    Ok(out)
 }
 
 /// `outline(path)`: the `read` plugin's `map` mode, capped like the other two.
@@ -359,6 +377,29 @@ mod tests {
             impact(&cx, &dir, "no_such_fn", 2).unwrap(),
             "nothing reaches no_such_fn"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T8.13: CTE / path query and the BFS return the same (depth, path, scope) set.
+    #[test]
+    fn impact_fanout_matches_bfs() {
+        let (cx, dir) = cx("fanout");
+        let mut src = String::from("fn sink() {}\n");
+        for i in 0..10 {
+            src.push_str(&format!("fn a{i}() {{ sink(); }}\n"));
+            src.push_str(&format!("fn b{i}() {{ a{i}(); }}\n"));
+            src.push_str(&format!("fn c{i}() {{ b{i}(); }}\n"));
+            src.push_str(&format!("fn d{i}() {{ c{i}(); }}\n"));
+        }
+        fs::write(dir.join("fan.rs"), src).unwrap();
+        index::run(&cx, &dir).unwrap();
+        let key = index::canon(&dir);
+        let mut cte: Vec<_> = cx.store.symbol_impact(&key, "sink", 4).unwrap();
+        let mut bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
+        cte.sort();
+        bfs.sort();
+        assert!(!cte.is_empty(), "fan-out-10 must reach sink");
+        assert_eq!(cte, bfs, "query vs BFS");
         let _ = fs::remove_dir_all(dir);
     }
 
