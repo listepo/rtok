@@ -162,12 +162,14 @@ Gate P8d (release, this machine): (1) with `auto_index = false` and `watch = "no
 **T8.16 watcher in `rtok mcp` (`notify`)** · T8.15 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `src/mcp.rs`
 Do: dependency `notify = "8"` (stable; 9 is an RC; MSRV 1.77 under the 1.97 pin) — reason in the commit message. `watch::run(cx, root, stop)` watches `root` recursively, drops events whose path fails `outline::supported` or sits under `.git/`, and after 250 ms without one calls `index::run(cx, &root)`; every error is logged once and the loop continues (a lost event costs one stale answer, never a crash). `mcp::run` wraps the stdin loop in `std::thread::scope` and spawns the watcher when `plugins.graph.watch != "off"`; EOF on stdin sets `stop` and joins the thread. No `rtok graph watch` subcommand: the MCP server is the only consumer, and a second process would break the one-writer rule under `graph-lbug`.
 Check: test on a temp root: start the watcher, write a new `.rs` file with one `fn`, poll `symbol` with `auto_index = false` — the definition appears within 1 s and the call's `Report.read` is 0; delete the file, it disappears; 200 writes in 100 ms produce ≤ 3 `index::run` calls (count via `Report`); `rtok mcp` exits within 500 ms of stdin EOF with the watcher on; Gate P8d (2) numbers into `research.md` §2.
-Status: open
-Model: -
+Complexity: 3/5 — concurrent watcher thread inside `rtok mcp`, 250 ms debounce, timing-sensitive tests (poll ≤ 1 s, EOF exit < 500 ms); the design is fully specified by the task, so the risk is test flake, not architecture.
+Status: in progress
+Model: Muse Spark 1.3 Contributor
 
 **T8.17 `watchman` backend** · T8.16 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `docs/config.md`
 Do: optional dependency `watchman_client = "0.9"` (Meta's client; tokio, already a dependency) behind feature `graph-watchman` (in `default` only if Gate P8d (3) and (5) pass). `watch = "watchman"`: connect to the socket (`watchman get-sockname`), `watch-project` the root, subscribe with the same suffix filter as `notify`, and feed the same quiet-period loop; the fallback to `notify` when the socket is missing prints one stderr line. The 250 ms loop and `index::run` call are shared with T8.16 — one function, two event sources.
 Check: with `/opt/homebrew/bin/watchman` on PATH the T8.16 test passes with `watch = "watchman"` and `watchman watch-list` lists the temp root; with `PATH` emptied the same test passes through the fallback and stderr has exactly one `watchman: … falling back to notify` line; Gate P8d (3) and (5) numbers into `research.md` §2 and the decision rule applied in the same commit.
+Complexity: 4/5 — async `watchman_client` (tokio) bridged into the sync quiet loop, one loop with two event sources, an external daemon on the machine, a fallback path that must print exactly one stderr line, feature gating (`graph-watchman`), and the Gate P8d (3)+(5) numbers plus the removal decision rule in the same commit.
 Status: open
 Model: -
 
@@ -392,6 +394,19 @@ Do not start these while v0.1 work is open. When v0.1 is done, promote each row 
 
 P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, daemon, WASM) start only after §4 v0.1 done.
 
+Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Open tasks carry a `Complexity:` line; the open gates are mostly calendar- or user-bound, not engineering:
+
+| Item | Complexity | Waits on |
+|---|---|---|
+| T8.16 | 3/5 | implemented in the working tree; `just check`, commit, move to `done.md` |
+| T8.17 | 4/5 | the only unstarted code task: watchman backend + Gate P8d (3)+(5) numbers + removal decision rule |
+| Gate P8d | 1–2/5 | measurements after T8.16/T8.17; clause (2) already recorded; a quiet machine for p95 |
+| Gate P19 | 1/5 | browser check of `just dashboard` (T19.1–T19.3 done) |
+| Gates P3 / P4 / P6 / P7 / P11 | 1/5 code, days of traffic | legacy tools disabled + `rtok stats --compare` |
+| Gate P5 | 2/5 | the proxy has served no live request yet: 2 d passthrough + 2 d compress; expand rate and cache_read unmeasured |
+| Gate P8b (4) + P9 | 3/5 | P9 task set run twice; user keep/drop decision |
+| Gate P18 | 3/5 | first real release from the Actions tab; one real session as one trace; SigNoz + Maple with user accounts |
+
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
 | Date | Change | Why |
@@ -439,3 +454,4 @@ P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (
 | 2026-09-07 | T18.5 added to P18 and done: release-plz as a second entry point — a `release: vX.Y.Z` pull request with the next version and changelog; merging it dispatches the dist Release workflow through `tools/release.sh --no-bump`. release-plz neither tags nor publishes; dist does both. No new dependency in the binary; no new secret required. | User request 2026-09-07 ("Add support release-plz"). Two paths, one script, one workflow — they cannot disagree on the version. |
 | 2026-09-08 | D21 added: every new plugin is plugin + MCP as one unit, a singleton, one call path per capability; host plugins work on desktop and CLI; missing `rtok` tells the user to install with ketch. `AGENTS.md` never-bend and plan §2 match. | User request 2026-09-08 (Cursor host plugin: plugin and MCP simultaneously, no duplicate calls, singleton; missing rtok → ketch install). |
 | 2026-09-08 | T10.5 added (P10 reopened): `rtok setup cursor` offers to install `plugins/cursor`. D21 gains clause (6); `AGENTS.md` matches. | User request 2026-09-08 (`rtok setup cursor` должен предлагать установить и плагин). |
+| 2026-09-08 | Complexity ratings added to the plan: a `Complexity:` line on open tasks and a complexity table for the remaining work in §5 (scale 1–5). | User request; makes the remaining effort visible next to the order of value. |
