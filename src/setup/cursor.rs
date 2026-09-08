@@ -7,6 +7,7 @@
 //! Cursor `hooks.json` is `{version, hooks.beforeShellExecution[].command}`.
 
 use std::fs;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -42,6 +43,110 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let path = cfg.setup.cursor.hooks_path.with_file_name("mcp.json");
     register_stdio_mcp(&path, cfg)
+}
+
+const PLUGIN_SRC_REL: &str = "plugins/cursor";
+const PLUGIN_LOCAL: &str = "~/.cursor/plugins/local";
+const KETCH_INSTALL: &str = "ketch install listepo/rtok";
+
+/// Source tree shipped in this repo.
+pub fn plugin_src() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(PLUGIN_SRC_REL)
+}
+
+/// Local Cursor plugin dest: sibling of hooks.json → `<cursor-dir>/plugins/local/rtok`.
+pub fn plugin_dest(cfg: &Config) -> PathBuf {
+    cfg.setup
+        .cursor
+        .hooks_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("plugins/local/rtok")
+}
+
+fn plugin_present(dest: &std::path::Path) -> bool {
+    dest.symlink_metadata().is_ok()
+}
+
+/// Offer / link / unlink `plugins/cursor` (D21, T10.5).
+/// Dry-run and the unaccepted offer MUST contain the substrings `plugins/cursor`
+/// and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
+pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let dest = plugin_dest(cfg);
+    let src = plugin_src();
+    if cfg.setup.dry_run {
+        return Ok(format!(
+            "offer {PLUGIN_SRC_REL} → {PLUGIN_LOCAL} ({}) {KETCH_INSTALL}",
+            dest.display()
+        ));
+    }
+    if remove {
+        if !plugin_present(&dest) {
+            return Ok("no changes".into());
+        }
+        if dest.is_dir() && !dest.is_symlink() {
+            fs::remove_dir_all(&dest)?;
+        } else {
+            fs::remove_file(&dest)?;
+        }
+        return Ok(format!("- plugin {}", dest.display()));
+    }
+    if plugin_present(&dest) {
+        return Ok("no changes".into());
+    }
+    if !cfg.setup.yes {
+        return Ok(format!(
+            "offer {PLUGIN_SRC_REL} → {PLUGIN_LOCAL} (accept with --yes) {KETCH_INSTALL}"
+        ));
+    }
+    if let Some(dir) = dest.parent() {
+        fs::create_dir_all(dir).ok();
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&src, &dest)
+        .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))?;
+    #[cfg(not(unix))]
+    {
+        let _ = (&src, &dest);
+        anyhow::bail!("plugin link requires unix");
+    }
+    // Singleton (D21): the plugin is the MCP, so a previous `mcpServers.rtok`
+    // entry from a plain install must go, else two writers serve one store.
+    let _ = strip_mcp_registration(cfg);
+    Ok(format!(
+        "+ plugin {PLUGIN_SRC_REL} → {} {PLUGIN_LOCAL}",
+        dest.display()
+    ))
+}
+
+/// Remove `mcpServers.rtok` from the Cursor `mcp.json` sibling of `hooks.json`.
+/// Best-effort: missing file or foreign content is not an error.
+fn strip_mcp_registration(cfg: &Config) -> Result<bool> {
+    use super::claude::read_settings;
+    let path = cfg.setup.cursor.hooks_path.with_file_name("mcp.json");
+    if !path.exists() {
+        return Ok(false);
+    }
+    let mut root = read_settings(&path)?;
+    let removed = root
+        .get_mut("mcpServers")
+        .and_then(|s| s.as_object_mut())
+        .is_some_and(|servers| servers.remove("rtok").is_some());
+    if removed && !cfg.setup.dry_run {
+        if cfg.setup.backup {
+            super::claude::backup(&path)?;
+        }
+        fs::write(&path, serde_json::to_string_pretty(&root)? + "\n")
+            .with_context(|| path.display().to_string())?;
+    }
+    Ok(removed)
+}
+
+/// True when `--yes` accepted the plugin, so `mcp.json` must not also register rtok.
+/// Also true when the plugin link already exists: the plugin *is* the MCP (D21
+/// singleton), so a later plain `rtok setup cursor` must not add a second entry.
+pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
+    !remove && (cfg.setup.yes || plugin_present(&plugin_dest(cfg)))
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -117,6 +222,35 @@ mod tests {
         c.setup.dry_run = dry;
         c.setup.backup = false;
         c
+    }
+
+    #[test]
+    fn dry_run_offer_names_plugin_and_local() {
+        let dir = tmp("offer-dry");
+        let path = dir.join("hooks.json");
+        let c = cfg(path, true);
+        let s = offer_plugin(&c, false).unwrap();
+        assert!(s.contains("plugins/cursor"), "{s}");
+        assert!(s.contains("~/.cursor/plugins/local"), "{s}");
+        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(!plugin_dest(&c).exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn yes_links_plugin_second_apply_no_changes() {
+        let dir = tmp("offer-yes");
+        let mut c = cfg(dir.join("hooks.json"), false);
+        c.setup.yes = true;
+        c.setup.backup = false;
+        let first = offer_plugin(&c, false).unwrap();
+        assert!(
+            first.contains("plugins/cursor") || first.starts_with("+ plugin"),
+            "{first}"
+        );
+        assert!(plugin_present(&plugin_dest(&c)));
+        assert_eq!(offer_plugin(&c, false).unwrap(), "no changes");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

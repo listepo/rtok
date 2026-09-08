@@ -215,16 +215,7 @@ Gate P9 (review + your decision): adopt config B if cost per passed task is lowe
 
 The migration side of this phase — which rtok plugin owns each lean-ctx behaviour, the two gaps (`cmd` runner prefixes and families, `graph` callees) and the cutover order — is written in `migration.md` (2026-09-07, plan only; its gaps become tasks here only when promoted).
 
-### P10 — other hosts + release — T10.1–T10.4 done 2026-09-02; T10.5 open (D21)
-
-**T10.5 Cursor plugin offer** · T10.1, D21 · `src/setup/cursor.rs`
-
-Do: `rtok setup cursor` offers to install the host plugin at `plugins/cursor` (Cursor Desktop local plugins + CLI). `--dry-run` prints the offer only; `--yes` accepts without a prompt; a TTY without `--yes` prompts. Accepting the plugin is the MCP (D21): do not also write `mcpServers.rtok` into `~/.cursor/mcp.json`. `--remove` offers to unlink the plugin. If `rtok` would be missing from the plugin's point of view, the offer still names ketch: `ketch install listepo/rtok`.
-
-Check: `rtok setup cursor --dry-run` stdout names `plugins/cursor` and `~/.cursor/plugins/local`; `rtok setup cursor --yes` in a temp HOME links the plugin and does not add a second `rtok` entry to `mcp.json`; second apply reports `no changes`. `just check` green.
-
-Status: in progress
-Model: Cursor Grok 4.6
+### P10 — other hosts + release — T10.1–T10.5 done 2026-09-08 (D21)
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 

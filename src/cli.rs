@@ -424,15 +424,18 @@ pub fn run() -> Result<()> {
                 }
                 "cursor" => {
                     let hooks = crate::setup::cursor::run(&cfg, remove)?;
-                    if cfg.setup.mcp && !remove {
-                        let mcp = crate::setup::cursor::register_mcp(&cfg)?;
-                        if hooks == "no changes" && mcp == "no changes" {
-                            println!("no changes");
-                        } else {
-                            println!("{hooks}\n{mcp}");
-                        }
+                    let plugin = crate::setup::cursor::offer_plugin(&cfg, remove)?;
+                    let mut lines = vec![hooks, plugin];
+                    if cfg.setup.mcp
+                        && !remove
+                        && !crate::setup::cursor::plugin_is_mcp(&cfg, remove)
+                    {
+                        lines.push(crate::setup::cursor::register_mcp(&cfg)?);
+                    }
+                    if lines.iter().all(|s| s == "no changes") {
+                        println!("no changes");
                     } else {
-                        println!("{hooks}");
+                        println!("{}", lines.join("\n"));
                     }
                 }
                 // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
