@@ -86,6 +86,8 @@ hooks_path    = "~/.cursor/hooks.json"
 config_path   = "~/.codex/config.toml"
 [setup.opencode]
 config_path   = "~/.config/opencode/opencode.json"
+[setup.pi]
+extensions_path = "~/.pi/agent/extensions"
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

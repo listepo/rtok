@@ -106,7 +106,7 @@ enum Cmd {
     },
     /// Install hooks, MCP server and proxy into a host
     Setup {
-        /// Host (`claude`, `cursor`, `codex`, `opencode`)
+        /// Host (`claude`, `cursor`, `codex`, `opencode`, `pi`)
         host: String,
         /// Print the planned edits and exit
         #[arg(long)]
@@ -451,6 +451,8 @@ pub fn run() -> Result<()> {
                     }
                 }
                 "opencode" => println!("{}", crate::setup::opencode::run(&cfg, remove)?),
+                // pi has no hooks and no MCP (its philosophy); the extension owns bash (T10.6).
+                "pi" => println!("{}", crate::setup::pi::offer_plugin(&cfg, remove)?),
                 other => bail!("unknown host: {other}"),
             }
         }

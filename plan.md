@@ -205,14 +205,7 @@ Gate P9 (review + your decision): adopt config B if cost per passed task is lowe
 
 The migration side of this phase — which rtok plugin owns each lean-ctx behaviour, the two gaps (`cmd` runner prefixes and families, `graph` callees) and the cutover order — is written in `migration.md` (2026-09-07, plan only; its gaps become tasks here only when promoted).
 
-### P10 — other hosts + release — T10.1–T10.5 done 2026-09-08 (D21); T10.6 open
-
-**T10.6 pi host plugin** · T10.1, D21 · `src/setup/pi.rs`, `plugins/pi/`, `tests/pi_plugin.rs`
-Do: pi package (`package.json` with `pi.extensions` + `skills/`): `extensions/rtok.ts` — one call path only: `tool_call` bash → mutate `input.command` to `rtok run -- …`, `tool_result` bash → `rtok filter` compress + `expand <id>` trailer; no `read`/`search` tool duplicates (pi philosophy is no MCP). `rtok setup pi` offers `plugins/pi/` into `~/.pi/agent/extensions/` (or packages); `--dry-run` prints the offer + `ketch install listepo/rtok`; `--yes` links without a prompt; `--remove` unlinks. Missing `rtok` fails open and names ketch. Optional proxy via `registerProvider` `baseUrl` `http://127.0.0.1:8790/v1` (T11.5 pattern).
-Check: `rtok setup pi --dry-run` names `plugins/pi` and `ketch install listepo/rtok` and touches nothing; `--yes` links the extension, second apply `no changes`, `--remove` unlinks; `tests/pi_plugin.rs` asserts the single bash call path, no `read`/`search` duplication, and the ketch message; `just check` green.
-Complexity: 2/5 — new `src/setup/<host>.rs` after the T10.1 pattern, one TS extension with two event handlers, no new dependency, no wire format.
-Status: open
-Model: -
+### P10 — other hosts + release — T10.1–T10.6 done 2026-09-09 (D21)
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 

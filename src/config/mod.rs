@@ -191,6 +191,7 @@ section! {
         cursor: SetupCursor = SetupCursor::default(),
         codex: SetupCodex = SetupCodex::default(),
         opencode: SetupOpenCode = SetupOpenCode::default(),
+        pi: SetupPi = SetupPi::default(),
     }
 }
 
@@ -212,6 +213,11 @@ section! {
 section! {
     /// `[setup.opencode]`
     SetupOpenCode { config_path: PathBuf = p("~/.config/opencode/opencode.json") }
+}
+
+section! {
+    /// `[setup.pi]`
+    SetupPi { extensions_path: PathBuf = p("~/.pi/agent/extensions") }
 }
 
 section! {
@@ -512,6 +518,7 @@ impl Config {
             &mut self.setup.cursor.hooks_path,
             &mut self.setup.codex.config_path,
             &mut self.setup.opencode.config_path,
+            &mut self.setup.pi.extensions_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
         ] {
