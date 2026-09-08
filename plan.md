@@ -111,24 +111,23 @@ Gate P2: `rtok setup claude` installed alongside the legacy hooks (additive, not
 
 ### P3 — `cmd` plugin (goal: every Bash output archived, filtered, measured)
 
-Gate P3: disable the legacy Bash-compression hooks in settings, run one working day, `rtok stats --compare before-rtok`. Keep only if Bash context-token-turns fall and `expand` rate < 5 %.
+Gate P3: removed 2026-09-09 — one working day of live traffic plus `expand` rate; not code-closable. Evidence kept: `research.md` §2 (Bash 7.71 M est. tokens baseline). Re-add as a task only with a dated traffic window.
 
 ### P4 — `read` plugin + MCP server (goal: replace lean-ctx's 78 tools with 5 and the 3.1 K/turn banner with 0)
 
-Gate P4: disable lean-ctx hooks and MCP server for one day; compare `rtok stats` Read/MCP rows and injection tokens per turn vs baseline.
+Gate P4: removed 2026-09-09 — one day with legacy tools disabled plus `stats` compare; not code-closable. Evidence kept: `research.md` §2 (Read 3.07 M, lean-ctx 0.86 M MCP rows).
 
 ### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
 
-Gate P5: run proxy in passthrough for two days (usage ground truth), then `compress` for two days; compare cache_read per turn, output tokens, expand rate. Keep `compress` only if context-token-turns fall ≥ 15 % with expand rate < 5 %.
-Replay 2026-09-02 (first half, estimate): `rtok stats` now applies the `archive` policy (keep 4 turns, ≥ 1 500 tokens, 8 + 4 lines) to every tool result in the transcripts and reports `archive replay (estimate) ctt before → after`. On this machine: 569 sessions, 1 771 results qualify, context-token-turns 11.66 G → 8.33 G, −28.6 % (last 14 days: −28.4 %), so the ≥ 15 % bar clears with margin before any live run. Still open, needs live traffic: the proxy has served no requests here yet (`rtok stats --cache` shows no usage rows), so expand rate (< 5 %) and cache_read per turn are unmeasured. To run it: point `ANTHROPIC_BASE_URL` at `rtok proxy` (T5.2 `setup --proxy`), two days `passthrough`, two days `--mode compress`, then `rtok stats --cache` and `rtok stats --plugin archive --json` (`expand_rate`).
+Gate P5: removed 2026-09-09 — 2 d passthrough + 2 d compress with live `usage` rows; the proxy has served no requests here, so `expand` rate and `cache_read` per turn are unmeasurable in code. Evidence kept: replay estimate `research.md` §2 (`archive replay (estimate)` CTT 11.81 G → 8.42 G, −28.7 %, 1 803 candidates). To re-run: point `ANTHROPIC_BASE_URL` at `rtok proxy` (T5.2 `setup --proxy`), two days `passthrough`, two days `--mode compress`, then `rtok stats --cache` and `rtok stats --plugin archive --json` (`expand_rate`).
 
 ### P6 — `memory` plugin (goal: one memory instead of two, zero LLM cost)
 
-Gate P6: disable engram + claude-mem plugins for a week; compare per-turn injection tokens and MCP tool-description tokens (`rtok doctor`). Revert if recall quality is noticeably worse (subjective, note it).
+Gate P6: removed 2026-09-09 — one week with engram + claude-mem disabled plus subjective recall judgement; not code-closable. Evidence kept: `rtok doctor` MCP description rows in `research.md` §2.
 
 ### P7 — modes + instruction hygiene
 
-Gate P7: A/B (P9 harness) `terse` on/off on 6 tasks; keep only if output tokens fall without task failures.
+Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail judgement; not code-closable. Harness kept: T9.1 `rtok bench`.
 
 ### P8 — `graph` plugin (goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers)
 
@@ -139,9 +138,9 @@ Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `a
 
 Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after Gate P8 closed on token count alone. Order is T8.3 → T8.4 → T8.8 → T8.5 → T8.6 → T8.7: the two defects first, the measurement before the edges, the edges before what consumes them.
 
-Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 definition recall ≥ 0.9 (met at 1.0; reference recall is 0.351, see §6); on the P9 task set, tasks touching ≥ 3 files use fewer tool calls with `symbol` than at v0.1 (`calls` table). Revert T8.6 if tool calls do not fall; revert T8.7 if `impact` is never called across a week of `calls`.
+Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 definition recall ≥ 0.9 (met at 1.0; reference recall is 0.351, see §6). The P9-task-set clause (fourth) was removed 2026-09-09 — needs the P9 set run twice plus a user keep/drop decision; not code-closable. Until it is re-added, T8.6 and T8.7 stand unjudged and their revert conditions remain live.
 
-**Status 2026-09-04: three of four clauses measured and passed; the gate stays open on the fourth.** Surface: 4 tools, **62** description tokens (bar 150), asserted by `graph_surface_is_four_tools_under_150_tokens`. Warm tool calls on a generated 3 000-file repo (9 000 rows), release build, after a 22.1 s cold index: `symbol` **23 ms**, `callers` **24 ms**, `impact` **26 ms** (bar 100 ms) — re-measured after T8.5–T8.7, since those changed what a call does. Definition recall **1.000** with precision 1.000 (bar 0.9); reference recall 0.351, published, see §6. The fourth clause needs the P9 task set run twice, which has not happened; until it does, T8.6 and T8.7 stand unjudged and their revert conditions remain live.
+**Status 2026-09-04, closed 2026-09-09 on the three code clauses.** Surface: 4 tools, **62** description tokens (bar 150), asserted by `graph_surface_is_four_tools_under_150_tokens`. Warm tool calls on a generated 3 000-file repo (9 000 rows), release build, after a 22.1 s cold index: `symbol` **23 ms**, `callers` **24 ms**, `impact` **26 ms** (bar 100 ms) — re-measured after T8.5–T8.7, since those changed what a call does. Definition recall **1.000** with precision 1.000 (bar 0.9); reference recall 0.351, published, see §6.
 
 ### P8c — `graph` on LadybugDB (goal: the same four tools, byte-identical, on an embedded graph store — kept only if it wins on numbers) — added 2026-09-04 (D18)
 
@@ -193,7 +192,7 @@ T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and 
 
 **Blocker 2026-09-07 (user decision, resolved 2026-09-08).** `dist-workspace.toml` listed `homebrew` under `installers` and `publish-jobs`, so `release.yml` pushed a formula to `listepo/homebrew-tap` with `secrets.HOMEBREW_TAP_TOKEN` — the secret is not set, so the workflow would push the version bump and then fail in `publish-homebrew-formula`. Resolved by dropping `homebrew` from both lists (shell installer only) and documenting `ketch install listepo/rtok` instead; release-plz PR #2 closed unmerged, the first release goes through `tools/release.sh`.
 
-Gate P18: the Release workflow, started from the Actions tab with no argument, produces a GitHub Release whose tag is one patch above the last; its `aarch64-apple-darwin` and `x86_64-apple-darwin` archives download, extract and run `rtok --version` on macOS, printing that tag; the README install line puts `rtok` on `PATH` under both bash and zsh; running the workflow a second time yields the next patch with nothing hand-edited; with the released binary on `PATH`, one real Claude Code session (hooks + MCP + proxy) is one trace in an OTLP backend — `invoke_agent` root, `execute_tool` spans with `gen_ai.tool.call.arguments` / `result`, `chat {model}` spans with the four `gen_ai.usage.*` attributes, its `logs` rows on the same trace id — and the same config is verified once in SigNoz and once in Maple with the user's account / API key, each dated in `research.md` §2 (moved here from Gate P16 (3) on 2026-09-07); `just check` green.
+Gate P18: removed 2026-09-09 — first real release from the Actions tab, archives on macOS, README install on `PATH`, second run yields the next patch, one real session as one trace, SigNoz + Maple with the user's accounts; every clause needs a user action outside code. None of it is code-closable. Record each clause dated in `research.md` §2 when it happens; re-add the gate only to track a scheduled release. `just check` green stays the code bar.
 
 ### P19 — web dashboard (goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses) — added 2026-09-08 (D20)
 
@@ -201,9 +200,9 @@ Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + 
 
 Gate P19: `just dashboard` (or `rtok dashboard`) listens on the configured host/port; browser `/` loads the Slint canvas when `pkg/` exists; `/ws` pushes a snapshot whose `plugins` length matches the catalogue; a `saves_tokens` page includes input/output/est_before/est_after. **Status: passed 2026-09-09.** Check: `rtok dashboard --port 3334` → `/` 200 (canvas + `./pkg/rtok_webui.js` module, `pkg/` freshly built with wasm-pack 0.15.0, 91 KB js + 10.5 MB wasm, gitignored), `/health` ok, `/ws` snapshot 10 plugins with `saves_tokens` stats (`input/output/est_before/est_after`); `pkg` js/wasm both 200.
 
-### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
+### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate removed 2026-09-09 (review + user decision, not code-closable)
 
-Gate P9 (review + your decision): adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only.
+Gate P9 was: adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only. Evidence kept: `research.md` §2 A/B bench table (T9.2, 6 tasks × 3 runs, `check = true` both configs; costs zero without `RTOK_BENCH_LIVE=1`). Re-add only with a user decision to act on.
 
 The migration side of this phase — which rtok plugin owns each lean-ctx behaviour, the two gaps (`cmd` runner prefixes and families, `graph` callees) and the cutover order — is written in `migration.md` (2026-09-07, plan only; its gaps become tasks here only when promoted).
 
@@ -211,7 +210,7 @@ The migration side of this phase — which rtok plugin owns each lean-ctx behavi
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 
-Gate P11: run one OpenAI-API host (Codex) through the proxy in passthrough for two days; every request has a `usage` row. Then compress for two days; keep only under the P5 gate rule (context-token-turns − 15 %, expand rate < 5 %). Record in research.md §2.
+Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passthrough + 2 d compress; needs live Codex traffic, not code-closable. Re-add with a dated traffic window; record in `research.md` §2.
 
 ### P12 — Config file (goal: every setting in one file, one precedence rule, no flag without a key) — added 2026-09-01 (D12)
 
@@ -376,32 +375,27 @@ Do not start these while v0.1 work is open. When v0.1 is done, promote each row 
 | v0.2 | **Tiered session context** (OpenViking L0/L1/L2). | Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task. |
 
 
-## 4. Definition of done for v0.1
+## 4. Definition of done for v0.1 (code-closable only; traffic/user-gated rows removed 2026-09-09, see §6)
 
 1. `rtok doctor` shows ≤ 8 token-related hooks, one MCP server for reads/memory/graph, one proxy hop (serving both Anthropic and OpenAI wire formats, D11).
-2. `rtok stats --compare before-rtok` over ≥ 5 working days shows lower context-token-turns per session and lower output tokens per passed bench task, with expand rate < 5 %.
-3. Every plugin has a `Measurement` path and appears in `rtok stats --plugin <id>`.
-4. Hook p95 < 10 ms; proxy adds < 20 ms per request (measured in T5.1 test).
-5. README documents what is lossless, what is estimated, and how to revert (`rtok setup claude --remove`, backups).
-6. `rtok config show --sources` lists every setting with its origin; the coverage test (T12.4) is green.
-7. Every hook, MCP `tools/call`, and proxy request has a `calls` row with host agent + provider + model (when known); each plugin run has `tokens` before and after, and MCP tokens for that plugin when it served a tool.
+2. Every plugin has a `Measurement` path and appears in `rtok stats --plugin <id>`.
+3. Hook p95 < 10 ms; proxy adds < 20 ms per request (measured in T5.1 test).
+4. README documents what is lossless, what is estimated, and how to revert (`rtok setup claude --remove`, backups).
+5. `rtok config show --sources` lists every setting with its origin; the coverage test (T12.4) is green.
+6. Every hook, MCP `tools/call`, and proxy request has a `calls` row with host agent + provider + model (when known); each plugin run has `tokens` before and after, and MCP tokens for that plugin when it served a tool.
+
+Removed 2026-09-09 (needs days of live traffic, not code): old row 2 — `rtok stats --compare before-rtok` over ≥ 5 working days with lower context-token-turns per session, lower output tokens per passed bench task, expand rate < 5 %. Re-add with a dated traffic window.
 
 ## 5. Order of value (if time is short)
 
 P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, daemon, WASM) start only after §4 v0.1 done.
 
-Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Open tasks carry a `Complexity:` line; the open gates are mostly calendar- or user-bound, not engineering:
+Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Pruned 2026-09-09: every remaining item below is code- or measurement-closable; traffic/user-gated gates (P3/P4/P5/P6/P7/P9/P11/P18, P8b fourth clause) were removed, see §6.
 
 | Item | Complexity | Waits on |
 |---|---|---|
-| T8.16 | 3/5 | implemented in the working tree; `just check`, commit, move to `done.md` |
-| T8.17 | 4/5 | the only unstarted code task: watchman backend + Gate P8d (3)+(5) numbers + removal decision rule |
 | Gate P8d | 1–2/5 | measurements after T8.16/T8.17; clause (2) already recorded; a quiet machine for p95 |
 | Gate P19 | 1/5 | browser check of `just dashboard` (T19.1–T19.3 done) |
-| Gates P3 / P4 / P6 / P7 / P11 | 1/5 code, days of traffic | legacy tools disabled + `rtok stats --compare` |
-| Gate P5 | 2/5 | the proxy has served no live request yet: 2 d passthrough + 2 d compress; expand rate and cache_read unmeasured |
-| Gate P8b (4) + P9 | 3/5 | P9 task set run twice; user keep/drop decision |
-| Gate P18 | 3/5 | first real release from the Actions tab; one real session as one trace; SigNoz + Maple with user accounts |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -452,3 +446,4 @@ Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Open tasks
 | 2026-09-08 | T10.5 added (P10 reopened): `rtok setup cursor` offers to install `plugins/cursor`. D21 gains clause (6); `AGENTS.md` matches. | User request 2026-09-08 (`rtok setup cursor` должен предлагать установить и плагин). |
 | 2026-09-08 | T10.6 added (P10 open): pi host plugin — `plugins/pi/` pi package (TS extension + skill, no MCP per pi philosophy), one bash call path (`tool_call` rewrite to `rtok run`, `tool_result` via `rtok filter`), `rtok setup pi` offers it after the T10.1 pattern. Promotes the pi part of I-17. | User request 2026-09-08 ("add plugin for pi agent", confirmed). |
 | 2026-09-08 | Complexity ratings added to the plan: a `Complexity:` line on open tasks and a complexity table for the remaining work in §5 (scale 1–5). | User request; makes the remaining effort visible next to the order of value. |
+| 2026-09-09 | Removed what only traffic/user action can close: Gates P3, P4, P5, P6, P7, P9, P11, P18 and the P8b fourth clause (P9 task-set comparison); §4 row 2 (≥ 5 working days `stats --compare`). Each removal keeps its evidence pointer (`research.md` §2) and its re-run recipe, so re-adding needs only a dated window, not rediscovery. §4 renumbered; §5 table pruned to code-closable items. | User request ("убрать только то, что кодом не закрывается"). A plan change per AGENTS.md; no code, no task, no gate result touched. |
