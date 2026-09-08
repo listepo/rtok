@@ -215,12 +215,6 @@ Gate P18: the Release workflow, started from the Actions tab with no argument, p
 
 Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + `tower-http` ServeDir, Slint on wasm32 (official web renderer). Not a catalogue plugin — it does not save tokens.
 
-**T19.2 WebSocket snapshot** · files: `src/dashboard/mod.rs`
-Do: `/health`, `/ws` snapshot of plugin pages + usage; stats widget data for `saves_tokens` plugins.
-**Check:** `cargo test -q dashboard::` — measure has no stats, cmd does after a Measurement row.
-Status: in progress
-Model: Cursor Grok 4.6
-
 **T19.3 Slint WASM UI** · files: `crates/rtok-webui/**`
 Do: one `.slint` app, plugin list, per-plugin page, `TokenStatsWidget`; `web_sys::WebSocket` to `/ws`.
 **Check:** `wasm-pack build crates/rtok-webui --dev --target web` (or skip if wasm-pack missing; crate still present).

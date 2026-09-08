@@ -15,6 +15,13 @@ Status: done 2026-09-08
 Model: Cursor Grok 4.6
 Check result: `rtok dashboard --help` lists `--host` / `--port`; `rtok config get dashboard.port` → `3333`; `just check` green. Extra files beyond the task list (`layers.rs`, `validate.rs`, `src/dashboard/`, `crates/rtok-webui`, `src/plugin.rs` `DashboardPage`) are required for a compiling `Dashboard` subcommand and the later T19.2/T19.3 Checks.
 
+**T19.2 WebSocket snapshot** · files: `src/dashboard/mod.rs`
+Do: `/health`, `/ws` snapshot of plugin pages + usage; stats widget data for `saves_tokens` plugins.
+**Check:** `cargo test -q dashboard::` — measure has no stats, cmd does after a Measurement row.
+Status: done 2026-09-08
+Model: Cursor Grok 4.6
+Check result: `cargo test dashboard::` — `snapshot_lists_catalogue_and_hides_stats_on_measure` green; `tests/dashboard.rs` `dashboard_health_and_index` green (`/health` ok, `/` serves the Slint canvas host). `just check` green at T19.1.
+
 ## P18 — release · tasks done 2026-09-04 (gate needs the first real release)
 
 Goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed. Plan: `plan.md` P18.
