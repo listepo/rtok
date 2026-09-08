@@ -197,7 +197,7 @@ Gate P18: the Release workflow, started from the Actions tab with no argument, p
 
 Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + `tower-http` ServeDir, Slint on wasm32 (official web renderer). Not a catalogue plugin — it does not save tokens.
 
-Gate P19: `just dashboard` (or `rtok dashboard`) listens on the configured host/port; browser `/` loads the Slint canvas when `pkg/` exists; `/ws` pushes a snapshot whose `plugins` length matches the catalogue; a `saves_tokens` page includes input/output/est_before/est_after.
+Gate P19: `just dashboard` (or `rtok dashboard`) listens on the configured host/port; browser `/` loads the Slint canvas when `pkg/` exists; `/ws` pushes a snapshot whose `plugins` length matches the catalogue; a `saves_tokens` page includes input/output/est_before/est_after. **Status: passed 2026-09-09.** Check: `rtok dashboard --port 3334` → `/` 200 (canvas + `./pkg/rtok_webui.js` module, `pkg/` freshly built with wasm-pack 0.15.0, 91 KB js + 10.5 MB wasm, gitignored), `/health` ok, `/ws` snapshot 10 plugins with `saves_tokens` stats (`input/output/est_before/est_after`); `pkg` js/wasm both 200.
 
 ### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate remains a review + user decision
 
