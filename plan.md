@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -150,7 +150,7 @@ Gate P8c (numbers from the same machine, release, for both builds — `default` 
 
 **Status 2026-09-08: clause (4) won; `graph-lbug` stays opt-in.** `impact(4)` 371 ms (`lbug`) vs 28.5 s (SQLite CTE), 77× the 2× bar. Clauses (2) and (3) fail on the `graph-lbug` binary (PostToolUse p95 97 ms, warm calls 0.78–0.87 s); default SQLite meets both (8.07 ms, 18–27 ms). Clause (1) green both; (5) `just check` 16.9 s with liblbug already built, source build still pinned (T8.11); (6) binaries 19.7 MiB vs 32.4 MiB, `graph.lbdb` 6.10 MB. All six do not hold, so the feature never joins `default` and the lbug code is not deleted. Table: `research.md` §2.
 
-### P8d — `graph` freshness (goal: the index follows the working tree without a tool call paying for the walk; the parser stays tree-sitter) — added 2026-09-05
+### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17) — added 2026-09-05
 
 What exists: the index is tree-sitter-tags (T8.1, the seven grammars of `read`); every tool call runs `index::run`, a gitignore-aware walk with a stat gate (T8.4: 0.053 s warm on 3 000 files); `PostToolUse(Edit|Write)` deletes the file's rows so the next call re-parses it. So "auto index" is on and unconditional today, and there is no watcher. A richer parser is not this phase: rtok's own queries above the grammar's tags (type positions, `scoped_identifier`) are I-31, an LSP backend is I-24, both stay in `ideas.md` until a task needs a reference the tags miss. Order T8.15 → T8.16 → T8.17: the knob, the watcher, the second backend. Nothing changes what the four tools print; `tests/graph_contract.rs` stays untouched.
 
@@ -159,14 +159,6 @@ Constraints that shape the design: under `graph-lbug` one process holds the read
 Gate P8d (release, this machine): (1) with `auto_index = false` and `watch = "notify"`, an edit to a fixture file is visible in `symbol` within 1 s while the tool call itself opens no file (`Report.read == 0`, a walk of 0); (2) `rtok mcp` idle for 60 s with the watcher on: CPU time within 50 ms of the watcher-off run and RSS within 2 MB; (3) `watch = "watchman"` passes (1) on the same fixture and `watchman watch-list` names the root; with no watchman socket it falls back to `notify` and says so once on stderr; (4) `rtok hook PostToolUse` p95 ≤ 10 ms, unchanged; (5) release binary bytes before and after `notify` and `watchman_client` in `research.md` §2. Decision rule: (2) lost → the watcher defaults to `"off"` and stays opt-in; (3) lost or watchman ≤ notify on (1) latency → T8.17's crate is removed and `watchman` stays a documented `ideas.md` entry.
 
 **Status 2026-09-09: passed.** (1) `notify` re-index within 1 s, `Report.read == 0` (+ delete disappears); (2) idle ΔCPU −10 ms, ΔRSS +1.14 MB; (3) `watchman` passes (1) (~500 ms vs `notify` ~250 ms, same bar), `watch-list` names the root, socket-less fallback prints exactly one line; (4) hook p95 8.25 ms serialized (`-- --test-threads=1`; parallel rounds straddle the bar on scheduler noise); (5) release 19 764 144 B pre-`notify` → 19 867 968 B default → 20 429 392 B with `graph-watchman`. No decision-rule trigger fired: `watch` stays opt-in `off`, `graph-watchman` stays opt-in, never default. Rows: `research.md` §2.
-
-**T8.17 `watchman` backend** · T8.16 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `docs/config.md`
-Do: optional dependency `watchman_client = "0.9"` (Meta's client; tokio, already a dependency) behind feature `graph-watchman` (in `default` only if Gate P8d (3) and (5) pass). `watch = "watchman"`: connect to the socket (`watchman get-sockname`), `watch-project` the root, subscribe with the same suffix filter as `notify`, and feed the same quiet-period loop; the fallback to `notify` when the socket is missing prints one stderr line. The 250 ms loop and `index::run` call are shared with T8.16 — one function, two event sources.
-Check: with `/opt/homebrew/bin/watchman` on PATH the T8.16 test passes with `watch = "watchman"` and `watchman watch-list` lists the temp root; with `PATH` emptied the same test passes through the fallback and stderr has exactly one `watchman: … falling back to notify` line; Gate P8d (3) and (5) numbers into `research.md` §2 and the decision rule applied in the same commit.
-Complexity: 4/5 — async `watchman_client` (tokio) bridged into the sync quiet loop, one loop with two event sources, an external daemon on the machine, a fallback path that must print exactly one stderr line, feature gating (`graph-watchman`), and the Gate P8d (3)+(5) numbers plus the removal decision rule in the same commit.
-Status: done 2026-09-09
-Model: Muse Spark (meta/muse-spark-1.3-contributor)
-Check result: moved to `done.md` — `watchman_sees_daemon_edit_within_1s_reading_nothing` + `mcp_watchman_*` green; Gate P8d (3) passes, (4) 9.77 ms, (5) +2.8 %; crate stays opt-in per the decision rule.
 
 ### P16 — OpenTelemetry export (goal: every session, call, token and saving rtok records is a trace, log and metric in any OTLP backend, with nothing added to the hook path) — added 2026-09-04 (D19); gate passed 2026-09-07, backend clause moved to P18 and `ideas.md` I-33
 
@@ -194,7 +186,7 @@ T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and 
 
 Gate P18: removed 2026-09-09 — first real release from the Actions tab, archives on macOS, README install on `PATH`, second run yields the next patch, one real session as one trace, SigNoz + Maple with the user's accounts; every clause needs a user action outside code. None of it is code-closable. Record each clause dated in `research.md` §2 when it happens; re-add the gate only to track a scheduled release. `just check` green stays the code bar.
 
-### P19 — web dashboard (goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses) — added 2026-09-08 (D20)
+### P19 — web dashboard · done 2026-09-09 (T19.1–T19.3) — added 2026-09-08 (D20)
 
 Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + `tower-http` ServeDir, Slint on wasm32 (official web renderer). Not a catalogue plugin — it does not save tokens.
 
@@ -394,8 +386,7 @@ Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Pruned 202
 
 | Item | Complexity | Waits on |
 |---|---|---|
-| Gate P8d | 1–2/5 | measurements after T8.16/T8.17; clause (2) already recorded; a quiet machine for p95 |
-| Gate P19 | 1/5 | browser check of `just dashboard` (T19.1–T19.3 done) |
+All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — nothing code-closable is left open. Traffic/user-gated gates were removed above, see §6.
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 

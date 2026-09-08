@@ -31,7 +31,7 @@ Status: done 2026-09-08
 Model: Muse Spark 1.3 Contributor
 Check result: `tests/graph_contract.rs` 3 passed with defaults; new `auto_index_false_is_stale_until_explicit_index` (old line, `index_for` read 0, `index::run` shows new line) and `auto_index_false_empty_root_still_answers` green; `config_coverage` + `default_toml_is_the_defaults` green; `rtok config set plugins.graph.watch bogus` exits 1, `notify` accepted; `just check` green. Deviation (Check wording vs semantics): under `auto_index = false` the contract's `edited_and_deleted_files_are_reflected` fails with the old counts (2 passed, 1 failed) — that staleness is exactly what this task specifies, and the T8.16 watcher (Gate P8d (1)) is what makes edits visible again with `Report.read == 0`. Extra files beyond the task list: `config/default.toml` (the keys themselves or `default_toml_is_the_defaults` fails) and `src/config/validate.rs` (the `watch` enum the Do requires).
 
-## P19 — web dashboard · in progress (D20)
+## P19 — web dashboard · done 2026-09-09 (T19.1–T19.3, Gate P19 passed)
 
 Goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses. Plan: `plan.md` P19.
 
