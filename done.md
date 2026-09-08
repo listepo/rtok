@@ -4,6 +4,17 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P19 — web dashboard · in progress (D20)
+
+Goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses. Plan: `plan.md` P19.
+
+**T19.1 `[dashboard]` config, CLI, flags** · files: `config/default.toml`, `src/config/mod.rs`, `src/cli.rs`
+Do: `host = "127.0.0.1"`, `port = 3333`; `rtok dashboard --host --port`; figment `flag` layer.
+**Check:** `rtok dashboard --help` lists `--host`/`--port`; `rtok config get dashboard.port` is 3333.
+Status: done 2026-09-08
+Model: Cursor Grok 4.6
+Check result: `rtok dashboard --help` lists `--host` / `--port`; `rtok config get dashboard.port` → `3333`; `just check` green. Extra files beyond the task list (`layers.rs`, `validate.rs`, `src/dashboard/`, `crates/rtok-webui`, `src/plugin.rs` `DashboardPage`) are required for a compiling `Dashboard` subcommand and the later T19.2/T19.3 Checks.
+
 ## P18 — release · tasks done 2026-09-04 (gate needs the first real release)
 
 Goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed. Plan: `plan.md` P18.

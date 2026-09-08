@@ -63,7 +63,8 @@ rmcp = { version = "0.8" } # stdio MCP types + JSON-RPC (T4.1)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
+tower-http = { version = "0.6", features = ["fs"] } # ServeDir for Slint WASM assets
 futures-util = "0.3.34"
 reqwest = { version = "0.13.4", default-features = false, features = ["stream", "rustls"] }
 tree-sitter = { version = "0.25", optional = true } # parser for map/signatures (T4.3)

@@ -1,0 +1,144 @@
+import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+
+export struct PluginRow {
+    id: string,
+    title: string,
+    summary: string,
+    fields: string,
+    enabled: bool,
+    saves-tokens: bool,
+    input-tokens: int,
+    output-tokens: int,
+    cache-read: int,
+    cache-create: int,
+    est-before: int,
+    est-after: int,
+    rows: int,
+}
+
+/// Shared stats strip for plugins that record Measurement / usage rows.
+export component TokenStatsWidget inherits Rectangle {
+    in property <int> input-tokens;
+    in property <int> output-tokens;
+    in property <int> cache-read;
+    in property <int> cache-create;
+    in property <int> est-before;
+    in property <int> est-after;
+    in property <int> rows;
+    border-radius: 8px;
+    background: #1e1e24;
+
+    HorizontalBox {
+        padding: 12px;
+        spacing: 16px;
+        alignment: space-around;
+        VerticalBox {
+            Text { text: "input"; color: #888; font-size: 11px; }
+            Text { text: "\{input-tokens}"; color: #eee; font-size: 18px; font-weight: 600; }
+        }
+        VerticalBox {
+            Text { text: "output"; color: #888; font-size: 11px; }
+            Text { text: "\{output-tokens}"; color: #eee; font-size: 18px; font-weight: 600; }
+        }
+        VerticalBox {
+            Text { text: "cache read"; color: #888; font-size: 11px; }
+            Text { text: "\{root.cache-read}"; color: #eee; font-size: 18px; font-weight: 600; }
+        }
+        VerticalBox {
+            Text { text: "cache create"; color: #888; font-size: 11px; }
+            Text { text: "\{root.cache-create}"; color: #eee; font-size: 18px; font-weight: 600; }
+        }
+        VerticalBox {
+            Text { text: "est before → after"; color: #888; font-size: 11px; }
+            Text { text: "\{est-before} → \{est-after}"; color: #8fd19e; font-size: 18px; font-weight: 600; }
+        }
+        VerticalBox {
+            Text { text: "rows"; color: #888; font-size: 11px; }
+            Text { text: "\{rows}"; color: #eee; font-size: 18px; font-weight: 600; }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "rtok";
+    preferred-width: 960px;
+    preferred-height: 640px;
+    background: #121216;
+
+    in-out property <[PluginRow]> plugins;
+    in-out property <int> current: 0;
+    in property <int> usage-input;
+    in property <int> usage-output;
+    in property <int> usage-cache-read;
+    in property <int> usage-cache-create;
+    in property <string> status: "connecting";
+
+    property <PluginRow> selected: plugins[current];
+
+    HorizontalBox {
+        padding: 12px;
+        spacing: 12px;
+
+        Rectangle {
+            width: 220px;
+            border-radius: 8px;
+            background: #1a1a20;
+            VerticalBox {
+                padding: 8px;
+                Text { text: "rtok"; color: #fff; font-size: 20px; font-weight: 700; }
+                Text { text: status; color: #888; font-size: 11px; }
+                ListView {
+                    for p[i] in plugins: Rectangle {
+                        height: 36px;
+                        border-radius: 6px;
+                        background: i == current ? #2a3a4a : transparent;
+                        TouchArea {
+                            clicked => { current = i; }
+                        }
+                        HorizontalBox {
+                            padding-left: 8px;
+                            alignment: start;
+                            Text {
+                                text: p.title;
+                                color: p.enabled ? #eee : #888;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            VerticalBox {
+                spacing: 12px;
+                Text { text: "usage"; color: #888; font-size: 11px; }
+                TokenStatsWidget {
+                    input-tokens: usage-input;
+                    output-tokens: usage-output;
+                    cache-read: usage-cache-read;
+                    cache-create: usage-cache-create;
+                    est-before: 0;
+                    est-after: 0;
+                    rows: 0;
+                }
+                Text { text: selected.title; color: #fff; font-size: 22px; font-weight: 700; }
+                Text {
+                    text: selected.enabled ? "enabled" : "disabled";
+                    color: selected.enabled ? #8fd19e : #c97;
+                }
+                Text { text: selected.summary; color: #ccc; wrap: word-wrap; }
+                Text { text: selected.fields; color: #aaa; wrap: word-wrap; }
+                if selected.saves-tokens: TokenStatsWidget {
+                    input-tokens: selected.input-tokens;
+                    output-tokens: selected.output-tokens;
+                    cache-read: selected.cache-read;
+                    cache-create: selected.cache-create;
+                    est-before: selected.est-before;
+                    est-after: selected.est-after;
+                    rows: selected.rows;
+                }
+            }
+        }
+    }
+}

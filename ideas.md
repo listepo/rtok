@@ -113,6 +113,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 ## Promoted
 
 | I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
+| I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 
 | ID | Became | Date |
 |----|--------|------|

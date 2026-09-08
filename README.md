@@ -75,6 +75,7 @@ rtok stats --compare before-rtok
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
+| `rtok dashboard` | local Slint/WASM UI + WebSocket API (`--host`, `--port`) |
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok run -- <cmd>` | run, archive, and format a command result |

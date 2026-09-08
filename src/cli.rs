@@ -50,6 +50,15 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Local Slint/WASM dashboard (WebSocket API + UI)
+    Dashboard {
+        /// Override `[dashboard] host`
+        #[arg(long)]
+        host: Option<String>,
+        /// Override `[dashboard] port`
+        #[arg(long)]
+        port: Option<u16>,
+    },
     /// Measurements from session logs and the proxy
     Stats {
         /// How far back to read transcripts (`60d`, `24h`)
@@ -376,6 +385,11 @@ pub fn run() -> Result<()> {
                 return Ok(());
             }
             crate::proxy::serve_blocking(cfg)?;
+        }
+        Cmd::Dashboard { host, port } => {
+            let cfg =
+                Config::load_with(config_file.as_deref(), layers::dashboard_flags(host, port))?;
+            crate::dashboard::serve_blocking(cfg)?;
         }
         Cmd::Setup {
             host,

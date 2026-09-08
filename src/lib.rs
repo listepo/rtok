@@ -14,6 +14,7 @@
 pub mod bench;
 pub mod cli;
 pub mod config;
+pub mod dashboard;
 pub mod doctor;
 pub mod expand;
 pub mod hooks;

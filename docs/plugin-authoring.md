@@ -37,6 +37,7 @@ impl Plugin for MyPlugin {
 ```
 
 Implement only the trait methods your surfaces need; every method has a no-op default.
+Override `dashboard_page` when the operator UI should show plugin-specific fields; token-saving plugins keep `saves_tokens` so the shared stats widget appears.
 
 ## 2. Wire it in (three one-liners)
 

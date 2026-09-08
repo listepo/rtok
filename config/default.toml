@@ -40,6 +40,10 @@ timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
+[dashboard]                           # rtok dashboard
+host = "127.0.0.1"                    # --host
+port = 3333                           # --port
+
 [stats]                               # rtok stats
 since           = "30d"
 format          = "table"             # table | json      (--json)

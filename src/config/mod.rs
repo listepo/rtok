@@ -130,6 +130,14 @@ section! {
 }
 
 section! {
+    /// `[dashboard]` — `rtok dashboard` (P19). Slint WASM UI + WebSocket API.
+    Dashboard {
+        host: String = s("127.0.0.1"),
+        port: u16 = 3333,
+    }
+}
+
+section! {
     /// `[stats]` — `rtok stats`.
     Stats {
         since: String = s("30d"),
@@ -389,6 +397,7 @@ pub struct Config {
     pub hook: Hook,
     pub mcp: Mcp,
     pub proxy: Proxy,
+    pub dashboard: Dashboard,
     pub stats: Stats,
     pub bench: Bench,
     pub doctor: Doctor,

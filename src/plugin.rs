@@ -5,6 +5,7 @@
 //! implements only the surfaces it declares in its [`Manifest`].
 
 use anyhow::Result;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::config::Config;
@@ -210,6 +211,83 @@ pub struct Injection {
     pub priority: u8,
 }
 
+/// Static copy for `rtok dashboard`. Stats are attached by `src/dashboard` from the Store.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DashboardPage {
+    pub title: String,
+    pub summary: String,
+    pub saves_tokens: bool,
+    pub fields: Vec<(String, String)>,
+}
+
+impl DashboardPage {
+    pub fn from_id(id: &str) -> Self {
+        let (title, summary, saves_tokens) = match id {
+            "measure" => (
+                "Measure",
+                "Only Measurement rows count as savings. Stats from transcripts and proxy usage.",
+                false,
+            ),
+            "cmd" => (
+                "Bash / cmd",
+                "Archive and filter command output; expand the original by id.",
+                true,
+            ),
+            "read" => (
+                "Read",
+                "Outline, map, and search instead of dumping full files into context.",
+                true,
+            ),
+            "archive" => (
+                "Archive",
+                "Shrink old tool results in the live zone; pointers expand on demand.",
+                true,
+            ),
+            "proxy" => (
+                "Proxy usage",
+                "Record provider usage; compress mode runs plugin proxy_filter.",
+                true,
+            ),
+            "inject" => (
+                "Inject",
+                "Budgeted SessionStart / prompt context that stays byte-stable.",
+                true,
+            ),
+            "guard" => (
+                "Guard",
+                "Deny duplicate reads and commands inside a sliding window.",
+                true,
+            ),
+            "memory" => (
+                "Memory",
+                "Recall notes and titles without an LLM extraction step.",
+                true,
+            ),
+            "graph" => (
+                "Graph",
+                "symbol / callers / impact from a tree-sitter-tags index.",
+                true,
+            ),
+            "toon" => (
+                "TOON",
+                "Compact tabular JSON. Off by default until it beats the corpus.",
+                true,
+            ),
+            _ => ("Plugin", "External plugin.", false),
+        };
+        Self {
+            title: if title == "Plugin" {
+                id.into()
+            } else {
+                title.into()
+            },
+            summary: summary.into(),
+            saves_tokens,
+            fields: vec![],
+        }
+    }
+}
+
 /// An MCP tool exposed by `rtok mcp`. Description ≤ 60 tokens (T4.1 test).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolDef {
@@ -298,6 +376,11 @@ pub trait Plugin: Send + Sync {
     /// Rewrite the selected wire's normalised tool results; return one measurement per change.
     fn proxy_filter(&self, _req: &mut WireRequest<'_>, _cx: &Ctx) -> Vec<Measurement> {
         Vec::new()
+    }
+
+    /// Operator-dashboard page. Default is catalogue copy; override for extra fields.
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::from_id(self.manifest().id)
     }
 }
 

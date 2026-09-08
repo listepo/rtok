@@ -75,6 +75,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | v0.2 |
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
+| `src/dashboard/` | axum WebSocket + static Slint WASM UI: `rtok dashboard` (D20). UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
@@ -185,7 +186,7 @@ under 5 %.
   a fixture, and a trait method with a default body.
 - **New host** (Cursor, OpenCode, Codex): a `src/setup/<host>.rs` installer plus, if the
   payload differs, a field mapping into `HookInput`. The plugins do not change.
-- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait; operator TUI (`src/tui/`, D17) reads `Store`/`stats`/`doctor` and does not enter the plugin trait;
+- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait; operator TUI (`src/tui/`, D17) and web dashboard (`src/dashboard/`, D20) read `Store`/`stats`/`doctor`; dashboard also calls `Plugin::dashboard_page`. They do not run on the hook path;
   add a `Surface` variant so manifests can declare it.
 - **New API wire format** (e.g. Gemini): implement `Wire` in `src/proxy/<name>.rs` — route
   match, tool-result accessor, usage parser for body and SSE — plus fixtures. Plugins do not

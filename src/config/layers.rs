@@ -337,6 +337,23 @@ pub fn proxy_flags(
     Some(flags)
 }
 
+/// Clap `Option<T>` overlay for `rtok dashboard` (`flag` layer).
+pub fn dashboard_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> {
+    let mut dash = Dict::new();
+    if let Some(host) = host {
+        dash.insert("host".into(), Value::from(host));
+    }
+    if let Some(port) = port {
+        dash.insert("port".into(), Value::from(i64::from(port)));
+    }
+    if dash.is_empty() {
+        return None;
+    }
+    let mut flags = Dict::new();
+    flags.insert("dashboard".into(), Value::from(dash));
+    Some(flags)
+}
+
 /// [`figment`], extracted and finished (legacy-key migration + `~` expansion).
 pub fn load(home: &Path, config_file: Option<&Path>, flags: Option<Dict>) -> Result<Config> {
     let mut cfg: Config = figment(home, config_file, flags).extract()?;

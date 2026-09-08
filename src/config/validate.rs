@@ -172,7 +172,7 @@ fn check_leaf(
     }
     if let Some(n) = item.as_integer() {
         match dotted {
-            "proxy.port" if !(1..=65535).contains(&n) => {
+            "proxy.port" | "dashboard.port" if !(1..=65535).contains(&n) => {
                 errors.push(format!("{at}: {dotted} out of range (1–65535)"));
             }
             "plugins.archive.keep_turns" if n < 1 => {
