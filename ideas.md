@@ -77,7 +77,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-17 | aider, Windsurf, Zed, Copilot Chat | `setup` | Installers beyond Claude / Cursor / OpenCode / Codex (T10.1–T10.3). | P10 is those three + release. New host = new `src/setup/<host>.rs` after T10.1 pattern. |
+| I-17 | aider, Windsurf, Zed, Copilot Chat | `setup` | Installers beyond Claude / Cursor / OpenCode / Codex (T10.1–T10.3). Pi agent promoted 2026-09-08 → T10.6; the rest stays here. | P10 is those three + release. New host = new `src/setup/<host>.rs` after T10.1 pattern. |
 | I-18 | token-optimizer coaching / quality nudges | `inject` | Prompt nudges (“don’t re-read”, “use expand”). | Nudges are re-read every turn (D5). Lean-ctx’s 3.1 K banner is the cautionary tale. Promote only with a P7-style A/B. |
 | I-19 | `log`/`tracing` in every alternative CLI | core | Dedicated `tracing` logger: levels (`error`–`trace`), `core.log_file`, no stderr on the hook path; `Ctx::log` stays the DB path (D13). | Config already has `log_level` / `log_file`; P13 writes the `logs` table. File+level subscriber is not a numbered task. |
 | I-20 | clap ecosystem | CLI | Shell completions (`clap_complete`) and a man page (`clap_mangen`). | D14 is clap + figment. Completions are polish after T12.4. |
@@ -114,6 +114,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 
 | I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
+| I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
 
 | ID | Became | Date |
 |----|--------|------|

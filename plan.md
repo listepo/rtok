@@ -211,7 +211,14 @@ Gate P9 (review + your decision): adopt config B if cost per passed task is lowe
 
 The migration side of this phase — which rtok plugin owns each lean-ctx behaviour, the two gaps (`cmd` runner prefixes and families, `graph` callees) and the cutover order — is written in `migration.md` (2026-09-07, plan only; its gaps become tasks here only when promoted).
 
-### P10 — other hosts + release — T10.1–T10.5 done 2026-09-08 (D21)
+### P10 — other hosts + release — T10.1–T10.5 done 2026-09-08 (D21); T10.6 open
+
+**T10.6 pi host plugin** · T10.1, D21 · `src/setup/pi.rs`, `plugins/pi/`, `tests/pi_plugin.rs`
+Do: pi package (`package.json` with `pi.extensions` + `skills/`): `extensions/rtok.ts` — one call path only: `tool_call` bash → mutate `input.command` to `rtok run -- …`, `tool_result` bash → `rtok filter` compress + `expand <id>` trailer; no `read`/`search` tool duplicates (pi philosophy is no MCP). `rtok setup pi` offers `plugins/pi/` into `~/.pi/agent/extensions/` (or packages); `--dry-run` prints the offer + `ketch install listepo/rtok`; `--yes` links without a prompt; `--remove` unlinks. Missing `rtok` fails open and names ketch. Optional proxy via `registerProvider` `baseUrl` `http://127.0.0.1:8790/v1` (T11.5 pattern).
+Check: `rtok setup pi --dry-run` names `plugins/pi` and `ketch install listepo/rtok` and touches nothing; `--yes` links the extension, second apply `no changes`, `--remove` unlinks; `tests/pi_plugin.rs` asserts the single bash call path, no `read`/`search` duplication, and the ketch message; `just check` green.
+Complexity: 2/5 — new `src/setup/<host>.rs` after the T10.1 pattern, one TS extension with two event handlers, no new dependency, no wire format.
+Status: open
+Model: -
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 
@@ -454,4 +461,5 @@ Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Open tasks
 | 2026-09-07 | T18.5 added to P18 and done: release-plz as a second entry point — a `release: vX.Y.Z` pull request with the next version and changelog; merging it dispatches the dist Release workflow through `tools/release.sh --no-bump`. release-plz neither tags nor publishes; dist does both. No new dependency in the binary; no new secret required. | User request 2026-09-07 ("Add support release-plz"). Two paths, one script, one workflow — they cannot disagree on the version. |
 | 2026-09-08 | D21 added: every new plugin is plugin + MCP as one unit, a singleton, one call path per capability; host plugins work on desktop and CLI; missing `rtok` tells the user to install with ketch. `AGENTS.md` never-bend and plan §2 match. | User request 2026-09-08 (Cursor host plugin: plugin and MCP simultaneously, no duplicate calls, singleton; missing rtok → ketch install). |
 | 2026-09-08 | T10.5 added (P10 reopened): `rtok setup cursor` offers to install `plugins/cursor`. D21 gains clause (6); `AGENTS.md` matches. | User request 2026-09-08 (`rtok setup cursor` должен предлагать установить и плагин). |
+| 2026-09-08 | T10.6 added (P10 open): pi host plugin — `plugins/pi/` pi package (TS extension + skill, no MCP per pi philosophy), one bash call path (`tool_call` rewrite to `rtok run`, `tool_result` via `rtok filter`), `rtok setup pi` offers it after the T10.1 pattern. Promotes the pi part of I-17. | User request 2026-09-08 ("add plugin for pi agent", confirmed). |
 | 2026-09-08 | Complexity ratings added to the plan: a `Complexity:` line on open tasks and a complexity table for the remaining work in §5 (scale 1–5). | User request; makes the remaining effort visible next to the order of value. |
