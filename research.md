@@ -88,6 +88,22 @@ not 2× a default `cargo test` (18.9 s); the C++ cmake cost is paid once (T8.11:
 debug from source, pinned). Decision: `graph-lbug` stays **opt-in, never default**. Code is
 not deleted.
 
+### `graph` watcher idle cost (Gate P8d (2), T8.16, 2026-09-08)
+
+Release binary, macOS arm64, this machine. `rtok mcp` idle for 60 s (stdin held open, no
+requests), 50-file fixture root, `ps -o time=,rss=` sampled at t+60 s. Watcher thread inside
+the server process (D18 one-writer rule).
+
+| Measurement | `watch = "off"` | `watch = "notify"` | Bar |
+|---|---|---|---|
+| CPU time over 60 s idle | 0:00.03 (30 ms) | 0:00.02 (20 ms) | Δ ≤ 50 ms |
+| RSS at t+60 s | 11 552 KB (11.3 MB) | 12 720 KB (12.4 MB) | Δ ≤ 2 MB |
+
+Clause (2) **passed**: the FSEvents-backed watcher costs less CPU than the noise floor of the
+measurement and +1.14 MB RSS. Per the Gate P8d decision rule the watcher is not forced to
+`"off"`; it stays opt-in anyway because T8.15 shipped `watch = "off"` as the default and no
+task in P8d changes it.
+
 ### OpenTelemetry export (Gate P16, 2026-09-04)
 
 Release binary, macOS arm64, 100 runs per event, spawn-to-exit measured from Python.

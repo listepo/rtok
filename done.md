@@ -4,9 +4,17 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
-## P8d — `graph` freshness · in progress (T8.15 done 2026-09-08, T8.16–T8.17 open)
+## P8d — `graph` freshness · in progress (T8.15–T8.16 done 2026-09-08, T8.17 open)
 
 Goal: the index follows the working tree without a tool call paying for the walk. Plan: `plan.md` P8d.
+
+**T8.16 watcher in `rtok mcp` (`notify`)** · T8.15 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `src/mcp.rs`
+Do: dependency `notify = "8"` (stable; 9 is an RC; MSRV 1.77 under the 1.97 pin) — reason in the commit message. `watch::run(cx, root, stop)` watches `root` recursively, drops events whose path fails `outline::supported` or sits under `.git/`, and after 250 ms without one calls `index::run(cx, &root)`; every error is logged once and the loop continues (a lost event costs one stale answer, never a crash). `mcp::run` wraps the stdin loop in `std::thread::scope` and spawns the watcher when `plugins.graph.watch != "off"`; EOF on stdin sets `stop` and joins the thread. No `rtok graph watch` subcommand: the MCP server is the only consumer, and a second process would break the one-writer rule under `graph-lbug`.
+Check: test on a temp root: start the watcher, write a new `.rs` file with one `fn`, poll `symbol` with `auto_index = false` — the definition appears within 1 s and the call's `Report.read` is 0; delete the file, it disappears; 200 writes in 100 ms produce ≤ 3 `index::run` calls (count via `Report`); `rtok mcp` exits within 500 ms of stdin EOF with the watcher on; Gate P8d (2) numbers into `research.md` §2.
+Complexity: 3/5 — concurrent watcher thread inside `rtok mcp`, 250 ms debounce, timing-sensitive tests (poll ≤ 1 s, EOF exit < 500 ms); the design is fully specified by the task, so the risk is test flake, not architecture.
+Status: done 2026-09-08
+Model: Muse Spark 1.3 Contributor
+Check result: `cargo test --lib plugins::graph::watch` 4 passed (reindex within 1 s with `Report.read == 0`, delete disappears, 200 writes coalesce to ≤ 3 runs, git/unsupported paths dropped, watchman-less fallback re-indexes); `cargo test --test mcp` 3 passed (watcher exits < 500 ms at stdin EOF; one fallback line with `PATH` emptied); Gate P8d (2) numbers in `research.md` §2 (idle CPU −10 ms, RSS +1.14 MB — passed); `just check` green.
 
 **T8.15 `auto_index` and `watch` keys** · T8.4 · `src/config/mod.rs`, `src/plugins/graph/mod.rs`, `docs/config.md`
 Do: `plugins.graph.auto_index: bool = true` and `plugins.graph.watch: String = "off"` (`off` | `notify` | `watchman`; validated like other enums in `config/validate.rs`). `auto_index = true` is today's behaviour. `false`: `symbol` / `callers` / `impact` call `index::ensure` instead of `index::run`, so a root with no rows is still indexed once and everything after that is `rtok graph index` or the watcher; a file the hook marked stale reads as missing until then, which `docs/config.md` says in one line.

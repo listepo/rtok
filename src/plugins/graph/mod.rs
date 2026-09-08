@@ -21,6 +21,7 @@ use crate::plugin::{Ctx, Manifest, Measurement, Plugin, PostToolUse, Surface, To
 use crate::tokens::Class;
 
 pub mod index;
+pub mod watch;
 
 pub struct Graph;
 

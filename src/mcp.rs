@@ -4,6 +4,7 @@
 
 use std::io::{BufRead, Write};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
 use rmcp::model::{CallToolResult, Content, JsonObject, ListToolsResult, ServerInfo, Tool};
@@ -23,23 +24,43 @@ fn expand_def() -> ToolDef {
 }
 
 /// Serve MCP on stdin/stdout until EOF.
+#[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
     let server = Server::new(cfg)?;
     crate::otel::export::spawn_ticker(cfg);
-    let stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
+    // P8d watcher (T8.16): a thread inside this process, never a second writer.
+    // Any value but `off` arms it; `watchman` gets its own backend in T8.17.
+    let watch_root: Option<std::path::PathBuf> =
+        if server.cx.config.plugins.graph.watch.as_str() != "off" {
+            std::env::current_dir().ok()
+        } else {
+            None
+        };
+    let stop = AtomicBool::new(false);
+    std::thread::scope(|s| {
+        #[cfg(feature = "graph")]
+        if let Some(root) = &watch_root {
+            s.spawn(|| crate::plugins::graph::watch::run(&server.cx, root, &stop));
         }
-        if let Some(out) = server.handle_line(&line) {
-            writeln!(stdout, "{out}")?;
-            stdout.flush()?;
-        }
-    }
-    crate::otel::export::flush_blocking(&server.cx);
-    Ok(())
+        let res: Result<()> = (|| {
+            let stdin = std::io::stdin();
+            let mut stdout = std::io::stdout();
+            for line in stdin.lock().lines() {
+                let line = line?;
+                if line.trim().is_empty() {
+                    continue;
+                }
+                if let Some(out) = server.handle_line(&line) {
+                    writeln!(stdout, "{out}")?;
+                    stdout.flush()?;
+                }
+            }
+            Ok(())
+        })();
+        stop.store(true, Ordering::Relaxed);
+        crate::otel::export::flush_blocking(&server.cx);
+        res
+    })
 }
 
 struct Listed {
