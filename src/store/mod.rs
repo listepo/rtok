@@ -603,6 +603,29 @@ impl Store {
         Ok(())
     }
 
+    /// Request bodies of the newest `limit` hook calls in this session (T4.6
+    /// edit window: a PreToolUse(Read) checks them for a recent Edit|Write).
+    /// The live call's own row has no `call_io` yet, so it never matches itself.
+    pub fn recent_hook_inputs(&self, session: &str, limit: i64) -> Result<Vec<String>> {
+        #[derive(QueryableByName)]
+        struct Body {
+            #[diesel(sql_type = Text)]
+            request_json: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Body> = sql_query(
+            "SELECT call_io.request_json AS request_json FROM calls
+             JOIN call_io ON call_io.call_id = calls.id
+             WHERE calls.session_id = ? AND calls.kind = 'hook'
+               AND call_io.request_json IS NOT NULL
+             ORDER BY calls.id DESC LIMIT ?",
+        )
+        .bind::<Text, _>(session)
+        .bind::<BigInt, _>(limit)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| r.request_json).collect())
+    }
+
     /// Hook/call rows in this session at or after `ts` (window for `guard`).
     pub fn calls_since(&self, session: &str, ts: i64) -> Result<i64> {
         let mut conn = self.lock()?;
