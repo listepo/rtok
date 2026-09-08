@@ -154,19 +154,31 @@ fn mcp_watchman_watch_list_names_the_root() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn rtok mcp");
-    std::thread::sleep(std::time::Duration::from_millis(400));
-    let list = Command::new("/opt/homebrew/bin/watchman")
-        .arg("watch-list")
-        .output()
-        .expect("watch-list");
+    // The watchman connect + subscribe happens off the stdin loop; poll the
+    // daemon (≤ 5 s) instead of asserting a fixed 400 ms sleep.
+    let root = repo.canonicalize().unwrap();
+    let mut listed = String::new();
+    for _ in 0..50 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let list = Command::new("/opt/homebrew/bin/watchman")
+            .arg("watch-list")
+            .output()
+            .expect("watch-list");
+        listed = String::from_utf8_lossy(&list.stdout).into_owned();
+        if listed.contains(&root.display().to_string()) {
+            break;
+        }
+    }
     drop(child.stdin.take());
     let _ = child.wait_with_output();
-    let listed = String::from_utf8_lossy(&list.stdout);
-    let root = repo.canonicalize().unwrap();
     assert!(
         listed.contains(&root.display().to_string()),
         "watch-list missing {}: {listed}",
         root.display()
     );
+    // Leave no root behind: the next run asserts its own root only.
+    let _ = Command::new("/opt/homebrew/bin/watchman")
+        .args(["watch-del", &root.display().to_string()])
+        .output();
     let _ = std::fs::remove_dir_all(&home);
 }

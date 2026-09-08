@@ -104,6 +104,39 @@ measurement and +1.14 MB RSS. Per the Gate P8d decision rule the watcher is not 
 `"off"`; it stays opt-in anyway because T8.15 shipped `watch = "off"` as the default and no
 task in P8d changes it.
 
+### `graph` watchman backend (Gate P8d (3)+(5), T8.17, 2026-09-09)
+
+Release binary, macOS arm64, this machine, `watchman 2026.07.27.00` on PATH.
+Gate P8d (1) under `watch = "watchman"`: daemon edit visible in `symbol`
+within 1 s while the call reads 0 files — `watchman_sees_daemon_edit_within_1s_reading_nothing`
+green (`tests/` poll the daemon's `watch-list` for the root before the timed
+write, so the check measures delivery, not connect + subscribe).
+Gate P8d (3): `mcp_watchman_watch_list_names_the_root` green — the MCP cwd
+registers with the daemon (the first version slept a fixed 400 ms and flaked
+when the daemon needed longer; it now polls `watch-list` ≤ 5 s); with no
+socket the server prints exactly one `watchman: … falling back to notify`
+line and serves through `notify` (`mcp_watchman_without_daemon_falls_back_once`).
+Gate P8d (1) latency, single probes (debug binary, one live `rtok mcp` per
+backend, `auto_index = false`, write-then-poll to `symbol`): `notify` ~250 ms,
+`watchman` ~500 ms — both under the 1 s bar; the daemon path pays connect +
+round-trip on top of the same 250 ms quiet period, so it cannot beat `notify`
+here. Not a bench (n=1 each); the committed tests assert the bar, not the gap.
+Gate P8d (4): hook path is untouched by this phase (no `hooks/` file changed;
+the default binary links neither `notify` nor `watchman_client`), so no new
+p95 is owed by the change itself. Measured anyway on this machine:
+`cargo test --release --test latency` p95 14.8/14.9 ms (Pre/PostToolUse,
+n=200) at load ~9, and 10.1/10.6 ms at load ~11 — both over the 10 ms bar
+with p50 ~8.3 ms and 633 ms scheduler-stall maxima, i.e. machine load, as in
+Gate P17 (7–8 ms p95 at load ~3). Re-run on a quiet machine for the gate row.
+Gate P8d (5): release `rtok` 19 764 144 B pre-`notify` (scratch worktree at
+`54f2445^`) vs 19 867 968 B (18.9 MiB) default with `notify` (+103 824 B,
++0.5 %) vs 20 429 392 B (19.5 MiB) with `--features graph-watchman`
+(+561 424 B over default, +2.8 %). The feature is **not** in `default`:
+(3) passes but watchman does not beat `notify` on (1) latency — same ≤ 1 s
+bar, same quiet-period loop, plus a daemon the user must run — so per the
+Gate P8d decision rule the `watchman_client` crate stays behind opt-in
+`graph-watchman` and `watchman` stays a documented value, not the default.
+
 ### OpenTelemetry export (Gate P16, 2026-09-04)
 
 Release binary, macOS arm64, 100 runs per event, spawn-to-exit measured from Python.

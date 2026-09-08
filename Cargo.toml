@@ -24,6 +24,9 @@ memory = []
 graph = ["read"]
 # Opt-in only (P8c): the symbol index moves to LadybugDB. Never in `default` until Gate P8c says so.
 graph-lbug = ["graph", "dep:lbug"]
+# Opt-in only (P8d T8.17): the graph watcher reads Meta's watchman daemon instead of
+# notify's FSEvents/kqueue/inotify. Joins `default` only if Gate P8d (3) and (5) pass.
+graph-watchman = ["graph", "dep:watchman_client"]
 toon = []
 lang-rust = ["dep:tree-sitter-rust"]
 lang-ts = ["dep:tree-sitter-typescript"]
@@ -62,6 +65,7 @@ dotenvy = "0.15" # `.env` files as a config layer, parse only (T12.5)
 rmcp = { version = "0.8" } # stdio MCP types + JSON-RPC (T4.1)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
 notify = "8" # recursive file watching for the graph background indexer (T8.16; 9 is an RC)
+watchman_client = { version = "0.9", optional = true } # Meta's watchman client for the T8.17 watcher backend (tokio, already a dependency); behind `graph-watchman`
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged

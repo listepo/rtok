@@ -163,8 +163,9 @@ Gate P8d (release, this machine): (1) with `auto_index = false` and `watch = "no
 Do: optional dependency `watchman_client = "0.9"` (Meta's client; tokio, already a dependency) behind feature `graph-watchman` (in `default` only if Gate P8d (3) and (5) pass). `watch = "watchman"`: connect to the socket (`watchman get-sockname`), `watch-project` the root, subscribe with the same suffix filter as `notify`, and feed the same quiet-period loop; the fallback to `notify` when the socket is missing prints one stderr line. The 250 ms loop and `index::run` call are shared with T8.16 — one function, two event sources.
 Check: with `/opt/homebrew/bin/watchman` on PATH the T8.16 test passes with `watch = "watchman"` and `watchman watch-list` lists the temp root; with `PATH` emptied the same test passes through the fallback and stderr has exactly one `watchman: … falling back to notify` line; Gate P8d (3) and (5) numbers into `research.md` §2 and the decision rule applied in the same commit.
 Complexity: 4/5 — async `watchman_client` (tokio) bridged into the sync quiet loop, one loop with two event sources, an external daemon on the machine, a fallback path that must print exactly one stderr line, feature gating (`graph-watchman`), and the Gate P8d (3)+(5) numbers plus the removal decision rule in the same commit.
-Status: open
-Model: -
+Status: done 2026-09-09
+Model: Muse Spark (meta/muse-spark-1.3-contributor)
+Check result: moved to `done.md` — `watchman_sees_daemon_edit_within_1s_reading_nothing` + `mcp_watchman_*` green; Gate P8d (3) passes, (4) 9.77 ms, (5) +2.8 %; crate stays opt-in per the decision rule.
 
 ### P16 — OpenTelemetry export (goal: every session, call, token and saving rtok records is a trace, log and metric in any OTLP backend, with nothing added to the hook path) — added 2026-09-04 (D19); gate passed 2026-09-07, backend clause moved to P18 and `ideas.md` I-33
 

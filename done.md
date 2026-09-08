@@ -4,9 +4,17 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
-## P8d — `graph` freshness · in progress (T8.15–T8.16 done 2026-09-08, T8.17 open)
+## P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17)
 
 Goal: the index follows the working tree without a tool call paying for the walk. Plan: `plan.md` P8d.
+
+**T8.17 `watchman` backend** · T8.16 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `docs/config.md`
+Do: optional dependency `watchman_client = "0.9"` (Meta's client; tokio, already a dependency) behind feature `graph-watchman` (in `default` only if Gate P8d (3) and (5) pass). `watch = "watchman"`: connect to the socket (`watchman get-sockname`), `watch-project` the root, subscribe with the same suffix filter as `notify`, and feed the same quiet-period loop; the fallback to `notify` when the socket is missing prints one stderr line. The 250 ms loop and `index::run` call are shared with T8.16 — one function, two event sources.
+Check: with `/opt/homebrew/bin/watchman` on PATH the T8.16 test passes with `watch = "watchman"` and `watchman watch-list` lists the temp root; with `PATH` emptied the same test passes through the fallback and stderr has exactly one `watchman: … falling back to notify` line; Gate P8d (3) and (5) numbers into `research.md` §2 and the decision rule applied in the same commit.
+Complexity: 4/5 — async `watchman_client` (tokio) bridged into the sync quiet loop, one loop with two event sources, an external daemon on the machine, a fallback path that must print exactly one stderr line, feature gating (`graph-watchman`), and the Gate P8d (3)+(5) numbers plus the removal decision rule in the same commit.
+Status: done 2026-09-09
+Model: Muse Spark (meta/muse-spark-1.3-contributor)
+Check result: `cargo test --features graph-watchman --lib plugins::graph::watch` 5 passed (incl. new `watchman_sees_daemon_edit_within_1s_reading_nothing`: daemon edit visible ≤ 1 s, `index_for.read == 0`); `cargo test --features graph-watchman --test mcp mcp_watchman` 2 passed (`watch-list` names the root — fixed a 400 ms fixed-sleep flake by polling ≤ 5 s, plus `watch-del` cleanup; fallback prints exactly one line); `just check` green (15 suites); Gate P8d (3) passes but watchman does not beat `notify` on (1), so the crate stays behind opt-in `graph-watchman`, never `default`; Gate P8d (4) `PostToolUse` p95 9.77 ms; Gate P8d (5) release 18.9 MiB → 19.5 MiB (+2.8 %) — all in `research.md` §2.
 
 **T8.16 watcher in `rtok mcp` (`notify`)** · T8.15 · `Cargo.toml`, `src/plugins/graph/watch.rs`, `src/mcp.rs`
 Do: dependency `notify = "8"` (stable; 9 is an RC; MSRV 1.77 under the 1.97 pin) — reason in the commit message. `watch::run(cx, root, stop)` watches `root` recursively, drops events whose path fails `outline::supported` or sits under `.git/`, and after 250 ms without one calls `index::run(cx, &root)`; every error is logged once and the loop continues (a lost event costs one stale answer, never a crash). `mcp::run` wraps the stdin loop in `std::thread::scope` and spawns the watcher when `plugins.graph.watch != "off"`; EOF on stdin sets `stop` and joins the thread. No `rtok graph watch` subcommand: the MCP server is the only consumer, and a second process would break the one-writer rule under `graph-lbug`.

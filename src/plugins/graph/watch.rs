@@ -70,7 +70,7 @@ async fn watchman_loop(
     stop: &AtomicBool,
     runs: &AtomicUsize,
 ) -> Result<(), String> {
-    use watchman_client::prelude::*;
+    use watchman_client::{SubscriptionData, prelude::*};
     let client = Connector::new()
         .connect()
         .await
@@ -289,6 +289,64 @@ mod tests {
         assert!(!relevant(Path::new(".git/HEAD")));
         assert!(!relevant(Path::new("foo/bar.md")));
         assert!(relevant(Path::new("src/lib.rs")));
+    }
+
+    /// T8.17 Gate P8d (1) under `watchman`: the daemon's edit is visible in
+    /// `symbol` within 1 s while the call itself reads nothing. Skipped
+    /// without the feature or without the daemon on PATH.
+    #[test]
+    fn watchman_sees_daemon_edit_within_1s_reading_nothing() {
+        if option_env!("CARGO_FEATURE_GRAPH_WATCHMAN").is_none() {
+            return;
+        }
+        if std::process::Command::new("/opt/homebrew/bin/watchman")
+            .arg("version")
+            .output()
+            .map(|o| !o.status.success())
+            .unwrap_or(true)
+        {
+            return;
+        }
+        let (mut cx, dir) = mk("watch-wman");
+        arm(&mut cx, "watchman");
+        fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
+        super::super::index::run(&cx, &dir).unwrap();
+        let stop = AtomicBool::new(false);
+        let (found, within_1s, read) = std::thread::scope(|s| {
+            s.spawn(|| run(&cx, &dir, &stop));
+            // The daemon connect + subscribe happens off any timer: wait for
+            // the root to register before the timed write measures delivery.
+            let root = dir.canonicalize().unwrap();
+            let mut registered = false;
+            for _ in 0..50 {
+                let list = std::process::Command::new("/opt/homebrew/bin/watchman")
+                    .arg("watch-list")
+                    .output()
+                    .expect("watch-list");
+                if String::from_utf8_lossy(&list.stdout).contains(&root.display().to_string()) {
+                    registered = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            assert!(registered, "watchman never listed {}", root.display());
+            let t0 = Instant::now();
+            fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
+            let found = wait_contains(&cx, &dir, "watched", "watched.rs:1");
+            let within_1s = t0.elapsed() <= Duration::from_secs(1);
+            let read = super::super::index_for(&cx, &dir).unwrap().read;
+            stop.store(true, Ordering::Relaxed);
+            (found, within_1s, read)
+        });
+        let _ = std::process::Command::new("/opt/homebrew/bin/watchman")
+            .args([
+                "watch-del",
+                &dir.canonicalize().unwrap().display().to_string(),
+            ])
+            .output();
+        assert!(found && within_1s, "watchman edit not visible within 1 s");
+        assert_eq!(read, 0, "the call itself must open no file");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
