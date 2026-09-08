@@ -64,6 +64,30 @@ Cost split with p_out = 5 × p_in (input-token equivalents):
 
 Reading: on standard models, context volume dominates → compress tool results and clear old ones. On Fable/Mythos, output tokens dominate → fewer lines written (ponytail-style), fewer turns, terse prose.
 
+### `graph` LadybugDB vs SQLite (Gate P8c, T8.14, 2026-09-08)
+
+Release build, this machine (macOS arm64). Same generated 3 000-file repo as P8b (one `fn` calling
+two others, 9 000 rows). Fan-out-10 depth-4 fixture: 11 110 call edges (10+100+1 000+10 000).
+Numbers from `cargo test --release --test graph_bench -- --ignored --nocapture`.
+
+| Measurement | default (SQLite) | `--features graph-lbug` | Bar |
+|-------------|------------------|-------------------------|-----|
+| (1) `tests/graph_contract.rs` | 3 passed | 3 passed | unchanged, both |
+| (2) `rtok hook PostToolUse` p95, n=100 | 8.07 ms | 96.6 ms | ≤ 10 ms |
+| (3) warm `symbol` / `callers` / `impact(2)` | 17.9 / 17.5 / 26.8 ms | 797 / 776 / 873 ms | < 100 ms |
+| (3) cold index, 3 000 files | 13.8 s | 33.7 s | not gated |
+| (4) `impact(4)` on fan-out fixture | CTE 28.5 s | path 371 ms (**77×**) | lbug ≥ 2× CTE |
+| (4) same fixture, Rust BFS | 2.61 s | 2.35 s | baseline |
+| (5) `just check` (liblbug already built) | 16.9 s | same command (clippy `--all-features`) | ≤ 2× default |
+| (6) release `rtok` bytes | 20 668 544 (19.7 MiB) | 34 002 576 (32.4 MiB) | published |
+| (6) store after 3 000-file index | `rtok.db` 3.98 MB | `rtok.db` 200 KB + `graph.lbdb` 6.10 MB | published |
+
+Clause (4) won. Clauses (2) and (3) fail on the `graph-lbug` binary (spawn/link cost, and every
+warm tool call opens LadybugDB). Default SQLite meets (2) and (3). Incremental `just check` is
+not 2× a default `cargo test` (18.9 s); the C++ cmake cost is paid once (T8.11: 3 min 21 s
+debug from source, pinned). Decision: `graph-lbug` stays **opt-in, never default**. Code is
+not deleted.
+
 ### OpenTelemetry export (Gate P16, 2026-09-04)
 
 Release binary, macOS arm64, 100 runs per event, spawn-to-exit measured from Python.

@@ -164,6 +164,13 @@ CTE; clean `just check` ≤ 2× and a reproducible build; sizes published.
 P8c is falsified by clause (4) lost or tied: then the graph store adds a C++ toolchain and a
 second file for nothing the CTE does not do, and its code is deleted.
 
+### Measured (T8.14, 2026-09-08)
+
+Release, this machine. Clause (4) won: `impact(4)` on 11 110 edges is 371 ms (`lbug` path) vs
+28.5 s (SQLite CTE), 77×. The CTE also lost to the Rust BFS (2.6 s) on that fixture. Clauses
+(2) and (3) fail on the `graph-lbug` binary (hook p95 97 ms, warm calls 0.78–0.87 s). Default
+SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stays opt-in. Full table: `research.md` §2.
+
 ### Rejected in this round
 
 - Replacing `rtok.db` wholesale with LadybugDB — the ledgers are relational and Diesel-typed (D13); nothing in `calls`, `usage` or `measurements` is a graph.

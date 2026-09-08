@@ -294,6 +294,12 @@ Status: done 2026-09-08 · Check: `tests/graph_contract.rs` untouched; `cargo te
 Model: Cursor Grok 4.6
 
 
+**T8.14 P8c measurement** · T8.13 · `tests/graph_bench.rs`, `research.md`, `src/plugins/graph/PLAN.md`
+Do: one `#[ignore]` bench test, run in release under both builds: the P8b 3 000-file repo (cold index; warm `symbol`, `callers`, `impact(2)`); a fan-out-10 depth-4 fixture with 10 000 edges (`impact(4)` via Rust BFS, SQLite CTE, `lbug` path); clean `just check` wall time; release binary bytes; `rtok.db` vs `graph.lbdb` bytes; `rtok hook PostToolUse` p95 over 100 runs. Numbers with a date into `research.md` §2; the decision into `plan.md` P8c and §6.
+Check: every Gate P8c clause has a number for both builds from this run; the decision written in `plan.md` follows the gate's rule; the losing code is deleted in the same commit or the deleting task is filed under P8c.
+Status: done 2026-09-08 · Check: `tests/graph_bench.rs` `#[ignore]` `p8c_numbers` run in release under both builds. Clause (4) won 77× (371 ms vs 28.5 s). Clauses (2)(3) fail on `graph-lbug` (p95 97 ms, warm 0.8 s); default SQLite meets them. `just check` 16.9 s. Binaries 19.7 vs 32.4 MiB. Decision: stay opt-in, do not delete. Numbers in `research.md` §2.
+Model: Cursor Grok 4.6
+
 ## P14 — per-plugin design research · done 2026-09-02
 
 Goal: every plugin beats the field on a named number before a line of it is written (D15). Template + `plugin_plans` test, then one `PLAN.md` per catalogue plugin. No plugin code, no new dependency.
