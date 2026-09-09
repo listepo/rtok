@@ -25,7 +25,14 @@ permissions:
   actions: write # dispatch release.yml
 
 jobs:
+  # T18.6: the same gate every pull request passes, on the commit this release is cut from. The
+  # version commit `release.sh` makes afterwards touches only Cargo.toml, Cargo.lock and
+  # CHANGELOG.md, so what is tested here is the code that ships.
+  verify:
+    uses: ./.github/workflows/verify.yml
+
   bump:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
