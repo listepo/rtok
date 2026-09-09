@@ -264,6 +264,35 @@ pub fn sessions_table(rows: &[SessionTotals], all: bool, now: i64) -> String {
     out
 }
 
+/// One `rtok agent sessions watch` step (T25.3): the same table `sessions_table`
+/// renders, compared to the previous screen. A change — a session appearing,
+/// ending, spending tokens, or its duration ticking over — returns the whole
+/// table as `fresh` (a pipe prints it again, plain) and as `screen` (a TTY
+/// repaints it in place through T24.3's `watch_loop`); no change returns an
+/// empty `fresh` so the loop writes nothing. `prev` is the previous table text
+/// and is updated in place, so the caller holds one `String` across polls.
+pub fn sessions_tick(
+    prev: &mut String,
+    rows: &[SessionTotals],
+    all: bool,
+    now: i64,
+) -> crate::log::WatchTick {
+    let text = sessions_table(rows, all, now);
+    let screen: Vec<String> = text.lines().map(str::to_string).collect();
+    if text == *prev {
+        crate::log::WatchTick {
+            fresh: Vec::new(),
+            screen,
+        }
+    } else {
+        *prev = text;
+        crate::log::WatchTick {
+            fresh: screen.clone(),
+            screen,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +443,41 @@ mod tests {
                 sessions_table(&[], false, 0).lines().next().unwrap()
             )
         );
+    }
+
+    /// T25.3's tick: a new session, spent tokens or a ticking duration returns the
+    /// whole table as `fresh` (a pipe repeats it, plain); an unchanged poll returns
+    /// nothing to print. No escape codes anywhere — the TTY repaint owns those.
+    #[test]
+    fn a_sessions_tick_repaints_state_and_stays_quiet_otherwise() {
+        let now = 1_788_966_245 + 65;
+        let mut rows = vec![totals("live", Some("claude"), None, 1_788_966_245)];
+        let mut prev = String::new();
+        let first = sessions_tick(&mut prev, &rows, false, now);
+        assert!(!first.fresh.is_empty(), "first screen always prints");
+        assert_eq!(first.fresh, first.screen);
+        assert!(first.screen.iter().any(|l| l.contains("claude")));
+        for line in first.fresh.iter().chain(first.screen.iter()) {
+            assert!(!line.contains('\x1b'), "plain rows, not escapes: {line:?}");
+        }
+        let quiet = sessions_tick(&mut prev, &rows, false, now);
+        assert!(
+            quiet.fresh.is_empty(),
+            "same second, same tokens: nothing new"
+        );
+        assert_eq!(quiet.screen, first.screen);
+        // The duration ticks over: the same row at a later `now` repaints.
+        let later = sessions_tick(&mut prev, &rows, false, now + 60);
+        assert!(
+            !later.fresh.is_empty(),
+            "duration advances, so the tick repaints"
+        );
+        assert!(later.screen.iter().any(|l| l.contains("2m05s")));
+        // A session that appears shows up without a restart.
+        rows.push(totals("new", Some("pi"), None, now));
+        rows[1].model = Some("watch-new".into());
+        let arrived = sessions_tick(&mut prev, &rows, false, now + 60);
+        assert!(!arrived.fresh.is_empty());
+        assert!(arrived.screen.iter().any(|l| l.contains("watch-new")));
     }
 }

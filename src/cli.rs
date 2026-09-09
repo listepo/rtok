@@ -287,9 +287,21 @@ enum AgentCmd {
     /// What is running in this project: host, provider, model, tokens, start, run time
     Sessions {
         /// Also show sessions that have ended
-        #[arg(long)]
+        #[arg(long, global = true)]
         all: bool,
+        #[command(subcommand)]
+        action: Option<SessionsCmd>,
     },
+}
+
+/// `rtok agent sessions watch` (T25.3): the same table, live. One screen, no keys:
+///
+/// the TTY repaints in place through T24.3's `watch_loop`, a pipe gets the whole
+/// table again whenever it changes.
+#[derive(Subcommand)]
+enum SessionsCmd {
+    /// Redraw the sessions table in place as sessions appear, end or spend
+    Watch,
 }
 
 #[derive(clap::Args)]
@@ -583,8 +595,40 @@ pub fn run() -> Result<()> {
             // only unless `--all`. `since = 0` because the default view's window is
             // liveness itself — a `started_at` floor could hide a session that began
             // before it and is still running, which is the row this command exists for.
-            AgentCmd::Sessions { all } => {
+            AgentCmd::Sessions { all, action } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
+                // T25.3: live repaint through T24.3's `watch_loop` — no second loop.
+                // The loop only writes characters (no raw mode, no alternate screen),
+                // so Ctrl-C under the default handling leaves the terminal as found.
+                if matches!(action, Some(SessionsCmd::Watch)) {
+                    let mut out = io::stdout();
+                    let tty = out.is_terminal();
+                    let mut prev = String::new();
+                    let run =
+                        crate::log::watch_loop(&mut out, tty, crate::log::WATCH_POLL, move || {
+                            let now = crate::log::now() as i64;
+                            match model::sessions(&cfg, 0) {
+                                Ok(rows) => {
+                                    Some(crate::render::sessions_tick(&mut prev, &rows, all, now))
+                                }
+                                Err(_) => {
+                                    // A transient unreadable store is a missed poll,
+                                    // not a blank screen: keep showing what we had.
+                                    let screen: Vec<String> =
+                                        prev.lines().map(str::to_string).collect();
+                                    Some(crate::log::WatchTick {
+                                        fresh: Vec::new(),
+                                        screen,
+                                    })
+                                }
+                            }
+                        });
+                    match run {
+                        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => return Ok(()),
+                        other => other?,
+                    }
+                    return Ok(());
+                }
                 let rows = model::sessions(&cfg, 0)?;
                 print!(
                     "{}",

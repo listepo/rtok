@@ -189,3 +189,202 @@ fn an_empty_store_prints_the_header_and_nothing_is_running() {
     assert_eq!(lines[1], "nothing is running");
     let _ = fs::remove_dir_all(&h);
 }
+
+/// T25.3's Check, live: a session started while `watch` runs appears within one
+/// interval and the table repeats plain (no escapes) whenever state changes —
+/// including the duration ticking over with no new rows at all.
+#[test]
+fn watch_shows_a_session_started_mid_run_and_repeats_plain_tables() {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    let h = home("watch");
+    // One live session (`watch-old`) and one ended (`watch-gone`, hidden without
+    // `--all`): the watch must show the first and never the second.
+    {
+        let cfg = rtok::config::Config::load_from(&h).expect("config");
+        let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+        let claude = store.host_id("claude").unwrap().expect("0002 seeds claude");
+        let pi = store.host_id("pi").unwrap().expect("0010 seeds pi");
+        store
+            .upsert_session("live-a", Some(claude), Some("rtok"), None, Some("proxy"))
+            .unwrap();
+        store
+            .upsert_session("gone-c", Some(pi), None, None, None)
+            .unwrap();
+        let (pid, mid) = store.upsert_model("anthropic", "watch-old").unwrap();
+        let call_a = store
+            .insert_call(
+                "live-a",
+                "proxy",
+                "api_request",
+                Some(claude),
+                Some(pid),
+                Some(mid),
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        let call_c = store
+            .insert_call(
+                "gone-c",
+                "proxy",
+                "api_request",
+                Some(pi),
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        store
+            .insert_usage(
+                "live-a",
+                Some("watch-old"),
+                "anthropic",
+                10,
+                0,
+                0,
+                1,
+                call_a,
+            )
+            .unwrap();
+        store
+            .insert_usage(
+                "gone-c",
+                Some("watch-gone"),
+                "openai_chat",
+                7,
+                0,
+                0,
+                1,
+                call_c,
+            )
+            .unwrap();
+        store
+            .end_session("gone-c", rtok::log::now() as i64)
+            .unwrap();
+    }
+
+    let mut child = Command::new(bin())
+        .args(["agent", "sessions", "watch"])
+        .env("RTOK_HOME", &h)
+        .env("HOME", &h)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines() {
+            match line {
+                Ok(l) => sink.lock().unwrap().push(l),
+                Err(_) => break,
+            }
+        }
+    });
+
+    let wait_for = |want: &str| {
+        let deadline = Instant::now() + rtok::log::WATCH_POLL * 20;
+        loop {
+            if seen.lock().unwrap().iter().any(|l| l.contains(want)) {
+                return;
+            }
+            if Instant::now() > deadline {
+                panic!("watch never showed {want:?}: {:?}", seen.lock().unwrap());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+
+    // The first screen: the live row, newest first, header first.
+    wait_for("watch-old");
+    assert!(
+        !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l.contains("watch-gone")),
+        "ended stays hidden without --all: {:?}",
+        seen.lock().unwrap()
+    );
+
+    // Another process (this test) starts a session: it appears within one
+    // interval (20 polls of slack for CI, not part of the contract).
+    {
+        let cfg = rtok::config::Config::load_from(&h).expect("config");
+        let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+        let pi = store.host_id("pi").unwrap().expect("0010 seeds pi");
+        store
+            .upsert_session("live-b", Some(pi), Some("rtok"), None, None)
+            .unwrap();
+        let call_b = store
+            .insert_call(
+                "live-b",
+                "proxy",
+                "api_request",
+                Some(pi),
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        store
+            .insert_usage(
+                "live-b",
+                Some("watch-new"),
+                "openai_chat",
+                5,
+                0,
+                0,
+                1,
+                call_b,
+            )
+            .unwrap();
+    }
+    wait_for("watch-new");
+
+    // The duration ticks over with no further writes: the table repeats (a new
+    // header lands) because `run` advanced, which is the repaint state needs.
+    let headers = || {
+        seen.lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l.starts_with("agent"))
+            .count()
+    };
+    let before = headers();
+    let deadline = Instant::now() + rtok::log::WATCH_POLL * 20;
+    loop {
+        if headers() > before {
+            break;
+        }
+        if Instant::now() > deadline {
+            panic!(
+                "duration never repainted the table: {:?}",
+                seen.lock().unwrap()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let got = seen.lock().unwrap().join("\n");
+    assert!(
+        !got.contains('\x1b'),
+        "a pipe gets plain repeated tables, not escapes: {got:?}"
+    );
+    assert!(
+        got.contains("watch-old") && got.contains("watch-new"),
+        "{got}"
+    );
+    assert!(!got.contains("watch-gone"), "ended never shown: {got}");
+    assert!(headers() >= 3, "header repeats per table: {got}");
+    let _ = fs::remove_dir_all(&h);
+}

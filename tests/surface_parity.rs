@@ -99,6 +99,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "logs watch",
         "streams the log file as lines arrive (D27 exempts streaming)",
     ),
+    (
+        "agent sessions watch",
+        "repaints the Sessions page as sessions change (D27 exempts streaming)",
+    ),
     // writing: a surface that shows numbers is not one that mutates a tree (D27)
     (
         "agent setup",

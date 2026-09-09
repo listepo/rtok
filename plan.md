@@ -286,7 +286,7 @@ Complexity: 3/5
 
 T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
 
-### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27)
+### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27) · done 2026-09-09 (T25.0–T25.3), see `done.md` P25
 
 `rtok agent sessions [--all]` with `agents` as a visible alias, so `rtok agents sessions` is the
 same command: one command tree, and the plural spelling the request used still works. It lists the
@@ -307,18 +307,10 @@ T25.1 (one reader, in the model) and T25.2 (`rtok agent sessions`) are done 2026
 aggregates of `usage` and `calls`; the Sessions page rides the snapshot (`pages()` gained it),
 and `rtok agent sessions` renders it through `model::sessions` — the second command after
 `plugins` whose page the frame actually carries, which is why T15.12's `COMMAND_PAGES` lists it.
-T25.3 (`sessions watch`) reuses T24.3's `watch_loop`.
-Complexity: 3/5
 
-**T25.3 `rtok agent sessions watch`** · T25.2 · `src/cli.rs`, `src/render.rs`
-Do: the same table, redrawn on an interval, in place rather than scrolling; a session that appears,
-ends or spends tokens shows up without a restart. Not a TUI — one screen, no key handling, and it
-leaves the terminal as it found it on Ctrl-C. Where `rtok logs watch` (T24.3) streams new lines,
-this one repaints state; both share the poll-and-print loop rather than growing two.
-Check: a session started while `watch` runs appears within one interval and its duration advances;
-piping the command produces plain repeated tables, not escape codes.
-Status: open · Model: -
-Complexity: 2/5
+T25.3 (`sessions watch`) is done 2026-09-09 — see `done.md` P25. The same table repainted
+through T24.3's `watch_loop` (`render::sessions_tick`), in place on a TTY and as repeated
+plain tables when piped.
 
 Gate P25 (review): every session rtok knows about has a host and a project, `agents sessions`
 numbers equal `rtok stats` over the same window, and the page exists on `rtok web` and `rtok tui`
@@ -608,7 +600,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T25.0` | P25 agents | a session knows whose it is | ✅ 2026-09-09 | 3/5 |
 | `T25.1` | P25 agents | one reader, in the model | ✅ 2026-09-09 | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | ✅ 2026-09-09 | 2/5 |
-| `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
+| `T25.3` | P25 agents | `rtok agent sessions watch` | ✅ 2026-09-09 | 2/5 |
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
 | `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
