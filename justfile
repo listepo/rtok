@@ -20,10 +20,11 @@ fmt-check:
     {{cargo}} fmt --check
 
 lint:
-    {{cargo}} clippy --all-targets --all-features -- -D warnings
+    {{cargo}} clippy --workspace --all-targets --all-features -- -D warnings
 
+# --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 test:
-    {{cargo}} test
+    {{cargo}} test --workspace
 
 # T0.4: one plugin feature must build alone
 build-min:

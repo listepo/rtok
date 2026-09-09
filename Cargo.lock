@@ -2146,6 +2146,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rmcp",
+ "rtok-plugin-sdk",
  "rustix",
  "serde",
  "serde_json",
@@ -2164,6 +2165,14 @@ dependencies = [
  "tree-sitter-tags",
  "tree-sitter-typescript",
  "watchman_client",
+]
+
+[[package]]
+name = "rtok-plugin-sdk"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

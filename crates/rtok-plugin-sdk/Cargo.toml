@@ -1,0 +1,26 @@
+[package]
+name = "rtok-plugin-sdk"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97.1" # the pin in mise.toml; a plugin author needs no newer toolchain
+repository = "https://github.com/listepo/rtok"
+homepage = "https://listepo.github.io/rtok/"
+description = "The rtok plugin contract: the trait, its events, and the values a plugin returns"
+# T23.6 adds `license` and the crates.io publish; the field is a decision for the repository
+# owner, and `cargo publish` refuses without it — which is the point of leaving it here.
+publish = false
+categories = ["development-tools"]
+keywords = ["rtok", "plugin", "tokens", "llm", "agents"]
+
+[dependencies]
+# Three, none of them C (T23.0). Anything heavier belongs on the host side of the line.
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"

@@ -13,13 +13,13 @@
 [[symbol]]
 name = "Manifest"
 kind = "struct"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/hello_plugin.rs", "examples/mcp_tool.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/mod.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/measure/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/mod.rs", "src/plugins/proxy/mod.rs", "src/plugins/read/mod.rs", "src/plugins/toon/mod.rs"]
 
 [[symbol]]
 name = "Measurement"
 kind = "struct"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/hello_plugin.rs", "src/expand.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/run.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/read/cache.rs", "src/plugins/toon/mod.rs"]
 
 [[symbol]]
@@ -31,19 +31,19 @@ refs = ["examples/mcp_tool.rs", "src/cli.rs", "src/hooks/mod.rs", "src/mcp.rs", 
 [[symbol]]
 name = "ToolDef"
 kind = "struct"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/mcp_tool.rs", "src/mcp.rs", "src/plugins/graph/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/read/mod.rs"]
 
 [[symbol]]
 name = "Injection"
 kind = "struct"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/hello_plugin.rs", "src/plugins/checkpoint.rs", "src/plugins/inject/mod.rs", "src/plugins/memory/mod.rs"]
 
 [[symbol]]
 name = "PostToolUse"
 kind = "struct"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["src/hooks/types.rs", "src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
 
 [[symbol]]
@@ -61,13 +61,13 @@ refs = ["src/cli.rs", "src/measure/baseline.rs"]
 [[symbol]]
 name = "Surface"
 kind = "enum"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/hello_plugin.rs", "examples/mcp_tool.rs", "src/plugins/archive/mod.rs", "src/plugins/cmd/mod.rs", "src/plugins/graph/mod.rs", "src/plugins/guard/mod.rs", "src/plugins/inject/mod.rs", "src/plugins/measure/mod.rs", "src/plugins/memory/mod.rs", "src/plugins/mod.rs", "src/plugins/proxy/mod.rs", "src/plugins/read/mod.rs", "src/plugins/toon/mod.rs"]
 
 [[symbol]]
 name = "PreToolDecision"
 kind = "enum"
-defs = ["src/plugin.rs"]
+defs = ["crates/rtok-plugin-sdk/src/lib.rs"]
 refs = ["examples/hello_plugin.rs", "src/hooks/mod.rs", "src/plugins/cmd/hook.rs", "src/plugins/guard/mod.rs", "src/plugins/read/hook.rs"]
 
 [[symbol]]
