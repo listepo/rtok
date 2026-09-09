@@ -261,3 +261,76 @@ fn out_flag_writes_the_file() {
     assert!(written.contains("| cmd | 1 | 25 | 10 | 15 |"));
     let _ = fs::remove_dir_all(&h);
 }
+
+/// Maximal digit-led runs (`30d` → `30`, `33.3%` → `33.3`): the Check's "every number".
+fn numbers(md: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for ch in md.chars() {
+        if ch.is_ascii_digit() || (ch == '.' && !cur.is_empty()) {
+            cur.push(ch);
+        } else if !cur.is_empty() {
+            out.push(cur.trim_end_matches('.').to_string());
+            cur = String::new();
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur.trim_end_matches('.').to_string());
+    }
+    out.retain(|n| !n.is_empty());
+    out
+}
+
+/// T22.2 Check: `--format html` holds every number `--format md` holds (walk both over
+/// the same fixture store), the eight sections in the same order, a chart per model
+/// series — and no `http` outside code blocks, so the file opens from `file://`
+/// fetching nothing.
+#[test]
+fn html_holds_every_markdown_number_and_fetches_nothing() {
+    let h = home("html");
+    let first_id = seed(&h);
+    let md = rtok(&["report"], &h);
+    let html = rtok(&["report", "--format", "html"], &h);
+    for n in numbers(&md) {
+        assert!(html.contains(&n), "markdown number {n} missing from html");
+    }
+    assert!(html.contains(&first_id), "expanded id missing from html");
+    let order: Vec<usize> = [
+        "Window",
+        "Savings",
+        "Calls",
+        "Cache",
+        "Expand",
+        "Config",
+        "Doctor",
+        "Recommendations",
+    ]
+    .iter()
+    .map(|sec| {
+        html.find(&format!(">{sec}</h2>"))
+            .unwrap_or_else(|| panic!("missing section {sec}"))
+    })
+    .collect();
+    let mut sorted = order.clone();
+    sorted.sort_unstable();
+    assert_eq!(order, sorted, "the section set is fixed and ordered");
+    assert_eq!(
+        html.matches("<svg").count(),
+        3,
+        "one chart per series: savings, calls, cache"
+    );
+    let mut bare = html.clone();
+    while let Some(a) = bare.find("<code>") {
+        let end = bare[a..]
+            .find("</code>")
+            .map(|i| a + i + 7)
+            .unwrap_or(bare.len());
+        bare.replace_range(a..end, "");
+    }
+    assert!(
+        !bare.contains("http"),
+        "external reference outside code: {}",
+        &bare[..bare.len().min(200)]
+    );
+    let _ = fs::remove_dir_all(&h);
+}

@@ -185,9 +185,9 @@ enum Cmd {
         #[arg(long, global = true)]
         lines: Option<usize>,
     },
-    /// The operator model as one document (D24): Markdown now, html/pdf later
+    /// The operator model as one document (D24): Markdown and HTML now, pdf later
     Report {
-        /// Output format (`html` T22.2, `pdf` T22.3)
+        /// Output format (`pdf` T22.3)
         #[arg(long, value_enum, default_value = "md")]
         format: ReportFormat,
         /// Write to this path instead of stdout
@@ -240,16 +240,18 @@ enum LogsCmd {
 }
 
 /// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
-/// validates, lists and completes it). T22.2/T22.3 add `Html`/`Pdf` variants here.
+/// validates, lists and completes it). T22.3 adds the `Pdf` variant here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ReportFormat {
     Md,
+    Html,
 }
 
 impl ReportFormat {
     fn as_str(self) -> &'static str {
         match self {
             Self::Md => "md",
+            Self::Html => "html",
         }
     }
 }
@@ -756,16 +758,9 @@ pub fn run() -> Result<()> {
             let home = Config::home_dir();
             let doc = crate::report::document(&cfg, &home, config_file.as_deref())?;
             match cfg.report.format.as_str() {
-                "md" => {
-                    let md = crate::report::markdown::render(&doc);
-                    if cfg.report.out.as_os_str().is_empty() {
-                        print!("{md}");
-                    } else {
-                        std::fs::write(&cfg.report.out, md)?;
-                        println!("{}", cfg.report.out.display());
-                    }
-                }
-                other => bail!("--format {other} is not built yet (T22.2 adds html, T22.3 pdf)"),
+                "md" => emit(&cfg.report.out, &crate::report::markdown::render(&doc))?,
+                "html" => emit(&cfg.report.out, &crate::report::html::render(&doc))?,
+                other => bail!("--format {other} is not built yet (T22.3 adds pdf)"),
             }
         }
         #[cfg(not(feature = "cmd"))]
@@ -987,6 +982,18 @@ fn doctor_flags(instructions: bool) -> Option<figment::value::Dict> {
     let mut flags = Dict::new();
     flags.insert("doctor".into(), Value::from(doctor));
     Some(flags)
+}
+
+/// The report's sink (D12: `report.out`): stdout when empty, else the file. One sink
+/// for every `--format` so the renderings cannot disagree about where it went.
+fn emit(out: &std::path::Path, body: &str) -> Result<()> {
+    if out.as_os_str().is_empty() {
+        print!("{body}");
+    } else {
+        std::fs::write(out, body)?;
+        println!("{}", out.display());
+    }
+    Ok(())
 }
 
 /// The `[report]` flag layer (D12): `--format md` is the default, so it sets nothing.

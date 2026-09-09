@@ -165,19 +165,10 @@ per plugin, from `Measurement` rows only) · **Calls** (hooks / MCP / proxy, p50
 (effective values with their origin, from `config show --sources`) · **Doctor** (what `rtok
 doctor` reports) · **Recommendations**.
 
-T22.0 (the renderer survey) and T22.1 (`--format md`) are done 2026-09-09 — see `done.md` P22.
+T22.1 (`--format md`) and T22.2 (`--format html`) are done 2026-09-09 — see `done.md` P22.
 The Markdown document carries the whole section set, every number with its row count and window,
 and reads through the D23 model only (`model::report_ledgers`); `--format` is a ValueEnum with
-`md` alone until T22.2/T22.3 land.
-
-**T22.2 `--format html`** · T22.1 · `src/report/html.rs`
-Do: the same sections, one self-contained file — inline CSS, inline SVG charts, no network fetch,
-openable from a file:// URL. Charts where a series exists (savings over time, tokens per plugin,
-latency distribution, cache busts per turn); tables everywhere else.
-Check: the HTML contains every number the Markdown contains, asserted by a test that walks both;
-the file opens with no external request (no `http` outside code blocks).
-Status: open · Model: -
-Complexity: 3/5
+`md` and `html` until T22.3 lands `pdf`.
 
 **T22.3 `--format pdf`** · T22.0, T22.2 · `src/report/pdf.rs`
 Do: the renderer T22.0 chose, over the same document and the same SVG charts. Paged, with a table
@@ -581,7 +572,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T21.3` | P21 CLI presentation | `rtok dashboard` becomes `rtok web` | ✅ 2026-09-09 | — |
 | `T22.0` | P22 report | pick the PDF renderer against the size gate | ✅ 2026-09-09 | 2/5 |
 | `T22.1` | P22 report | `--format md` | ✅ 2026-09-09 | 3/5 |
-| `T22.2` | P22 report | `--format html` | open | 3/5 |
+| `T22.2` | P22 report | `--format html` | ✅ 2026-09-09 | 3/5 |
 | `T22.3` | P22 report | `--format pdf` | open | 4/5 |
 | `T22.4` | P22 report | `--ai` | open | 3/5 |
 | `T22.5` | P22 report | recommendations | open | 3/5 |

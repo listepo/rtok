@@ -7,6 +7,7 @@
 //! number that is not in a model struct cannot appear here, and every figure carries the
 //! rows it came from and the window it covers.
 
+pub mod html;
 pub mod markdown;
 
 use std::path::Path;
