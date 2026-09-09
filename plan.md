@@ -435,6 +435,25 @@ Gate P25 (review): every session rtok knows about has a host and a project, `age
 numbers equal `rtok stats` over the same window, and the page exists on `rtok web` and `rtok tui`
 without a second query (D27).
 
+### P26 — duplication gate (goal: "don't duplicate logic" is checked, not remembered) — added 2026-09-09
+
+`AGENTS.md` has said "don't duplicate code or logic: reuse an existing helper, or extract one shared
+helper" since T0.7, and nothing measures it. `just check` gates format, lints, tests and the minimum
+feature build; a copy-paste detector is the missing fifth, and it is the one an agent working in
+≤200-LOC slices is most likely to lose to — the cheapest way to finish a task is to copy the
+neighbouring one.
+
+T26.0 (`just dup`, jscpd in the gate) is done 2026-09-09 — see `done.md` P26.
+
+**T26.1 retire what it found** · T26.0 · `src/proxy/mod.rs`, `.jscpd.json`
+Do: the 46 clones are concentrated in `src/proxy/mod.rs` (the same request/response shaping repeated
+across wires) and in per-file test fixtures. Extract the proxy ones — they are the copies D6 warns
+about, one shared helper at the responsible layer — and lower `threshold` to what remains.
+Check: `just dup` green at the new threshold; the proxy tests are unchanged, which is what proves
+the extraction did not change behaviour.
+Status: open · Model: -
+Complexity: 3/5
+
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
@@ -534,7 +553,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**130 done · 30 open · 1 superseded — 161 tasks.**
+**131 done · 31 open · 1 superseded — 163 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -699,6 +718,8 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T25.1` | P25 agents | one reader, in the model | open | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
+| `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
+| `T26.1` | P26 duplication | retire what it found | open | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -765,3 +786,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | §5 now carries every task in the plan and in `done.md` as one table — id, phase, title, status, complexity — with a ✅ on each finished row. It is an index over the two files, not a third place to record work: a task's Do/Check and its Check result stay in its own entry, and the row moves in the same commit the task does. | User request 2026-09-09 (таблица со списком всех задач, статусом и сложностью, зелёная галочка у сделанных). The per-phase headings said which phases were finished; nothing said, on one screen, how much of the plan is done (128 of 150) or what the open work costs. |
 | 2026-09-09 | D26 and P24 added: `rtok logs`, `logs watch`, `logs export`, and a `[log]` table that bounds the file at 1 MiB × 5 and finally gives `core.log_file`, `log_level` and `log_to_db` — declared since T0.2, read nowhere — something to do. T24.4 rewires `demon` to pipe its children rather than hand them an fd, because a file the child holds open is a file rtok cannot rotate. | User request 2026-09-09 (команда `logs` с нумерацией строк, `watch` в реальном времени от новых к старым, `export`, размер и количество файлов в конфиге, путь настраивается). The supervisor D22 added makes long-running processes normal, which makes an unbounded log a disk-full bug. |
 | 2026-09-09 | D27 and P25 added: `rtok agent sessions` (alias `agents`) lists what is running in the project — host, provider, model, the four token counts, start and duration — and `watch` repaints it live. It is a page in the D23 model first and a command second, which is D27: every reading command asks the model, so `rtok web` and `rtok tui` get the same view for free. T25.0 comes first because the data is unattributed today — the hook path writes NULL host, project and cwd, `pi` is not a row in `hosts`, and only Claude's `SessionEnd` ever sets `ended_at`. P15 gained T15.11 (move the reading commands' queries into the model) and T15.12 (the parity test walks commands, not pages). | User request 2026-09-09 (`agents sessions` со списком активных сессий, провайдером, именем агента, токенами input/output/cache, датой начала и длительностью, плюс `watch`; и: всё, что выводится в консоли или лежит в базе, должно быть в webui и tui). `rtok stats` counting transcript files while `rtok web` sums `usage` rows is the drift D23 predicted, already shipped. |
+| 2026-09-09 | P26 added: a copy-paste detector (jscpd, Rust tokenizer, `min-tokens 50`) joins `just check` at a threshold just above what the tree measures today — 2.14 % of lines, 46 clones — so new duplication fails while the existing clones wait for T26.1. `similarity-rs` would match on the AST rather than on tokens and is the better shape for Rust, but it is a `cargo install` to pin and build; jscpd answers the same question with a config file. | User request 2026-09-09 (добавить лучший копипаст-детектор для Rust). `AGENTS.md` has forbidden duplicated logic since T0.7 with nothing measuring it, and an agent working in ≤200-LOC slices is exactly who copies the neighbouring block to finish. |

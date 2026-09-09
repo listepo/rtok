@@ -7,11 +7,12 @@ cliff := env("CLIFF", "mise exec -- git-cliff")
 # cargo-dist is not in mise.toml (compiling it on every `mise install` is slow); mise fetches it on demand.
 dist := env("DIST", "mise x cargo:cargo-dist@0.32.0 -- dist")
 hugo := env("HUGO", "mise exec -- hugo --source site")
+jscpd := env("JSCPD", "mise exec -- jscpd")
 
 default: check
 
-# fmt --check, clippy -D warnings, tests, min-feature build
-check: fmt-check lint test build-min
+# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector
+check: fmt-check lint test build-min dup
 
 fmt:
     {{cargo}} fmt
@@ -21,6 +22,11 @@ fmt-check:
 
 lint:
     {{cargo}} clippy --workspace --all-targets --all-features -- -D warnings
+
+# T26.0: copy-paste detector. Config, paths and threshold live in `.jscpd.json`; jscpd exits
+# non-zero past the threshold, which is what makes "don't duplicate logic" a gate and not a wish.
+dup:
+    {{jscpd}}
 
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 test:

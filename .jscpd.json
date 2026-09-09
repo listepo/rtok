@@ -1,0 +1,8 @@
+{
+  "pattern": "{src,crates/rtok-plugin-sdk/src}/**/*.rs",
+  "format": ["rust"],
+  "minTokens": 50,
+  "threshold": 3,
+  "reporters": ["console"],
+  "gitignore": true
+}
