@@ -21,11 +21,82 @@
 //! every event method has a no-op default, so a plugin writes only the surfaces it declares.
 //! What the host can do for you is [`Ctx`] — estimate, record, log, your own configuration —
 //! plus the capability traits in [`host`], reachable straight off `cx`.
+//!
+//! ```
+//! use rtok_plugin_sdk::{
+//!     Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse,
+//!     Surface,
+//! };
+//!
+//! struct Terse;
+//!
+//! impl Plugin for Terse {
+//!     fn manifest(&self) -> Manifest {
+//!         Manifest { id: "terse", surfaces: &[Surface::Hook], default_on: true }
+//!     }
+//!
+//!     fn dashboard_page(&self) -> DashboardPage {
+//!         DashboardPage::new("Terse", "Drops `-l` from `ls`.", true)
+//!     }
+//!
+//!     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
+//!         // Fail open: every step that can be absent is a `?`, never an unwrap.
+//!         let cmd = ev.tool_input.get("command")?.as_str()?;
+//!         if ev.tool_name != "Bash" || !cmd.starts_with("ls -l") {
+//!             return None;
+//!         }
+//!         let short = cmd.replacen("ls -l", "ls", 1);
+//!         // A saving that is not a row does not exist.
+//!         cx.record(&Measurement {
+//!             plugin: "terse",
+//!             kind: "rewrite",
+//!             before_bytes: cmd.len() as u64,
+//!             after_bytes: short.len() as u64,
+//!             est_before: cx.estimate(cmd, Class::Code),
+//!             est_after: cx.estimate(&short, Class::Code),
+//!             ref_id: None,
+//!             call_id: None,
+//!         })
+//!         .ok()?;
+//!         Some(PreToolDecision::Rewrite {
+//!             input: serde_json::json!({ "command": short }),
+//!             reason: "terse: long listing is rarely what was wanted".into(),
+//!         })
+//!     }
+//! }
+//!
+//! # use rtok_plugin_sdk::testing::MemoryHost;
+//! let host = MemoryHost::new();
+//! let ev = PreToolUse { tool_name: "Bash", tool_input: &serde_json::json!({"command": "ls -la"}) };
+//! assert!(Terse.pre_tool(&ev, &Ctx::new(&host)).is_some());
+//! assert_eq!(host.recorded().len(), 1);
+//! ```
+//!
+//! [`testing::MemoryHost`] is the host in that example: it holds what a plugin records, so a
+//! plugin can be tested without a database. `examples/shrink.rs` is the same shape as a file
+//! you can run.
+//!
+//! # The events, and when the host asks
+//!
+//! | Method | Asked | May |
+//! |---|---|---|
+//! | [`Plugin::pre_tool`] | before a tool call runs | deny it, or rewrite its input |
+//! | [`Plugin::post_tool`] | after it ran | add context beside the result, never change it |
+//! | [`Plugin::session_start`] | a session starts or resumes | offer text for the context budget |
+//! | [`Plugin::prompt_submit`] | a user prompt is about to go | offer text for the same budget |
+//! | [`Plugin::pre_compact`] | the transcript is about to be compacted | persist state; returns nothing |
+//! | [`Plugin::mcp_tools`] | the MCP server lists its tools | add tools of its own |
+//! | [`Plugin::proxy_filter`] | a provider request passes the proxy | rewrite the tool results in it |
+//!
+//! The first four run on the hook path, where the whole dispatch has 10 ms. Offered text is
+//! an [`Injection`]: the host, not the plugin, decides what fits the budget, and text that
+//! changes between turns costs a cache miss on every one of them.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub mod host;
+pub mod testing;
 pub mod wire;
 
 pub use host::{

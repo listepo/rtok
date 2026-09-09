@@ -283,55 +283,5 @@ pub trait Symbols {
     ) -> Result<Vec<(u32, String, String)>>;
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(serde::Deserialize, Default, PartialEq, Debug)]
-    struct Cfg {
-        #[serde(default)]
-        enabled: bool,
-    }
-
-    struct NoConfig;
-
-    impl Host for NoConfig {
-        fn session(&self) -> &str {
-            "s"
-        }
-        fn estimate(&self, text: &str, _class: Class) -> u32 {
-            text.len() as u32
-        }
-        fn record(&self, _m: &Measurement) -> Result<()> {
-            Ok(())
-        }
-        fn record_call(&self, _s: &str, _k: &str, _n: Option<&str>) -> Result<i32> {
-            Ok(0)
-        }
-        fn record_plugin_run(&self, _s: &str, _p: &str) -> Result<i32> {
-            Ok(0)
-        }
-        fn record_tokens(
-            &self,
-            _c: i32,
-            _p: Option<&str>,
-            _ph: &str,
-            _so: &str,
-            _t: i64,
-        ) -> Result<()> {
-            Ok(())
-        }
-        fn log(&self, _l: &str, _s: &str, _n: &str, _m: &str) {}
-        fn config_json(&self, _path: &str) -> Value {
-            Value::Null
-        }
-    }
-
-    /// A host with nothing to say about a plugin's section must not stop the plugin: the
-    /// defaults are the configuration, exactly as if the section were absent from the file.
-    #[test]
-    fn a_missing_section_is_the_default_not_an_error() {
-        let cfg: Cfg = section(&NoConfig, "plugins.mine");
-        assert_eq!(cfg, Cfg::default());
-    }
-}
+// The tests for what a host owes a plugin live beside `testing::MemoryHost`, the host this
+// crate ships for exactly that purpose (`src/testing.rs`).

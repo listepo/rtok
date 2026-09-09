@@ -3,6 +3,7 @@ name = "rtok-plugin-sdk"
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.97.1" # the pin in mise.toml; a plugin author needs no newer toolchain
+readme = "README.md"
 repository = "https://github.com/listepo/rtok"
 homepage = "https://listepo.github.io/rtok/"
 description = "The rtok plugin contract: the trait, its events, and the values a plugin returns"
