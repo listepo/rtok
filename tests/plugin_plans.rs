@@ -30,6 +30,11 @@ fn plan_files() -> Vec<PathBuf> {
     out
 }
 
+/// The plugin *contract* gets the same design note as a plugin (T23.0, D25).
+fn sdk_plan() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-plugin-sdk/PLAN.md")
+}
+
 fn is_separator(line: &str) -> bool {
     let t = line.trim();
     t.starts_with('|') && t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
@@ -104,8 +109,8 @@ Falsified by: 2
 
 #[test]
 fn plugin_plans_walks_existing() {
-    for path in plan_files() {
-        let body = fs::read_to_string(&path).unwrap();
+    for path in plan_files().into_iter().chain([sdk_plan()]) {
+        let body = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         check(&body).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     }
 }

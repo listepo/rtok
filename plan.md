@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -245,24 +245,12 @@ behaviour, no `Measurement` changes, and `rtok stats` reports the same numbers b
 that is the property the gate tests, because a refactor that quietly changes a number is not a
 refactor.
 
-**T23.0 where the boundary goes** · T15.0 · `crates/rtok-plugin-sdk/PLAN.md` (new)
-Do: D15-style survey before any code. The question is what crosses the crate line, and there are
-three honest answers to price: (A) the runtime moves — `Config`, `Store`, `tokens`, the wire views
-go into the SDK and `rtok` becomes surfaces on top; (B) contract only — the SDK holds the trait and
-the event types, and everything a plugin does to the host goes through capability traits the SDK
-declares and `rtok` implements; (C) the middle — contract plus `Config` and `tokens`, with the
-store behind capability traits. Price each on (1) what a third party has to compile to implement
-one trait, (2) whether the ten internal plugins compile against it without reaching back into
-`rtok` (they use 29 `Store` methods today — the survey counts them and says which become
-capabilities), (3) what the crate's public surface costs to keep stable across versions, (4) build
-time and the P17 size gate. At least one comparison from outside this stack (rustc's
-`rustc_plugin`-era history, `bevy_app::Plugin`, `tower::Layer`, or `nu_plugin`) on how they drew
-the same line. Name the required methods and why each is required.
-Check: `crates/rtok-plugin-sdk/PLAN.md` names the choice, the two rejected boundaries with the
-reason, the capability list with the `Store` methods behind it, and the falsification (what would
-make this the wrong line). No code in this task.
-Status: open · Model: -
-Complexity: 3/5
+T23.0 (the boundary survey) is done 2026-09-09 — `crates/rtok-plugin-sdk/PLAN.md`, see `done.md`
+P23. It chose the middle line: the crate carries the trait, the events, the value types and host
+capability traits (`Host` plus `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger`) on `serde`,
+`serde_json` and `anyhow`; `Store`, `Config` and every surface stay in `rtok`. The tasks below
+follow that choice — `Config` does *not* move, and a plugin reads its own `[plugins.<id>]` section
+through `Host::plugin_config::<T>()`.
 
 **T23.1 the crate exists and owns the contract** · T23.0 · `Cargo.toml`, `crates/rtok-plugin-sdk/*`, `src/plugin.rs`
 Do: a workspace root (`rtok` plus `crates/rtok-plugin-sdk`; `crates/rtok-webui` keeps its own

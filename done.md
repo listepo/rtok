@@ -4,6 +4,19 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P23 — `rtok-plugin-sdk` (D25) · T23.0 done 2026-09-09
+
+Goal: one published contract every plugin implements. Plan: `plan.md` P23.
+
+**T23.0 where the boundary goes** · T15.0 · `crates/rtok-plugin-sdk/PLAN.md` (new)
+Do: D15-style survey before any code. The question is what crosses the crate line, and there are three honest answers to price: (A) the runtime moves — `Config`, `Store`, `tokens`, the wire views go into the SDK and `rtok` becomes surfaces on top; (B) contract only — the SDK holds the trait and the event types, and everything a plugin does to the host goes through capability traits the SDK declares and `rtok` implements; (C) the middle — contract plus `Config` and `tokens`, with the store behind capability traits. Price each on (1) what a third party has to compile to implement one trait, (2) whether the ten internal plugins compile against it without reaching back into `rtok` (they use 29 `Store` methods today — the survey counts them and says which become capabilities), (3) what the crate's public surface costs to keep stable across versions, (4) build time and the P17 size gate. At least one comparison from outside this stack (rustc's `rustc_plugin`-era history, `bevy_app::Plugin`, `tower::Layer`, or `nu_plugin`) on how they drew the same line. Name the required methods and why each is required.
+Check: `crates/rtok-plugin-sdk/PLAN.md` names the choice, the two rejected boundaries with the reason, the capability list with the `Store` methods behind it, and the falsification (what would make this the wrong line). No code in this task.
+Complexity: 3/5
+Status: done 2026-09-09
+Model: Claude Opus 5 (anthropic/claude-opus-5)
+Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
+Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
+
 ## P15 — `rtok tui` (D17, D23) · T15.0 done 2026-09-09
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
