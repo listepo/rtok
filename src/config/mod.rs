@@ -98,6 +98,19 @@ section! {
 // ── surfaces ────────────────────────────────────────────────────────────────
 
 section! {
+    /// `[log]` — rtok's own log (P24, D26). One rotating text file, plus the `logs` rows
+    /// `rtok otel` exports. `[core] log_file`, `log_level` and `log_to_db` moved here.
+    Log {
+        path: PathBuf = p("~/.rtok/logs/rtok.log"),
+        max_bytes: u64 = 1_048_576,
+        files: u32 = 5,
+        lines: usize = 200,
+        level: String = s("info"),
+        to_db: bool = true,
+    }
+}
+
+section! {
     /// `[hook]` — `rtok hook <event>`.
     Hook {
         host: String = s("claude"),
@@ -414,6 +427,7 @@ section! {
 pub struct Config {
     pub core: Core,
     pub estimator: Estimator,
+    pub log: Log,
     pub hook: Hook,
     pub mcp: Mcp,
     pub proxy: Proxy,
@@ -542,6 +556,7 @@ impl Config {
             &mut self.core.db_path,
             &mut self.core.archive_dir,
             &mut self.core.log_file,
+            &mut self.log.path,
             &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
             &mut self.doctor.settings_path,

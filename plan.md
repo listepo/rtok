@@ -327,18 +327,9 @@ same store. The P17 size gate still passes.
 do this today — `log_file`, `log_level`, `log_to_db` — which are migrated with a warning the way
 `[dashboard]` was in T21.3, and are read for real for the first time.
 
-**T24.0 `[log]`: a sink that rotates** · - · `src/log.rs` (new), `src/config/mod.rs`, `config/default.toml`
-Do: the section (`path` `~/.rtok/logs/rtok.log`, `max_bytes` 1048576, `files` 5, `lines` 200,
-`level` `info`, `to_db` true) and one `append(cfg, level, source, name, message)` that writes a
-line and rotates when the file would pass `max_bytes`: `rtok.log.4` → `.5`, current → `.1`, and
-whatever falls past `files` is deleted. Lines below `level` are dropped before any I/O. The three
-`[core]` keys migrate in `finish()`, `log_file` → `log.path`, and `[log] path` joins the `~`
-expansion list.
-Check: a sink with `max_bytes` 200 and `files` 2 keeps exactly `rtok.log`, `.1`, `.2` after 50
-writes and the newest line is in `rtok.log`; an old config with `[core] log_file` loads and warns;
-`default_toml_is_the_defaults` green.
-Status: open · Model: -
-Complexity: 3/5
+T24.0 (the `[log]` section and a sink that rotates) is done 2026-09-09 — see `done.md` P24. The
+`[core]` keys are still where they were: moving them means rewiring `Ctx::log`, which is T24.1's
+file and T24.1's commit.
 
 **T24.1 every log line goes through the funnel** · T24.0 · `src/plugin.rs`, `src/proxy/mod.rs`
 Do: `Ctx::log` writes the file line *and* the `logs` row (`to_db` false skips the row, and the file
@@ -543,7 +534,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**129 done · 31 open · 1 superseded — 161 tasks.**
+**130 done · 30 open · 1 superseded — 161 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -699,7 +690,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T23.4` | P23 plugin SDK | the ten plugins move | open | 3/5 |
 | `T23.5` | P23 plugin SDK | documentation someone can build against | open | 2/5 |
 | `T23.6` | P23 plugin SDK | the release publishes it | open | 2/5 |
-| `T24.0` | P24 logs | `[log]`: a sink that rotates | open | 3/5 |
+| `T24.0` | P24 logs | `[log]`: a sink that rotates | ✅ 2026-09-09 | 3/5 |
 | `T24.1` | P24 logs | every log line goes through the funnel | open | 2/5 |
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | open | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |

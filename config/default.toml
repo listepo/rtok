@@ -12,6 +12,14 @@ call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to ar
 retain_calls_days    = 30             # 0 = keep `calls` forever
 log_to_db            = true           # also write `logs` rows; log_file is always written
 
+[log]                                 # rtok's own log (D26); `rtok logs` reads it
+path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5
+max_bytes = 1048576                   # rotate past 1 MiB
+files     = 5                         # generations kept; older ones are deleted, never archived
+lines     = 200                       # what `rtok logs` prints when --lines is not given
+level     = "info"                    # error | warn | info | debug
+to_db     = true                      # also write a `logs` row for `rtok otel`
+
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5
 prose = 4.2

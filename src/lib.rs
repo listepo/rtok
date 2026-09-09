@@ -18,6 +18,7 @@ pub mod demon;
 pub mod doctor;
 pub mod expand;
 pub mod hooks;
+pub mod log;
 pub mod mcp;
 pub mod measure;
 pub mod otel;
