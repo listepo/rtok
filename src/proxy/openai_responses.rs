@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, str_field};
+use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, turn_setup};
 
 pub static OPENAI_RESPONSES: OpenAiResponses = OpenAiResponses;
 
@@ -22,10 +22,9 @@ impl ToolResults for OpenAiResponses {
         {
             return Vec::new();
         }
-        let Some(input) = req.get_mut("input").and_then(Value::as_array_mut) else {
+        let Some((input, total)) = turn_setup(req, "input") else {
             return Vec::new();
         };
-        let total = input.iter().filter(|item| item["role"] == "user").count();
         let mut seen = 0;
         let mut results = Vec::new();
         for item in input {
@@ -56,14 +55,6 @@ impl ToolResults for OpenAiResponses {
 impl Wire for OpenAiResponses {
     fn matches(&self, path: &str) -> bool {
         path == "/v1/responses"
-    }
-
-    fn provider(&self) -> &'static str {
-        "openai"
-    }
-
-    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
-        str_field(body, "user")
     }
 
     fn usage_from_body(&self, body: &Value) -> Option<Usage> {

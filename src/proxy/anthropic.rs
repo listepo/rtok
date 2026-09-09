@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field};
+use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, turn_setup};
 
 pub static ANTHROPIC: Anthropic = Anthropic;
 
@@ -10,13 +10,9 @@ pub struct Anthropic;
 
 impl ToolResults for Anthropic {
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>> {
-        let Some(messages) = req.get_mut("messages").and_then(Value::as_array_mut) else {
+        let Some((messages, total)) = turn_setup(req, "messages") else {
             return Vec::new();
         };
-        let total = messages
-            .iter()
-            .filter(|message| message["role"] == "user")
-            .count();
         let mut seen = 0;
         let mut results = Vec::new();
         for message in messages {

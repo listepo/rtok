@@ -15,11 +15,17 @@ pub trait Wire: ToolResults {
     /// Whether this wire owns the request path.
     fn matches(&self, path: &str) -> bool;
 
-    /// Provider slug used for the request's dimension row.
-    fn provider(&self) -> &'static str;
+    /// Provider slug used for the request's dimension row. Defaults to `"openai"`,
+    /// which both OpenAI wires use; Anthropic overrides.
+    fn provider(&self) -> &'static str {
+        "openai"
+    }
 
-    /// Provider session identity, when the body carries one.
-    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str>;
+    /// Provider session identity, when the body carries one. Defaults to the `user`
+    /// field both OpenAI wires use; Anthropic overrides for `metadata.user_id`.
+    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
+        str_field(body, "user")
+    }
 
     /// Usage from a complete JSON response body.
     fn usage_from_body(&self, body: &Value) -> Option<Usage>;
@@ -84,6 +90,22 @@ pub(super) fn str_field<'a>(body: &'a Value, name: &str) -> Option<&'a str> {
     body.get(name)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
+}
+
+/// The array at `req[field]` and how many of its entries are a user turn, or `None`
+/// if the field is absent/not an array. Every wire's `tool_results` starts here,
+/// then walks the array itself since what counts as a result differs per wire — be
+/// it Anthropic's `messages`, Chat Completions' `messages`, or Responses' `input`.
+pub(super) fn turn_setup<'a>(
+    req: &'a mut Value,
+    field: &str,
+) -> Option<(&'a mut Vec<Value>, usize)> {
+    let entries = req.get_mut(field).and_then(Value::as_array_mut)?;
+    let total = entries
+        .iter()
+        .filter(|entry| entry["role"] == "user")
+        .count();
+    Some((entries, total))
 }
 
 /// Read an integer usage counter, treating an absent or non-integer field as zero.

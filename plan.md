@@ -387,14 +387,7 @@ neighbouring one.
 
 T26.0 (`just dup`, jscpd in the gate) is done 2026-09-09 — see `done.md` P26.
 
-**T26.1 retire what it found** · T26.0 · `src/proxy/mod.rs`, `.jscpd.json`
-Do: the 46 clones are concentrated in `src/proxy/mod.rs` (the same request/response shaping repeated
-across wires) and in per-file test fixtures. Extract the proxy ones — they are the copies D6 warns
-about, one shared helper at the responsible layer — and lower `threshold` to what remains.
-Check: `just dup` green at the new threshold; the proxy tests are unchanged, which is what proves
-the extraction did not change behaviour.
-Status: in progress · Model: Opus 5
-Complexity: 3/5
+T26.1 (retire what it found) is done 2026-09-09 — see `done.md` P26.
 
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
@@ -495,7 +488,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**134 done · 29 open · 1 superseded — 164 tasks.**
+**135 done · 28 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -662,7 +655,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
-| `T26.1` | P26 duplication | retire what it found | open | 3/5 |
+| `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
