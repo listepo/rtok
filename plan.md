@@ -141,7 +141,7 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P19 — web dashboard — tasks done, Gate P19 passed 2026-09-09 (see `done.md` P19).
 
-### P20 — `demon` supervisor — T20.1 done 2026-09-09 (D22); see `done.md` P20.
+### P20 — `demon` supervisor — T20.1, T20.2 done 2026-09-09 (D22); see `done.md` P20.
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 

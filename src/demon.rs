@@ -209,10 +209,12 @@ pub fn status(cfg: &Config, named: &[Service]) -> Result<()> {
             ),
             _ => ("-".into(), "-".into(), "-".into(), "-".into()),
         };
+        // The word is padded before it is coloured: ANSI bytes would otherwise count as width.
+        let word = format!("{:<10}", if up { "running" } else { "stopped" });
         println!(
-            "{:<11}{:<10}{sup:<12}{ch:<8}{age:<9}{n:<10}{}",
+            "{:<11}{}{sup:<12}{ch:<8}{age:<9}{n:<10}{}",
             service,
-            if up { "running" } else { "stopped" },
+            crate::render::state(&word, up),
             file(cfg, service, "log").display()
         );
     }
