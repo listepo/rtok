@@ -61,7 +61,7 @@ fn labelled_symbols_are_found() {
     cfg.core.archive_dir = dir.join("archive");
     let cx = Ctx::open(cfg, "graph_truth").unwrap();
     let root = repo();
-    index::run(&cx, &root).unwrap();
+    index::run(&cx, &root, false).unwrap();
     let key = index::canon(&root);
 
     let (mut dwant, mut dgot) = (0usize, 0usize);

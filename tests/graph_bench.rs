@@ -38,7 +38,7 @@ fn p8c_numbers() {
         .unwrap();
     }
     let t = Instant::now();
-    let cold = index::run(&cx, &repo).unwrap();
+    let cold = index::run(&cx, &repo, false).unwrap();
     let cold_ms = t.elapsed();
     eprintln!(
         "cold_index files={} rows={} read={} {cold_ms:?}",
@@ -80,7 +80,7 @@ fn p8c_numbers() {
 
     let (cx2, fan) = home("p8c-fan");
     write_fanout(&fan);
-    index::run(&cx2, &fan).unwrap();
+    index::run(&cx2, &fan, false).unwrap();
     let key = index::canon(&fan);
     let t = Instant::now();
     let rows = cx2.store.symbol_impact(&key, "sink", 4).unwrap();

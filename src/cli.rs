@@ -174,14 +174,24 @@ enum OtelCmd {
 #[derive(Subcommand)]
 enum MemoryCmd {
     /// Import `{kind,title,body}` JSONL; dedupe by body sha256
-    Import { file: std::path::PathBuf },
+    Import {
+        file: std::path::PathBuf,
+        /// Count what would be imported and write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[cfg(feature = "graph")]
 #[derive(Subcommand)]
 enum GraphCmd {
     /// Walk a tree and insert definitions + references
-    Index { path: Option<PathBuf> },
+    Index {
+        path: Option<PathBuf>,
+        /// Report what would be indexed and write no rows
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -252,6 +262,9 @@ enum ConfigCmd {
         /// Overwrite an existing file
         #[arg(long)]
         force: bool,
+        /// Print the diff it would write and exit
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Print the path of the config file
     Path,
@@ -272,7 +285,13 @@ enum ConfigCmd {
         path: Option<PathBuf>,
     },
     /// Edit one key in the user file, preserving comments
-    Set { key: String, value: String },
+    Set {
+        key: String,
+        value: String,
+        /// Print the diff it would write and exit
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 pub fn run() -> Result<()> {
@@ -286,8 +305,10 @@ pub fn run() -> Result<()> {
         Cmd::Config { action } => {
             let home = Config::home_dir();
             match action {
-                ConfigCmd::Init { force } => {
-                    println!("{}", Config::init(&home, force)?.display());
+                ConfigCmd::Init { force, dry_run } => {
+                    let (path, diff) = Config::init_maybe(&home, force, dry_run)?;
+                    println!("{}", path.display());
+                    print_diff(&diff);
                 }
                 ConfigCmd::Path => println!("{}", Config::path_for(&home).display()),
                 ConfigCmd::Show { sources, json } => {
@@ -313,12 +334,22 @@ pub fn run() -> Result<()> {
                         std::process::exit(1);
                     }
                 }
-                ConfigCmd::Set { key, value } => {
-                    validate::set(&home, &key, &value)?;
-                    let fig = load_figment(config_file.as_deref())?;
-                    match layers::entries(&fig).into_iter().find(|(k, ..)| k == &key) {
-                        Some((_, v, _)) => println!("{v}"),
-                        None => println!("{value}"),
+                ConfigCmd::Set {
+                    key,
+                    value,
+                    dry_run,
+                } => {
+                    let (_, diff) = validate::set(&home, &key, &value, dry_run)?;
+                    if dry_run {
+                        // Nothing was written, so the loader would still report the old value.
+                        print_diff(&diff);
+                    } else {
+                        let fig = load_figment(config_file.as_deref())?;
+                        match layers::entries(&fig).into_iter().find(|(k, ..)| k == &key) {
+                            Some((_, v, _)) => println!("{v}"),
+                            None => println!("{value}"),
+                        }
+                        print_diff(&diff);
                     }
                 }
             }
@@ -473,18 +504,21 @@ pub fn run() -> Result<()> {
         Cmd::Memory { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             match action {
-                MemoryCmd::Import { file } => {
-                    println!("{}", crate::plugins::memory::import::run(&cfg, &file)?);
+                MemoryCmd::Import { file, dry_run } => {
+                    println!(
+                        "{}",
+                        crate::plugins::memory::import::run(&cfg, &file, dry_run)?
+                    );
                 }
             }
         }
         #[cfg(feature = "graph")]
         Cmd::Graph { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let GraphCmd::Index { path } = action;
+            let GraphCmd::Index { path, dry_run } = action;
             let cx = crate::plugin::Ctx::open(cfg, "graph")?;
             let root = path.unwrap_or(std::env::current_dir()?);
-            let r = crate::plugins::graph::index::run(&cx, &root)?;
+            let r = crate::plugins::graph::index::run(&cx, &root, dry_run)?;
             println!(
                 "indexed {} files · {} rows · {} skipped · {} read",
                 r.indexed, r.inserted, r.skipped, r.read
@@ -641,12 +675,20 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     Ok(())
 }
 
-/// An installer that changed nothing reports it once, not once per step.
+/// An installer that changed nothing reports it once, not once per step. The lines it does
+/// report are already `+`/`-` shaped, so they take the same colours as a diff (T12.6).
 fn print_lines(lines: &[String]) {
     if lines.iter().all(|s| s == "no changes") {
         println!("no changes");
     } else {
-        println!("{}", lines.join("\n"));
+        println!("{}", crate::render::paint(&lines.join("\n")));
+    }
+}
+
+/// A rendered diff, when there is one. An empty diff means the file was already right.
+fn print_diff(diff: &str) {
+    if !diff.is_empty() {
+        println!("{diff}");
     }
 }
 

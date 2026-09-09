@@ -489,13 +489,23 @@ impl Config {
     /// Write the reference file verbatim, so its comments survive. Refuses to clobber
     /// an existing file unless `force`.
     pub fn init(home: &Path, force: bool) -> Result<PathBuf> {
+        Self::init_maybe(home, force, false).map(|(p, _)| p)
+    }
+
+    /// [`Config::init`] with a preview: `dry_run` renders the `git diff` it would write and
+    /// leaves the disk alone. The diff is empty when the file already is the reference file.
+    pub fn init_maybe(home: &Path, force: bool, dry_run: bool) -> Result<(PathBuf, String)> {
         let path = Self::path_for(home);
         if path.exists() && !force {
             bail!("{} exists; pass --force to overwrite", path.display());
         }
-        std::fs::create_dir_all(home)?;
-        std::fs::write(&path, DEFAULT_TOML).with_context(|| path.display().to_string())?;
-        Ok(path)
+        let before = std::fs::read_to_string(&path).unwrap_or_default();
+        let diff = crate::render::file_diff(&path, &before, DEFAULT_TOML);
+        if !dry_run {
+            std::fs::create_dir_all(home)?;
+            std::fs::write(&path, DEFAULT_TOML).with_context(|| path.display().to_string())?;
+        }
+        Ok((path, diff))
     }
 
     /// Migrate legacy keys and expand `~` in paths. Called after every parse.

@@ -244,9 +244,10 @@ min_rows = 5
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
-| `setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
+| `agent setup`, `agent remove` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps |
 | `filter` | `--cmd` | `filter.cmd` |
+| `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
 
 The coverage test (T12.4) walks the clap command tree and fails if a non-positional flag
 appears without a key in `config/default.toml`, so this table cannot silently drift.

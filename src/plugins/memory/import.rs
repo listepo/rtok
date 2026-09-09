@@ -41,7 +41,8 @@ fn sha(body: &str) -> String {
 }
 
 /// Import one JSON object per line. Dedupe by sha256 of `body`. Always exit-success.
-pub fn run(cfg: &Config, path: &Path) -> Result<Report> {
+/// `dry_run` counts exactly what a real run would insert and skip, and writes no rows.
+pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
     let cx = Ctx::open(cfg.clone(), "import")?;
     let raw = std::fs::read_to_string(path).unwrap_or_default();
     let mut seen: HashSet<String> = cx
@@ -65,8 +66,10 @@ pub fn run(cfg: &Config, path: &Path) -> Result<Report> {
             r.skipped += 1;
             continue;
         }
-        cx.store
-            .insert_note(row.project.as_deref(), &row.kind, &row.title, &row.body)?;
+        if !dry_run {
+            cx.store
+                .insert_note(row.project.as_deref(), &row.kind, &row.title, &row.body)?;
+        }
         r.inserted += 1;
     }
     Ok(r)
@@ -101,7 +104,7 @@ mod tests {
         let (c, dir) = cfg("fifty");
         let p = dir.join("n.jsonl");
         fs::write(&p, fifty()).unwrap();
-        let a = run(&c, &p).unwrap();
+        let a = run(&c, &p, false).unwrap();
         assert_eq!(
             a,
             Report {
@@ -110,7 +113,7 @@ mod tests {
                 malformed: 0
             }
         );
-        let b = run(&c, &p).unwrap();
+        let b = run(&c, &p, false).unwrap();
         assert_eq!(
             b,
             Report {
@@ -120,7 +123,7 @@ mod tests {
             }
         );
         fs::write(&p, fifty() + "not json\n").unwrap();
-        let d = run(&c, &p).unwrap();
+        let d = run(&c, &p, false).unwrap();
         assert_eq!(
             d,
             Report {

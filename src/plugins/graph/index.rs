@@ -41,7 +41,9 @@ pub fn canon(p: &Path) -> String {
 }
 
 /// Incremental index of `root`. Returns how many rows were newly written.
-pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
+/// `dry_run` walks and parses exactly as a real run does but writes no rows, so the report
+/// says what the index would gain without touching the store.
+pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
@@ -77,7 +79,9 @@ pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
         let sha = store::hex_sha256(src.as_bytes());
         if known.as_ref().is_some_and(|(h, _, _)| h == &sha) {
             // Touched but not changed: move the freshness key so the next run skips on stat.
-            cx.store.touch_symbols(&rk, &rel, stat.0, stat.1)?;
+            if !dry_run {
+                cx.store.touch_symbols(&rk, &rel, stat.0, stat.1)?;
+            }
             report.skipped += 1;
             continue;
         }
@@ -86,11 +90,17 @@ pub fn run(cx: &Ctx, root: &Path) -> Result<Report> {
             Err(_) => continue,
         };
         let rows = scoped(&hits);
-        let n = cx.store.replace_symbols(&rk, &rel, &sha, stat, &rows)?;
+        let n = if dry_run {
+            rows.len()
+        } else {
+            cx.store.replace_symbols(&rk, &rel, &sha, stat, &rows)?
+        };
         report.indexed += 1;
         report.inserted += n;
     }
-    let _ = cx.store.delete_symbols_missing(&rk, &keep);
+    if !dry_run {
+        let _ = cx.store.delete_symbols_missing(&rk, &keep);
+    }
     Ok(report)
 }
 
@@ -131,7 +141,7 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
     if cx.store.symbol_count(&canon(root))? > 0 {
         return Ok(Report::default());
     }
-    run(cx, root)
+    run(cx, root, false)
 }
 
 #[cfg(test)]
@@ -156,7 +166,7 @@ pub(crate) mod tests {
     fn index_crate_has_main_def_and_registry_ref() {
         let (cx, dir) = cx("crate");
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        run(&cx, &root).unwrap();
+        run(&cx, &root, false).unwrap();
         let k = canon(&root);
         assert!(cx.store.has_symbol_def(&k, "main").unwrap(), "main def");
         assert!(
@@ -180,10 +190,10 @@ pub(crate) mod tests {
             )
             .unwrap();
         }
-        run(&cx, &a).unwrap();
+        run(&cx, &a, false).unwrap();
         let (ka, kb) = (canon(&a), canon(&b));
         let a_rows = cx.store.symbol_count(&ka).unwrap();
-        run(&cx, &b).unwrap();
+        run(&cx, &b, false).unwrap();
         assert_eq!(
             cx.store.symbol_count(&ka).unwrap(),
             a_rows,
@@ -224,17 +234,21 @@ pub(crate) mod tests {
         for i in 0..FILES {
             fs::write(dir.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
         }
-        let cold = run(&cx, &dir).unwrap();
+        let cold = run(&cx, &dir, false).unwrap();
         assert_eq!(cold.read as usize, FILES, "cold run reads every file");
-        let warm = run(&cx, &dir).unwrap();
+        let warm = run(&cx, &dir, false).unwrap();
         assert_eq!(warm.read, 0, "warm run must not open a file");
         assert_eq!(warm.skipped as usize, FILES);
         assert_eq!(warm.inserted, 0);
         fs::write(dir.join("f0.rs"), "fn f0() {}\n").unwrap();
-        let touched = run(&cx, &dir).unwrap();
+        let touched = run(&cx, &dir, false).unwrap();
         assert_eq!(touched.read, 1, "only the touched file is read");
         assert_eq!(touched.inserted, 0, "identical bytes must not re-insert");
-        assert_eq!(run(&cx, &dir).unwrap().read, 0, "new stat was recorded");
+        assert_eq!(
+            run(&cx, &dir, false).unwrap().read,
+            0,
+            "new stat was recorded"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -242,8 +256,8 @@ pub(crate) mod tests {
     fn second_run_inserts_zero() {
         let (cx, dir) = cx("twice");
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        run(&cx, &root).unwrap();
-        let r = run(&cx, &root).unwrap();
+        run(&cx, &root, false).unwrap();
+        let r = run(&cx, &root, false).unwrap();
         assert_eq!(r.inserted, 0, "second run must insert 0 rows");
         assert_eq!(r.indexed, 0);
         let _ = fs::remove_dir_all(dir);
@@ -256,9 +270,9 @@ pub(crate) mod tests {
         let b = dir.join("b.rs");
         fs::write(&a, "fn alpha() {}\n").unwrap();
         fs::write(&b, "fn beta() {}\n").unwrap();
-        run(&cx, &dir).unwrap();
+        run(&cx, &dir, false).unwrap();
         fs::write(&a, "fn alpha() {}\nfn gamma() {}\n").unwrap();
-        let r = run(&cx, &dir).unwrap();
+        let r = run(&cx, &dir, false).unwrap();
         assert_eq!(r.indexed, 1, "only a.rs changed");
         let k = canon(&dir);
         assert!(cx.store.has_symbol_def(&k, "gamma").unwrap());
@@ -275,7 +289,7 @@ pub(crate) mod tests {
             "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nstatic S: u8 = top();\n",
         )
         .unwrap();
-        run(&cx, &dir).unwrap();
+        run(&cx, &dir, false).unwrap();
         let k = canon(&dir);
         let scope = |n: &str| {
             cx.store

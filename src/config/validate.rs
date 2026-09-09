@@ -36,24 +36,33 @@ fn issues_in(path: &Path, text: &str) -> Vec<String> {
 /// Edit `<home>/config.toml` at `key` (dotted), preserving comments. Creates the
 /// reference file when it is missing. Refuses a write that would fail [`issues`]
 /// (unknown plugin id, `enabled = "yes"`, …) so the file never stops loading.
-pub fn set(home: &Path, key: &str, raw: &str) -> Result<PathBuf> {
+/// Returns the file and a `git diff` of the edit — empty when the value was already there.
+/// `dry_run` renders that diff and writes nothing; the value is validated either way, so a
+/// preview refuses exactly what the real run would refuse.
+pub fn set(home: &Path, key: &str, raw: &str, dry_run: bool) -> Result<(PathBuf, String)> {
     if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
         bail!("empty key");
     }
     let path = Config::path_for(home);
     if !path.exists() {
+        if dry_run {
+            bail!("no config file yet; run `rtok config init` first");
+        }
         Config::init(home, false)?;
     }
-    let text = std::fs::read_to_string(&path)?;
-    let mut doc: DocumentMut = text.parse().with_context(|| path.display().to_string())?;
+    let before = std::fs::read_to_string(&path)?;
+    let mut doc: DocumentMut = before.parse().with_context(|| path.display().to_string())?;
     assign(&mut doc, key, parse_value(raw))?;
-    let text = doc.to_string();
-    let errs = issues_in(&path, &text);
+    let after = doc.to_string();
+    let errs = issues_in(&path, &after);
     if !errs.is_empty() {
         bail!("{}", errs.join("\n"));
     }
-    std::fs::write(&path, text)?;
-    Ok(path)
+    let diff = crate::render::file_diff(&path, &before, &after);
+    if !dry_run {
+        std::fs::write(&path, after)?;
+    }
+    Ok((path, diff))
 }
 
 fn parse_value(raw: &str) -> TomlValue {
@@ -256,13 +265,13 @@ mod tests {
         let home = tmp("setbad");
         Config::init(&home, false).unwrap();
         let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
-        assert!(set(&home, "plugins.nope.enabled", "true").is_err());
-        assert!(set(&home, "plugins.cmd.enabled", "yes").is_err());
+        assert!(set(&home, "plugins.nope.enabled", "true", false).is_err());
+        assert!(set(&home, "plugins.cmd.enabled", "yes", false).is_err());
         assert_eq!(
             std::fs::read_to_string(Config::path_for(&home)).unwrap(),
             before
         );
-        set(&home, "plugins.cmd.enabled", "false").unwrap();
+        set(&home, "plugins.cmd.enabled", "false", false).unwrap();
         let cfg = Config::load_from(&home).unwrap();
         assert!(!cfg.plugin_enabled("cmd", true));
         let _ = std::fs::remove_dir_all(&home);
@@ -272,7 +281,7 @@ mod tests {
     fn set_keeps_proxy_comment() {
         let home = tmp("set");
         Config::init(&home, false).unwrap();
-        set(&home, "proxy.port", "8791").unwrap();
+        set(&home, "proxy.port", "8791", false).unwrap();
         let text = std::fs::read_to_string(Config::path_for(&home)).unwrap();
         assert!(
             text.contains("port            = 8791") || text.contains("port = 8791"),

@@ -79,7 +79,7 @@ impl Plugin for Graph {
 /// missing until then.
 pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
     if cx.config.plugins.graph.auto_index {
-        index::run(cx, root)
+        index::run(cx, root, false)
     } else {
         index::ensure(cx, root)
     }
@@ -406,7 +406,7 @@ mod tests {
             src.push_str(&format!("fn d{i}() {{ c{i}(); }}\n"));
         }
         fs::write(dir.join("fan.rs"), src).unwrap();
-        index::run(&cx, &dir).unwrap();
+        index::run(&cx, &dir, false).unwrap();
         let key = index::canon(&dir);
         let mut cte: Vec<_> = cx.store.symbol_impact(&key, "sink", 4).unwrap();
         let mut bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
@@ -435,7 +435,7 @@ mod tests {
         );
         let r = index_for(&cx, &dir).unwrap();
         assert_eq!(r.read, 0, "the call must open no file");
-        index::run(&cx, &dir).unwrap(); // what `rtok graph index` does
+        index::run(&cx, &dir, false).unwrap(); // what `rtok graph index` does
         let fresh = symbol(&cx, &dir, "alpha").unwrap();
         assert!(
             fresh.contains("a.rs:2"),

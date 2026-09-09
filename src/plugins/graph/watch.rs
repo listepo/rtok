@@ -188,7 +188,7 @@ where
 
 fn settle(cx: &Ctx, root: &Path, runs: &AtomicUsize, last: &mut Instant, dirty: &mut bool) {
     if *dirty && last.elapsed() >= QUIET {
-        let _ = super::index::run(cx, root);
+        let _ = super::index::run(cx, root, false);
         runs.fetch_add(1, Ordering::Relaxed);
         *last = Instant::now();
         *dirty = false;
@@ -239,7 +239,7 @@ mod tests {
         let (mut cx, dir) = mk("watch-new");
         arm(&mut cx, "notify");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir).unwrap();
+        super::super::index::run(&cx, &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let (found, within_1s, read, gone) = std::thread::scope(|s| {
             s.spawn(|| run(&cx, &dir, &stop));
@@ -266,7 +266,7 @@ mod tests {
         let (mut cx, dir) = mk("watch-burst");
         arm(&mut cx, "notify");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir).unwrap();
+        super::super::index::run(&cx, &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let runs = AtomicUsize::new(0);
         let n = std::thread::scope(|s| {
@@ -310,7 +310,7 @@ mod tests {
         let (mut cx, dir) = mk("watch-wman");
         arm(&mut cx, "watchman");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir).unwrap();
+        super::super::index::run(&cx, &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let (found, within_1s, read) = std::thread::scope(|s| {
             s.spawn(|| run(&cx, &dir, &stop));
@@ -354,7 +354,7 @@ mod tests {
         let (mut cx, dir) = mk("watch-fb");
         arm(&mut cx, "watchman");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir).unwrap();
+        super::super::index::run(&cx, &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let found = std::thread::scope(|s| {
             s.spawn(|| run(&cx, &dir, &stop));

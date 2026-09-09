@@ -27,6 +27,16 @@ const ALLOW: &[&str] = &[
     "stdin",   // action: rtok filter reads stdin (T10.2)
 ];
 
+/// Flags that are actions on one command rather than settings, so they get no config key.
+/// `--dry-run` has a key wherever the command owns a config table (`setup`, `proxy`, `bench`);
+/// on `config init` / `config set` it sits beside `--force` and means "print, do not write".
+const ALLOW_KEYS: &[&str] = &[
+    "config.init.dry_run",
+    "config.set.dry_run",
+    "memory.import.dry_run",
+    "graph.index.dry_run",
+];
+
 #[test]
 fn config_coverage() {
     let toml_keys: HashSet<String> = layers::leaf_keys().into_iter().collect();
@@ -67,7 +77,11 @@ fn walk(cmd: &Command, path: &[&str], out: &mut Vec<String>) {
         if ALLOW.contains(&long) {
             continue;
         }
-        out.push(config_key(path, long));
+        let key = config_key(path, long);
+        if ALLOW_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        out.push(key);
     }
     for sub in cmd.get_subcommands() {
         let mut next = path.to_vec();
