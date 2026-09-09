@@ -37,7 +37,63 @@ the root manifest (it moved with `accepted`), and fmt. One inherited behaviour c
 no longer rewrites/backs-up when its diff is empty (the SDK's `NO_CHANGES` write gate) — no report
 string changed and no test asserted the old churn. 16 files, the task's own list in plan.md.
 
-## P25 — `rtok agent sessions` (D27) · T25.0 done 2026-09-09
+## P25 — `rtok agent sessions` (D27) · T25.0, T25.1, T25.2 done 2026-09-09
+
+**T25.2 `rtok agent sessions`** · T25.1 · `src/cli.rs`, `src/render.rs`, `tests/agents.rs` (new)
+Do: render the model's page as a table — agent, provider, model, in / out / cache, started, and how
+long it has run, newest first; `--all` includes sessions that have ended. Durations and the table
+layout come from one helper in `render.rs`, because `demon status`, `stats` and this all pad columns
+by hand today and the next one would be the fourth copy.
+Check: two live sessions and one ended print two rows, three with `--all`; the token columns equal
+`rtok stats` over the same window; an empty store prints a header and a line saying nothing is
+running.
+Complexity: 2/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
+Check result: green. `render::table(cols, rows)` pads every column to its widest cell with a
+per-column width floor — the floor is what lets a fixed-width table move over byte-identically;
+stats' api table, tool/bash/mcp sections and `stats --cache` were refactored onto it, byte-identity
+proven by the unmodified full-equality goldens in `tests/stats_model.rs`. `demon status`
+deliberately NOT refactored: it pads its state word before colouring so ANSI bytes stay out of the
+width math, and its last column is an unpadded path — a measure-then-pad helper would change its
+tty output. Also `render::duration()` ("45s"…"3d04h", two units max) and `sessions_table()`
+(both cache counts labelled). Default window `since = 0`: the default view's selectivity is
+liveness (`ended_at IS NULL`) — a started_at floor could hide a long-running live session, the row
+the command exists for. `tests/agents.rs` 3/3: two live + one ended → 2 rows, 3 with `--all`;
+`agents` alias byte-equal; token columns == `rtok stats --json` over the same window (fixture
+transcripts mirror the usage rows turn-for-turn so both definitions agree); empty store → header +
+"nothing is running". `just check` exit 0.
+Deviations: the `agents` visible alias did not exist on the tree despite the P25 preamble — added
+as one `#[command(visible_alias)]` line. `tests/config_coverage.rs` gained `"all"` in its
+action-flag allow-list (`--all` is a view toggle, not a stored setting). At integration the
+command joined T15.12's `COMMAND_PAGES` (`agent sessions` → `sessions`) — the page rides the
+snapshot, so it is a real page, not an on-demand call.
+
+**T25.1 one reader, in the model** · T25.0 · `src/store/mod.rs`, `src/web/model.rs`
+Do: `Store::session_totals(since)` — one `GROUP BY` over `sessions` joined to `usage` and `calls`,
+returning id, host slug, provider/api, model, the four token counts, `started_at`, last activity
+and `ended_at`. It lands in the D23 model as a `Sessions` page, which is what makes it a `rtok web`
+and `rtok tui` page and not just a command (D27). No second query anywhere.
+Check: a fixture DB with three sessions across two hosts totals each one's tokens exactly, and the
+model's page carries the same numbers as the store call; `rtok web`'s snapshot gains the page.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent, effort High)
+Check result: green. One statement: `sessions` LEFT JOINed to four per-session CTE aggregates —
+`tot` (token SUMs over `usage`), `last_u` (newest usage row's api/model), `act` (MAX(ts) over
+usage UNION ALL calls — no `[agents] idle_secs`, per T25.0's deviation), `prov` (newest
+provider-bearing call's slug). CTE pre-aggregation is required: a flat sessions×usage×calls join
+fans each usage row across each call row and multiplies the sums. `since` windows sessions, not
+tokens. Contract for T25.2: `session_totals(&self, since: i64) -> Result<Vec<SessionTotals>>`,
+rows newest first, `ended_at IS NULL` = live, zeroed session still appears with
+`last_activity = started_at`; `SessionTotals` is documented field-by-field. `Snapshot` gains
+`sessions` (existing keys untouched — the P19 shape test passes unmodified) and `pages()` gained
+`("sessions", "sessions")` in the same commit, which keeps the T15.10 parity gate green. Fixture:
+three sessions across `claude` and `pi`, one ended, one zeroed — store call, model page and
+snapshot frame all asserted equal. `just check` exit 0.
+Deviations: host slugs are `claude` (0002) and `pi` (0010), not `claude-code` as the briefing
+guessed. `SessionTotals` carries `project` beyond the task's field list — P25's gate ("every
+session has a host and a project") and T25.2's "sessions active in this project" need it. Diff
++397/−2 exceeds the ≤200-LOC line; ~265 of it is the two test groups the Check requires, product
+code ~150 in the task's two files.
 
 **T25.0 a session knows whose it is** · - · `migrations/0010.sql` (new), `src/plugin.rs`, `src/hooks/mod.rs`, `src/store/mod.rs`, `src/config/layers.rs`
 Do: `Ctx` learns the host from `[hook] host` and passes it to `upsert_session` instead of `None`,
@@ -115,7 +171,38 @@ request with `npx skills add`. It is prose — a checklist for turning a clone r
 extraction — with no code and nothing executable, and it belongs beside the gate that produces the
 report T26.1 will work from.
 
-## P24 — `rtok logs` (D26) · T24.0, T24.1, T24.2, T24.4 done 2026-09-09
+## P24 — `rtok logs` (D26) · done 2026-09-09 (T24.0–T24.4)
+
+**T24.3 `rtok logs watch`** · T24.2 · `src/log.rs`, `src/cli.rs`
+Do: print the same last-`lines` screen, then follow: every new line appears above the previous one,
+so newest-first holds while it runs. Rotation while watching is handled — the file the watcher
+holds is renamed, and it reopens `path` rather than following the inode into `.1`. Ctrl-C leaves
+the terminal as it found it.
+Check: a line written by another process shows up within a poll interval; a rotation mid-watch does
+not end the stream and does not repeat lines already printed.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent, effort High)
+Check result: green. `watch_loop` polls a step closure every `WATCH_POLL` (200 ms, a pub const a
+test reads) and renders each `WatchTick` two ways: on a TTY the newest-first screen is repainted in
+place with `\x1b[{n}F` + `\x1b[J` so new lines land on top; piped, it appends only fresh rows
+(numbered past the initial screen) with zero escape codes, and `BrokenPipe` maps to `Ok` so
+`| head` exits cleanly. Rotation is detected by content (first line + line count — std has no
+portable inode read), carrying the unconsumed tail out of the `.1`/`.2` chain before the
+newcomer's lines; a rotation-storm unit test (12 appends across ~4 rotations at `max_bytes=150`)
+asserts every line once in arrival order. Ctrl-C needs no handler: the loop only writes
+row-move/clear escapes — no raw mode, no alternate screen — leaving the terminal as `tail -f`
+would. Evidence: the integration test seeds the log, runs `logs watch` piped, appends from the test
+process, rotates exactly as the sink does, appends again — both markers arrive, each exactly once,
+no `\x1b` anywhere; the TTY repaint is unit-pinned byte-exact; a real-pty smoke run confirms the
+row-1 landing. `watch_loop`/`WatchTick` is the skeleton T25.3 reuses for state-table repaint.
+`cargo test --lib log::` 18 passed; `cargo test --test logs` 4 passed; `just check` exit 0
+(workspace 284 passed, jscpd 37 clones / 1.42 %).
+Deviations: content-based rotation detection instead of the inode the Do implies (std limitation;
+the degenerate case degrades to skipping lines, never repeating). `tail` refactored into
+`tail_with(live, …)` so the first screen and the follow state share one read — two reads repeat or
+lose a line written between them; output unchanged, its tests untouched. Documented in code: a row
+wider than the terminal makes the repaint drift one row (fixing it needs an ioctl or a dependency).
+No new dependency (`std::io::IsTerminal`).
 
 **T24.4 the demon's own logs are bounded too** · T24.0 · `src/demon.rs`
 Do: today `supervise` hands the child a raw appending fd, so `<service>.log` grows without limit and
@@ -376,9 +463,37 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
 Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
 
-## P22 — `rtok report` (D24) · T22.0 done 2026-09-09
+## P22 — `rtok report` (D24) · T22.0, T22.1 done 2026-09-09
 
 Goal: one artefact a person or a model can act on — the report renders the D23 operator model and computes nothing of its own. Plan: `plan.md` P22.
+
+**T22.1 `--format md`** · T22.0 · `src/report/mod.rs`, `src/report/markdown.rs`, `src/cli.rs`
+Do: the whole section set as Markdown, straight from the D23 model. Tables, no charts. Every
+number is followed by its evidence — row count and window — so the document cannot quietly grow a
+figure nobody measured. Markdown first because it needs no renderer: it is the format that proves
+the *content* is right before any layout work starts.
+Check: on a store with known fixtures, every number in the output is traceable to a row the test
+also asserts; an empty store produces a report that says so rather than zeros.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent, effort High)
+Check result: green. The eight sections render in the fixed order (Window · Savings · Calls ·
+Cache · Expand · Config · Doctor · Recommendations, the last a T22.5 placeholder that says "No
+recommendations." on an empty rule set); every section carries its evidence — per-ledger row
+counts plus coverage, with measurements/usage honestly labelled "whole ledger (no row times)"
+because their readers return no row time. `src/report/` imports only `crate::web::model` (D24):
+`model::report_ledgers()` opens the store once and builds the section data entirely on existing
+readers (`calls_after`, `list_measurements`, `archive_decision_counts`, `cache::report`,
+`usage_sessions`), so `src/store/` needed no edits; `config_entries`, `doctor`, `log::stamp`,
+`stats::parse_since` reused as-is. `tests/report.rs` (3 tests) asserts the fixture store's numbers
+row-for-row; `empty_store_says_so_rather_than_zeros` pins the no-rows prose (no `| cmd |` table
+rows anywhere). CLI: `rtok report [--format md] [--out <path>] [--since <window>]`, `--format` a
+ValueEnum with `Md` alone, `[report] format/out/since` keys (D12/D14; asking for html/pdf errors
+with "not built yet (T22.2/T22.3)"). `cargo test --test report` 3 passed; `just check` exit 0
+(188 unit + all integration suites; jscpd unchanged at 36 on its tree).
+Deviations: 9 files / +880 — D12 forces the config pair + docs mirror, D24 forces the model
+methods, `tests/report.rs` follows the house fixture pattern; stated in the commit body. Savings
+are net per plugin (expand rows negative), with an explicit line that a `Measurement` row carries
+no turn count, so tokens are floors, not context-token-turns.
 
 **T22.0 pick the PDF renderer against the size gate** · T15.0 · `docs/report.md` (new)
 Do: D15-style survey before any code. At least three candidates priced honestly: `typst` as a
@@ -402,9 +517,61 @@ cap, so the budget clause is applied as published arithmetic — dist 17.4 MB + 
 arithmetic (≈ 61.8 MB, ~3.5×) is what fails the gate, which is why the smaller candidate wins. The
 site row for the new docs page is in _content.gotmpl. Repo Cargo.toml/Cargo.lock untouched.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.10, T15.11 done 2026-09-09
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.10, T15.11, T15.12 done 2026-09-09
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.12 the parity test enumerates commands, not pages** · T15.11, T15.10 · `tests/surface_parity.rs`
+Do: extend T15.10's test from "the two surfaces expose the same pages" to "every reading command has
+a page", walking `Cli::command()` the way `config_coverage` already walks it, with an explicit
+allow-list for the streaming and writing commands D27 exempts.
+Check: adding a reading command with no page fails `just check` naming the command; the allow-list
+entries each carry the reason they are exempt.
+Complexity: 2/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
+Check result: green. `every_command_is_exempt_or_renders_a_page_of_the_model` walks `Cli::command()`
+the way `config_coverage` does (leaves only; a parent that needs a verb is navigation; `logs` is a
+leaf beside its subcommands; clap's `help` skipped). Two const data lists, one line per entry:
+`COMMAND_PAGES` (command → page, asserted ∈ `model::pages()`) and `EXEMPT` (command, reason).
+Anti-rot asserts: unclassified fails by name; stale entries (renamed/removed commands), empty
+reasons, and mapped-and-exempt overlaps all fail. Check evidence (scratch command, reverted, not
+committed): `unclassified command 'sessions': a reading command renders a page of the model
+(COMMAND_PAGES); everything else needs a reason in EXEMPT (D27, T15.12)`. Both parity tests pass;
+`just check` exit 0.
+Deviations: none to the spec. Judgment calls recorded: the lists live in the test, not the model,
+so the frame stays byte-stable; `otel status` exempted as an exporter echo (the decision T15.11
+left open); `config get`/`logs export`/`demon list` classified alongside their siblings. At
+integration the coordinator added this round's new commands: `report` (reading, on-demand P22
+document), `logs watch` (streaming), `tui` (surface) to `EXEMPT`, and `agent sessions` — a real
+snapshot page since T25.1 — to `COMMAND_PAGES`: 2 mapped, 37 exempt of 39 paths.
+
+**T15.2 header · tabs · footer shell** · T15.1 · `src/tui/view.rs`, `src/tui/app.rs`
+Do (roadmap §tui): the TUI shell — header line, tab bar, footer.
+Complexity: 2/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
+Check result: green. Header `rtok · <project dir> · <cols>x<rows>`, tab bar with the selected tab
+bold, body, footer `q quit · Left/Right or 1..N switch tabs · updated HH:MM:SS UTC` (reusing
+`log::stamp` — one calendar implementation). Tabs render through ratatui's `Tabs` widget from
+`tab_names()`; `selected()` (this task) drives the highlight. Shell rendering pinned by a
+`TestBackend` test; `tabs_are_the_model_pages` still holds. `just check` exit 0.
+Deviations: none.
+
+**T15.1 ratatui + crossterm scaffold, event loop** · T15.0 · `Cargo.toml`, `src/lib.rs`, `src/cli.rs`, `src/tui/{mod,app,view}.rs`
+Do (roadmap §tui): the scaffold — dependencies, module, event loop, `rtok tui` subcommand.
+Complexity: 2/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
+Check result: green. `ratatui 0.30.2` (the widget layer; its default backend is crossterm) and
+`crossterm 0.29` (key/tick events; same major as ratatui 0.30's backend so exactly one copy
+links) — reasons in the commit message. `src/tui/mod.rs` runs `ratatui::try_init`/`restore` on
+every exit path; the loop draws, `event::poll(2 s)` (the web tick's cadence), re-reads
+`model::snapshot(cfg)` on timeout, and routes keys through `App::key` (`q`/`Esc`/`Ctrl+C` quit,
+Left/Right wrap, `1..=9` jump). `App` holds `tabs = model::pages()` **by reference** — no second
+list anywhere; pinned by `tabs_are_the_model_pages`. The TUI never opens the `Store` (D23): data
+only via the model's snapshot. Unit tests cover tab switching and the pages-derived tab list; a
+real-pty smoke run rendered the header, bold tabs, usage body and footer without a panic (a 0×0
+pty also does not crash — the real TTY guard is T15.9). `just check` exit 0 per commit.
+Deviations: T15.1's placeholder view renders one line consuming app state rather than a bare
+hello — private `mod app` accessors trip `-D dead_code` otherwise; the shell replaced it in T15.2.
 
 **T15.11 the model covers every reading command** · T15.0 · `src/web/model.rs`, `src/measure/stats.rs`, `src/cli.rs`
 Do: move the queries the reading commands own into the D23 model, one command at a time, and have

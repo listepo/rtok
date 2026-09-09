@@ -165,15 +165,10 @@ per plugin, from `Measurement` rows only) · **Calls** (hooks / MCP / proxy, p50
 (effective values with their origin, from `config show --sources`) · **Doctor** (what `rtok
 doctor` reports) · **Recommendations**.
 
-**T22.1 `--format md`** · T22.0 · `src/report/mod.rs`, `src/report/markdown.rs`, `src/cli.rs`
-Do: the whole section set as Markdown, straight from the D23 model. Tables, no charts. Every
-number is followed by its evidence — row count and window — so the document cannot quietly grow a
-figure nobody measured. Markdown first because it needs no renderer: it is the format that proves
-the *content* is right before any layout work starts.
-Check: on a store with known fixtures, every number in the output is traceable to a row the test
-also asserts; an empty store produces a report that says so rather than zeros.
-Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
-Complexity: 3/5
+T22.0 (the renderer survey) and T22.1 (`--format md`) are done 2026-09-09 — see `done.md` P22.
+The Markdown document carries the whole section set, every number with its row count and window,
+and reads through the D23 model only (`model::report_ledgers`); `--format` is a ValueEnum with
+`md` alone until T22.2/T22.3 land.
 
 **T22.2 `--format html`** · T22.1 · `src/report/html.rs`
 Do: the same sections, one self-contained file — inline CSS, inline SVG charts, no network fetch,
@@ -270,7 +265,7 @@ Gate P23 (review): the SDK compiles on its own — a scratch crate that depends 
 `rtok stats --json` and `rtok web`'s snapshot are byte-identical to the pre-refactor output on the
 same store. The P17 size gate still passes.
 
-### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26)
+### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26) · done 2026-09-09 (T24.0–T24.4), see `done.md` P24
 
 `rtok logs [--lines N]` · `rtok logs watch` · `rtok logs export`. Config table `[log]`: `path`,
 `max_bytes`, `files`, `lines`, `level`, `to_db`. It absorbs the three `[core]` keys that pretend to
@@ -283,14 +278,10 @@ are done 2026-09-09 — see `done.md` P24. The `[core]` keys are still where the
 
 T24.2 (`rtok logs` and `rtok logs export`) is done 2026-09-09 — see `done.md` P24.
 
-**T24.3 `rtok logs watch`** · T24.2 · `src/log.rs`, `src/cli.rs`
-Do: print the same last-`lines` screen, then follow: every new line appears above the previous one,
-so newest-first holds while it runs. Rotation while watching is handled — the file the watcher
-holds is renamed, and it reopens `path` rather than following the inode into `.1`. Ctrl-C leaves
-the terminal as it found it.
-Check: a line written by another process shows up within a poll interval; a rotation mid-watch does
-not end the stream and does not repeat lines already printed.
-Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
+T24.3 (`rtok logs watch`) is done 2026-09-09 — see `done.md` P24. The watcher repaints the
+newest-first screen in place on a TTY, degrades to plain appending rows when piped, survives the
+sink's rename-rotation without repeating lines, and its `watch_loop`/`WatchTick` skeleton is the
+one T25.3 reuses.
 Complexity: 3/5
 
 T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
@@ -311,26 +302,13 @@ no query aggregates tokens by session. So the first task is attribution, not dis
 T25.0 (a session knows whose it is) is done 2026-09-09 — see `done.md` P25. Its `[agents]
 idle_secs` clause was not built; T25.1 reads last activity off `calls`/`usage` instead.
 
-**T25.1 one reader, in the model** · T25.0 · `src/store/mod.rs`, `src/web/model.rs`
-Do: `Store::session_totals(since)` — one `GROUP BY` over `sessions` joined to `usage` and `calls`,
-returning id, host slug, provider/api, model, the four token counts, `started_at`, last activity
-and `ended_at`. It lands in the D23 model as a `Sessions` page, which is what makes it a `rtok web`
-and `rtok tui` page and not just a command (D27). No second query anywhere.
-Check: a fixture DB with three sessions across two hosts totals each one's tokens exactly, and the
-model's page carries the same numbers as the store call; `rtok web`'s snapshot gains the page.
-Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
+T25.1 (one reader, in the model) and T25.2 (`rtok agent sessions`) are done 2026-09-09 — see
+`done.md` P25. `Store::session_totals(since)` is one GROUP BY over `sessions` joined to CTE
+aggregates of `usage` and `calls`; the Sessions page rides the snapshot (`pages()` gained it),
+and `rtok agent sessions` renders it through `model::sessions` — the second command after
+`plugins` whose page the frame actually carries, which is why T15.12's `COMMAND_PAGES` lists it.
+T25.3 (`sessions watch`) reuses T24.3's `watch_loop`.
 Complexity: 3/5
-
-**T25.2 `rtok agent sessions`** · T25.1 · `src/cli.rs`, `src/render.rs`, `tests/agents.rs` (new)
-Do: render the model's page as a table — agent, provider, model, in / out / cache, started, and how
-long it has run, newest first; `--all` includes sessions that have ended. Durations and the table
-layout come from one helper in `render.rs`, because `demon status`, `stats` and this all pad columns
-by hand today and the next one would be the fourth copy.
-Check: two live sessions and one ended print two rows, three with `--all`; the token columns equal
-`rtok stats` over the same window; an empty store prints a header and a line saying nothing is
-running.
-Status: in progress · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low — starts when T25.1 lands)
-Complexity: 2/5
 
 **T25.3 `rtok agent sessions watch`** · T25.2 · `src/cli.rs`, `src/render.rs`
 Do: the same table, redrawn on an interval, in place rather than scrolling; a session that appears,
@@ -378,7 +356,7 @@ Gate P27 (review): no module under `src/setup/` writes a host file, copies a bac
 plugin directory itself — every one of those goes through `rtok-agent-sdk`. A sixth host is a new
 `src/setup/<host>.rs` and nothing else.
 
-### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
+### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.3–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
 worth doing: `rtok tui` and `rtok web` are one operator model with two renderings (D23), so the
@@ -390,13 +368,14 @@ web` has today, Overview and Plugins; every reading command (stats, doctor, plug
 logs, demon status/list) now asks the model and renders what it returns. Calls, Doctor and Logs
 become surfaced pages with T15.5–T15.7.
 
-**T15.12 the parity test enumerates commands, not pages** · T15.11, T15.10 · `tests/surface_parity.rs`
-Do: extend T15.10's test from "the two surfaces expose the same pages" to "every reading command has
-a page", walking `Cli::command()` the way `config_coverage` already walks it, with an explicit
-allow-list for the streaming and writing commands D27 exempts.
-Check: adding a reading command with no page fails `just check` naming the command; the allow-list
-entries each carry the reason they are exempt.
-Status: in progress · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
+T15.12 (the parity test enumerates commands, not pages) is done 2026-09-09 — see `done.md` P15.
+`every_command_is_exempt_or_renders_a_page_of_the_model` walks `Cli::command()` the way
+`config_coverage` does; every command is either mapped to a `model::pages()` entry
+(`COMMAND_PAGES`: `plugins`, `agent sessions`) or carries its reason in `EXEMPT` — streaming,
+writing, surfaces, helpers, and the reading-but-on-demand set until a surface carries their pages.
+
+Gate P15 (T15.1–T15.9 remainder): the TUI scaffold and shell are landed; the tab set is
+`model::pages()` by reference, asserted by test.
 Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
@@ -462,7 +441,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**143 done · 23 open · 1 superseded — 167 tasks.**
+**150 done · 16 open · 1 superseded — 167 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -583,7 +562,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
 | `T15.10` | P15 tui | the two surfaces cannot drift | ✅ 2026-09-09 | 1/5 |
 | `T15.11` | P15 tui | the model covers every reading command | ✅ 2026-09-09 | 4/5 |
-| `T15.12` | P15 tui | the parity test enumerates commands, not pages | open | 2/5 |
+| `T15.12` | P15 tui | the parity test enumerates commands, not pages | ✅ 2026-09-09 | 2/5 |
 | `T16.1` | P16 otel | `[otel]` config | ✅ 2026-09-04 | — |
 | `T16.2` | P16 otel | export watermark and row readers | ✅ 2026-09-04 | — |
 | `T16.3` | P16 otel | OTLP/HTTP JSON encoder | ✅ 2026-09-04 | — |
@@ -609,7 +588,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T21.2` | P21 CLI presentation | `graph index` shows progress | ✅ 2026-09-09 | — |
 | `T21.3` | P21 CLI presentation | `rtok dashboard` becomes `rtok web` | ✅ 2026-09-09 | — |
 | `T22.0` | P22 report | pick the PDF renderer against the size gate | ✅ 2026-09-09 | 2/5 |
-| `T22.1` | P22 report | `--format md` | open | 3/5 |
+| `T22.1` | P22 report | `--format md` | ✅ 2026-09-09 | 3/5 |
 | `T22.2` | P22 report | `--format html` | open | 3/5 |
 | `T22.3` | P22 report | `--format pdf` | open | 4/5 |
 | `T22.4` | P22 report | `--ai` | open | 3/5 |
@@ -624,11 +603,11 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.0` | P24 logs | `[log]`: a sink that rotates | ✅ 2026-09-09 | 3/5 |
 | `T24.1` | P24 logs | every log line goes through the funnel | ✅ 2026-09-09 | 2/5 |
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
-| `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
+| `T24.3` | P24 logs | `rtok logs watch` | ✅ 2026-09-09 | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | ✅ 2026-09-09 | 3/5 |
 | `T25.0` | P25 agents | a session knows whose it is | ✅ 2026-09-09 | 3/5 |
-| `T25.1` | P25 agents | one reader, in the model | open | 3/5 |
-| `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |
+| `T25.1` | P25 agents | one reader, in the model | ✅ 2026-09-09 | 3/5 |
+| `T25.2` | P25 agents | `rtok agent sessions` | ✅ 2026-09-09 | 2/5 |
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
@@ -706,3 +685,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | Decision D28 and phase P27 (T27.0): the agent-host half of `agent setup` becomes `crates/rtok-agent-sdk`, a second workspace crate the five host installers, `proxy::cli` and `migrate` all route through. | User request: one SDK for the agent hosts, every host plugin using it, starting with `rtok agent setup cursor`. |
 | 2026-09-09 | Three tasks landed from a second parallel round — T27.0 (`rtok-agent-sdk`, completing the snapshot another session had left uncommitted in the shared checkout: three drifted report strings restored and pinned, `dialoguer` dropped from the root manifest, jscpd 49 → 36 clones), T8.19 (`graph_truth` was red because the *labels* were the stale half — T23.5's `MemoryHost` methods — not the index; the test now prints its precision/recall, and the landing round also repaired two entries its own tasks had staled, `plugin_json` (T15.11) and `read_settings` (T27.0)) and T15.11 (every reading command renders the D23 model; `rtok stats` output pinned byte-identical by `tests/stats_model.rs`). The round ran mid-air with another three-task round (T15.10/T22.0/T24.1): each agent owned a worktree at its own HEAD, landings waited on the other round's dirty files, and the future `surface_parity` conflict was resolved before it happened by applying the other round's uncommitted diff to the T15.11 tree and running its test. | Two rounds can share main if landing is sequential and each waits for the files it must update to leave the other's working set; predicting the test-level collision before the rebase is what kept it a fast-forward. The one unforced error was `5975877` sweeping the docs/branding session's files into a "T27.0 (wip)" commit — a coordinator should commit only its own paths. |
 | 2026-09-09 | T10.10 added to P10 and done: the residue of the T10.8/T10.9 rename — the `--remove` flag help still said "Delete rtok hook entries only" (false since T10.9 made removal complete), `docs/config.md` merged `agent setup` and `agent remove` into one flag row although `agent remove` takes only `--dry-run`, and `docs/comparison.md` still called the MCP half "task T10.7, in progress". One help string, one split table row, one stale comparison line; the built site is untracked (`site/public` is gitignored), so there is nothing to rebuild in the repo — the site mounts repo markdown, and the sources are what this fixes. The same commit resets T10.7's stale `Model:` claim to `-` (the stop convention) and trims its Status to the supersession fact. | Review of the T10.7 supersession: the design is sound, but its residue contradicted it — a help line and docs rows describing a removal smaller than the one the code performs, and a comparison page still calling a superseded task in progress. |
+| 2026-09-09 | Seven tasks landed from a third parallel round, six agents by the user's model policy (3/5 → GLM-5.3 effort High; 1–2/5 → GLM-5.3-Flash effort Low; the harness exposes no per-agent model selection, so every agent ran GLM-5.3 and the Flash tier is recorded as policy): T22.1 (`rtok report --format md`, the document from `model::report_ledgers`, D24 held — `src/report/` imports only the model), T24.3 (`logs watch` — in-place newest-first repaint, content-based rotation detection, piped degrades to plain rows; `watch_loop` is the T25.3 skeleton), T25.1 + T25.2 (`session_totals` one-statement CTE join; the Sessions page rides the snapshot and `pages()`; `rtok agent sessions` renders it — the second command after `plugins` with a real page, which is why T15.12's `COMMAND_PAGES` lists it), T15.12 (the parity test walks `Cli::command()`: 2 commands map to pages, 37 carry exempt reasons), and T15.1 + T15.2 (ratatui/crossterm scaffold + shell; tabs are `model::pages()` by reference). The staggered sixth agent (T25.2) started the moment T25.1 landed — dependencies were honest, never spec-guessed. Integration classifications (`report`, `logs watch`, `tui`, `agent sessions`) were added at landing by the coordinator, as the test's data-list design intended. | The parity gate did exactly what D23 built it for: three landings would each have shipped a one-surface command, and the test named every one at integration. Two agents edited plan.md/done.md despite instructions not to — stripping those hunks at landing was cheaper than resolving four-way bookkeeping conflicts; the claim-everything-in-one-commit convention held. Residue note: test runs still create a literal `./~/.rtok` directory in CWD when env is lost under ptys (T10.10 fixed the adjacent docs residue; the directory itself still wants an owner). |
