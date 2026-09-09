@@ -315,18 +315,7 @@ not end the stream and does not repeat lines already printed.
 Status: open · Model: -
 Complexity: 3/5
 
-**T24.4 the demon's own logs are bounded too** · T24.0 · `src/demon.rs`
-Do: today `supervise` hands the child a raw appending fd, so `<service>.log` grows without limit and
-rtok cannot rotate a file the child holds open. Pipe the child's stdout and stderr instead and let
-the supervisor write them through the T24.0 sink, which is what makes rotation possible at all.
-Check: a service that writes more than `max_bytes` ends with rotated `<service>.log.1`; `demon
-status` still names the live file; the restart and backoff tests are unchanged.
-Status: in progress · Model: Opus 5
-Complexity: 3/5
-
-Gate P24 (review): the log an operator reads and the rows OTel exports come from one funnel — a
-test writes through `Ctx::log` and finds the same message in both. No log file in `~/.rtok` can
-exceed `max_bytes * (files + 1)`, `demon`'s included. `rtok logs` reads; it never writes.
+T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
 
 ### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27)
 
@@ -506,7 +495,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**133 done · 30 open · 1 superseded — 164 tasks.**
+**134 done · 29 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -667,7 +656,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.1` | P24 logs | every log line goes through the funnel | open | 2/5 |
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
-| `T24.4` | P24 logs | the demon's own logs are bounded too | open | 3/5 |
+| `T24.4` | P24 logs | the demon's own logs are bounded too | ✅ 2026-09-09 | 3/5 |
 | `T25.0` | P25 agents | a session knows whose it is | open | 3/5 |
 | `T25.1` | P25 agents | one reader, in the model | open | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |

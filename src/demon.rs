@@ -6,8 +6,10 @@
 //! never reads this state and fails open whether a supervisor is up or not (D1).
 
 use std::fs;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -241,6 +243,22 @@ pub fn update(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Re
     restart(cfg, config_file, &services)
 }
 
+/// Read `stream` line by line, forwarding each as `(level, line)`. Runs on its own thread so
+/// the supervisor's poll loop never blocks on a child's pipe; a send failure only means the
+/// receiving end already went away, which happens once the drain loop is done.
+fn pump(stream: impl Read, level: &'static str, tx: &Sender<(&'static str, String)>) {
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        let _ = tx.send((level, line));
+    }
+}
+
+/// Write every line waiting on `rx` through the T24.0 sink, without blocking for more.
+fn drain(rx: &Receiver<(&'static str, String)>, log_cfg: &Config, service: Service) {
+    while let Ok((level, line)) = rx.try_recv() {
+        crate::log::append(log_cfg, level, "demon", service.as_str(), &line);
+    }
+}
+
 /// The detached half: spawn the service, wait, spawn it again. Runs until the stop marker.
 /// `config_file` is passed straight down, so the service reads the file the operator started the
 /// supervisor with rather than whatever the default layers resolve to.
@@ -260,11 +278,12 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
     };
     let mut backoff = cfg.demon.backoff_ms;
     while !stop.exists() {
-        let log = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(file(cfg, service, "log"))?;
-        let errlog = log.try_clone()?;
+        // The child's own log config: same rotation settings, but pointed at its file rather
+        // than rtok's own. A raw appending fd (the old approach) is a file the child holds
+        // open, which nothing can ever rotate out from under it — piping stdout/stderr through
+        // the T24.0 sink instead is what makes rotation possible at all.
+        let mut log_cfg = cfg.clone();
+        log_cfg.log.path = file(cfg, service, "log");
         let mut cmd = Command::new(&exe);
         if let Some(c) = config_file {
             cmd.arg("--config").arg(c);
@@ -272,18 +291,30 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
         let mut child = cmd
             .arg(service.as_str())
             .stdin(Stdio::null())
-            .stdout(Stdio::from(log))
-            .stderr(Stdio::from(errlog))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("spawn {service}"))?;
+        // Two reader threads only forward lines over a channel; the main thread is the sole
+        // writer, so two streams landing on the same file are never a rotate/append race.
+        let (tx, rx) = mpsc::channel();
+        let out_tx = tx.clone();
+        let out = child.stdout.take().expect("piped stdout");
+        let out_handle = std::thread::spawn(move || pump(out, "info", &out_tx));
+        let err = child.stderr.take().expect("piped stderr");
+        let err_handle = std::thread::spawn(move || pump(err, "warn", &tx));
         st.child = child.id() as i32;
         st.since = now();
         write(cfg, &st)?;
         let started = Instant::now();
         loop {
+            drain(&rx, &log_cfg, service);
             if stop.exists() {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = out_handle.join();
+                let _ = err_handle.join();
+                drain(&rx, &log_cfg, service);
                 let _ = fs::remove_file(file(cfg, service, "json"));
                 return Ok(());
             }
@@ -292,6 +323,11 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
             }
             std::thread::sleep(Duration::from_millis(cfg.demon.poll_ms));
         }
+        // The pipes close when the child exits, so both readers reach EOF and finish on their
+        // own; joining just makes sure every line they already read is drained before restart.
+        let _ = out_handle.join();
+        let _ = err_handle.join();
+        drain(&rx, &log_cfg, service);
         // A child that stayed up was healthy; only a fast crash loop earns a longer wait.
         backoff = if started.elapsed() >= Duration::from_millis(cfg.demon.healthy_ms) {
             cfg.demon.backoff_ms
@@ -315,6 +351,39 @@ mod tests {
         assert_eq!(Service::parse("PROXY").unwrap(), Service::Proxy);
         let e = Service::parse("rm -rf ~").unwrap_err().to_string();
         assert!(e.contains("[demon] services"), "{e}");
+    }
+
+    /// The plumbing `supervise` wires up: a child's output, pumped through the channel and
+    /// drained through the T24.0 sink, rotates the same as any other log once it passes
+    /// `max_bytes` — a real child's own stdout volume isn't something a test can dial in, so
+    /// this drives `pump`/`drain` directly with a synthetic stream instead of a subprocess.
+    #[test]
+    fn a_service_that_writes_past_max_bytes_gets_a_rotated_log() {
+        let dir = std::env::temp_dir().join(format!("rtok-demon-rotate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut cfg = Config::default();
+        cfg.demon.state_dir = dir.clone();
+        cfg.log.max_bytes = 200;
+        cfg.log.files = 2;
+        cfg.log.level = "debug".into();
+        let mut log_cfg = cfg.clone();
+        log_cfg.log.path = file(&cfg, Service::Mcp, "log");
+
+        let (tx, rx) = mpsc::channel();
+        let body: String = (0..50).map(|i| format!("line {i}\n")).collect();
+        pump(std::io::Cursor::new(body), "info", &tx);
+        drop(tx);
+        drain(&rx, &log_cfg, Service::Mcp);
+
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.iter().any(|n| n == "mcp.log"), "{names:?}");
+        assert!(names.iter().any(|n| n == "mcp.log.1"), "{names:?}");
+        let live = fs::metadata(file(&cfg, Service::Mcp, "log")).unwrap().len();
+        assert!(live <= 200, "the live file is bounded: {live}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
