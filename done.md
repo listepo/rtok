@@ -199,6 +199,13 @@ from `releases/latest` installed `rtok 0.0.1 (6c55b45a5)` and `rtok-update` into
 returned `{}` and exit 0, so fail-open holds in the shipped binary.
 Deviation: four files, one more than the rule — `dist-workspace.toml` gains no setting, only the
 comment recording why `plan-jobs` is the wrong place, so the next reader does not retry it.
+Same day, found while pushing this task: the T18.5 gate missed the ordinary squash merge. GitHub
+appends the pull request number to the title, so merging #3 wrote `release: v0.0.1 (#3)` and
+`grep -x` did not match it. Nothing was lost — v0.0.1 was already tagged, and `release.sh
+--no-bump` refuses a released version — but the next merge would have dispatched no release at
+all, silently. The gate now matches `^release: v[0-9]+\.[0-9]+\.[0-9]+( \(#[0-9]+\))?$`, checked
+against all five shapes: squash with and without the number, the title line of a merge commit, an
+ordinary task commit, and the same string inside a commit body (the last two correctly no match).
 Not proven here: that a red `verify` actually blocks the dispatch. It needs a release run with a
 deliberately broken tree, and the only way to stage one is to publish from `main`.
 
