@@ -22,8 +22,8 @@ use crate::store::{SessionTotals, Store};
 pub struct Snapshot {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    /// Overview page: provider usage totals.
-    pub usage: Stats,
+    /// Overview page: provider usage totals, CTT and the per-turn series.
+    pub usage: Overview,
     /// Plugins page: one entry per catalogue plugin.
     pub plugins: Vec<PluginPage>,
     /// Sessions page (T25.1): one row per session, newest first.
@@ -41,6 +41,30 @@ pub struct Stats {
     pub est_after: i64,
     pub rows: u64,
 }
+
+/// The Overview page (T15.3): the usage totals plus what the tab draws from them —
+/// context-token-turns and the per-turn series behind the sparkline. The totals stay
+/// flat under the `usage` key, so the `/ws` frame keeps the shape P19 pinned and the
+/// Slint UI reads on untouched.
+#[derive(Debug, Default, Serialize)]
+pub struct Overview {
+    #[serde(flatten)]
+    pub totals: Stats,
+    /// Σ over sessions of Σ over turns `ctx × turns-after`, where `ctx` is the turn's
+    /// input-side tokens (`input + cache_create + cache_read`) and `turns-after` counts
+    /// the session's later turns — the usage-row mirror of `stats`' `tokens × remain`.
+    /// Output is left out on purpose: it re-enters as a later turn's input or cache,
+    /// so counting it again would count it twice.
+    pub ctt: i64,
+    /// Per-turn `ctx`, sessions oldest-first and request order within a session, kept
+    /// to the last [`OVERVIEW_TURNS`]. A `usage` row carries no timestamp, so across
+    /// sessions this is session order, not wall-clock order.
+    pub turns: Vec<i64>,
+}
+
+/// Points of the Overview sparkline: wider than any terminal the TUI draws on, and
+/// small enough that the `/ws` frame stays cheap at one snapshot per 2 s tick.
+pub const OVERVIEW_TURNS: usize = 120;
 
 /// A plugin's page: its manifest, the static copy it contributes through
 /// `Plugin::dashboard_page`, and the stats widget when it saves tokens.
@@ -461,21 +485,41 @@ impl<'a> Model<'a> {
             .unwrap_or_default()
     }
 
-    /// Overview: provider usage totals across every API.
-    pub fn overview(&self) -> Stats {
-        let mut s = Stats::default();
+    /// Overview: provider usage totals across every API, plus the CTT and per-turn
+    /// series the tab draws (T15.3). The reads are the ones `stats --cache` already
+    /// uses (`usage_sessions` + `usage_rows`), so this adds no `Store` method (D27).
+    /// No store, or one that will not read: zeros, like before.
+    pub fn overview(&self) -> Overview {
+        let mut out = Overview::default();
         let Some(store) = self.store else {
-            return s;
+            return out;
         };
         if let Ok(rows) = store.usage_by_api() {
             for r in rows {
-                s.input += r.input;
-                s.output += r.output;
-                s.cache_create += r.cache_create;
-                s.cache_read += r.cache_read;
+                out.totals.input += r.input;
+                out.totals.output += r.output;
+                out.totals.cache_create += r.cache_create;
+                out.totals.cache_read += r.cache_read;
             }
         }
-        s
+        if let Ok(sessions) = store.usage_sessions() {
+            let mut turns = Vec::new();
+            for session in &sessions {
+                let Ok(mut rows) = store.usage_rows(session) else {
+                    continue;
+                };
+                rows.reverse(); // newest-first → request order
+                let after = |j: usize| rows.len().saturating_sub(j + 1) as i64;
+                for (j, r) in rows.iter().enumerate() {
+                    let ctx = r.input + r.cache_create + r.cache_read;
+                    out.ctt = out.ctt.saturating_add(ctx.saturating_mul(after(j)));
+                    turns.push(ctx);
+                }
+            }
+            let skip = turns.len().saturating_sub(OVERVIEW_TURNS);
+            out.turns = turns.into_iter().skip(skip).collect();
+        }
+        out
     }
 
     /// Plugins: the catalogue, each with its page and — when it saves tokens — its stats.
@@ -593,6 +637,49 @@ mod tests {
         let stats = cmd.stats.as_ref().unwrap();
         assert_eq!(stats.est_before, 25);
         assert_eq!(stats.est_after, 10);
+    }
+
+    /// T15.3's Check: the Overview page carries the store's own sums — totals, CTT and
+    /// the per-turn series — so the tab, `rtok stats --json`'s `api` table and the web
+    /// Overview agree on one store. Two sessions: `a` with two turns, `b` with one.
+    #[test]
+    fn overview_carries_totals_ctt_and_turns() {
+        let cx = Runtime::in_memory("dash").unwrap();
+        cx.store.insert_proxy_turn("a", 10, 0, 0, 1).unwrap();
+        cx.store.insert_proxy_turn("a", 4, 0, 12, 2).unwrap();
+        cx.store.insert_proxy_turn("b", 100, 20, 0, 5).unwrap();
+        let over = Model::new(&cx.config, Some(&cx.store)).overview();
+        assert_eq!(
+            (
+                over.totals.input,
+                over.totals.cache_create,
+                over.totals.cache_read,
+                over.totals.output
+            ),
+            (114, 20, 12, 8)
+        );
+        // `a`: turn ctx 10 × 1 turn after, then ctx 16 × 0; `b`: one turn × 0.
+        assert_eq!(over.ctt, 10);
+        assert_eq!(over.turns, vec![10, 16, 120]);
+        // Gate P15: the same sums `rtok stats --json` prints in its `api` table —
+        // `attach_api` reads the same `usage_by_api` rows the Overview sums.
+        let mut report = stats::Report::default();
+        stats::attach_api(&mut report, &cx.store).unwrap();
+        let api = report.api.get("anthropic").expect("one api on record");
+        assert_eq!(
+            (api.input, api.cache_create, api.cache_read, api.output),
+            (
+                over.totals.input,
+                over.totals.cache_create,
+                over.totals.cache_read,
+                over.totals.output
+            )
+        );
+        // The wire keeps the P19 shape: totals flat under `usage`, CTT beside them.
+        let v = serde_json::to_value(Model::new(&cx.config, Some(&cx.store)).snapshot()).unwrap();
+        assert_eq!(v["usage"]["input"], 114);
+        assert_eq!(v["usage"]["ctt"], 10);
+        assert_eq!(v["usage"]["turns"], serde_json::json!([10, 16, 120]));
     }
 
     /// The wire the P19 UI reads: keys and values as `json!` produced them.

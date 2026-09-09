@@ -523,7 +523,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.0` | P15 tui | one operator model behind both surfaces | ✅ 2026-09-09 | 2/5 |
 | `T15.1` | P15 tui | ratatui + crossterm scaffold, event loop *(`roadmap.md`)* | open | 2/5 |
 | `T15.2` | P15 tui | header · tabs · footer shell *(`roadmap.md`)* | open | 2/5 |
-| `T15.3` | P15 tui | Overview tab (CTT, bars, sparkline) *(`roadmap.md`)* | open | 3/5 |
+| `T15.3` | P15 tui | Overview tab (CTT, bars, sparkline) *(`roadmap.md`)* | ✅ 2026-09-10 | 3/5 |
 | `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | open | 3/5 |
 | `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | open | 3/5 |
 | `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | open | 1/5 |

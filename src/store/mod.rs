@@ -746,6 +746,41 @@ impl Store {
         Ok(())
     }
 
+    /// Test-only: one proxy `usage` turn — the session row, a bare `api_request` call
+    /// and the `usage` row. Tests that need request bodies (cache-bust causes) still
+    /// write their own `call_io`.
+    #[cfg(test)]
+    pub fn insert_proxy_turn(
+        &self,
+        session: &str,
+        input: i64,
+        cache_create: i64,
+        cache_read: i64,
+        output: i64,
+    ) -> Result<()> {
+        self.upsert_session(session, None, None, None, Some("proxy"))?;
+        let id = self.insert_call(
+            session,
+            "proxy",
+            "api_request",
+            None,
+            None,
+            None,
+            None,
+            Some("/v1/messages"),
+        )?;
+        self.insert_usage(
+            session,
+            Some("m"),
+            "anthropic",
+            input,
+            cache_create,
+            cache_read,
+            output,
+            id,
+        )
+    }
+
     /// Provider counters for an api_request (plan T5.1): one `tokens` row,
     /// `phase = 'after'`, `source = 'provider'`, carrying the four Anthropic counters
     /// (the `tokens` total is their sum).

@@ -633,9 +633,16 @@ tests), and the toon dogfood needs the 2-word `pub(crate)` share; precedent T22.
 stays theirs to retire). No new dependency. Landing note: verified both before (`a054922`) and
 after (`1246857`) T22.2's landing; the dispatch rides T22.2's committed `emit()`.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.8, T15.10, T15.11, T15.12 done (T15.8 2026-09-10, rest 2026-09-09)
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.8, T15.10, T15.11, T15.12 done (T15.3, T15.8 2026-09-10, rest 2026-09-09)
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.3 Overview tab (CTT, bars, sparkline)** · T15.0 · `src/web/model.rs`, `src/tui/view.rs`, `src/store/mod.rs`
+Do (roadmap §TUI): the Overview tab — CTT, per-plugin savings bars, per-turn sparkline — rendered off the shared D23 model, with no query of its own; the tab set stays `model::pages()` by reference.
+Complexity: 3/5
+Status: done 2026-09-10 · Model: Muse Spark 1.3 (subagent-overview-tab)
+Check result: green, verified in a detached worktree at HEAD holding only this task's three files — `just check` exit 0 (fmt, clippy `--workspace --all-targets --all-features -D warnings`, workspace tests, `build-min`, `just dup` with no clone in the task's files). `overview_carries_totals_ctt_and_turns`: totals, CTT (`ctx × turns-after`, the usage-row mirror of `stats`' `tokens × remain`) and the per-turn series pinned against inserted rows, plus the same sums `rtok stats --json` prints in its `api` table (`attach_api` reads the same `usage_by_api` rows — Gate P15). `overview_tab_renders_the_snapshot_numbers`: the TestBackend screen carries the snapshot's totals, CTT, one scaled bar per measured plugin and the sparkline. Both T15.10/T15.12 parity tests green — no new page, no new snapshot key, and the totals stay flat under the `usage` key, so the P19 wire pin and the Slint UI read on.
+Deviations: 3 files, +305/−27 — over the ≤200 line (T25.1 precedent): the two Check test groups and the `#[cfg(test)]` helper are the bulk of it. The third file is the DRY extraction `Store::insert_proxy_turn` (the T25.0 `session_row` precedent): both Check tests seed proxy turns, and the seed block cloned `cache.rs`'s helper until `just dup` named it. No new dependency.
 
 **T15.8 CLI + `[tui]` config** · `roadmap.md` §TUI · `src/cli.rs`, `src/config/{mod,layers,validate}.rs`, `src/tui/{mod.rs,app.rs}`, `config/default.toml`, `docs/config.md`
 Do (roadmap §TUI): `rtok tui` CLI flags and the `[tui]` config section, by the `[web]`
