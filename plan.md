@@ -31,6 +31,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D23 | **`rtok tui` and `rtok web` are two renderings of one operator model, never two products.** Every page one offers, the other offers: Overview, Plugins, Calls, Doctor, Logs today, and whatever is added next. Neither owns data — both read the same `Store` / `stats` / `doctor` values through the same module, and a plugin contributes its page once, through `Plugin::dashboard_page`, which is why that trait method keeps a surface-neutral name. A page that exists on one surface and not the other is a defect, and P15's gate is a test that enumerates both and fails on the difference — not a promise in prose. Which one you run is a question of where you are: a terminal over ssh, or a browser. `rtok dashboard` was renamed to `rtok web` the same day, so the pair reads as `tui` and `web` rather than as a UI and a thing. Added 2026-09-09 by user request. | Two operator surfaces built independently drift within one release, and then the answer to "what does rtok say about this session" depends on which one you opened. Sharing the model is also what keeps the cost of a new page at one implementation. |
 | D24 | **`rtok report` renders; it never computes a number of its own.** It reads the operator model of D23 (T15.0) — the same `Store` / `stats` / `doctor` values `rtok web` and `rtok tui` render — and lays them out as Markdown, HTML or PDF. Three renderings, one document: the same sections, the same numbers, in the same order. Every figure carries the rows it came from and the window it covers, because a saving that is not a `Measurement` row does not exist (D3), and a report is the easiest place in the codebase to forget that. The recommendations are rules over those same rows, each printing the evidence that triggered it — never a language-model call: an unmeasurable suggestion that costs tokens is the opposite of what this binary is for. `--ai` is a fourth rendering of the same document for a model rather than a person: no images, no styling, dense tables through the `toon` plugin, stable heading ids, one explicit budget, and a note saying what was dropped to fit it. Added 2026-09-09 by user request. | A report that runs its own queries drifts from `rtok stats` within a release, and then two commands disagree about the same session. Charts and a PDF are presentation; the numbers underneath must be the ones already on record. |
 | D25 | **The plugin contract is its own published crate, `rtok-plugin-sdk`.** Every plugin — the ten in `src/plugins/` and any written elsewhere — implements the same trait from the same crate, so there is one contract and no in-tree shortcut. The crate carries what a plugin *is* (the `Plugin` trait, `Manifest`, `Surface`), the events it answers (`PreToolUse`, `PostToolUse`, `SessionStart`, `PromptSubmit`, `PreCompact`, proxy and MCP views) and the management surface it uses (`Measurement`, `Injection`, `PreToolDecision`, `ToolDef`, `DashboardPage`, and the host capabilities: estimate, record, log, config, store access). It does **not** carry a surface: `rtok hook` / `mcp` / `proxy` / `web` stay in `rtok`, which is the only thing that dispatches. Required methods are explicit — a plugin that does not say what it is and what page it shows does not compile; every event method keeps a no-op default, so a plugin implements only the surfaces its `Manifest` declares. `rtok` re-exports it as `rtok::plugin`, so the path D6 published stays valid. It is published to crates.io by the release (release-plz, `CARGO_REGISTRY_TOKEN`), which is what makes "third parties extend rtok from outside" (D6) true rather than aspirational. Added 2026-09-09 by user request. Boundary survey: `crates/rtok-plugin-sdk/PLAN.md` (T23.0). | Today a third party who wants to write a plugin depends on the whole `rtok` binary crate — diesel, axum, reqwest, tree-sitter and every surface — to implement one trait, and the trait's real contract (what `Ctx` lets you touch) is whatever `src/store` happens to expose that week. One published crate with a documented, versioned surface is the difference between an extension point and a claim. It also forces the question D6 left open: what a plugin may touch is now a list someone can read, not the whole binary. |
+| D26 | **One log with two readers: a rotating text file a person reads, and the `logs` table OTel exports.** Today neither exists as a thing you can look at — `core.log_file` is written only when the DB insert fails, and `core.log_level` and `core.log_to_db` are declared and read nowhere. `[log]` replaces all three and means them: one funnel writes a line to the file and a row to the table, so the two cannot disagree; the file is what `rtok logs` prints and what an operator greps at 3am, the table is what `rtok otel` ships. The file is bounded — `max_bytes` (1 MiB) and `files` (5) — because an unbounded log on a laptop is a disk-full bug waiting for a long-running `rtok proxy`, which is exactly what `demon` keeps alive. Rotation deletes; nothing is archived, since a log line is not a saving and D2's lossless rule does not reach it. Added 2026-09-09 by user request. | A log nobody can read is not logging, and three config keys that do nothing are worse than none. Bounding it is the same argument as D22: the surfaces `demon` supervises run for days. |
 
 Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
@@ -318,6 +319,70 @@ Gate P23 (review): the SDK compiles on its own — a scratch crate that depends 
 `rtok stats --json` and `rtok web`'s snapshot are byte-identical to the pre-refactor output on the
 same store. The P17 size gate still passes.
 
+### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26)
+
+`rtok logs [--lines N]` · `rtok logs watch` · `rtok logs export`. Config table `[log]`: `path`,
+`max_bytes`, `files`, `lines`, `level`, `to_db`. It absorbs the three `[core]` keys that pretend to
+do this today — `log_file`, `log_level`, `log_to_db` — which are migrated with a warning the way
+`[dashboard]` was in T21.3, and are read for real for the first time.
+
+**T24.0 `[log]`: a sink that rotates** · - · `src/log.rs` (new), `src/config/mod.rs`, `config/default.toml`
+Do: the section (`path` `~/.rtok/logs/rtok.log`, `max_bytes` 1048576, `files` 5, `lines` 200,
+`level` `info`, `to_db` true) and one `append(cfg, level, source, name, message)` that writes a
+line and rotates when the file would pass `max_bytes`: `rtok.log.4` → `.5`, current → `.1`, and
+whatever falls past `files` is deleted. Lines below `level` are dropped before any I/O. The three
+`[core]` keys migrate in `finish()`, `log_file` → `log.path`, and `[log] path` joins the `~`
+expansion list.
+Check: a sink with `max_bytes` 200 and `files` 2 keeps exactly `rtok.log`, `.1`, `.2` after 50
+writes and the newest line is in `rtok.log`; an old config with `[core] log_file` loads and warns;
+`default_toml_is_the_defaults` green.
+Status: open · Model: -
+Complexity: 3/5
+
+**T24.1 every log line goes through the funnel** · T24.0 · `src/plugin.rs`, `src/proxy/mod.rs`
+Do: `Ctx::log` writes the file line *and* the `logs` row (`to_db` false skips the row, and the file
+is then the only sink — the reason the key exists). The proxy's private `log(store, …)` helper
+routes through the same funnel instead of inserting on its own; there is one writer, not two.
+Fail open stays fail open: an unwritable log directory never turns into an error a plugin sees.
+Check: a plugin call leaves one line in the file and one row in the table; with `to_db = false`,
+one line and no row; a read-only log directory changes nothing about the call's result.
+Status: open · Model: -
+Complexity: 2/5
+
+**T24.2 `rtok logs` and `rtok logs export`** · T24.0 · `src/cli.rs`, `src/log.rs`, `tests/logs.rs` (new)
+Do: `rtok logs` prints the last `[log] lines` lines (`--lines N` overrides), newest first, reading
+back through the rotated files as far as it needs; each line numbered, `1` being the newest, with
+the level coloured through `render.rs` — one helper, not a second colour table. `rtok logs export`
+is the same selection with no numbers and no colour, for `rtok logs export > my.log`.
+Check: with 3 rotated files and `--lines 10`, the first line printed is the newest written and the
+tenth is ten lines back across the file boundary; `export` output is byte-identical to those lines
+with the numbering and ANSI stripped; both are empty and say so when nothing has been logged.
+Status: open · Model: -
+Complexity: 3/5
+
+**T24.3 `rtok logs watch`** · T24.2 · `src/log.rs`, `src/cli.rs`
+Do: print the same last-`lines` screen, then follow: every new line appears above the previous one,
+so newest-first holds while it runs. Rotation while watching is handled — the file the watcher
+holds is renamed, and it reopens `path` rather than following the inode into `.1`. Ctrl-C leaves
+the terminal as it found it.
+Check: a line written by another process shows up within a poll interval; a rotation mid-watch does
+not end the stream and does not repeat lines already printed.
+Status: open · Model: -
+Complexity: 3/5
+
+**T24.4 the demon's own logs are bounded too** · T24.0 · `src/demon.rs`
+Do: today `supervise` hands the child a raw appending fd, so `<service>.log` grows without limit and
+rtok cannot rotate a file the child holds open. Pipe the child's stdout and stderr instead and let
+the supervisor write them through the T24.0 sink, which is what makes rotation possible at all.
+Check: a service that writes more than `max_bytes` ends with rotated `<service>.log.1`; `demon
+status` still names the live file; the restart and backoff tests are unchanged.
+Status: open · Model: -
+Complexity: 3/5
+
+Gate P24 (review): the log an operator reads and the rows OTel exports come from one funnel — a
+test writes through `Ctx::log` and finds the same message in both. No log file in `~/.rtok` can
+exceed `max_bytes * (files + 1)`, `demon`'s included. `rtok logs` reads; it never writes.
+
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
@@ -397,7 +462,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**129 done · 20 open · 1 superseded — 150 tasks.**
+**129 done · 25 open · 1 superseded — 155 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -551,6 +616,11 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T23.4` | P23 plugin SDK | the ten plugins move | open | 3/5 |
 | `T23.5` | P23 plugin SDK | documentation someone can build against | open | 2/5 |
 | `T23.6` | P23 plugin SDK | the release publishes it | open | 2/5 |
+| `T24.0` | P24 logs | `[log]`: a sink that rotates | open | 3/5 |
+| `T24.1` | P24 logs | every log line goes through the funnel | open | 2/5 |
+| `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | open | 3/5 |
+| `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
+| `T24.4` | P24 logs | the demon's own logs are bounded too | open | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -615,3 +685,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | D23 added and P15 promoted from `roadmap.md` into this file with two new tasks: T15.0 lifts one operator model out of the web handlers, T15.10 is the test that fails when a page exists on one surface and not the other. | User request 2026-09-09 (`rtok tui и rtok dashboard должен иметь одинаковый функционал`). Parity that is only written down drifts; parity that a test enumerates does not. |
 | 2026-09-09 | D24 and P22 added: `rtok report` in Markdown, HTML and PDF, plus `--ai` as a fourth rendering for a model. It renders the D23 operator model and computes nothing of its own, so it cannot disagree with `rtok stats`; recommendations are rules over the ledgers that print their own evidence, never a language-model call. T22.0 is a D15-style renderer survey before any code, because a PDF library is the one choice here that can cost the P17 size gate. | User request 2026-09-09 (`rtok report` в html/pdf/markdown, `--ai` для нейросетей, графики и таблицы, рекомендации как сделать эффективнее). The report is the first surface whose whole purpose is to state numbers, which makes D3 — a saving that is not a `Measurement` row does not exist — the easiest rule in the repo to break there and the one worth writing into the decision. |
 | 2026-09-09 | §5 now carries every task in the plan and in `done.md` as one table — id, phase, title, status, complexity — with a ✅ on each finished row. It is an index over the two files, not a third place to record work: a task's Do/Check and its Check result stay in its own entry, and the row moves in the same commit the task does. | User request 2026-09-09 (таблица со списком всех задач, статусом и сложностью, зелёная галочка у сделанных). The per-phase headings said which phases were finished; nothing said, on one screen, how much of the plan is done (128 of 150) or what the open work costs. |
+| 2026-09-09 | D26 and P24 added: `rtok logs`, `logs watch`, `logs export`, and a `[log]` table that bounds the file at 1 MiB × 5 and finally gives `core.log_file`, `log_level` and `log_to_db` — declared since T0.2, read nowhere — something to do. T24.4 rewires `demon` to pipe its children rather than hand them an fd, because a file the child holds open is a file rtok cannot rotate. | User request 2026-09-09 (команда `logs` с нумерацией строк, `watch` в реальном времени от новых к старым, `export`, размер и количество файлов в конфиге, путь настраивается). The supervisor D22 added makes long-running processes normal, which makes an unbounded log a disk-full bug. |
