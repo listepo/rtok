@@ -18,6 +18,7 @@ use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
@@ -837,6 +838,67 @@ impl Store {
             .collect())
     }
 
+    /// One row per session the store knows (T25.1, D27): the single read behind the
+    /// Sessions page and `rtok agent sessions`. One statement — `usage` (by `session`)
+    /// and `calls` (by `session_id`) are pre-aggregated per session because joining
+    /// both flat to `sessions` would fan every `usage` row out across every `calls`
+    /// row and multiply the token sums. `since` windows on `sessions.started_at`
+    /// (unix seconds; 0 = every session) while the totals stay whole-session — a
+    /// session's cost is what it spent, not what it spent after an arbitrary line.
+    /// Newest first; `ended_at IS NULL` is "live". A session with no `usage` rows yet
+    /// still appears, zeroed, with `last_activity = started_at`.
+    pub fn session_totals(&self, since: i64) -> Result<Vec<SessionTotals>> {
+        let mut conn = self.lock()?;
+        // tot: the four sums per session. last_u: the newest `usage` row's api and
+        // model — what the session is spending on now. act: last activity as MAX(ts)
+        // over both tables (no `[agents] idle_secs`; T25.0's clause was not built).
+        // prov: the newest provider-bearing `calls` row's `providers.slug`.
+        sql_query(
+            "WITH tot AS (
+                 SELECT session AS sid, SUM(input) AS input, SUM(cache_create) AS cache_create,
+                        SUM(cache_read) AS cache_read, SUM(output) AS output
+                 FROM usage GROUP BY session
+             ),
+             last_u AS (
+                 SELECT session AS sid, api, model FROM usage
+                 WHERE id IN (SELECT MAX(id) FROM usage GROUP BY session)
+             ),
+             act AS (
+                 SELECT sid, MAX(ts) AS ts FROM (
+                     SELECT session AS sid, ts FROM usage
+                     UNION ALL
+                     SELECT session_id AS sid, ts FROM calls
+                 ) GROUP BY sid
+             ),
+             prov AS (
+                 SELECT c.session_id AS sid, p.slug AS provider
+                 FROM calls c JOIN providers p ON p.id = c.provider_id
+                 WHERE c.id IN (SELECT MAX(id) FROM calls
+                                WHERE provider_id IS NOT NULL GROUP BY session_id)
+             )
+             SELECT s.id AS id, h.slug AS host, s.project AS project,
+                    prov.provider AS provider, last_u.api AS api, last_u.model AS model,
+                    COALESCE(tot.input, 0) AS input,
+                    COALESCE(tot.cache_create, 0) AS cache_create,
+                    COALESCE(tot.cache_read, 0) AS cache_read,
+                    COALESCE(tot.output, 0) AS output,
+                    s.started_at AS started_at,
+                    COALESCE(act.ts, s.started_at) AS last_activity,
+                    s.ended_at AS ended_at
+             FROM sessions s
+             LEFT JOIN hosts h ON h.id = s.host_id
+             LEFT JOIN tot ON tot.sid = s.id
+             LEFT JOIN last_u ON last_u.sid = s.id
+             LEFT JOIN act ON act.sid = s.id
+             LEFT JOIN prov ON prov.sid = s.id
+             WHERE s.started_at >= ?
+             ORDER BY s.started_at DESC, s.id",
+        )
+        .bind::<BigInt, _>(since)
+        .load::<SessionTotals>(&mut *conn)
+        .map_err(Into::into)
+    }
+
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
     pub fn model_slug_of_call(&self, call_id: i32) -> Result<Option<String>> {
         let mut conn = self.lock()?;
@@ -990,6 +1052,42 @@ pub struct UsageRow {
     pub output: i64,
     #[diesel(sql_type = Nullable<BigInt>)]
     pub call_id: Option<i64>,
+}
+
+/// One session's totals ([`Store::session_totals`], T25.1) — the rendering input of the
+/// Sessions page and `rtok agent sessions` (T25.2). Everything below is one query's
+/// output, so no renderer can re-derive a number differently (D27): tokens are whole-
+/// session sums of `usage`, `last_activity` is the MAX ts over the session's `usage`
+/// and `calls` rows (falling back to `started_at` when there are none), and `ended_at`
+/// `None` means live.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, QueryableByName)]
+pub struct SessionTotals {
+    #[diesel(sql_type = Text)]
+    pub id: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub host: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub project: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub provider: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub api: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub model: Option<String>,
+    #[diesel(sql_type = BigInt)]
+    pub input: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_create: i64,
+    #[diesel(sql_type = BigInt)]
+    pub cache_read: i64,
+    #[diesel(sql_type = BigInt)]
+    pub output: i64,
+    #[diesel(sql_type = BigInt)]
+    pub started_at: i64,
+    #[diesel(sql_type = BigInt)]
+    pub last_activity: i64,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub ended_at: Option<i64>,
 }
 
 #[cfg(test)]
@@ -1234,5 +1332,177 @@ mod tests {
             .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
             .unwrap();
         assert_eq!(store.usage_by_api().unwrap().len(), 2);
+    }
+
+    /// T25.1's Check: three sessions across the two hosts the migrations seed
+    /// (`claude` from 0002, `pi` from 0010), one ended, one with no usage yet —
+    /// `session_totals` sums each one's tokens exactly, newest first, and `since`
+    /// windows on `started_at` without cutting the totals.
+    #[test]
+    fn session_totals_sums_each_session_exactly() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().expect("0002 seeds claude");
+        let pi = store.host_id("pi").unwrap().expect("0010 seeds pi");
+        store
+            .upsert_session(
+                "a",
+                Some(claude),
+                Some("rtok"),
+                Some("/w/rtok"),
+                Some("proxy"),
+            )
+            .unwrap();
+        store
+            .upsert_session("b", Some(pi), Some("rtok"), None, None)
+            .unwrap();
+        store
+            .upsert_session("c", Some(pi), None, None, None)
+            .unwrap();
+        let (pid, mid) = store.upsert_model("anthropic", "claude-x").unwrap();
+        let call_a = store
+            .insert_call(
+                "a",
+                "proxy",
+                "api_request",
+                Some(claude),
+                Some(pid),
+                Some(mid),
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        let call_b = store
+            .insert_call(
+                "b",
+                "proxy",
+                "api_request",
+                Some(pi),
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        store
+            .insert_usage("a", Some("claude-x"), "anthropic", 10, 1, 2, 3, call_a)
+            .unwrap();
+        store
+            .insert_usage("a", Some("claude-x"), "anthropic", 20, 0, 5, 4, call_a)
+            .unwrap();
+        store
+            .insert_usage("b", Some("gpt-x"), "openai_chat", 7, 2, 0, 1, call_b)
+            .unwrap();
+        store.end_session("b", 2500).unwrap();
+        // The write path stamps `unixepoch()`; pin the timeline so last-activity and
+        // the `since` window are exact. The in-memory DB is fresh, so rowids are the
+        // insert order: usage 1–2 belong to "a", 3 to "b".
+        {
+            let mut conn = store.lock().unwrap();
+            for (id, started) in [("a", 1000i64), ("b", 2000), ("c", 3000)] {
+                sql_query("UPDATE sessions SET started_at = ? WHERE id = ?")
+                    .bind::<BigInt, _>(started)
+                    .bind::<Text, _>(id)
+                    .execute(&mut *conn)
+                    .unwrap();
+            }
+            for (rowid, ts) in [(1i64, 1100i64), (2, 1200), (3, 2100)] {
+                sql_query("UPDATE usage SET ts = ? WHERE rowid = ?")
+                    .bind::<BigInt, _>(ts)
+                    .bind::<BigInt, _>(rowid)
+                    .execute(&mut *conn)
+                    .unwrap();
+            }
+            for (id, ts) in [(call_a as i64, 1500i64), (call_b as i64, 2100)] {
+                sql_query("UPDATE calls SET ts = ? WHERE id = ?")
+                    .bind::<BigInt, _>(ts)
+                    .bind::<BigInt, _>(id)
+                    .execute(&mut *conn)
+                    .unwrap();
+            }
+        }
+        // Newest first. "a": two usage rows summed, last activity from the newer call
+        // (ts 1500 > 1200), live. "b": ended, one row. "c": no usage and no calls, so
+        // zeroed with last activity = started_at.
+        #[allow(clippy::too_many_arguments)]
+        fn expect(
+            id: &str,
+            host: Option<&str>,
+            project: Option<&str>,
+            provider: Option<&str>,
+            api: Option<&str>,
+            model: Option<&str>,
+            tokens: (i64, i64, i64, i64),
+            started_at: i64,
+            last_activity: i64,
+            ended_at: Option<i64>,
+        ) -> SessionTotals {
+            SessionTotals {
+                id: id.into(),
+                host: host.map(String::from),
+                project: project.map(String::from),
+                provider: provider.map(String::from),
+                api: api.map(String::from),
+                model: model.map(String::from),
+                input: tokens.0,
+                cache_create: tokens.1,
+                cache_read: tokens.2,
+                output: tokens.3,
+                started_at,
+                last_activity,
+                ended_at,
+            }
+        }
+        assert_eq!(
+            store.session_totals(0).unwrap(),
+            vec![
+                expect(
+                    "c",
+                    Some("pi"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    (0, 0, 0, 0),
+                    3000,
+                    3000,
+                    None
+                ),
+                expect(
+                    "b",
+                    Some("pi"),
+                    Some("rtok"),
+                    None,
+                    Some("openai_chat"),
+                    Some("gpt-x"),
+                    (7, 2, 0, 1),
+                    2000,
+                    2100,
+                    Some(2500)
+                ),
+                expect(
+                    "a",
+                    Some("claude"),
+                    Some("rtok"),
+                    Some("anthropic"),
+                    Some("anthropic"),
+                    Some("claude-x"),
+                    (30, 1, 7, 7),
+                    1000,
+                    1500,
+                    None
+                ),
+            ]
+        );
+        // `since` floors `started_at`; the totals it returns stay whole-session.
+        let ids: Vec<String> = store
+            .session_totals(2000)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["c", "b"]);
+        let only_c = store.session_totals(3000).unwrap();
+        assert_eq!(only_c.len(), 1);
+        assert_eq!(only_c[0].id, "c");
     }
 }

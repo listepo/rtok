@@ -15,7 +15,7 @@ use crate::demon::{self, Service};
 use crate::doctor;
 use crate::measure::{cache, stats};
 use crate::plugins::Registry;
-use crate::store::Store;
+use crate::store::{SessionTotals, Store};
 
 /// Everything a surface needs for one refresh.
 #[derive(Debug, Serialize)]
@@ -26,6 +26,8 @@ pub struct Snapshot {
     pub usage: Stats,
     /// Plugins page: one entry per catalogue plugin.
     pub plugins: Vec<PluginPage>,
+    /// Sessions page (T25.1): one row per session, newest first.
+    pub sessions: Vec<SessionTotals>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -59,7 +61,11 @@ pub struct PluginPage {
 /// that exists on one surface and not the other is a defect, and
 /// `tests/surface_parity.rs` holds every surface to this list.
 pub fn pages() -> &'static [(&'static str, &'static str)] {
-    &[("overview", "usage"), ("plugins", "plugins")]
+    &[
+        ("overview", "usage"),
+        ("plugins", "plugins"),
+        ("sessions", "sessions"),
+    ]
 }
 
 /// Open the store at `core.db_path` and read one snapshot. A store that will not open
@@ -67,6 +73,16 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
 pub fn snapshot(cfg: &Config) -> Snapshot {
     let store = Store::open(&cfg.core.db_path).ok();
     Model::new(cfg, store.as_ref()).snapshot()
+}
+
+/// The Sessions page (T25.1, D27): one row per session, newest first — the same rows
+/// the snapshot's `sessions` key carries and `rtok agent sessions` (T25.2) renders.
+/// `since` is a `started_at` floor in unix seconds; `0` asks for every session.
+/// The store is required, like `plugin_stats`: a page whose whole content is the
+/// store's rows reports an unreadable store rather than rendering an empty page.
+pub fn sessions(cfg: &Config, since: i64) -> Result<Vec<SessionTotals>> {
+    let store = Store::open(&cfg.core.db_path)?;
+    Ok(Model::new(cfg, Some(&store)).sessions(since))
 }
 
 /// The `rtok stats` page (T15.11): the transcript report — `sessions` here counts transcript
@@ -181,7 +197,19 @@ impl<'a> Model<'a> {
             kind: "snapshot",
             usage: self.overview(),
             plugins: self.plugins(),
+            sessions: self.sessions(0),
         }
+    }
+
+    /// Sessions page (T25.1): every session the store knows, newest first, through the
+    /// store's one `session_totals` query — the model does not keep a second reader
+    /// (D27), and it does not decide what "live" means: `ended_at` is in the row and
+    /// the renderers filter. No store (or one that will not read): an empty page,
+    /// like Overview's zeros.
+    pub fn sessions(&self, since: i64) -> Vec<SessionTotals> {
+        self.store
+            .and_then(|s| s.session_totals(since).ok())
+            .unwrap_or_default()
     }
 
     /// Overview: provider usage totals across every API.
@@ -336,5 +364,102 @@ mod tests {
         assert!(cmd["fields"].is_array());
         assert!(cmd["surfaces"].is_array());
         assert_eq!(cmd["title"], "Bash / cmd");
+    }
+
+    /// T25.1's Check: the Sessions page carries exactly the store call's numbers (one
+    /// reader, D27) and rides the snapshot the `/ws` frame sends — three sessions
+    /// across the two hosts the migrations seed, one ended, one zeroed.
+    #[test]
+    fn sessions_page_matches_the_store_and_rides_the_snapshot() {
+        let cx = Runtime::in_memory("dash").unwrap();
+        let claude = cx
+            .store
+            .host_id("claude")
+            .unwrap()
+            .expect("0002 seeds claude");
+        let pi = cx.store.host_id("pi").unwrap().expect("0010 seeds pi");
+        cx.store
+            .upsert_session("a", Some(claude), Some("rtok"), None, Some("proxy"))
+            .unwrap();
+        cx.store
+            .upsert_session("b", Some(pi), Some("rtok"), None, None)
+            .unwrap();
+        cx.store
+            .upsert_session("c", Some(pi), None, None, None)
+            .unwrap();
+        let (pid, mid) = cx.store.upsert_model("anthropic", "claude-x").unwrap();
+        let call_a = cx
+            .store
+            .insert_call(
+                "a",
+                "proxy",
+                "api_request",
+                Some(claude),
+                Some(pid),
+                Some(mid),
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        let call_b = cx
+            .store
+            .insert_call(
+                "b",
+                "proxy",
+                "api_request",
+                Some(pi),
+                None,
+                None,
+                None,
+                Some("/v1/chat/completions"),
+            )
+            .unwrap();
+        cx.store
+            .insert_usage("a", Some("claude-x"), "anthropic", 10, 1, 2, 3, call_a)
+            .unwrap();
+        cx.store
+            .insert_usage("a", Some("claude-x"), "anthropic", 20, 0, 5, 4, call_a)
+            .unwrap();
+        cx.store
+            .insert_usage("b", Some("gpt-x"), "openai_chat", 7, 2, 0, 1, call_b)
+            .unwrap();
+        cx.store.end_session("b", 2_500).unwrap();
+
+        let model = Model::new(&cx.config, Some(&cx.store));
+        assert_eq!(
+            model.sessions(0),
+            cx.store.session_totals(0).unwrap(),
+            "the page is the store call, not a second query"
+        );
+        let snap = model.snapshot();
+        assert_eq!(snap.sessions.len(), 3);
+        let a = snap.sessions.iter().find(|r| r.id == "a").unwrap();
+        assert_eq!(
+            (a.input, a.cache_create, a.cache_read, a.output),
+            (30, 1, 7, 7)
+        );
+        assert_eq!(a.host.as_deref(), Some("claude"));
+        assert_eq!(a.provider.as_deref(), Some("anthropic"));
+        assert!(a.ended_at.is_none(), "a never ended");
+        let b = snap.sessions.iter().find(|r| r.id == "b").unwrap();
+        assert_eq!(
+            (b.input, b.cache_create, b.cache_read, b.output),
+            (7, 2, 0, 1)
+        );
+        assert_eq!(b.ended_at, Some(2_500));
+        let c = snap.sessions.iter().find(|r| r.id == "c").unwrap();
+        assert_eq!((c.input, c.output), (0, 0));
+        assert_eq!(
+            c.last_activity, c.started_at,
+            "no rows yet: started is all there is"
+        );
+        // The wire frame gains the page; `tests/surface_parity.rs` pins the key set.
+        let v = serde_json::to_value(&snap).unwrap();
+        let rows = v["sessions"].as_array().expect("sessions rides the frame");
+        assert_eq!(rows.len(), 3);
+        assert!(
+            rows.iter()
+                .any(|r| r["id"] == "a" && r["input"] == 30 && r["cache_read"] == 7)
+        );
     }
 }
