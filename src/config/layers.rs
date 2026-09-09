@@ -51,7 +51,7 @@ impl Provider for FlagsProvider {
 }
 
 /// Walk up from `start` looking for a `.git` entry (no subprocess). `None` outside a repo.
-fn git_root(start: &Path) -> Option<PathBuf> {
+pub(crate) fn git_root(start: &Path) -> Option<PathBuf> {
     find_up(start, ".git")
 }
 

@@ -330,17 +330,8 @@ missing: the hook path writes `host_id`, `project` and `cwd` as NULL (`Ctx::inse
 `None`), `ended_at` is set only by Claude's `SessionEnd`, `pi` is not a row in `hosts` at all, and
 no query aggregates tokens by session. So the first task is attribution, not display.
 
-**T25.0 a session knows whose it is** · - · `migrations/0010.sql` (new), `src/plugin.rs`, `src/hooks/mod.rs`
-Do: `Ctx` learns the host from `[hook] host` and passes it to `upsert_session` instead of `None`,
-with `project` (git root basename) and `cwd`; `SessionStart` writes the row rather than leaving it
-to the first call that happens to arrive. The migration seeds the two host slugs `rtok agent setup`
-can install but `hosts` never had — `pi` and `claude-code`-style additions belong in data, not in a
-match arm. `ended_at` gains a companion: sessions are live until a `SessionEnd` *or* silence longer
-than `[agents] idle_secs`, because the proxy and every non-Claude host never send one.
-Check: a hook run leaves a `sessions` row with a non-NULL `host_id` and `project`; `pi` records as
-`pi` and not as `other`; an existing DB migrates with no row rewritten.
-Status: in progress · Model: Opus 5
-Complexity: 3/5
+T25.0 (a session knows whose it is) is done 2026-09-09 — see `done.md` P25. Its `[agents]
+idle_secs` clause was not built; T25.1 reads last activity off `calls`/`usage` instead.
 
 **T25.1 one reader, in the model** · T25.0 · `src/store/mod.rs`, `src/web/model.rs`
 Do: `Store::session_totals(since)` — one `GROUP BY` over `sessions` joined to `usage` and `calls`,
@@ -488,7 +479,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**135 done · 28 open · 1 superseded — 164 tasks.**
+**136 done · 27 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -650,7 +641,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | ✅ 2026-09-09 | 3/5 |
-| `T25.0` | P25 agents | a session knows whose it is | open | 3/5 |
+| `T25.0` | P25 agents | a session knows whose it is | ✅ 2026-09-09 | 3/5 |
 | `T25.1` | P25 agents | one reader, in the model | open | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |

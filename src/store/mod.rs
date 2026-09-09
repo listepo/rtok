@@ -37,6 +37,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0007.sql", include_str!("../../migrations/0007.sql")),
     ("0008.sql", include_str!("../../migrations/0008.sql")),
     ("0009.sql", include_str!("../../migrations/0009.sql")),
+    ("0010.sql", include_str!("../../migrations/0010.sql")),
 ];
 
 pub struct Store {
@@ -275,6 +276,30 @@ impl Store {
             .select(hosts::id)
             .first(&mut *conn)
             .optional()?)
+    }
+
+    /// Test-only: one session's `(host_id slug, project, cwd)` — T25.0's Check reads the row
+    /// a hook run left rather than re-deriving it from `upsert_session`'s arguments.
+    #[cfg(test)]
+    pub fn session_row(&self, id: &str) -> Result<Option<SessionRow>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Nullable<Text>)]
+            slug: Option<String>,
+            #[diesel(sql_type = Nullable<Text>)]
+            project: Option<String>,
+            #[diesel(sql_type = Nullable<Text>)]
+            cwd: Option<String>,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT hosts.slug AS slug, sessions.project AS project, sessions.cwd AS cwd
+             FROM sessions LEFT JOIN hosts ON hosts.id = sessions.host_id
+             WHERE sessions.id = ?",
+        )
+        .bind::<Text, _>(id)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().next().map(|r| (r.slug, r.project, r.cwd)))
     }
 
     pub fn count_call_io(&self) -> Result<i64> {
@@ -885,6 +910,10 @@ impl Store {
 
 type Spill = (Option<String>, Option<String>, i64, Option<String>);
 
+/// `(host slug, project, cwd)` — [`Store::session_row`].
+#[cfg(test)]
+type SessionRow = (Option<String>, Option<String>, Option<String>);
+
 pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
@@ -1052,7 +1081,9 @@ mod tests {
         let hosts: Vec<Count> = sql_query("SELECT count(*) AS n FROM hosts")
             .load(&mut *conn)
             .unwrap();
-        assert_eq!(hosts[0].n, 6);
+        // 0002.sql seeds 6; 0010.sql (T25.0) adds `pi`, the slug `rtok agent setup` installs
+        // but the original list never had.
+        assert_eq!(hosts[0].n, 7);
         sql_query("INSERT INTO sessions (id) VALUES ('s1')")
             .execute(&mut *conn)
             .unwrap();

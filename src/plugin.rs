@@ -36,27 +36,41 @@ pub struct Runtime {
     /// The `calls` row this dispatch runs under (the API request in the proxy), when the
     /// surface has one. `record_call` / `record_plugin_run` nest their rows under it.
     pub call_id: Option<i32>,
+    /// Resolved once from `[hook] host` (same shape as `proxy::ProxyState::new`); an unknown
+    /// slug falls back to `other` (6) rather than leaving the session row unattributed.
+    host_id: Option<i32>,
+    /// Host process cwd, when the surface knows it (the hook surface sets this from the
+    /// event's own `cwd`, T25.0). `project` is derived from it at write time.
+    pub cwd: Option<String>,
 }
 
 impl Runtime {
     /// Open the store at `config.core.db_path`.
     pub fn open(config: Config, session: impl Into<String>) -> Result<Self> {
         let store = Store::open(&config.core.db_path)?;
+        let host_id = store.host_id(&config.hook.host)?.or(Some(6));
         Ok(Self {
             config,
             store,
             session: session.into(),
             call_id: None,
+            host_id,
+            cwd: None,
         })
     }
 
     /// Default config + in-memory store, for tests and examples.
     pub fn in_memory(session: impl Into<String>) -> Result<Self> {
+        let config = Config::default();
+        let store = Store::open_in_memory()?;
+        let host_id = store.host_id(&config.hook.host)?.or(Some(6));
         Ok(Self {
-            config: Config::default(),
-            store: Store::open_in_memory()?,
+            config,
+            store,
             session: session.into(),
             call_id: None,
+            host_id,
+            cwd: None,
         })
     }
 
@@ -86,8 +100,14 @@ impl Runtime {
         plugin: Option<&str>,
         name: Option<&str>,
     ) -> Result<i32> {
-        self.store
-            .upsert_session(&self.session, None, None, None, None)?;
+        let project = project_of(self.cwd.as_deref());
+        self.store.upsert_session(
+            &self.session,
+            self.host_id,
+            project.as_deref(),
+            self.cwd.as_deref(),
+            None,
+        )?;
         let id =
             self.store
                 .insert_call(&self.session, surface, kind, None, None, None, plugin, name)?;
@@ -134,6 +154,14 @@ impl Runtime {
             }
         }
     }
+}
+
+/// The basename of the nearest ancestor of `cwd` holding `.git` (T25.0). The walk itself is
+/// `config::layers::git_root` — one helper, and already the no-subprocess one the fail-open
+/// hook path needs.
+fn project_of(cwd: Option<&str>) -> Option<String> {
+    let root = crate::config::layers::git_root(std::path::Path::new(cwd?))?;
+    root.file_name().map(|n| n.to_string_lossy().into_owned())
 }
 
 /// The host side of the contract (D25). `Runtime` *is* the host: every capability trait is

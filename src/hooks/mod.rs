@@ -38,10 +38,13 @@ fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
     } else {
         input.session_id.clone()
     };
-    let cx = match Runtime::open(cfg.clone(), session) {
+    let mut cx = match Runtime::open(cfg.clone(), session) {
         Ok(cx) => cx,
         Err(_) => return b"{}".to_vec(),
     };
+    // SessionStart carries `cwd` like every other event, so the session row is attributed
+    // from the first hook of the run rather than whichever call happens to arrive first.
+    cx.cwd = input.cwd.clone();
     dispatch(stdin, &input, &cx)
 }
 
@@ -253,5 +256,50 @@ mod tests {
         let mut out = Vec::new();
         run("PreToolUse", b"not-json".as_slice(), &mut out, &cfg);
         assert_eq!(out, b"{}");
+    }
+
+    /// T25.0 Check: a hook run leaves a `sessions` row with non-NULL `host_id` and
+    /// `project` — resolved from `[hook] host` and the event's own `cwd`, not left `None`.
+    #[test]
+    fn hook_run_attributes_the_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-hooks-t25-{}", std::process::id()));
+        let repo = dir.join("myproj");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut v: serde_json::Value = serde_json::from_str(raw).unwrap();
+        v["cwd"] = serde_json::Value::String(repo.display().to_string());
+        v["session_id"] = serde_json::Value::String("b1e2c3d4-0000-4000-8000-0000000000aa".into());
+        let stdin = serde_json::to_vec(&v).unwrap();
+        let input: HookInput = serde_json::from_slice(&stdin).unwrap();
+        let mut cx = Runtime::in_memory(input.session_id.clone()).unwrap();
+        cx.cwd = input.cwd.clone();
+        let _ = dispatch(&stdin, &input, &cx);
+        let (slug, project, cwd) = cx.store.session_row(&cx.session).unwrap().unwrap();
+        assert_eq!(
+            slug.as_deref(),
+            Some("claude"),
+            "default [hook] host resolves"
+        );
+        assert_eq!(project.as_deref(), Some("myproj"), "git root basename");
+        assert_eq!(cwd.as_deref(), Some(repo.display().to_string()).as_deref());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T25.0 Check: `pi` records as `pi`, not `other` — 0010.sql seeds the slug
+    /// `rtok agent setup pi` installs but 0002.sql's original list never had.
+    #[test]
+    fn pi_host_resolves_to_pi_not_other() {
+        let dir = std::env::temp_dir().join(format!("rtok-hooks-t25-pi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::default();
+        cfg.hook.host = "pi".into();
+        cfg.core.db_path = dir.join("rtok.db");
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let input: HookInput = serde_json::from_str(raw).unwrap();
+        let cx = Runtime::open(cfg, input.session_id.clone()).unwrap();
+        let _ = dispatch(raw.as_bytes(), &input, &cx);
+        let (slug, ..) = cx.store.session_row(&cx.session).unwrap().unwrap();
+        assert_eq!(slug.as_deref(), Some("pi"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
