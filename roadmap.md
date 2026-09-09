@@ -306,6 +306,28 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 ---
 
+## Plugin SDK (the contract — not a plugin)
+
+**Replaces.** The in-tree-only `src/plugin.rs` contract: a third party had to depend on the whole `rtok` binary crate to implement one trait.
+
+**Goal.** `rtok-plugin-sdk` on crates.io — the trait, the events, the management surface and the host capabilities, documented and versioned (D25). Every internal plugin implements it, so the SDK is proved by what ships.
+
+**Surfaces.** None of its own. `rtok` re-exports it as `rtok::plugin` and stays the only dispatcher.
+
+**Blocked by.** T15.0 (done). T23.4 needs T23.2 and T23.3.
+
+| # | Task | What | Complexity |
+|---|------|------|------------|
+| 0 | T23.0 | **Design first (D15).** Where the crate line goes: runtime-in-SDK vs contract-only vs the middle → `crates/rtok-plugin-sdk/PLAN.md` | 3/5 |
+| 1 | T23.1 | workspace + crate; the contract moves, `rtok::plugin` re-exports | 3/5 |
+| 2 | T23.2 | required methods (`manifest`, `dashboard_page`); catalogue copy moves to its plugin | 2/5 |
+| 3 | T23.3 | host capability traits replace bare `Store` access | 4/5 |
+| 4 | T23.4 | the ten plugins move onto the SDK | 3/5 |
+| 5 | T23.5 | crate docs, doctests, one example plugin, `docs/plugin-authoring.md` | 2/5 |
+| 6 | T23.6 | release publishes it (release-plz + `cargo-semver-checks`) | 2/5 |
+
+**Gate P23.** A crate depending only on the SDK implements a plugin and runs through `Registry::from_plugins`; `rtok stats --json` byte-identical before and after; P17 size gate still passes.
+
 ## Dashboard (operator surface — not a plugin)
 
 **Replaces.** Browser view of the same `Store` / `stats` the CLI uses (I-34). Complements ratatui `rtok tui` (P15).

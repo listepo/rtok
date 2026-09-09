@@ -30,6 +30,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D22 | **`rtok demon` is an operator surface that supervises rtok's own long-running surfaces, not a catalogue plugin.** One supervisor process per service, and the service is an allow-list name (`proxy`, `mcp`, `dashboard`), never an arbitrary command line. State is `~/.rtok/demon/<name>.json`, output is `<name>.log`, and a `<name>.stop` marker is how `stop` reaches a supervisor it did not spawn. The supervisor re-spawns its child whenever the child exits and exits itself only on the marker. Nothing in it is on the hook path: `rtok hook` never reads the state and still fails open in ≤ 10 ms whether a supervisor runs or not (D1). It has no `Measurement` row, so §4 clause 2 does not apply — the same reasoning D20 uses for `dashboard`. Added 2026-09-09 by user request. | The proxy is the `ANTHROPIC_BASE_URL` hop; when it dies every host silently loses its wire until someone notices. launchd and systemd do this natively but differ per OS and per install method, and cargo-dist ships a plain binary with no service unit. A supervisor has no token path, so calling it a catalogue plugin would put a plugin in `rtok stats --plugin` with nothing to measure. |
 | D23 | **`rtok tui` and `rtok web` are two renderings of one operator model, never two products.** Every page one offers, the other offers: Overview, Plugins, Calls, Doctor, Logs today, and whatever is added next. Neither owns data — both read the same `Store` / `stats` / `doctor` values through the same module, and a plugin contributes its page once, through `Plugin::dashboard_page`, which is why that trait method keeps a surface-neutral name. A page that exists on one surface and not the other is a defect, and P15's gate is a test that enumerates both and fails on the difference — not a promise in prose. Which one you run is a question of where you are: a terminal over ssh, or a browser. `rtok dashboard` was renamed to `rtok web` the same day, so the pair reads as `tui` and `web` rather than as a UI and a thing. Added 2026-09-09 by user request. | Two operator surfaces built independently drift within one release, and then the answer to "what does rtok say about this session" depends on which one you opened. Sharing the model is also what keeps the cost of a new page at one implementation. |
 | D24 | **`rtok report` renders; it never computes a number of its own.** It reads the operator model of D23 (T15.0) — the same `Store` / `stats` / `doctor` values `rtok web` and `rtok tui` render — and lays them out as Markdown, HTML or PDF. Three renderings, one document: the same sections, the same numbers, in the same order. Every figure carries the rows it came from and the window it covers, because a saving that is not a `Measurement` row does not exist (D3), and a report is the easiest place in the codebase to forget that. The recommendations are rules over those same rows, each printing the evidence that triggered it — never a language-model call: an unmeasurable suggestion that costs tokens is the opposite of what this binary is for. `--ai` is a fourth rendering of the same document for a model rather than a person: no images, no styling, dense tables through the `toon` plugin, stable heading ids, one explicit budget, and a note saying what was dropped to fit it. Added 2026-09-09 by user request. | A report that runs its own queries drifts from `rtok stats` within a release, and then two commands disagree about the same session. Charts and a PDF are presentation; the numbers underneath must be the ones already on record. |
+| D25 | **The plugin contract is its own published crate, `rtok-plugin-sdk`.** Every plugin — the ten in `src/plugins/` and any written elsewhere — implements the same trait from the same crate, so there is one contract and no in-tree shortcut. The crate carries what a plugin *is* (the `Plugin` trait, `Manifest`, `Surface`), the events it answers (`PreToolUse`, `PostToolUse`, `SessionStart`, `PromptSubmit`, `PreCompact`, proxy and MCP views) and the management surface it uses (`Measurement`, `Injection`, `PreToolDecision`, `ToolDef`, `DashboardPage`, and the host capabilities: estimate, record, log, config, store access). It does **not** carry a surface: `rtok hook` / `mcp` / `proxy` / `web` stay in `rtok`, which is the only thing that dispatches. Required methods are explicit — a plugin that does not say what it is and what page it shows does not compile; every event method keeps a no-op default, so a plugin implements only the surfaces its `Manifest` declares. `rtok` re-exports it as `rtok::plugin`, so the path D6 published stays valid. It is published to crates.io by the release (release-plz, `CARGO_REGISTRY_TOKEN`), which is what makes "third parties extend rtok from outside" (D6) true rather than aspirational. Added 2026-09-09 by user request. Boundary survey: `crates/rtok-plugin-sdk/PLAN.md` (T23.0). | Today a third party who wants to write a plugin depends on the whole `rtok` binary crate — diesel, axum, reqwest, tree-sitter and every surface — to implement one trait, and the trait's real contract (what `Ctx` lets you touch) is whatever `src/store` happens to expose that week. One published crate with a documented, versioned surface is the difference between an extension point and a claim. It also forces the question D6 left open: what a plugin may touch is now a list someone can read, not the whole binary. |
 
 Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
@@ -235,6 +236,107 @@ others. `rtok report` adds no query of its own: `src/report/` touches the D23 mo
 else. Every number in the output is traceable to rows, and the recommendation section is empty
 rather than invented when there is nothing to say.
 
+### P23 — `rtok-plugin-sdk` (goal: one published contract every plugin implements) — added 2026-09-09 (D25)
+
+A new crate in a new workspace, `crates/rtok-plugin-sdk`, published to crates.io. The ten
+catalogue plugins move onto it, so the SDK is proved by the plugins that ship rather than by an
+example. Nothing about *what* a plugin does changes in this phase: no plugin gains or loses
+behaviour, no `Measurement` changes, and `rtok stats` reports the same numbers before and after —
+that is the property the gate tests, because a refactor that quietly changes a number is not a
+refactor.
+
+**T23.0 where the boundary goes** · T15.0 · `crates/rtok-plugin-sdk/PLAN.md` (new)
+Do: D15-style survey before any code. The question is what crosses the crate line, and there are
+three honest answers to price: (A) the runtime moves — `Config`, `Store`, `tokens`, the wire views
+go into the SDK and `rtok` becomes surfaces on top; (B) contract only — the SDK holds the trait and
+the event types, and everything a plugin does to the host goes through capability traits the SDK
+declares and `rtok` implements; (C) the middle — contract plus `Config` and `tokens`, with the
+store behind capability traits. Price each on (1) what a third party has to compile to implement
+one trait, (2) whether the ten internal plugins compile against it without reaching back into
+`rtok` (they use 29 `Store` methods today — the survey counts them and says which become
+capabilities), (3) what the crate's public surface costs to keep stable across versions, (4) build
+time and the P17 size gate. At least one comparison from outside this stack (rustc's
+`rustc_plugin`-era history, `bevy_app::Plugin`, `tower::Layer`, or `nu_plugin`) on how they drew
+the same line. Name the required methods and why each is required.
+Check: `crates/rtok-plugin-sdk/PLAN.md` names the choice, the two rejected boundaries with the
+reason, the capability list with the `Store` methods behind it, and the falsification (what would
+make this the wrong line). No code in this task.
+Status: open · Model: -
+Complexity: 3/5
+
+**T23.1 the crate exists and owns the contract** · T23.0 · `Cargo.toml`, `crates/rtok-plugin-sdk/*`, `src/plugin.rs`
+Do: a workspace root (`rtok` plus `crates/rtok-plugin-sdk`; `crates/rtok-webui` keeps its own
+build), the new crate with `#![deny(missing_docs)]`, and the contract types moved into it exactly
+as the survey drew them. `src/plugin.rs` becomes a re-export so `rtok::plugin::*` still resolves
+and no call site outside it changes in this task.
+Check: `cargo test` green with the types imported from the SDK; `rtok::plugin::Plugin` and
+`rtok_plugin_sdk::Plugin` are the same type (a test that assigns one to the other); `cargo doc
+-p rtok-plugin-sdk` builds with no missing-docs warning.
+Status: open · Model: -
+Complexity: 3/5
+
+**T23.2 required methods are required** · T23.1 · `crates/rtok-plugin-sdk/src/lib.rs`, `src/plugins/*/mod.rs`
+Do: the mandatory set from T23.0 has no default body — `manifest()` (what the plugin is) and
+`dashboard_page()` (the page D23 says every plugin contributes). Every event method keeps its
+no-op default. `DashboardPage::from_id`'s catalogue match dies: each plugin owns its own title,
+summary and `saves_tokens`, which is where that copy belonged.
+Check: a `trybuild` case where a plugin implements only `manifest()` fails to compile naming
+`dashboard_page`; `rtok web`'s snapshot carries the same titles and summaries as before (the T15.0
+model test); `rtok plugins` output is unchanged.
+Status: open · Model: -
+Complexity: 2/5
+
+**T23.3 host capabilities** · T23.1 · `crates/rtok-plugin-sdk/src/host.rs`, `src/plugin.rs`, `src/store/`
+Do: the capability traits the survey named — the management surface (estimate, record a
+`Measurement`, record calls and tokens, log) plus one trait per store area a plugin actually uses
+(archive, notes, read cache, symbol index). `Ctx` implements them; plugins stop naming `Store`.
+Nothing new is exposed: a `Store` method that no plugin calls does not become a capability.
+Check: `grep -r 'cx\.store\.' src/plugins/` is empty; every capability method is reachable from a
+plugin that does not depend on `rtok`; the store test suite is unchanged and green.
+Status: open · Model: -
+Complexity: 4/5
+
+**T23.4 the ten plugins move** · T23.2, T23.3 · `src/plugins/*/`
+Do: mechanical, one commit per group of plugins if it does not fit — `measure` `cmd` `read`
+`archive` `proxy`, then `inject` `guard` `memory` `graph` `toon`. Imports come from
+`rtok_plugin_sdk`; behaviour does not change. Each plugin's `AGENTS.md` gets the one line that
+says its contract now lives in the SDK. Exempt from the ≤ 3 files rule: it is import churn across
+ten directories, and splitting it further would leave the tree half-migrated between commits.
+Check: `just check` green; `rtok stats --json` over a fixture store is byte-identical before and
+after; no `use crate::plugin::` remains under `src/plugins/`.
+Status: open · Model: -
+Complexity: 3/5
+
+**T23.5 documentation someone can build against** · T23.1 · `crates/rtok-plugin-sdk/README.md`, `crates/rtok-plugin-sdk/examples/`, `docs/plugin-authoring.md`
+Do: crate-level docs that say what a plugin is, the required methods, the lifecycle of each event,
+and the three rules that never bend for a plugin either (fail open, lossless, a saving that is not
+a `Measurement` row does not exist). Every public item documented, with an example that compiles as
+a doctest. `examples/` holds one complete plugin — the smallest thing that records a
+`Measurement`. `docs/plugin-authoring.md` is rewritten against the crate and stops describing the
+in-tree path as the normal one.
+Check: `cargo test -p rtok-plugin-sdk --doc` green; `cargo doc -p rtok-plugin-sdk` has no warning;
+the example crate builds against the published version number and records one `Measurement` row.
+Status: open · Model: -
+Complexity: 2/5
+
+**T23.6 the release publishes it** · T23.5 · `release-plz.toml`, `.github/workflows/release-plz.yml`, `.github/workflows/ci.yml`
+Do: `publish = false` becomes a per-package setting — the SDK is published, the `rtok` binary crate
+stays off crates.io (dist ships it). release-plz gains the `release` command with
+`CARGO_REGISTRY_TOKEN`, after `verify`, and `semver_check` is switched on for the SDK because its
+whole point is a stable surface. CI runs `cargo publish -p rtok-plugin-sdk --dry-run` so a broken
+manifest fails on the pull request, not at the tag.
+Check: `cargo publish -p rtok-plugin-sdk --dry-run` green locally and in CI; a release run
+publishes exactly one crate; `cargo-semver-checks` fails the build on a deliberate breaking change
+to the trait.
+Status: open · Model: -
+Complexity: 2/5
+
+Gate P23 (review): the SDK compiles on its own — a scratch crate that depends only on
+`rtok-plugin-sdk` implements a plugin, and `Registry::from_plugins` runs it. No plugin under
+`src/plugins/` names `crate::plugin`, `crate::store` or `Config` fields outside its own section.
+`rtok stats --json` and `rtok web`'s snapshot are byte-identical to the pre-refactor output on the
+same store. The P17 size gate still passes.
+
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
@@ -312,6 +414,7 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-09-09 | Decision D25 and phase P23 (T23.0–T23.6): the plugin contract becomes `crates/rtok-plugin-sdk`, a published crate every plugin implements, with an explicit required-method set and host capability traits instead of a bare `Store`; the ten catalogue plugins move onto it and the release publishes it to crates.io. | User request: one SDK module carrying the hooks and the management methods, plugins implementing it, documented and published, every internal plugin migrated. |
 | 2026-09-09 | Every task carries `Complexity: n/5` (1 trivial … 5 hard); `AGENTS.md` Workflow makes it a claim precondition. `roadmap.md` §TUI got a Complexity column for T15.1–T15.9, the last open tasks without a rating. | User request: pick work by difficulty. |
 | 2026-09-08 | Gate P8c (T8.14): `graph-lbug` stays opt-in, never default. Clause (4) won (77×); (2) and (3) fail on the `graph-lbug` binary. | T8.14 release bench, this machine; numbers in `research.md` §2. |
 | 2026-09-01 | Estimator rates are `[estimator] code/prose/json/cjk` in config, not `core.estimator_chars_per_token`. | T0.5 needs four classes; one key per class is what `--calibrate` (T1.5) will rewrite. |
