@@ -7,9 +7,9 @@ readme = "README.md"
 repository = "https://github.com/listepo/rtok"
 homepage = "https://listepo.github.io/rtok/"
 description = "The rtok plugin contract: the trait, its events, and the values a plugin returns"
-# T23.6 adds `license` and the crates.io publish; the field is a decision for the repository
-# owner, and `cargo publish` refuses without it — which is the point of leaving it here.
-publish = false
+# Apache-2.0, chosen by the repository owner for this crate (T23.6). The full text ships in
+# the package: `cargo publish` takes what is inside this directory and nothing above it.
+license = "Apache-2.0"
 categories = ["development-tools"]
 keywords = ["rtok", "plugin", "tokens", "llm", "agents"]
 

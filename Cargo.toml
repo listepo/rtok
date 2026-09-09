@@ -14,6 +14,9 @@ repository = "https://github.com/listepo/rtok" # cargo-dist hosting (T10.4)
 # commented out in dist-workspace.toml to be fixed later, so leave them in place.
 homepage = "https://listepo.github.io/rtok/"
 description = "Token-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods"
+# T23.6: only `rtok-plugin-sdk` is published. A release of the binary is a tag plus dist
+# archives, and `cargo publish` at the workspace level must not reach this package.
+publish = false
 
 [[bin]]
 name = "rtok"

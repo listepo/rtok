@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 T23.3 T23.4 T23.5 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 T23.3 T23.4 T23.5 T23.6 done; P23 complete.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -148,7 +148,7 @@ generous cap (the deadline is then only reached when the watcher is genuinely br
 the store's state rather than on timing.
 Check: both tests pass 20 consecutive runs (`cargo test --lib plugins::graph::watch` in a loop) and
 still fail within the cap when the watcher is disabled.
-Status: open · Model: -
+Status: in progress · Model: Opus 5
 Complexity: 2/5
 
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
@@ -285,17 +285,9 @@ T23.5 (crate docs, doctests, `examples/shrink.rs`, `docs/plugin-authoring.md`) i
 2026-09-09 — see `done.md` P23. The crate also ships `testing::MemoryHost`, the host a plugin's
 own tests run against.
 
-**T23.6 the release publishes it** · T23.5 · `release-plz.toml`, `.github/workflows/release-plz.yml`, `.github/workflows/ci.yml`
-Do: `publish = false` becomes a per-package setting — the SDK is published, the `rtok` binary crate
-stays off crates.io (dist ships it). release-plz gains the `release` command with
-`CARGO_REGISTRY_TOKEN`, after `verify`, and `semver_check` is switched on for the SDK because its
-whole point is a stable surface. CI runs `cargo publish -p rtok-plugin-sdk --dry-run` so a broken
-manifest fails on the pull request, not at the tag.
-Check: `cargo publish -p rtok-plugin-sdk --dry-run` green locally and in CI; a release run
-publishes exactly one crate; `cargo-semver-checks` fails the build on a deliberate breaking change
-to the trait.
-Status: open · Model: -
-Complexity: 2/5
+T23.6 (Apache-2.0, per-package publish, release-plz `release`, `just publish-dry` in CI) is
+done 2026-09-09 — see `done.md` P23. **P23 is complete**: the plugin contract is a published
+crate and every plugin implements it.
 
 Gate P23 (review): the SDK compiles on its own — a scratch crate that depends only on
 `rtok-plugin-sdk` implements a plugin, and `Registry::from_plugins` runs it. No plugin under
@@ -332,7 +324,7 @@ is the same selection with no numbers and no colour, for `rtok logs export > my.
 Check: with 3 rotated files and `--lines 10`, the first line printed is the newest written and the
 tenth is ten lines back across the file boundary; `export` output is byte-identical to those lines
 with the numbering and ANSI stripped; both are empty and say so when nothing has been logged.
-Status: open · Model: -
+Status: in progress · Model: Opus 5
 Complexity: 3/5
 
 **T24.3 `rtok logs watch`** · T24.2 · `src/log.rs`, `src/cli.rs`
@@ -351,7 +343,7 @@ rtok cannot rotate a file the child holds open. Pipe the child's stdout and stde
 the supervisor write them through the T24.0 sink, which is what makes rotation possible at all.
 Check: a service that writes more than `max_bytes` ends with rotated `<service>.log.1`; `demon
 status` still names the live file; the restart and backoff tests are unchanged.
-Status: open · Model: -
+Status: in progress · Model: Opus 5
 Complexity: 3/5
 
 Gate P24 (review): the log an operator reads and the rows OTel exports come from one funnel — a
@@ -380,7 +372,7 @@ match arm. `ended_at` gains a companion: sessions are live until a `SessionEnd` 
 than `[agents] idle_secs`, because the proxy and every non-Claude host never send one.
 Check: a hook run leaves a `sessions` row with a non-NULL `host_id` and `project`; `pi` records as
 `pi` and not as `other`; an existing DB migrates with no row rewritten.
-Status: open · Model: -
+Status: in progress · Model: Opus 5
 Complexity: 3/5
 
 **T25.1 one reader, in the model** · T25.0 · `src/store/mod.rs`, `src/web/model.rs`
@@ -434,7 +426,7 @@ across wires) and in per-file test fixtures. Extract the proxy ones — they are
 about, one shared helper at the responsible layer — and lower `threshold` to what remains.
 Check: `just dup` green at the new threshold; the proxy tests are unchanged, which is what proves
 the extraction did not change behaviour.
-Status: open · Model: -
+Status: in progress · Model: Opus 5
 Complexity: 3/5
 
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
@@ -692,7 +684,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T23.3` | P23 plugin SDK | host capabilities, and the trait moves with them | ✅ 2026-09-09 | 4/5 |
 | `T23.4` | P23 plugin SDK | the ten plugins move | ✅ 2026-09-09 | 3/5 |
 | `T23.5` | P23 plugin SDK | documentation someone can build against | ✅ 2026-09-09 | 2/5 |
-| `T23.6` | P23 plugin SDK | the release publishes it | open | 2/5 |
+| `T23.6` | P23 plugin SDK | the release publishes it | ✅ 2026-09-09 | 2/5 |
 | `T24.0` | P24 logs | `[log]`: a sink that rotates | ✅ 2026-09-09 | 3/5 |
 | `T24.1` | P24 logs | every log line goes through the funnel | open | 2/5 |
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | open | 3/5 |

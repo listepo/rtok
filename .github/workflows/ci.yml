@@ -22,3 +22,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: just check
       - run: just example
+      # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
+      - run: just publish-dry

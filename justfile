@@ -36,10 +36,17 @@ test:
 build-min:
     {{cargo}} build -q --no-default-features --features measure
 
-# plugin-authoring examples (hook plugin, MCP-tool plugin)
+# plugin-authoring examples (hook plugin, MCP-tool plugin, and the same plugin written
+# against the published contract alone)
 example:
     {{cargo}} run -q --example hello_plugin
     {{cargo}} run -q --example mcp_tool
+    {{cargo}} run -q -p rtok-plugin-sdk --example shrink
+
+# T23.6: the one crate this repository publishes, packaged exactly as the release will do it.
+# A manifest that cannot be published fails on the pull request, not at the tag.
+publish-dry:
+    {{cargo}} publish -p rtok-plugin-sdk --dry-run --locked
 
 # T9.5: execute every README bash fence marked `# check`.
 readme-check:
