@@ -5,6 +5,7 @@
 
 use super::jsonl::{self, Parsed};
 use crate::config::Config;
+use crate::render::{Col, table};
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -102,21 +103,35 @@ impl Report {
             self.median_final_context
         ));
         if !self.api.is_empty() {
-            s.push_str(&format!(
-                "{:<24} {:>8} {:>12} {:>10} {:>6} {:>6}\n",
-                "api", "input", "cache_create", "cache_read", "output", "hit"
-            ));
+            // The old fixed widths ride along as column floors, so the bytes a golden
+            // pinned do not move (T25.2 moved the padding into `render::table`).
+            let cols = [
+                Col::left(24),
+                Col::right(8),
+                Col::right(12),
+                Col::right(10),
+                Col::right(6),
+                Col::right(6),
+            ];
+            let mut rows = vec![vec![
+                "api".into(),
+                "input".into(),
+                "cache_create".into(),
+                "cache_read".into(),
+                "output".into(),
+                "hit".into(),
+            ]];
             for (api, r) in &self.api {
-                s.push_str(&format!(
-                    "{:<24} {:>8} {:>12} {:>10} {:>6} {:>5.1}%\n",
-                    api,
-                    r.input,
-                    r.cache_create,
-                    r.cache_read,
-                    r.output,
-                    r.hit * 100.0
-                ));
+                rows.push(vec![
+                    api.clone(),
+                    r.input.to_string(),
+                    r.cache_create.to_string(),
+                    r.cache_read.to_string(),
+                    r.output.to_string(),
+                    format!("{:.1}%", r.hit * 100.0),
+                ]);
             }
+            s.push_str(&table(&cols, &rows));
         }
         if self.ctt_total > 0 {
             let pct =
@@ -134,17 +149,41 @@ impl Report {
 }
 
 fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
-    let mut s = format!(
-        "{title:<24} {:>7} {:>12} {:>8} {:>8} {:>8} {:>12} {:>12}\n",
-        "count", "bytes", "mean", "p95", "max", "est_tokens", "ctt"
-    );
+    // The section's own title sits in the first column of its header line; the fixed
+    // widths are floors now (`render::table`, T25.2), bytes unchanged.
+    let cols = [
+        Col::left(24),
+        Col::right(7),
+        Col::right(12),
+        Col::right(8),
+        Col::right(8),
+        Col::right(8),
+        Col::right(12),
+        Col::right(12),
+    ];
+    let mut out = vec![vec![
+        title.to_string(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "ctt".into(),
+    ]];
     for (name, r) in rows {
-        s.push_str(&format!(
-            "{name:<24} {:>7} {:>12} {:>8} {:>8} {:>8} {:>12} {:>12}\n",
-            r.count, r.total_bytes, r.mean, r.p95, r.max, r.est_tokens, r.ctt
-        ));
+        out.push(vec![
+            name.clone(),
+            r.count.to_string(),
+            r.total_bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.ctt.to_string(),
+        ]);
     }
-    s
+    table(&cols, &out)
 }
 
 pub fn parse_since(s: &str) -> Result<Duration> {

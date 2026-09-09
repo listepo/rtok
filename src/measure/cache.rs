@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::render::{self, Col};
 use crate::store::{Store, UsageRow};
 
 /// `cache_creation_input_tokens` above this, with a `cache_read` drop, is a bust.
@@ -121,21 +122,34 @@ pub fn report(store: &Store) -> Result<Vec<SessionHealth>> {
 
 /// `rtok stats --cache` is a page of the operator model (`crate::web::model::cache_health`,
 /// T15.11): the model runs this report over the store; the command renders it as a table,
-/// or as JSON when `stats.format = "json"`.
+/// or as JSON when `stats.format = "json"`. The old fixed widths are the column floors
+/// now (`render::table`, T25.2), so the bytes a golden pinned do not move.
 pub fn table(report: &[SessionHealth]) -> String {
-    let mut s = format!(
-        "{:<40} {:>6} {:>12} {:>12} {:>6}\n",
-        "session", "turns", "cache_read", "cache_create", "busts"
-    );
+    let cols = [
+        Col::left(40),
+        Col::right(6),
+        Col::right(12),
+        Col::right(12),
+        Col::right(6),
+    ];
+    let mut rows = vec![vec![
+        "session".into(),
+        "turns".into(),
+        "cache_read".into(),
+        "cache_create".into(),
+        "busts".into(),
+    ]];
     for h in report {
-        s.push_str(&format!(
-            "{:<40} {:>6} {:>12} {:>12} {:>6}\n",
-            h.session,
-            h.turns.len(),
-            h.cache_read,
-            h.cache_create,
-            h.busts
-        ));
+        rows.push(vec![
+            h.session.clone(),
+            h.turns.len().to_string(),
+            h.cache_read.to_string(),
+            h.cache_create.to_string(),
+            h.busts.to_string(),
+        ]);
+    }
+    let mut s = render::table(&cols, &rows);
+    for h in report {
         for (i, t) in h.turns.iter().enumerate() {
             if let Some(c) = &t.bust {
                 s.push_str(&format!(

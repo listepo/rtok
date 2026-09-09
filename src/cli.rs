@@ -108,6 +108,7 @@ enum Cmd {
         instructions: bool,
     },
     /// Agent hosts (`rtok agent setup claude|cursor|codex|opencode|pi`)
+    #[command(visible_alias = "agents")]
     Agent {
         #[command(subcommand)]
         action: AgentCmd,
@@ -283,6 +284,12 @@ enum AgentCmd {
     Setup(SetupArgs),
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
     Remove(RemoveArgs),
+    /// What is running in this project: host, provider, model, tokens, start, run time
+    Sessions {
+        /// Also show sessions that have ended
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(clap::Args)]
@@ -571,6 +578,18 @@ pub fn run() -> Result<()> {
             AgentCmd::Setup(args) => setup_host(config_file.as_deref(), args)?,
             AgentCmd::Remove(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
+            }
+            // The command renders the model's Sessions page (T25.2): newest first, live
+            // only unless `--all`. `since = 0` because the default view's window is
+            // liveness itself — a `started_at` floor could hide a session that began
+            // before it and is still running, which is the row this command exists for.
+            AgentCmd::Sessions { all } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let rows = model::sessions(&cfg, 0)?;
+                print!(
+                    "{}",
+                    crate::render::sessions_table(&rows, all, crate::log::now() as i64)
+                );
             }
         },
         Cmd::Setup(args) => {

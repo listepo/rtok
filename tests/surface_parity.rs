@@ -64,7 +64,12 @@ fn web_serves_exactly_the_pages_the_model_offers() {
 /// Reading commands and the page of the model they render: (command path, page). The
 /// page must be one `model::pages()` offers — a page both surfaces carry in the frame.
 /// The mapping is many-to-one: several commands may render the same page.
-const COMMAND_PAGES: &[(&str, &str)] = &[("plugins", "plugins")];
+const COMMAND_PAGES: &[(&str, &str)] = &[
+    ("plugins", "plugins"),
+    // the Sessions page rides the snapshot since T25.1, so the command renders a
+    // real page, not an on-demand call
+    ("agent sessions", "sessions"),
+];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
 /// not a state; writing commands mutate a host, a file or the store; surfaces render
