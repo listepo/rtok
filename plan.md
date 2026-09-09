@@ -394,6 +394,34 @@ T26.0 (`just dup`, jscpd in the gate) is done 2026-09-09 — see `done.md` P26.
 
 T26.1 (retire what it found) is done 2026-09-09 — see `done.md` P26.
 
+### P27 — `rtok-agent-sdk` (goal: one contract every agent host installs through) — added 2026-09-09 (D28)
+
+P23 gave the *plugin* side of rtok a published contract. The *host* side has none: five installers
+under `src/setup/` plus `src/proxy/cli.rs` each carry their own copy of the same four moves —
+timestamped backup, the `dry-run`/`no changes` write gate, the `mcpServers.rtok` stdio entry, and
+the offer-then-symlink of `plugins/<host>/` (D21 (6)). Seven copies of the write cycle and two
+near-identical `offer_plugin` bodies are exactly what T26.0's detector is for, and what D21 (6)
+will multiply on the next host. A second workspace crate, `crates/rtok-agent-sdk`, owns the
+contract; `src/setup/<host>.rs` keeps only what is host-specific — which file, which shape, which
+keys.
+
+**T27.0 the crate exists and the five hosts move onto it** · T26.0 · `crates/rtok-agent-sdk/*`, `Cargo.toml`, `src/setup/*.rs`, `src/proxy/cli.rs`, `src/cli.rs`, `.jscpd.json`
+Do: the crate carries `Apply` (the `[setup]` flags: `dry_run`, `backup`, `yes`), `NO_CHANGES` as
+both the report and the write gate, `backup`, `read_json` / `write_json` / `write`, `register_mcp`
+/ `unregister_mcp`, `accepted` (dialoguer moves with it), and `PluginLink` — the offer/link/unlink
+`plugins/cursor` and `plugins/pi` both spell today. Three dependencies, none of them C, the line
+T23.0 drew for the plugin SDK. Claude, Cursor, Codex, OpenCode, pi, `proxy::cli` and `migrate` all
+route through it; no report string changes, because the host integration tests assert them.
+Check: `cargo test --workspace` green with the `agent setup`/`agent remove` integration tests
+(`tests/cursor_plugin.rs`, `tests/pi_plugin.rs`, `tests/agent_remove.rs`) unmodified; `just dup`
+does not regress; `rtok agent setup <host> --dry-run` prints the same lines as before for all five.
+Status: open · Model: -
+Complexity: 3/5
+
+Gate P27 (review): no module under `src/setup/` writes a host file, copies a backup, or symlinks a
+plugin directory itself — every one of those goes through `rtok-agent-sdk`. A sixth host is a new
+`src/setup/<host>.rs` and nothing else.
+
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
@@ -493,7 +521,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**136 done · 28 open · 1 superseded — 165 tasks.**
+**136 done · 29 open · 1 superseded — 166 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -662,10 +690,12 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
+| `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | open | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
 | Date | Change | Why |
+| D28 | **The agent-host contract is its own crate, `rtok-agent-sdk`.** Every `rtok agent setup <host>` / `agent remove <host>` installer goes through it: `Apply` (the `[setup]` flags), `NO_CHANGES` as both the report and the write gate, timestamped `backup`, `read_json` / `write_json` / `write`, `register_mcp` / `unregister_mcp`, `accepted` (the D21 (6) offer prompt), and `PluginLink` (offer, symlink, unlink a `plugins/<host>/` tree). What stays in `src/setup/<host>.rs` is host-specific and nothing else: which file, which shape, which keys. Same shape as D25 and the same three-dependency line, plus `dialoguer` for the one prompt. Added 2026-09-09 by user request. | Five installers plus `proxy::cli` and `migrate` carried seven copies of one write cycle (dry-run gate, backup, mkdir, pretty-print) and two near-identical plugin-offer bodies. D21 (6) makes that grow with every host added, and T26.0's detector exists to catch exactly this. One crate is also what makes "a sixth host is one new file" checkable rather than hoped for. |
 |------|--------|-----|
 | 2026-09-09 | T23.2's Check asked for a `trybuild` case; the proof is a ```compile_fail doctest on `Plugin` instead. Same failure, same run, no new dev-dependency for one compile error. The task also touched 16 files, not ≤ 3: making a trait method required edits the trait and every implementor at once, and splitting it leaves the tree not compiling — the exemption T23.4 already has. | The dependency rule and D6 both argue against a crate whose whole job is to assert a compile error `cargo test` can assert. |
 | 2026-09-09 | T23.1 moved the contract's value types but not the `Plugin` trait; the trait names `Ctx` and `WireRequest` and moves in T23.3, whose Do now carries the SDK-side `Ctx<'a>` wrapper over `&dyn Host` (it keeps `cx.estimate` / `cx.record` / `cx.log` spelled the same, so T23.4 is import churn plus `cx.store.*`). `crates.io` also needs a `license` field the repository does not have — T23.6 blocks on the owner choosing one. | Splitting the move at the type/host line is what keeps each commit compiling; the licence is not an agent's call. |
@@ -731,3 +761,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | P26 added: a copy-paste detector (jscpd, Rust tokenizer, `min-tokens 50`) joins `just check` at a threshold just above what the tree measures today — 2.14 % of lines, 46 clones — so new duplication fails while the existing clones wait for T26.1. `similarity-rs` would match on the AST rather than on tokens and is the better shape for Rust, but it is a `cargo install` to pin and build; jscpd answers the same question with a config file. | User request 2026-09-09 (добавить лучший копипаст-детектор для Rust). `AGENTS.md` has forbidden duplicated logic since T0.7 with nothing measuring it, and an agent working in ≤200-LOC slices is exactly who copies the neighbouring block to finish. |
 | 2026-09-09 | T8.18 added to P8d: the two watcher tests wait a fixed second for FSEvents and have flaked three times in one day, each time passing on a re-run. The fix is a poll to a generous cap instead of a deadline. | A gate that fails at random teaches everyone to re-run rather than to read it, which is the same as not having it — and P18's release runs on a green suite (T18.6). |
 | 2026-09-09 | Five tasks landed from one round of parallel agents — T24.2 (`rtok logs`, `logs export`), T24.4 (the demon pipes its children through the sink), T26.1 (the proxy's three real clones retired, `threshold` 3 → 2), T25.0 (a session records its host, project and cwd) and T8.18 (the watcher tests poll instead of racing). Each was verified in a detached worktree at its own staged tree, because the shared checkout carries other sessions' half-finished edits and a whole-tree `just check` there measures their work, not the task's. T8.19 opened: `graph_truth` is red and was already red at `ddda5d0`. | The agents can partition files but not compilation: three separate times a task's verification was blocked by an unrelated in-flight refactor. Staging explicit blobs and testing a detached worktree is what makes a parallel round committable one task at a time. |
+| 2026-09-09 | Decision D28 and phase P27 (T27.0): the agent-host half of `agent setup` becomes `crates/rtok-agent-sdk`, a second workspace crate the five host installers, `proxy::cli` and `migrate` all route through. | User request: one SDK for the agent hosts, every host plugin using it, starting with `rtok agent setup cursor`. |
