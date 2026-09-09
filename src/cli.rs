@@ -1,6 +1,6 @@
 //! Clap tree. `tests/config_coverage.rs` walks [`Cli::command`] (plan T12.4).
 
-use std::io::{self, Read, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
 use crate::config::Config;
@@ -232,6 +232,8 @@ enum OtelCmd {
 enum LogsCmd {
     /// Same selection, no numbering, no colour — for `rtok logs export > my.log`
     Export,
+    /// Print the last lines, then follow: new lines arrive above the old, newest first
+    Watch,
 }
 
 /// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
@@ -656,9 +658,17 @@ pub fn run() -> Result<()> {
         }
         Cmd::Logs { action, lines } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            // The selection is the model's Logs page (T15.11); the numbering and colour
-            // are this command's rendering of it.
             let out = match action {
+                // T24.3: runs until Ctrl-C. The loop only ever writes characters — no raw
+                // mode, no alternate screen — so there is no terminal state to restore.
+                Some(LogsCmd::Watch) => {
+                    let mut out = io::stdout();
+                    let tty = out.is_terminal();
+                    crate::log::watch(&cfg, lines, &mut out, tty)?;
+                    return Ok(());
+                }
+                // The selection is the model's Logs page (T15.11); the numbering and colour
+                // are this command's rendering of it.
                 None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
                 Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };

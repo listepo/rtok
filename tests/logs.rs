@@ -1,8 +1,13 @@
 //! T24.2: `rtok logs` and `rtok logs export` against the real binary and rotated files on disk.
+//! T24.3: `rtok logs watch` against the real binary, a line written by this (other) process, and
+//! a rotation mid-watch.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_rtok")
@@ -77,4 +82,81 @@ fn both_commands_say_so_when_nothing_has_been_logged() {
     let home = home("empty");
     assert_eq!(rtok(&["logs"], &home).trim(), "no logs yet");
     assert_eq!(rtok(&["logs", "export"], &home).trim(), "no logs yet");
+}
+
+/// The child watches; this process is the "another process" of T24.3's Check. Its stdout is a
+/// pipe, so the run also proves the non-TTY half: plain rows, no escape codes.
+#[test]
+fn watch_streams_a_line_from_another_process_and_survives_a_rotation() {
+    let home = home("watch");
+    let log = home.join("logs/rtok.log");
+    fs::write(&log, "seed-1\nseed-2\n").unwrap();
+
+    let mut child = Command::new(bin())
+        .args(["logs", "watch", "--lines", "5"])
+        .env("RTOK_HOME", &home)
+        .env("HOME", &home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines() {
+            match line {
+                Ok(l) => sink.lock().unwrap().push(l),
+                Err(_) => break,
+            }
+        }
+    });
+
+    // 20 poll intervals of slack for CI, not part of the contract: the contract is one.
+    let wait = |want: &str| {
+        let deadline = Instant::now() + rtok::log::WATCH_POLL * 20;
+        loop {
+            if seen.lock().unwrap().iter().any(|l| l == want) {
+                return;
+            }
+            if Instant::now() > deadline {
+                panic!("watch never said {want:?}: {:?}", seen.lock().unwrap());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+
+    // The same screen `rtok logs` prints, newest first, then the followed lines counted past it.
+    wait("1 seed-2");
+    wait("2 seed-1");
+    writeln!(
+        OpenOptions::new().append(true).open(&log).unwrap(),
+        "watch-a"
+    )
+    .unwrap();
+    wait("3 watch-a");
+
+    // Rotation the way the sink does it (T24.0): rename, and the next write recreates `path`.
+    fs::rename(&log, log.with_extension("log.1")).unwrap();
+    writeln!(
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap(),
+        "watch-b"
+    )
+    .unwrap();
+    wait("4 watch-b");
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let got = seen.lock().unwrap().join("\n");
+    for once in ["seed-2", "seed-1", "watch-a", "watch-b"] {
+        assert_eq!(got.matches(once).count(), 1, "each line once: {got}");
+    }
+    assert!(
+        !got.contains('\x1b'),
+        "a pipe gets plain rows, not escapes: {got:?}"
+    );
 }

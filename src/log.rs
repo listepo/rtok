@@ -6,9 +6,10 @@
 use crate::config::{Config, Log};
 use crate::store::Store;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Levels, most severe first. A line is written when it is at least as severe as `[log] level`.
 const LEVELS: [&str; 4] = ["error", "warn", "info", "debug"];
@@ -135,23 +136,22 @@ fn nth(path: &Path, i: u32) -> PathBuf {
 /// rotation is contiguous, so nothing sits behind a gap. Empty when nothing has been logged.
 pub fn tail(cfg: &Config, n: Option<usize>) -> Vec<String> {
     let n = n.unwrap_or(cfg.log.lines);
-    let mut out = Vec::new();
-    let mut i = 0u32;
+    let live = whole_lines_of(&cfg.log.path);
+    tail_with(&live, &cfg.log.path, n)
+}
+
+/// `tail`'s walk with the live file's lines supplied by the caller (T24.3): `logs watch` reads
+/// the live file once and feeds both its first screen and its follow state from that one read,
+/// so a line written as the watch starts shows exactly once — in the screen if it made the
+/// read, from the loop if it did not. The rotated siblings are read as `tail` always read them.
+fn tail_with(live: &[String], path: &Path, n: usize) -> Vec<String> {
+    let mut out: Vec<String> = live.iter().rev().take(n).cloned().collect();
+    let mut i = 1u32;
     while out.len() < n {
-        let path = if i == 0 {
-            cfg.log.path.clone()
-        } else {
-            nth(&cfg.log.path, i)
+        let Ok(text) = fs::read_to_string(nth(path, i)) else {
+            break; // rotation is contiguous: nothing sits behind a gap
         };
-        let Ok(text) = fs::read_to_string(&path) else {
-            break;
-        };
-        for line in text.lines().rev() {
-            out.push(line.to_string());
-            if out.len() == n {
-                break;
-            }
-        }
+        out.extend(text.lines().rev().map(str::to_string).take(n - out.len()));
         i += 1;
     }
     out
@@ -166,6 +166,215 @@ pub fn screen(lines: &[String]) -> Vec<String> {
         .enumerate()
         .map(|(i, line)| format!("{} {}", i + 1, crate::render::log_line(line)))
         .collect()
+}
+
+// ── T24.3: `rtok logs watch` — follow the live file, newest first ─────────────────
+
+/// How often a watch loop looks (T24.3; T25.3's table repaints on the same cadence). A constant
+/// so a test can time a line's arrival against the interval it was promised.
+pub const WATCH_POLL: Duration = Duration::from_millis(200);
+
+/// One step of a running watch (T24.3): `fresh` is what a pipe must print now — new lines for a
+/// stream, the whole body again for a state table (T25.3) — and `screen` is what a terminal must
+/// be showing once the step lands. The loop owns the difference: a TTY repaints `screen` in
+/// place, a pipe appends `fresh` and nothing else.
+pub struct WatchTick {
+    pub fresh: Vec<String>,
+    pub screen: Vec<String>,
+}
+
+/// The poll-and-print loop every `watch` command runs (T24.3 `logs watch`; T25.3's `agent
+/// sessions watch` repaints state on the same loop — do not grow a second one). Every
+/// `interval`, `step` says what changed; `None` ends the watch. On a TTY the screen is redrawn
+/// in place — cursor up, clear below — and nothing else: no raw mode, no alternate screen, no
+/// hidden cursor, so Ctrl-C under the default signal handling leaves the terminal as it found
+/// it, the way `tail -f` does. Piped, only `fresh` rows are appended, as plain text.
+pub fn watch_loop<W: Write>(
+    out: &mut W,
+    tty: bool,
+    interval: Duration,
+    mut step: impl FnMut() -> Option<WatchTick>,
+) -> std::io::Result<()> {
+    let mut prev = 0usize; // rows the TTY is holding above the cursor
+    while let Some(tick) = step() {
+        if !tick.fresh.is_empty() || tick.screen.len() != prev {
+            if tty {
+                repaint(out, prev, &tick.screen)?;
+            } else {
+                for row in &tick.fresh {
+                    writeln!(out, "{row}")?;
+                }
+            }
+            out.flush()?;
+            prev = tick.screen.len();
+        }
+        thread::sleep(interval);
+    }
+    Ok(())
+}
+
+/// Redraw in place: to the start of the row `prev` rows up, clear to the end of the screen,
+/// print `rows`, each on its own line — the cursor ends one row past the screen, which is where
+/// the next repaint counts from. The cursor moves by rows, not wrapped rows: a line wider than
+/// the terminal makes the real display one row longer than `prev` and the redraw drifts down a
+/// row. Knowing the width would take an ioctl and a dependency, for that one case.
+fn repaint<W: Write>(out: &mut W, prev: usize, rows: &[String]) -> std::io::Result<()> {
+    if prev > 0 {
+        write!(out, "\x1b[{prev}F")?; // CPL: up `prev` rows, to column 1
+    }
+    write!(out, "\x1b[J")?; // ED: clear from the cursor down, erasing the old screen
+    for row in rows {
+        writeln!(out, "{row}")?;
+    }
+    Ok(())
+}
+
+/// `rtok logs watch` (T24.3): the same last-`n` screen `rtok logs` prints, then follow the live
+/// file — every new line lands above the ones before it, so newest-first holds while it runs.
+/// `tty` decides repaint-in-place over plain appending; the caller reads it off stdout so the
+/// tests can pin both halves. Runs until killed; a pipe closing under it (`| head`) is a reader
+/// that left, not an error.
+pub fn watch<W: Write>(
+    cfg: &Config,
+    n: Option<usize>,
+    out: &mut W,
+    tty: bool,
+) -> std::io::Result<()> {
+    let n = n.unwrap_or(cfg.log.lines);
+    // One read of the live file feeds both halves of the start: the first screen (through
+    // `tail_with`, with the rotated history above it) and the follow state. A line written
+    // after this read is new to both; a line in it is old to both — never shown twice, never
+    // skipped.
+    let live = whole_lines_of(&cfg.log.path);
+    let mut follow = Follow::primed(&live);
+    let mut window: Vec<String> = tail_with(&live, &cfg.log.path, n); // newest first
+    let mut shown = window.len(); // rows already printed; piped rows keep counting past them
+    let mut first = true;
+    let run = watch_loop(out, tty, WATCH_POLL, move || {
+        if first {
+            first = false;
+            let rows = screen(&window);
+            return Some(WatchTick {
+                fresh: rows.clone(),
+                screen: rows,
+            });
+        }
+        let fresh = follow.poll(&cfg.log.path); // arrival order, oldest first
+        if fresh.is_empty() {
+            return Some(WatchTick {
+                fresh: Vec::new(),
+                screen: screen(&window),
+            });
+        }
+        for line in fresh.iter().rev() {
+            window.insert(0, line.clone()); // newest goes to the top
+        }
+        window.truncate(n);
+        // On a TTY the repaint renumbers everything, `1` newest. A pipe cannot renumber what it
+        // already printed, so its rows keep counting past the screen: each line once, each
+        // number once.
+        let rows = fresh
+            .iter()
+            .enumerate()
+            .map(|(i, line)| format!("{} {}", shown + i + 1, crate::render::log_line(line)))
+            .collect();
+        shown += fresh.len();
+        Some(WatchTick {
+            fresh: rows,
+            screen: screen(&window),
+        })
+    });
+    match run {
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
+}
+
+/// Incremental reader for the live log file across rotations (T24.3). Reads only `path` — the
+/// rotated siblings are history `rtok logs` already shows — and detects T24.0's rotation
+/// (`path` renamed to `path.1`, the next write recreating `path`) by content, not inode: the
+/// file at `path` is the one we were reading iff its first line is ours and it holds at least
+/// as many lines. Anything else is a new file, read from its start — after carrying the tail of
+/// ours over from wherever the rename left it.
+#[derive(Default)]
+pub struct Follow {
+    first: Option<String>, // the first line of the file we were reading
+    consumed: usize,       // of its lines, the ones already returned
+}
+
+impl Follow {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A follow already caught up with `live`: every line of it counts as shown, matching the
+    /// first screen built from the same read — one read for both, so the two cannot disagree
+    /// about what was on disk and repeat or lose the line written between two reads.
+    pub fn primed(live: &[String]) -> Self {
+        Self {
+            first: live.first().cloned(),
+            consumed: live.len(),
+        }
+    }
+
+    /// The lines of `path` written since the last call, oldest first. A file renamed away and
+    /// not yet recreated reads as empty and keeps its state — the state is what names the old
+    /// file in `.1` when the carry comes — so whatever appears at `path` next is read as the
+    /// new file it is.
+    pub fn poll(&mut self, path: &Path) -> Vec<String> {
+        let mut lines = match fs::read(path) {
+            Ok(bytes) => whole_lines(&bytes),
+            // A file that is not there (renamed away, T24.0) reads as empty and keeps its
+            // state: the state is what names the old file in `.1` when the carry comes. A file
+            // that cannot be read now is a delay, not a rotation.
+            Err(_) => return Vec::new(),
+        };
+        let ours = self.first.as_deref() == lines.first().map(String::as_str);
+        if ours && lines.len() >= self.consumed {
+            let at = self.consumed;
+            self.consumed = lines.len();
+            return lines.split_off(at); // `split_off` truncates, so the count comes first
+        }
+        // A rotation: carry the tail of the file we were reading out of its rotated siblings —
+        // a rotation between two polls must cost no line — then read the newcomer from its
+        // start. `nth` runs newest-old first, so the pieces reverse into chronology.
+        let mut pieces: Vec<Vec<String>> = Vec::new();
+        for i in 1.. {
+            let mut sibling = match fs::read(nth(path, i)) {
+                Ok(bytes) => whole_lines(&bytes),
+                Err(_) => break, // rotation is contiguous (`tail` counts on that too)
+            };
+            if sibling.first().map(String::as_str) == self.first.as_deref() {
+                let at = self.consumed.min(sibling.len());
+                pieces.push(sibling.split_off(at)); // ours: only what we had not returned
+                break; // older files were fully returned before they rotated
+            }
+            pieces.push(sibling); // rotated past us between polls: all of it is new
+        }
+        pieces.reverse();
+        *self = Self {
+            first: lines.first().cloned(),
+            consumed: lines.len(), // the newcomer is returned whole, so all of it is consumed
+        };
+        let mut fresh = pieces.concat();
+        fresh.extend(lines);
+        fresh
+    }
+}
+
+/// Whole lines of a byte string, dropping a half-written tail: the sink's `writeln!` lands as
+/// two writes, and a line is a line only once its `\n` is on disk.
+fn whole_lines(bytes: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    lines.pop(); // the piece after the last `\n` is not a line yet
+    lines
+}
+
+/// Whole lines of the file at `path`, empty when it cannot be read — the one read `tail` and
+/// `Follow` share. Lossy rather than empty, so a stray byte costs a character, not the log.
+fn whole_lines_of(path: &Path) -> Vec<String> {
+    whole_lines(&fs::read(path).unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -387,5 +596,154 @@ mod tests {
             1
         );
         assert_eq!(cx.store.logs_after(0, 10).unwrap().len(), 1);
+    }
+
+    // ── T24.3: follow, rotate, degrade ───────────────────────────────────────────
+
+    use std::time::Duration;
+
+    /// `Follow::primed` over the same read `watch` makes: everything on disk now is the first
+    /// screen's to show, not the loop's to emit.
+    fn primed_at(path: &Path) -> Follow {
+        Follow::primed(&whole_lines_of(path))
+    }
+
+    #[test]
+    fn follow_returns_only_lines_written_after_the_last_poll() {
+        let dir = tmp("follow-new");
+        let cfg = cfg_at(&dir, 1 << 20, 3);
+        append(&cfg, "info", "test", "f", "first");
+        let mut f = primed_at(&cfg.log.path);
+        append(&cfg, "warn", "test", "f", "second");
+        append(&cfg, "error", "test", "f", "third");
+        let got = f.poll(&cfg.log.path);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(
+            got[0].contains("second") && got[1].contains("third"),
+            "{got:?}"
+        );
+        assert!(
+            f.poll(&cfg.log.path).is_empty(),
+            "nothing new, nothing repeated"
+        );
+    }
+
+    #[test]
+    fn follow_reopens_path_when_rotation_renames_the_file_it_was_reading() {
+        let dir = tmp("follow-rotate");
+        let cfg = cfg_at(&dir, 1 << 20, 3);
+        append(&cfg, "info", "test", "f", "before");
+        let mut f = primed_at(&cfg.log.path); // the seed line is the first screen's, not ours
+        // T24.0's rotation: `path` → `.1`, and the next write recreates `path`.
+        fs::rename(&cfg.log.path, nth(&cfg.log.path, 1)).unwrap();
+        assert!(
+            f.poll(&cfg.log.path).is_empty(),
+            "renamed away, not yet recreated"
+        );
+        append(&cfg, "info", "test", "f", "after");
+        let got = f.poll(&cfg.log.path);
+        assert_eq!(got.len(), 1, "{got:?}"); // the old line lives on in `.1`: no repeat
+        assert!(got[0].contains("after"), "{got:?}");
+        assert!(
+            f.poll(&cfg.log.path).is_empty(),
+            "the stream continues past the rotation"
+        );
+    }
+
+    #[test]
+    fn a_rotation_between_polls_carries_the_lines_not_yet_seen() {
+        let dir = tmp("follow-carry");
+        let cfg = cfg_at(&dir, 1 << 20, 3);
+        append(&cfg, "info", "test", "f", "already-emitted-1");
+        append(&cfg, "info", "test", "f", "already-emitted-2");
+        let mut f = primed_at(&cfg.log.path); // consumes both
+        append(&cfg, "info", "test", "f", "missed-by-poll"); // written, then rotated off unseen
+        fs::rename(&cfg.log.path, nth(&cfg.log.path, 1)).unwrap();
+        append(&cfg, "info", "test", "f", "after-rename"); // recreates `path`
+        let got = f.poll(&cfg.log.path);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(
+            got[0].contains("missed-by-poll") && got[1].contains("after-rename"),
+            "{got:?}"
+        );
+        assert!(
+            !got.iter().any(|l| l.contains("already-emitted")),
+            "no line twice: {got:?}"
+        );
+    }
+
+    #[test]
+    fn a_rotation_storm_between_polls_prints_every_line_once() {
+        let dir = tmp("follow-storm");
+        let cfg = cfg_at(&dir, 150, 5); // a line is ~40 B: the burst rotates every few writes
+        let mut f = primed_at(&cfg.log.path); // prime on a not-yet-existing file
+        for i in 0..12 {
+            append(&cfg, "info", "test", "f", &format!("wave-{i}"));
+        }
+        assert!(nth(&cfg.log.path, 1).exists(), "the burst actually rotated");
+        let got = f.poll(&cfg.log.path);
+        assert_eq!(got.len(), 12, "{got:?}");
+        for i in 0..12 {
+            let times = got
+                .iter()
+                .filter(|l| l.ends_with(&format!("wave-{i}")))
+                .count();
+            assert_eq!(times, 1, "wave-{i} appeared {times} times");
+        }
+        assert!(
+            got.last().unwrap().ends_with("wave-11"),
+            "arrival order: {got:?}"
+        );
+    }
+
+    #[test]
+    fn a_tty_watch_repaints_the_screen_in_place() {
+        let mut out = Vec::new();
+        let mut ticks = vec![
+            Some(WatchTick {
+                fresh: vec!["1 a".into()],
+                screen: vec!["1 a".into()],
+            }),
+            Some(WatchTick {
+                fresh: vec!["1 b".into()],
+                screen: vec!["1 b".into(), "2 a".into()],
+            }),
+            None,
+        ];
+        watch_loop(&mut out, true, Duration::from_millis(1), || ticks.remove(0)).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.starts_with("\x1b[J1 a\n"),
+            "the first screen prints at the cursor: {text:?}"
+        );
+        assert!(
+            text.ends_with("\x1b[1F\x1b[J1 b\n2 a\n"),
+            "up one row, cleared, newest printed above: {text:?}"
+        );
+    }
+
+    #[test]
+    fn a_piped_watch_appends_plain_rows_and_no_escape_codes() {
+        let mut out = Vec::new();
+        let mut ticks = vec![
+            Some(WatchTick {
+                fresh: vec!["1 a".into()],
+                screen: vec!["1 a".into()],
+            }),
+            Some(WatchTick {
+                fresh: vec!["2 b".into()],
+                screen: vec!["2 b".into(), "1 a".into()],
+            }),
+            Some(WatchTick {
+                fresh: Vec::new(), // nothing changed: nothing printed
+                screen: vec!["2 b".into(), "1 a".into()],
+            }),
+            None,
+        ];
+        watch_loop(&mut out, false, Duration::from_millis(1), || {
+            ticks.remove(0)
+        })
+        .unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "1 a\n2 b\n");
     }
 }
