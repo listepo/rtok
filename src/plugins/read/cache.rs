@@ -2,7 +2,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::plugin::{Ctx, Measurement, PostToolUse};
+use crate::plugin::{Archive, Ctx, Measurement, PostToolUse, ReadCache};
 use crate::tokens::Class;
 
 pub fn key(path: &str, mode: &str, range: Option<&str>) -> String {
@@ -10,10 +10,10 @@ pub fn key(path: &str, mode: &str, range: Option<&str>) -> String {
 }
 
 pub fn hit(cx: &Ctx, key: &str, body: &[u8], lines: usize) -> Option<String> {
-    let (Some(id), _) = cx.store.get_read_cache(&cx.session, key).ok().flatten()? else {
+    let (Some(id), _) = cx.get_read_cache(key).ok().flatten()? else {
         return None;
     };
-    let prev = cx.store.get_archive(&id).ok().flatten()?;
+    let prev = cx.get_archive(&id).ok().flatten()?;
     if prev.as_slice() != body {
         return None;
     }
@@ -37,11 +37,8 @@ pub fn hit(cx: &Ctx, key: &str, body: &[u8], lines: usize) -> Option<String> {
 }
 
 pub fn remember(cx: &Ctx, key: &str, body: &[u8]) -> anyhow::Result<String> {
-    let id = cx
-        .store
-        .put_archive(&cx.session, body, &cx.config.core.archive_dir)?;
-    cx.store
-        .put_read_cache(&cx.session, key, &hex_sha256(body), Some(&id))?;
+    let id = cx.put_archive(body)?;
+    cx.put_read_cache(key, &hex_sha256(body), Some(&id))?;
     Ok(id)
 }
 
@@ -57,7 +54,7 @@ pub fn invalidate(ev: &PostToolUse<'_>, cx: &Ctx) {
     else {
         return;
     };
-    let _ = cx.store.clear_read_cache(&cx.session, path);
+    let _ = cx.clear_read_cache(path);
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

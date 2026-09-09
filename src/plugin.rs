@@ -9,16 +9,19 @@
 //! [`Measurement`] row does not exist. Default method bodies do nothing, so a plugin
 //! implements only the surfaces it declares in its [`Manifest`].
 
+use std::collections::HashSet;
+
 use anyhow::Result;
 
 use crate::config::Config;
 use crate::proxy::wire::WireRequest;
 use crate::store::Store;
-use crate::tokens::{self, Class};
+use crate::tokens;
 
 pub use rtok_plugin_sdk::{
-    DashboardPage, Injection, Manifest, Measurement, PostToolUse, PreCompact, PreToolDecision,
-    PreToolUse, PromptSubmit, SessionStart, Surface, ToolDef,
+    Archive, ArchiveDecision, Class, DashboardPage, Host, Injection, Ledger, Manifest, Measurement,
+    NoteHit, Notes, PostToolUse, PreCompact, PreToolDecision, PreToolUse, PromptSubmit, ReadCache,
+    SessionStart, Surface, Symbols, ToolDef,
 };
 
 /// Everything a plugin may touch: config, the store, and the session id.
@@ -130,6 +133,190 @@ impl Ctx {
                 let _ = writeln!(f, "{level} {source}/{name}: {message} ({e})");
             }
         }
+    }
+}
+
+/// The host side of the contract (D25). `Ctx` *is* the host: every capability trait is
+/// implemented here by delegating to the one store, and the session and the archive
+/// directory come from the context rather than from the plugin's arguments.
+///
+/// A plugin sees only these traits, which is what lets `rtok-plugin-sdk` stay three
+/// dependencies deep while this crate carries SQLite and tree-sitter.
+impl Host for Ctx {
+    fn session(&self) -> &str {
+        &self.session
+    }
+
+    fn estimate(&self, text: &str, class: Class) -> u32 {
+        Ctx::estimate(self, text, class)
+    }
+
+    fn record(&self, m: &Measurement) -> Result<()> {
+        Ctx::record(self, m)
+    }
+
+    fn record_call(&self, surface: &str, kind: &str, name: Option<&str>) -> Result<i32> {
+        Ctx::record_call(self, surface, kind, name)
+    }
+
+    fn record_plugin_run(&self, surface: &str, plugin: &str) -> Result<i32> {
+        Ctx::record_plugin_run(self, surface, plugin)
+    }
+
+    fn record_tokens(
+        &self,
+        call_id: i32,
+        plugin: Option<&str>,
+        phase: &str,
+        source: &str,
+        tokens: i64,
+    ) -> Result<()> {
+        Ctx::record_tokens(self, call_id, plugin, phase, source, tokens)
+    }
+
+    fn log(&self, level: &str, source: &str, name: &str, message: &str) {
+        Ctx::log(self, level, source, name, message);
+    }
+
+    /// `[plugins.<id>]` as JSON. Unknown id → `Null`, which deserializes to the plugin's
+    /// own defaults rather than to an error.
+    fn plugin_config_json(&self, id: &str) -> serde_json::Value {
+        serde_json::to_value(&self.config.plugins)
+            .ok()
+            .and_then(|v| v.get(id).cloned())
+            .unwrap_or(serde_json::Value::Null)
+    }
+}
+
+impl Archive for Ctx {
+    fn put_archive(&self, body: &[u8]) -> Result<String> {
+        self.store
+            .put_archive(&self.session, body, &self.config.core.archive_dir)
+    }
+
+    fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        self.store.get_archive(id)
+    }
+
+    fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
+        self.store.archive_decision(tool_use_id)
+    }
+
+    fn put_archive_decision(
+        &self,
+        tool_use_id: &str,
+        archive_id: &str,
+        pointer: &str,
+    ) -> Result<()> {
+        self.store
+            .put_archive_decision(tool_use_id, archive_id, &self.session, pointer)
+    }
+
+    fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
+        self.store.mark_expanded(archive_id)
+    }
+}
+
+impl Notes for Ctx {
+    fn insert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        self.store.insert_note(project, kind, title, body)
+    }
+
+    fn latest_note(&self, kind: &str) -> Result<Option<String>> {
+        self.store.latest_note(kind)
+    }
+
+    fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>> {
+        self.store.list_note_titles(project, limit)
+    }
+
+    fn get_note_body(&self, id: i32) -> Result<Option<String>> {
+        self.store.get_note_body(id)
+    }
+
+    fn search_notes(&self, query: &str, limit: u32) -> Result<Vec<NoteHit>> {
+        self.store.search_notes(query, limit)
+    }
+}
+
+impl ReadCache for Ctx {
+    fn put_read_cache(&self, path: &str, sha256: &str, archive_id: Option<&str>) -> Result<()> {
+        self.store
+            .put_read_cache(&self.session, path, sha256, archive_id)
+    }
+
+    fn get_read_cache(&self, path: &str) -> Result<Option<(Option<String>, i64)>> {
+        self.store.get_read_cache(&self.session, path)
+    }
+
+    fn clear_read_cache(&self, path: &str) -> Result<()> {
+        self.store.clear_read_cache(&self.session, path)
+    }
+}
+
+impl Ledger for Ctx {
+    fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>> {
+        self.store.recent_hook_inputs(&self.session, limit)
+    }
+
+    fn calls_since(&self, ts: i64) -> Result<i64> {
+        self.store.calls_since(&self.session, ts)
+    }
+}
+
+impl Symbols for Ctx {
+    fn symbol_count(&self, root: &str) -> Result<i64> {
+        self.store.symbol_count(root)
+    }
+
+    fn symbol_stat(&self, root: &str, path: &str) -> Result<Option<(String, i64, i64)>> {
+        self.store.symbol_stat(root, path)
+    }
+
+    fn touch_symbols(&self, root: &str, path: &str, mtime: i64, size: i64) -> Result<()> {
+        self.store.touch_symbols(root, path, mtime, size)
+    }
+
+    fn replace_symbols(
+        &self,
+        root: &str,
+        path: &str,
+        file_sha: &str,
+        stat: (i64, i64),
+        rows: &[(String, String, i32, bool, i32, String)],
+    ) -> Result<usize> {
+        self.store.replace_symbols(root, path, file_sha, stat, rows)
+    }
+
+    fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize> {
+        self.store.delete_symbols_missing(root, keep)
+    }
+
+    fn mark_symbols_stale(&self, abs_path: &str) -> Result<()> {
+        self.store.mark_symbols_stale(abs_path)
+    }
+
+    fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
+        self.store.symbol_defs(root, name)
+    }
+
+    fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>> {
+        self.store.symbol_ref_groups(root, name)
+    }
+
+    fn symbol_impact(
+        &self,
+        root: &str,
+        name: &str,
+        depth: u32,
+    ) -> Result<Vec<(u32, String, String)>> {
+        self.store.symbol_impact(root, name, depth)
     }
 }
 

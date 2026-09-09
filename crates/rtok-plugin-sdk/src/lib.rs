@@ -17,12 +17,16 @@
 //!
 //! # Status
 //!
-//! The [`Plugin`] trait itself still lives in `rtok` while the host capabilities move behind
-//! traits (T23.3); this crate already owns every type in its signatures, and `rtok::plugin`
-//! re-exports them, so the two paths are one type today.
+//! The [`Plugin`] trait itself still lives in `rtok` while the host moves behind the
+//! [`host`] traits (T23.3); this crate already owns every type in its signatures, and
+//! `rtok::plugin` re-exports them, so the two paths are one type today.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+
+pub mod host;
+
+pub use host::{Archive, ArchiveDecision, Class, Host, Ledger, NoteHit, Notes, ReadCache, Symbols};
 
 use serde::Serialize;
 use serde_json::Value;

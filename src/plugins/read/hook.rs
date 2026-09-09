@@ -1,6 +1,6 @@
 //! PreToolUse(Read) advice (plan T4.6): deny native Read of large files not just edited.
 
-use crate::plugin::{Ctx, PreToolDecision, PreToolUse};
+use crate::plugin::{Ctx, Ledger, PreToolDecision, PreToolUse};
 
 const REASON: &str =
     "use rtok read(mode=map) first; native Read allowed for files you are about to edit";
@@ -29,7 +29,7 @@ const WINDOW_CALLS: i64 = 10;
 /// True when a PostToolUse(Edit|Write) for `path` sits in the window.
 /// Fail open: any store error allows the Read (unmodified input, D1).
 fn recently_edited(cx: &Ctx, path: &str) -> bool {
-    let bodies = match cx.store.recent_hook_inputs(&cx.session, WINDOW_CALLS) {
+    let bodies = match cx.recent_hook_inputs(WINDOW_CALLS) {
         Ok(b) => b,
         Err(_) => return true,
     };

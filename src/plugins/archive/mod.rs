@@ -16,6 +16,9 @@
 
 use serde_json::Value;
 
+// The plugin type below is also called `Archive`; the capability trait is only needed for
+// its methods, so it comes in unnamed.
+use crate::plugin::Archive as _;
 use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
@@ -84,7 +87,7 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
 fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Measurement> {
     let text = block_text(content)?;
     let a = &cx.config.plugins.archive;
-    let (archive_id, pointer) = match cx.store.archive_decision(tool_use_id) {
+    let (archive_id, pointer) = match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
         Ok(Some(d)) => (d.archive_id, d.pointer),
         Ok(None) => {
@@ -92,10 +95,8 @@ fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Mea
             if est < a.min_tokens {
                 return None;
             }
-            let dir = &cx.config.core.archive_dir;
             let archive_id = cx
-                .store
-                .put_archive(&cx.session, text.as_bytes(), dir)
+                .put_archive(text.as_bytes())
                 .map_err(|e| cx.log("error", "plugin", "archive", &format!("put: {e}")))
                 .ok()?;
             let pointer = pointer(
@@ -105,8 +106,7 @@ fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Mea
                 a.head_lines as usize,
                 a.tail_lines as usize,
             );
-            cx.store
-                .put_archive_decision(tool_use_id, &archive_id, &cx.session, &pointer)
+            cx.put_archive_decision(tool_use_id, &archive_id, &pointer)
                 .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
                 .ok()?;
             (archive_id, pointer)

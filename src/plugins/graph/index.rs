@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::Result;
 use ignore::WalkBuilder;
 
-use crate::plugin::Ctx;
+use crate::plugin::{Ctx, Symbols};
 use crate::plugins::read::outline;
 use crate::store;
 
@@ -79,7 +79,7 @@ pub fn run_with(
         keep.insert(rel.clone());
         pb.inc(1);
         let stat = entry.metadata().as_ref().map(stat_key).unwrap_or((0, 0));
-        let known = cx.store.symbol_stat(&rk, &rel)?;
+        let known = cx.symbol_stat(&rk, &rel)?;
         // Same mtime and size: git's rule for "unchanged". Nothing is opened.
         if known.as_ref().is_some_and(|(_, m, s)| (*m, *s) == stat) && stat != (0, 0) {
             report.skipped += 1;
@@ -93,7 +93,7 @@ pub fn run_with(
         if known.as_ref().is_some_and(|(h, _, _)| h == &sha) {
             // Touched but not changed: move the freshness key so the next run skips on stat.
             if !dry_run {
-                cx.store.touch_symbols(&rk, &rel, stat.0, stat.1)?;
+                cx.touch_symbols(&rk, &rel, stat.0, stat.1)?;
             }
             report.skipped += 1;
             continue;
@@ -106,13 +106,13 @@ pub fn run_with(
         let n = if dry_run {
             rows.len()
         } else {
-            cx.store.replace_symbols(&rk, &rel, &sha, stat, &rows)?
+            cx.replace_symbols(&rk, &rel, &sha, stat, &rows)?
         };
         report.indexed += 1;
         report.inserted += n;
     }
     if !dry_run {
-        let _ = cx.store.delete_symbols_missing(&rk, &keep);
+        let _ = cx.delete_symbols_missing(&rk, &keep);
     }
     pb.finish_and_clear();
     Ok(report)
@@ -152,7 +152,7 @@ fn scoped(hits: &[outline::TagHit]) -> Vec<(String, String, i32, bool, i32, Stri
 
 /// Index `root` only when it has no rows yet (first tool call in that repo).
 pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
-    if cx.store.symbol_count(&canon(root))? > 0 {
+    if cx.symbol_count(&canon(root))? > 0 {
         return Ok(Report::default());
     }
     run(cx, root, false)

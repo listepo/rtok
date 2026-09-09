@@ -1,7 +1,7 @@
 //! `rtok run -- <cmd>`: capture, archive, print (plan T3.1). Unfiltered in this task.
 
 use crate::config::Config;
-use crate::plugin::{Ctx, Measurement};
+use crate::plugin::{Archive, Ctx, Measurement};
 use crate::tokens::Class;
 use anyhow::{Result, bail};
 use std::process::Command;
@@ -42,9 +42,7 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     body.extend_from_slice(&out.stderr);
     let code = out.status.code().unwrap_or(1);
     let cx = Ctx::open(cfg.clone(), "run")?;
-    let id = cx
-        .store
-        .put_archive(&cx.session, &body, &cfg.core.archive_dir)?;
+    let id = cx.put_archive(&body)?;
     let before = String::from_utf8_lossy(&body);
     let family = args
         .first()

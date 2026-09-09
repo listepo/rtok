@@ -9,8 +9,8 @@ use anyhow::{Result, bail};
 use serde_json::json;
 
 use crate::plugin::{
-    Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
-    ToolDef,
+    Archive, Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse,
+    Surface, ToolDef,
 };
 
 pub mod cache;
@@ -142,9 +142,7 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
     if text.chars().count() <= max {
         return Ok(text);
     }
-    let id = cx
-        .store
-        .put_archive(&cx.session, text.as_bytes(), &cx.config.core.archive_dir)?;
+    let id = cx.put_archive(text.as_bytes())?;
     let chars: Vec<char> = text.chars().collect();
     let keep = (max / 2).max(1);
     let head: String = chars.iter().take(keep).collect();

@@ -18,7 +18,8 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::plugin::{
-    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
+    Archive, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, Symbols,
+    ToolDef,
 };
 use crate::tokens::Class;
 
@@ -49,7 +50,7 @@ impl Plugin for Graph {
             return None;
         }
         if let Some(p) = ev.tool_input.get("file_path").and_then(|v| v.as_str()) {
-            let _ = cx.store.mark_symbols_stale(&index::canon(Path::new(p)));
+            let _ = cx.mark_symbols_stale(&index::canon(Path::new(p)));
         }
         None
     }
@@ -119,7 +120,7 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
 /// answers "what is this and what does it do", which took a `symbol` plus a `read` at v0.1.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index_for(cx, root)?;
-    let rows = cx.store.symbol_defs(&index::canon(root), name)?;
+    let rows = cx.symbol_defs(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no definition of {name}"));
     }
@@ -147,7 +148,7 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// costs a fraction of the bytes.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     index_for(cx, root)?;
-    let rows = cx.store.symbol_ref_groups(&index::canon(root), name)?;
+    let rows = cx.symbol_ref_groups(&index::canon(root), name)?;
     if rows.is_empty() {
         return Ok(format!("no references to {name}"));
     }
@@ -168,7 +169,7 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// reached. A definition is expanded once, so a call cycle terminates.
 pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
     index_for(cx, root)?;
-    let rows = cx.store.symbol_impact(&index::canon(root), name, depth)?;
+    let rows = cx.symbol_impact(&index::canon(root), name, depth)?;
     if rows.is_empty() {
         return Ok(format!("nothing reaches {name}"));
     }
@@ -229,9 +230,7 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
     let (out, ref_id) = if est <= max {
         (text, None)
     } else {
-        let id = cx
-            .store
-            .put_archive(&cx.session, text.as_bytes(), &cx.config.core.archive_dir)?;
+        let id = cx.put_archive(text.as_bytes())?;
         // The estimator is linear in chars, so the char budget scales the same way;
         // leave room for the trailer line (count + a 64-hex archive id).
         let budget = (text.len() * max as usize / est as usize).saturating_sub(120);

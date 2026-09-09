@@ -1,8 +1,8 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
 use crate::plugin::{
-    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
-    Surface,
+    Archive, Ctx, DashboardPage, Ledger, Manifest, Measurement, Plugin, PostToolUse,
+    PreToolDecision, PreToolUse, ReadCache, Surface,
 };
 use serde_json::Value;
 
@@ -27,9 +27,9 @@ impl Plugin for Guard {
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
         let key = cache_key(ev.tool_name, ev.tool_input)?;
-        let (id, ts) = cx.store.get_read_cache(&cx.session, &key).ok().flatten()?;
+        let (id, ts) = cx.get_read_cache(&key).ok().flatten()?;
         let id = id?;
-        let n = cx.store.calls_since(&cx.session, ts).unwrap_or(0);
+        let n = cx.calls_since(ts).unwrap_or(0);
         if n > i64::from(cx.config.plugins.guard.window_turns) {
             return None;
         }
@@ -50,11 +50,8 @@ impl Plugin for Guard {
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> {
         let key = cache_key(ev.tool_name, ev.tool_input)?;
         let body = payload(ev.tool_response);
-        let id = cx
-            .store
-            .put_archive(&cx.session, &body, &cx.config.core.archive_dir)
-            .ok()?;
-        let _ = cx.store.put_read_cache(&cx.session, &key, &id, Some(&id));
+        let id = cx.put_archive(&body).ok()?;
+        let _ = cx.put_read_cache(&key, &id, Some(&id));
         None
     }
 }

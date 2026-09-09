@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
+use crate::plugin::{Archive, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
 
@@ -58,8 +58,7 @@ fn rewrite_block(content: &mut Value, cx: &Ctx, min_rows: usize) -> Option<Measu
     let rows = table.as_array()?;
     let bytes = serde_json::to_vec(&table).ok()?;
     let archive_id = cx
-        .store
-        .put_archive(&cx.session, &bytes, &cx.config.core.archive_dir)
+        .put_archive(&bytes)
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("put: {e}")))
         .ok()?;
     let encoded = encode(rows, &keys);

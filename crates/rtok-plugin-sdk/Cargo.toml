@@ -16,6 +16,8 @@ keywords = ["rtok", "plugin", "tokens", "llm", "agents"]
 # Three, none of them C (T23.0). Anything heavier belongs on the host side of the line.
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# anyhow: the capability traits return `Result` and a plugin author already has it in tree
+anyhow = "1.0.104"
 
 [lints.rust]
 unsafe_code = "forbid"

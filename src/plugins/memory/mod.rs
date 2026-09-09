@@ -3,7 +3,7 @@
 pub mod import;
 
 use crate::plugin::{
-    Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
+    Ctx, DashboardPage, Injection, Manifest, Notes, Plugin, SessionStart, Surface, ToolDef,
 };
 use crate::tokens::Class;
 use serde_json::json;
@@ -69,7 +69,7 @@ fn recall(cx: &Ctx) -> Option<Injection> {
     let n = cx.config.plugins.memory.recall_titles.max(1);
     let cap = cx.config.plugins.memory.recall_tokens.max(1);
     let project = std::env::current_dir().ok().and_then(|d| project_name(&d));
-    let rows = cx.store.list_note_titles(project.as_deref(), n).ok()?;
+    let rows = cx.list_note_titles(project.as_deref(), n).ok()?;
     if rows.is_empty() {
         return None;
     }
@@ -99,15 +99,15 @@ pub fn mem_save(
     let proj = project
         .map(str::to_string)
         .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
-    cx.store.insert_note(proj.as_deref(), kind, title, body)
+    cx.insert_note(proj.as_deref(), kind, title, body)
 }
 
 pub fn mem_search(cx: &Ctx, query: &str, limit: u32) -> anyhow::Result<Vec<crate::store::NoteHit>> {
-    cx.store.search_notes(query, limit.max(1))
+    cx.search_notes(query, limit.max(1))
 }
 
 pub fn mem_get(cx: &Ctx, id: i32) -> anyhow::Result<Option<String>> {
-    cx.store.get_note_body(id)
+    cx.get_note_body(id)
 }
 
 #[cfg(test)]

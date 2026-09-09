@@ -6,17 +6,9 @@
 
 use crate::config::Estimator;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Class {
-    /// Source code, shell output, diffs.
-    Code,
-    /// Natural-language prose, markdown.
-    Prose,
-    /// JSON / structured data (punctuation-heavy → fewer chars per token).
-    Json,
-    /// CJK scripts: roughly one token per character.
-    Cjk,
-}
+/// The text classes, owned by the published contract (D25) so a plugin can name one without
+/// depending on `rtok`.
+pub use rtok_plugin_sdk::Class;
 
 /// Estimated tokens for `text`. Empty text → 0.
 pub fn estimate(text: &str, class: Class, rates: &Estimator) -> u32 {

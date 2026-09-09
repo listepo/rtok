@@ -21,6 +21,8 @@ use diesel::sqlite::SqliteConnection;
 use sha2::{Digest, Sha256};
 
 use crate::plugin::Measurement;
+// The two row shapes a plugin sees are the contract's (D25); the diesel rows below feed them.
+pub use crate::plugin::{ArchiveDecision, NoteHit};
 
 use schema::{archive, call_io, calls, hosts, logs, measurements, notes, read_cache, tokens};
 
@@ -376,13 +378,17 @@ impl Store {
     /// T5.3: the persisted decision for a `tool_use_id`, if the archive plugin made one.
     pub fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
         let mut conn = self.lock()?;
-        let rows: Vec<ArchiveDecision> = sql_query(
+        let rows: Vec<ArchiveDecisionRow> = sql_query(
             "SELECT archive_id, pointer, expanded_ts IS NOT NULL AS expanded
              FROM archive_decisions WHERE tool_use_id = ?",
         )
         .bind::<Text, _>(tool_use_id)
         .load(&mut *conn)?;
-        Ok(rows.into_iter().next())
+        Ok(rows.into_iter().next().map(|r| ArchiveDecision {
+            archive_id: r.archive_id,
+            pointer: r.pointer,
+            expanded: r.expanded,
+        }))
     }
 
     /// T5.3: persist a decision. First writer wins — the pointer must never change.
@@ -541,7 +547,7 @@ impl Store {
         }
         let mut conn = self.lock()?;
         let q = query.replace('"', " ");
-        sql_query(
+        let hits = sql_query(
             "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
              FROM notes_fts f JOIN notes n ON n.id = f.rowid
              WHERE notes_fts MATCH ?
@@ -550,8 +556,15 @@ impl Store {
         )
         .bind::<Text, _>(q)
         .bind::<Integer, _>(i32::try_from(limit).unwrap_or(5))
-        .load(&mut *conn)
-        .map_err(Into::into)
+        .load::<NoteHitRow>(&mut *conn)?
+        .into_iter()
+        .map(|r| NoteHit {
+            id: r.id,
+            title: r.title,
+            snippet: r.snippet,
+        })
+        .collect::<Vec<_>>();
+        Ok(hits)
     }
 
     pub fn put_read_cache(
@@ -884,15 +897,16 @@ struct Count {
     n: i64,
 }
 
-/// FTS5 search hit (T6.1).
+/// FTS5 search hit (T6.1). The shape is the published contract's (D25); this is only the
+/// row diesel loads it into.
 #[derive(Debug, QueryableByName)]
-pub struct NoteHit {
+struct NoteHitRow {
     #[diesel(sql_type = Integer)]
-    pub id: i32,
+    id: i32,
     #[diesel(sql_type = Text)]
-    pub title: String,
+    title: String,
     #[diesel(sql_type = Text)]
-    pub snippet: String,
+    snippet: String,
 }
 
 /// One `measurements` row for `stats --plugin`.
@@ -906,15 +920,16 @@ pub struct MeasRow {
     pub ref_id: Option<String>,
 }
 
-/// T5.3 archive decision: the frozen pointer text for one `tool_use_id`.
+/// T5.3 archive decision: the frozen pointer text for one `tool_use_id`. Same story as
+/// [`NoteHitRow`] — the type plugins see is the contract's.
 #[derive(Debug, QueryableByName)]
-pub struct ArchiveDecision {
+struct ArchiveDecisionRow {
     #[diesel(sql_type = Text)]
-    pub archive_id: String,
+    archive_id: String,
     #[diesel(sql_type = Text)]
-    pub pointer: String,
+    pointer: String,
     #[diesel(sql_type = diesel::sql_types::Bool)]
-    pub expanded: bool,
+    expanded: bool,
 }
 
 /// Aggregated usage totals grouped by API (T11.6).

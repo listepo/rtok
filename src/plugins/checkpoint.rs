@@ -1,6 +1,6 @@
 //! PreCompact checkpoint + compact restore (plan T2.5).
 
-use crate::plugin::{Ctx, Injection};
+use crate::plugin::{Ctx, Injection, Notes};
 use crate::tokens::Class;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -116,14 +116,13 @@ fn walk(v: &Value, paths: &mut BTreeSet<String>, text: &mut impl FnMut(&str)) {
 /// Read `transcript_path`, store a `notes` row `kind=checkpoint`.
 pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
     let cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
-    cx.store
-        .insert_note(Some("rtok"), "checkpoint", "compact", &cp.render())?;
+    cx.insert_note(Some("rtok"), "checkpoint", "compact", &cp.render())?;
     Ok(cp)
 }
 
 /// Latest checkpoint as an injection, capped at `plugins.memory.checkpoint_tokens`.
 pub fn offer(cx: &Ctx) -> Option<Injection> {
-    let mut text = cx.store.latest_note("checkpoint").ok().flatten()?;
+    let mut text = cx.latest_note("checkpoint").ok().flatten()?;
     let cap = cx.config.plugins.memory.checkpoint_tokens.max(1);
     while cx.estimate(&text, Class::Prose) > cap && !text.is_empty() {
         text.pop();
