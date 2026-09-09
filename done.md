@@ -176,7 +176,7 @@ stayed empty, so nothing was published. Fix: a `gate` job runs
 its output; checked locally against a squash message, a merge-commit message (both match) and
 the T18.5 commit (no match); `actionlint` clean.
 
-**T18.6 the release runs only on a green test suite** · T18.2, T18.5 · `.github/workflows/verify.yml`, `.github/workflows/release-plz.yml`, `.github/workflows/bump.yml`, `dist-workspace.toml`
+**T18.6 the release runs only on a green test suite** · T18.2, T18.5 · `.github/workflows/verify.yml`, `.github/workflows/release-plz.yml`, `.github/workflows/bump.yml`, `dist-workspace.toml`, `docs/release.md`
 Do: after v0.0.1 shipped, close the two holes the first real release exposed. (1) Nothing tested the code a release was cut from: `ci.yml` gates pull requests, and both release entry points dispatch `release.yml` without consulting it. Add a reusable `verify.yml` — the `ci.yml` matrix and recipes — and make the dispatch in `bump.yml` and in release-plz's `release` job depend on it. (2) `release-plz.yml` fell back to `GITHUB_TOKEN` when `RELEASE_PLZ_TOKEN` was absent, which opens a release pull request that starts no workflows: an empty checks list, not a red one. Fail the job with the reason instead. Modelled on `../ketch`, which runs the same gate inside its release and refuses to run without the token.
 Check: the gate is not a dist `plan-jobs` entry — prove why with the generated workflow, not from memory; `actionlint` clean on all three workflows; `dist plan` still parses `dist-workspace.toml` and `release.yml` is byte-identical to the committed one; `just check` green.
 Status: done 2026-09-09
@@ -197,8 +197,14 @@ from `releases/latest` installed `rtok 0.0.1 (6c55b45a5)` and `rtok-update` into
 `otel status` and `setup claude --dry-run` (7 additions + `mcpServers.rtok`) with exit 0, and
 `hook PreToolUse` returned the wrapped command in 28 ms wall — garbage and empty stdin both
 returned `{}` and exit 0, so fail-open holds in the shipped binary.
-Deviation: four files, one more than the rule — `dist-workspace.toml` gains no setting, only the
-comment recording why `plan-jobs` is the wrong place, so the next reader does not retry it.
+Deviation: five files, two more than the rule. `dist-workspace.toml` gains no setting, only the
+comment recording why `plan-jobs` is the wrong place, so the next reader does not retry it; and
+`docs/release.md` still described the token as optional and the tap as nonexistent. That document
+is the only place the two remaining ketch-parity items are written down, both blocked on a secret
+this session cannot create: `HOMEBREW_TAP_TOKEN` for the formula (the tap now exists and carries
+ketch's cask), and `CODESIGN_CERTIFICATE` / `CODESIGN_CERTIFICATE_PASSWORD` for signing (ketch
+holds the same Developer ID under different secret names; a secret's value cannot be read back out
+of GitHub, so it has to be issued again).
 Same day, found while pushing this task: the T18.5 gate missed the ordinary squash merge. GitHub
 appends the pull request number to the title, so merging #3 wrote `release: v0.0.1 (#3)` and
 `grep -x` did not match it. Nothing was lost — v0.0.1 was already tagged, and `release.sh
