@@ -1,6 +1,6 @@
 //! T10.6 + D21: pi host plugin is one bash call path, no MCP, ketch if missing.
 //!
-//! Check: `rtok setup pi --dry-run` names `plugins/pi` and
+//! Check: `rtok agent setup pi --dry-run` names `plugins/pi` and
 //! `ketch install listepo/rtok` and touches nothing; `--yes` links the
 //! extension, second apply is `no changes`, `--remove` unlinks; the TS
 //! extension owns the single bash call path with no `read`/`search`
@@ -97,7 +97,7 @@ fn pi_extension_owns_the_single_bash_call_path() {
 fn setup_pi_dry_run_offers_plugin() {
     let home = tmp("dry");
     let cfg = write_cfg(&home);
-    let (stdout, stderr, code) = setup(&["setup", "pi", "--dry-run"], &cfg, &home);
+    let (stdout, stderr, code) = setup(&["agent", "setup", "pi", "--dry-run"], &cfg, &home);
     assert_eq!(code, 0, "stderr={stderr}");
     assert!(stdout.contains("plugins/pi"), "stdout={stdout}");
     assert!(
@@ -115,15 +115,15 @@ fn setup_pi_dry_run_offers_plugin() {
 fn setup_pi_yes_links_remove_unlinks() {
     let home = tmp("yes");
     let cfg = write_cfg(&home);
-    let (stdout, stderr, code) = setup(&["setup", "pi", "--yes"], &cfg, &home);
+    let (stdout, stderr, code) = setup(&["agent", "setup", "pi", "--yes"], &cfg, &home);
     assert_eq!(code, 0, "stderr={stderr} stdout={stdout}");
     let dest = home.join("extensions/rtok");
     let meta = fs::symlink_metadata(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
     assert!(meta.file_type().is_symlink() || dest.is_dir(), "{dest:?}");
-    let (again, stderr2, code2) = setup(&["setup", "pi", "--yes"], &cfg, &home);
+    let (again, stderr2, code2) = setup(&["agent", "setup", "pi", "--yes"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2}");
     assert!(again.contains("no changes"), "second apply: {again}");
-    let (rm, stderr3, code3) = setup(&["setup", "pi", "--remove"], &cfg, &home);
+    let (rm, stderr3, code3) = setup(&["agent", "setup", "pi", "--remove"], &cfg, &home);
     assert_eq!(code3, 0, "stderr={stderr3}");
     assert!(!dest.exists(), "remove must unlink; stdout={rm}");
     let _ = fs::remove_dir_all(&home);

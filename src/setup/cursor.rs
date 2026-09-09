@@ -1,4 +1,4 @@
-//! Cursor installer (`rtok setup cursor`) and field mapping (plan T10.1).
+//! Cursor installer (`rtok agent setup cursor`) and field mapping (plan T10.1).
 //!
 //! Cursor `beforeShellExecution` stdin uses top-level `command` and
 //! `conversation_id`. rtok's PreToolUse path expects `tool_name=Bash` and
@@ -144,7 +144,7 @@ fn strip_mcp_registration(cfg: &Config) -> Result<bool> {
 
 /// True when `--yes` accepted the plugin, so `mcp.json` must not also register rtok.
 /// Also true when the plugin link already exists: the plugin *is* the MCP (D21
-/// singleton), so a later plain `rtok setup cursor` must not add a second entry.
+/// singleton), so a later plain `rtok agent setup cursor` must not add a second entry.
 pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
     !remove && (cfg.setup.yes || plugin_present(&plugin_dest(cfg)))
 }

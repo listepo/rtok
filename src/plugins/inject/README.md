@@ -20,7 +20,7 @@ SessionStart output is byte-identical across runs with unchanged state — no ti
 counters — so the host's prompt cache keeps hitting.
 
 Modes (`terse`, `yagni`) are markdown files under `~/.rtok/modes/`, ≤ 250 tokens each,
-enabled with `rtok setup --mode terse,yagni`, injected once per session at priority 5.
+enabled with `rtok agent setup --mode terse,yagni`, injected once per session at priority 5.
 
 ## Config
 

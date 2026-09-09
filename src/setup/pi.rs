@@ -1,4 +1,4 @@
-//! pi installer (`rtok setup pi`, plan T10.6, D21).
+//! pi installer (`rtok agent setup pi`, plan T10.6, D21).
 //!
 //! pi philosophy is no MCP: the plugin owns the bash call path only —
 //! `tool_call` bash rewrites to `rtok run -- …`, `tool_result` bash

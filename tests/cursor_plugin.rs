@@ -1,6 +1,6 @@
 //! T10.5 + D21: Cursor host plugin is one MCP, a singleton, desktop+CLI, ketch if missing.
 //!
-//! Check: `rtok setup cursor --dry-run` names `plugins/cursor` and
+//! Check: `rtok agent setup cursor --dry-run` names `plugins/cursor` and
 //! `~/.cursor/plugins/local`; `--yes` links the plugin and does not add a second
 //! `rtok` entry to `mcp.json`; second apply is `no changes`.
 
@@ -129,7 +129,7 @@ fn d21_missing_rtok_names_ketch() {
 fn setup_cursor_dry_run_offers_plugin() {
     let home = tmp("dry");
     let cfg = write_cfg(&home);
-    let (stdout, stderr, code) = setup(&["setup", "cursor", "--dry-run"], &cfg, &home);
+    let (stdout, stderr, code) = setup(&["agent", "setup", "cursor", "--dry-run"], &cfg, &home);
     assert_eq!(code, 0, "stderr={stderr}");
     assert!(stdout.contains("plugins/cursor"), "stdout={stdout}");
     assert!(
@@ -151,7 +151,7 @@ fn setup_cursor_dry_run_offers_plugin() {
 fn setup_cursor_yes_links_plugin_without_mcp_json() {
     let home = tmp("yes");
     let cfg = write_cfg(&home);
-    let (stdout, stderr, code) = setup(&["setup", "cursor", "--yes"], &cfg, &home);
+    let (stdout, stderr, code) = setup(&["agent", "setup", "cursor", "--yes"], &cfg, &home);
     assert_eq!(code, 0, "stderr={stderr} stdout={stdout}");
     let dest = home.join(".cursor/plugins/local/rtok");
     let meta = fs::symlink_metadata(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
@@ -164,10 +164,10 @@ fn setup_cursor_yes_links_plugin_without_mcp_json() {
             "plugin is the MCP; no second registration: {body}"
         );
     }
-    let (again, stderr2, code2) = setup(&["setup", "cursor", "--yes"], &cfg, &home);
+    let (again, stderr2, code2) = setup(&["agent", "setup", "cursor", "--yes"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2}");
     assert!(again.contains("no changes"), "second apply: {again}");
-    let (rm, stderr3, code3) = setup(&["setup", "cursor", "--remove"], &cfg, &home);
+    let (rm, stderr3, code3) = setup(&["agent", "setup", "cursor", "--remove"], &cfg, &home);
     assert_eq!(code3, 0, "stderr={stderr3}");
     assert!(!dest.exists(), "remove must unlink plugin; stdout={rm}");
     let _ = fs::remove_dir_all(&home);

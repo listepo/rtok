@@ -18,7 +18,7 @@ today, anything else prints `not implemented` and exits 0.
 | `rtok expand <id>` | print an archived payload | T3.5 |
 | `rtok stats` | measurements from session logs and the proxy | T1.2 |
 | `rtok doctor` | inspect hooks, MCP servers, proxy chain | T1.4 |
-| `rtok setup claude` | install hooks / MCP / proxy into Claude Code, with backups | T2.3 |
+| `rtok agent setup claude` | install hooks / MCP / proxy into Claude Code, with backups | T2.3 |
 | `rtok bench` | A/B two host configurations on fixed tasks | T9.1 |
 
 ## Every flag is a config key

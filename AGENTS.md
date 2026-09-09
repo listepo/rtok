@@ -20,7 +20,7 @@
 - PostToolUse can only add context; it cannot change tool results.
 - No new dependency without a one-line reason in the commit message.
 - Don't duplicate code or logic: reuse an existing helper, or extract one shared helper at the responsible layer.
-- New plugins (D21): plugin and MCP as one unit; singleton (one MCP / one writer per store); one call path per capability; host plugins work on desktop and CLI. If `rtok` is missing, fail open and say to install with ketch (`ketch install listepo/rtok`). `rtok setup <host>` offers `plugins/<host>/` (Cursor: `rtok setup cursor`).
+- New plugins (D21): plugin and MCP as one unit; singleton (one MCP / one writer per store); one call path per capability; host plugins work on desktop and CLI. If `rtok` is missing, fail open and say to install with ketch (`ketch install listepo/rtok`). `rtok agent setup <host>` offers `plugins/<host>/` (Cursor: `rtok agent setup cursor`).
 
 **Models.** Any provider. **Low-cost** for mechanical work, and for any task a cheap model can finish. **Mid-tier** for coding; pick the cheaper mid model when the task is small. **High-performance** for research and investigation only after the user confirms — do not switch up on your own.
 

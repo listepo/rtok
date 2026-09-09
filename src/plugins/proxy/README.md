@@ -22,7 +22,7 @@ other plugins rewrite the request.
 - `passthrough` mode changes zero bytes. `compress` mode runs every enabled plugin's
   `proxy_filter` (today: `archive`, optionally `toon`).
 - `/health` → `{"ok":true,"mode":"passthrough"}`.
-- `rtok setup claude --proxy` sets `env.ANTHROPIC_BASE_URL` in settings (with backup) and
+- `rtok agent setup claude --proxy` sets `env.ANTHROPIC_BASE_URL` in settings (with backup) and
   prints how to revert.
 
 Caveat (research.md §3): setting a base URL disables MCP tool search by default in Claude

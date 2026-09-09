@@ -42,8 +42,8 @@ Install rtok's seven hooks and MCP entry. The installer backs up the settings fi
 writing it; inspect its changes first if preferred.
 
 ```bash
-rtok setup claude --dry-run
-rtok setup claude
+rtok agent setup claude --dry-run
+rtok agent setup claude
 rtok doctor
 ```
 
@@ -70,8 +70,8 @@ rtok stats --compare before-rtok
 
 | Command | Purpose |
 |---|---|
-| `rtok setup claude` | install Claude Code hooks and MCP registration |
-| `rtok setup cursor` / `rtok setup codex` | register the supported host integrations |
+| `rtok agent setup claude` | install Claude Code hooks and MCP registration |
+| `rtok agent setup cursor` / `rtok agent setup codex` | register the supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
@@ -153,7 +153,7 @@ rtok() {
 rtok --version
 rtok config init
 rtok config validate
-rtok setup claude --dry-run
+rtok agent setup claude --dry-run
 rtok stats --since 1h
 ```
 

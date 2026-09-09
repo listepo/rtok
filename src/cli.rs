@@ -104,32 +104,14 @@ enum Cmd {
         #[arg(long)]
         instructions: bool,
     },
-    /// Install hooks, MCP server and proxy into a host
-    Setup {
-        /// Host (`claude`, `cursor`, `codex`, `opencode`, `pi`)
-        host: String,
-        /// Print the planned edits and exit
-        #[arg(long)]
-        dry_run: bool,
-        /// Delete rtok hook entries only
-        #[arg(long)]
-        remove: bool,
-        /// Enable prompt modes (`terse,yagni`)
-        #[arg(long, value_delimiter = ',')]
-        mode: Vec<String>,
-        /// Confirm destructive `--replace`
-        #[arg(long)]
-        yes: bool,
-        /// Remove legacy token hooks and retarget the proxy
-        #[arg(long)]
-        replace: bool,
-        /// Register `rtok mcp` in the host MCP map
-        #[arg(long)]
-        mcp: bool,
-        /// Set `env.ANTHROPIC_BASE_URL` to this proxy
-        #[arg(long)]
-        proxy: bool,
+    /// Agent hosts (`rtok agent setup claude|cursor|codex|opencode|pi`)
+    Agent {
+        #[command(subcommand)]
+        action: AgentCmd,
     },
+    /// Deprecated spelling of `rtok agent setup <host>`; still runs, still prints where to go
+    #[command(hide = true)]
+    Setup(SetupArgs),
     /// Execute a command, archive its raw output, print the filtered version
     Run {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -200,6 +182,40 @@ enum MemoryCmd {
 enum GraphCmd {
     /// Walk a tree and insert definitions + references
     Index { path: Option<PathBuf> },
+}
+
+#[derive(Subcommand)]
+enum AgentCmd {
+    /// Install hooks, MCP server and proxy into a host
+    Setup(SetupArgs),
+}
+
+/// One definition behind `rtok agent setup` and the deprecated `rtok setup`.
+#[derive(clap::Args)]
+struct SetupArgs {
+    /// Host (`claude`, `cursor`, `codex`, `opencode`, `pi`)
+    host: String,
+    /// Print the planned edits and exit
+    #[arg(long)]
+    dry_run: bool,
+    /// Delete rtok hook entries only
+    #[arg(long)]
+    remove: bool,
+    /// Enable prompt modes (`terse,yagni`)
+    #[arg(long, value_delimiter = ',')]
+    mode: Vec<String>,
+    /// Confirm destructive `--replace`
+    #[arg(long)]
+    yes: bool,
+    /// Remove legacy token hooks and retarget the proxy
+    #[arg(long)]
+    replace: bool,
+    /// Register `rtok mcp` in the host MCP map
+    #[arg(long)]
+    mcp: bool,
+    /// Set `env.ANTHROPIC_BASE_URL` to this proxy
+    #[arg(long)]
+    proxy: bool,
 }
 
 #[derive(Subcommand)]
@@ -391,70 +407,15 @@ pub fn run() -> Result<()> {
                 Config::load_with(config_file.as_deref(), layers::dashboard_flags(host, port))?;
             crate::dashboard::serve_blocking(cfg)?;
         }
-        Cmd::Setup {
-            host,
-            dry_run,
-            remove,
-            mode,
-            yes,
-            replace,
-            mcp,
-            proxy,
-        } => {
-            let cfg = Config::load_with(
-                config_file.as_deref(),
-                setup_flags(dry_run, yes, mcp, proxy, &mode),
-            )?;
-            match host.as_str() {
-                "claude" if replace => println!("{}", crate::setup::migrate::run(&cfg)?),
-                "claude" => {
-                    let hooks = crate::setup::claude::run(&cfg, remove)?;
-                    let mut lines = vec![hooks];
-                    if cfg.setup.mcp && !remove {
-                        lines.push(crate::setup::claude::register_mcp(&cfg)?);
-                    }
-                    if cfg.setup.proxy && !remove {
-                        lines.push(crate::proxy::cli::register_proxy(&cfg)?);
-                    }
-                    if lines.iter().all(|s| s == "no changes") {
-                        println!("no changes");
-                    } else {
-                        println!("{}", lines.join("\n"));
-                    }
-                }
-                "cursor" => {
-                    let hooks = crate::setup::cursor::run(&cfg, remove)?;
-                    let plugin = crate::setup::cursor::offer_plugin(&cfg, remove)?;
-                    let mut lines = vec![hooks, plugin];
-                    if cfg.setup.mcp
-                        && !remove
-                        && !crate::setup::cursor::plugin_is_mcp(&cfg, remove)
-                    {
-                        lines.push(crate::setup::cursor::register_mcp(&cfg)?);
-                    }
-                    if lines.iter().all(|s| s == "no changes") {
-                        println!("no changes");
-                    } else {
-                        println!("{}", lines.join("\n"));
-                    }
-                }
-                // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
-                "codex" => {
-                    let mut lines = vec![crate::setup::codex::run(&cfg, remove)?];
-                    if cfg.setup.proxy {
-                        lines.push(crate::setup::codex::register_proxy(&cfg, remove)?);
-                    }
-                    if lines.iter().all(|s| s == "no changes") {
-                        println!("no changes");
-                    } else {
-                        println!("{}", lines.join("\n"));
-                    }
-                }
-                "opencode" => println!("{}", crate::setup::opencode::run(&cfg, remove)?),
-                // pi has no hooks and no MCP (its philosophy); the extension owns bash (T10.6).
-                "pi" => println!("{}", crate::setup::pi::offer_plugin(&cfg, remove)?),
-                other => bail!("unknown host: {other}"),
-            }
+        Cmd::Agent {
+            action: AgentCmd::Setup(args),
+        } => setup_host(config_file.as_deref(), args)?,
+        Cmd::Setup(args) => {
+            eprintln!(
+                "warning: `rtok setup {0}` is deprecated; use `rtok agent setup {0}`",
+                args.host
+            );
+            setup_host(config_file.as_deref(), args)?;
         }
         #[cfg(feature = "cmd")]
         Cmd::Run { command } => {
@@ -579,6 +540,66 @@ fn bench_flags(
     let mut flags = Dict::new();
     flags.insert("bench".into(), Value::from(bench));
     Some(flags)
+}
+
+/// The host installers, one call site for `rtok agent setup` and the deprecated `rtok setup`.
+fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<()> {
+    let SetupArgs {
+        host,
+        dry_run,
+        remove,
+        mode,
+        yes,
+        replace,
+        mcp,
+        proxy,
+    } = args;
+    let cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
+    match host.as_str() {
+        "claude" if replace => println!("{}", crate::setup::migrate::run(&cfg)?),
+        "claude" => {
+            let hooks = crate::setup::claude::run(&cfg, remove)?;
+            let mut lines = vec![hooks];
+            if cfg.setup.mcp && !remove {
+                lines.push(crate::setup::claude::register_mcp(&cfg)?);
+            }
+            if cfg.setup.proxy && !remove {
+                lines.push(crate::proxy::cli::register_proxy(&cfg)?);
+            }
+            print_lines(&lines);
+        }
+        "cursor" => {
+            let hooks = crate::setup::cursor::run(&cfg, remove)?;
+            let plugin = crate::setup::cursor::offer_plugin(&cfg, remove)?;
+            let mut lines = vec![hooks, plugin];
+            if cfg.setup.mcp && !remove && !crate::setup::cursor::plugin_is_mcp(&cfg, remove) {
+                lines.push(crate::setup::cursor::register_mcp(&cfg)?);
+            }
+            print_lines(&lines);
+        }
+        // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
+        "codex" => {
+            let mut lines = vec![crate::setup::codex::run(&cfg, remove)?];
+            if cfg.setup.proxy {
+                lines.push(crate::setup::codex::register_proxy(&cfg, remove)?);
+            }
+            print_lines(&lines);
+        }
+        "opencode" => println!("{}", crate::setup::opencode::run(&cfg, remove)?),
+        // pi has no hooks and no MCP (its philosophy); the extension owns bash (T10.6).
+        "pi" => println!("{}", crate::setup::pi::offer_plugin(&cfg, remove)?),
+        other => bail!("unknown host: {other}"),
+    }
+    Ok(())
+}
+
+/// An installer that changed nothing reports it once, not once per step.
+fn print_lines(lines: &[String]) {
+    if lines.iter().all(|s| s == "no changes") {
+        println!("no changes");
+    } else {
+        println!("{}", lines.join("\n"));
+    }
 }
 
 fn setup_flags(

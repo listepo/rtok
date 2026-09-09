@@ -86,6 +86,8 @@ fn config_key(path: &[&str], long: &str) -> String {
         _ => name.as_str(),
     };
     match path {
+        // `rtok agent setup` keeps the `[setup]` table it had as `rtok setup`.
+        ["agent", "setup", ..] => format!("setup.{name}"),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

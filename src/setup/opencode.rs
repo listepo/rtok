@@ -1,4 +1,4 @@
-//! OpenCode installer (`rtok setup opencode --proxy`, plan T11.5).
+//! OpenCode installer (`rtok agent setup opencode --proxy`, plan T11.5).
 
 use std::fs;
 

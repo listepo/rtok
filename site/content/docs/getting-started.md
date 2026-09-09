@@ -33,7 +33,7 @@ blocks the host agent.
 ## Wire it into Claude Code
 
 ```bash
-rtok setup claude     # installs hooks / MCP / proxy, with backups
+rtok agent setup claude     # installs hooks / MCP / proxy, with backups
 ```
 
 This writes the hook entries, the MCP server registration, and the proxy environment into

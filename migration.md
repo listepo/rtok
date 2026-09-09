@@ -137,7 +137,7 @@ Grep/Glob denial (I-08), secret redaction (row 20).
    `mcpServers`; delete the "lean-ctx — Replace Mode" section from the global CLAUDE.md; lift the
    `Grep` / `Glob` deny if it was lean-ctx's (the codebase-memory gate is a separate decision);
    decide what to do with `shell_allowlist_extra` — carry the list into `permissions` or drop it.
-   `rtok setup` adds rtok's entries idempotently and leaves foreign hooks alone
+   `rtok agent setup` adds rtok's entries idempotently and leaves foreign hooks alone
    (`apply_twice_then_remove_keeps_foreign`), so the removals are manual or `lean-ctx unwrap`.
    The target file is `bench/configs/rtok.json` (config B) plus the non-token hooks.
 5. **Environment.** `lean-ctx proxy cleanup`; `ANTHROPIC_BASE_URL` → `rtok proxy` (T5.2 sets it)
@@ -151,7 +151,7 @@ Grep/Glob denial (I-08), secret redaction (row 20).
 8. **Retire.** `lean-ctx uninstall`, delete `~/.local/share/lean-ctx`, remove the Homebrew
    package. Record the date and the step-7 numbers in `research.md` §2.
 9. **Rollback** (any time before 8): `lean-ctx wrap` / `lean-ctx setup` restores its hooks and
-   server; `rtok setup --remove` takes rtok's out. Both are idempotent.
+   server; `rtok agent setup --remove` takes rtok's out. Both are idempotent.
 
 ---
 

@@ -178,7 +178,7 @@ section! {
 }
 
 section! {
-    /// `[setup]` — `rtok setup <host>`.
+    /// `[setup]` — `rtok agent setup <host>`.
     Setup {
         dry_run: bool = false,
         yes: bool = false,

@@ -1,4 +1,4 @@
-//! Host installers (`rtok setup <host>`).
+//! Host installers (`rtok agent setup <host>`).
 
 pub mod claude;
 pub mod codex;

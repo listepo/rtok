@@ -1,4 +1,4 @@
-//! Lifecycle helpers for `rtok proxy` and `rtok setup claude --proxy` (plan T5.2).
+//! Lifecycle helpers for `rtok proxy` and `rtok agent setup claude --proxy` (plan T5.2).
 
 use std::fs;
 use std::sync::Arc;

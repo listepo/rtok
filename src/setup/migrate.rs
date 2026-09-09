@@ -1,4 +1,4 @@
-//! `rtok setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
+//! `rtok agent setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
 
 use std::fs;
 use std::path::Path;
