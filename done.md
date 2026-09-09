@@ -229,7 +229,9 @@ Making `just check` gate the release exposed a flaky test that would have blocke
 random: `stop_hook_spawns_the_flush_and_stays_under_10ms` waited 40 × 50 ms for the spawned child
 to post, against the `flush_secs = 2` the same test writes — a 2 s deadline on a 2 s interval, so
 the post lands on the boundary. It failed on ci run 34342891823 on a docs-only commit. The wait is
-now 400 polls, matching `tests/proxy.rs`; a green run still breaks out on the first poll.
+now 400 polls, matching `tests/proxy.rs`; a green run still breaks out on the first poll. Five
+consecutive local runs of that test pass, and two of them took 4.72 s and 6.39 s — both past the
+old 2 s deadline, so the budget was the cause and not the runner. ci is green on the fix.
 Not proven here: that a red `verify` actually blocks the dispatch. It needs a release run with a
 deliberately broken tree, and the only way to stage one is to publish from `main`.
 
