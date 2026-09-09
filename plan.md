@@ -528,7 +528,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | open | 3/5 |
 | `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | open | 1/5 |
 | `T15.7` | P15 tui | Logs tab *(`roadmap.md`)* | open | 2/5 |
-| `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | open | 2/5 |
+| `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | ✅ 2026-09-10 | 2/5 |
 | `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
 | `T15.10` | P15 tui | the two surfaces cannot drift | ✅ 2026-09-09 | 1/5 |
 | `T15.11` | P15 tui | the model covers every reading command | ✅ 2026-09-09 | 4/5 |

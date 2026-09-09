@@ -187,6 +187,9 @@ fn check_leaf(
             "plugins.archive.keep_turns" if n < 1 => {
                 errors.push(format!("{at}: {dotted} must be ≥ 1"));
             }
+            "tui.tick_secs" if n < 1 => {
+                errors.push(format!("{at}: {dotted} must be ≥ 1"));
+            }
             "plugins.inject.budget_tokens" if n < 0 => {
                 errors.push(format!("{at}: {dotted} must be ≥ 0"));
             }

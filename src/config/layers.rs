@@ -337,6 +337,26 @@ pub fn proxy_flags(
     Some(flags)
 }
 
+/// Clap `Option<T>` overlay for `rtok tui` (`flag` layer).
+pub fn tui_flags(tab: Option<String>, tick_secs: Option<u64>) -> Option<Dict> {
+    let mut tui = Dict::new();
+    if let Some(tab) = tab {
+        tui.insert("tab".into(), Value::from(tab));
+    }
+    if let Some(tick) = tick_secs {
+        tui.insert(
+            "tick_secs".into(),
+            Value::from(i64::try_from(tick).unwrap_or(i64::MAX)),
+        );
+    }
+    if tui.is_empty() {
+        return None;
+    }
+    let mut flags = Dict::new();
+    flags.insert("tui".into(), Value::from(tui));
+    Some(flags)
+}
+
 /// Clap `Option<T>` overlay for `rtok web` (`flag` layer).
 pub fn web_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> {
     let mut dash = Dict::new();
@@ -451,6 +471,24 @@ mod tests {
             None,
             RtokEnv::from_dotenv_pairs(&[]),
         )
+    }
+
+    #[test]
+    fn tui_flags_beat_env() {
+        let home = tmp("tui-flags");
+        let figment = assemble(
+            &home,
+            Some(&Config::path_for(&home)),
+            tui_flags(Some("plugins".into()), Some(5)),
+            RtokEnv::from_pairs(&[("TUI_TAB", "doctor")]),
+            None,
+            RtokEnv::from_dotenv_pairs(&[]),
+        );
+        let cfg: Config = figment.extract().unwrap();
+        assert_eq!(cfg.tui.tab, "plugins");
+        assert_eq!(cfg.tui.tick_secs, 5);
+        assert!(tui_flags(None, None).is_none());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

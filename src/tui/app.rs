@@ -19,9 +19,16 @@ pub struct App {
 
 impl App {
     pub fn new(cfg: &Config) -> Self {
+        let tabs = model::pages();
+        // `[tui] tab` names the opening tab; empty or unknown falls back to the first
+        // page rather than failing the surface (fail open, D1).
+        let selected = tabs
+            .iter()
+            .position(|(page, _)| *page == cfg.tui.tab)
+            .unwrap_or(0);
         Self {
-            tabs: model::pages(),
-            selected: 0,
+            tabs,
+            selected,
             snapshot: model::snapshot(cfg),
             updated: crate::log::now(),
         }
@@ -122,6 +129,20 @@ pub(super) mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(app.page(), "overview");
+    }
+
+    /// T15.8: `[tui] tab` picks the opening tab; empty or unknown is the first page.
+    #[test]
+    fn tui_tab_picks_the_opening_tab() {
+        let names: Vec<&str> = model::pages().iter().map(|(page, _)| *page).collect();
+        assert!(names.len() >= 2, "needs two pages to choose between");
+        let mut cfg = config();
+        cfg.tui.tab = names[1].to_string();
+        assert_eq!(App::new(&cfg).page(), names[1]);
+        cfg.tui.tab = "no-such-page".to_string();
+        assert_eq!(App::new(&cfg).page(), names[0]);
+        cfg.tui.tab = String::new();
+        assert_eq!(App::new(&cfg).page(), names[0]);
     }
 
     #[test]

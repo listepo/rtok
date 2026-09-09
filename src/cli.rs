@@ -61,7 +61,14 @@ enum Cmd {
         port: Option<u16>,
     },
     /// Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
-    Tui,
+    Tui {
+        /// Start on this tab (a page name both surfaces carry)
+        #[arg(long)]
+        tab: Option<String>,
+        /// Model re-read cadence in seconds
+        #[arg(long)]
+        tick_secs: Option<u64>,
+    },
     /// Measurements from session logs and the proxy
     Stats {
         /// How far back to read transcripts (`60d`, `24h`)
@@ -582,8 +589,8 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
             crate::web::serve_blocking(cfg)?;
         }
-        Cmd::Tui => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
+        Cmd::Tui { tab, tick_secs } => {
+            let cfg = Config::load_with(config_file.as_deref(), layers::tui_flags(tab, tick_secs))?;
             crate::tui::run(cfg)?;
         }
         Cmd::Dashboard { host, port } => {

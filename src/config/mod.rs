@@ -151,6 +151,17 @@ section! {
 }
 
 section! {
+    /// `[tui]` — `rtok tui` (P15). The terminal rendering of the one operator model (D23).
+    /// `tab` names the opening tab (`""` = first page); `tick_secs` is the model
+    /// re-read cadence (2 = the web socket's tick in `src/web/mod.rs`, so both
+    /// surfaces go stale at the same rate).
+    Tui {
+        tab: String = String::new(),
+        tick_secs: u64 = 2,
+    }
+}
+
+section! {
     /// `[demon]` — `rtok demon` (P20, D22). Supervises the long-running surfaces.
     Demon {
         services: Vec<String> = strs(&["proxy"]),
@@ -444,6 +455,7 @@ pub struct Config {
     pub mcp: Mcp,
     pub proxy: Proxy,
     pub web: Web,
+    pub tui: Tui,
     /// Renamed in T21.3: `[dashboard]` is now `[web]`. Accepted from an old file with a
     /// warning, then dropped.
     #[serde(skip_serializing_if = "Option::is_none")]

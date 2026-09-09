@@ -16,30 +16,30 @@ use crossterm::event::{self, Event, KeyEventKind};
 use crate::config::Config;
 use crate::web::model;
 
-/// Refresh cadence — the web socket's 2 s tick (`src/web/mod.rs`), so both surfaces
-/// go stale at the same rate.
-const TICK: Duration = Duration::from_secs(2);
-
 /// `rtok tui`: alternate screen and raw mode until `q` / `Esc` / `Ctrl+C`. The terminal
 /// is restored on every exit path — the loop's errors are returned, not panicked on.
 pub fn run(cfg: Config) -> Result<()> {
     let mut terminal = ratatui::try_init().context("terminal init — is stdout a tty?")?;
+    // `max(1)`: a zero cadence would busy-poll; `config validate` rejects it in the
+    // file, this holds the line for `--tick-secs 0`.
+    let tick = Duration::from_secs(cfg.tui.tick_secs.max(1));
     let mut app = app::App::new(&cfg);
-    let res = event_loop(&mut terminal, &mut app, &cfg);
+    let res = event_loop(&mut terminal, &mut app, &cfg, tick);
     ratatui::restore();
     res
 }
 
-/// Draw, then wait up to [`TICK`] for a key: a press updates the state, a timeout
+/// Draw, then wait up to `tick` for a key: a press updates the state, a timeout
 /// re-reads the model — the same one-snapshot-per-tick shape `rtok web`'s socket serves.
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut app::App,
     cfg: &Config,
+    tick: Duration,
 ) -> Result<()> {
     loop {
         terminal.draw(|frame| view::draw(frame, app))?;
-        if !event::poll(TICK)? {
+        if !event::poll(tick)? {
             app.refresh(model::snapshot(cfg));
             continue;
         }

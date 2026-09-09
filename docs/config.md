@@ -104,6 +104,10 @@ dry_run         = false               # --dry-run: print effective [proxy] setti
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
 
+[tui]                                 # rtok tui (same data as rtok web)
+tab       = ""                        # "" = first tab          (--tab <page>)
+tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
+
 [stats]                               # rtok stats
 since           = "30d"
 format          = "table"             # table | json      (--json)
@@ -248,6 +252,7 @@ min_rows = 5
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
+| `tui` | `--tab`, `--tick-secs` | `tui.tab`, `tui.tick_secs` |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |

@@ -52,6 +52,10 @@ dry_run         = false               # --dry-run: print effective [proxy] setti
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
 
+[tui]                                 # rtok tui (same data as rtok web)
+tab       = ""                        # "" = first tab          (--tab <page>)
+tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
+
 [demon]                               # rtok demon start | stop | restart | status | list | kill | update
 services       = ["proxy"]            # what `rtok demon start` starts when given no name
 state_dir      = "~/.rtok/demon"      # <name>.json, <name>.log and the <name>.stop marker
