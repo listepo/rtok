@@ -37,6 +37,11 @@ impl App {
         self.tabs[self.selected].0
     }
 
+    /// The selected tab's index — where the highlight sits.
+    pub fn selected(&self) -> usize {
+        self.selected
+    }
+
     /// The last snapshot the model served.
     pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
@@ -99,7 +104,7 @@ impl App {
 pub(super) mod tests {
     use super::*;
 
-    pub(super) fn config() -> Config {
+    pub(in crate::tui) fn config() -> Config {
         let dir = std::env::temp_dir().join(format!("rtok-tui-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         Config::load_from(&dir).expect("config")
