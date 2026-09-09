@@ -212,6 +212,17 @@ appends the pull request number to the title, so merging #3 wrote `release: v0.0
 all, silently. The gate now matches `^release: v[0-9]+\.[0-9]+\.[0-9]+( \(#[0-9]+\))?$`, checked
 against all five shapes: squash with and without the number, the title line of a merge commit, an
 ordinary task commit, and the same string inside a commit body (the last two correctly no match).
+The T18.5 line "the failure mode is a second PR proposing the same version, not a wrong release"
+turned out to be the actual behaviour, and permanent. release-plz 0.3.163 decides whether a version
+shipped by comparing the packaged crate against the registry copy; `publish = false` means there is
+no copy, so it reads rtok as never released and answers `next version is 0.0.1` regardless of
+history. Reproduced in a clean clone with the `v0.0.1` tag fetched (`git describe` finds it) under
+four configurations: as shipped, with `git_tag_enable = true`, with an explicit
+`git_tag_name = "v{{ version }}"` (ketch's setting), and with a conventional `fix:` commit after
+the tag — 0.0.1 every time. `../ketch` shares the configuration and will meet this at its second
+release. Nothing mis-releases: `release.sh --no-bump` refuses a tagged version and exits 0. Recorded
+in `docs/release.md`, which now sends the second and later releases through **Bump and release**.
+Whether release-plz still earns its place is the user's call, so T18.5 is left standing.
 Not proven here: that a red `verify` actually blocks the dispatch. It needs a release run with a
 deliberately broken tree, and the only way to stage one is to publish from `main`.
 

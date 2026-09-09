@@ -34,6 +34,23 @@ the GitHub Release: dist does, and the `v*` tag dist pushes is how release-plz l
 is out (`publish = false`, so tags are its only record). Both entry points end in the same script
 and the same workflow, so they cannot disagree on the version.
 
+**The release pull request cannot raise the version, and will not after v0.0.1** (measured
+2026-09-09, release-plz 0.3.163). release-plz decides whether a version has shipped by comparing
+the packaged crate against the copy in the registry. With `publish = false` there is no copy —
+`Package rtok@*.*.* not found` — so it reads the package as never released and answers `next
+version is 0.0.1` every time, whatever is in the history. Reproduced in a clean clone with the
+`v0.0.1` tag fetched and `git describe` finding it, and it does not move with
+`git_tag_enable = true`, with an explicit `git_tag_name = "v{{ version }}"` (ketch's setting), or
+with a conventional `fix:` commit after the tag. `../ketch` is configured the same way and will
+meet this at its second release; it has only released `v0.1.0` so far.
+
+Nothing mis-releases as a result: merging a stale release pull request runs
+`tools/release.sh patch --no-bump`, which sees the version is already tagged and exits 0 without
+dispatching. But the pull request proposes a version that is already out, so **use
+Actions → Bump and release for the second and later releases** — `tools/release.sh` reads the tags
+itself and raises the version correctly. Whether release-plz is worth keeping as a changelog
+preview is a decision, not a defect to patch around.
+
 `RELEASE_PLZ_TOKEN` (fine-grained PAT, contents and pull requests write) is required, not optional.
 GitHub starts no workflow from a `GITHUB_TOKEN` event, so a release PR opened with the default
 token has an empty checks list rather than a red one, and merges having never run `ci.yml`. The
