@@ -201,8 +201,9 @@ pub struct PluginLink<'a> {
     pub src: PathBuf,
     /// Where the host expects the plugin.
     pub dest: PathBuf,
-    /// How the destination reads to a person (`~/.cursor/plugins/local`); the real path is
-    /// printed beside it. `None` prints the path alone.
+    /// How the destination reads to a person (`~/.cursor/plugins/local`); a dry run prints
+    /// the real path beside it, and every other line the label alone. `None` spells the
+    /// destination path itself, with the source tree beside it on a dry run.
     pub label: Option<&'a str>,
     /// The host's name as its users spell it, for the question.
     pub host: &'a str,
@@ -215,11 +216,22 @@ impl PluginLink<'_> {
         self.dest.symlink_metadata().is_ok()
     }
 
-    /// The destination as reports spell it.
+    /// The destination as the question and a declined offer spell it: the label, or the
+    /// path itself when the host has no shorthand for where its plugins live.
+    fn main_desc(&self) -> String {
+        match self.label {
+            Some(label) => label.to_string(),
+            None => self.dest.display().to_string(),
+        }
+    }
+
+    /// The destination as a dry run spells it: the label (or the path) with the concrete
+    /// path beside it — the destination when a label stands in for it, the source tree the
+    /// link will carry otherwise.
     fn dest_desc(&self) -> String {
         match self.label {
             Some(label) => format!("{label} ({})", self.dest.display()),
-            None => self.dest.display().to_string(),
+            None => format!("{} ({})", self.dest.display(), self.src.display()),
         }
     }
 
@@ -250,24 +262,26 @@ impl PluginLink<'_> {
         let question = format!(
             "install {} into {} for {}?",
             self.src_rel,
-            self.dest_desc(),
+            self.main_desc(),
             self.host
         );
         if !accepted(apply, &question) {
             return Ok(format!(
                 "offer {} → {} (accept with --yes) {KETCH_INSTALL}",
                 self.src_rel,
-                self.dest_desc()
+                self.main_desc()
             ));
         }
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
         }
         symlink(&self.src, &self.dest)?;
+        let label = self.label.map(|l| format!(" {l}")).unwrap_or_default();
         Ok(format!(
-            "+ plugin {} → {}",
+            "+ plugin {} → {}{}",
             self.src_rel,
-            self.dest.display()
+            self.dest.display(),
+            label
         ))
     }
 }
@@ -392,14 +406,49 @@ mod tests {
                 false,
             )
             .unwrap();
-        assert!(dry.contains("plugins/demo"), "{dry}");
-        assert!(dry.contains("~/.demo/plugins"), "{dry}");
-        assert!(dry.contains(KETCH_INSTALL), "{dry}");
+        assert!(
+            dry.starts_with(&format!(
+                "offer plugins/demo → ~/.demo/plugins ({}) {KETCH_INSTALL}",
+                link.dest.display()
+            )),
+            "{dry}"
+        );
         assert!(!link.linked(), "a dry run must not link");
+
+        // A host with no shorthand for its plugin dir (pi) spells the destination path
+        // itself, with the source tree beside it on a dry run.
+        let bare = PluginLink {
+            src_rel: "plugins/demo",
+            src: link.src.clone(),
+            dest: dir.join("other/plugins/rtok"),
+            label: None,
+            host: "demo",
+        };
+        let bare_dry = bare
+            .run(
+                &Apply {
+                    dry_run: true,
+                    backup: false,
+                    yes: false,
+                },
+                false,
+            )
+            .unwrap();
+        assert_eq!(
+            bare_dry,
+            format!(
+                "offer plugins/demo → {} ({}) {KETCH_INSTALL}",
+                bare.dest.display(),
+                link.src.display()
+            )
+        );
 
         // No terminal, no --yes: the offer declines itself and still says how to accept.
         let declined = link.run(&apply(), false).unwrap();
-        assert!(declined.contains("--yes"), "{declined}");
+        assert_eq!(
+            declined,
+            format!("offer plugins/demo → ~/.demo/plugins (accept with --yes) {KETCH_INSTALL}")
+        );
         assert!(!link.linked());
 
         let yes = Apply {
@@ -407,7 +456,13 @@ mod tests {
             backup: false,
             yes: true,
         };
-        assert!(link.run(&yes, false).unwrap().starts_with("+ plugin"));
+        assert_eq!(
+            link.run(&yes, false).unwrap(),
+            format!(
+                "+ plugin plugins/demo → {} ~/.demo/plugins",
+                link.dest.display()
+            )
+        );
         assert!(link.linked());
         assert_eq!(link.run(&yes, false).unwrap(), NO_CHANGES);
         assert!(link.run(&yes, true).unwrap().starts_with("- plugin"));

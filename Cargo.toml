@@ -82,7 +82,6 @@ rmcp = { version = "0.8" } # stdio MCP types + JSON-RPC (T4.1)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
 notify = "8" # recursive file watching for the graph background indexer (T8.16; 9 is an RC)
 watchman_client = { version = "0.9", optional = true } # Meta's watchman client for the T8.17 watcher backend (tokio, already a dependency); behind `graph-watchman`
-dialoguer = { version = "0.12", default-features = false } # the `agent setup` plugin offer, D21 (6) (T21.1): restores the terminal, reads Ctrl-C/EOF as no
 indicatif = "0.18" # progress for `graph index` (T21.2); `ProgressBar::hidden()` keeps it off the MCP path
 owo-colors = { version = "4", features = ["supports-colors"] } # ANSI + the tty/NO_COLOR/CLICOLOR/TERM=dumb question in one call (T20.2)
 regex = "1" # search pattern (T4.5)
