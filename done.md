@@ -176,7 +176,33 @@ stayed empty, so nothing was published. Fix: a `gate` job runs
 its output; checked locally against a squash message, a merge-commit message (both match) and
 the T18.5 commit (no match); `actionlint` clean.
 
-## P17 — build size · tasks done 2026-09-05 (gate: p95 clause sits on the bar)
+**T18.6 the release runs only on a green test suite** · T18.2, T18.5 · `.github/workflows/verify.yml`, `.github/workflows/release-plz.yml`, `.github/workflows/bump.yml`, `dist-workspace.toml`
+Do: after v0.0.1 shipped, close the two holes the first real release exposed. (1) Nothing tested the code a release was cut from: `ci.yml` gates pull requests, and both release entry points dispatch `release.yml` without consulting it. Add a reusable `verify.yml` — the `ci.yml` matrix and recipes — and make the dispatch in `bump.yml` and in release-plz's `release` job depend on it. (2) `release-plz.yml` fell back to `GITHUB_TOKEN` when `RELEASE_PLZ_TOKEN` was absent, which opens a release pull request that starts no workflows: an empty checks list, not a red one. Fail the job with the reason instead. Modelled on `../ketch`, which runs the same gate inside its release and refuses to run without the token.
+Check: the gate is not a dist `plan-jobs` entry — prove why with the generated workflow, not from memory; `actionlint` clean on all three workflows; `dist plan` still parses `dist-workspace.toml` and `release.yml` is byte-identical to the committed one; `just check` green.
+Status: done 2026-09-09
+Model: Opus 5
+Check result: `plan-jobs = ["./verify"]` was tried first and reverted. `dist generate` wired it as
+`custom-verify` with `build-local-artifacts` gaining `needs: custom-verify` — but `host` keeps
+`if: always() && … && (needs.build-local-artifacts.result == 'skipped' || … == 'success')`, and a
+failed custom job leaves that job `skipped`, so `host` and `announce` would still run. A red gate
+would have published a Release with no binaries — worse than no gate, since `rtok-update` and the
+installer read exactly those assets. The gate therefore sits in the two workflows that dispatch
+`release.yml`, where a failure means no dispatch, no tag and no draft Release. `release.yml` was
+restored with `git checkout` and `git diff` confirms it byte-identical; `dist plan` still lists all
+three targets. `actionlint -shellcheck=` clean on `verify.yml`, `release-plz.yml` and `bump.yml`
+(shellcheck itself could not run: the mise shim has no version set). `just check` green (146 tests).
+Beta check the same day, on the published v0.0.1 rather than a local build: `rtok-installer.sh`
+from `releases/latest` installed `rtok 0.0.1 (6c55b45a5)` and `rtok-update` into a scratch
+`CARGO_HOME`; against a fresh `HOME` the binary ran `stats`, `config show --sources`, `doctor`,
+`otel status` and `setup claude --dry-run` (7 additions + `mcpServers.rtok`) with exit 0, and
+`hook PreToolUse` returned the wrapped command in 28 ms wall — garbage and empty stdin both
+returned `{}` and exit 0, so fail-open holds in the shipped binary.
+Deviation: four files, one more than the rule — `dist-workspace.toml` gains no setting, only the
+comment recording why `plan-jobs` is the wrong place, so the next reader does not retry it.
+Not proven here: that a red `verify` actually blocks the dispatch. It needs a release run with a
+deliberately broken tree, and the only way to stage one is to publish from `main`.
+
+## P17 — build size · done 2026-09-07 (T17.1–T17.2, Gate P17 passed)
 
 Goal: what a contributor compiles and what a user downloads stop growing with the dependency list. Plan: `plan.md` P17. Numbers: `research.md` §2 "Build size (T17.1, Gate P17)".
 
@@ -225,7 +251,7 @@ Linux x86_64 target `dist` ships, and a `.dylib` — the only variant that would
 static binary, has no `-rpath` from `lbug`'s `build.rs`, and cannot differ between dev and release
 because `LBUG_SHARED` is a build-time env var and `.cargo/config.toml [env]` is global.
 
-## P16 — OpenTelemetry export · in progress (D19)
+## P16 — OpenTelemetry export · done 2026-09-07 (T16.1–T16.8, Gate P16 passed on (1), (2), (4); (3) moved to Gate P18)
 
 Goal: every ledger row is a span, log or sum in Jaeger, Grafana, SigNoz and Maple, with nothing on the hook path. Plan: `plan.md` P16, design `src/otel/PLAN.md`.
 
@@ -285,7 +311,7 @@ Status: done 2026-09-04 — `docs/otel.md` written (keys, env fallback, flush tr
 Model: Claude Fable 5.1
 
 
-## P8c — `graph` on LadybugDB · in progress (D18)
+## P8c — `graph` on LadybugDB · done 2026-09-08 (T8.10–T8.14, Gate P8c: clause (4) won, `graph-lbug` stays opt-in)
 
 Goal: the same four tools, byte-identical, on an embedded graph store — kept only if it wins on numbers. Plan: `plan.md` P8c, survey `src/plugins/graph/PLAN.md` v0.3. T8.9 (the contract these tasks are judged against) is recorded under P8b below, where it was written.
 

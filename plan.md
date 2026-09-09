@@ -98,16 +98,11 @@ Format: **Tn.m title** · depends · files · do · **Check** (command → expec
 
 T0.1–T0.8 are complete; their text, Checks and deviations are in `done.md`. Gate P0 (review: trait shape final; no plugin logic yet) closed as the scaffold freeze (see §6).
 
-Gate P0 (review): trait shape final; no plugin logic yet. **Status: done 2026-09-03 (historical).** Check: trait is `Plugin` in `src/plugin.rs`; "no plugin logic yet" held at T0.8 (`c9b6f81`). Later tasks extended the trait and added plugin logic by design — §6.
+Gate P0: done 2026-09-03 (historical freeze at T0.8) — see `done.md` P0; §6 records later trait extensions.
 
-### P1 — Measure (goal: a baseline you can trust before changing anything)
+### P1 — Measure — tasks done, Gate P1 passed 2026-09-03 (see `done.md` P1).
 
-Gate P1: baseline saved (`rtok stats --save-baseline before-rtok`). Record the numbers in research.md §2. **Status: done 2026-09-03.** Check: `~/.rtok/measurements/before-rtok.json` (580 sessions, 181 303 lines, Bash 7.71 M / Read 3.07 M est. tokens, 30d); `--compare` all Δ0; numbers in `research.md` §2. Slice is not the original 17-session H-measured table.
-
-### P2 — Hook surface (goal: one hook command per event, < 10 ms, budgeted injection)
-
-
-Gate P2: `rtok setup claude` installed alongside the legacy hooks (additive, nothing removed yet); `rtok doctor` shows 88 hooks; sessions still work. **Status: done 2026-09-03.** Check: 7 additions (81→88), second `setup claude` → `no changes`; doctor `hooks 88`; 7 `rtok hook` commands beside the original 81; `settings.json` still parses; proxy chain still 8788→8787; backup `settings.json.bak-*`.
+### P2 — Hook surface — tasks done, Gate P2 passed 2026-09-03 (see `done.md` P2).
 
 ### P3 — `cmd` plugin (goal: every Bash output archived, filtered, measured)
 
@@ -129,228 +124,42 @@ Gate P6: removed 2026-09-09 — one week with engram + claude-mem disabled plus 
 
 Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail judgement; not code-closable. Harness kept: T9.1 `rtok bench`.
 
-### P8 — `graph` plugin (goal: `symbol`/`callers`/`outline` from an index rtok builds itself, replacing four graph servers)
+### P8 — `graph` plugin — tasks done, Gate P8 passed 2026-09-03 (see `done.md` P8).
 
-Gate P8: measure MCP description tokens saved by disabling the other graph servers (code-review-graph 30 tools, serena ~25, lean-ctx 78); index time on this repo < 2 s. **Status: done 2026-09-03.** Check: Result 2026-09-02 (passed) — index 0.48 s cold / 0.03 s warm; retiring three servers saves ~4 493 description tokens vs rtok's ~117.
-Result 2026-09-02 (passed): `rtok doctor`, once it spawned servers with their `args`/`env` and a 15 s timeout (it ran the bare `command` with a 2 s wait, so every `uvx`/`npx` server read as 0 tools), measured on this machine: code-review-graph 30 tools ~2 295 desc tokens, serena 22 ~1 494, lean-ctx 12 ~704, codebase-memory-mcp 0 (the binary exits on start; Claude Code reports the same connection failure). rtok's whole MCP surface: 10 tools ~117 desc tokens. Retiring the three measurable servers saves ~4 493 description tokens per request and rtok adds ~117 (descriptions only; input schemas not counted). Index on this repo, release binary: 0.48 s cold (61 files, 6 625 rows), 0.03 s warm.
+### P8b — `graph` quality — tasks done, Gate P8b closed 2026-09-09 on the three code clauses (see `done.md` P8b).
 
-### P8b — `graph` quality (goal: the same ≤ 4 tools answer with the code, across repos, with a published recall) — added 2026-09-04
+### P8c — `graph` on LadybugDB — tasks done; Gate P8c: clause (4) won 2026-09-08, `graph-lbug` stays opt-in (see `done.md` P8c).
 
-Promoted from the v0.2 survey in `src/plugins/graph/PLAN.md` (2026-09-04) after Gate P8 closed on token count alone. Order is T8.3 → T8.4 → T8.8 → T8.5 → T8.6 → T8.7: the two defects first, the measurement before the edges, the edges before what consumes them.
+### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17), Gate P8d passed — see `done.md` P8d.
 
-Gate P8b: graph surface ≤ 150 description tokens (`rtok doctor`); warm tool call < 100 ms on a 3 000-file repo; T8.8 definition recall ≥ 0.9 (met at 1.0; reference recall is 0.351, see §6). The P9-task-set clause (fourth) was removed 2026-09-09 — needs the P9 set run twice plus a user keep/drop decision; not code-closable. Until it is re-added, T8.6 and T8.7 stand unjudged and their revert conditions remain live.
+### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
 
-**Status 2026-09-04, closed 2026-09-09 on the three code clauses.** Surface: 4 tools, **62** description tokens (bar 150), asserted by `graph_surface_is_four_tools_under_150_tokens`. Warm tool calls on a generated 3 000-file repo (9 000 rows), release build, after a 22.1 s cold index: `symbol` **23 ms**, `callers` **24 ms**, `impact` **26 ms** (bar 100 ms) — re-measured after T8.5–T8.7, since those changed what a call does. Definition recall **1.000** with precision 1.000 (bar 0.9); reference recall 0.351, published, see §6.
+### P17 — build size — tasks done, Gate P17 passed 2026-09-07 (see `done.md` P17).
 
-### P8c — `graph` on LadybugDB (goal: the same four tools, byte-identical, on an embedded graph store — kept only if it wins on numbers) — added 2026-09-04 (D18)
+### P18 — release — tasks done, v0.0.1 published 2026-09-08 (see `done.md` P18); Gate P18 removed 2026-09-09 (needs a real release run, not code).
 
-Survey and rejected options in `src/plugins/graph/PLAN.md` (v0.3, 2026-09-04). Order is T8.9 → T8.10 → T8.11 → T8.12 → T8.13 → T8.14: the contract first, the seam second, the backend third, the one query a graph store can win fourth, the measurement last. Nothing in this phase changes what the four tools print; `tests/graph_contract.rs` is the acceptance test for every task.
+### P19 — web dashboard — tasks done, Gate P19 passed 2026-09-09 (see `done.md` P19).
 
-Gate P8c (numbers from the same machine, release, for both builds — `default` and `--features graph-lbug`): (1) `tests/graph_contract.rs` passes unchanged under both; (2) `rtok hook PostToolUse` p95 ≤ 10 ms over 100 runs of the `graph-lbug` binary — the binary grows, the hook path must not; (3) warm `symbol` / `callers` / `impact(2)` < 100 ms on the P8b 3 000-file repo; (4) `impact(4)` on a fan-out-10 fixture (10 000 edges): the `lbug` path query is ≥ 2× faster than the SQLite `WITH RECURSIVE` of T8.13 — the one clause only a graph store can win; (5) clean `just check` ≤ 2× the default build's wall time, and no unpinned network fetch in `build.rs` (a download at build time is pinned to the crate version with a checksum, or the build is from source); (6) release binary bytes and `graph.lbdb` bytes published in `research.md` §2. Decision rule: (4) lost or tied → delete the `lbug` code and feature from T8.11–T8.13, keep T8.9's tests, T8.10's seam and the CTE if it beat the Rust BFS; (4) won but (5) lost → `graph-lbug` stays opt-in, never default; all six hold → `graph-lbug` joins `default` and `src/store/symbols.rs` is deleted in the next task.
-
-**Status 2026-09-08: clause (4) won; `graph-lbug` stays opt-in.** `impact(4)` 371 ms (`lbug`) vs 28.5 s (SQLite CTE), 77× the 2× bar. Clauses (2) and (3) fail on the `graph-lbug` binary (PostToolUse p95 97 ms, warm calls 0.78–0.87 s); default SQLite meets both (8.07 ms, 18–27 ms). Clause (1) green both; (5) `just check` 16.9 s with liblbug already built, source build still pinned (T8.11); (6) binaries 19.7 MiB vs 32.4 MiB, `graph.lbdb` 6.10 MB. All six do not hold, so the feature never joins `default` and the lbug code is not deleted. Table: `research.md` §2.
-
-### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17) — added 2026-09-05
-
-What exists: the index is tree-sitter-tags (T8.1, the seven grammars of `read`); every tool call runs `index::run`, a gitignore-aware walk with a stat gate (T8.4: 0.053 s warm on 3 000 files); `PostToolUse(Edit|Write)` deletes the file's rows so the next call re-parses it. So "auto index" is on and unconditional today, and there is no watcher. A richer parser is not this phase: rtok's own queries above the grammar's tags (type positions, `scoped_identifier`) are I-31, an LSP backend is I-24, both stay in `ideas.md` until a task needs a reference the tags miss. Order T8.15 → T8.16 → T8.17: the knob, the watcher, the second backend. Nothing changes what the four tools print; `tests/graph_contract.rs` stays untouched.
-
-Constraints that shape the design: under `graph-lbug` one process holds the read-write `Database` (PLAN.md v0.3), so the watcher runs as a thread inside `rtok mcp`, borrowing the server's `Ctx` in a scoped thread — never a second process on the same store. The hook path is a separate process and is not touched (AGENTS.md: indexing never runs there). A watch event does not name what to re-parse; it only ends a quiet period, after which `index::run` on the root does the incremental work — the stat gate already makes a run cost a walk, so no per-file bookkeeping is added.
-
-Gate P8d (release, this machine): (1) with `auto_index = false` and `watch = "notify"`, an edit to a fixture file is visible in `symbol` within 1 s while the tool call itself opens no file (`Report.read == 0`, a walk of 0); (2) `rtok mcp` idle for 60 s with the watcher on: CPU time within 50 ms of the watcher-off run and RSS within 2 MB; (3) `watch = "watchman"` passes (1) on the same fixture and `watchman watch-list` names the root; with no watchman socket it falls back to `notify` and says so once on stderr; (4) `rtok hook PostToolUse` p95 ≤ 10 ms, unchanged; (5) release binary bytes before and after `notify` and `watchman_client` in `research.md` §2. Decision rule: (2) lost → the watcher defaults to `"off"` and stays opt-in; (3) lost or watchman ≤ notify on (1) latency → T8.17's crate is removed and `watchman` stays a documented `ideas.md` entry.
-
-**Status 2026-09-09: passed.** (1) `notify` re-index within 1 s, `Report.read == 0` (+ delete disappears); (2) idle ΔCPU −10 ms, ΔRSS +1.14 MB; (3) `watchman` passes (1) (~500 ms vs `notify` ~250 ms, same bar), `watch-list` names the root, socket-less fallback prints exactly one line; (4) hook p95 8.25 ms serialized (`-- --test-threads=1`; parallel rounds straddle the bar on scheduler noise); (5) release 19 764 144 B pre-`notify` → 19 867 968 B default → 20 429 392 B with `graph-watchman`. No decision-rule trigger fired: `watch` stays opt-in `off`, `graph-watchman` stays opt-in, never default. Rows: `research.md` §2.
-
-### P16 — OpenTelemetry export (goal: every session, call, token and saving rtok records is a trace, log and metric in any OTLP backend, with nothing added to the hook path) — added 2026-09-04 (D19); gate passed 2026-09-07, backend clause moved to P18 and `ideas.md` I-33
-
-Design, mapping table and rejected options in `src/otel/PLAN.md`. Order T16.1 → T16.8: config, watermark, encoder, mapping, exporter + CLI, triggers, metrics, docs + live check. Every task keeps `rtok hook` at ≤ 10 ms and does nothing unless `[otel] endpoint` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) is set.
-
-**Status 2026-09-04: three of four clauses measured and passed; the gate stays open on the third.** (1) `tests/otel.rs`, six tests, green. (2) release p95 with a reachable endpoint: `PostToolUse` 9.70 ms and `Stop` 8.97 ms against a no-endpoint baseline of 8.89 ms and 8.36 ms — the spawn costs 0.61 ms and both stay under the 10 ms bar (`research.md` §2). (4) `§2` baseline unchanged: no crate was added. (3) is half done: an independent OTLP receiver validated one session's real traffic with 0 problems (205 spans, 3 metric streams, ids and int64 encodings as the spec requires), but none of Jaeger, Grafana, SigNoz or Maple was exercised — Docker is blocked by this machine's shell allowlist, so no collector image could start. The four recipes are in `docs/otel.md`; running one of them closes the clause.
-
-**Status 2026-09-07: passed on (1), (2), (4); (3) moved.** The first two backends were run (evidence in `research.md` §2, the recipes stay in `docs/otel.md`; a repeatable check is `ideas.md` I-33) and the run found and fixed an exporter loop: a backend that answers 404 to a stream made each failed flush log a row the next flush re-sent, so pending grew by one per flush — a 404 is now "not served", skipped without a log row (`tests/otel.rs`, seven tests). What clause (3) still asked for — one real hooks + MCP + proxy session as one trace, and SigNoz and Maple — needs a released binary on `PATH` and the user's accounts, so it is now part of Gate P18.
-
-Gate P16: (1) `tests/otel.rs` against a mock collector: every `calls`, `logs` and ended `sessions` row after the watermark is posted once per flush, a second flush posts nothing, a non-2xx leaves the watermark; (2) `rtok hook PostToolUse` and `Stop` p95 ≤ 10 ms over 100 runs with an endpoint set and unreachable; (3) moved 2026-09-07 — backend rendering is `ideas.md` I-33, the real-session trace and the SigNoz / Maple sign-off are in Gate P18; (4) §2 baseline unchanged.
-
-### P17 — build size (goal: what a contributor compiles and what a user downloads stop growing with the dependency list) — added 2026-09-04; T17.1–T17.2 done, gate passed 2026-09-07
-
-D18 brought a C++ graph engine into the tree and the cost showed up immediately: on this machine the debug `liblbug` rlib is 2.08 GB, kept twice for two feature sets, over a 4.6 GB cmake directory, while `~/.cargo/shared_target/debug` reached 69 GB and the volume 98 % full. The dev profile is the lever — full DWARF is most of a 124 MB test binary and all of the C++ debug library — and `strip` is the lever on the shipped binary. No profile may set `panic = "abort"`: `hooks::dispatch` fails open through five `catch_unwind` sites, and aborting would break the rule that a hook exits 0 on error.
-
-Gate P17: release and debug `rtok` bytes, `liblbug.a` bytes and the `lbug` build directory measured before and after on this machine and published in `research.md` §2; `just check` green; `rtok hook PostToolUse` p95 ≤ 10 ms in release; a panic inside a plugin still prints a backtrace with `file:line`.
-
-T17.1 and T17.2 are done (`done.md`). **Status: passed 2026-09-07.** Check: sizes in `research.md` §2 (T17.1); `just check` green at T17.1 and T17.2; the p95 clause, on the bar at 10.07 ms on 2026-09-04 and 10.3–13.6 ms under a load average of 14–36 on 2026-09-05, measured 7.24 / 7.86 / 8.17 ms for `PostToolUse` over three rounds of `cargo test --release --test latency` on a quiet machine (load 2.9–3.4), with `PreToolUse` at 5.79–6.94 ms; the drift was the machine, not the profile or the database. The breakdown (same section) puts the hook's own work at ~1.3 ms and 1.3–1.5 ms of every spawn in the dyld cost of Security.framework + CoreFoundation, which only `proxy` / `otel` TLS need — I-32 in `ideas.md`, not a P17 task.
-
-### P18 — release (goal: a macOS user installs a released binary with one command, and the version of the next release is computed, never typed) — added 2026-09-04; tasks done (T18.5 release-plz added and done 2026-09-07), gate needs the first real release
-
-T10.4 wrote the release config but never ran it: no tag, no GitHub Release, and `dist-workspace.toml` has never met a runner. The runner half is not the problem — dist 0.32 already plans `macos-14` for `aarch64-apple-darwin` and `macos-15-intel` for `x86_64-apple-darwin`, both current images. What is missing is the entry point (nothing creates a tag), the numbering (versions are hand-edited), and the install path a macOS user would actually use (README only documents `cargo install --path .`). Versions restart at 0.0.1 and every release is the next patch. Codesigning and notarisation are out of scope: they need Apple Developer credentials this repo does not have, so downloads are Gatekeeper-quarantined via a browser and clean via the installer.
-
-**Blocker 2026-09-07 (user decision, resolved 2026-09-08).** `dist-workspace.toml` listed `homebrew` under `installers` and `publish-jobs`, so `release.yml` pushed a formula to `listepo/homebrew-tap` with `secrets.HOMEBREW_TAP_TOKEN` — the secret is not set, so the workflow would push the version bump and then fail in `publish-homebrew-formula`. Resolved by dropping `homebrew` from both lists (shell installer only) and documenting `ketch install listepo/rtok` instead; release-plz PR #2 closed unmerged, the first release goes through `tools/release.sh`.
-
-Gate P18: removed 2026-09-09 — first real release from the Actions tab, archives on macOS, README install on `PATH`, second run yields the next patch, one real session as one trace, SigNoz + Maple with the user's accounts; every clause needs a user action outside code. None of it is code-closable. Record each clause dated in `research.md` §2 when it happens; re-add the gate only to track a scheduled release. `just check` green stays the code bar.
-
-### P19 — web dashboard · done 2026-09-09 (T19.1–T19.3) — added 2026-09-08 (D20)
-
-Operator surface like `rtok tui` (P15), in the browser. Frameworks: axum `ws` + `tower-http` ServeDir, Slint on wasm32 (official web renderer). Not a catalogue plugin — it does not save tokens.
-
-Gate P19: `just dashboard` (or `rtok dashboard`) listens on the configured host/port; browser `/` loads the Slint canvas when `pkg/` exists; `/ws` pushes a snapshot whose `plugins` length matches the catalogue; a `saves_tokens` page includes input/output/est_before/est_after. **Status: passed 2026-09-09.** Check: `rtok dashboard --port 3334` → `/` 200 (canvas + `./pkg/rtok_webui.js` module, `pkg/` freshly built with wasm-pack 0.15.0, 91 KB js + 10.5 MB wasm, gitignored), `/health` ok, `/ws` snapshot 10 plugins with `saves_tokens` stats (`input/output/est_before/est_after`); `pkg` js/wasm both 200.
-
-### P9 — A/B bench + migration (goal: replace 81 hooks with ≤ 8, keep only what measures) — tasks done; gate removed 2026-09-09 (review + user decision, not code-closable)
-
-Gate P9 was: adopt config B if cost per passed task is lower and pass rate is equal; otherwise keep the measured winners only. Evidence kept: `research.md` §2 A/B bench table (T9.2, 6 tasks × 3 runs, `check = true` both configs; costs zero without `RTOK_BENCH_LIVE=1`). Re-add only with a user decision to act on.
-
-The migration side of this phase — which rtok plugin owns each lean-ctx behaviour, the two gaps (`cmd` runner prefixes and families, `graph` callees) and the cutover order — is written in `migration.md` (2026-09-07, plan only; its gaps become tasks here only when promoted).
+### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
 ### P10 — other hosts + release — T10.1–T10.6 done 2026-09-09 (D21)
+
+**T10.7 `setup --remove` strips MCP** · T10.1 · `src/cli.rs`, `src/setup/claude.rs`, `src/setup/cursor.rs`
+Do: `setup claude/cursor --remove` also removes `mcpServers.rtok` via the shared `unregister_stdio_mcp` helper (foreign servers kept); cursor keeps unlinking the plugin, and `--dry-run --remove` previews without touching the FS.
+Check: unit `unregister_strips_only_rtok_and_keeps_foreign` (both hosts); temp-HOME apply (`--mcp` / `--yes`) → `--remove` → second `--remove` is `no changes`, foreign entries kept; `just check` green.
+Complexity: 1/5 — two call sites plus one shared helper, no new flags, no config keys.
+Status: in progress
+Model: Muse Spark (meta/muse-spark)
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 
 Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passthrough + 2 d compress; needs live Codex traffic, not code-closable. Re-add with a dated traffic window; record in `research.md` §2.
 
-### P12 — Config file (goal: every setting in one file, one precedence rule, no flag without a key) — added 2026-09-01 (D12)
+### P12 — Config file — tasks done, Gate P12 passed 2026-09-03 (see `done.md` P12).
 
-Gate P12 (review): `docs/config.md`, `config/default.toml` and `Config` agree; no subcommand keeps its own defaults; merge is figment, CLI is clap, `config set` is toml_edit (D14). **Status: done 2026-09-03.** Check: `filter --cmd` is `Option<String>` (absent → `filter.cmd` from figment); mapping table lists only clap-defined flags plus env `RTOK_HOME`; D14 crates unchanged (`layers.rs` figment, `cli.rs` clap, `validate.rs` toml_edit).
+### P13 — ORM + action store — tasks done, Gate P13 passed 2026-09-03 (see `done.md` P13).
 
-### P13 — ORM + action store (goal: every MCP call, API request, plugin run, and log is a typed row) — added 2026-09-01 (D13)
-
-Runs right after P12, before P1 writes any rows. `Store` becomes Diesel over bundled SQLite; plugins keep using `Ctx` and never SQL. `events` is superseded by `calls` (0001 table stays, nothing new writes it). `measurements` (D3) and `usage` stay the savings/ground-truth ledgers; they gain `call_id`. FTS5 for `notes_fts` stays as `diesel::sql_query` (Diesel cannot model `VIRTUAL TABLE`).
-
-Schema (`migrations/0002.sql`). Integers are i64. Booleans are 0/1. `ts` is unixepoch. Foreign keys ON.
-
-```sql
--- Dimension: host agents, API providers, models (upserted from traffic).
-CREATE TABLE hosts (
-    id INTEGER PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,          -- claude | cursor | codex | opencode | aider | other
-    kind TEXT NOT NULL,                 -- cli | ide | other
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE TABLE providers (
-    id INTEGER PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,          -- anthropic | openai | other
-    name TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
-);
-CREATE TABLE models (
-    id INTEGER PRIMARY KEY,
-    provider_id INTEGER NOT NULL REFERENCES providers(id),
-    slug TEXT NOT NULL,                 -- request `model` field
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE (provider_id, slug)
-);
-CREATE TABLE sessions (
-    id TEXT PRIMARY KEY,                -- host session id
-    host_id INTEGER REFERENCES hosts(id),
-    project TEXT,
-    cwd TEXT,
-    source TEXT,                        -- startup | resume | compact | …
-    started_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    ended_at INTEGER
-);
-
--- Unified action log. parent_id nests plugin_run under hook | mcp_call | api_request.
-CREATE TABLE calls (
-    id INTEGER PRIMARY KEY,
-    ts INTEGER NOT NULL DEFAULT (unixepoch()),
-    session_id TEXT NOT NULL REFERENCES sessions(id),
-    host_id INTEGER REFERENCES hosts(id),
-    provider_id INTEGER REFERENCES providers(id),
-    model_id INTEGER REFERENCES models(id),
-    plugin TEXT,                        -- null = core / surface
-    surface TEXT NOT NULL,              -- hook | mcp | proxy | cli
-    kind TEXT NOT NULL,                 -- hook | mcp_call | api_request | plugin_run | expand | cli
-    parent_id INTEGER REFERENCES calls(id),
-    name TEXT,                          -- hook event, MCP tool, HTTP path
-    ms REAL,
-    ok INTEGER NOT NULL DEFAULT 1,
-    error TEXT
-);
-CREATE INDEX calls_session ON calls (session_id, ts);
-CREATE INDEX calls_kind ON calls (kind, ts);
-CREATE INDEX calls_plugin ON calls (plugin, ts);
-CREATE INDEX calls_parent ON calls (parent_id);
-
--- Full MCP args/result and API request/response. Over core.call_io_inline_bytes → archive.
-CREATE TABLE call_io (
-    call_id INTEGER PRIMARY KEY REFERENCES calls(id),
-    request_bytes INTEGER NOT NULL DEFAULT 0,
-    response_bytes INTEGER NOT NULL DEFAULT 0,
-    request_sha256 TEXT,
-    response_sha256 TEXT,
-    request_json TEXT,
-    response_json TEXT,
-    request_archive TEXT REFERENCES archive(id),
-    response_archive TEXT REFERENCES archive(id)
-);
-
--- Token counts. One row per (call, plugin, phase).
--- phase=before|after: estimator or provider, around a plugin_run or whole api_request.
--- phase=mcp: tokens of MCP traffic owned by this plugin (args+result of its tools).
-CREATE TABLE tokens (
-    id INTEGER PRIMARY KEY,
-    ts INTEGER NOT NULL DEFAULT (unixepoch()),
-    call_id INTEGER NOT NULL REFERENCES calls(id),
-    plugin TEXT,
-    phase TEXT NOT NULL,                -- before | after | mcp
-    source TEXT NOT NULL,               -- estimate | provider | mcp
-    tokens INTEGER NOT NULL,
-    bytes INTEGER,
-    input INTEGER,
-    output INTEGER,
-    cache_create INTEGER,
-    cache_read INTEGER
-);
-CREATE INDEX tokens_call ON tokens (call_id, phase);
-CREATE INDEX tokens_plugin ON tokens (plugin, ts);
-
--- Core, plugin, and module logs (also still written to core.log_file).
-CREATE TABLE logs (
-    id INTEGER PRIMARY KEY,
-    ts INTEGER NOT NULL DEFAULT (unixepoch()),
-    level TEXT NOT NULL,                -- error | warn | info | debug
-    source TEXT NOT NULL,               -- core | plugin | module
-    name TEXT NOT NULL,                 -- plugin id or rust module path
-    session TEXT,
-    call_id INTEGER REFERENCES calls(id),
-    plugin TEXT,
-    message TEXT NOT NULL,
-    fields TEXT                         -- JSON extras
-);
-CREATE INDEX logs_ts ON logs (ts);
-CREATE INDEX logs_source ON logs (source, name, ts);
-CREATE INDEX logs_session ON logs (session, ts);
-
-ALTER TABLE measurements ADD COLUMN call_id INTEGER REFERENCES calls(id);
-ALTER TABLE usage ADD COLUMN call_id INTEGER REFERENCES calls(id);
-
-INSERT INTO hosts (id, slug, kind) VALUES
-  (1,'claude','cli'),(2,'cursor','ide'),(3,'codex','cli'),
-  (4,'opencode','cli'),(5,'aider','cli'),(6,'other','other');
-INSERT INTO providers (id, slug, name) VALUES
-  (1,'anthropic','Anthropic'),(2,'openai','OpenAI'),(3,'other','Other');
-```
-
-T13.1–T13.4 are done — see `done.md`.
-
-Gate P13 (review): no rusqlite; no SQL outside `src/store/`; hook-path tests never write `archive/` for `call_io`; a plugin_run has before and after token rows. **Status: done 2026-09-03.** Check: no `rusqlite` in the tree; `oversized_hook_call_io_does_not_archive`; `only_results_outside_the_live_tail_are_rewritten` asserts before/after `tokens` phases. Runtime SQL is `src/store/` only; `migrations/*.sql` are included by `Store` (see §6).
-
-### P14 — per-plugin design research (goal: every plugin beats the field on a named number before a line of it is written) — added 2026-09-02 (D15)
-
-One task per catalogue plugin, each producing that plugin's own plan: `src/plugins/<id>/PLAN.md`.
-**Not a batch.** T14.0 lands first (it makes the rest checkable); each T14.x then lands in the commit
-immediately before that plugin's first implementation task, so the survey is current when it is used.
-A T14.x is ≤ 1 file plus a `research.md` §6 row — no code, no dependency.
-
-Every T14.x must, in `PLAN.md`: survey **≥ 3 alternatives** with version and date, **≥ 1 from outside the
-stack rtok retires** (another ecosystem, a library, a paper); say in one line each what the alternative
-gets right and what it gets wrong; name rtok's mechanism and the one property that makes it better
-(“written in Rust” is not one); list **≥ 2 rejected options** with the reason; set **`Target:`** — the one
-number that plugin's gate in `roadmap.md` must beat; and **`Falsified by:`** — the observation that kills
-the design. Where the survey changes a task, amend it in §6 rather than silently building something else.
-
-Shared Check for T14.1–T14.10: `cargo test plugin_plans` green; the `Target:` line matches that plugin's
-gate in `roadmap.md`; every surveyed alternative appears in `research.md` §6 with a date.
-
-T14.0–T14.10 are done — see `done.md`. Shared Check `cargo test plugin_plans` green; ten `PLAN.md` files; alternatives dated in `research.md` §6.
-
-Gate P14 (review): `ls src/plugins/*/PLAN.md | wc -l` → 10; every `Target:` matches a `roadmap.md` gate; no plugin was implemented before its `PLAN.md` merged (`git log` order); any design that contradicted a task produced a §6 amendment. **Status: done 2026-09-03.** Check: `cargo test plugin_plans` (`every_target_matches_a_roadmap_gate`); 10 files; guard Mechanism is T2.6 Deny. `git log` order: all PLAN.md landed in `830e049` with measure/hooks impl — see §6.
+### P14 — per-plugin design research — tasks done, Gate P14 passed 2026-09-03 (see `done.md` P14).
 
 ### Later versions (v0.2+) — deferred, not rejected — added 2026-09-02
 
@@ -437,4 +246,5 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 | 2026-09-08 | T10.5 added (P10 reopened): `rtok setup cursor` offers to install `plugins/cursor`. D21 gains clause (6); `AGENTS.md` matches. | User request 2026-09-08 (`rtok setup cursor` должен предлагать установить и плагин). |
 | 2026-09-08 | T10.6 added (P10 open): pi host plugin — `plugins/pi/` pi package (TS extension + skill, no MCP per pi philosophy), one bash call path (`tool_call` rewrite to `rtok run`, `tool_result` via `rtok filter`), `rtok setup pi` offers it after the T10.1 pattern. Promotes the pi part of I-17. | User request 2026-09-08 ("add plugin for pi agent", confirmed). |
 | 2026-09-08 | Complexity ratings added to the plan: a `Complexity:` line on open tasks and a complexity table for the remaining work in §5 (scale 1–5). | User request; makes the remaining effort visible next to the order of value. |
+| 2026-09-09 | T18.6 added to P18 and done: the release runs only on a green `just check`. A reusable `verify.yml` (the `ci.yml` matrix) gates the dispatch in `bump.yml` and in release-plz's `release` job, and `release-plz.yml` now fails loudly without `RELEASE_PLZ_TOKEN` instead of opening a pull request that starts no CI. Not a dist `plan-jobs` entry: `host` treats a skipped `build-local-artifacts` as fine, so a red gate there would publish a Release with no binaries. | User request 2026-09-09 (set the release up along the lines of `../ketch`, after a beta-readiness check). ketch runs the same gate inside its release and refuses to run without the token; v0.0.1 shipped with neither. |
 | 2026-09-09 | Removed what only traffic/user action can close: Gates P3, P4, P5, P6, P7, P9, P11, P18 and the P8b fourth clause (P9 task-set comparison); §4 row 2 (≥ 5 working days `stats --compare`). Each removal keeps its evidence pointer (`research.md` §2) and its re-run recipe, so re-adding needs only a dated window, not rediscovery. §4 renumbered; §5 table pruned to code-closable items. | User request ("убрать только то, что кодом не закрывается"). A plan change per AGENTS.md; no code, no task, no gate result touched. |
