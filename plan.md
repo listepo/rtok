@@ -385,11 +385,172 @@ Removed 2026-09-09 (needs days of live traffic, not code): old row 2 — `rtok s
 
 P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, daemon, WASM) start only after §4 v0.1 done.
 
-Complexity of what is left (added 2026-09-08; 1 = trivial, 5 = hard). Pruned 2026-09-09: every remaining item below is code- or measurement-closable; traffic/user-gated gates (P3/P4/P5/P6/P7/P9/P11/P18, P8b fourth clause) were removed, see §6.
+The gate table that stood here (added 2026-09-08, retired 2026-09-09) is gone: every code-closable
+gate passed, and the traffic/user-gated ones were removed — see §6. What replaces it is the whole
+list, not only what is left.
 
-| Item | Complexity | Waits on |
-|---|---|---|
-All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — nothing code-closable is left open. Traffic/user-gated gates were removed above, see §6.
+### Every task, its status and its complexity
+
+Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
+task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` means the
+entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table is an index, never the
+authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
+1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
+
+**129 done · 20 open · 1 superseded — 150 tasks.**
+
+| Task | Phase | What | Status | Complexity |
+|------|-------|------|--------|------------|
+| `T0.1` | P0 scaffold | cargo project | ✅ 2026-09-01 | — |
+| `T0.2` | P0 scaffold | config + paths | ✅ 2026-09-01 | — |
+| `T0.3` | P0 scaffold | SQLite store | ✅ 2026-09-01 | — |
+| `T0.4` | P0 scaffold | plugin trait + registry | ✅ 2026-09-01 | — |
+| `T0.5` | P0 scaffold | token estimator | ✅ 2026-09-01 | — |
+| `T0.6` | P0 scaffold | hook I/O types | ✅ 2026-09-01 | — |
+| `T0.7` | P0 scaffold | CI | ✅ 2026-09-01 | — |
+| `T0.8` | P0 scaffold | plugin SDK: one kind, external plugins, simple examples | ✅ 2026-09-02 | — |
+| `T1.1` | P1 measure | session JSONL parser | ✅ 2026-09-02 | — |
+| `T1.2` | P1 measure | `rtok stats` | ✅ 2026-09-02 | — |
+| `T1.3` | P1 measure | baseline snapshot | ✅ 2026-09-02 | — |
+| `T1.4` | P1 measure | `rtok doctor` | ✅ 2026-09-02 | — |
+| `T1.5` | P1 measure | estimator calibration (optional, needs API key) | ✅ 2026-09-02 | — |
+| `T2.1` | P2 hooks | `rtok hook <event>` dispatcher | ✅ 2026-09-02 | — |
+| `T2.2` | P2 hooks | latency harness | ✅ 2026-09-02 | — |
+| `T2.3` | P2 hooks | `rtok setup claude` | ✅ 2026-09-02 | — |
+| `T2.4` | P2 hooks | `inject` plugin + budget | ✅ 2026-09-02 | — |
+| `T2.5` | P2 hooks | PreCompact checkpoint + restore | ✅ 2026-09-02 | — |
+| `T2.6` | P2 hooks | `guard` deny duplicate Read/Bash | ✅ 2026-09-02 | — |
+| `T3.1` | P3 cmd | `rtok run -- <cmd>` | ✅ 2026-09-02 | — |
+| `T3.2` | P3 cmd | rule engine | ✅ 2026-09-02 | — |
+| `T3.3` | P3 cmd | family formatters + default rules | ✅ 2026-09-02 | — |
+| `T3.4` | P3 cmd | PreToolUse(Bash) rewrite | ✅ 2026-09-02 | — |
+| `T3.5` | P3 cmd | `rtok expand <id>` | ✅ 2026-09-02 | — |
+| `T3.6` | P3 cmd | measurement wiring | ✅ 2026-09-02 | — |
+| `T4.1` | P4 read + MCP | `rtok mcp` | ✅ 2026-09-02 | — |
+| `T4.2` | P4 read + MCP | `read` tool: full/lines | ✅ 2026-09-02 | — |
+| `T4.3` | P4 read + MCP | `read` map/signatures via tree-sitter-tags | ✅ 2026-09-02 | — |
+| `T4.4` | P4 read + MCP | re-read dedup | ✅ 2026-09-02 | — |
+| `T4.5` | P4 read + MCP | `search` + `tree` | ✅ 2026-09-02 | — |
+| `T4.6` | P4 read + MCP | PreToolUse(Read) advice | ✅ 2026-09-02 | — |
+| `T4.7` | P4 read + MCP | register MCP | ✅ 2026-09-02 | — |
+| `T5.0` | P5 proxy + archive | httpmock upstream harness | ✅ 2026-09-02 | — |
+| `T5.1` | P5 proxy + archive | passthrough proxy | ✅ 2026-09-02 | — |
+| `T5.2` | P5 proxy + archive | `rtok proxy` lifecycle | ✅ 2026-09-02 | — |
+| `T5.3` | P5 proxy + archive | live-zone archive rewrite | ✅ 2026-09-02 | — |
+| `T5.4` | P5 proxy + archive | `expand` through the proxy | ✅ 2026-09-02 | — |
+| `T5.5` | P5 proxy + archive | cache-health report | ✅ 2026-09-02 | — |
+| `T6.1` | P6 memory | notes API | ✅ 2026-09-02 | — |
+| `T6.2` | P6 memory | SessionStart recall | ✅ 2026-09-02 | — |
+| `T6.3` | P6 memory | import | ✅ 2026-09-02 | — |
+| `T7.1` | P7 modes | modes as data | ✅ 2026-09-02 | — |
+| `T7.2` | P7 modes | instruction audit | ✅ 2026-09-02 | — |
+| `T8.1` | P8 graph | symbol index | ✅ 2026-09-02 | — |
+| `T8.2` | P8 graph | MCP tools | ✅ 2026-09-02 | — |
+| `T8.3` | P8b graph quality | per-root index | ✅ 2026-09-04 | — |
+| `T8.4` | P8b graph quality | stat-gated freshness | ✅ 2026-09-04 | — |
+| `T8.5` | P8b graph quality | call edges | ✅ 2026-09-04 | — |
+| `T8.6` | P8b graph quality | `symbol` returns the definition | ✅ 2026-09-04 | — |
+| `T8.7` | P8b graph quality | `impact(name, depth)` | ✅ 2026-09-04 | — |
+| `T8.8` | P8b graph quality | labelled hit rate | ✅ 2026-09-04 | — |
+| `T8.9` | P8b graph quality | graph contract tests | ✅ 2026-09-04 | — |
+| `T8.10` | P8c graph on lbug | symbol store seam | ✅ 2026-09-04 | — |
+| `T8.11` | P8c graph on lbug | `lbug` store: open and index writes | ✅ 2026-09-04 | — |
+| `T8.12` | P8c graph on lbug | `lbug` store: reads | ✅ 2026-09-04 | — |
+| `T8.13` | P8c graph on lbug | `impact` in one query | ✅ 2026-09-08 | — |
+| `T8.14` | P8c graph on lbug | P8c measurement | ✅ 2026-09-08 | — |
+| `T8.15` | P8d graph freshness | `auto_index` and `watch` keys | ✅ 2026-09-08 | — |
+| `T8.16` | P8d graph freshness | watcher in `rtok mcp` (`notify`) | ✅ 2026-09-08 | 3/5 |
+| `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
+| `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
+| `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
+| `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |
+| `T9.4` | P9 bench + migration | legacy stack folder | ✅ 2026-09-02 | — |
+| `T9.5` | P9 bench + migration | README | ✅ 2026-09-02 | — |
+| `T10.1` | P10 hosts | Cursor | ✅ 2026-09-02 | — |
+| `T10.2` | P10 hosts | OpenCode | ✅ 2026-09-02 | — |
+| `T10.3` | P10 hosts | Codex | ✅ 2026-09-02 | — |
+| `T10.4` | P10 hosts | release | ✅ 2026-09-02 | — |
+| `T10.5` | P10 hosts | Cursor plugin offer | ✅ 2026-09-08 | — |
+| `T10.6` | P10 hosts | pi host plugin | ✅ 2026-09-09 | 2/5 |
+| `T10.7` | P10 hosts | `setup --remove` strips MCP | ↦ superseded by T10.9 | 1/5 |
+| `T10.8` | P10 hosts | the installers move under `rtok agent` | ✅ 2026-09-09 | — |
+| `T10.9` | P10 hosts | `rtok agent remove <host>`, and a copy before either command | ✅ 2026-09-09 | — |
+| `T11.1` | P11 OpenAI wire | `Wire` adapter + Anthropic behind it | ✅ 2026-09-02 | — |
+| `T11.2` | P11 OpenAI wire | OpenAI Chat Completions wire | ✅ 2026-09-02 | — |
+| `T11.3` | P11 OpenAI wire | OpenAI Responses wire | ✅ 2026-09-03 | — |
+| `T11.4` | P11 OpenAI wire | `archive` across wires | ✅ 2026-09-03 | — |
+| `T11.5` | P11 OpenAI wire | setup for OpenAI hosts | ✅ 2026-09-03 | — |
+| `T11.6` | P11 OpenAI wire | `usage.api` + per-API stats | ✅ 2026-09-03 | — |
+| `T11.7` | P11 OpenAI wire | `toon` on Wire tool results | ✅ 2026-09-03 | — |
+| `T12.1` | P12 config | typed schema + reference file | ✅ 2026-09-02 | — |
+| `T12.2` | P12 config | layering + precedence + `config show` | ✅ 2026-09-02 | — |
+| `T12.3` | P12 config | `config validate` + `config set` | ✅ 2026-09-02 | — |
+| `T12.4` | P12 config | flag ↔ key coverage test | ✅ 2026-09-02 | — |
+| `T12.5` | P12 config | `.env` files | ✅ 2026-09-02 | — |
+| `T12.6` | P12 config | `--dry-run` on every write command, with a git-shaped diff | ✅ 2026-09-09 | — |
+| `T13.1` | P13 ORM + store | Diesel replaces rusqlite | ✅ 2026-09-02 | — |
+| `T13.2` | P13 ORM + store | schema 0002 + models | ✅ 2026-09-02 | — |
+| `T13.3` | P13 ORM + store | `Store`/`Ctx` write API | ✅ 2026-09-02 | — |
+| `T13.4` | P13 ORM + store | config keys | ✅ 2026-09-02 | — |
+| `T14.0` | P14 plugin design | plan template + structure test | ✅ 2026-09-02 | — |
+| `T14.1` | P14 plugin design | `measure` design | ✅ 2026-09-02 | — |
+| `T14.2` | P14 plugin design | `cmd` design | ✅ 2026-09-02 | — |
+| `T14.3` | P14 plugin design | `read` design | ✅ 2026-09-02 | — |
+| `T14.4` | P14 plugin design | `archive` design | ✅ 2026-09-02 | — |
+| `T14.5` | P14 plugin design | `proxy` design | ✅ 2026-09-02 | — |
+| `T14.6` | P14 plugin design | `inject` design | ✅ 2026-09-02 | — |
+| `T14.7` | P14 plugin design | `guard` design | ✅ 2026-09-02 | — |
+| `T14.8` | P14 plugin design | `memory` design | ✅ 2026-09-02 | — |
+| `T14.9` | P14 plugin design | `graph` design | ✅ 2026-09-02 | — |
+| `T14.10` | P14 plugin design | `toon` design | ✅ 2026-09-02 | — |
+| `T15.0` | P15 tui | one operator model behind both surfaces | ✅ 2026-09-09 | 2/5 |
+| `T15.1` | P15 tui | ratatui + crossterm scaffold, event loop *(`roadmap.md`)* | open | 2/5 |
+| `T15.2` | P15 tui | header · tabs · footer shell *(`roadmap.md`)* | open | 2/5 |
+| `T15.3` | P15 tui | Overview tab (CTT, bars, sparkline) *(`roadmap.md`)* | open | 3/5 |
+| `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | open | 3/5 |
+| `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | open | 3/5 |
+| `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | open | 1/5 |
+| `T15.7` | P15 tui | Logs tab *(`roadmap.md`)* | open | 2/5 |
+| `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | open | 2/5 |
+| `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
+| `T15.10` | P15 tui | the two surfaces cannot drift | open | 1/5 |
+| `T16.1` | P16 otel | `[otel]` config | ✅ 2026-09-04 | — |
+| `T16.2` | P16 otel | export watermark and row readers | ✅ 2026-09-04 | — |
+| `T16.3` | P16 otel | OTLP/HTTP JSON encoder | ✅ 2026-09-04 | — |
+| `T16.4` | P16 otel | ledger → GenAI mapping | ✅ 2026-09-04 | — |
+| `T16.5` | P16 otel | exporter and `rtok otel` | ✅ 2026-09-04 | — |
+| `T16.6` | P16 otel | triggers off the hook path | ✅ 2026-09-04 | — |
+| `T16.7` | P16 otel | metrics | ✅ 2026-09-04 | — |
+| `T16.8` | P16 otel | docs and live check | ✅ 2026-09-04 | — |
+| `T17.1` | P17 build size | dev, release and dist profiles | ✅ 2026-09-04 | — |
+| `T17.2` | P17 build size | pin cargo-cache | ✅ 2026-09-05 | — |
+| `T18.1` | P18 release | version 0.0.1 and a dispatchable release | ✅ 2026-09-04 | — |
+| `T18.2` | P18 release | the next patch, computed | ✅ 2026-09-04 | — |
+| `T18.3` | P18 release | install in one line | ✅ 2026-09-04 | — |
+| `T18.4` | P18 release | codesigning and notarisation, written down | ✅ 2026-09-04 | — |
+| `T18.5` | P18 release | release-plz: the version as a pull request | ✅ 2026-09-07 | — |
+| `T18.6` | P18 release | the release runs only on a green test suite | ✅ 2026-09-09 | — |
+| `T19.1` | P19 web | `[dashboard]` config, CLI, flags | ✅ 2026-09-08 | — |
+| `T19.2` | P19 web | WebSocket snapshot | ✅ 2026-09-08 | — |
+| `T19.3` | P19 web | Slint WASM UI | ✅ 2026-09-08 | — |
+| `T20.1` | P20 demon | `rtok demon start\|stop\|restart\|status\|list\|kill\|update` | ✅ 2026-09-09 | 3/5 |
+| `T20.2` | P20 demon | owo-colors owns the colour question | ✅ 2026-09-09 | — |
+| `T21.1` | P21 CLI presentation | the plugin offer actually asks | ✅ 2026-09-09 | — |
+| `T21.2` | P21 CLI presentation | `graph index` shows progress | ✅ 2026-09-09 | — |
+| `T21.3` | P21 CLI presentation | `rtok dashboard` becomes `rtok web` | ✅ 2026-09-09 | — |
+| `T22.0` | P22 report | pick the PDF renderer against the size gate | open | 2/5 |
+| `T22.1` | P22 report | `--format md` | open | 3/5 |
+| `T22.2` | P22 report | `--format html` | open | 3/5 |
+| `T22.3` | P22 report | `--format pdf` | open | 4/5 |
+| `T22.4` | P22 report | `--ai` | open | 3/5 |
+| `T22.5` | P22 report | recommendations | open | 3/5 |
+| `T23.0` | P23 plugin SDK | where the boundary goes | ✅ 2026-09-09 | 3/5 |
+| `T23.1` | P23 plugin SDK | the crate exists and owns the contract | ✅ 2026-09-09 | 3/5 |
+| `T23.2` | P23 plugin SDK | required methods are required | ✅ 2026-09-09 | 2/5 |
+| `T23.3` | P23 plugin SDK | host capabilities, and the trait moves with them | open | 4/5 |
+| `T23.4` | P23 plugin SDK | the ten plugins move | open | 3/5 |
+| `T23.5` | P23 plugin SDK | documentation someone can build against | open | 2/5 |
+| `T23.6` | P23 plugin SDK | the release publishes it | open | 2/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -453,3 +614,4 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 | 2026-09-09 | T21.3: `rtok dashboard` renamed to `rtok web`, with `dashboard` kept as a hidden alias that runs and says where to go — the same shape T10.8 used for `rtok setup`. The config table is `[web]`; an old file's `[dashboard]` is accepted once with a warning and folded into it, the way `core.inject_budget_tokens` already is, because `deny_unknown_fields` would otherwise turn a stale config into a load error. `src/dashboard/` is `src/web/`; `Plugin::dashboard_page` is deliberately *not* renamed — it is the page a plugin gives to both surfaces, and it is published API. | User request 2026-09-09 (`rtok dashboard переименовать в rtok web`). |
 | 2026-09-09 | D23 added and P15 promoted from `roadmap.md` into this file with two new tasks: T15.0 lifts one operator model out of the web handlers, T15.10 is the test that fails when a page exists on one surface and not the other. | User request 2026-09-09 (`rtok tui и rtok dashboard должен иметь одинаковый функционал`). Parity that is only written down drifts; parity that a test enumerates does not. |
 | 2026-09-09 | D24 and P22 added: `rtok report` in Markdown, HTML and PDF, plus `--ai` as a fourth rendering for a model. It renders the D23 operator model and computes nothing of its own, so it cannot disagree with `rtok stats`; recommendations are rules over the ledgers that print their own evidence, never a language-model call. T22.0 is a D15-style renderer survey before any code, because a PDF library is the one choice here that can cost the P17 size gate. | User request 2026-09-09 (`rtok report` в html/pdf/markdown, `--ai` для нейросетей, графики и таблицы, рекомендации как сделать эффективнее). The report is the first surface whose whole purpose is to state numbers, which makes D3 — a saving that is not a `Measurement` row does not exist — the easiest rule in the repo to break there and the one worth writing into the decision. |
+| 2026-09-09 | §5 now carries every task in the plan and in `done.md` as one table — id, phase, title, status, complexity — with a ✅ on each finished row. It is an index over the two files, not a third place to record work: a task's Do/Check and its Check result stay in its own entry, and the row moves in the same commit the task does. | User request 2026-09-09 (таблица со списком всех задач, статусом и сложностью, зелёная галочка у сделанных). The per-phase headings said which phases were finished; nothing said, on one screen, how much of the plan is done (128 of 150) or what the open work costs. |
