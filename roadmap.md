@@ -353,8 +353,8 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 | # | Task | What | Complexity |
 |---|------|------|------------|
 | 0 | T15.0 | one operator model behind `web` and `tui` (D23) · done 2026-09-09 | 2/5 |
-| 1 | T15.1 | ratatui + crossterm scaffold, event loop | 2/5 |
-| 2 | T15.2 | header · tabs · footer shell | 2/5 |
+| 1 | T15.1 | ratatui + crossterm scaffold, event loop · in progress 2026-09-09, GLM-5.3 round (policy tier GLM-5.3-Flash) | 2/5 |
+| 2 | T15.2 | header · tabs · footer shell · in progress 2026-09-09, same round | 2/5 |
 | 3 | T15.3 | Overview tab (CTT, bars, sparkline) | 3/5 |
 | 4 | T15.4 | Plugins tab (toggle enabled) | 3/5 |
 | 5 | T15.5 | Calls tab (P13 rows + detail) | 3/5 |

@@ -172,7 +172,7 @@ figure nobody measured. Markdown first because it needs no renderer: it is the f
 the *content* is right before any layout work starts.
 Check: on a store with known fixtures, every number in the output is traceable to a row the test
 also asserts; an empty store produces a report that says so rather than zeros.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
 Complexity: 3/5
 
 **T22.2 `--format html`** · T22.1 · `src/report/html.rs`
@@ -290,7 +290,7 @@ holds is renamed, and it reopens `path` rather than following the inode into `.1
 the terminal as it found it.
 Check: a line written by another process shows up within a poll interval; a rotation mid-watch does
 not end the stream and does not repeat lines already printed.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
 Complexity: 3/5
 
 T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
@@ -318,7 +318,7 @@ and `ended_at`. It lands in the D23 model as a `Sessions` page, which is what ma
 and `rtok tui` page and not just a command (D27). No second query anywhere.
 Check: a fixture DB with three sessions across two hosts totals each one's tokens exactly, and the
 model's page carries the same numbers as the store call; `rtok web`'s snapshot gains the page.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High)
 Complexity: 3/5
 
 **T25.2 `rtok agent sessions`** · T25.1 · `src/cli.rs`, `src/render.rs`, `tests/agents.rs` (new)
@@ -329,7 +329,7 @@ by hand today and the next one would be the fourth copy.
 Check: two live sessions and one ended print two rows, three with `--all`; the token columns equal
 `rtok stats` over the same window; an empty store prints a header and a line saying nothing is
 running.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low — starts when T25.1 lands)
 Complexity: 2/5
 
 **T25.3 `rtok agent sessions watch`** · T25.2 · `src/cli.rs`, `src/render.rs`
@@ -396,7 +396,7 @@ a page", walking `Cli::command()` the way `config_coverage` already walks it, wi
 allow-list for the streaming and writing commands D27 exempts.
 Check: adding a reading command with no page fails `just check` naming the command; the allow-list
 entries each carry the reason they are exempt.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, effort Low)
 Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
