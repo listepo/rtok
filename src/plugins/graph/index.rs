@@ -44,6 +44,18 @@ pub fn canon(p: &Path) -> String {
 /// `dry_run` walks and parses exactly as a real run does but writes no rows, so the report
 /// says what the index would gain without touching the store.
 pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
+    run_with(cx, root, dry_run, &indicatif::ProgressBar::hidden())
+}
+
+/// [`run`] reporting each source file it reaches to `pb`. Only `rtok graph index` passes a real
+/// bar; the MCP tool and the background watcher pass `ProgressBar::hidden()`, because neither
+/// owns the terminal it would be drawing on.
+pub fn run_with(
+    cx: &Ctx,
+    root: &Path,
+    dry_run: bool,
+    pb: &indicatif::ProgressBar,
+) -> Result<Report> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
@@ -65,6 +77,7 @@ pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
             .to_string_lossy()
             .replace('\\', "/");
         keep.insert(rel.clone());
+        pb.inc(1);
         let stat = entry.metadata().as_ref().map(stat_key).unwrap_or((0, 0));
         let known = cx.store.symbol_stat(&rk, &rel)?;
         // Same mtime and size: git's rule for "unchanged". Nothing is opened.
@@ -101,6 +114,7 @@ pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
     if !dry_run {
         let _ = cx.store.delete_symbols_missing(&rk, &keep);
     }
+    pb.finish_and_clear();
     Ok(report)
 }
 
@@ -249,6 +263,22 @@ pub(crate) mod tests {
             0,
             "new stat was recorded"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T21.2: the bar counts the source files the walk reached — one tick per indexed or
+    /// skipped file, and none for the noise the walker filtered out.
+    #[test]
+    fn the_progress_bar_counts_the_files_the_walk_reached() {
+        let (cx, dir) = cx("progress");
+        for i in 0..7 {
+            fs::write(dir.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
+        }
+        fs::write(dir.join("notes.md"), "not a source file\n").unwrap();
+        let pb = indicatif::ProgressBar::hidden();
+        let r = run_with(&cx, &dir, false, &pb).unwrap();
+        assert_eq!(r.indexed, 7);
+        assert_eq!(pb.position(), 7, "the bar and the report must agree");
         let _ = fs::remove_dir_all(dir);
     }
 

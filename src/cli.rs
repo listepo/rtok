@@ -548,7 +548,8 @@ pub fn run() -> Result<()> {
             let GraphCmd::Index { path, dry_run } = action;
             let cx = crate::plugin::Ctx::open(cfg, "graph")?;
             let root = path.unwrap_or(std::env::current_dir()?);
-            let r = crate::plugins::graph::index::run(&cx, &root, dry_run)?;
+            let pb = crate::render::spinner("indexing");
+            let r = crate::plugins::graph::index::run_with(&cx, &root, dry_run, &pb)?;
             println!(
                 "indexed {} files · {} rows · {} skipped · {} read",
                 r.indexed, r.inserted, r.skipped, r.read

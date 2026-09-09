@@ -103,7 +103,8 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     if plugin_present(&dest) {
         return Ok("no changes".into());
     }
-    if !cfg.setup.yes {
+    let q = format!("install {PLUGIN_SRC_REL} into {PLUGIN_LOCAL} for Cursor?");
+    if !crate::setup::accepted(cfg, &q) {
         return Ok(format!(
             "offer {PLUGIN_SRC_REL} → {PLUGIN_LOCAL} (accept with --yes) {KETCH_INSTALL}"
         ));

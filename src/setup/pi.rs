@@ -58,7 +58,8 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     if plugin_present(&dest) {
         return Ok("no changes".into());
     }
-    if !cfg.setup.yes {
+    let q = format!("install {PLUGIN_SRC_REL} into {} for pi?", dest.display());
+    if !crate::setup::accepted(cfg, &q) {
         return Ok(format!(
             "offer {PLUGIN_SRC_REL} → {} (accept with --yes) {KETCH_INSTALL}",
             dest.display(),

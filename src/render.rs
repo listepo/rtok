@@ -54,6 +54,20 @@ pub fn paint(text: &str) -> String {
         .join("\n")
 }
 
+/// A spinner for a walk with no known length. indicatif draws to stderr and draws nothing at
+/// all when stderr is not a terminal, so a piped or redirected run stays byte-clean.
+pub fn spinner(what: &str) -> indicatif::ProgressBar {
+    let pb = indicatif::ProgressBar::new_spinner();
+    if let Ok(style) =
+        indicatif::ProgressStyle::with_template("{spinner:.cyan} {msg} {pos} files · {elapsed}")
+    {
+        pb.set_style(style);
+    }
+    pb.set_message(what.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(120));
+    pb
+}
+
 /// A state word for a status table: green when the thing is up, red when it is not.
 pub fn state(word: &str, ok: bool) -> String {
     if ok {

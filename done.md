@@ -645,6 +645,23 @@ Do: `proxy_filter` on the normalised `Wire` view (D11): tabular JSON arrays/obje
 Check: default off, fixture request bytes identical; enabled on a 3×4 JSON table → `after_bytes` < `before_bytes` and a measurement row; decode of the TOON recovers the same keys.
 Status: done 2026-09-03 · Check: `cargo test --lib plugins::toon` → 3 passed: `default_off_leaves_bytes_identical` (enabled=false, request JSON unchanged), `encodes_3x4_table_and_decode_recovers_keys` (`after_bytes` < `before_bytes`, one measurement, decode recovers keys a,b,c,d), `round_trip_values`. `just check` green. Deviation: encoder+tests live in `src/plugins/toon/mod.rs` (over the 200 LOC budget because decode and three tests sit in the same file). Default remains off (`min_rows = 5`).
 
+## P21 — CLI presentation
+
+**T21.1 the plugin offer actually asks** · T10.5 · `src/setup/mod.rs`, `src/setup/cursor.rs`, `src/setup/pi.rs`
+Do: D21 (6) says `--dry-run` prints the offer, `--yes` accepts it and the default on a TTY is a prompt; only the first two were built, so on a terminal setup declined its own offer without a word. Add one `setup::accepted(cfg, question)` — `--yes` is yes, no terminal is no, a terminal asks through dialoguer — and call it from both installers instead of their identical `if !cfg.setup.yes` blocks.
+Check: without a terminal only `--yes` accepts (the test harness *is* that case, so the existing cursor/pi tests pin the behaviour they already had); `--dry-run` still returns before anything is asked; `just check` green.
+Status: done 2026-09-09 · Model: Opus 5
+Check result: green — `without_a_terminal_only_yes_accepts` plus the 19 existing `setup::` tests unchanged, `just check` clean.
+Deviation: dialoguer over a hand-rolled `read_line`, which would have been about eight lines and no dependency. It is not smaller code that wins here but behaviour: dialoguer restores the terminal on the way out and reads Ctrl-C and EOF as a no, where a naive `read_line` treats EOF as an empty line and would take the default — accepting a symlink into the user's host config on a stream that never answered.
+
+**T21.2 `graph index` shows progress** · T8.1 · `src/plugins/graph/index.rs`, `src/render.rs`, `src/cli.rs`
+Do: a cold index walks thousands of files in silence. Split `index::run` into `run_with(cx, root, dry_run, pb)` and keep `run` as the same call with `ProgressBar::hidden()`, so the MCP tool and the background watcher — neither of which owns a terminal — are unchanged and un-branched. `rtok graph index` passes a real spinner from `render::spinner`.
+Check: the bar's position equals the report's file count, so it counts the walk rather than decorating it; indicatif draws nothing when stderr is not a terminal, so piped output stays byte-clean; `just check` green.
+Status: done 2026-09-09 · Model: Opus 5
+Check result: green — `the_progress_bar_counts_the_files_the_walk_reached` (7 `.rs` files and one `.md`: `indexed` is 7 and `pb.position()` is 7), the six existing `graph::index` tests unchanged, `just check` clean.
+Deviation: none. `ProgressBar::hidden()` is the reason there is no `Option<&ProgressBar>` and no `cfg` in the walk — the no-op bar is indicatif's own answer to a caller with nothing to draw on.
+
+
 ## P20 — `demon` supervisor (D22)
 
 **T20.1 `rtok demon start|stop|restart|status|list|kill|update`** · T12.3 · `src/demon.rs`, `src/cli.rs`, `src/config/mod.rs` (+ `config/default.toml`, `docs/config.md`, `tests/demon.rs`)
