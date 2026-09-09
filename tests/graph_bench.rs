@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use rtok::config::Config;
-use rtok::plugin::Ctx;
+use rtok::plugin::{Ctx, Runtime};
 use rtok::plugins::graph::{callers, impact, index, symbol};
 use rtok::store::Store;
 
@@ -38,7 +38,7 @@ fn p8c_numbers() {
         .unwrap();
     }
     let t = Instant::now();
-    let cold = index::run(&cx, &repo, false).unwrap();
+    let cold = index::run(&Ctx::new(&cx), &repo, false).unwrap();
     let cold_ms = t.elapsed();
     eprintln!(
         "cold_index files={} rows={} read={} {cold_ms:?}",
@@ -47,7 +47,7 @@ fn p8c_numbers() {
 
     let warm = |label: &str, f: fn(&Ctx, &Path, &str) -> anyhow::Result<String>| {
         let t = Instant::now();
-        f(&cx, &repo, "f0").unwrap();
+        f(&Ctx::new(&cx), &repo, "f0").unwrap();
         let d = t.elapsed();
         eprintln!("warm_{label} {d:?}");
         d
@@ -55,7 +55,7 @@ fn p8c_numbers() {
     let ws = warm("symbol", symbol);
     let wc = warm("callers", callers);
     let t = Instant::now();
-    impact(&cx, &repo, "f0", 2).unwrap();
+    impact(&Ctx::new(&cx), &repo, "f0", 2).unwrap();
     let wi = t.elapsed();
     eprintln!("warm_impact2 {wi:?}");
 
@@ -80,7 +80,7 @@ fn p8c_numbers() {
 
     let (cx2, fan) = home("p8c-fan");
     write_fanout(&fan);
-    index::run(&cx2, &fan, false).unwrap();
+    index::run(&Ctx::new(&cx2), &fan, false).unwrap();
     let key = index::canon(&fan);
     let t = Instant::now();
     let rows = cx2.store.symbol_impact(&key, "sink", 4).unwrap();
@@ -146,14 +146,14 @@ fn impact_bfs(
     Ok(out)
 }
 
-fn home(name: &str) -> (Ctx, std::path::PathBuf) {
+fn home(name: &str) -> (Runtime, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!("rtok-bench-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut c = Config::default();
     c.core.db_path = dir.join("rtok.db");
     c.core.archive_dir = dir.join("archive");
-    (Ctx::open(c, name).unwrap(), dir)
+    (Runtime::open(c, name).unwrap(), dir)
 }
 
 fn hook_p95() {

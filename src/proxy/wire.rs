@@ -2,12 +2,16 @@
 
 use serde_json::Value;
 
+// The plugin-visible half of the wire is the published contract (D25); the provider
+// dialects that implement it stay here.
+pub use rtok_plugin_sdk::{ToolResultRef, ToolResults, WireRequest};
+
 use super::anthropic::ANTHROPIC;
 use super::openai_chat::OPENAI_CHAT;
 use super::openai_responses::OPENAI_RESPONSES;
 
 /// A provider request/response shape supported by the proxy.
-pub trait Wire: Send + Sync {
+pub trait Wire: ToolResults {
     /// Whether this wire owns the request path.
     fn matches(&self, path: &str) -> bool;
 
@@ -16,9 +20,6 @@ pub trait Wire: Send + Sync {
 
     /// Provider session identity, when the body carries one.
     fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str>;
-
-    /// Every mutable tool-result payload, with its id and number of later user turns.
-    fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>>;
 
     /// Usage from a complete JSON response body.
     fn usage_from_body(&self, body: &Value) -> Option<Usage>;
@@ -45,16 +46,6 @@ pub trait Wire: Send + Sync {
     }
 }
 
-/// A wire-normalised tool result. `turn` is the number of user turns that follow it.
-pub struct ToolResultRef<'a> {
-    /// Provider-stable result id, used as the archive-decision key.
-    pub id: String,
-    /// The provider's mutable result payload.
-    pub content: &'a mut Value,
-    /// User turns after this result; the archive plugin protects the live tail.
-    pub turn: usize,
-}
-
 /// Provider usage counters, with absent provider fields represented as zero.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
@@ -79,23 +70,6 @@ impl Usage {
         if next.output != 0 {
             self.output = next.output;
         }
-    }
-}
-
-/// A parsed request paired with its selected provider wire.
-pub struct WireRequest<'a> {
-    wire: &'static dyn Wire,
-    body: &'a mut Value,
-}
-
-impl<'a> WireRequest<'a> {
-    pub fn new(wire: &'static dyn Wire, body: &'a mut Value) -> Self {
-        Self { wire, body }
-    }
-
-    /// Expose only provider-normalised tool results to request-rewriting plugins.
-    pub fn tool_results(&mut self) -> Vec<ToolResultRef<'_>> {
-        self.wire.tool_results(self.body)
     }
 }
 

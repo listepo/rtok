@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Archive, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
+use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
 
@@ -30,7 +30,7 @@ impl Plugin for Toon {
     }
 
     fn proxy_filter(&self, req: &mut WireRequest<'_>, cx: &Ctx) -> Vec<Measurement> {
-        if !cx.config.plugins.toon.enabled {
+        if !cx.plugin_config::<crate::config::Toon>("toon").enabled {
             return Vec::new();
         }
         rewrite(req.tool_results(), cx)
@@ -38,7 +38,7 @@ impl Plugin for Toon {
 }
 
 fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
-    let min_rows = cx.config.plugins.toon.min_rows as usize;
+    let min_rows = cx.plugin_config::<crate::config::Toon>("toon").min_rows as usize;
     let mut out = Vec::new();
     for result in results {
         if let Some(m) = rewrite_block(result.content, cx, min_rows) {
@@ -179,14 +179,15 @@ fn decode_cell(s: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
     use crate::proxy::anthropic::ANTHROPIC;
     use crate::proxy::wire::WireRequest;
     use serde_json::json;
 
-    fn cx(name: &str, enabled: bool, min_rows: u32) -> Ctx {
+    fn cx(name: &str, enabled: bool, min_rows: u32) -> Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-toon-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cx = Ctx::in_memory("s").unwrap();
+        let mut cx = Runtime::in_memory("s").unwrap();
         cx.config.core.archive_dir = dir;
         cx.config.plugins.toon.enabled = enabled;
         cx.config.plugins.toon.min_rows = min_rows;
@@ -220,7 +221,7 @@ mod tests {
             {"a": 10, "b": 11, "c": 12},
         ]));
         let original = body.clone();
-        assert!(filter(&mut body, &cx).is_empty());
+        assert!(filter(&mut body, &Ctx::new(&cx)).is_empty());
         assert_eq!(body, original);
     }
 
@@ -228,7 +229,7 @@ mod tests {
     fn encodes_3x4_table_and_decode_recovers_keys() {
         let cx = cx("enc", true, 3);
         let mut body = tool_req(rows_3x4());
-        let ms = filter(&mut body, &cx);
+        let ms = filter(&mut body, &Ctx::new(&cx));
         assert_eq!(ms.len(), 1);
         assert!(ms[0].after_bytes < ms[0].before_bytes);
         let text = body["messages"][0]["content"][0]["content"]

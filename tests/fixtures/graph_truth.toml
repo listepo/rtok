@@ -49,7 +49,9 @@ refs = ["src/hooks/types.rs", "src/plugins/guard/mod.rs", "src/plugins/read/cach
 [[symbol]]
 name = "ToolResultRef"
 kind = "struct"
-defs = ["src/proxy/wire.rs"]
+# T23.3: the plugin-visible half of the wire is the published contract; `src/proxy/wire.rs`
+# only re-exports it.
+defs = ["crates/rtok-plugin-sdk/src/wire.rs"]
 refs = ["src/plugins/archive/mod.rs", "src/proxy/anthropic.rs", "src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
 
 [[symbol]]

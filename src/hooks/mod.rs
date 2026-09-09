@@ -6,7 +6,7 @@
 pub mod types;
 
 use crate::config::Config;
-use crate::plugin::{Ctx, PreToolDecision, SessionStart};
+use crate::plugin::{Ctx, PreToolDecision, Runtime, SessionStart};
 use crate::plugins::Registry;
 use crate::tokens::Class;
 use std::io::{Read, Write};
@@ -38,14 +38,14 @@ fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
     } else {
         input.session_id.clone()
     };
-    let cx = match Ctx::open(cfg.clone(), session) {
+    let cx = match Runtime::open(cfg.clone(), session) {
         Ok(cx) => cx,
         Err(_) => return b"{}".to_vec(),
     };
     dispatch(stdin, &input, &cx)
 }
 
-pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
+pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
     let parent = cx
@@ -58,7 +58,8 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
-                    let _ = panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, cx)));
+                    let _ =
+                        panic::catch_unwind(AssertUnwindSafe(|| p.pre_compact(&ev, &Ctx::new(cx))));
                 }
             }
             HookOutput::default()
@@ -88,13 +89,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Ctx) -> Vec<u8> {
     bytes
 }
 
-fn pre_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
+fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let Some(ev) = input.pre_tool() else {
         return HookOutput::default();
     };
     let mut rewrite: Option<PreToolDecision> = None;
     for p in registry.enabled() {
-        let got = panic::catch_unwind(AssertUnwindSafe(|| p.pre_tool(&ev, cx)))
+        let got = panic::catch_unwind(AssertUnwindSafe(|| p.pre_tool(&ev, &Ctx::new(cx))))
             .ok()
             .flatten();
         match got {
@@ -127,13 +128,15 @@ fn pre_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
     HookOutput::default()
 }
 
-fn post_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
+fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let Some(ev) = input.post_tool() else {
         return HookOutput::default();
     };
     let mut parts = Vec::new();
     for p in registry.enabled() {
-        if let Ok(Some(s)) = panic::catch_unwind(AssertUnwindSafe(|| p.post_tool(&ev, cx))) {
+        if let Ok(Some(s)) =
+            panic::catch_unwind(AssertUnwindSafe(|| p.post_tool(&ev, &Ctx::new(cx))))
+        {
             parts.push(s);
         }
     }
@@ -151,16 +154,16 @@ fn post_tool(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
     }
 }
 
-fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput {
+fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let mut inj = Vec::new();
     for p in registry.enabled() {
         let one = panic::catch_unwind(AssertUnwindSafe(|| {
             if let Some(ev) = input.session_start() {
-                p.session_start(&ev, cx)
+                p.session_start(&ev, &Ctx::new(cx))
             } else if let Some(ev) = input.prompt_submit() {
-                p.prompt_submit(&ev, cx)
+                p.prompt_submit(&ev, &Ctx::new(cx))
             } else if input.hook_event_name == "PostCompact" {
-                p.session_start(&SessionStart { source: "compact" }, cx)
+                p.session_start(&SessionStart { source: "compact" }, &Ctx::new(cx))
             } else {
                 None
             }
@@ -172,7 +175,7 @@ fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput 
         }
     }
     #[cfg(feature = "inject")]
-    let text = crate::plugins::inject::apply(cx, inj);
+    let text = crate::plugins::inject::apply(&Ctx::new(cx), inj);
     #[cfg(not(feature = "inject"))]
     let text = {
         let _ = inj;
@@ -191,7 +194,7 @@ fn inject_event(input: &HookInput, cx: &Ctx, registry: &Registry) -> HookOutput 
     }
 }
 
-fn cap_budget(cx: &Ctx, text: &str) -> String {
+fn cap_budget(cx: &Runtime, text: &str) -> String {
     let budget = cx.config.plugins.inject.budget_tokens;
     if cx.estimate(text, Class::Prose) <= budget {
         return text.to_string();
@@ -214,12 +217,12 @@ fn cap_budget(cx: &Ctx, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Ctx;
+    use crate::plugin::Runtime;
 
     #[test]
     fn fixture_pre_tool_is_valid_json() {
         let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
-        let cx = Ctx::in_memory("b1e2c3d4-0000-4000-8000-000000000001").unwrap();
+        let cx = Runtime::in_memory("b1e2c3d4-0000-4000-8000-000000000001").unwrap();
         let input: HookInput = serde_json::from_str(raw).unwrap();
         let out = dispatch(raw.as_bytes(), &input, &cx);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
@@ -235,7 +238,7 @@ mod tests {
         let stdin = serde_json::to_vec(&v).unwrap();
         assert!(stdin.len() > 65_536);
         let input: HookInput = serde_json::from_slice(&stdin).unwrap();
-        let cx = Ctx::in_memory("b1e2c3d4-0000-4000-8000-000000000002").unwrap();
+        let cx = Runtime::in_memory("b1e2c3d4-0000-4000-8000-000000000002").unwrap();
         let _ = dispatch(&stdin, &input, &cx);
         let ids = cx.store.call_ids_of_kind("hook").unwrap();
         assert!(!ids.is_empty());

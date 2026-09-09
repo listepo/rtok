@@ -28,11 +28,12 @@ fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
 
 /// Wrap a Bash command unless the skip rules fire.
 pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
-    if ev.tool_name != "Bash" || !cx.config.plugins.cmd.rewrite {
+    let cfg = cx.plugin_config::<crate::config::Cmd>("cmd");
+    if ev.tool_name != "Bash" || !cfg.rewrite {
         return None;
     }
     let cmd = ev.tool_input.get("command")?.as_str()?;
-    if skip_wrap(cmd, &cx.config.plugins.cmd.never_wrap) {
+    if skip_wrap(cmd, &cfg.never_wrap) {
         return None;
     }
     let mut input = ev.tool_input.clone();
@@ -46,16 +47,16 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Ctx;
+    use crate::plugin::{Ctx, Runtime};
 
     fn decide(command: &str) -> Option<PreToolDecision> {
-        let cx = Ctx::in_memory("wrap").unwrap();
+        let cx = Runtime::in_memory("wrap").unwrap();
         let input = json!({"command": command, "description": "t"});
         let ev = PreToolUse {
             tool_name: "Bash",
             tool_input: &input,
         };
-        pre_tool(&ev, &cx)
+        pre_tool(&ev, &Ctx::new(&cx))
     }
 
     fn wrapped(d: &PreToolDecision) -> &str {

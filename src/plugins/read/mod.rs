@@ -9,8 +9,8 @@ use anyhow::{Result, bail};
 use serde_json::json;
 
 use crate::plugin::{
-    Archive, Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse,
-    Surface, ToolDef,
+    Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
+    ToolDef,
 };
 
 pub mod cache;
@@ -69,10 +69,11 @@ impl Plugin for Read {
 
 pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<String> {
     let cwd = std::env::current_dir()?;
-    let abs = resolve(&cwd, Path::new(path), &cx.config.plugins.read.allow_paths)?;
+    let cfg = cx.plugin_config::<crate::config::Read>("read");
+    let abs = resolve(&cwd, Path::new(path), &cfg.allow_paths)?;
     let raw = std::fs::read_to_string(&abs)?;
     let mode = if mode.is_empty() {
-        cx.config.plugins.read.default_mode.as_str()
+        cfg.default_mode.as_str()
     } else {
         mode
     };
@@ -138,7 +139,7 @@ fn under(path: &Path, root: &Path) -> bool {
 }
 
 fn cap(cx: &Ctx, text: String) -> Result<String> {
-    let max = cx.config.plugins.read.max_chars as usize;
+    let max = cx.plugin_config::<crate::config::Read>("read").max_chars as usize;
     if text.chars().count() <= max {
         return Ok(text);
     }
@@ -162,9 +163,10 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::plugin::Runtime;
     use std::fs;
 
-    fn cx(name: &str) -> (Ctx, PathBuf) {
+    fn cx(name: &str) -> (Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-read-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -172,7 +174,7 @@ mod tests {
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
         c.plugins.read.allow_paths = vec![dir.clone()];
-        (Ctx::open(c, name).unwrap(), dir)
+        (Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]
@@ -180,7 +182,7 @@ mod tests {
         let (cx, dir) = cx("three");
         let p = dir.join("a.txt");
         fs::write(&p, "alpha\nbeta\ngamma\n").unwrap();
-        let out = read(&cx, p.to_str().unwrap(), "full", None).unwrap();
+        let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
         assert_eq!(out, "1:alpha\n2:beta\n3:gamma");
         let _ = fs::remove_dir_all(dir);
     }
@@ -191,7 +193,7 @@ mod tests {
         let p = dir.join("big.txt");
         let blob = "x".repeat(100 * 1024);
         fs::write(&p, &blob).unwrap();
-        let out = read(&cx, p.to_str().unwrap(), "full", None).unwrap();
+        let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
         assert!(out.contains("archived"), "{out}");
         assert!(out.chars().count() < blob.len(), "capped");
         let _ = fs::remove_dir_all(dir);
@@ -200,7 +202,7 @@ mod tests {
     #[test]
     fn dotdot_etc_passwd_is_err() {
         let (cx, dir) = cx("guard");
-        let err = read(&cx, "../etc/passwd", "full", None)
+        let err = read(&Ctx::new(&cx), "../etc/passwd", "full", None)
             .unwrap_err()
             .to_string();
         assert!(err.contains("outside cwd"), "{err}");
@@ -215,8 +217,8 @@ mod tests {
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        let cx = Ctx::open(c, "mapmain").unwrap();
-        let out = read(&cx, "src/main.rs", "map", None).unwrap();
+        let cx = Runtime::open(c, "mapmain").unwrap();
+        let out = read(&Ctx::new(&cx), "src/main.rs", "map", None).unwrap();
         assert!(out.contains("fn main"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }

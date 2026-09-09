@@ -1,6 +1,6 @@
 //! PreCompact checkpoint + compact restore (plan T2.5).
 
-use crate::plugin::{Ctx, Injection, Notes};
+use crate::plugin::{Ctx, Injection};
 use crate::tokens::Class;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -123,7 +123,10 @@ pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
 /// Latest checkpoint as an injection, capped at `plugins.memory.checkpoint_tokens`.
 pub fn offer(cx: &Ctx) -> Option<Injection> {
     let mut text = cx.latest_note("checkpoint").ok().flatten()?;
-    let cap = cx.config.plugins.memory.checkpoint_tokens.max(1);
+    let cap = cx
+        .plugin_config::<crate::config::Memory>("memory")
+        .checkpoint_tokens
+        .max(1);
     while cx.estimate(&text, Class::Prose) > cap && !text.is_empty() {
         text.pop();
     }
@@ -137,6 +140,7 @@ pub fn offer(cx: &Ctx) -> Option<Injection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
 
     const FIXTURE: &str = r#"{"type":"user","message":{"role":"user","content":"edit the three files"}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/a.rs"}},{"type":"tool_use","name":"Read","input":{"file_path":"src/b.rs"}},{"type":"tool_use","name":"Read","input":{"file_path":"src/c.rs"}}]}}
@@ -170,7 +174,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
-        let cx = Ctx::in_memory("budget").unwrap();
+        let cx = Runtime::in_memory("budget").unwrap();
         for p in ["src/a.rs", "src/b.rs", "src/c.rs"] {
             assert!(body.contains(p) && text.contains(p), "{body}\n{text}");
         }

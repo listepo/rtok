@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use rtok::config::Config;
-use rtok::plugin::Ctx;
+use rtok::plugin::{Ctx, Runtime};
 use rtok::plugins::graph::index;
 
 struct Truth {
@@ -59,9 +59,9 @@ fn labelled_symbols_are_found() {
     let mut cfg = Config::default();
     cfg.core.db_path = dir.join("rtok.db");
     cfg.core.archive_dir = dir.join("archive");
-    let cx = Ctx::open(cfg, "graph_truth").unwrap();
+    let cx = Runtime::open(cfg, "graph_truth").unwrap();
     let root = repo();
-    index::run(&cx, &root, false).unwrap();
+    index::run(&Ctx::new(&cx), &root, false).unwrap();
     let key = index::canon(&root);
 
     let (mut dwant, mut dgot) = (0usize, 0usize);

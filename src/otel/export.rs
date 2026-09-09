@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 
 use super::{map, metrics, otlp};
 use crate::config::{Config, Endpoint};
-use crate::plugin::Ctx;
+use crate::plugin::Runtime;
 
 /// Rows per stream per flush; the rest goes next time.
 pub const BATCH: i64 = 1000;
@@ -50,7 +50,7 @@ impl fmt::Display for Report {
     }
 }
 
-pub fn resource(cx: &Ctx) -> otlp::Resource {
+pub fn resource(cx: &Runtime) -> otlp::Resource {
     otlp::Resource {
         attrs: vec![
             otlp::s("service.name", &cx.config.otel.service_name),
@@ -62,7 +62,7 @@ pub fn resource(cx: &Ctx) -> otlp::Resource {
 }
 
 /// One flush: traces (ended sessions + calls), then logs. Errors are reported, not returned.
-pub async fn flush(cx: &Ctx) -> Report {
+pub async fn flush(cx: &Runtime) -> Report {
     let Some(ep) = cx.config.otel.resolve() else {
         return Report::default();
     };
@@ -78,7 +78,7 @@ pub async fn flush(cx: &Ctx) -> Report {
     rep
 }
 
-async fn flush_into(cx: &Ctx, ep: &Endpoint, rep: &mut Report) -> Result<()> {
+async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()> {
     let store = &cx.store;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(u64::from(
@@ -181,7 +181,7 @@ async fn post(
 }
 
 /// `flush` on a current-thread runtime: the CLI, `mcp`'s thread and the hook-spawned child.
-pub fn flush_blocking(cx: &Ctx) -> Report {
+pub fn flush_blocking(cx: &Runtime) -> Report {
     match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -196,7 +196,7 @@ pub fn flush_blocking(cx: &Ctx) -> Report {
 }
 
 /// `rtok otel status`: endpoint, marks, what is pending, the exporter's last log line.
-pub fn status(cx: &Ctx) -> Result<String> {
+pub fn status(cx: &Runtime) -> Result<String> {
     let mut out = String::new();
     match cx.config.otel.resolve() {
         Some(ep) => writeln!(out, "endpoint: {}", ep.url)?,
@@ -233,7 +233,7 @@ pub fn spawn_tick(cfg: &Config) {
     }
     let cfg = cfg.clone();
     tokio::spawn(async move {
-        let Ok(cx) = Ctx::open(cfg.clone(), "otel") else {
+        let Ok(cx) = Runtime::open(cfg.clone(), "otel") else {
             return;
         };
         let period = Duration::from_secs(u64::from(cfg.otel.flush_secs.max(1)));
@@ -253,7 +253,7 @@ pub fn spawn_ticker(cfg: &Config) {
     }
     let cfg = cfg.clone();
     std::thread::spawn(move || {
-        let Ok(cx) = Ctx::open(cfg.clone(), "otel") else {
+        let Ok(cx) = Runtime::open(cfg.clone(), "otel") else {
             return;
         };
         let period = Duration::from_secs(u64::from(cfg.otel.flush_secs.max(1)));
@@ -266,7 +266,7 @@ pub fn spawn_ticker(cfg: &Config) {
 
 /// Hooks (`Stop`, `SessionEnd`): hand the flush to a detached `rtok otel flush` and return
 /// in about a millisecond. The child inherits the environment; `RTOK_HOME` names the config.
-pub fn spawn_child(cx: &Ctx) {
+pub fn spawn_child(cx: &Runtime) {
     if cx.config.otel.resolve().is_none() {
         return;
     }

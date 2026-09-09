@@ -18,8 +18,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::plugin::{
-    Archive, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, Symbols,
-    ToolDef,
+    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
 };
 use crate::tokens::Class;
 
@@ -89,7 +88,7 @@ impl Plugin for Graph {
 /// `rtok graph index` or the P8d watcher, and a hook-staled file reads as
 /// missing until then.
 pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
-    if cx.config.plugins.graph.auto_index {
+    if cx.plugin_config::<crate::config::Graph>("graph").auto_index {
         index::run(cx, root, false)
     } else {
         index::ensure(cx, root)
@@ -124,7 +123,7 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     if rows.is_empty() {
         return Ok(format!("no definition of {name}"));
     }
-    let budget = cx.config.plugins.graph.body_lines as usize;
+    let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
     let mut out = String::new();
     for (path, kind, line, end_line) in &rows {
         out.push_str(&format!("{path}:{line} {kind}\n"));
@@ -224,7 +223,7 @@ pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
 /// Always records one measurement (capped vs uncapped estimate); `ref_id` when truncated.
 fn cap(cx: &Ctx, text: String) -> Result<String> {
-    let max = cx.config.plugins.graph.max_tokens;
+    let max = cx.plugin_config::<crate::config::Graph>("graph").max_tokens;
     let est = cx.estimate(&text, Class::Code);
     let before_bytes = text.len() as u64;
     let (out, ref_id) = if est <= max {
@@ -258,7 +257,7 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
         est_before: est,
         est_after: cx.estimate(&out, Class::Code),
         ref_id,
-        call_id: cx.call_id,
+        call_id: cx.call_id(),
     })?;
     Ok(out)
 }
@@ -278,7 +277,7 @@ mod tests {
     #[test]
     fn symbol_returns_the_definition_body() {
         let (cx, dir) = cx("body");
-        let out = symbol(&cx, &crate_root(), "cap").unwrap();
+        let out = symbol(&Ctx::new(&cx), &crate_root(), "cap").unwrap();
         let src = fs::read_to_string(crate_root().join("src/plugins/graph/mod.rs")).unwrap();
         let head = src
             .lines()
@@ -301,7 +300,7 @@ mod tests {
         // ~13 s of fixture setup into every `just check` for nothing this test measures.
         let src = "fn dup() {\n    ();\n}\n".repeat(500);
         fs::write(dir.join("d.rs"), &src).unwrap();
-        let out = symbol(&cx, &dir, "dup").unwrap();
+        let out = symbol(&Ctx::new(&cx), &dir, "dup").unwrap();
         let trailer = out.lines().last().unwrap();
         assert!(trailer.contains(" more, expand "), "{trailer}");
         let id = trailer.rsplit(' ').next().unwrap();
@@ -319,21 +318,21 @@ mod tests {
     #[test]
     fn symbol_main_is_in_src_main_rs() {
         let (cx, dir) = cx("symbol");
-        let out = symbol(&cx, &crate_root(), "main").unwrap();
+        let out = symbol(&Ctx::new(&cx), &crate_root(), "main").unwrap();
         assert!(out.lines().any(|l| l.starts_with("src/main.rs:")), "{out}");
         assert_eq!(
-            symbol(&cx, &crate_root(), "no_such_fn").unwrap(),
+            symbol(&Ctx::new(&cx), &crate_root(), "no_such_fn").unwrap(),
             "no definition of no_such_fn"
         );
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T8.5: the caller is a definition, not a line number. `Ctx::estimate` calls the free
+    /// T8.5: the caller is a definition, not a line number. `Runtime::estimate` calls the free
     /// `tokens::estimate`, so `src/plugin.rs` must report `estimate` as the calling scope.
     #[test]
     fn callers_estimate_lists_src_plugin_rs() {
         let (cx, dir) = cx("callers");
-        let out = callers(&cx, &crate_root(), "estimate").unwrap();
+        let out = callers(&Ctx::new(&cx), &crate_root(), "estimate").unwrap();
         assert!(
             out.lines()
                 .any(|l| l.starts_with("src/plugin.rs  estimate \u{d7}")),
@@ -351,7 +350,7 @@ mod tests {
             src.push_str(&format!("fn c{i}() {{ zeta(); }}\n"));
         }
         fs::write(dir.join("zeta.rs"), &src).unwrap();
-        let out = callers(&cx, &dir, "zeta").unwrap();
+        let out = callers(&Ctx::new(&cx), &dir, "zeta").unwrap();
         let trailer = out.lines().last().unwrap();
         assert!(trailer.contains(" more, expand "), "{trailer}");
         let id = trailer.rsplit(' ').next().unwrap();
@@ -383,21 +382,21 @@ mod tests {
                 .find(|l| l.ends_with(&format!("  {n}")))
                 .map(|l| l[..1].to_string())
         };
-        let two = impact(&cx, &dir, "c", 2).unwrap();
+        let two = impact(&Ctx::new(&cx), &dir, "c", 2).unwrap();
         assert_eq!(at(&two, "b").as_deref(), Some("1"), "{two}");
         assert_eq!(at(&two, "a").as_deref(), Some("2"), "{two}");
-        let one = impact(&cx, &dir, "c", 1).unwrap();
+        let one = impact(&Ctx::new(&cx), &dir, "c", 1).unwrap();
         assert_eq!(at(&one, "b").as_deref(), Some("1"), "{one}");
         assert_eq!(at(&one, "a"), None, "depth 1 must stop at the callers");
         // x calls y, y calls x, both reach c: the walk visits each once and returns.
-        let deep = impact(&cx, &dir, "c", 4).unwrap();
+        let deep = impact(&Ctx::new(&cx), &dir, "c", 4).unwrap();
         assert_eq!(
             deep.lines().filter(|l| l.ends_with("  x")).count(),
             1,
             "{deep}"
         );
         assert_eq!(
-            impact(&cx, &dir, "no_such_fn", 2).unwrap(),
+            impact(&Ctx::new(&cx), &dir, "no_such_fn", 2).unwrap(),
             "nothing reaches no_such_fn"
         );
         let _ = fs::remove_dir_all(dir);
@@ -415,7 +414,7 @@ mod tests {
             src.push_str(&format!("fn d{i}() {{ c{i}(); }}\n"));
         }
         fs::write(dir.join("fan.rs"), src).unwrap();
-        index::run(&cx, &dir, false).unwrap();
+        index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let key = index::canon(&dir);
         let mut cte: Vec<_> = cx.store.symbol_impact(&key, "sink", 4).unwrap();
         let mut bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
@@ -433,19 +432,19 @@ mod tests {
         let (mut cx, dir) = cx("noauto");
         cx.config.plugins.graph.auto_index = false;
         fs::write(dir.join("a.rs"), "fn alpha() {}\n").unwrap();
-        let first = symbol(&cx, &dir, "alpha").unwrap();
+        let first = symbol(&Ctx::new(&cx), &dir, "alpha").unwrap();
         assert!(first.contains("a.rs:1"), "{first}");
         std::thread::sleep(std::time::Duration::from_millis(5));
         fs::write(dir.join("a.rs"), "// bump\nfn alpha() {}\n").unwrap();
-        let stale = symbol(&cx, &dir, "alpha").unwrap();
+        let stale = symbol(&Ctx::new(&cx), &dir, "alpha").unwrap();
         assert!(
             stale.contains("a.rs:1"),
             "must still report the old line: {stale}"
         );
-        let r = index_for(&cx, &dir).unwrap();
+        let r = index_for(&Ctx::new(&cx), &dir).unwrap();
         assert_eq!(r.read, 0, "the call must open no file");
-        index::run(&cx, &dir, false).unwrap(); // what `rtok graph index` does
-        let fresh = symbol(&cx, &dir, "alpha").unwrap();
+        index::run(&Ctx::new(&cx), &dir, false).unwrap(); // what `rtok graph index` does
+        let fresh = symbol(&Ctx::new(&cx), &dir, "alpha").unwrap();
         assert!(
             fresh.contains("a.rs:2"),
             "explicit index shows the new line: {fresh}"
@@ -459,7 +458,7 @@ mod tests {
         let (mut cx, dir) = cx("noauto-empty");
         cx.config.plugins.graph.auto_index = false;
         fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
-        let out = symbol(&cx, &dir, "main").unwrap();
+        let out = symbol(&Ctx::new(&cx), &dir, "main").unwrap();
         assert!(out.contains("main.rs:1"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
@@ -485,7 +484,7 @@ mod tests {
     #[test]
     fn outline_reuses_read_map() {
         let (cx, dir) = cx("outline");
-        let out = outline(&cx, "src/main.rs").unwrap();
+        let out = outline(&Ctx::new(&cx), "src/main.rs").unwrap();
         assert!(out.contains("main"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }

@@ -2,28 +2,13 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, Usage, Wire, int_field};
+use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field};
 
 pub static ANTHROPIC: Anthropic = Anthropic;
 
 pub struct Anthropic;
 
-impl Wire for Anthropic {
-    fn matches(&self, path: &str) -> bool {
-        path == "/v1/messages"
-    }
-
-    fn provider(&self) -> &'static str {
-        "anthropic"
-    }
-
-    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
-        body.get("metadata")
-            .and_then(|metadata| metadata.get("user_id"))
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-    }
-
+impl ToolResults for Anthropic {
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>> {
         let Some(messages) = req.get_mut("messages").and_then(Value::as_array_mut) else {
             return Vec::new();
@@ -61,6 +46,23 @@ impl Wire for Anthropic {
             }
         }
         results
+    }
+}
+
+impl Wire for Anthropic {
+    fn matches(&self, path: &str) -> bool {
+        path == "/v1/messages"
+    }
+
+    fn provider(&self) -> &'static str {
+        "anthropic"
+    }
+
+    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
+        body.get("metadata")
+            .and_then(|metadata| metadata.get("user_id"))
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
     }
 
     fn usage_from_body(&self, body: &Value) -> Option<Usage> {

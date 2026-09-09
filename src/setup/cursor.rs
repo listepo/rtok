@@ -198,7 +198,7 @@ fn is_ours(entry: &Value) -> bool {
 mod tests {
     use super::*;
     use crate::hooks::{dispatch, types::HookInput};
-    use crate::plugin::Ctx;
+    use crate::plugin::Runtime;
     use std::fs;
     use std::path::PathBuf;
 
@@ -269,7 +269,7 @@ mod tests {
         c.hook.host = "cursor".into();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        let cx = Ctx::open(c, "cur").unwrap();
+        let cx = Runtime::open(c, "cur").unwrap();
         let raw = json!({
             "hook_event_name": "beforeShellExecution",
             "command": "ls -la",

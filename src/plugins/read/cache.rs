@@ -2,7 +2,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::plugin::{Archive, Ctx, Measurement, PostToolUse, ReadCache};
+use crate::plugin::{Ctx, Measurement, PostToolUse};
 use crate::tokens::Class;
 
 pub fn key(path: &str, mode: &str, range: Option<&str>) -> String {
@@ -65,12 +65,13 @@ fn hex_sha256(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::plugin::Runtime;
     use crate::plugins::read::read;
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
 
-    fn cx(name: &str) -> (Ctx, PathBuf) {
+    fn cx(name: &str) -> (Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-dedup-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -78,7 +79,7 @@ mod tests {
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
         c.plugins.read.allow_paths = vec![dir.clone()];
-        (Ctx::open(c, name).unwrap(), dir)
+        (Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]
@@ -87,9 +88,9 @@ mod tests {
         let p = dir.join("a.txt");
         fs::write(&p, "alpha\nbeta\n").unwrap();
         let path = p.to_str().unwrap();
-        let first = read(&cx, path, "full", None).unwrap();
+        let first = read(&Ctx::new(&cx), path, "full", None).unwrap();
         assert!(first.contains("1:alpha"), "{first}");
-        let second = read(&cx, path, "full", None).unwrap();
+        let second = read(&Ctx::new(&cx), path, "full", None).unwrap();
         assert!(second.len() < 80, "{second}");
         assert!(second.contains("unchanged"), "{second}");
         assert!(cx.store.measurement_count("read").unwrap() >= 1);
@@ -102,9 +103,9 @@ mod tests {
         let p = dir.join("a.txt");
         fs::write(&p, "alpha\n").unwrap();
         let path = p.to_str().unwrap();
-        let _ = read(&cx, path, "full", None).unwrap();
+        let _ = read(&Ctx::new(&cx), path, "full", None).unwrap();
         fs::write(&p, "omega\n").unwrap();
-        let second = read(&cx, path, "full", None).unwrap();
+        let second = read(&Ctx::new(&cx), path, "full", None).unwrap();
         assert!(second.contains("1:omega"), "{second}");
         assert!(!second.contains("unchanged"), "{second}");
         let _ = fs::remove_dir_all(dir);
@@ -116,7 +117,7 @@ mod tests {
         let p = dir.join("a.txt");
         fs::write(&p, "alpha\n").unwrap();
         let path = p.to_str().unwrap();
-        let _ = read(&cx, path, "full", None).unwrap();
+        let _ = read(&Ctx::new(&cx), path, "full", None).unwrap();
         let input = json!({"file_path": path});
         invalidate(
             &PostToolUse {
@@ -124,9 +125,9 @@ mod tests {
                 tool_input: &input,
                 tool_response: &json!({}),
             },
-            &cx,
+            &Ctx::new(&cx),
         );
-        let second = read(&cx, path, "full", None).unwrap();
+        let second = read(&Ctx::new(&cx), path, "full", None).unwrap();
         assert!(second.contains("1:alpha"), "{second}");
         let _ = fs::remove_dir_all(dir);
     }

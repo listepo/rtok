@@ -7,7 +7,7 @@ use std::process::Command;
 use httpmock::prelude::*;
 use rtok::config::Config;
 use rtok::otel::export::flush_blocking;
-use rtok::plugin::{Ctx, Measurement};
+use rtok::plugin::{Measurement, Runtime};
 
 fn home(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtok-otel-{tag}-{}", std::process::id()));
@@ -16,14 +16,14 @@ fn home(tag: &str) -> PathBuf {
     dir
 }
 
-fn ctx(dir: &Path, endpoint: &str) -> Ctx {
+fn ctx(dir: &Path, endpoint: &str) -> Runtime {
     let mut cfg = Config::default();
     cfg.core.db_path = dir.join("rtok.db");
     cfg.core.archive_dir = dir.join("archive");
     cfg.otel.endpoint = endpoint.into();
     cfg.otel.headers = "x-key=k".into();
     cfg.otel.flush_secs = 2;
-    let cx = Ctx::open(cfg, "s1").unwrap();
+    let cx = Runtime::open(cfg, "s1").unwrap();
     cx.store
         .upsert_session("s1", None, Some("p"), Some("/w"), Some("startup"))
         .unwrap();
@@ -31,7 +31,7 @@ fn ctx(dir: &Path, endpoint: &str) -> Ctx {
 }
 
 /// Three calls (hook, mcp, proxy) with io, one measurement, one log row.
-fn seed(cx: &Ctx) {
+fn seed(cx: &Runtime) {
     let s = &cx.store;
     let hook = s
         .insert_call(

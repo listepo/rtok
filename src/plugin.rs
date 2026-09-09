@@ -2,7 +2,7 @@
 //!
 //! The contract itself lives in the published `rtok-plugin-sdk` crate (D25) and is re-exported
 //! here, so `rtok::plugin::*` keeps resolving and an out-of-tree plugin and an in-tree one
-//! implement the same types. What stays here is the host side: [`Ctx`], which owns the config
+//! implement the same types. What stays here is the host side: [`Runtime`], which owns the config
 //! and the store, and the [`Plugin`] trait until T23.3 puts the host behind capability traits.
 //!
 //! Rules (AGENTS.md): fail open, lossless by default, and a saving that is not a
@@ -14,19 +14,19 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::config::Config;
-use crate::proxy::wire::WireRequest;
 use crate::store::Store;
 use crate::tokens;
 
 pub use rtok_plugin_sdk::{
-    Archive, ArchiveDecision, Class, DashboardPage, Host, Injection, Ledger, Manifest, Measurement,
-    NoteHit, Notes, PostToolUse, PreCompact, PreToolDecision, PreToolUse, PromptSubmit, ReadCache,
-    SessionStart, Surface, Symbols, ToolDef,
+    Archive, ArchiveDecision, Capabilities, Class, Ctx, DashboardPage, Host, Injection, Ledger,
+    Manifest, Measurement, NoteHit, Notes, Plugin, PostToolUse, PreCompact, PreToolDecision,
+    PreToolUse, PromptSubmit, ReadCache, SessionStart, Surface, Symbols, ToolDef, ToolResultRef,
+    ToolResults, WireRequest,
 };
 
 /// Everything a plugin may touch: config, the store, and the session id.
 /// The archive store is added in T3.1.
-pub struct Ctx {
+pub struct Runtime {
     /// Merged configuration for this run.
     pub config: Config,
     /// The one SQLite file (D8).
@@ -38,7 +38,7 @@ pub struct Ctx {
     pub call_id: Option<i32>,
 }
 
-impl Ctx {
+impl Runtime {
     /// Open the store at `config.core.db_path`.
     pub fn open(config: Config, session: impl Into<String>) -> Result<Self> {
         let store = Store::open(&config.core.db_path)?;
@@ -74,7 +74,7 @@ impl Ctx {
         self.insert_call(surface, kind, None, name)
     }
 
-    /// A `plugin_run` row for `plugin`, nested under [`Ctx::call_id`] when set.
+    /// A `plugin_run` row for `plugin`, nested under [`Runtime::call_id`] when set.
     pub fn record_plugin_run(&self, surface: &str, plugin: &str) -> Result<i32> {
         self.insert_call(surface, "plugin_run", Some(plugin), None)
     }
@@ -136,31 +136,31 @@ impl Ctx {
     }
 }
 
-/// The host side of the contract (D25). `Ctx` *is* the host: every capability trait is
+/// The host side of the contract (D25). `Runtime` *is* the host: every capability trait is
 /// implemented here by delegating to the one store, and the session and the archive
 /// directory come from the context rather than from the plugin's arguments.
 ///
 /// A plugin sees only these traits, which is what lets `rtok-plugin-sdk` stay three
 /// dependencies deep while this crate carries SQLite and tree-sitter.
-impl Host for Ctx {
+impl Host for Runtime {
     fn session(&self) -> &str {
         &self.session
     }
 
     fn estimate(&self, text: &str, class: Class) -> u32 {
-        Ctx::estimate(self, text, class)
+        Runtime::estimate(self, text, class)
     }
 
     fn record(&self, m: &Measurement) -> Result<()> {
-        Ctx::record(self, m)
+        Runtime::record(self, m)
     }
 
     fn record_call(&self, surface: &str, kind: &str, name: Option<&str>) -> Result<i32> {
-        Ctx::record_call(self, surface, kind, name)
+        Runtime::record_call(self, surface, kind, name)
     }
 
     fn record_plugin_run(&self, surface: &str, plugin: &str) -> Result<i32> {
-        Ctx::record_plugin_run(self, surface, plugin)
+        Runtime::record_plugin_run(self, surface, plugin)
     }
 
     fn record_tokens(
@@ -171,24 +171,35 @@ impl Host for Ctx {
         source: &str,
         tokens: i64,
     ) -> Result<()> {
-        Ctx::record_tokens(self, call_id, plugin, phase, source, tokens)
+        Runtime::record_tokens(self, call_id, plugin, phase, source, tokens)
     }
 
     fn log(&self, level: &str, source: &str, name: &str, message: &str) {
-        Ctx::log(self, level, source, name, message);
+        Runtime::log(self, level, source, name, message);
     }
 
-    /// `[plugins.<id>]` as JSON. Unknown id → `Null`, which deserializes to the plugin's
-    /// own defaults rather than to an error.
-    fn plugin_config_json(&self, id: &str) -> serde_json::Value {
-        serde_json::to_value(&self.config.plugins)
-            .ok()
-            .and_then(|v| v.get(id).cloned())
-            .unwrap_or(serde_json::Value::Null)
+    /// One configuration section by dotted path. An unknown path is `Null`, which
+    /// deserializes to the plugin's own defaults rather than to an error.
+    fn config_json(&self, path: &str) -> serde_json::Value {
+        let mut node = match serde_json::to_value(&self.config) {
+            Ok(v) => v,
+            Err(_) => return serde_json::Value::Null,
+        };
+        for key in path.split('.') {
+            node = match node.get_mut(key) {
+                Some(v) => v.take(),
+                None => return serde_json::Value::Null,
+            };
+        }
+        node
+    }
+
+    fn call_id(&self) -> Option<i32> {
+        self.call_id
     }
 }
 
-impl Archive for Ctx {
+impl Archive for Runtime {
     fn put_archive(&self, body: &[u8]) -> Result<String> {
         self.store
             .put_archive(&self.session, body, &self.config.core.archive_dir)
@@ -217,7 +228,7 @@ impl Archive for Ctx {
     }
 }
 
-impl Notes for Ctx {
+impl Notes for Runtime {
     fn insert_note(
         &self,
         project: Option<&str>,
@@ -245,7 +256,7 @@ impl Notes for Ctx {
     }
 }
 
-impl ReadCache for Ctx {
+impl ReadCache for Runtime {
     fn put_read_cache(&self, path: &str, sha256: &str, archive_id: Option<&str>) -> Result<()> {
         self.store
             .put_read_cache(&self.session, path, sha256, archive_id)
@@ -260,7 +271,7 @@ impl ReadCache for Ctx {
     }
 }
 
-impl Ledger for Ctx {
+impl Ledger for Runtime {
     fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>> {
         self.store.recent_hook_inputs(&self.session, limit)
     }
@@ -270,7 +281,7 @@ impl Ledger for Ctx {
     }
 }
 
-impl Symbols for Ctx {
+impl Symbols for Runtime {
     fn symbol_count(&self, root: &str) -> Result<i64> {
         self.store.symbol_count(root)
     }
@@ -320,65 +331,6 @@ impl Symbols for Ctx {
     }
 }
 
-/// One token-reduction method. Implement the surfaces your [`Manifest`] declares and leave
-/// the rest to the no-op defaults. External crates implement this too and register through
-/// [`Registry::from_plugins`](crate::plugins::Registry::from_plugins).
-///
-/// Two methods are required: [`Plugin::manifest`] says what the plugin is, and
-/// [`Plugin::dashboard_page`] is the page every operator surface renders for it (D23). A
-/// plugin that implements only the first does not compile:
-///
-/// ```compile_fail
-/// use rtok::plugin::{Manifest, Plugin, Surface};
-/// struct Half;
-/// impl Plugin for Half {
-///     fn manifest(&self) -> Manifest {
-///         Manifest { id: "half", surfaces: &[Surface::Cli], default_on: false }
-///     }
-/// }
-/// ```
-pub trait Plugin: Send + Sync {
-    /// Id, surfaces and default state. Called on every dispatch; keep it cheap.
-    fn manifest(&self) -> Manifest;
-
-    /// The page this plugin contributes to `rtok web` and `rtok tui` — the same one, rendered
-    /// twice (D23). Required: nothing else knows what the plugin does well enough to write it.
-    fn dashboard_page(&self) -> DashboardPage;
-
-    /// May deny or rewrite the tool call. `None` = no opinion.
-    fn pre_tool(&self, _ev: &PreToolUse, _cx: &Ctx) -> Option<PreToolDecision> {
-        None
-    }
-
-    /// May only add `additionalContext`; tool results cannot be changed here.
-    fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
-        None
-    }
-
-    /// Text to offer at session start; the `inject` plugin decides what fits the budget.
-    fn session_start(&self, _ev: &SessionStart, _cx: &Ctx) -> Option<Injection> {
-        None
-    }
-
-    /// Text to offer with a user prompt; budgeted the same way as [`Plugin::session_start`].
-    fn prompt_submit(&self, _ev: &PromptSubmit, _cx: &Ctx) -> Option<Injection> {
-        None
-    }
-
-    /// Last chance to persist state before the transcript is compacted.
-    fn pre_compact(&self, _ev: &PreCompact, _cx: &Ctx) {}
-
-    /// Tools this plugin adds to `rtok mcp`.
-    fn mcp_tools(&self) -> Vec<ToolDef> {
-        Vec::new()
-    }
-
-    /// Rewrite the selected wire's normalised tool results; return one measurement per change.
-    fn proxy_filter(&self, _req: &mut WireRequest<'_>, _cx: &Ctx) -> Vec<Measurement> {
-        Vec::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,9 +350,30 @@ mod tests {
         assert_eq!(page.title, "Ext");
     }
 
+    /// D25's whole claim in one assignment: an out-of-tree plugin implements
+    /// `rtok_plugin_sdk::Plugin` and the host accepts it, because there is only one trait.
+    #[test]
+    fn the_trait_is_the_published_one() {
+        struct Ext;
+        impl rtok_plugin_sdk::Plugin for Ext {
+            fn manifest(&self) -> Manifest {
+                Manifest {
+                    id: "ext",
+                    surfaces: &[Surface::Mcp],
+                    default_on: false,
+                }
+            }
+            fn dashboard_page(&self) -> DashboardPage {
+                DashboardPage::new("Ext", "out of tree.", false)
+            }
+        }
+        let p: &dyn Plugin = &Ext;
+        assert_eq!(p.manifest().id, "ext");
+    }
+
     #[test]
     fn log_survives_db_failure() {
-        let cx = Ctx::in_memory("s").unwrap();
+        let cx = Runtime::in_memory("s").unwrap();
         cx.store.set_query_only().unwrap();
         cx.log("error", "plugin", "read", "boom");
     }

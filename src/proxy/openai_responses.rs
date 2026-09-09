@@ -2,25 +2,13 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, Usage, Wire, int_field, str_field};
+use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, str_field};
 
 pub static OPENAI_RESPONSES: OpenAiResponses = OpenAiResponses;
 
 pub struct OpenAiResponses;
 
-impl Wire for OpenAiResponses {
-    fn matches(&self, path: &str) -> bool {
-        path == "/v1/responses"
-    }
-
-    fn provider(&self) -> &'static str {
-        "openai"
-    }
-
-    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
-        str_field(body, "user")
-    }
-
+impl ToolResults for OpenAiResponses {
     /// Responses carries tool results as `input[]` items of type `function_call_output`,
     /// keyed by `call_id`, with the payload in `output` (Chat Completions uses whole
     /// `role: "tool"` messages instead).
@@ -62,6 +50,20 @@ impl Wire for OpenAiResponses {
             results.push(ToolResultRef { id, content, turn });
         }
         results
+    }
+}
+
+impl Wire for OpenAiResponses {
+    fn matches(&self, path: &str) -> bool {
+        path == "/v1/responses"
+    }
+
+    fn provider(&self) -> &'static str {
+        "openai"
+    }
+
+    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
+        str_field(body, "user")
     }
 
     fn usage_from_body(&self, body: &Value) -> Option<Usage> {

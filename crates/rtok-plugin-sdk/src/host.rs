@@ -96,34 +96,67 @@ pub trait Host: Send + Sync {
     /// Append a log line. Never fails: a plugin cannot be made to care where logs go.
     fn log(&self, level: &str, source: &str, name: &str, message: &str);
 
-    /// The plugin's own `[plugins.<id>]` configuration section as JSON, or [`Value::Null`]
-    /// when the host has no section under that id.
+    /// One section of the host's configuration as JSON, by dotted path — `"plugins.read"`,
+    /// `"proxy"`, `"estimator"` — or [`Value::Null`] when the host has no such section.
     ///
-    /// Prefer [`plugin_config`], which deserializes this into the plugin's own struct.
-    fn plugin_config_json(&self, id: &str) -> Value;
+    /// A plugin reads its own settings through [`Ctx::plugin_config`]; this is the way out
+    /// for the few that legitimately need a host-wide value, such as the proxy's mode.
+    fn config_json(&self, path: &str) -> Value;
+
+    /// The `calls` row this dispatch runs under, when the surface has one.
+    fn call_id(&self) -> Option<i32> {
+        None
+    }
 }
 
-/// The plugin's own configuration section, deserialized into `T`.
+/// Everything a plugin may touch, in one object-safe bound. [`Ctx`] derefs to it, so a
+/// plugin calls `cx.estimate(..)`, `cx.put_archive(..)`, `cx.symbol_defs(..)` and the rest
+/// without naming a single trait.
+pub trait Capabilities: Host + Archive + Notes + ReadCache + Ledger + Symbols {}
+
+impl<T> Capabilities for T where T: Host + Archive + Notes + ReadCache + Ledger + Symbols + ?Sized {}
+
+/// What a plugin is handed on every event: the host, and nothing else.
 ///
-/// Configuration is data, not a schema the host has to know: a plugin declares whatever
-/// struct it wants and the host hands over the matching section. A missing or unparsable
-/// section yields `T::default()` — a plugin that cannot read its own settings still runs.
-///
-/// ```
-/// use rtok_plugin_sdk::host::{Host, plugin_config};
-///
-/// #[derive(serde::Deserialize, Default)]
-/// struct MyConfig {
-///     #[serde(default)]
-///     max_lines: usize,
-/// }
-/// # fn use_it(host: &dyn Host) {
-/// let cfg: MyConfig = plugin_config(host, "mine");
-/// # let _ = cfg.max_lines;
-/// # }
-/// ```
-pub fn plugin_config<T: DeserializeOwned + Default>(host: &dyn Host, id: &str) -> T {
-    serde_json::from_value(host.plugin_config_json(id)).unwrap_or_default()
+/// `Ctx` is a borrow, not a state — the host builds one per dispatch. It derefs to
+/// [`Capabilities`], so every host method is reachable directly on it.
+pub struct Ctx<'a> {
+    host: &'a dyn Capabilities,
+}
+
+impl<'a> Ctx<'a> {
+    /// Wrap a host for one dispatch.
+    pub fn new(host: &'a dyn Capabilities) -> Self {
+        Self { host }
+    }
+
+    /// This plugin's own `[plugins.<id>]` section, deserialized into `T`.
+    ///
+    /// Configuration is data, not a schema the host has to know: a plugin declares whatever
+    /// struct it wants and the host hands over the matching section. A missing or unparsable
+    /// section yields `T::default()` — a plugin that cannot read its own settings still runs.
+    pub fn plugin_config<T: DeserializeOwned + Default>(&self, id: &str) -> T {
+        section(self.host, &format!("plugins.{id}"))
+    }
+
+    /// A host-wide section by dotted path, deserialized into `T`; `T::default()` when the
+    /// host has no such section. Reach for [`Ctx::plugin_config`] first.
+    pub fn config<T: DeserializeOwned + Default>(&self, path: &str) -> T {
+        section(self.host, path)
+    }
+}
+
+/// One configuration section, or `T::default()` when the host has none under that path.
+fn section<T: DeserializeOwned + Default>(host: &dyn Host, path: &str) -> T {
+    serde_json::from_value(host.config_json(path)).unwrap_or_default()
+}
+
+impl<'a> std::ops::Deref for Ctx<'a> {
+    type Target = dyn Capabilities + 'a;
+
+    fn deref(&self) -> &(dyn Capabilities + 'a) {
+        self.host
+    }
 }
 
 /// Content-addressed blob storage — the other half of "lossless by default".
@@ -289,7 +322,7 @@ mod tests {
             Ok(())
         }
         fn log(&self, _l: &str, _s: &str, _n: &str, _m: &str) {}
-        fn plugin_config_json(&self, _id: &str) -> Value {
+        fn config_json(&self, _path: &str) -> Value {
             Value::Null
         }
     }
@@ -298,7 +331,7 @@ mod tests {
     /// defaults are the configuration, exactly as if the section were absent from the file.
     #[test]
     fn a_missing_section_is_the_default_not_an_error() {
-        let cfg: Cfg = plugin_config(&NoConfig, "mine");
+        let cfg: Cfg = section(&NoConfig, "plugins.mine");
         assert_eq!(cfg, Cfg::default());
     }
 }

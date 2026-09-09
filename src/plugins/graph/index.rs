@@ -6,7 +6,7 @@ use std::path::Path;
 use anyhow::Result;
 use ignore::WalkBuilder;
 
-use crate::plugin::{Ctx, Symbols};
+use crate::plugin::Ctx;
 use crate::plugins::read::outline;
 use crate::store;
 
@@ -162,25 +162,26 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
 pub(crate) mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::plugin::Runtime;
     use std::fs;
     use std::path::PathBuf;
 
     /// Fresh DB + archive dir under the temp dir; shared with the `mod.rs` tool tests.
-    pub(crate) fn cx(name: &str) -> (Ctx, PathBuf) {
+    pub(crate) fn cx(name: &str) -> (Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-graph-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        (Ctx::open(c, name).unwrap(), dir)
+        (Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]
     fn index_crate_has_main_def_and_registry_ref() {
         let (cx, dir) = cx("crate");
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        run(&cx, &root, false).unwrap();
+        run(&Ctx::new(&cx), &root, false).unwrap();
         let k = canon(&root);
         assert!(cx.store.has_symbol_def(&k, "main").unwrap(), "main def");
         assert!(
@@ -204,10 +205,10 @@ pub(crate) mod tests {
             )
             .unwrap();
         }
-        run(&cx, &a, false).unwrap();
+        run(&Ctx::new(&cx), &a, false).unwrap();
         let (ka, kb) = (canon(&a), canon(&b));
         let a_rows = cx.store.symbol_count(&ka).unwrap();
-        run(&cx, &b, false).unwrap();
+        run(&Ctx::new(&cx), &b, false).unwrap();
         assert_eq!(
             cx.store.symbol_count(&ka).unwrap(),
             a_rows,
@@ -248,18 +249,18 @@ pub(crate) mod tests {
         for i in 0..FILES {
             fs::write(dir.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
         }
-        let cold = run(&cx, &dir, false).unwrap();
+        let cold = run(&Ctx::new(&cx), &dir, false).unwrap();
         assert_eq!(cold.read as usize, FILES, "cold run reads every file");
-        let warm = run(&cx, &dir, false).unwrap();
+        let warm = run(&Ctx::new(&cx), &dir, false).unwrap();
         assert_eq!(warm.read, 0, "warm run must not open a file");
         assert_eq!(warm.skipped as usize, FILES);
         assert_eq!(warm.inserted, 0);
         fs::write(dir.join("f0.rs"), "fn f0() {}\n").unwrap();
-        let touched = run(&cx, &dir, false).unwrap();
+        let touched = run(&Ctx::new(&cx), &dir, false).unwrap();
         assert_eq!(touched.read, 1, "only the touched file is read");
         assert_eq!(touched.inserted, 0, "identical bytes must not re-insert");
         assert_eq!(
-            run(&cx, &dir, false).unwrap().read,
+            run(&Ctx::new(&cx), &dir, false).unwrap().read,
             0,
             "new stat was recorded"
         );
@@ -276,7 +277,7 @@ pub(crate) mod tests {
         }
         fs::write(dir.join("notes.md"), "not a source file\n").unwrap();
         let pb = indicatif::ProgressBar::hidden();
-        let r = run_with(&cx, &dir, false, &pb).unwrap();
+        let r = run_with(&Ctx::new(&cx), &dir, false, &pb).unwrap();
         assert_eq!(r.indexed, 7);
         assert_eq!(pb.position(), 7, "the bar and the report must agree");
         let _ = fs::remove_dir_all(dir);
@@ -286,8 +287,8 @@ pub(crate) mod tests {
     fn second_run_inserts_zero() {
         let (cx, dir) = cx("twice");
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        run(&cx, &root, false).unwrap();
-        let r = run(&cx, &root, false).unwrap();
+        run(&Ctx::new(&cx), &root, false).unwrap();
+        let r = run(&Ctx::new(&cx), &root, false).unwrap();
         assert_eq!(r.inserted, 0, "second run must insert 0 rows");
         assert_eq!(r.indexed, 0);
         let _ = fs::remove_dir_all(dir);
@@ -300,9 +301,9 @@ pub(crate) mod tests {
         let b = dir.join("b.rs");
         fs::write(&a, "fn alpha() {}\n").unwrap();
         fs::write(&b, "fn beta() {}\n").unwrap();
-        run(&cx, &dir, false).unwrap();
+        run(&Ctx::new(&cx), &dir, false).unwrap();
         fs::write(&a, "fn alpha() {}\nfn gamma() {}\n").unwrap();
-        let r = run(&cx, &dir, false).unwrap();
+        let r = run(&Ctx::new(&cx), &dir, false).unwrap();
         assert_eq!(r.indexed, 1, "only a.rs changed");
         let k = canon(&dir);
         assert!(cx.store.has_symbol_def(&k, "gamma").unwrap());
@@ -319,7 +320,7 @@ pub(crate) mod tests {
             "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nstatic S: u8 = top();\n",
         )
         .unwrap();
-        run(&cx, &dir, false).unwrap();
+        run(&Ctx::new(&cx), &dir, false).unwrap();
         let k = canon(&dir);
         let scope = |n: &str| {
             cx.store

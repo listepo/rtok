@@ -16,9 +16,6 @@
 
 use serde_json::Value;
 
-// The plugin type below is also called `Archive`; the capability trait is only needed for
-// its methods, so it comes in unnamed.
-use crate::plugin::Archive as _;
 use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
@@ -43,7 +40,7 @@ impl Plugin for Archive {
     }
 
     fn proxy_filter(&self, req: &mut WireRequest<'_>, cx: &Ctx) -> Vec<Measurement> {
-        if cx.config.proxy.mode != "compress" {
+        if cx.config::<crate::config::Proxy>("proxy").mode != "compress" {
             return Vec::new();
         }
         rewrite(req.tool_results(), cx)
@@ -53,7 +50,9 @@ impl Plugin for Archive {
 /// Rewrite every eligible wire-normalised result; one measurement per rewritten block, all
 /// under one `plugin_run` child call. The wire owns the provider-specific request shape.
 pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
-    let keep = cx.config.plugins.archive.keep_turns as usize;
+    let keep = cx
+        .plugin_config::<crate::config::Archive>("archive")
+        .keep_turns as usize;
     let mut out = Vec::new();
     for result in results {
         if result.turn < keep {
@@ -86,7 +85,7 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
 /// archive it now. Any store error leaves the block alone (fail open).
 fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Measurement> {
     let text = block_text(content)?;
-    let a = &cx.config.plugins.archive;
+    let a = cx.plugin_config::<crate::config::Archive>("archive");
     let (archive_id, pointer) = match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
         Ok(Some(d)) => (d.archive_id, d.pointer),
@@ -176,6 +175,7 @@ fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
 
     fn big(tag: &str) -> String {
         (1..=400)
@@ -184,10 +184,10 @@ mod tests {
             .join("\n")
     }
 
-    fn cx(name: &str) -> Ctx {
+    fn cx(name: &str) -> Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-archive-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cx = Ctx::in_memory("s").unwrap();
+        let mut cx = Runtime::in_memory("s").unwrap();
         cx.config.core.archive_dir = dir;
         cx.config.proxy.mode = "compress".into();
         cx
@@ -212,7 +212,7 @@ mod tests {
         let mut values: Vec<Value> = (1..=6)
             .map(|n| Value::String(big(&format!("t{n}"))))
             .collect();
-        let ms = rewrite(refs(&mut values), &cx);
+        let ms = rewrite(refs(&mut values), &Ctx::new(&cx));
         assert_eq!(ms.len(), 2);
         let first = values[0].as_str().unwrap();
         assert!(first.starts_with("[archived ") && first.contains("t1 line 400"));
@@ -238,7 +238,7 @@ mod tests {
             Value::String(big("five")),
             Value::String(big("six")),
         ];
-        let first_ms = rewrite(refs(&mut first), &cx);
+        let first_ms = rewrite(refs(&mut first), &Ctx::new(&cx));
         let archive_id = first_ms[0].ref_id.clone().unwrap();
         let first_body = first.clone();
         let mut second = vec![
@@ -249,7 +249,7 @@ mod tests {
             Value::String(big("five")),
             Value::String(big("six")),
         ];
-        rewrite(refs(&mut second), &cx);
+        rewrite(refs(&mut second), &Ctx::new(&cx));
         assert_eq!(first_body, second);
         assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
         let mut third = vec![
@@ -260,7 +260,7 @@ mod tests {
             Value::String(big("five")),
             Value::String(big("six")),
         ];
-        assert_eq!(rewrite(refs(&mut third), &cx).len(), 1);
+        assert_eq!(rewrite(refs(&mut third), &Ctx::new(&cx)).len(), 1);
         assert_eq!(third[0], Value::String(big("one")));
     }
 
@@ -307,7 +307,7 @@ mod tests {
             let original = load_six_turn(name);
             let original_bytes = serde_json::to_vec(&original).unwrap();
             let mut first = original.clone();
-            let ms = rewrite(wire.tool_results(&mut first), &cx);
+            let ms = rewrite(wire.tool_results(&mut first), &Ctx::new(&cx));
             assert_eq!(ms.len(), 2, "{name}");
             let rewritten = serde_json::to_vec(&first).unwrap();
             let pos = rewritten
@@ -316,7 +316,7 @@ mod tests {
                 .expect(name);
             assert_eq!(&original_bytes[..pos], &rewritten[..pos], "{name} prefix");
             let mut second = original.clone();
-            rewrite(wire.tool_results(&mut second), &cx);
+            rewrite(wire.tool_results(&mut second), &Ctx::new(&cx));
             assert_eq!(first, second, "{name} deterministic");
             let texts = result_texts(wire, &mut first);
             assert_eq!(texts.len(), 6, "{name}");
@@ -334,7 +334,10 @@ mod tests {
             let archive_id = ms[0].ref_id.clone().unwrap();
             assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
             let mut expanded = original.clone();
-            assert_eq!(rewrite(wire.tool_results(&mut expanded), &cx).len(), 1);
+            assert_eq!(
+                rewrite(wire.tool_results(&mut expanded), &Ctx::new(&cx)).len(),
+                1
+            );
             let live = result_texts(wire, &mut expanded);
             assert!(live[0].starts_with("t1 line 1:"), "{name} expand");
             assert!(live[1].starts_with("[archived "), "{name} turn 2 stays");

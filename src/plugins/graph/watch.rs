@@ -22,7 +22,7 @@ pub fn run_with<F>(cx: &Ctx, root: &Path, stop: &AtomicBool, runs: &AtomicUsize,
 where
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
-    if cx.config.plugins.graph.watch == "watchman" {
+    if cx.plugin_config::<crate::config::Graph>("graph").watch == "watchman" {
         if let Err(err) = try_watchman(cx, root, stop, runs) {
             eprintln!("watchman: {err} falling back to notify");
             notify_loop(cx, root, stop, runs, events);
@@ -65,7 +65,7 @@ fn watchman_connect(
 
 #[cfg(feature = "graph-watchman")]
 async fn watchman_loop(
-    cx: &Ctx,
+    cx: &Ctx<'_>,
     root: &Path,
     stop: &AtomicBool,
     runs: &AtomicUsize,
@@ -202,11 +202,12 @@ fn relevant(p: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
     use crate::plugins::graph::index::tests::cx as mk;
     use std::fs;
     use std::time::Duration;
 
-    fn arm(cx: &mut Ctx, watch: &str) {
+    fn arm(cx: &mut Runtime, watch: &str) {
         cx.config.plugins.graph.auto_index = false;
         cx.config.plugins.graph.watch = watch.into();
     }
@@ -239,19 +240,19 @@ mod tests {
         let (mut cx, dir) = mk("watch-new");
         arm(&mut cx, "notify");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir, false).unwrap();
+        super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let (found, within_1s, read, gone) = std::thread::scope(|s| {
-            s.spawn(|| run(&cx, &dir, &stop));
+            s.spawn(|| run(&Ctx::new(&cx), &dir, &stop));
             std::thread::sleep(Duration::from_millis(80));
-            warm_watcher(&cx, &dir);
+            warm_watcher(&Ctx::new(&cx), &dir);
             let t0 = Instant::now();
             fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
-            let found = wait_contains(&cx, &dir, "watched", "watched.rs:1");
+            let found = wait_contains(&Ctx::new(&cx), &dir, "watched", "watched.rs:1");
             let within_1s = t0.elapsed() <= Duration::from_secs(1);
-            let read = super::super::index_for(&cx, &dir).unwrap().read;
+            let read = super::super::index_for(&Ctx::new(&cx), &dir).unwrap().read;
             let _ = fs::remove_file(dir.join("watched.rs"));
-            let gone = wait_contains(&cx, &dir, "watched", "no definition of watched");
+            let gone = wait_contains(&Ctx::new(&cx), &dir, "watched", "no definition of watched");
             stop.store(true, Ordering::Relaxed);
             (found, within_1s, read, gone)
         });
@@ -266,12 +267,14 @@ mod tests {
         let (mut cx, dir) = mk("watch-burst");
         arm(&mut cx, "notify");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir, false).unwrap();
+        super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let runs = AtomicUsize::new(0);
         let n = std::thread::scope(|s| {
             s.spawn(|| {
-                run_with(&cx, &dir, &stop, &runs, |_| vec![dir.join("burst.rs")]);
+                run_with(&Ctx::new(&cx), &dir, &stop, &runs, |_| {
+                    vec![dir.join("burst.rs")]
+                });
             });
             for i in 0..200 {
                 fs::write(dir.join("burst.rs"), format!("pub fn f{i}() {{}}\n")).unwrap();
@@ -310,10 +313,10 @@ mod tests {
         let (mut cx, dir) = mk("watch-wman");
         arm(&mut cx, "watchman");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir, false).unwrap();
+        super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let (found, within_1s, read) = std::thread::scope(|s| {
-            s.spawn(|| run(&cx, &dir, &stop));
+            s.spawn(|| run(&Ctx::new(&cx), &dir, &stop));
             // The daemon connect + subscribe happens off any timer: wait for
             // the root to register before the timed write measures delivery.
             let root = dir.canonicalize().unwrap();
@@ -332,9 +335,9 @@ mod tests {
             assert!(registered, "watchman never listed {}", root.display());
             let t0 = Instant::now();
             fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
-            let found = wait_contains(&cx, &dir, "watched", "watched.rs:1");
+            let found = wait_contains(&Ctx::new(&cx), &dir, "watched", "watched.rs:1");
             let within_1s = t0.elapsed() <= Duration::from_secs(1);
-            let read = super::super::index_for(&cx, &dir).unwrap().read;
+            let read = super::super::index_for(&Ctx::new(&cx), &dir).unwrap().read;
             stop.store(true, Ordering::Relaxed);
             (found, within_1s, read)
         });
@@ -354,14 +357,14 @@ mod tests {
         let (mut cx, dir) = mk("watch-fb");
         arm(&mut cx, "watchman");
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&cx, &dir, false).unwrap();
+        super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let stop = AtomicBool::new(false);
         let found = std::thread::scope(|s| {
-            s.spawn(|| run(&cx, &dir, &stop));
+            s.spawn(|| run(&Ctx::new(&cx), &dir, &stop));
             std::thread::sleep(Duration::from_millis(80));
-            warm_watcher(&cx, &dir);
+            warm_watcher(&Ctx::new(&cx), &dir);
             fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
-            let found = wait_contains(&cx, &dir, "watched", "watched.rs:1");
+            let found = wait_contains(&Ctx::new(&cx), &dir, "watched", "watched.rs:1");
             stop.store(true, Ordering::Relaxed);
             found
         });

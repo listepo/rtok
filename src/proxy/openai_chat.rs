@@ -2,25 +2,13 @@
 
 use serde_json::{Map, Value};
 
-use super::wire::{ToolResultRef, Usage, Wire, int_field, str_field};
+use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, str_field};
 
 pub static OPENAI_CHAT: OpenAiChat = OpenAiChat;
 
 pub struct OpenAiChat;
 
-impl Wire for OpenAiChat {
-    fn matches(&self, path: &str) -> bool {
-        path == "/v1/chat/completions"
-    }
-
-    fn provider(&self) -> &'static str {
-        "openai"
-    }
-
-    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
-        str_field(body, "user")
-    }
-
+impl ToolResults for OpenAiChat {
     /// Chat Completions carries each tool result as its own `role: "tool"` message,
     /// keyed by `tool_call_id` (Anthropic nests them in the user turn instead).
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>> {
@@ -56,6 +44,20 @@ impl Wire for OpenAiChat {
             results.push(ToolResultRef { id, content, turn });
         }
         results
+    }
+}
+
+impl Wire for OpenAiChat {
+    fn matches(&self, path: &str) -> bool {
+        path == "/v1/chat/completions"
+    }
+
+    fn provider(&self) -> &'static str {
+        "openai"
+    }
+
+    fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
+        str_field(body, "user")
     }
 
     fn usage_from_body(&self, body: &Value) -> Option<Usage> {

@@ -5,7 +5,7 @@
 //! - [`config`]  — `~/.rtok/config.toml`, `RTOK_HOME`
 //! - [`store`]   — one SQLite file: events, measurements, archive, notes (FTS5), usage
 //! - [`tokens`]  — chars-per-token estimator (±15 %)
-//! - [`plugin`]  — the `Plugin` trait, `Manifest`, `Ctx`, `Measurement`
+//! - [`plugin`]  — the `Plugin` trait, `Manifest`, `Runtime`, `Measurement`
 //! - [`plugins`] — the registry and one module per catalogue plugin
 //! - [`hooks`]   — Claude Code hook I/O types
 //! - [`doctor`]  — `rtok doctor`
@@ -32,5 +32,5 @@ pub mod tokens;
 pub mod web;
 
 /// The plugin contract at the crate root, so an external plugin crate writes
-/// `use rtok::{Ctx, Manifest, Plugin, Surface};`.
+/// `use rtok::{Runtime, Manifest, Plugin, Surface};`.
 pub use plugin::*;

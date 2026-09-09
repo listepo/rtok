@@ -3,7 +3,7 @@
 pub mod import;
 
 use crate::plugin::{
-    Ctx, DashboardPage, Injection, Manifest, Notes, Plugin, SessionStart, Surface, ToolDef,
+    Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
 };
 use crate::tokens::Class;
 use serde_json::json;
@@ -66,8 +66,9 @@ pub fn project_name(cwd: &std::path::Path) -> Option<String> {
 }
 
 fn recall(cx: &Ctx) -> Option<Injection> {
-    let n = cx.config.plugins.memory.recall_titles.max(1);
-    let cap = cx.config.plugins.memory.recall_tokens.max(1);
+    let cfg = cx.plugin_config::<crate::config::Memory>("memory");
+    let n = cfg.recall_titles.max(1);
+    let cap = cfg.recall_tokens.max(1);
     let project = std::env::current_dir().ok().and_then(|d| project_name(&d));
     let rows = cx.list_note_titles(project.as_deref(), n).ok()?;
     if rows.is_empty() {
@@ -113,12 +114,13 @@ pub fn mem_get(cx: &Ctx, id: i32) -> anyhow::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
 
     #[test]
     fn save_three_search_hits_first_get_full_body() {
-        let cx = Ctx::in_memory("t61").unwrap();
+        let cx = Runtime::in_memory("t61").unwrap();
         let a = mem_save(
-            &cx,
+            &Ctx::new(&cx),
             "decision",
             "walrus",
             "the walrus journal lives here",
@@ -126,7 +128,7 @@ mod tests {
         )
         .unwrap();
         let _b = mem_save(
-            &cx,
+            &Ctx::new(&cx),
             "decision",
             "banana",
             "yellow fruit unrelated",
@@ -134,30 +136,30 @@ mod tests {
         )
         .unwrap();
         let _c = mem_save(
-            &cx,
+            &Ctx::new(&cx),
             "decision",
             "other",
             "nothing matching the unique token",
             Some("rtok"),
         )
         .unwrap();
-        let hits = mem_search(&cx, "walrus", 5).unwrap();
+        let hits = mem_search(&Ctx::new(&cx), "walrus", 5).unwrap();
         assert!(!hits.is_empty(), "{hits:?}");
         assert_eq!(hits[0].title, "walrus");
         assert_eq!(hits[0].id, a);
         assert!(hits[0].snippet.len() <= 120);
-        let body = mem_get(&cx, a).unwrap().unwrap();
+        let body = mem_get(&Ctx::new(&cx), a).unwrap().unwrap();
         assert_eq!(body, "the walrus journal lives here");
     }
 
     #[test]
     fn twenty_notes_recall_five_titles_under_budget_stable() {
-        let cx = Ctx::in_memory("t62").unwrap();
+        let cx = Runtime::in_memory("t62").unwrap();
         // `recall` filters by the project derived from the working directory, so the notes
         // must be saved the same way — a hard-coded name only matched a checkout called `rtok`.
         for i in 0..20 {
             mem_save(
-                &cx,
+                &Ctx::new(&cx),
                 "note",
                 &format!("title-{i}"),
                 &format!("body-{i} secret"),
@@ -165,8 +167,8 @@ mod tests {
             )
             .unwrap();
         }
-        let a = recall(&cx).unwrap();
-        let b = recall(&cx).unwrap();
+        let a = recall(&Ctx::new(&cx)).unwrap();
+        let b = recall(&Ctx::new(&cx)).unwrap();
         assert_eq!(a.text, b.text);
         assert!(!a.text.contains("secret"), "{}", a.text);
         assert_eq!(a.text.lines().count(), 6, "{}", a.text);

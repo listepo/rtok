@@ -163,10 +163,10 @@ fn kv(k: &str, v: impl ToString) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::{Ctx, Measurement};
+    use crate::plugin::{Measurement, Runtime};
 
-    fn fixture() -> Ctx {
-        let cx = Ctx::in_memory("dash").unwrap();
+    fn fixture() -> Runtime {
+        let cx = Runtime::in_memory("dash").unwrap();
         cx.record(&Measurement {
             plugin: "cmd",
             kind: "filter",

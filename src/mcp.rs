@@ -11,7 +11,7 @@ use rmcp::model::{CallToolResult, Content, JsonObject, ListToolsResult, ServerIn
 use serde_json::{Value, json};
 
 use crate::config::Config;
-use crate::plugin::{Ctx, ToolDef};
+use crate::plugin::{Runtime, ToolDef};
 use crate::plugins::Registry;
 use crate::tokens::Class;
 
@@ -40,7 +40,9 @@ pub fn run(cfg: &Config) -> Result<()> {
     std::thread::scope(|s| {
         #[cfg(feature = "graph")]
         if let Some(root) = &watch_root {
-            s.spawn(|| crate::plugins::graph::watch::run(&server.cx, root, &stop));
+            s.spawn(|| {
+                crate::plugins::graph::watch::run(&crate::plugin::Ctx::new(&server.cx), root, &stop)
+            });
         }
         let res: Result<()> = (|| {
             let stdin = std::io::stdin();
@@ -69,13 +71,13 @@ struct Listed {
 }
 
 struct Server {
-    cx: Ctx,
+    cx: Runtime,
     listed: Vec<Listed>,
 }
 
 impl Server {
     fn new(cfg: &Config) -> Result<Self> {
-        let cx = Ctx::open(cfg.clone(), "mcp")?;
+        let cx = Runtime::open(cfg.clone(), "mcp")?;
         let mut listed = vec![Listed {
             plugin: "archive",
             def: expand_def(),
@@ -154,7 +156,7 @@ fn to_tool(def: &ToolDef) -> Tool {
     Tool::new(def.name, def.description, Arc::new(schema))
 }
 
-fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
+fn invoke(cx: &Runtime, name: &str, args: &Value) -> String {
     match name {
         "expand" => expand_text(cx, args),
         #[cfg(feature = "memory")]
@@ -170,12 +172,14 @@ fn invoke(cx: &Ctx, name: &str, args: &Value) -> String {
         #[cfg(feature = "read")]
         "tree" => tree_files(cx, args),
         #[cfg(feature = "graph")]
-        "symbol" | "callers" | "impact" | "outline" => crate::plugins::graph::call(cx, name, args),
+        "symbol" | "callers" | "impact" | "outline" => {
+            crate::plugins::graph::call(&crate::plugin::Ctx::new(cx), name, args)
+        }
         _ => format!("unknown tool: {name}"),
     }
 }
 
-fn expand_text(cx: &Ctx, args: &Value) -> String {
+fn expand_text(cx: &Runtime, args: &Value) -> String {
     let id = args["id"].as_str().unwrap_or("");
     match crate::expand::fetch(cx, id) {
         Ok(Some(bytes)) => {
@@ -202,22 +206,23 @@ fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> String {
 }
 
 #[cfg(feature = "memory")]
-fn mem_save(cx: &Ctx, args: &Value) -> String {
+fn mem_save(cx: &Runtime, args: &Value) -> String {
     let kind = args["kind"].as_str().unwrap_or("note");
     let title = args["title"].as_str().unwrap_or("");
     let body = args["body"].as_str().unwrap_or("");
     let project = args["project"].as_str();
-    match crate::plugins::memory::mem_save(cx, kind, title, body, project) {
+    match crate::plugins::memory::mem_save(&crate::plugin::Ctx::new(cx), kind, title, body, project)
+    {
         Ok(id) => json!({"id": id}).to_string(),
         Err(e) => e.to_string(),
     }
 }
 
 #[cfg(feature = "memory")]
-fn mem_search(cx: &Ctx, args: &Value) -> String {
+fn mem_search(cx: &Runtime, args: &Value) -> String {
     let query = args["query"].as_str().unwrap_or("");
     let limit = args["limit"].as_u64().unwrap_or(5) as u32;
-    match crate::plugins::memory::mem_search(cx, query, limit) {
+    match crate::plugins::memory::mem_search(&crate::plugin::Ctx::new(cx), query, limit) {
         Ok(hits) => json!(
             hits.iter()
                 .map(|h| json!({"id": h.id, "title": h.title, "snippet": h.snippet}))
@@ -229,48 +234,48 @@ fn mem_search(cx: &Ctx, args: &Value) -> String {
 }
 
 #[cfg(feature = "read")]
-fn search_files(cx: &Ctx, args: &Value) -> String {
+fn search_files(cx: &Runtime, args: &Value) -> String {
     let pattern = args["pattern"].as_str().unwrap_or("");
     let path = args["path"].as_str().unwrap_or(".");
     let max = args["max"].as_u64().map(|n| n as u32);
-    match crate::plugins::read::search::search(cx, pattern, path, max) {
+    match crate::plugins::read::search::search(&crate::plugin::Ctx::new(cx), pattern, path, max) {
         Ok(s) => s,
         Err(e) => e.to_string(),
     }
 }
 
 #[cfg(feature = "read")]
-fn tree_files(cx: &Ctx, args: &Value) -> String {
+fn tree_files(cx: &Runtime, args: &Value) -> String {
     let path = args["path"].as_str().unwrap_or(".");
     let depth = args["depth"].as_u64().map(|n| n as u32);
-    match crate::plugins::read::search::tree(cx, path, depth) {
+    match crate::plugins::read::search::tree(&crate::plugin::Ctx::new(cx), path, depth) {
         Ok(s) => s,
         Err(e) => e.to_string(),
     }
 }
 
 #[cfg(feature = "read")]
-fn read_file(cx: &Ctx, args: &Value) -> String {
+fn read_file(cx: &Runtime, args: &Value) -> String {
     let path = args["path"].as_str().unwrap_or("");
     let mode = args["mode"].as_str().unwrap_or("");
     let range = args["range"].as_str();
-    match crate::plugins::read::read(cx, path, mode, range) {
+    match crate::plugins::read::read(&crate::plugin::Ctx::new(cx), path, mode, range) {
         Ok(s) => s,
         Err(e) => e.to_string(),
     }
 }
 
 #[cfg(feature = "memory")]
-fn mem_get(cx: &Ctx, args: &Value) -> String {
+fn mem_get(cx: &Runtime, args: &Value) -> String {
     let id = args["id"].as_i64().unwrap_or(0) as i32;
-    match crate::plugins::memory::mem_get(cx, id) {
+    match crate::plugins::memory::mem_get(&crate::plugin::Ctx::new(cx), id) {
         Ok(Some(body)) => body,
         Ok(None) => format!("unknown note id: {id}"),
         Err(e) => e.to_string(),
     }
 }
 
-fn record(cx: &Ctx, plugin: &str, name: &str, args: &Value, result: &str) -> Result<()> {
+fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) -> Result<()> {
     let args_s = args.to_string();
     let before = i64::from(cx.estimate(&args_s, Class::Json));
     let after = i64::from(cx.estimate(result, Class::Json));

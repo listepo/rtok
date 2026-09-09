@@ -1,7 +1,7 @@
 //! `rtok memory import <file.jsonl>` (plan T6.3).
 
 use crate::config::Config;
-use crate::plugin::Ctx;
+use crate::plugin::Runtime;
 use anyhow::Result;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -43,7 +43,7 @@ fn sha(body: &str) -> String {
 /// Import one JSON object per line. Dedupe by sha256 of `body`. Always exit-success.
 /// `dry_run` counts exactly what a real run would insert and skip, and writes no rows.
 pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
-    let cx = Ctx::open(cfg.clone(), "import")?;
+    let cx = Runtime::open(cfg.clone(), "import")?;
     let raw = std::fs::read_to_string(path).unwrap_or_default();
     let mut seen: HashSet<String> = cx
         .store

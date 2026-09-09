@@ -558,10 +558,15 @@ pub fn run() -> Result<()> {
         Cmd::Graph { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let GraphCmd::Index { path, dry_run } = action;
-            let cx = crate::plugin::Ctx::open(cfg, "graph")?;
+            let cx = crate::plugin::Runtime::open(cfg, "graph")?;
             let root = path.unwrap_or(std::env::current_dir()?);
             let pb = crate::render::spinner("indexing");
-            let r = crate::plugins::graph::index::run_with(&cx, &root, dry_run, &pb)?;
+            let r = crate::plugins::graph::index::run_with(
+                &crate::plugin::Ctx::new(&cx),
+                &root,
+                dry_run,
+                &pb,
+            )?;
             println!(
                 "indexed {} files · {} rows · {} skipped · {} read",
                 r.indexed, r.inserted, r.skipped, r.read
@@ -583,7 +588,7 @@ pub fn run() -> Result<()> {
         }
         Cmd::Otel { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let cx = crate::plugin::Ctx::open(cfg, "otel")?;
+            let cx = crate::plugin::Runtime::open(cfg, "otel")?;
             match action {
                 OtelCmd::Flush => println!("{}", crate::otel::export::flush_blocking(&cx)),
                 OtelCmd::Status => print!("{}", crate::otel::export::status(&cx)?),

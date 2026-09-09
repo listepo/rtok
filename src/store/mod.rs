@@ -108,7 +108,7 @@ impl Store {
         Ok(applied)
     }
 
-    /// One `measurements` row. Prefer `Ctx::record`, which supplies the session.
+    /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
     pub fn insert_measurement(&self, session: &str, m: &Measurement) -> Result<()> {
         let mut conn = self.lock()?;
         diesel::insert_into(measurements::table)

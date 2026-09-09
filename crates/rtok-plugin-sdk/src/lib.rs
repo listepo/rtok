@@ -15,18 +15,24 @@
 //! - **A saving that is not a [`Measurement`] row does not exist.** Record what you changed,
 //!   before and after, or it did not happen.
 //!
-//! # Status
+//! # Writing one
 //!
-//! The [`Plugin`] trait itself still lives in `rtok` while the host moves behind the
-//! [`host`] traits (T23.3); this crate already owns every type in its signatures, and
-//! `rtok::plugin` re-exports them, so the two paths are one type today.
+//! Implement [`Plugin`]. [`Plugin::manifest`] and [`Plugin::dashboard_page`] are required;
+//! every event method has a no-op default, so a plugin writes only the surfaces it declares.
+//! What the host can do for you is [`Ctx`] — estimate, record, log, your own configuration —
+//! plus the capability traits in [`host`], reachable straight off `cx`.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 pub mod host;
+pub mod wire;
 
-pub use host::{Archive, ArchiveDecision, Class, Host, Ledger, NoteHit, Notes, ReadCache, Symbols};
+pub use host::{
+    Archive, ArchiveDecision, Capabilities, Class, Ctx, Host, Ledger, NoteHit, Notes, ReadCache,
+    Symbols,
+};
+pub use wire::{ToolResultRef, ToolResults, WireRequest};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -213,6 +219,69 @@ pub struct PreCompact<'a> {
     pub trigger: &'a str,
     /// Path to the transcript the host is about to compact.
     pub transcript_path: &'a str,
+}
+
+/// One token-reduction method.
+///
+/// Implement the surfaces your [`Manifest`] declares and leave the rest to the no-op
+/// defaults; a plugin that answers only `PreToolUse` writes exactly one method beyond the
+/// two required ones. The host calls these on the hot path, so keep them cheap and never
+/// panic: a hook has 10 ms and must exit 0 even when everything went wrong.
+///
+/// Two methods are required. [`Plugin::manifest`] says what the plugin is, and
+/// [`Plugin::dashboard_page`] is the page every operator surface renders for it — nothing
+/// else knows the plugin well enough to write either. A plugin that implements only the
+/// first does not compile:
+///
+/// ```compile_fail
+/// use rtok_plugin_sdk::{Manifest, Plugin, Surface};
+/// struct Half;
+/// impl Plugin for Half {
+///     fn manifest(&self) -> Manifest {
+///         Manifest { id: "half", surfaces: &[Surface::Cli], default_on: false }
+///     }
+/// }
+/// ```
+pub trait Plugin: Send + Sync {
+    /// Id, surfaces and default state. Called on every dispatch; keep it cheap.
+    fn manifest(&self) -> Manifest;
+
+    /// The page this plugin contributes to `rtok web` and `rtok tui` — the same one,
+    /// rendered twice (D23).
+    fn dashboard_page(&self) -> DashboardPage;
+
+    /// May deny or rewrite the tool call. `None` = no opinion.
+    fn pre_tool(&self, _ev: &PreToolUse, _cx: &Ctx) -> Option<PreToolDecision> {
+        None
+    }
+
+    /// May only add `additionalContext`; tool results cannot be changed here.
+    fn post_tool(&self, _ev: &PostToolUse, _cx: &Ctx) -> Option<String> {
+        None
+    }
+
+    /// Text to offer at session start; the host decides what fits the budget.
+    fn session_start(&self, _ev: &SessionStart, _cx: &Ctx) -> Option<Injection> {
+        None
+    }
+
+    /// Text to offer with a user prompt; budgeted the same way as [`Plugin::session_start`].
+    fn prompt_submit(&self, _ev: &PromptSubmit, _cx: &Ctx) -> Option<Injection> {
+        None
+    }
+
+    /// Last chance to persist state before the transcript is compacted.
+    fn pre_compact(&self, _ev: &PreCompact, _cx: &Ctx) {}
+
+    /// Tools this plugin adds to `rtok mcp`.
+    fn mcp_tools(&self) -> Vec<ToolDef> {
+        Vec::new()
+    }
+
+    /// Rewrite the request's normalised tool results; return one [`Measurement`] per change.
+    fn proxy_filter(&self, _req: &mut WireRequest<'_>, _cx: &Ctx) -> Vec<Measurement> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]

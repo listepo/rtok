@@ -13,13 +13,14 @@ use super::resolve;
 
 /// `path:line: snippet` rows, at most `max` (default `plugins.read.search_max`).
 pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<String> {
+    let cfg = cx.plugin_config::<crate::config::Read>("read");
     let cwd = std::env::current_dir()?;
     let root = resolve(
         &cwd,
         Path::new(if path.is_empty() { "." } else { path }),
-        &cx.config.plugins.read.allow_paths,
+        &cfg.allow_paths,
     )?;
-    let cap = max.unwrap_or(cx.config.plugins.read.search_max).max(1) as usize;
+    let cap = max.unwrap_or(cfg.search_max).max(1) as usize;
     let re = Regex::new(pattern)?;
     let mut hits = Vec::new();
     for entry in WalkBuilder::new(&root).hidden(false).build() {
@@ -60,13 +61,14 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
 
 /// Compact listing `path size` down to `depth` (default `plugins.read.tree_depth`).
 pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
+    let cfg = cx.plugin_config::<crate::config::Read>("read");
     let cwd = std::env::current_dir()?;
     let root = resolve(
         &cwd,
         Path::new(if path.is_empty() { "." } else { path }),
-        &cx.config.plugins.read.allow_paths,
+        &cfg.allow_paths,
     )?;
-    let depth = depth.unwrap_or(cx.config.plugins.read.tree_depth).max(1) as usize;
+    let depth = depth.unwrap_or(cfg.tree_depth).max(1) as usize;
     let mut rows = Vec::new();
     for entry in WalkBuilder::new(&root)
         .hidden(false)
@@ -92,21 +94,21 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::Ctx;
+    use crate::plugin::{Ctx, Runtime};
 
-    fn cx(name: &str) -> Ctx {
+    fn cx(name: &str) -> Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-search-{name}-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        Ctx::open(c, name).unwrap()
+        Runtime::open(c, name).unwrap()
     }
 
     #[test]
     fn search_fn_main_finds_src_main() {
         let cx = cx("fnmain");
-        let out = search(&cx, "fn main", ".", None).unwrap();
+        let out = search(&Ctx::new(&cx), "fn main", ".", None).unwrap();
         assert!(out.contains("src/main.rs"), "{out}");
         let n = out.lines().count();
         assert!(n <= cx.config.plugins.read.search_max as usize, "{n}");
@@ -115,7 +117,7 @@ mod tests {
     #[test]
     fn search_respects_max() {
         let cx = cx("max");
-        let out = search(&cx, "the", ".", Some(3)).unwrap();
+        let out = search(&Ctx::new(&cx), "the", ".", Some(3)).unwrap();
         assert!(out.lines().count() <= 3, "{out}");
     }
 }

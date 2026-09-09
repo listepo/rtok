@@ -8,7 +8,7 @@ use anyhow::Result;
 use rtok::hooks::types::{HookInput, HookOutput, HookSpecificOutput};
 use rtok::plugin::{
     Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse,
-    SessionStart, Surface,
+    Runtime, SessionStart, Surface,
 };
 use rtok::tokens::Class;
 
@@ -89,7 +89,7 @@ fn run(plugin: &dyn Plugin, cx: &Ctx, input: &HookInput) -> HookOutput {
 }
 
 fn main() -> Result<()> {
-    let cx = Ctx::in_memory("example-session")?;
+    let cx = Runtime::in_memory("example-session")?;
     let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/hooks");
 
     let mut bash: HookInput = serde_json::from_str(&std::fs::read_to_string(format!(
@@ -97,13 +97,13 @@ fn main() -> Result<()> {
     ))?)?;
     println!(
         "git status      → {}",
-        serde_json::to_string(&run(&Hello, &cx, &bash))?
+        serde_json::to_string(&run(&Hello, &Ctx::new(&cx), &bash))?
     );
 
     bash.tool_input = Some(serde_json::json!({ "command": "rm -rf build" }));
     println!(
         "rm -rf build    → {}",
-        serde_json::to_string(&run(&Hello, &cx, &bash))?
+        serde_json::to_string(&run(&Hello, &Ctx::new(&cx), &bash))?
     );
 
     let start: HookInput = serde_json::from_str(&std::fs::read_to_string(format!(
@@ -111,7 +111,7 @@ fn main() -> Result<()> {
     ))?)?;
     println!(
         "SessionStart    → {}",
-        serde_json::to_string(&run(&Hello, &cx, &start))?
+        serde_json::to_string(&run(&Hello, &Ctx::new(&cx), &start))?
     );
 
     let rows: i64 = cx.store.measurement_count("hello")?;

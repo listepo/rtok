@@ -1,8 +1,8 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
 use crate::plugin::{
-    Archive, Ctx, DashboardPage, Ledger, Manifest, Measurement, Plugin, PostToolUse,
-    PreToolDecision, PreToolUse, ReadCache, Surface,
+    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
+    Surface,
 };
 use serde_json::Value;
 
@@ -30,7 +30,10 @@ impl Plugin for Guard {
         let (id, ts) = cx.get_read_cache(&key).ok().flatten()?;
         let id = id?;
         let n = cx.calls_since(ts).unwrap_or(0);
-        if n > i64::from(cx.config.plugins.guard.window_turns) {
+        let window = cx
+            .plugin_config::<crate::config::Guard>("guard")
+            .window_turns;
+        if n > i64::from(window) {
             return None;
         }
         let reason = format!("duplicate; rtok expand {id}");
@@ -104,17 +107,17 @@ fn payload(v: &Value) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::Ctx;
+    use crate::plugin::{Ctx, Runtime};
     use serde_json::json;
 
-    fn setup() -> Ctx {
+    fn setup() -> Runtime {
         let dir = std::env::temp_dir().join("rtok-t26-two-identical-read");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut cfg = Config::default();
         cfg.core.db_path = dir.join("db");
         cfg.core.archive_dir = dir.join("ar");
-        Ctx::open(cfg, "t26").unwrap()
+        Runtime::open(cfg, "t26").unwrap()
     }
 
     #[test]
@@ -127,15 +130,15 @@ mod tests {
             tool_name: "Read",
             tool_input: &path,
         };
-        assert!(g.pre_tool(&read, &cx).is_none());
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
         let resp = json!({"content": "fn main() {}"});
         let post = PostToolUse {
             tool_name: "Read",
             tool_input: &path,
             tool_response: &resp,
         };
-        assert!(g.post_tool(&post, &cx).is_none());
-        match g.pre_tool(&read, &cx) {
+        assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
+        match g.pre_tool(&read, &Ctx::new(&cx)) {
             Some(PreToolDecision::Deny { reason }) => {
                 assert!(reason.contains("rtok expand "), "{reason}");
                 let id = reason.rsplit(' ').next().unwrap();
@@ -147,7 +150,7 @@ mod tests {
             tool_name: "Read",
             tool_input: &other,
         };
-        assert!(g.pre_tool(&diff, &cx).is_none());
+        assert!(g.pre_tool(&diff, &Ctx::new(&cx)).is_none());
         assert!(cx.store.measurement_count("guard").unwrap() >= 1);
     }
 }

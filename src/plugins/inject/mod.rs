@@ -68,15 +68,17 @@ fn builtin(name: &str) -> Option<&'static str> {
 }
 
 fn modes_text(cx: &Ctx) -> Option<String> {
-    let names = if !cx.config.plugins.inject.modes.is_empty() {
-        cx.config.plugins.inject.modes.as_slice()
+    let cfg = cx.plugin_config::<crate::config::Inject>("inject");
+    let setup = cx.config::<crate::config::Setup>("setup");
+    let names = if cfg.modes.is_empty() {
+        setup.modes.as_slice()
     } else {
-        cx.config.setup.modes.as_slice()
+        cfg.modes.as_slice()
     };
     if names.is_empty() {
         return None;
     }
-    let dir = &cx.config.plugins.inject.modes_dir;
+    let dir = &cfg.modes_dir;
     let mut text = String::new();
     for name in names {
         let path = dir.join(format!("{name}.md"));
@@ -98,7 +100,9 @@ fn modes_text(cx: &Ctx) -> Option<String> {
 /// under budget is emitted even if it overshoots (T2.4 Check: 500+500 at 800).
 pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
     offered.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.plugin.cmp(b.plugin)));
-    let budget = cx.config.plugins.inject.budget_tokens;
+    let budget = cx
+        .plugin_config::<crate::config::Inject>("inject")
+        .budget_tokens;
     let mut parts = Vec::new();
     let mut dropped = Vec::new();
     let mut used = 0u32;
@@ -133,9 +137,13 @@ pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::Runtime;
 
     fn blob(tokens: u32, cx: &Ctx) -> String {
-        let rate = cx.config.estimator.prose.max(0.1);
+        let rate = cx
+            .config::<crate::config::Estimator>("estimator")
+            .prose
+            .max(0.1);
         let mut s = "x".repeat((tokens as f32 * rate) as usize);
         while cx.estimate(&s, Class::Prose) < tokens {
             s.push('x');
@@ -148,8 +156,8 @@ mod tests {
 
     #[test]
     fn three_500_budget_800_drops_one_and_is_byte_stable() {
-        let cx = Ctx::in_memory("inject-t24").unwrap();
-        let text = blob(500, &cx);
+        let cx = Runtime::in_memory("inject-t24").unwrap();
+        let text = blob(500, &Ctx::new(&cx));
         assert_eq!(cx.estimate(&text, Class::Prose), 500);
         let offered = vec![
             Injection {
@@ -168,8 +176,8 @@ mod tests {
                 priority: 1,
             },
         ];
-        let once = apply(&cx, offered.clone());
-        let twice = apply(&cx, offered);
+        let once = apply(&Ctx::new(&cx), offered.clone());
+        let twice = apply(&Ctx::new(&cx), offered);
         assert_eq!(once, twice);
         assert_eq!(once.matches('\n').count(), 1, "two emitted → one separator");
         assert_eq!(once, format!("{text}\n{text}"));
@@ -198,7 +206,7 @@ mod tests {
         assert!(text.contains("# terse"), "{text}");
         assert!(text.contains("# yagni"), "{text}");
         assert_eq!(text.matches("# terse").count(), 1);
-        let cx = Ctx::in_memory("t71").unwrap();
+        let cx = Runtime::in_memory("t71").unwrap();
         assert!(cx.estimate(TERSE, Class::Prose) <= 250);
         assert!(cx.estimate(YAGNI, Class::Prose) <= 250);
         out.clear();

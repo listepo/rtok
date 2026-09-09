@@ -1,14 +1,14 @@
 //! `rtok expand <id>` (plan T3.5) and the shared fetch used by the MCP `expand` tool (T5.4).
 
 use crate::config::Config;
-use crate::plugin::{Ctx, Measurement};
+use crate::plugin::{Measurement, Runtime};
 use crate::tokens::Class;
 use anyhow::{Result, bail};
 
 /// Read an archived payload. When the id is a live-zone pointer (T5.3) this freezes it:
 /// the archive plugin sends the original from the next request on, and one `expand`
 /// measurement records the cost — `rtok stats --plugin archive` derives the expand rate.
-pub fn fetch(cx: &Ctx, id: &str) -> Result<Option<Vec<u8>>> {
+pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     let Some(bytes) = cx.store.get_archive(id)? else {
         return Ok(None);
     };
@@ -30,7 +30,7 @@ pub fn fetch(cx: &Ctx, id: &str) -> Result<Option<Vec<u8>>> {
 
 /// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is substring.
 pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> Result<()> {
-    let cx = Ctx::open(cfg.clone(), "expand")?;
+    let cx = Runtime::open(cfg.clone(), "expand")?;
     let Some(bytes) = fetch(&cx, id)? else {
         bail!("unknown archive id: {id}");
     };
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn round_trip_from_put_archive() {
         let c = cfg("round");
-        let cx = crate::plugin::Ctx::open(c.clone(), "expand").unwrap();
+        let cx = crate::plugin::Runtime::open(c.clone(), "expand").unwrap();
         let id = cx
             .store
             .put_archive("expand", b"hello\nworld\n", &c.core.archive_dir)

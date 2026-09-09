@@ -40,7 +40,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use crate::config::Config;
-use crate::plugin::Ctx;
+use crate::plugin::{Ctx, Runtime};
 use crate::plugins::Registry;
 use crate::store::Store;
 use wire::{Wire, WireRequest};
@@ -293,7 +293,7 @@ fn compress(
     let (Some(mut body), Some(r)) = (parsed, recorded) else {
         return original;
     };
-    let mut cx = match Ctx::open(state.cfg.clone(), r.session.clone()) {
+    let mut cx = match Runtime::open(state.cfg.clone(), r.session.clone()) {
         Ok(cx) => cx,
         Err(e) => {
             log(
@@ -311,7 +311,7 @@ fn compress(
         let mut changed = false;
         let mut request = WireRequest::new(wire, &mut body);
         for p in state.registry.enabled() {
-            for m in p.proxy_filter(&mut request, &cx) {
+            for m in p.proxy_filter(&mut request, &Ctx::new(&cx)) {
                 changed = true;
                 if let Err(e) = cx.record(&m) {
                     log(
