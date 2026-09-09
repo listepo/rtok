@@ -157,10 +157,11 @@ pub fn tail(cfg: &Config, n: Option<usize>) -> Vec<String> {
     out
 }
 
-/// `rtok logs`: [`tail`] numbered (`1` newest) with the level coloured through
-/// [`crate::render::log_line`] — one colour table, not a second one here.
-pub fn screen(cfg: &Config, n: Option<usize>) -> Vec<String> {
-    tail(cfg, n)
+/// `rtok logs`: the tail numbered (`1` newest) with the level coloured through
+/// [`crate::render::log_line`] — one colour table, not a second one here. Pure rendering:
+/// the lines come from the operator model (T15.11), which owns the selection.
+pub fn screen(lines: &[String]) -> Vec<String> {
+    lines
         .iter()
         .enumerate()
         .map(|(i, line)| format!("{} {}", i + 1, crate::render::log_line(line)))
@@ -278,16 +279,17 @@ mod tests {
     fn tail_and_screen_are_empty_when_nothing_has_been_logged() {
         let dir = tmp("empty");
         let cfg = cfg_at(&dir, 1 << 20, 3);
-        assert!(tail(&cfg, Some(10)).is_empty());
-        assert!(screen(&cfg, Some(10)).is_empty());
+        let lines = tail(&cfg, Some(10));
+        assert!(lines.is_empty());
+        assert!(screen(&lines).is_empty());
     }
 
     #[test]
     fn screen_numbers_newest_first_and_strips_to_the_same_lines_as_tail() {
         let dir = tmp("screen");
         let cfg = seed_rotated(&dir);
-        let numbered = screen(&cfg, Some(10));
         let plain = tail(&cfg, Some(10));
+        let numbered = screen(&plain);
         assert_eq!(numbered.len(), plain.len());
         for (i, (n, p)) in numbered.iter().zip(plain.iter()).enumerate() {
             // No terminal in a test run, so `log_line` added no ANSI codes: stripping the

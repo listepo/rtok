@@ -7,9 +7,9 @@ use crate::config::Config;
 use crate::config::layers;
 use crate::config::validate;
 use crate::demon::Service;
-use crate::plugins::Registry;
+use crate::web::model;
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// `0.1.0 (1a2b3c4d5)` — the sha comes from `build.rs` (T10.4).
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("RTOK_GIT_SHA"), ")");
@@ -352,7 +352,14 @@ pub fn run() -> Result<()> {
     match cli.cmd {
         Cmd::Plugins => {
             let config = Config::load_with(config_file.as_deref(), None)?;
-            print!("{}", Registry::new(&config).table());
+            // The command renders the model's Plugins page (T15.11); the registry keeps
+            // the same formatter for library users.
+            let rows: Vec<(&str, bool, Vec<&str>)> = crate::web::model::Model::new(&config, None)
+                .plugins()
+                .into_iter()
+                .map(|p| (p.id, p.enabled, p.surfaces))
+                .collect();
+            print!("{}", crate::render::plugins_table(&rows));
         }
         Cmd::Config { action } => {
             let home = Config::home_dir();
@@ -364,13 +371,13 @@ pub fn run() -> Result<()> {
                 }
                 ConfigCmd::Path => println!("{}", Config::path_for(&home).display()),
                 ConfigCmd::Show { sources, json } => {
-                    let fig = load_figment(config_file.as_deref())?;
-                    show(&fig, sources, json)?;
+                    let rows = model::config_entries(&home, config_file.as_deref())?;
+                    show(&rows, sources, json)?;
                 }
                 ConfigCmd::Get { key } => {
-                    let fig = load_figment(config_file.as_deref())?;
-                    match layers::entries(&fig).into_iter().find(|(k, ..)| k == &key) {
-                        Some((_, value, _)) => println!("{value}"),
+                    let rows = model::config_entries(&home, config_file.as_deref())?;
+                    match rows.into_iter().find(|r| r.key == key) {
+                        Some(r) => println!("{}", r.value),
                         None => bail!("unknown key: {key}"),
                     }
                 }
@@ -396,9 +403,9 @@ pub fn run() -> Result<()> {
                         // Nothing was written, so the loader would still report the old value.
                         print_diff(&diff);
                     } else {
-                        let fig = load_figment(config_file.as_deref())?;
-                        match layers::entries(&fig).into_iter().find(|(k, ..)| k == &key) {
-                            Some((_, v, _)) => println!("{v}"),
+                        let rows = model::config_entries(&home, config_file.as_deref())?;
+                        match rows.into_iter().find(|r| r.key == key) {
+                            Some(r) => println!("{}", r.value),
                             None => println!("{value}"),
                         }
                         print_diff(&diff);
@@ -428,8 +435,18 @@ pub fn run() -> Result<()> {
                 println!("{}", crate::tokens::calibrate_or_skip(&cfg));
                 return Ok(());
             }
+            // Everything `stats` prints below is a rendering of the operator model (T15.11):
+            // the command owns no store of its own.
             if cache {
-                print!("{}", crate::measure::cache::run(&cfg)?);
+                let report = crate::web::model::cache_health(&cfg)?;
+                print!(
+                    "{}",
+                    if cfg.stats.format == "json" {
+                        serde_json::to_string_pretty(&report)?
+                    } else {
+                        crate::measure::cache::table(&report)
+                    }
+                );
                 return Ok(());
             }
             if crate::config::CATALOGUE
@@ -438,20 +455,14 @@ pub fn run() -> Result<()> {
             {
                 print!(
                     "{}",
-                    crate::measure::stats::plugin_json(&cfg, &cfg.stats.plugin)?
+                    serde_json::to_string_pretty(&crate::web::model::plugin_stats(
+                        &cfg,
+                        &cfg.stats.plugin
+                    )?)?
                 );
                 return Ok(());
             }
-            let since = crate::measure::stats::parse_since(&cfg.stats.since)?;
-            let mut report = crate::measure::stats::collect(
-                &cfg.stats.transcripts_dir,
-                since,
-                &cfg.stats.plugin,
-                crate::measure::stats::Replay::from_cfg(&cfg),
-            )?;
-            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path) {
-                let _ = crate::measure::stats::attach_api(&mut report, &store);
-            }
+            let report = crate::web::model::stats_report(&cfg)?;
             if let Some(name) = save_baseline {
                 let p = crate::measure::baseline::save(&cfg.home, &name, &report)?;
                 println!("{}", p.display());
@@ -487,7 +498,7 @@ pub fn run() -> Result<()> {
         }
         Cmd::Doctor { instructions } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            print!("{}", crate::doctor::run(&cfg)?);
+            print!("{}", model::doctor(&cfg)?.to_text());
         }
         Cmd::Proxy {
             port,
@@ -589,12 +600,20 @@ pub fn run() -> Result<()> {
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let c = config_file.as_deref();
+            // `status` and `list` render the model's Demon page (T15.11); the other verbs
+            // write state and stay CLI-only (D27).
             match action {
                 DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
                 DemonCmd::Stop { service } => crate::demon::stop(&cfg, &service, false)?,
                 DemonCmd::Restart { service } => crate::demon::restart(&cfg, c, &service)?,
-                DemonCmd::Status { service } => crate::demon::status(&cfg, &service)?,
-                DemonCmd::List => crate::demon::list(&cfg)?,
+                DemonCmd::Status { service } => {
+                    let rows = model::Model::new(&cfg, None).demon(&service)?;
+                    print!("{}", crate::demon::table(&rows));
+                }
+                DemonCmd::List => {
+                    let rows = model::Model::new(&cfg, None).demon(Service::value_variants())?;
+                    print!("{}", crate::demon::table(&rows));
+                }
                 DemonCmd::Kill { service } => crate::demon::stop(&cfg, &service, true)?,
                 DemonCmd::Update { service } => crate::demon::update(&cfg, c, &service)?,
                 DemonCmd::Supervise { service } => crate::demon::supervise(&cfg, c, service)?,
@@ -610,9 +629,11 @@ pub fn run() -> Result<()> {
         }
         Cmd::Logs { action, lines } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
+            // The selection is the model's Logs page (T15.11); the numbering and colour
+            // are this command's rendering of it.
             let out = match action {
-                None => crate::log::screen(&cfg, lines),
-                Some(LogsCmd::Export) => crate::log::tail(&cfg, lines),
+                None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
+                Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };
             if out.is_empty() {
                 println!("no logs yet");
@@ -843,27 +864,16 @@ fn doctor_flags(instructions: bool) -> Option<figment::value::Dict> {
     Some(flags)
 }
 
-fn load_figment(config_file: Option<&std::path::Path>) -> Result<figment::Figment> {
-    let home = Config::home_dir();
-    Config::ensure_user_file(&home, config_file)?;
-    Ok(layers::figment(&home, config_file, None))
-}
-
-fn show(fig: &figment::Figment, sources: bool, json: bool) -> Result<()> {
-    let rows = layers::entries(fig);
+fn show(rows: &[model::ConfigEntry], sources: bool, json: bool) -> Result<()> {
     if json {
-        let v: Vec<_> = rows
-            .iter()
-            .map(|(k, v, s)| serde_json::json!({ "key": k, "value": v, "source": s }))
-            .collect();
-        println!("{}", serde_json::to_string_pretty(&v)?);
+        println!("{}", serde_json::to_string_pretty(rows)?);
         return Ok(());
     }
-    for (k, v, s) in rows {
+    for r in rows {
         if sources {
-            println!("{k} = {v} ({s})");
+            println!("{} = {} ({})", r.key, r.value, r.source);
         } else {
-            println!("{k} = {v}");
+            println!("{} = {}", r.key, r.value);
         }
     }
     Ok(())

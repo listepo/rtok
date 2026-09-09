@@ -1,12 +1,19 @@
 //! The one operator model behind `rtok web` and `rtok tui` (D23, T15.0).
 //!
-//! Both surfaces render *these* values; neither owns data. This module is the only
-//! place either surface touches `Store` / `stats` / `doctor`, so a page cannot grow a
-//! query of its own and drift from `rtok stats`.
+//! Both surfaces render *these* values; neither owns data. Since T15.11 the reading
+//! commands are renderers of the same pages (D27): this module is the only place either
+//! surface *or* a reading command touches `Store` / `stats` / `doctor`, so a page cannot
+//! grow a query of its own and two windows cannot disagree about the same session.
 
+use anyhow::Result;
 use serde::Serialize;
+use serde_json::{Value, json};
+use std::path::Path;
 
-use crate::config::Config;
+use crate::config::{Config, layers};
+use crate::demon::{self, Service};
+use crate::doctor;
+use crate::measure::{cache, stats};
 use crate::plugins::Registry;
 use crate::store::Store;
 
@@ -60,6 +67,102 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
 pub fn snapshot(cfg: &Config) -> Snapshot {
     let store = Store::open(&cfg.core.db_path).ok();
     Model::new(cfg, store.as_ref()).snapshot()
+}
+
+/// The `rtok stats` page (T15.11): the transcript report — `sessions` here counts transcript
+/// files, the report's own definition — with the store's per-API `usage` attached. The store
+/// stays optional, as it always was: a store that will not open costs the report its `api`
+/// table and nothing else. The store's own definition of a session (`sessions` rows joined to
+/// `usage`, D27) is the Sessions page T25.1 adds; both definitions live here, one per page,
+/// rather than one number quietly serving two questions.
+pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
+    let since = stats::parse_since(&cfg.stats.since)?;
+    let mut report = stats::collect(
+        &cfg.stats.transcripts_dir,
+        since,
+        &cfg.stats.plugin,
+        stats::Replay::from_cfg(cfg),
+    )?;
+    if let Ok(store) = Store::open(&cfg.core.db_path) {
+        let _ = stats::attach_api(&mut report, &store);
+    }
+    Ok(report)
+}
+
+/// The `rtok stats --plugin <id>` page: one catalogue plugin's `Measurement` rows as data.
+/// The store is required — this is the one `stats` view that reports an unreadable store.
+pub fn plugin_stats(cfg: &Config, plugin: &str) -> Result<Value> {
+    let store = Store::open(&cfg.core.db_path)?;
+    let rows = store.list_measurements(plugin)?;
+    let archive_hits = rows.iter().filter(|r| r.kind == "expand").count();
+    let rows: Vec<Value> = rows
+        .into_iter()
+        .filter(|r| r.kind != "expand")
+        .map(|r| {
+            json!({
+                "kind": r.kind,
+                "before": r.before_bytes,
+                "after": r.after_bytes,
+                "est_before": r.est_before,
+                "est_after": r.est_after,
+                "ref_id": r.ref_id,
+            })
+        })
+        .collect();
+    let mut out = json!({
+        "plugin": plugin,
+        "archive_hits": archive_hits,
+        "rows": rows,
+    });
+    if plugin == "archive" {
+        // T5.4 honesty metric: how often a live-zone pointer had to be expanded.
+        let (decisions, expanded) = store.archive_decision_counts()?;
+        let rate = if decisions > 0 {
+            expanded as f64 / decisions as f64
+        } else {
+            0.0
+        };
+        out["decisions"] = json!(decisions);
+        out["expanded"] = json!(expanded);
+        out["expand_rate"] = json!(rate);
+    }
+    Ok(out)
+}
+
+/// The `rtok stats --cache` page: per-session prompt-cache health from the proxy's
+/// `usage` rows.
+pub fn cache_health(cfg: &Config) -> Result<Vec<cache::SessionHealth>> {
+    let store = Store::open(&cfg.core.db_path)?;
+    cache::report(&store)
+}
+
+/// The `rtok doctor` page (T15.11): hooks, MCP servers, proxy chains. Every probe runs on
+/// this call — a snapshot tick never pays for them.
+pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
+    doctor::page(cfg)
+}
+
+/// One row of the `rtok config show` page: an effective key, its value, and which layer
+/// (`default|user|project|env|flag`) set it.
+#[derive(Debug, Serialize)]
+pub struct ConfigEntry {
+    pub key: String,
+    pub value: String,
+    pub source: String,
+}
+
+/// The `rtok config show` page (T15.11): every effective key with its origin. Built from
+/// the layered figment rather than an extracted `Config`, so `show` still works on a file
+/// that would not extract — wrong types are `validate`'s to report, not `show`'s.
+/// `config_file` is the `--config` override; `None` resolves through `RTOK_CONFIG` /
+/// `<home>/config.toml`.
+pub fn config_entries(home: &Path, config_file: Option<&Path>) -> Result<Vec<ConfigEntry>> {
+    Config::ensure_user_file(home, config_file)?;
+    let fig = layers::figment(home, config_file, None);
+    Ok(layers::entries(&fig)
+        .into_iter()
+        .map(|(key, value, source)| ConfigEntry { key, value, source })
+        .collect())
 }
 
 /// Reads the pages. Borrows the store so tests can pass an in-memory one.
@@ -132,6 +235,18 @@ impl<'a> Model<'a> {
             }
         }
         s
+    }
+
+    /// Logs page (T15.11): the last `n` log lines, newest first — `[log] lines` when
+    /// `None`. The selection is the model's; the numbering and colour are the CLI's.
+    pub fn log_lines(&self, n: Option<usize>) -> Vec<String> {
+        crate::log::tail(self.cfg, n)
+    }
+
+    /// Demon page (T15.11): one row per supervised service, state asked of the kernel
+    /// rather than read out of the state file.
+    pub fn demon(&self, named: &[Service]) -> Result<Vec<demon::Row>> {
+        demon::rows(self.cfg, named)
     }
 }
 

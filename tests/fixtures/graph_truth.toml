@@ -15,6 +15,12 @@
 # trait, so six fn names below gained a definition the 2026-09-04 scan could not have seen --
 # that, not an index regression, was the precision 0.864 failure. T26.1 removed both
 # `str_field` call sites, so that symbol's `refs` is now empty.
+#
+# T15.11 (2026-09-09): `measure::stats::plugin_json` moved into the model
+# (`model::plugin_stats`); the `plugin_json` entry named a symbol the tree no
+# longer has, so it is removed rather than left to miss. T27.0 (2026-09-09):
+# `read_settings` became the SDK's `read_json` -- its entry is gone for the
+# same reason (def and all three call sites).
 
 [[symbol]]
 name = "Manifest"
@@ -183,18 +189,6 @@ defs = ["src/proxy/wire.rs"]
 # T26.1 removed both call sites (T8.19 repair): a must-appear list may not name a site the
 # tree no longer has.
 refs = []
-
-[[symbol]]
-name = "read_settings"
-kind = "fn"
-defs = ["src/setup/claude.rs"]
-refs = ["src/proxy/cli.rs", "src/setup/cursor.rs", "src/setup/opencode.rs"]
-
-[[symbol]]
-name = "plugin_json"
-kind = "fn"
-defs = ["src/measure/stats.rs"]
-refs = ["src/cli.rs", "src/plugins/cmd/run.rs"]
 
 [[symbol]]
 name = "open_in_memory"

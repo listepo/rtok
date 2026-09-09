@@ -118,8 +118,7 @@ mod tests {
         for _ in 0..3 {
             assert_eq!(run(&c, &["printf".into(), "a\nb\n".into()]).unwrap(), 0);
         }
-        let v: serde_json::Value =
-            serde_json::from_str(&crate::measure::stats::plugin_json(&c, "cmd").unwrap()).unwrap();
+        let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
         let rows = v["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 3, "{v}");
         for r in rows {

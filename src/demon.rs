@@ -193,39 +193,75 @@ pub fn restart(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> R
     start(cfg, config_file, &services)
 }
 
-/// One row per service, read from the kernel rather than copied out of the state file.
-pub fn status(cfg: &Config, named: &[Service]) -> Result<()> {
-    println!(
-        "{:<11}{:<10}{:<12}{:<8}{:<9}{:<10}log",
-        "service", "state", "supervisor", "child", "uptime", "restarts"
-    );
+/// One row of the `rtok demon status` page (T15.11): state asked of the kernel, never
+/// copied out of the state file.
+#[derive(Debug, Serialize)]
+pub struct Row {
+    pub service: Service,
+    pub running: bool,
+    /// `None` when the service is down: the columns render `-`.
+    pub supervisor: Option<i32>,
+    pub child: Option<i32>,
+    pub uptime_secs: Option<u64>,
+    pub restarts: Option<u32>,
+    pub log: PathBuf,
+}
+
+/// The query behind `rtok demon status` / `list`: one row per service the verb targets,
+/// liveness from `kill(2)` so a state file left behind by a killed supervisor reads as
+/// stopped instead of as whatever it said.
+pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
+    let mut out = Vec::new();
     for service in targets(cfg, named, true)? {
         let st = read(cfg, service);
         let up = st.as_ref().is_some_and(|s| alive(s.supervisor));
-        let (sup, ch, age, n) = match (&st, up) {
-            (Some(s), true) => (
-                s.supervisor.to_string(),
-                s.child.to_string(),
-                format!("{}s", now().saturating_sub(s.since)),
-                s.restarts.to_string(),
-            ),
-            _ => ("-".into(), "-".into(), "-".into(), "-".into()),
+        let live = |s: &State| {
+            (
+                Some(s.supervisor),
+                Some(s.child),
+                Some(now().saturating_sub(s.since)),
+                Some(s.restarts),
+            )
         };
-        // The word is padded before it is coloured: ANSI bytes would otherwise count as width.
-        let word = format!("{:<10}", if up { "running" } else { "stopped" });
-        println!(
-            "{:<11}{}{sup:<12}{ch:<8}{age:<9}{n:<10}{}",
+        let (supervisor, child, uptime_secs, restarts) = match st.as_ref().filter(|_| up) {
+            Some(s) => live(s),
+            None => (None, None, None, None),
+        };
+        out.push(Row {
             service,
-            crate::render::state(&word, up),
-            file(cfg, service, "log").display()
-        );
+            running: up,
+            supervisor,
+            child,
+            uptime_secs,
+            restarts,
+            log: file(cfg, service, "log"),
+        });
     }
-    Ok(())
+    Ok(out)
 }
 
-/// Every service rtok can supervise, up or not.
-pub fn list(cfg: &Config) -> Result<()> {
-    status(cfg, Service::value_variants())
+/// The rendering: header plus one coloured row per service. The word is padded before it
+/// is coloured: ANSI bytes would otherwise count as width.
+pub fn table(rows: &[Row]) -> String {
+    let mut out = format!(
+        "{:<11}{:<10}{:<12}{:<8}{:<9}{:<10}log\n",
+        "service", "state", "supervisor", "child", "uptime", "restarts"
+    );
+    let dash = || "-".to_string();
+    for r in rows {
+        let word = format!("{:<10}", if r.running { "running" } else { "stopped" });
+        out.push_str(&format!(
+            "{:<11}{}{:<12}{:<8}{:<9}{:<10}{}\n",
+            r.service,
+            crate::render::state(&word, r.running),
+            r.supervisor.map(|v| v.to_string()).unwrap_or_else(dash),
+            r.child.map(|v| v.to_string()).unwrap_or_else(dash),
+            r.uptime_secs.map(|s| format!("{s}s")).unwrap_or_else(dash),
+            r.restarts.map(|v| v.to_string()).unwrap_or_else(dash),
+            r.log.display()
+        ));
+    }
+    out
 }
 
 /// Restart under the binary that is on disk now — what to run after `ketch install listepo/rtok`

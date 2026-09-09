@@ -1,8 +1,13 @@
 //! `rtok doctor` (plan T1.4): hooks, MCP servers, proxy chain.
+//!
+//! Since T15.11 the probes live in [`page`] and the text in [`Report::to_text`]: the page is
+//! what the operator model serves (D27) and what a `rtok web` / `rtok tui` Doctor page will
+//! render; the command is one renderer of it.
 
 use crate::config::Config;
 use crate::tokens::{self, Class};
 use anyhow::Result;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -12,15 +17,99 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
-pub fn run(cfg: &Config) -> Result<String> {
-    let mut out = String::new();
+/// What `rtok doctor` found, as data.
+#[derive(Debug, Serialize)]
+pub struct Report {
+    pub hooks_total: usize,
+    pub hooks_by_event: BTreeMap<String, usize>,
+    /// One probed MCP server: name, command, tool count, description tokens.
+    pub mcp: Vec<ServerInfo>,
+    /// The proxy chain behind `ANTHROPIC_BASE_URL`, hops joined with `→`.
+    pub proxy: String,
+    /// The proxy chain behind the OpenAI seed (`OPENAI_BASE_URL` or a host config).
+    pub proxy_openai: String,
+    /// `ANTHROPIC_BASE_URL` is set, so MCP tool search is likely disabled.
+    pub mcp_tool_search_disabled: bool,
+    pub bash_max_output_length: Option<String>,
+    pub auto_compact_window: Option<String>,
+    /// The instruction audit (T7.2): `Some` only when `[doctor] instructions` ran — an audit
+    /// that found nothing still prints its section header, as it always did.
+    pub instructions: Option<Instructions>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ServerInfo {
+    pub name: String,
+    pub cmd: String,
+    pub tools: usize,
+    pub desc_tokens: u32,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct Instructions {
+    pub rows: Vec<InstructionRow>,
+    pub duplicates: Vec<(String, Vec<String>)>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InstructionRow {
+    pub name: String,
+    pub tokens: u32,
+    pub path: String,
+    pub warn: bool,
+}
+
+impl Report {
+    /// The `rtok doctor` text, line for line what the command printed before the page split.
+    pub fn to_text(&self) -> String {
+        let mut out = format!("hooks {}\n", self.hooks_total);
+        for (ev, n) in &self.hooks_by_event {
+            out.push_str(&format!("  {ev} {n}\n"));
+        }
+        out.push_str("mcp\n");
+        for s in &self.mcp {
+            out.push_str(&format!(
+                "  {} ({} tools, ~{} desc tokens) {}\n",
+                s.name, s.tools, s.desc_tokens, s.cmd
+            ));
+        }
+        out.push_str(&format!("proxy {}\n", self.proxy));
+        out.push_str(&format!("proxy openai {}\n", self.proxy_openai));
+        if self.mcp_tool_search_disabled {
+            out.push_str("mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)\n");
+        }
+        out.push_str(&format!(
+            "BASH_MAX_OUTPUT_LENGTH {}\n",
+            self.bash_max_output_length.as_deref().unwrap_or("(unset)")
+        ));
+        out.push_str(&format!(
+            "autoCompactWindow {}\n",
+            self.auto_compact_window.as_deref().unwrap_or("(unset)")
+        ));
+        if let Some(audit) = &self.instructions {
+            out.push_str("instructions\n");
+            for r in &audit.rows {
+                out.push_str(&format!(
+                    "  {} {} tokens {}{}\n",
+                    r.name,
+                    r.tokens,
+                    r.path,
+                    if r.warn { " WARN" } else { "" }
+                ));
+            }
+            for (sent, names) in &audit.duplicates {
+                out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
+            }
+        }
+        out
+    }
+}
+
+/// Every probe runs here: settings and host files are read, MCP servers are spawned and
+/// asked for their tools, proxy hops answer `/health` or do not.
+pub fn page(cfg: &Config) -> Result<Report> {
     let settings = read_json(&cfg.doctor.settings_path);
     let hooks = count_hooks(settings.as_ref());
-    out.push_str(&format!("hooks {}\n", hooks.total));
-    for (ev, n) in &hooks.by_event {
-        out.push_str(&format!("  {ev} {n}\n"));
-    }
-    out.push_str("mcp\n");
     let claude = read_json(&cfg.doctor.claude_json);
     let mut servers = mcp_servers(claude.as_ref(), Path::new(&cfg.doctor.mcp_json));
     // rtok's own MCP surface, so the P6/P8 gates compare like with like.
@@ -35,14 +124,19 @@ pub fn run(cfg: &Config) -> Result<String> {
             env: BTreeMap::new(),
         });
     }
-    let timeout = Duration::from_millis(cfg.doctor.mcp_timeout_ms.max(500));
-    for s in &servers {
-        let (n_tools, desc_tokens) = list_tools(s, timeout, &cfg.estimator);
-        out.push_str(&format!(
-            "  {} ({n_tools} tools, ~{desc_tokens} desc tokens) {}\n",
-            s.name, s.cmd
-        ));
-    }
+    let mcp_timeout = Duration::from_millis(cfg.doctor.mcp_timeout_ms.max(500));
+    let mcp = servers
+        .iter()
+        .map(|s| {
+            let (tools, desc_tokens) = list_tools(s, mcp_timeout, &cfg.estimator);
+            ServerInfo {
+                name: s.name.clone(),
+                cmd: s.cmd.clone(),
+                tools,
+                desc_tokens,
+            }
+        })
+        .collect();
     let timeout = Duration::from_millis(cfg.doctor.probe_timeout_ms.max(300));
     let anthropic = settings
         .as_ref()
@@ -50,11 +144,6 @@ pub fn run(cfg: &Config) -> Result<String> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| std::env::var("ANTHROPIC_BASE_URL").ok());
-    out.push_str(&format!("proxy {}\n", proxy_chain(anthropic, timeout)));
-    out.push_str(&format!(
-        "proxy openai {}\n",
-        proxy_chain(openai_seed(cfg, settings.as_ref()), timeout)
-    ));
     let base_owned = std::env::var("ANTHROPIC_BASE_URL").ok().or_else(|| {
         settings
             .as_ref()
@@ -62,28 +151,23 @@ pub fn run(cfg: &Config) -> Result<String> {
             .and_then(Value::as_str)
             .map(str::to_string)
     });
-    if base_owned.as_deref().is_some_and(|b| !b.is_empty()) {
-        out.push_str("mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)\n");
-    }
-    let bash = std::env::var("BASH_MAX_OUTPUT_LENGTH").ok();
-    out.push_str(&format!(
-        "BASH_MAX_OUTPUT_LENGTH {}\n",
-        bash.as_deref().unwrap_or("(unset)")
-    ));
-    let compact = settings
-        .as_ref()
-        .and_then(|s| s.get("autoCompactWindow"))
-        .cloned();
-    out.push_str(&format!(
-        "autoCompactWindow {}\n",
-        compact
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "(unset)".into())
-    ));
-    if cfg.doctor.instructions {
-        out.push_str(&instruction_audit(cfg, settings.as_ref(), claude.as_ref()));
-    }
-    Ok(out)
+    Ok(Report {
+        hooks_total: hooks.total,
+        hooks_by_event: hooks.by_event,
+        mcp,
+        proxy: proxy_chain(anthropic, timeout),
+        proxy_openai: proxy_chain(openai_seed(cfg, settings.as_ref()), timeout),
+        mcp_tool_search_disabled: base_owned.as_deref().is_some_and(|b| !b.is_empty()),
+        bash_max_output_length: std::env::var("BASH_MAX_OUTPUT_LENGTH").ok(),
+        auto_compact_window: settings
+            .as_ref()
+            .and_then(|s| s.get("autoCompactWindow"))
+            .map(|v| v.to_string()),
+        instructions: cfg
+            .doctor
+            .instructions
+            .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
+    })
 }
 
 const INJECTORS: &[&str] = &[
@@ -102,7 +186,11 @@ struct Source {
     text: String,
 }
 
-fn instruction_audit(cfg: &Config, settings: Option<&Value>, claude: Option<&Value>) -> String {
+fn instruction_audit(
+    cfg: &Config,
+    settings: Option<&Value>,
+    claude: Option<&Value>,
+) -> Instructions {
     let mut srcs = Vec::new();
     if let Some(dir) = cfg.doctor.settings_path.parent() {
         push_file(&mut srcs, "claude-user", &dir.join("CLAUDE.md"));
@@ -127,17 +215,22 @@ fn instruction_audit(cfg: &Config, settings: Option<&Value>, claude: Option<&Val
             });
         }
     }
-    let mut out = String::from("instructions\n");
     let warn_at = cfg.doctor.instruction_warn_tokens;
-    for s in &srcs {
-        let n = tokens::estimate(&s.text, Class::Prose, &cfg.estimator);
-        let flag = if n > warn_at { " WARN" } else { "" };
-        out.push_str(&format!("  {} {n} tokens {}{flag}\n", s.name, s.path));
+    Instructions {
+        rows: srcs
+            .iter()
+            .map(|s| {
+                let tokens = tokens::estimate(&s.text, Class::Prose, &cfg.estimator);
+                InstructionRow {
+                    name: s.name.clone(),
+                    warn: tokens > warn_at,
+                    tokens,
+                    path: s.path.clone(),
+                }
+            })
+            .collect(),
+        duplicates: duplicates(&srcs),
     }
-    for (sent, names) in duplicates(&srcs) {
-        out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
-    }
-    out
 }
 
 fn push_file(srcs: &mut Vec<Source>, name: &str, path: &Path) {
@@ -480,7 +573,7 @@ mod tests {
         cfg.doctor.settings_path = dir.join("settings.json");
         cfg.doctor.claude_json = dir.join("claude.json");
         cfg.doctor.instructions = true;
-        let s = run(&cfg).unwrap();
+        let s = page(&cfg).unwrap().to_text();
         assert!(s.contains("instructions"), "{s}");
         let n = s
             .lines()
@@ -511,7 +604,7 @@ mod tests {
         cfg.doctor.mcp_json = dir.join("missing-mcp.json");
         cfg.setup.opencode.config_path = dir.join("opencode.json");
         cfg.setup.codex.config_path = dir.join("missing-codex.toml");
-        let s = run(&cfg).unwrap();
+        let s = page(&cfg).unwrap().to_text();
         assert!(
             s.lines().any(|l| l.starts_with("proxy ")
                 && !l.starts_with("proxy openai")

@@ -14,7 +14,6 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::config::Config;
 use crate::store::{Store, UsageRow};
 
 /// `cache_creation_input_tokens` above this, with a `cache_read` drop, is a bust.
@@ -120,17 +119,9 @@ pub fn report(store: &Store) -> Result<Vec<SessionHealth>> {
     Ok(out)
 }
 
-/// `rtok stats --cache`: table, or JSON when `stats.format = "json"`.
-pub fn run(cfg: &Config) -> Result<String> {
-    let store = Store::open(&cfg.core.db_path)?;
-    let report = report(&store)?;
-    if cfg.stats.format == "json" {
-        Ok(serde_json::to_string_pretty(&report)?)
-    } else {
-        Ok(table(&report))
-    }
-}
-
+/// `rtok stats --cache` is a page of the operator model (`crate::web::model::cache_health`,
+/// T15.11): the model runs this report over the store; the command renders it as a table,
+/// or as JSON when `stats.format = "json"`.
 pub fn table(report: &[SessionHealth]) -> String {
     let mut s = format!(
         "{:<40} {:>6} {:>12} {:>12} {:>6}\n",

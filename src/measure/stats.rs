@@ -8,7 +8,6 @@ use crate::config::Config;
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -397,44 +396,9 @@ fn mcp_group(name: &str) -> Option<&str> {
     Some(rest.split("__").next().unwrap_or(rest))
 }
 
-/// SQLite measurements for a catalogue plugin (`rtok stats --plugin cmd --json`).
-pub fn plugin_json(cfg: &Config, plugin: &str) -> Result<String> {
-    let store = Store::open(&cfg.core.db_path)?;
-    let rows = store.list_measurements(plugin)?;
-    let archive_hits = rows.iter().filter(|r| r.kind == "expand").count();
-    let rows: Vec<serde_json::Value> = rows
-        .into_iter()
-        .filter(|r| r.kind != "expand")
-        .map(|r| {
-            json!({
-                "kind": r.kind,
-                "before": r.before_bytes,
-                "after": r.after_bytes,
-                "est_before": r.est_before,
-                "est_after": r.est_after,
-                "ref_id": r.ref_id,
-            })
-        })
-        .collect();
-    let mut out = json!({
-        "plugin": plugin,
-        "archive_hits": archive_hits,
-        "rows": rows,
-    });
-    if plugin == "archive" {
-        // T5.4 honesty metric: how often a live-zone pointer had to be expanded.
-        let (decisions, expanded) = store.archive_decision_counts()?;
-        let rate = if decisions > 0 {
-            expanded as f64 / decisions as f64
-        } else {
-            0.0
-        };
-        out["decisions"] = json!(decisions);
-        out["expanded"] = json!(expanded);
-        out["expand_rate"] = json!(rate);
-    }
-    Ok(serde_json::to_string_pretty(&out)?)
-}
+// SQLite measurements for a catalogue plugin (`rtok stats --plugin cmd --json`) live in the
+// operator model (`crate::web::model::plugin_stats`, T15.11): the command renders the page,
+// it does not query the store.
 
 #[cfg(test)]
 mod tests {

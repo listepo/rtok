@@ -114,19 +114,15 @@ impl Registry {
             .collect()
     }
 
-    /// The `rtok plugins` table.
+    /// The `rtok plugins` table — one formatter with the CLI's rendering of the model's
+    /// Plugins page ([`crate::render::plugins_table`], T15.11), so the two cannot drift.
     pub fn table(&self) -> String {
-        let mut out = format!("{:<9}{:<9}surfaces\n", "id", "enabled");
-        for (m, on) in self.manifests() {
-            let surfaces: Vec<&str> = m.surfaces.iter().map(|s| s.as_str()).collect();
-            out.push_str(&format!(
-                "{:<9}{:<9}{}\n",
-                m.id,
-                if on { "on" } else { "off" },
-                surfaces.join(",")
-            ));
-        }
-        out
+        let rows: Vec<(&str, bool, Vec<&str>)> = self
+            .manifests()
+            .into_iter()
+            .map(|(m, on)| (m.id, on, m.surfaces.iter().map(|s| s.as_str()).collect()))
+            .collect();
+        crate::render::plugins_table(&rows)
     }
 }
 

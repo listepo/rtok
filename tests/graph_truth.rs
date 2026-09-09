@@ -49,9 +49,9 @@ fn repo() -> PathBuf {
 
 /// Definitions must clear the P8b bar of 0.9 and do, at 1.0. References do not: the Rust tags
 /// query sees no type positions, nothing inside a macro body, and no path-qualified call, which
-/// is 74 of the 156 labelled sites. The floor below is a regression guard on the measured 0.339
-/// (0.351 at T8.8; repo drift, not index drift), not a target; `src/plugins/graph/PLAN.md`
-/// names the three constructs under "Known misses".
+/// is 73 of the 149 labelled sites. The floor below is a regression guard on the measured 0.318
+/// (0.351 at T8.8, 0.339 at T8.19; repo drift, not index drift), not a target;
+/// `src/plugins/graph/PLAN.md` names the three constructs under "Known misses".
 #[test]
 fn labelled_symbols_are_found() {
     let dir = std::env::temp_dir().join(format!("rtok-truth-{}", std::process::id()));
