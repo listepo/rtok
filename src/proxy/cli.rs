@@ -56,6 +56,35 @@ pub fn register_proxy(cfg: &Config) -> Result<String> {
     Ok(format!("env.ANTHROPIC_BASE_URL: {url}\n{revert}"))
 }
 
+/// Clear `env.ANTHROPIC_BASE_URL` (`rtok agent remove claude`), but only while it still
+/// points at this proxy — a URL the user set themselves is not ours to delete.
+pub fn unregister_proxy(cfg: &Config) -> Result<String> {
+    let path = &cfg.setup.claude.settings_path;
+    if !path.exists() {
+        return Ok("no changes".into());
+    }
+    let mut root = read_settings(path)?;
+    let url = format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port);
+    let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) else {
+        return Ok("no changes".into());
+    };
+    if env.get("ANTHROPIC_BASE_URL").and_then(Value::as_str) != Some(url.as_str()) {
+        return Ok("no changes".into());
+    }
+    env.remove("ANTHROPIC_BASE_URL");
+    if env.is_empty() {
+        root.as_object_mut().unwrap().remove("env");
+    }
+    if !cfg.setup.dry_run {
+        if cfg.setup.backup {
+            backup(path)?;
+        }
+        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
+            .with_context(|| path.display().to_string())?;
+    }
+    Ok("- env.ANTHROPIC_BASE_URL".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -62,18 +62,26 @@ pub(crate) fn read_settings(path: &Path) -> Result<Value> {
     serde_json::from_str(&raw).with_context(|| path.display().to_string())
 }
 
-pub(crate) fn backup(path: &Path) -> Result<()> {
+/// Copy `path` to `<name>.bak-<unix-seconds>` beside it. `None` when there is no file yet.
+pub(crate) fn backup(path: &Path) -> Result<Option<std::path::PathBuf>> {
     if !path.exists() {
-        return Ok(());
+        return Ok(None);
     }
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let bak = path.with_file_name(format!("{name}.bak-{ts}"));
+    // Two commands inside one second would otherwise share a name and the first copy would go.
+    let mut bak = path.with_file_name(format!("{name}.bak-{ts}"));
+    for n in 1..100 {
+        if !bak.exists() {
+            break;
+        }
+        bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
+    }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
-    Ok(())
+    Ok(Some(bak))
 }
 
 fn event_array<'a>(root: &'a mut Value, event: &str) -> &'a mut Vec<Value> {
@@ -209,6 +217,37 @@ pub(crate) fn register_stdio_mcp(path: &Path, cfg: &Config) -> Result<String> {
             .with_context(|| path.display().to_string())?;
     }
     Ok("mcpServers.rtok: rtok mcp".into())
+}
+
+/// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agent remove claude`).
+pub fn unregister_mcp(cfg: &Config) -> Result<String> {
+    unregister_stdio_mcp(&cfg.doctor.claude_json, cfg)
+}
+
+/// Drop the `rtok` entry from an `mcpServers` map. Foreign servers are left alone,
+/// and a map that ends up empty goes with it so the file reads as it did before.
+pub(crate) fn unregister_stdio_mcp(path: &Path, cfg: &Config) -> Result<String> {
+    if !path.exists() {
+        return Ok("no changes".into());
+    }
+    let mut root = read_settings(path)?;
+    let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
+        return Ok("no changes".into());
+    };
+    if servers.remove("rtok").is_none() {
+        return Ok("no changes".into());
+    }
+    if servers.is_empty() {
+        root.as_object_mut().unwrap().remove("mcpServers");
+    }
+    if !cfg.setup.dry_run {
+        if cfg.setup.backup {
+            backup(path)?;
+        }
+        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
+            .with_context(|| path.display().to_string())?;
+    }
+    Ok("- mcpServers.rtok".into())
 }
 
 #[cfg(test)]

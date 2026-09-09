@@ -70,7 +70,8 @@ rtok stats --compare before-rtok
 
 | Command | Purpose |
 |---|---|
-| `rtok agent setup claude` | install Claude Code hooks and MCP registration |
+| `rtok agent setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
+| `rtok agent remove claude` | take hooks, MCP registration and the proxy variable back out (`--dry-run`) |
 | `rtok agent setup cursor` / `rtok agent setup codex` | register the supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |

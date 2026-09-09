@@ -188,6 +188,17 @@ enum GraphCmd {
 enum AgentCmd {
     /// Install hooks, MCP server and proxy into a host
     Setup(SetupArgs),
+    /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
+    Remove(RemoveArgs),
+}
+
+#[derive(clap::Args)]
+struct RemoveArgs {
+    /// Host (`claude`, `cursor`, `codex`, `opencode`, `pi`)
+    host: String,
+    /// Print what would be removed and exit
+    #[arg(long)]
+    dry_run: bool,
 }
 
 /// One definition behind `rtok agent setup` and the deprecated `rtok setup`.
@@ -216,6 +227,22 @@ struct SetupArgs {
     /// Set `env.ANTHROPIC_BASE_URL` to this proxy
     #[arg(long)]
     proxy: bool,
+}
+
+impl SetupArgs {
+    /// `rtok agent remove <host>` is the install run backwards; nothing else about it differs.
+    fn removing(args: RemoveArgs) -> Self {
+        Self {
+            host: args.host,
+            dry_run: args.dry_run,
+            remove: true,
+            mode: Vec::new(),
+            yes: false,
+            replace: false,
+            mcp: false,
+            proxy: false,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -407,9 +434,12 @@ pub fn run() -> Result<()> {
                 Config::load_with(config_file.as_deref(), layers::dashboard_flags(host, port))?;
             crate::dashboard::serve_blocking(cfg)?;
         }
-        Cmd::Agent {
-            action: AgentCmd::Setup(args),
-        } => setup_host(config_file.as_deref(), args)?,
+        Cmd::Agent { action } => match action {
+            AgentCmd::Setup(args) => setup_host(config_file.as_deref(), args)?,
+            AgentCmd::Remove(args) => {
+                setup_host(config_file.as_deref(), SetupArgs::removing(args))?
+            }
+        },
         Cmd::Setup(args) => {
             eprintln!(
                 "warning: `rtok setup {0}` is deprecated; use `rtok agent setup {0}`",
@@ -554,17 +584,32 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         mcp,
         proxy,
     } = args;
-    let cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
+    let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
+    // The copy is taken up front, before any installer runs, so one `.bak-<ts>` per file holds
+    // the host exactly as it was — not as it was midway through a multi-file edit. Taking it
+    // here also means the installers must not take a second one of their own.
+    if !cfg.setup.dry_run && cfg.setup.backup {
+        for path in crate::setup::host_files(&cfg, &host) {
+            if let Some(bak) = crate::setup::claude::backup(&path)? {
+                println!("backup {}", bak.display());
+            }
+        }
+        cfg.setup.backup = false;
+    }
     match host.as_str() {
         "claude" if replace => println!("{}", crate::setup::migrate::run(&cfg)?),
         "claude" => {
-            let hooks = crate::setup::claude::run(&cfg, remove)?;
-            let mut lines = vec![hooks];
-            if cfg.setup.mcp && !remove {
-                lines.push(crate::setup::claude::register_mcp(&cfg)?);
-            }
-            if cfg.setup.proxy && !remove {
-                lines.push(crate::proxy::cli::register_proxy(&cfg)?);
+            let mut lines = vec![crate::setup::claude::run(&cfg, remove)?];
+            if remove {
+                lines.push(crate::setup::claude::unregister_mcp(&cfg)?);
+                lines.push(crate::proxy::cli::unregister_proxy(&cfg)?);
+            } else {
+                if cfg.setup.mcp {
+                    lines.push(crate::setup::claude::register_mcp(&cfg)?);
+                }
+                if cfg.setup.proxy {
+                    lines.push(crate::proxy::cli::register_proxy(&cfg)?);
+                }
             }
             print_lines(&lines);
         }
@@ -572,7 +617,9 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
             let hooks = crate::setup::cursor::run(&cfg, remove)?;
             let plugin = crate::setup::cursor::offer_plugin(&cfg, remove)?;
             let mut lines = vec![hooks, plugin];
-            if cfg.setup.mcp && !remove && !crate::setup::cursor::plugin_is_mcp(&cfg, remove) {
+            if remove {
+                lines.push(crate::setup::cursor::unregister_mcp(&cfg)?);
+            } else if cfg.setup.mcp && !crate::setup::cursor::plugin_is_mcp(&cfg, remove) {
                 lines.push(crate::setup::cursor::register_mcp(&cfg)?);
             }
             print_lines(&lines);
@@ -580,7 +627,8 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
         "codex" => {
             let mut lines = vec![crate::setup::codex::run(&cfg, remove)?];
-            if cfg.setup.proxy {
+            // On the way out the provider block goes whether or not `--proxy` asked for it.
+            if remove || cfg.setup.proxy {
                 lines.push(crate::setup::codex::register_proxy(&cfg, remove)?);
             }
             print_lines(&lines);

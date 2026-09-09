@@ -34,6 +34,7 @@ blocks the host agent.
 
 ```bash
 rtok agent setup claude     # installs hooks / MCP / proxy, with backups
+rtok agent remove claude    # takes them back out again
 ```
 
 This writes the hook entries, the MCP server registration, and the proxy environment into

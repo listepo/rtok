@@ -39,10 +39,19 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     Ok(report)
 }
 
+/// `~/.cursor/mcp.json` — the sibling of `hooks.json`.
+fn mcp_path(cfg: &Config) -> PathBuf {
+    cfg.setup.cursor.hooks_path.with_file_name("mcp.json")
+}
+
 /// Register `rtok mcp` in `~/.cursor/mcp.json` (sibling of `hooks.json`).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    let path = cfg.setup.cursor.hooks_path.with_file_name("mcp.json");
-    register_stdio_mcp(&path, cfg)
+    register_stdio_mcp(&mcp_path(cfg), cfg)
+}
+
+/// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agent remove cursor`).
+pub fn unregister_mcp(cfg: &Config) -> Result<String> {
+    super::claude::unregister_stdio_mcp(&mcp_path(cfg), cfg)
 }
 
 const PLUGIN_SRC_REL: &str = "plugins/cursor";
@@ -122,24 +131,7 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
 /// Remove `mcpServers.rtok` from the Cursor `mcp.json` sibling of `hooks.json`.
 /// Best-effort: missing file or foreign content is not an error.
 fn strip_mcp_registration(cfg: &Config) -> Result<bool> {
-    use super::claude::read_settings;
-    let path = cfg.setup.cursor.hooks_path.with_file_name("mcp.json");
-    if !path.exists() {
-        return Ok(false);
-    }
-    let mut root = read_settings(&path)?;
-    let removed = root
-        .get_mut("mcpServers")
-        .and_then(|s| s.as_object_mut())
-        .is_some_and(|servers| servers.remove("rtok").is_some());
-    if removed && !cfg.setup.dry_run {
-        if cfg.setup.backup {
-            super::claude::backup(&path)?;
-        }
-        fs::write(&path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
-    Ok(removed)
+    Ok(unregister_mcp(cfg)? != "no changes")
 }
 
 /// True when `--yes` accepted the plugin, so `mcp.json` must not also register rtok.
