@@ -29,6 +29,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D21 | **Every new plugin is plugin and MCP as one unit, a singleton, with one call path per capability.** Applies to catalogue plugins (`src/plugins/<id>/`) and host plugins (`plugins/<host>/`). (1) **Plugin + MCP together:** if it exposes tools, it *is* the MCP for those tools in the same bundle — not a second server and not a second registration (`rtok setup --mcp` plus the plugin both listing `rtok`). (2) **Singleton:** one MCP process / one writer per store; do not spawn a second `rtok mcp` for the same `rtok.db` / graph index (D18). (3) **No duplicate calls:** hooks, MCP tools, CLI, rules, skills, and commands must not invoke the same function twice. A hook that rewrites Bash to `rtok run` is not a duplicate of MCP `read`/`search`; a skill that shells out to `rtok read` when MCP `read` exists *is*. (4) **Desktop and CLI:** a host plugin must load in that host's desktop app and its CLI (Cursor: `.cursor-plugin/` plus MCP; `agent --plugin-dir` / marketplace). (5) **Missing `rtok`:** fail open (D1) and tell the user it must be installed and how, using ketch: `ketch install listepo/rtok`. If ketch is missing, the bootstrap from the README: `curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash` then `ketch install listepo/rtok`. (6) **Setup offers the host plugin:** `rtok setup <host>` must offer to install `plugins/<host>/` (Cursor: `rtok setup cursor` offers `plugins/cursor` for desktop and CLI). `--dry-run` prints the offer; `--yes` accepts it; default on a TTY is a prompt. If the user accepts the plugin, that plugin *is* the MCP — do not also register `mcpServers.rtok` in the host's mcp.json (D21 singleton). Added 2026-09-08 by user request. | Two MCP registrations spawn two writers on the graph store. Duplicate tool paths split `Measurement` (D3, D10) and burn tokens. Desktop vs CLI must see the same unit. Install is ketch (P18). Setup that only writes hooks.json leaves the plugin undiscoverable in Cursor Desktop/CLI. |
 | D22 | **`rtok demon` is an operator surface that supervises rtok's own long-running surfaces, not a catalogue plugin.** One supervisor process per service, and the service is an allow-list name (`proxy`, `mcp`, `dashboard`), never an arbitrary command line. State is `~/.rtok/demon/<name>.json`, output is `<name>.log`, and a `<name>.stop` marker is how `stop` reaches a supervisor it did not spawn. The supervisor re-spawns its child whenever the child exits and exits itself only on the marker. Nothing in it is on the hook path: `rtok hook` never reads the state and still fails open in ≤ 10 ms whether a supervisor runs or not (D1). It has no `Measurement` row, so §4 clause 2 does not apply — the same reasoning D20 uses for `dashboard`. Added 2026-09-09 by user request. | The proxy is the `ANTHROPIC_BASE_URL` hop; when it dies every host silently loses its wire until someone notices. launchd and systemd do this natively but differ per OS and per install method, and cargo-dist ships a plain binary with no service unit. A supervisor has no token path, so calling it a catalogue plugin would put a plugin in `rtok stats --plugin` with nothing to measure. |
 | D23 | **`rtok tui` and `rtok web` are two renderings of one operator model, never two products.** Every page one offers, the other offers: Overview, Plugins, Calls, Doctor, Logs today, and whatever is added next. Neither owns data — both read the same `Store` / `stats` / `doctor` values through the same module, and a plugin contributes its page once, through `Plugin::dashboard_page`, which is why that trait method keeps a surface-neutral name. A page that exists on one surface and not the other is a defect, and P15's gate is a test that enumerates both and fails on the difference — not a promise in prose. Which one you run is a question of where you are: a terminal over ssh, or a browser. `rtok dashboard` was renamed to `rtok web` the same day, so the pair reads as `tui` and `web` rather than as a UI and a thing. Added 2026-09-09 by user request. | Two operator surfaces built independently drift within one release, and then the answer to "what does rtok say about this session" depends on which one you opened. Sharing the model is also what keeps the cost of a new page at one implementation. |
+| D24 | **`rtok report` renders; it never computes a number of its own.** It reads the operator model of D23 (T15.0) — the same `Store` / `stats` / `doctor` values `rtok web` and `rtok tui` render — and lays them out as Markdown, HTML or PDF. Three renderings, one document: the same sections, the same numbers, in the same order. Every figure carries the rows it came from and the window it covers, because a saving that is not a `Measurement` row does not exist (D3), and a report is the easiest place in the codebase to forget that. The recommendations are rules over those same rows, each printing the evidence that triggered it — never a language-model call: an unmeasurable suggestion that costs tokens is the opposite of what this binary is for. `--ai` is a fourth rendering of the same document for a model rather than a person: no images, no styling, dense tables through the `toon` plugin, stable heading ids, one explicit budget, and a note saying what was dropped to fit it. Added 2026-09-09 by user request. | A report that runs its own queries drifts from `rtok stats` within a release, and then two commands disagree about the same session. Charts and a PDF are presentation; the numbers underneath must be the ones already on record. |
 
 Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
@@ -145,6 +146,94 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 ### P20 — `demon` supervisor — T20.1, T20.2 done 2026-09-09 (D22); see `done.md` P20.
 
 ### P21 — CLI presentation — T21.1–T21.3 done 2026-09-09; see `done.md` P21. Started as T20.2 (owo-colors).
+
+### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24)
+
+`rtok report [--format md|html|pdf] [--ai] [--out <path>] [--since <window>]`. Depends on T15.0:
+until the operator model exists, a report would be a fourth reader of the `Store` and would start
+drifting from `rtok stats` immediately (D24). Config table `[report]`: `format`, `out`, `since`,
+`ai`, `charts`, `budget_tokens` — every flag has a key (D12); `--format` is a clap `ValueEnum`
+(D14), like `demon`'s `Service`.
+
+The section set is fixed and identical in every format, so "the report" means one thing:
+**Window** (dates, row counts per ledger) · **Savings** (context-token-turns and output tokens,
+per plugin, from `Measurement` rows only) · **Calls** (hooks / MCP / proxy, p50 and p95 latency) ·
+**Cache** (busts and their cause) · **Expand** (rate, and what was expanded) · **Config**
+(effective values with their origin, from `config show --sources`) · **Doctor** (what `rtok
+doctor` reports) · **Recommendations**.
+
+**T22.0 pick the PDF renderer against the size gate** · T15.0 · `docs/report.md` (new)
+Do: D15-style survey before any code. At least three candidates priced honestly: `typst` as a
+library, `printpdf` + `svg2pdf`, and rendering through a browser. Judge each on (1) what it does to
+the release binary, which P17 already gates, (2) whether it keeps "one static binary, no runtime
+dependency" true, (3) whether HTML and PDF can come from *one* document rather than two layouts.
+Charts are one decision too: pure-Rust SVG (`plotters`) embeds into all three formats, where a
+JS charting library would make the HTML the only real format and the other two second-class.
+Check: `docs/report.md` names the choice, the two rejected options with the reason, and the
+measured size cost of the winner; a `dist` build stays inside the P17 budget.
+Status: open · Model: -
+Complexity: 2/5
+
+**T22.1 `--format md`** · T22.0 · `src/report/mod.rs`, `src/report/markdown.rs`, `src/cli.rs`
+Do: the whole section set as Markdown, straight from the D23 model. Tables, no charts. Every
+number is followed by its evidence — row count and window — so the document cannot quietly grow a
+figure nobody measured. Markdown first because it needs no renderer: it is the format that proves
+the *content* is right before any layout work starts.
+Check: on a store with known fixtures, every number in the output is traceable to a row the test
+also asserts; an empty store produces a report that says so rather than zeros.
+Status: open · Model: -
+Complexity: 3/5
+
+**T22.2 `--format html`** · T22.1 · `src/report/html.rs`
+Do: the same sections, one self-contained file — inline CSS, inline SVG charts, no network fetch,
+openable from a file:// URL. Charts where a series exists (savings over time, tokens per plugin,
+latency distribution, cache busts per turn); tables everywhere else.
+Check: the HTML contains every number the Markdown contains, asserted by a test that walks both;
+the file opens with no external request (no `http` outside code blocks).
+Status: open · Model: -
+Complexity: 3/5
+
+**T22.3 `--format pdf`** · T22.0, T22.2 · `src/report/pdf.rs`
+Do: the renderer T22.0 chose, over the same document and the same SVG charts. Paged, with a table
+of contents.
+Check: the PDF has the same section headings in the same order as the HTML, and the release binary
+still passes the P17 size gate with the renderer linked in.
+Status: open · Model: -
+Complexity: 4/5
+
+**T22.4 `--ai`** · T22.1 · `src/report/ai.rs`
+Do: the same document shaped for a model instead of a person. No images, no styling, no box
+drawing. Tables in `toon` rather than Markdown pipes — dense, and it dogfoods the plugin this repo
+ships. Stable heading ids so a model can be pointed at one section. Every number keeps its unit and
+its row count, because a model has no other way to weigh it. One budget (`[report] budget_tokens`),
+and when the document does not fit, it says which sections it dropped instead of truncating
+mid-table. Ends with the recommendations as an ordered, explicit task list.
+Check: `--ai` output is measurably smaller in tokens than `--format md` on the same store and
+window (a `Measurement` row, not an assertion in prose); no section is silently missing — the
+dropped ones are named; every heading id is stable across two runs over the same data.
+Status: open · Model: -
+Complexity: 3/5
+
+**T22.5 recommendations** · T22.1 · `src/report/advice.rs`
+Do: rules over the ledgers, never a model call. Each finding prints what triggered it and the rows
+it read. The first set, all answerable from data rtok already stores: expand rate above
+`[expand] max_rate` (the compression is lossier in practice than it looks); a plugin whose net
+saving over the window is ≤ 0 (it costs more than it returns — D10 says retire, not stack); cache
+busts with cause `tools` or `system` (the host rewrites its tool list mid-session, and the turn is
+named); hooks that fire often and produce no `Measurement` (weight on the 10 ms path for nothing);
+measured injection bytes per turn against `[plugins.inject] budget_tokens`; `archive keep_turns`
+against how often old tool results were actually re-read. Findings are ordered by the tokens they
+would recover, and a finding with no number attached does not ship.
+Check: a fixture store triggers each rule exactly once and the text names the row count behind it;
+a healthy store produces an empty section that says so, not filler advice.
+Status: open · Model: -
+Complexity: 3/5
+
+Gate P22 (review): the three formats are one document — a test walks the Markdown, the HTML and the
+`--ai` output over the same store and fails if a section or a number appears in one and not the
+others. `rtok report` adds no query of its own: `src/report/` touches the D23 model and nothing
+else. Every number in the output is traceable to rows, and the recommendation section is empty
+rather than invented when there is nothing to say.
 
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
@@ -283,3 +372,4 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 | 2026-09-09 | P21 added and done (T21.1, T21.2): the prompt half of D21 (6) exists at last — without `--yes` and on a terminal, `rtok agent setup cursor|pi` asks before it links the host plugin, through one shared `setup::accepted` rather than a copy in each installer. `rtok graph index` grew a spinner. Two new dependencies, both chosen over a hand-rolled version for what they get right rather than for size: dialoguer restores the terminal and reads Ctrl-C and EOF as a no, which a bare `read_line` does not; indicatif's `ProgressBar::hidden()` is what keeps the same walk silent on the MCP and watcher paths without a `cfg` or a branch. | User request 2026-09-09 (`используй dialoguer в D21 если нет лучшего решения`, `indicatif используй для прогресса graph index`). D21 (6) had specified the prompt since 2026-09-08 and only `--yes` was implemented, so setup silently declined its own offer on a terminal. |
 | 2026-09-09 | T21.3: `rtok dashboard` renamed to `rtok web`, with `dashboard` kept as a hidden alias that runs and says where to go — the same shape T10.8 used for `rtok setup`. The config table is `[web]`; an old file's `[dashboard]` is accepted once with a warning and folded into it, the way `core.inject_budget_tokens` already is, because `deny_unknown_fields` would otherwise turn a stale config into a load error. `src/dashboard/` is `src/web/`; `Plugin::dashboard_page` is deliberately *not* renamed — it is the page a plugin gives to both surfaces, and it is published API. | User request 2026-09-09 (`rtok dashboard переименовать в rtok web`). |
 | 2026-09-09 | D23 added and P15 promoted from `roadmap.md` into this file with two new tasks: T15.0 lifts one operator model out of the web handlers, T15.10 is the test that fails when a page exists on one surface and not the other. | User request 2026-09-09 (`rtok tui и rtok dashboard должен иметь одинаковый функционал`). Parity that is only written down drifts; parity that a test enumerates does not. |
+| 2026-09-09 | D24 and P22 added: `rtok report` in Markdown, HTML and PDF, plus `--ai` as a fourth rendering for a model. It renders the D23 operator model and computes nothing of its own, so it cannot disagree with `rtok stats`; recommendations are rules over the ledgers that print their own evidence, never a language-model call. T22.0 is a D15-style renderer survey before any code, because a PDF library is the one choice here that can cost the P17 size gate. | User request 2026-09-09 (`rtok report` в html/pdf/markdown, `--ai` для нейросетей, графики и таблицы, рекомендации как сделать эффективнее). The report is the first surface whose whole purpose is to state numbers, which makes D3 — a saving that is not a `Measurement` row does not exist — the easiest rule in the repo to break there and the one worth writing into the decision. |
