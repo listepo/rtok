@@ -32,6 +32,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D24 | **`rtok report` renders; it never computes a number of its own.** It reads the operator model of D23 (T15.0) — the same `Store` / `stats` / `doctor` values `rtok web` and `rtok tui` render — and lays them out as Markdown, HTML or PDF. Three renderings, one document: the same sections, the same numbers, in the same order. Every figure carries the rows it came from and the window it covers, because a saving that is not a `Measurement` row does not exist (D3), and a report is the easiest place in the codebase to forget that. The recommendations are rules over those same rows, each printing the evidence that triggered it — never a language-model call: an unmeasurable suggestion that costs tokens is the opposite of what this binary is for. `--ai` is a fourth rendering of the same document for a model rather than a person: no images, no styling, dense tables through the `toon` plugin, stable heading ids, one explicit budget, and a note saying what was dropped to fit it. Added 2026-09-09 by user request. | A report that runs its own queries drifts from `rtok stats` within a release, and then two commands disagree about the same session. Charts and a PDF are presentation; the numbers underneath must be the ones already on record. |
 | D25 | **The plugin contract is its own published crate, `rtok-plugin-sdk`.** Every plugin — the ten in `src/plugins/` and any written elsewhere — implements the same trait from the same crate, so there is one contract and no in-tree shortcut. The crate carries what a plugin *is* (the `Plugin` trait, `Manifest`, `Surface`), the events it answers (`PreToolUse`, `PostToolUse`, `SessionStart`, `PromptSubmit`, `PreCompact`, proxy and MCP views) and the management surface it uses (`Measurement`, `Injection`, `PreToolDecision`, `ToolDef`, `DashboardPage`, and the host capabilities: estimate, record, log, config, store access). It does **not** carry a surface: `rtok hook` / `mcp` / `proxy` / `web` stay in `rtok`, which is the only thing that dispatches. Required methods are explicit — a plugin that does not say what it is and what page it shows does not compile; every event method keeps a no-op default, so a plugin implements only the surfaces its `Manifest` declares. `rtok` re-exports it as `rtok::plugin`, so the path D6 published stays valid. It is published to crates.io by the release (release-plz, `CARGO_REGISTRY_TOKEN`), which is what makes "third parties extend rtok from outside" (D6) true rather than aspirational. Added 2026-09-09 by user request. Boundary survey: `crates/rtok-plugin-sdk/PLAN.md` (T23.0). | Today a third party who wants to write a plugin depends on the whole `rtok` binary crate — diesel, axum, reqwest, tree-sitter and every surface — to implement one trait, and the trait's real contract (what `Ctx` lets you touch) is whatever `src/store` happens to expose that week. One published crate with a documented, versioned surface is the difference between an extension point and a claim. It also forces the question D6 left open: what a plugin may touch is now a list someone can read, not the whole binary. |
 | D26 | **One log with two readers: a rotating text file a person reads, and the `logs` table OTel exports.** Today neither exists as a thing you can look at — `core.log_file` is written only when the DB insert fails, and `core.log_level` and `core.log_to_db` are declared and read nowhere. `[log]` replaces all three and means them: one funnel writes a line to the file and a row to the table, so the two cannot disagree; the file is what `rtok logs` prints and what an operator greps at 3am, the table is what `rtok otel` ships. The file is bounded — `max_bytes` (1 MiB) and `files` (5) — because an unbounded log on a laptop is a disk-full bug waiting for a long-running `rtok proxy`, which is exactly what `demon` keeps alive. Rotation deletes; nothing is archived, since a log line is not a saving and D2's lossless rule does not reach it. Added 2026-09-09 by user request. | A log nobody can read is not logging, and three config keys that do nothing are worse than none. Bounding it is the same argument as D22: the surfaces `demon` supervises run for days. |
+| D27 | **Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`.** D23 made the two surfaces one model; this says what that model has to cover. Every *reading* command — `stats`, `doctor`, `plugins`, `config show`, `logs`, `demon status`, `agents sessions`, `report` — gets its numbers by asking the model, and the CLI becomes one renderer of it rather than the only place the query lives. This is not theory: `rtok stats` and `rtok web` already disagree about what a session is, because one counts transcript files and the other sums `usage` rows, and neither is wrong on its own terms. Writing commands stay CLI-only — a surface that shows numbers is not a surface that mutates a tree — and so does anything whose output is a stream rather than a state (`rtok run`, `rtok expand`, `hook`, `mcp`). The gate is a test that enumerates the reading commands, not a promise in prose (T15.12). Added 2026-09-09 by user request. | The value of an operator surface is that the answer does not depend on which window you opened. Every command that keeps its own query is one more way for two windows to disagree, and the cost of fixing that grows with each command shipped before the rule exists. |
 
 Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
@@ -383,6 +384,66 @@ Gate P24 (review): the log an operator reads and the rows OTel exports come from
 test writes through `Ctx::log` and finds the same message in both. No log file in `~/.rtok` can
 exceed `max_bytes * (files + 1)`, `demon`'s included. `rtok logs` reads; it never writes.
 
+### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27)
+
+`rtok agent sessions [--all]` with `agents` as a visible alias, so `rtok agents sessions` is the
+same command: one command tree, and the plural spelling the request used still works. It lists the
+sessions active in this project — agent (host) and provider, model, input / output / cache-read /
+cache-create tokens, when it started, how long it has been going — and `watch` does it live.
+
+The data is mostly there and mostly unattributed. `sessions` (id, host_id, project, cwd, source,
+started_at, ended_at) exists since T13.2; `usage` carries per-session tokens and `api`. What is
+missing: the hook path writes `host_id`, `project` and `cwd` as NULL (`Ctx::insert_call` passes
+`None`), `ended_at` is set only by Claude's `SessionEnd`, `pi` is not a row in `hosts` at all, and
+no query aggregates tokens by session. So the first task is attribution, not display.
+
+**T25.0 a session knows whose it is** · - · `migrations/0010.sql` (new), `src/plugin.rs`, `src/hooks/mod.rs`
+Do: `Ctx` learns the host from `[hook] host` and passes it to `upsert_session` instead of `None`,
+with `project` (git root basename) and `cwd`; `SessionStart` writes the row rather than leaving it
+to the first call that happens to arrive. The migration seeds the two host slugs `rtok agent setup`
+can install but `hosts` never had — `pi` and `claude-code`-style additions belong in data, not in a
+match arm. `ended_at` gains a companion: sessions are live until a `SessionEnd` *or* silence longer
+than `[agents] idle_secs`, because the proxy and every non-Claude host never send one.
+Check: a hook run leaves a `sessions` row with a non-NULL `host_id` and `project`; `pi` records as
+`pi` and not as `other`; an existing DB migrates with no row rewritten.
+Status: open · Model: -
+Complexity: 3/5
+
+**T25.1 one reader, in the model** · T25.0 · `src/store/mod.rs`, `src/web/model.rs`
+Do: `Store::session_totals(since)` — one `GROUP BY` over `sessions` joined to `usage` and `calls`,
+returning id, host slug, provider/api, model, the four token counts, `started_at`, last activity
+and `ended_at`. It lands in the D23 model as a `Sessions` page, which is what makes it a `rtok web`
+and `rtok tui` page and not just a command (D27). No second query anywhere.
+Check: a fixture DB with three sessions across two hosts totals each one's tokens exactly, and the
+model's page carries the same numbers as the store call; `rtok web`'s snapshot gains the page.
+Status: open · Model: -
+Complexity: 3/5
+
+**T25.2 `rtok agent sessions`** · T25.1 · `src/cli.rs`, `src/render.rs`, `tests/agents.rs` (new)
+Do: render the model's page as a table — agent, provider, model, in / out / cache, started, and how
+long it has run, newest first; `--all` includes sessions that have ended. Durations and the table
+layout come from one helper in `render.rs`, because `demon status`, `stats` and this all pad columns
+by hand today and the next one would be the fourth copy.
+Check: two live sessions and one ended print two rows, three with `--all`; the token columns equal
+`rtok stats` over the same window; an empty store prints a header and a line saying nothing is
+running.
+Status: open · Model: -
+Complexity: 2/5
+
+**T25.3 `rtok agent sessions watch`** · T25.2 · `src/cli.rs`, `src/render.rs`
+Do: the same table, redrawn on an interval, in place rather than scrolling; a session that appears,
+ends or spends tokens shows up without a restart. Not a TUI — one screen, no key handling, and it
+leaves the terminal as it found it on Ctrl-C. Where `rtok logs watch` (T24.3) streams new lines,
+this one repaints state; both share the poll-and-print loop rather than growing two.
+Check: a session started while `watch` runs appears within one interval and its duration advances;
+piping the command produces plain repeated tables, not escape codes.
+Status: open · Model: -
+Complexity: 2/5
+
+Gate P25 (review): every session rtok knows about has a host and a project, `agents sessions`
+numbers equal `rtok stats` over the same window, and the page exists on `rtok web` and `rtok tui`
+without a second query (D27).
+
 ### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
@@ -398,6 +459,26 @@ fails the build until it exists on the other. This is D23's gate, and it replace
 Check: adding a page to `rtok web` alone fails `just check` with the page's name in the message.
 Status: open · Model: -
 Complexity: 1/5
+
+**T15.11 the model covers every reading command** · T15.0 · `src/web/model.rs`, `src/measure/stats.rs`, `src/cli.rs`
+Do: move the queries the reading commands own into the D23 model, one command at a time, and have
+the command render what the model returns. `stats` is the hard one and goes first: it counts
+transcript files while the model sums `usage` rows, so the two disagree about what a session is —
+D27 says one of them is the model and the other is a renderer. `doctor`, `plugins`, `config show`,
+`logs`, `demon status` follow; each is a page.
+Check: `grep -r 'Store::open' src/` outside `src/web/model.rs` finds only writing commands and the
+three surfaces; `rtok stats` output is unchanged for a fixture store.
+Status: open · Model: -
+Complexity: 4/5
+
+**T15.12 the parity test enumerates commands, not pages** · T15.11, T15.10 · `tests/surface_parity.rs`
+Do: extend T15.10's test from "the two surfaces expose the same pages" to "every reading command has
+a page", walking `Cli::command()` the way `config_coverage` already walks it, with an explicit
+allow-list for the streaming and writing commands D27 exempts.
+Check: adding a reading command with no page fails `just check` naming the command; the allow-list
+entries each carry the reason they are exempt.
+Status: open · Model: -
+Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
@@ -462,7 +543,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**129 done · 25 open · 1 superseded — 155 tasks.**
+**129 done · 31 open · 1 superseded — 161 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -579,6 +660,8 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | open | 2/5 |
 | `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
 | `T15.10` | P15 tui | the two surfaces cannot drift | open | 1/5 |
+| `T15.11` | P15 tui | the model covers every reading command | open | 4/5 |
+| `T15.12` | P15 tui | the parity test enumerates commands, not pages | open | 2/5 |
 | `T16.1` | P16 otel | `[otel]` config | ✅ 2026-09-04 | — |
 | `T16.2` | P16 otel | export watermark and row readers | ✅ 2026-09-04 | — |
 | `T16.3` | P16 otel | OTLP/HTTP JSON encoder | ✅ 2026-09-04 | — |
@@ -621,6 +704,10 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | open | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | open | 3/5 |
+| `T25.0` | P25 agents | a session knows whose it is | open | 3/5 |
+| `T25.1` | P25 agents | one reader, in the model | open | 3/5 |
+| `T25.2` | P25 agents | `rtok agent sessions` | open | 2/5 |
+| `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -686,3 +773,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | D24 and P22 added: `rtok report` in Markdown, HTML and PDF, plus `--ai` as a fourth rendering for a model. It renders the D23 operator model and computes nothing of its own, so it cannot disagree with `rtok stats`; recommendations are rules over the ledgers that print their own evidence, never a language-model call. T22.0 is a D15-style renderer survey before any code, because a PDF library is the one choice here that can cost the P17 size gate. | User request 2026-09-09 (`rtok report` в html/pdf/markdown, `--ai` для нейросетей, графики и таблицы, рекомендации как сделать эффективнее). The report is the first surface whose whole purpose is to state numbers, which makes D3 — a saving that is not a `Measurement` row does not exist — the easiest rule in the repo to break there and the one worth writing into the decision. |
 | 2026-09-09 | §5 now carries every task in the plan and in `done.md` as one table — id, phase, title, status, complexity — with a ✅ on each finished row. It is an index over the two files, not a third place to record work: a task's Do/Check and its Check result stay in its own entry, and the row moves in the same commit the task does. | User request 2026-09-09 (таблица со списком всех задач, статусом и сложностью, зелёная галочка у сделанных). The per-phase headings said which phases were finished; nothing said, on one screen, how much of the plan is done (128 of 150) or what the open work costs. |
 | 2026-09-09 | D26 and P24 added: `rtok logs`, `logs watch`, `logs export`, and a `[log]` table that bounds the file at 1 MiB × 5 and finally gives `core.log_file`, `log_level` and `log_to_db` — declared since T0.2, read nowhere — something to do. T24.4 rewires `demon` to pipe its children rather than hand them an fd, because a file the child holds open is a file rtok cannot rotate. | User request 2026-09-09 (команда `logs` с нумерацией строк, `watch` в реальном времени от новых к старым, `export`, размер и количество файлов в конфиге, путь настраивается). The supervisor D22 added makes long-running processes normal, which makes an unbounded log a disk-full bug. |
+| 2026-09-09 | D27 and P25 added: `rtok agent sessions` (alias `agents`) lists what is running in the project — host, provider, model, the four token counts, start and duration — and `watch` repaints it live. It is a page in the D23 model first and a command second, which is D27: every reading command asks the model, so `rtok web` and `rtok tui` get the same view for free. T25.0 comes first because the data is unattributed today — the hook path writes NULL host, project and cwd, `pi` is not a row in `hosts`, and only Claude's `SessionEnd` ever sets `ended_at`. P15 gained T15.11 (move the reading commands' queries into the model) and T15.12 (the parity test walks commands, not pages). | User request 2026-09-09 (`agents sessions` со списком активных сессий, провайдером, именем агента, токенами input/output/cache, датой начала и длительностью, плюс `watch`; и: всё, что выводится в консоли или лежит в базе, должно быть в webui и tui). `rtok stats` counting transcript files while `rtok web` sums `usage` rows is the drift D23 predicted, already shipped. |
