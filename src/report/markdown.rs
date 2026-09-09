@@ -200,7 +200,8 @@ page.\n"
 }
 
 /// `4.0` for a recorded latency, `—` for none — an untimed surface is not a zero-ms one.
-fn ms(v: Option<f64>) -> String {
+/// `pub(crate)` so the `--ai` rendering (T22.4) formats latencies the same way.
+pub(crate) fn ms(v: Option<f64>) -> String {
     v.map(|ms| format!("{ms:.1}")).unwrap_or_else(|| "—".into())
 }
 

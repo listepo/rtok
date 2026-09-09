@@ -72,6 +72,8 @@ baseline        = ""                  # default name for --compare; "" = none
 format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
 out    = ""                           # "" = stdout     (--out <path>)
 since  = "30d"                        # how far back the report reads
+ai     = false                        # model-shaped rendering instead of --format (--ai)
+budget_tokens = 8000                  # --ai drops whole sections past this (T22.4)
 
 [bench]                               # rtok bench
 tasks    = "bench/tasks.toml"

@@ -176,11 +176,13 @@ section! {
 
 section! {
     /// `[report]` — `rtok report` (P22, D24). `format` grows `html` (T22.2) and `pdf`
-    /// (T22.3); `ai`, `charts` and `budget_tokens` land with their tasks, not before.
+    /// (T22.3); `ai` and `budget_tokens` landed with T22.4, `charts` with its task.
     Report {
         format: String = s("md"),
         out: PathBuf = PathBuf::new(),
         since: String = s("30d"),
+        ai: bool = false,
+        budget_tokens: u32 = 8000,
     }
 }
 

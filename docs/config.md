@@ -116,6 +116,8 @@ baseline        = ""                  # default name for --compare; "" = none
 format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
 out    = ""                           # "" = stdout     (--out <path>)
 since  = "30d"                        # how far back the report reads
+ai     = false                        # model-shaped rendering instead of --format (--ai)
+budget_tokens = 8000                  # --ai drops whole sections past this (T22.4)
 
 [bench]                               # rtok bench
 tasks    = "bench/tasks.toml"
@@ -247,7 +249,7 @@ min_rows = 5
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
-| `report` | `--format`, `--out`, `--since` | `report.format`, `report.out`, `report.since` |
+| `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `agent setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |

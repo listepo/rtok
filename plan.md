@@ -178,19 +178,6 @@ still passes the P17 size gate with the renderer linked in.
 Status: open · Model: -
 Complexity: 4/5
 
-**T22.4 `--ai`** · T22.1 · `src/report/ai.rs`
-Do: the same document shaped for a model instead of a person. No images, no styling, no box
-drawing. Tables in `toon` rather than Markdown pipes — dense, and it dogfoods the plugin this repo
-ships. Stable heading ids so a model can be pointed at one section. Every number keeps its unit and
-its row count, because a model has no other way to weigh it. One budget (`[report] budget_tokens`),
-and when the document does not fit, it says which sections it dropped instead of truncating
-mid-table. Ends with the recommendations as an ordered, explicit task list.
-Check: `--ai` output is measurably smaller in tokens than `--format md` on the same store and
-window (a `Measurement` row, not an assertion in prose); no section is silently missing — the
-dropped ones are named; every heading id is stable across two runs over the same data.
-Status: open · Model: -
-Complexity: 3/5
-
 **T22.5 recommendations** · T22.1 · `src/report/advice.rs`
 Do: rules over the ledgers, never a model call. Each finding prints what triggered it and the rows
 it read. The first set, all answerable from data rtok already stores: expand rate above
@@ -574,7 +561,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T22.1` | P22 report | `--format md` | ✅ 2026-09-09 | 3/5 |
 | `T22.2` | P22 report | `--format html` | ✅ 2026-09-09 | 3/5 |
 | `T22.3` | P22 report | `--format pdf` | open | 4/5 |
-| `T22.4` | P22 report | `--ai` | open | 3/5 |
+| `T22.4` | P22 report | `--ai` | ✅ 2026-09-09 | 3/5 |
 | `T22.5` | P22 report | recommendations | open | 3/5 |
 | `T23.0` | P23 plugin SDK | where the boundary goes | ✅ 2026-09-09 | 3/5 |
 | `T23.1` | P23 plugin SDK | the crate exists and owns the contract | ✅ 2026-09-09 | 3/5 |

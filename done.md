@@ -499,7 +499,7 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
 Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
 
-## P22 — `rtok report` (D24) · T22.0–T22.2 done 2026-09-09
+## P22 — `rtok report` (D24) · T22.0–T22.2, T22.4 done 2026-09-09
 
 Goal: one artefact a person or a model can act on — the report renders the D23 operator model and computes nothing of its own. Plan: `plan.md` P22.
 
@@ -589,6 +589,49 @@ fourth file for 3 lines, and T22.4's `pub(crate)` share is the natural home when
 `report_flags` needed no change (`Html != Md` already inserts `format = "html"`); the
 `default.toml` / `docs/config.md` format comments still read `html (T22.2)` and are left for the
 owner — T22.4 is editing those same lines.
+
+**T22.4 `--ai`** · T22.1 · `src/report/ai.rs` (new), `tests/report_ai.rs` (new), `src/cli.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`
+Do: the same document shaped for a model instead of a person. No images, no styling, no box
+drawing. Tables in `toon` rather than Markdown pipes — dense, and it dogfoods the plugin this repo
+ships. Stable heading ids so a model can be pointed at one section. Every number keeps its unit and
+its row count, because a model has no other way to weigh it. One budget (`[report] budget_tokens`),
+and when the document does not fit, it says which sections it dropped instead of truncating
+mid-table. Ends with the recommendations as an ordered, explicit task list.
+Check: `--ai` output is measurably smaller in tokens than `--format md` on the same store and
+window (a `Measurement` row, not an assertion in prose); no section is silently missing — the
+dropped ones are named; every heading id is stable across two runs over the same data.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: Muse Spark (meta/muse-spark) subagent
+Check result: green. `src/report/ai.rs` (new) renders the same eight sections in the P22 order —
+one `#id` anchor per section (`window` … `recommendations`, stable by construction), dense plain
+lines, tables through the toon encoder (`tabular_keys`/`encode` are `pub(crate)` now, so the
+`--ai` rendering dogfoods the plugin T22.2's entry pointed at instead of growing a second table
+syntax; latencies reuse `markdown::ms`, also `pub(crate)` now). Without the `toon` feature the
+same tables fall back to `k=v` lines (`build-min` stays silent). Every section states its `units:`
+line and every number keeps its unit and row count (`total_saved=210tok rows=2`). The budget is
+first-fit whole sections under `[report] budget_tokens` (default 8000, ~6× the fixture's 1316-tok
+`--ai` output, so it binds only on very large stores); the past-budget sections are named in
+`dropped:`, never truncated mid-table. `--ai` (flag and key, D12/D14) selects this renderer
+instead of `--format`, through T22.2's committed `emit()` sink. CLI and tests: `tests/report_ai.rs`
+4 passed — md 1630 tok vs ai 1316 tok on the same fixture store and window (−19%, −314 tok, the
+measured proof), the eight `#id`s in order with md's numbers (`total_saved=210tok`, `hooks 2`,
+`dropped: none`), a `budget_tokens = 100` config file naming its drops with no dropped heading
+left behind, and an empty store saying `no rows.` / `no recommendations.`. Four unit tests beside
+the renderer pin the task-list shape (`1. [rule] finding (evidence)`, nothing after it), block
+wholeness under a tight budget, byte-equality across two runs, and toon-vs-pipes. Verified in a
+detached worktree at `1246857` with only this task's files (the shared checkout carries
+T15.6/T22.5/T25.x in flight): `cargo fmt --check` clean, `cargo clippy --workspace --all-targets
+--all-features -D warnings` clean, `cargo test --workspace` green (30 suites, 0 failed),
+`cargo build --no-default-features --features measure` silent, `just dup` exit 0 (38 clones, none
+from the new files). One transient on the way: `report_ai` failed 4/4 once under a full-workspace
+run (all in 0.04s at the binary-status assert — the shared `CARGO_TARGET_DIR` was being rebuilt by
+sibling builds), green on immediate rerun and on the recorded full run; environment flake, not code.
+Deviations: ~750 added lines across 7 tracked files + 2 new (brief: ≤200) — D12 forces the config
+pair plus the docs mirror, the Check forces three measured proofs plus the task-list shape (8
+tests), and the toon dogfood needs the 2-word `pub(crate)` share; precedent T22.1 (+880) and T22.2
+(+370, whose entry already named this task's share as the home for its `ms()` mirror — that mirror
+stays theirs to retire). No new dependency. Landing note: verified both before (`a054922`) and
+after (`1246857`) T22.2's landing; the dispatch rides T22.2's committed `emit()`.
 
 ## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.10, T15.11, T15.12 done 2026-09-09
 

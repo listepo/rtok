@@ -81,7 +81,10 @@ fn rewrite_block(content: &mut Value, cx: &Ctx, min_rows: usize) -> Option<Measu
     Some(m)
 }
 
-fn tabular_keys(value: &Value, min_rows: usize) -> Option<Vec<String>> {
+/// Only arrays of uniform scalar objects encode; shared with the `--ai` report
+/// rendering (T22.4), which shapes the same tables for a model. `pub(crate)` so the
+/// encoder has one home (D6: one code path per method).
+pub(crate) fn tabular_keys(value: &Value, min_rows: usize) -> Option<Vec<String>> {
     let arr = value.as_array()?;
     if arr.len() < min_rows.max(1) {
         return None;
@@ -106,7 +109,10 @@ fn tabular_keys(value: &Value, min_rows: usize) -> Option<Vec<String>> {
     Some(keys)
 }
 
-fn encode(rows: &[Value], keys: &[String]) -> String {
+/// TOON block for uniform rows under `keys`, in the caller's column order.
+/// `pub(crate)` with [`tabular_keys`]: the `--ai` rendering dogfoods this encoder
+/// instead of growing a second table syntax.
+pub(crate) fn encode(rows: &[Value], keys: &[String]) -> String {
     let mut out = format!("[{}]{{{}}}:", rows.len(), keys.join(","));
     for row in rows {
         out.push_str("\n  ");

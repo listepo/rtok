@@ -196,6 +196,9 @@ enum Cmd {
         /// How far back the report reads (`30d`, `24h`)
         #[arg(long)]
         since: Option<String>,
+        /// Model-shaped rendering of the same document instead of `--format` (T22.4)
+        #[arg(long)]
+        ai: bool,
     },
 }
 
@@ -751,12 +754,22 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Report { format, out, since } => {
-            let cfg = Config::load_with(config_file.as_deref(), report_flags(format, out, since))?;
+        Cmd::Report {
+            format,
+            out,
+            since,
+            ai,
+        } => {
+            let cfg =
+                Config::load_with(config_file.as_deref(), report_flags(format, out, since, ai))?;
             // D24: the command picks the renderer and the sink; every number was already
             // computed by the model (`src/report/` touches nothing else).
             let home = Config::home_dir();
             let doc = crate::report::document(&cfg, &home, config_file.as_deref())?;
+            if cfg.report.ai {
+                emit(&cfg.report.out, &crate::report::ai::render(&doc, &cfg))?;
+                return Ok(());
+            }
             match cfg.report.format.as_str() {
                 "md" => emit(&cfg.report.out, &crate::report::markdown::render(&doc))?,
                 "html" => emit(&cfg.report.out, &crate::report::html::render(&doc))?,
@@ -1001,8 +1014,9 @@ fn report_flags(
     format: ReportFormat,
     out: Option<PathBuf>,
     since: Option<String>,
+    ai: bool,
 ) -> Option<figment::value::Dict> {
-    if format == ReportFormat::Md && out.is_none() && since.is_none() {
+    if format == ReportFormat::Md && out.is_none() && since.is_none() && !ai {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -1015,6 +1029,9 @@ fn report_flags(
     }
     if let Some(s) = since {
         report.insert("since".into(), Value::from(s));
+    }
+    if ai {
+        report.insert("ai".into(), Value::from(true));
     }
     let mut flags = Dict::new();
     flags.insert("report".into(), Value::from(report));
