@@ -26,6 +26,7 @@ pub mod plugin;
 pub mod plugins;
 pub mod proxy;
 pub mod render;
+pub mod report;
 pub mod setup;
 pub mod store;
 pub mod tokens;

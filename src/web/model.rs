@@ -152,6 +152,255 @@ pub fn cache_health(cfg: &Config) -> Result<Vec<cache::SessionHealth>> {
     cache::report(&store)
 }
 
+// ── the report pages (T22.1, D24) ────────────────────────────────────────────
+//
+// `rtok report` renders; it never computes a number of its own (D24). Every figure it
+// prints comes from [`ReportLedgers`] — one store open serves every ledger section, and
+// each struct carries the rows its numbers were summed from. The Config and Doctor
+// sections come from their own pages above ([`config_entries`], [`doctor`]).
+
+/// The report's window and row counts per ledger.
+#[derive(Debug, Serialize)]
+pub struct ReportWindow {
+    /// The configured window, e.g. `"30d"` — the report's own, not `[stats] since`.
+    pub since: String,
+    pub from_unix: i64,
+    pub to_unix: i64,
+    /// `YYYY-MM-DD` UTC, through `log::stamp`'s calendar — one date implementation.
+    pub from_date: String,
+    pub to_date: String,
+    pub db_path: String,
+    /// `calls` rows with `ts` in the window — the one ledger whose reader returns row
+    /// times, so the only one the window can filter.
+    pub calls_in_window: u64,
+    pub calls_total: u64,
+    /// Whole-ledger counts: the measurements and usage readers return no row time to
+    /// filter on, and the report says so beside the numbers.
+    pub measurements: u64,
+    pub usage: u64,
+}
+
+/// One plugin's savings, from `Measurement` rows only (D3: a saving that is not a
+/// `Measurement` row does not exist).
+#[derive(Debug, Serialize)]
+pub struct ReportSavings {
+    pub plugin: String,
+    pub rows: u64,
+    pub est_before: i64,
+    pub est_after: i64,
+    /// est_before − est_after, net: an `expand` row counts negative, because retrieval
+    /// costs tokens.
+    pub saved: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReportSavingsSection {
+    /// One row per catalogue plugin with at least one `Measurement` row.
+    pub rows: Vec<ReportSavings>,
+    pub total_rows: u64,
+    pub total_saved: i64,
+}
+
+/// Latency of one surface; p50/p95 are nearest-rank over the calls that recorded an `ms`.
+#[derive(Debug, Serialize)]
+pub struct ReportCalls {
+    /// `hook` | `mcp` | `proxy` — the section set's three surfaces.
+    pub surface: String,
+    pub calls: u64,
+    /// Rows with a recorded latency.
+    pub timed: u64,
+    pub p50_ms: Option<f64>,
+    pub p95_ms: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReportCallsSection {
+    pub rows: Vec<ReportCalls>,
+    pub in_window: u64,
+    pub total: u64,
+}
+
+/// Cache busts and their cause, aggregated from the `stats --cache` page.
+#[derive(Debug, Serialize)]
+pub struct ReportCache {
+    pub sessions: u64,
+    pub turns: u64,
+    pub busts: u64,
+    /// Busts per cause (`tools` | `system` | `unknown`), cause order.
+    pub by_cause: Vec<(String, u64)>,
+}
+
+/// The archive plugin's honesty metric (T5.4): how often a live-zone pointer had to be
+/// expanded, and which ids.
+#[derive(Debug, Serialize)]
+pub struct ReportExpand {
+    pub decisions: i64,
+    pub expanded: i64,
+    /// expanded / decisions; `0.0` with no decisions (the report prints the empty line,
+    /// not this zero).
+    pub rate: f64,
+    /// Archive ids a `rtok expand` froze — `Measurement` rows, kind `expand`, `ref_id`.
+    pub expanded_ids: Vec<String>,
+}
+
+/// Every ledger section of the report, from one store open.
+#[derive(Debug, Serialize)]
+pub struct ReportLedgers {
+    pub window: ReportWindow,
+    pub savings: ReportSavingsSection,
+    pub calls: ReportCallsSection,
+    pub cache: ReportCache,
+    pub expand: ReportExpand,
+}
+
+/// The report's ledger read (T22.1). A store that will not open is an error, as in
+/// `cache_health`: a report over an unreadable store is not a report.
+pub fn report_ledgers(cfg: &Config) -> Result<ReportLedgers> {
+    let store = Store::open(&cfg.core.db_path)?;
+    let window = report_window(cfg, &store)?;
+    Ok(ReportLedgers {
+        calls: report_calls(&store, window.from_unix)?,
+        window,
+        savings: report_savings(&store)?,
+        cache: report_cache(&store)?,
+        expand: report_expand(&store)?,
+    })
+}
+
+fn report_window(cfg: &Config, store: &Store) -> Result<ReportWindow> {
+    let since = cfg.report.since.clone();
+    let to_unix = crate::log::now() as i64;
+    let span = i64::try_from(stats::parse_since(&since)?.as_secs()).unwrap_or(i64::MAX);
+    let from_unix = to_unix.saturating_sub(span);
+    let date = |secs: i64| crate::log::stamp(secs.max(0) as u64)[..10].to_string();
+    let calls = store.calls_after(0, i64::MAX)?;
+    let mut measurements = 0;
+    for (id, _) in crate::config::CATALOGUE {
+        measurements += store.list_measurements(id)?.len() as u64;
+    }
+    let mut usage = 0;
+    for session in store.usage_sessions()? {
+        usage += store.usage_rows(&session)?.len() as u64;
+    }
+    Ok(ReportWindow {
+        calls_in_window: calls.iter().filter(|c| c.ts >= from_unix).count() as u64,
+        calls_total: calls.len() as u64,
+        measurements,
+        usage,
+        since,
+        from_unix,
+        to_unix,
+        from_date: date(from_unix),
+        to_date: date(to_unix),
+        db_path: cfg.core.db_path.display().to_string(),
+    })
+}
+
+fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
+    let mut rows = Vec::new();
+    let (mut total_rows, mut total_saved) = (0u64, 0i64);
+    for (id, _) in crate::config::CATALOGUE {
+        let ms = store.list_measurements(id)?;
+        if ms.is_empty() {
+            continue;
+        }
+        let (mut before, mut after) = (0i64, 0i64);
+        for m in &ms {
+            before += i64::from(m.est_before);
+            after += i64::from(m.est_after);
+        }
+        total_rows += ms.len() as u64;
+        total_saved += before - after;
+        rows.push(ReportSavings {
+            plugin: (*id).to_string(),
+            rows: ms.len() as u64,
+            est_before: before,
+            est_after: after,
+            saved: before - after,
+        });
+    }
+    Ok(ReportSavingsSection {
+        rows,
+        total_rows,
+        total_saved,
+    })
+}
+
+fn report_calls(store: &Store, from: i64) -> Result<ReportCallsSection> {
+    let all = store.calls_after(0, i64::MAX)?;
+    let mut rows = Vec::new();
+    for surface in ["hook", "mcp", "proxy"] {
+        let group: Vec<_> = all
+            .iter()
+            .filter(|c| c.surface == surface && c.ts >= from)
+            .collect();
+        let mut ms: Vec<f64> = group.iter().filter_map(|c| c.ms).collect();
+        ms.sort_by(|a, b| a.total_cmp(b));
+        rows.push(ReportCalls {
+            surface: surface.to_string(),
+            calls: group.len() as u64,
+            timed: ms.len() as u64,
+            p50_ms: pct(&ms, 0.5),
+            p95_ms: pct(&ms, 0.95),
+        });
+    }
+    Ok(ReportCallsSection {
+        in_window: all.iter().filter(|c| c.ts >= from).count() as u64,
+        total: all.len() as u64,
+        rows,
+    })
+}
+
+fn report_cache(store: &Store) -> Result<ReportCache> {
+    let health = cache::report(store)?;
+    let mut by_cause: std::collections::BTreeMap<String, u64> = Default::default();
+    let (mut turns, mut busts) = (0u64, 0u64);
+    for h in &health {
+        turns += h.turns.len() as u64;
+        busts += h.busts as u64;
+        for t in &h.turns {
+            if let Some(cause) = &t.bust {
+                *by_cause.entry(cause.clone()).or_default() += 1;
+            }
+        }
+    }
+    Ok(ReportCache {
+        sessions: health.len() as u64,
+        turns,
+        busts,
+        by_cause: by_cause.into_iter().collect(),
+    })
+}
+
+fn report_expand(store: &Store) -> Result<ReportExpand> {
+    let (decisions, expanded) = store.archive_decision_counts()?;
+    let expanded_ids = store
+        .list_measurements("archive")?
+        .into_iter()
+        .filter(|m| m.kind == "expand")
+        .filter_map(|m| m.ref_id)
+        .collect();
+    Ok(ReportExpand {
+        rate: if decisions > 0 {
+            expanded as f64 / decisions as f64
+        } else {
+            0.0
+        },
+        decisions,
+        expanded,
+        expanded_ids,
+    })
+}
+
+/// Nearest-rank percentile: the `ceil(p·n)`-th smallest value; one sample gives p50 = p95
+/// = it. `None` when nothing was timed — the report prints a dash, not a zero.
+fn pct(sorted: &[f64], p: f64) -> Option<f64> {
+    let idx = ((p * sorted.len() as f64).ceil() as usize)
+        .saturating_sub(1)
+        .min(sorted.len().saturating_sub(1));
+    sorted.get(idx).copied()
+}
+
 /// The `rtok doctor` page (T15.11): hooks, MCP servers, proxy chains. Every probe runs on
 /// this call — a snapshot tick never pays for them.
 pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
@@ -461,5 +710,16 @@ mod tests {
             rows.iter()
                 .any(|r| r["id"] == "a" && r["input"] == 30 && r["cache_read"] == 7)
         );
+    }
+
+    /// The report's percentile, pinned where it is defined: nearest rank, so
+    /// `tests/report.rs` can assert the p50/p95 the fixture's ms values must produce.
+    #[test]
+    fn report_pct_is_nearest_rank() {
+        assert_eq!(pct(&[], 0.95), None);
+        assert_eq!(pct(&[2.0, 4.0], 0.5), Some(2.0));
+        assert_eq!(pct(&[2.0, 4.0], 0.95), Some(4.0));
+        assert_eq!(pct(&[10.0], 0.5), Some(10.0));
+        assert_eq!(pct(&[10.0], 0.95), Some(10.0));
     }
 }

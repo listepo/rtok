@@ -175,6 +175,16 @@ section! {
 }
 
 section! {
+    /// `[report]` — `rtok report` (P22, D24). `format` grows `html` (T22.2) and `pdf`
+    /// (T22.3); `ai`, `charts` and `budget_tokens` land with their tasks, not before.
+    Report {
+        format: String = s("md"),
+        out: PathBuf = PathBuf::new(),
+        since: String = s("30d"),
+    }
+}
+
+section! {
     /// `[bench]` — `rtok bench`.
     Bench {
         tasks: PathBuf = p("bench/tasks.toml"),
@@ -438,6 +448,7 @@ pub struct Config {
     pub dashboard: Option<Web>,
     pub demon: Demon,
     pub stats: Stats,
+    pub report: Report,
     pub bench: Bench,
     pub doctor: Doctor,
     pub setup: Setup,

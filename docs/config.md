@@ -112,6 +112,11 @@ transcripts_dir = "~/.claude/projects"
 calibrate_samples = 30                # per class        (--calibrate)
 baseline        = ""                  # default name for --compare; "" = none
 
+[report]                              # rtok report (D24: renders the operator model, computes nothing)
+format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
+out    = ""                           # "" = stdout     (--out <path>)
+since  = "30d"                        # how far back the report reads
+
 [bench]                               # rtok bench
 tasks    = "bench/tasks.toml"
 runs     = 3
@@ -242,6 +247,7 @@ min_rows = 5
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
+| `report` | `--format`, `--out`, `--since` | `report.format`, `report.out`, `report.since` |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `agent setup`, `agent remove` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |

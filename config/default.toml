@@ -68,6 +68,11 @@ transcripts_dir = "~/.claude/projects"
 calibrate_samples = 30                # per class        (--calibrate)
 baseline        = ""                  # default name for --compare; "" = none
 
+[report]                              # rtok report (D24: renders the operator model, computes nothing)
+format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
+out    = ""                           # "" = stdout     (--out <path>)
+since  = "30d"                        # how far back the report reads
+
 [bench]                               # rtok bench
 tasks    = "bench/tasks.toml"
 runs     = 3

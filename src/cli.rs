@@ -182,6 +182,18 @@ enum Cmd {
         #[arg(long, global = true)]
         lines: Option<usize>,
     },
+    /// The operator model as one document (D24): Markdown now, html/pdf later
+    Report {
+        /// Output format (`html` T22.2, `pdf` T22.3)
+        #[arg(long, value_enum, default_value = "md")]
+        format: ReportFormat,
+        /// Write to this path instead of stdout
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+        /// How far back the report reads (`30d`, `24h`)
+        #[arg(long)]
+        since: Option<String>,
+    },
 }
 
 /// Every verb takes optional services; with none they act on what is already up, falling back
@@ -220,6 +232,21 @@ enum OtelCmd {
 enum LogsCmd {
     /// Same selection, no numbering, no colour — for `rtok logs export > my.log`
     Export,
+}
+
+/// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
+/// validates, lists and completes it). T22.2/T22.3 add `Html`/`Pdf` variants here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ReportFormat {
+    Md,
+}
+
+impl ReportFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Md => "md",
+        }
+    }
 }
 
 #[cfg(feature = "memory")]
@@ -643,6 +670,25 @@ pub fn run() -> Result<()> {
                 }
             }
         }
+        Cmd::Report { format, out, since } => {
+            let cfg = Config::load_with(config_file.as_deref(), report_flags(format, out, since))?;
+            // D24: the command picks the renderer and the sink; every number was already
+            // computed by the model (`src/report/` touches nothing else).
+            let home = Config::home_dir();
+            let doc = crate::report::document(&cfg, &home, config_file.as_deref())?;
+            match cfg.report.format.as_str() {
+                "md" => {
+                    let md = crate::report::markdown::render(&doc);
+                    if cfg.report.out.as_os_str().is_empty() {
+                        print!("{md}");
+                    } else {
+                        std::fs::write(&cfg.report.out, md)?;
+                        println!("{}", cfg.report.out.display());
+                    }
+                }
+                other => bail!("--format {other} is not built yet (T22.2 adds html, T22.3 pdf)"),
+            }
+        }
         #[cfg(not(feature = "cmd"))]
         Cmd::Run { .. } => eprintln!("rtok run: not implemented"),
         #[cfg(not(feature = "cmd"))]
@@ -861,6 +907,31 @@ fn doctor_flags(instructions: bool) -> Option<figment::value::Dict> {
     doctor.insert("instructions".into(), Value::from(true));
     let mut flags = Dict::new();
     flags.insert("doctor".into(), Value::from(doctor));
+    Some(flags)
+}
+
+/// The `[report]` flag layer (D12): `--format md` is the default, so it sets nothing.
+fn report_flags(
+    format: ReportFormat,
+    out: Option<PathBuf>,
+    since: Option<String>,
+) -> Option<figment::value::Dict> {
+    if format == ReportFormat::Md && out.is_none() && since.is_none() {
+        return None;
+    }
+    use figment::value::{Dict, Value};
+    let mut report = Dict::new();
+    if format != ReportFormat::Md {
+        report.insert("format".into(), Value::from(format.as_str()));
+    }
+    if let Some(o) = out {
+        report.insert("out".into(), Value::from(o.to_string_lossy().into_owned()));
+    }
+    if let Some(s) = since {
+        report.insert("since".into(), Value::from(s));
+    }
+    let mut flags = Dict::new();
+    flags.insert("report".into(), Value::from(report));
     Some(flags)
 }
 
