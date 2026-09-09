@@ -136,20 +136,7 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8c — `graph` on LadybugDB — tasks done; Gate P8c: clause (4) won 2026-09-08, `graph-lbug` stays opt-in (see `done.md` P8c).
 
-### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17), Gate P8d passed — see `done.md` P8d.
-
-**T8.18 the watcher tests stop racing the filesystem** · T8.16 · `src/plugins/graph/watch.rs`
-Do: `watcher_reindexes_new_file_while_calls_read_nothing` and
-`watchman_without_socket_falls_back_to_notify` give the watcher one second to observe a write and
-re-index. On a loaded machine FSEvents does not deliver in that window, and both tests have failed
-and then passed on a re-run three times on 2026-09-09 alone. A flaky gate is worse than a slow one:
-it trains everyone to re-run instead of to read. Replace the fixed deadline with a poll until a
-generous cap (the deadline is then only reached when the watcher is genuinely broken), and assert on
-the store's state rather than on timing.
-Check: both tests pass 20 consecutive runs (`cargo test --lib plugins::graph::watch` in a loop) and
-still fail within the cap when the watcher is disabled.
-Status: in progress · Model: Opus 5
-Complexity: 2/5
+### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.18), Gate P8d passed — see `done.md` P8d.
 
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
 
@@ -519,7 +506,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**132 done · 31 open · 1 superseded — 164 tasks.**
+**133 done · 30 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -583,7 +570,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T8.15` | P8d graph freshness | `auto_index` and `watch` keys | ✅ 2026-09-08 | — |
 | `T8.16` | P8d graph freshness | watcher in `rtok mcp` (`notify`) | ✅ 2026-09-08 | 3/5 |
 | `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
-| `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | open | 2/5 |
+| `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | ✅ 2026-09-09 | 2/5 |
 | `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
 | `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
 | `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |

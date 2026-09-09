@@ -211,17 +211,40 @@ mod tests {
         cx.config.plugins.graph.watch = watch.into();
     }
 
+    /// Generous cap: a loaded machine can make FSEvents deliver in over a
+    /// second, so a hard 1 s deadline flakes on real re-indexing, not on a
+    /// broken watcher. Reaching this cap means the watcher never re-indexed.
+    const REINDEX_CAP: Duration = Duration::from_secs(10);
+    const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
     fn wait_contains(cx: &Ctx, dir: &Path, name: &str, needle: &str) -> bool {
-        for _ in 0..25 {
-            std::thread::sleep(Duration::from_millis(50));
+        let deadline = Instant::now() + REINDEX_CAP;
+        loop {
             if super::super::symbol(cx, dir, name)
                 .unwrap()
                 .contains(needle)
             {
                 return true;
             }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(POLL_INTERVAL);
         }
-        false
+    }
+
+    /// `found` came from a `wait_contains` poll already run to the cap; this
+    /// turns a miss into a panic naming what the store actually held, not a
+    /// stopwatch verdict.
+    fn assert_reindexed(found: bool, cx: &Ctx, dir: &Path, name: &str, needle: &str) {
+        if found {
+            return;
+        }
+        let actual = super::super::symbol(cx, dir, name).unwrap();
+        panic!(
+            "watcher did not re-index within {REINDEX_CAP:?}: expected {name} to contain \
+             {needle:?}, store holds {actual:?}"
+        );
     }
 
     /// FSEvents delivers the first event on a fresh stream late (~1 s on this
@@ -241,23 +264,24 @@ mod tests {
         fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
         super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let stop = AtomicBool::new(false);
-        let (found, within_1s, read, gone) = std::thread::scope(|s| {
+        let (found, read, gone) = std::thread::scope(|s| {
             s.spawn(|| run(&Ctx::new(&cx), &dir, &stop));
             std::thread::sleep(Duration::from_millis(80));
             warm_watcher(&Ctx::new(&cx), &dir);
-            let t0 = Instant::now();
             fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
             let found = wait_contains(&Ctx::new(&cx), &dir, "watched", "watched.rs:1");
-            let within_1s = t0.elapsed() <= Duration::from_secs(1);
             let read = super::super::index_for(&Ctx::new(&cx), &dir).unwrap().read;
             let _ = fs::remove_file(dir.join("watched.rs"));
             let gone = wait_contains(&Ctx::new(&cx), &dir, "watched", "no definition of watched");
             stop.store(true, Ordering::Relaxed);
-            (found, within_1s, read, gone)
+            (found, read, gone)
         });
-        assert!(found && within_1s, "watcher did not re-index within 1 s");
+        assert_reindexed(found, &Ctx::new(&cx), &dir, "watched", "watched.rs:1");
         assert_eq!(read, 0, "the call itself must open no file");
-        assert!(gone, "deleted file kept its rows");
+        assert!(
+            gone,
+            "deleted file kept its rows: store still contains a definition of watched"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -367,7 +391,7 @@ mod tests {
             stop.store(true, Ordering::Relaxed);
             found
         });
-        assert!(found, "fallback notify did not re-index");
+        assert_reindexed(found, &Ctx::new(&cx), &dir, "watched", "watched.rs:1");
         let _ = fs::remove_dir_all(dir);
     }
 }
