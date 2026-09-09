@@ -136,9 +136,27 @@ impl Ctx {
 /// One token-reduction method. Implement the surfaces your [`Manifest`] declares and leave
 /// the rest to the no-op defaults. External crates implement this too and register through
 /// [`Registry::from_plugins`](crate::plugins::Registry::from_plugins).
+///
+/// Two methods are required: [`Plugin::manifest`] says what the plugin is, and
+/// [`Plugin::dashboard_page`] is the page every operator surface renders for it (D23). A
+/// plugin that implements only the first does not compile:
+///
+/// ```compile_fail
+/// use rtok::plugin::{Manifest, Plugin, Surface};
+/// struct Half;
+/// impl Plugin for Half {
+///     fn manifest(&self) -> Manifest {
+///         Manifest { id: "half", surfaces: &[Surface::Cli], default_on: false }
+///     }
+/// }
+/// ```
 pub trait Plugin: Send + Sync {
     /// Id, surfaces and default state. Called on every dispatch; keep it cheap.
     fn manifest(&self) -> Manifest;
+
+    /// The page this plugin contributes to `rtok web` and `rtok tui` — the same one, rendered
+    /// twice (D23). Required: nothing else knows what the plugin does well enough to write it.
+    fn dashboard_page(&self) -> DashboardPage;
 
     /// May deny or rewrite the tool call. `None` = no opinion.
     fn pre_tool(&self, _ev: &PreToolUse, _cx: &Ctx) -> Option<PreToolDecision> {
@@ -172,11 +190,6 @@ pub trait Plugin: Send + Sync {
     fn proxy_filter(&self, _req: &mut WireRequest<'_>, _cx: &Ctx) -> Vec<Measurement> {
         Vec::new()
     }
-
-    /// Operator-dashboard page. Default is catalogue copy; override for extra fields.
-    fn dashboard_page(&self) -> DashboardPage {
-        DashboardPage::from_id(self.manifest().id)
-    }
 }
 
 #[cfg(test)]
@@ -194,8 +207,8 @@ mod tests {
         };
         let m: Manifest = m;
         assert_eq!(m.id, "ext");
-        let page: DashboardPage = rtok_plugin_sdk::DashboardPage::from_id("cmd");
-        assert_eq!(page.title, "Bash / cmd");
+        let page: DashboardPage = rtok_plugin_sdk::DashboardPage::new("Ext", "external.", false);
+        assert_eq!(page.title, "Ext");
     }
 
     #[test]

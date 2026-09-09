@@ -6,7 +6,7 @@
 use anyhow::Result;
 use rtok::config::Config;
 use rtok::plugins::Registry;
-use rtok::{Manifest, Plugin, Surface, ToolDef};
+use rtok::{DashboardPage, Manifest, Plugin, Surface, ToolDef};
 use serde_json::json;
 
 /// One plugin, one tool.
@@ -19,6 +19,10 @@ impl Plugin for Echo {
             surfaces: &[Surface::Mcp],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new("Echo", "Reference MCP tool for plugin authors.", false)
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {

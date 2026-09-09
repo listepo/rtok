@@ -132,70 +132,18 @@ pub struct DashboardPage {
 }
 
 impl DashboardPage {
-    /// Catalogue copy for a built-in id; anything else gets a generic page.
+    /// The page, with no extra fields. `saves_tokens` is false for a plugin with no
+    /// [`Measurement`] path — the operator surfaces then show no stats widget rather than a
+    /// row of zeroes.
     ///
-    /// Kept while the ten catalogue plugins still rely on it. T23.2 moves each plugin's copy
-    /// to the plugin and makes `Plugin::dashboard_page` required.
-    pub fn from_id(id: &str) -> Self {
-        let (title, summary, saves_tokens) = match id {
-            "measure" => (
-                "Measure",
-                "Only Measurement rows count as savings. Stats from transcripts and proxy usage.",
-                false,
-            ),
-            "cmd" => (
-                "Bash / cmd",
-                "Archive and filter command output; expand the original by id.",
-                true,
-            ),
-            "read" => (
-                "Read",
-                "Outline, map, and search instead of dumping full files into context.",
-                true,
-            ),
-            "archive" => (
-                "Archive",
-                "Shrink old tool results in the live zone; pointers expand on demand.",
-                true,
-            ),
-            "proxy" => (
-                "Proxy usage",
-                "Record provider usage; compress mode runs plugin proxy_filter.",
-                true,
-            ),
-            "inject" => (
-                "Inject",
-                "Budgeted SessionStart / prompt context that stays byte-stable.",
-                true,
-            ),
-            "guard" => (
-                "Guard",
-                "Deny duplicate reads and commands inside a sliding window.",
-                true,
-            ),
-            "memory" => (
-                "Memory",
-                "Recall notes and titles without an LLM extraction step.",
-                true,
-            ),
-            "graph" => (
-                "Graph",
-                "symbol / callers / impact from a tree-sitter-tags index.",
-                true,
-            ),
-            "toon" => (
-                "TOON",
-                "Compact tabular JSON. Off by default until it beats the corpus.",
-                true,
-            ),
-            _ => ("Plugin", "External plugin.", false),
-        };
+    /// ```
+    /// use rtok_plugin_sdk::DashboardPage;
+    /// let page = DashboardPage::new("Graph", "symbol / callers / impact.", true);
+    /// assert!(page.fields.is_empty());
+    /// ```
+    pub fn new(title: impl Into<String>, summary: impl Into<String>, saves_tokens: bool) -> Self {
         Self {
-            title: if title == "Plugin" {
-                id.into()
-            } else {
-                title.into()
-            },
+            title: title.into(),
             summary: summary.into(),
             saves_tokens,
             fields: vec![],
@@ -274,9 +222,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_id_gets_a_generic_page_titled_after_itself() {
-        let p = DashboardPage::from_id("ext");
-        assert_eq!(p.title, "ext");
+    fn a_page_without_a_measurement_path_shows_no_stats() {
+        let p = DashboardPage::new("Measure", "Reads what others recorded.", false);
+        assert_eq!(p.title, "Measure");
         assert!(!p.saves_tokens);
+        assert!(p.fields.is_empty());
     }
 }

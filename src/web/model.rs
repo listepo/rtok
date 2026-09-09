@@ -7,7 +7,6 @@
 use serde::Serialize;
 
 use crate::config::Config;
-use crate::plugin::DashboardPage;
 use crate::plugins::Registry;
 use crate::store::Store;
 
@@ -94,10 +93,9 @@ impl<'a> Model<'a> {
     /// Plugins: the catalogue, each with its page and — when it saves tokens — its stats.
     pub fn plugins(&self) -> Vec<PluginPage> {
         Registry::new(self.cfg)
-            .manifests()
+            .pages()
             .into_iter()
-            .map(|(m, enabled)| {
-                let mut page = DashboardPage::from_id(m.id);
+            .map(|(m, enabled, mut page)| {
                 page.fields.extend(config_fields(m.id, self.cfg));
                 PluginPage {
                     id: m.id,

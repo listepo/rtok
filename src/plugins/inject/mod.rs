@@ -1,7 +1,7 @@
 //! Budgeted SessionStart / UserPromptSubmit injection (plan T2.4, D5).
 
 use crate::plugin::{
-    Ctx, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart, Surface,
+    Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart, Surface,
 };
 use crate::tokens::Class;
 
@@ -15,6 +15,14 @@ impl Plugin for Inject {
             surfaces: &[Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Inject",
+            "Budgeted SessionStart / prompt context that stays byte-stable.",
+            true,
+        )
     }
 
     fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection> {

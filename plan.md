@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -256,16 +256,9 @@ T23.1 (the crate exists and owns the value types) is done 2026-09-09 — see `do
 `Plugin` trait itself did not move: it names `Ctx` and `WireRequest`, which are the host side, so
 it moves in T23.3 with them.
 
-**T23.2 required methods are required** · T23.1 · `crates/rtok-plugin-sdk/src/lib.rs`, `src/plugins/*/mod.rs`
-Do: the mandatory set from T23.0 has no default body — `manifest()` (what the plugin is) and
-`dashboard_page()` (the page D23 says every plugin contributes). Every event method keeps its
-no-op default. `DashboardPage::from_id`'s catalogue match dies: each plugin owns its own title,
-summary and `saves_tokens`, which is where that copy belonged.
-Check: a `trybuild` case where a plugin implements only `manifest()` fails to compile naming
-`dashboard_page`; `rtok web`'s snapshot carries the same titles and summaries as before (the T15.0
-model test); `rtok plugins` output is unchanged.
-Status: open · Model: -
-Complexity: 2/5
+T23.2 (`manifest` and `dashboard_page` are required; the catalogue copy moved to its plugin) is
+done 2026-09-09 — see `done.md` P23. The compile-failure proof is a ```compile_fail doctest, not
+`trybuild`: same failure, no new dev-dependency.
 
 **T23.3 host capabilities, and the trait moves with them** · T23.1 · `crates/rtok-plugin-sdk/src/host.rs`, `src/plugin.rs`, `src/store/`
 Do: the capability traits the survey named — `Host` (estimate, record a `Measurement`, record
@@ -402,6 +395,7 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-09-09 | T23.2's Check asked for a `trybuild` case; the proof is a ```compile_fail doctest on `Plugin` instead. Same failure, same run, no new dev-dependency for one compile error. The task also touched 16 files, not ≤ 3: making a trait method required edits the trait and every implementor at once, and splitting it leaves the tree not compiling — the exemption T23.4 already has. | The dependency rule and D6 both argue against a crate whose whole job is to assert a compile error `cargo test` can assert. |
 | 2026-09-09 | T23.1 moved the contract's value types but not the `Plugin` trait; the trait names `Ctx` and `WireRequest` and moves in T23.3, whose Do now carries the SDK-side `Ctx<'a>` wrapper over `&dyn Host` (it keeps `cx.estimate` / `cx.record` / `cx.log` spelled the same, so T23.4 is import churn plus `cx.store.*`). `crates.io` also needs a `license` field the repository does not have — T23.6 blocks on the owner choosing one. | Splitting the move at the type/host line is what keeps each commit compiling; the licence is not an agent's call. |
 | 2026-09-09 | Decision D25 and phase P23 (T23.0–T23.6): the plugin contract becomes `crates/rtok-plugin-sdk`, a published crate every plugin implements, with an explicit required-method set and host capability traits instead of a bare `Store`; the ten catalogue plugins move onto it and the release publishes it to crates.io. | User request: one SDK module carrying the hooks and the management methods, plugins implementing it, documented and published, every internal plugin migrated. |
 | 2026-09-09 | Every task carries `Complexity: n/5` (1 trivial … 5 hard); `AGENTS.md` Workflow makes it a claim precondition. `roadmap.md` §TUI got a Complexity column for T15.1–T15.9, the last open tasks without a rating. | User request: pick work by difficulty. |

@@ -3,7 +3,7 @@
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Manifest, Plugin, Surface};
+use crate::plugin::{DashboardPage, Manifest, Plugin, Surface};
 
 pub struct Proxy;
 
@@ -14,5 +14,13 @@ impl Plugin for Proxy {
             surfaces: &[Surface::Proxy],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Proxy usage",
+            "Record provider usage; compress mode runs plugin proxy_filter.",
+            true,
+        )
     }
 }

@@ -314,13 +314,13 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 **Surfaces.** None of its own. `rtok` re-exports it as `rtok::plugin` and stays the only dispatcher.
 
-**Blocked by.** T15.0 (done). T23.4 needs T23.2 and T23.3.
+**Blocked by.** T15.0 (done). T23.2 (done). T23.4 needs T23.3.
 
 | # | Task | What | Complexity |
 |---|------|------|------------|
 | 0 | T23.0 | **Design first (D15).** Where the crate line goes → `crates/rtok-plugin-sdk/PLAN.md` · done 2026-09-09, the middle line: contract + host capability traits, three dependencies | 3/5 |
 | 1 | T23.1 | workspace + crate; the value types move, `rtok::plugin` re-exports · done 2026-09-09 | 3/5 |
-| 2 | T23.2 | required methods (`manifest`, `dashboard_page`); catalogue copy moves to its plugin | 2/5 |
+| 2 | T23.2 | required methods (`manifest`, `dashboard_page`); catalogue copy moves to its plugin · done 2026-09-09 | 2/5 |
 | 3 | T23.3 | host capability traits replace bare `Store` access | 4/5 |
 | 4 | T23.4 | the ten plugins move onto the SDK | 3/5 |
 | 5 | T23.5 | crate docs, doctests, one example plugin, `docs/plugin-authoring.md` | 2/5 |

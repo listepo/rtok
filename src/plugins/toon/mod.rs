@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, Manifest, Measurement, Plugin, Surface};
+use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
 
@@ -19,6 +19,14 @@ impl Plugin for Toon {
             surfaces: &[Surface::Proxy, Surface::Mcp],
             default_on: false,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "TOON",
+            "Compact tabular JSON. Off by default until it beats the corpus.",
+            true,
+        )
     }
 
     fn proxy_filter(&self, req: &mut WireRequest<'_>, cx: &Ctx) -> Vec<Measurement> {

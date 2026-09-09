@@ -9,7 +9,8 @@ use anyhow::{Result, bail};
 use serde_json::json;
 
 use crate::plugin::{
-    Ctx, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface, ToolDef,
+    Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
+    ToolDef,
 };
 
 pub mod cache;
@@ -26,6 +27,14 @@ impl Plugin for Read {
             surfaces: &[Surface::Mcp, Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Read",
+            "Outline, map, and search instead of dumping full files into context.",
+            true,
+        )
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {

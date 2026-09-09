@@ -2,7 +2,7 @@
 //! feature of the same name (`default = all`). Order here is dispatch order.
 
 use crate::config::Config;
-use crate::plugin::{Manifest, Plugin};
+use crate::plugin::{DashboardPage, Manifest, Plugin};
 
 #[cfg(feature = "measure")]
 pub mod measure;
@@ -106,6 +106,15 @@ impl Registry {
             .collect()
     }
 
+    /// `(manifest, enabled, page)` for every compiled-in plugin. The page comes from the
+    /// plugin itself (D23, T23.2) — the operator surfaces never look copy up by id.
+    pub fn pages(&self) -> Vec<(Manifest, bool, DashboardPage)> {
+        self.plugins
+            .iter()
+            .map(|(p, on)| (p.manifest(), *on, p.dashboard_page()))
+            .collect()
+    }
+
     /// The `rtok plugins` table.
     pub fn table(&self) -> String {
         let mut out = format!("{:<9}{:<9}surfaces\n", "id", "enabled");
@@ -165,6 +174,9 @@ mod tests {
                     surfaces: &[crate::plugin::Surface::Mcp],
                     default_on: true,
                 }
+            }
+            fn dashboard_page(&self) -> DashboardPage {
+                DashboardPage::new("Ext", "An out-of-tree plugin.", false)
             }
         }
         let reg = Registry::from_plugins(vec![Box::new(Ext)], &Config::default());

@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use crate::plugin::{Ctx, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef};
+use crate::plugin::{
+    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
+};
 use crate::tokens::Class;
 
 pub mod index;
@@ -32,6 +34,14 @@ impl Plugin for Graph {
             surfaces: &[Surface::Mcp],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Graph",
+            "symbol / callers / impact from a tree-sitter-tags index.",
+            true,
+        )
     }
 
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> {

@@ -2,7 +2,9 @@
 
 pub mod import;
 
-use crate::plugin::{Ctx, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef};
+use crate::plugin::{
+    Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
+};
 use crate::tokens::Class;
 use serde_json::json;
 
@@ -15,6 +17,14 @@ impl Plugin for Memory {
             surfaces: &[Surface::Mcp, Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Memory",
+            "Recall notes and titles without an LLM extraction step.",
+            true,
+        )
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {

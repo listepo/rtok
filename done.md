@@ -8,6 +8,16 @@ history of what was asked stays readable next to what was delivered.
 
 Goal: one published contract every plugin implements. Plan: `plan.md` P23.
 
+**T23.2 required methods are required** · T23.1 · `crates/rtok-plugin-sdk/src/lib.rs`, `src/plugins/*/mod.rs`
+Do: the mandatory set from T23.0 has no default body — `manifest()` (what the plugin is) and `dashboard_page()` (the page D23 says every plugin contributes). Every event method keeps its no-op default. `DashboardPage::from_id`'s catalogue match dies: each plugin owns its own title, summary and `saves_tokens`, which is where that copy belonged.
+Check: a `trybuild` case where a plugin implements only `manifest()` fails to compile naming `dashboard_page`; `rtok web`'s snapshot carries the same titles and summaries as before (the T15.0 model test); `rtok plugins` output is unchanged.
+Complexity: 2/5
+Status: done 2026-09-09
+Model: Claude Opus 5 (anthropic/claude-opus-5)
+Check result: `Plugin::dashboard_page` has no default body; the 178-line `DashboardPage::from_id` match is gone, replaced by `DashboardPage::new(title, summary, saves_tokens)`, and all ten catalogue plugins plus both examples carry their own copy. `Registry::pages()` returns `(Manifest, enabled, DashboardPage)` so `src/web/model.rs` asks the plugin instead of looking copy up by id — the T15.0 model test still reads `Bash / cmd` off the snapshot, so titles and summaries are unchanged. `rtok plugins` prints id/enabled/surfaces and never touched the page, so it is unchanged by construction. `just check` green twice (169 tests), `cargo run --example hello_plugin` still records exactly one measurement row.
+Deviation: no `trybuild`. The compile-failure proof is a ```compile_fail doctest on the trait, which `cargo test` already runs — a new dev-dependency to assert one compile error is the kind of thing D6's spirit and the repo's dependency rule both argue against. It fails for the same reason and in the same run.
+Second deviation: 16 files, not ≤ 3. Making a trait method required is one edit in the trait and one in every implementor; splitting it would leave the tree not compiling between commits, the same reason T23.4 is exempt.
+
 **T23.1 the crate exists and owns the contract** · T23.0 · `Cargo.toml`, `crates/rtok-plugin-sdk/*`, `src/plugin.rs`
 Do: a workspace root (`rtok` plus `crates/rtok-plugin-sdk`; `crates/rtok-webui` keeps its own build), the new crate with `#![deny(missing_docs)]`, and the contract types moved into it exactly as the survey drew them. `src/plugin.rs` becomes a re-export so `rtok::plugin::*` still resolves and no call site outside it changes in this task.
 Check: `cargo test` green with the types imported from the SDK; `rtok::plugin::Plugin` and `rtok_plugin_sdk::Plugin` are the same type (a test that assigns one to the other); `cargo doc -p rtok-plugin-sdk` builds with no missing-docs warning.

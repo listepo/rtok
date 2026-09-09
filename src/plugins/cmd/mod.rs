@@ -3,7 +3,7 @@
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{Ctx, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
+use crate::plugin::{Ctx, DashboardPage, Manifest, Plugin, PreToolDecision, PreToolUse, Surface};
 
 pub mod hook;
 
@@ -21,6 +21,14 @@ impl Plugin for Cmd {
             surfaces: &[Surface::Hook, Surface::Cli],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Bash / cmd",
+            "Archive and filter command output; expand the original by id.",
+            true,
+        )
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {

@@ -7,8 +7,8 @@
 use anyhow::Result;
 use rtok::hooks::types::{HookInput, HookOutput, HookSpecificOutput};
 use rtok::plugin::{
-    Ctx, Injection, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse, SessionStart,
-    Surface,
+    Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreToolDecision, PreToolUse,
+    SessionStart, Surface,
 };
 use rtok::tokens::Class;
 
@@ -21,6 +21,15 @@ impl Plugin for Hello {
             surfaces: &[Surface::Hook],
             default_on: true,
         }
+    }
+
+    // Required, like `manifest`: the page `rtok web` and `rtok tui` both render (D23).
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Hello",
+            "Denies `rm -rf` and greets the session once.",
+            true,
+        )
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {

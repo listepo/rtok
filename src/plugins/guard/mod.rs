@@ -1,7 +1,8 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
 use crate::plugin::{
-    Ctx, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
+    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
+    Surface,
 };
 use serde_json::Value;
 
@@ -14,6 +15,14 @@ impl Plugin for Guard {
             surfaces: &[Surface::Hook],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Guard",
+            "Deny duplicate reads and commands inside a sliding window.",
+            true,
+        )
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {

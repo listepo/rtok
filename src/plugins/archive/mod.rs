@@ -16,7 +16,7 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, Manifest, Measurement, Plugin, Surface};
+use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
 use crate::proxy::wire::{ToolResultRef, WireRequest};
 use crate::tokens::Class;
 
@@ -29,6 +29,14 @@ impl Plugin for Archive {
             surfaces: &[Surface::Proxy, Surface::Mcp],
             default_on: true,
         }
+    }
+
+    fn dashboard_page(&self) -> DashboardPage {
+        DashboardPage::new(
+            "Archive",
+            "Shrink old tool results in the live zone; pointers expand on demand.",
+            true,
+        )
     }
 
     fn proxy_filter(&self, req: &mut WireRequest<'_>, cx: &Ctx) -> Vec<Measurement> {
