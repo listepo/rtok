@@ -60,6 +60,8 @@ enum Cmd {
         #[arg(long)]
         port: Option<u16>,
     },
+    /// Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
+    Tui,
     /// Measurements from session logs and the proxy
     Stats {
         /// How far back to read transcripts (`60d`, `24h`)
@@ -555,6 +557,10 @@ pub fn run() -> Result<()> {
         Cmd::Web { host, port } => {
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
             crate::web::serve_blocking(cfg)?;
+        }
+        Cmd::Tui => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            crate::tui::run(cfg)?;
         }
         Cmd::Dashboard { host, port } => {
             eprintln!("warning: `rtok dashboard` is deprecated; use `rtok web`");

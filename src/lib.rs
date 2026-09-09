@@ -10,6 +10,7 @@
 //! - [`hooks`]   — Claude Code hook I/O types
 //! - [`doctor`]  — `rtok doctor`
 //! - [`measure`] — JSONL ingest, `rtok stats` (P1)
+//! - [`tui`]     — `rtok tui`, the terminal rendering of the operator model (D23)
 
 pub mod bench;
 pub mod cli;
@@ -30,6 +31,7 @@ pub mod report;
 pub mod setup;
 pub mod store;
 pub mod tokens;
+pub mod tui;
 pub mod web;
 
 /// The plugin contract at the crate root, so an external plugin crate writes
