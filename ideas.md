@@ -100,7 +100,6 @@ and a row on `roadmap.md` Later. v0.1 `graph` stays tags-only; v0.1 hooks stay p
 | I-24 | serena | `graph` | LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
 | I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
 | I-26 | (architecture) | core | WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
-| I-27 | (architecture) | core | Optional daemon besides `proxy`/`mcp`. | v0.1 hooks are short-lived and fail open in ≤ 10 ms; a daemon must not become a single point of failure. |
 
 ---
 
@@ -113,6 +112,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 ## Promoted
 
 | I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
+| I-27 | P20 T20.1 | `rtok demon` supervises `proxy`/`mcp`/`dashboard` (D22) | 2026-09-09 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 | I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
 

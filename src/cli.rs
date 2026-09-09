@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use crate::config::Config;
 use crate::config::layers;
 use crate::config::validate;
+use crate::demon::Service;
 use crate::plugins::Registry;
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
@@ -155,11 +156,40 @@ enum Cmd {
         #[command(subcommand)]
         action: GraphCmd,
     },
+    /// Keep `rtok proxy` (or `mcp` / `dashboard`) running in the background
+    Demon {
+        #[command(subcommand)]
+        action: DemonCmd,
+    },
     /// OpenTelemetry export (`rtok otel flush | status`)
     Otel {
         #[command(subcommand)]
         action: OtelCmd,
     },
+}
+
+/// Every verb takes optional services; with none they act on what is already up, falling back
+/// to `[demon] services`. `Service` is a `ValueEnum`, so clap validates the name, lists the
+/// choices in `--help` and completes them in a shell (D14).
+#[derive(Subcommand)]
+enum DemonCmd {
+    /// Detach a supervisor that restarts the service whenever it dies
+    Start { service: Vec<Service> },
+    /// Ask the supervisor and its child to exit
+    Stop { service: Vec<Service> },
+    /// Stop, then start
+    Restart { service: Vec<Service> },
+    /// State, pids, uptime, restarts and log path
+    Status { service: Vec<Service> },
+    /// `status` for every service, running or not
+    List,
+    /// SIGKILL instead of SIGTERM, and drop the state file
+    Kill { service: Vec<Service> },
+    /// Restart under the binary on disk now (after an upgrade replaced it)
+    Update { service: Vec<Service> },
+    /// The detached half; `demon start` runs this, you do not
+    #[command(hide = true)]
+    Supervise { service: Service },
 }
 
 #[derive(Subcommand)]
@@ -523,6 +553,20 @@ pub fn run() -> Result<()> {
                 "indexed {} files · {} rows · {} skipped · {} read",
                 r.indexed, r.inserted, r.skipped, r.read
             );
+        }
+        Cmd::Demon { action } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let c = config_file.as_deref();
+            match action {
+                DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
+                DemonCmd::Stop { service } => crate::demon::stop(&cfg, &service, false)?,
+                DemonCmd::Restart { service } => crate::demon::restart(&cfg, c, &service)?,
+                DemonCmd::Status { service } => crate::demon::status(&cfg, &service)?,
+                DemonCmd::List => crate::demon::list(&cfg)?,
+                DemonCmd::Kill { service } => crate::demon::stop(&cfg, &service, true)?,
+                DemonCmd::Update { service } => crate::demon::update(&cfg, c, &service)?,
+                DemonCmd::Supervise { service } => crate::demon::supervise(&cfg, c, service)?,
+            }
         }
         Cmd::Otel { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;

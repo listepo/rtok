@@ -44,6 +44,14 @@ dry_run         = false               # --dry-run: print effective [proxy] setti
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
 
+[demon]                               # rtok demon start | stop | restart | status | list | kill | update
+services       = ["proxy"]            # what `rtok demon start` starts when given no name
+state_dir      = "~/.rtok/demon"      # <name>.json, <name>.log and the <name>.stop marker
+backoff_ms     = 1000                 # wait before the first restart after a crash
+max_backoff_ms = 30000                # ceiling for a crash loop
+healthy_ms     = 10000                # a child up this long resets the backoff
+poll_ms        = 200                  # how often the supervisor looks at its child
+
 [stats]                               # rtok stats
 since           = "30d"
 format          = "table"             # table | json      (--json)

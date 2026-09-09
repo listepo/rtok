@@ -138,6 +138,18 @@ section! {
 }
 
 section! {
+    /// `[demon]` — `rtok demon` (P20, D22). Supervises the long-running surfaces.
+    Demon {
+        services: Vec<String> = strs(&["proxy"]),
+        state_dir: PathBuf = p("~/.rtok/demon"),
+        backoff_ms: u64 = 1000,
+        max_backoff_ms: u64 = 30000,
+        healthy_ms: u64 = 10000,
+        poll_ms: u64 = 200,
+    }
+}
+
+section! {
     /// `[stats]` — `rtok stats`.
     Stats {
         since: String = s("30d"),
@@ -406,6 +418,7 @@ pub struct Config {
     pub mcp: Mcp,
     pub proxy: Proxy,
     pub dashboard: Dashboard,
+    pub demon: Demon,
     pub stats: Stats,
     pub bench: Bench,
     pub doctor: Doctor,
@@ -521,6 +534,7 @@ impl Config {
             &mut self.core.db_path,
             &mut self.core.archive_dir,
             &mut self.core.log_file,
+            &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
             &mut self.doctor.settings_path,
             &mut self.doctor.claude_json,
