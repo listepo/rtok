@@ -1,0 +1,27 @@
+[package]
+name = "rtok-agent-sdk"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97.1" # the pin in mise.toml; a host-integration author needs no newer toolchain
+readme = "README.md"
+repository = "https://github.com/listepo/rtok"
+homepage = "https://listepo.github.io/rtok/"
+description = "The rtok agent-host contract: reversible, idempotent installs for `rtok agent setup <host>`"
+license = "Apache-2.0"
+categories = ["development-tools"]
+keywords = ["rtok", "agents", "install", "mcp", "hooks"]
+
+[dependencies]
+# Same three-dependency line the plugin SDK holds, plus the one thing an *installer* needs and a
+# plugin does not: a prompt that restores the terminal and reads Ctrl-C/EOF as no (D21 (6)).
+serde_json = "1.0.151"
+anyhow = "1.0.104"
+dialoguer = { version = "0.12", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "warn"
+todo = "warn"

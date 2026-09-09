@@ -1,16 +1,16 @@
 //! Lifecycle helpers for `rtok proxy` and `rtok agent setup claude --proxy` (plan T5.2).
 
-use std::fs;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use axum::Json;
 use axum::extract::State;
+use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
 use serde_json::{Value, json};
 
 use super::ProxyState;
 use crate::config::Config;
-use crate::setup::claude::{backup, read_settings};
+use crate::setup::apply;
 
 /// `GET /health` → `{"ok":true,"mode":"passthrough"}`.
 pub async fn health(State(state): State<Arc<ProxyState>>) -> Json<Value> {
@@ -20,7 +20,7 @@ pub async fn health(State(state): State<Arc<ProxyState>>) -> Json<Value> {
 /// Set `env.ANTHROPIC_BASE_URL` in Claude settings.json to this proxy (backup).
 pub fn register_proxy(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.claude.settings_path;
-    let mut root = read_settings(path)?;
+    let mut root = read_json(path)?;
     if !root.is_object() {
         root = json!({});
     }
@@ -36,24 +36,16 @@ pub fn register_proxy(cfg: &Config) -> Result<String> {
     }
     let prev = env.get("ANTHROPIC_BASE_URL").cloned();
     if prev.as_ref() == Some(&want) {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     }
     env["ANTHROPIC_BASE_URL"] = want;
-    if !cfg.setup.dry_run {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
     let revert = match prev.and_then(|v| v.as_str().map(str::to_string)) {
         Some(old) => format!("revert: set env.ANTHROPIC_BASE_URL to {old}"),
         None => "revert: remove env.ANTHROPIC_BASE_URL".into(),
     };
-    Ok(format!("env.ANTHROPIC_BASE_URL: {url}\n{revert}"))
+    let report = format!("env.ANTHROPIC_BASE_URL: {url}\n{revert}");
+    write_json(&apply(cfg), path, &root, &report)?;
+    Ok(report)
 }
 
 /// Clear `env.ANTHROPIC_BASE_URL` (`rtok agent remove claude`), but only while it still
@@ -61,28 +53,23 @@ pub fn register_proxy(cfg: &Config) -> Result<String> {
 pub fn unregister_proxy(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.claude.settings_path;
     if !path.exists() {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     }
-    let mut root = read_settings(path)?;
+    let mut root = read_json(path)?;
     let url = format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port);
     let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) else {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     };
     if env.get("ANTHROPIC_BASE_URL").and_then(Value::as_str) != Some(url.as_str()) {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     }
     env.remove("ANTHROPIC_BASE_URL");
     if env.is_empty() {
         root.as_object_mut().unwrap().remove("env");
     }
-    if !cfg.setup.dry_run {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
-    Ok("- env.ANTHROPIC_BASE_URL".into())
+    let report = "- env.ANTHROPIC_BASE_URL";
+    write_json(&apply(cfg), path, &root, report)?;
+    Ok(report.into())
 }
 
 #[cfg(test)]

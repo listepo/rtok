@@ -6,13 +6,13 @@
 //! performs that map when `[hook] host` is `cursor` (also `--host cursor`).
 //! Cursor `hooks.json` is `{version, hooks.beforeShellExecution[].command}`.
 
-use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use rtok_agent_sdk::{NO_CHANGES, PluginLink, read_json, write_json};
 use serde_json::{Value, json};
 
-use super::claude::{backup, read_settings, register_stdio_mcp};
+use super::{apply, plugin_src};
 use crate::config::Config;
 
 const HOOK_CMD: &str = "rtok hook PreToolUse --host cursor";
@@ -20,22 +20,13 @@ const HOOK_CMD: &str = "rtok hook PreToolUse --host cursor";
 /// Apply, dry-run, or remove the Cursor `beforeShellExecution` entry.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.cursor.hooks_path;
-    let mut root = read_settings(path)?;
+    let mut root = read_json(path)?;
     let report = if remove {
         strip_ours(&mut root)
     } else {
         insert_ours(&mut root)
     };
-    if !cfg.setup.dry_run && report != "no changes" {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
+    write_json(&apply(cfg), path, &root, &report)?;
     Ok(report)
 }
 
@@ -46,22 +37,16 @@ fn mcp_path(cfg: &Config) -> PathBuf {
 
 /// Register `rtok mcp` in `~/.cursor/mcp.json` (sibling of `hooks.json`).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    register_stdio_mcp(&mcp_path(cfg), cfg)
+    rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), "rtok", "rtok", &["mcp"])
 }
 
 /// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agent remove cursor`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    super::claude::unregister_stdio_mcp(&mcp_path(cfg), cfg)
+    rtok_agent_sdk::unregister_mcp(&apply(cfg), &mcp_path(cfg), "rtok")
 }
 
 const PLUGIN_SRC_REL: &str = "plugins/cursor";
 const PLUGIN_LOCAL: &str = "~/.cursor/plugins/local";
-const KETCH_INSTALL: &str = "ketch install listepo/rtok";
-
-/// Source tree shipped in this repo.
-pub fn plugin_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(PLUGIN_SRC_REL)
-}
 
 /// Local Cursor plugin dest: sibling of hooks.json → `<cursor-dir>/plugins/local/rtok`.
 pub fn plugin_dest(cfg: &Config) -> PathBuf {
@@ -73,73 +58,34 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
         .join("plugins/local/rtok")
 }
 
-fn plugin_present(dest: &std::path::Path) -> bool {
-    dest.symlink_metadata().is_ok()
+fn link(cfg: &Config) -> PluginLink<'static> {
+    PluginLink {
+        src_rel: PLUGIN_SRC_REL,
+        src: plugin_src(PLUGIN_SRC_REL),
+        dest: plugin_dest(cfg),
+        label: Some(PLUGIN_LOCAL),
+        host: "Cursor",
+    }
 }
 
 /// Offer / link / unlink `plugins/cursor` (D21, T10.5).
 /// Dry-run and the unaccepted offer MUST contain the substrings `plugins/cursor`
 /// and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let dest = plugin_dest(cfg);
-    let src = plugin_src();
-    if cfg.setup.dry_run {
-        return Ok(format!(
-            "offer {PLUGIN_SRC_REL} → {PLUGIN_LOCAL} ({}) {KETCH_INSTALL}",
-            dest.display()
-        ));
-    }
-    if remove {
-        if !plugin_present(&dest) {
-            return Ok("no changes".into());
-        }
-        if dest.is_dir() && !dest.is_symlink() {
-            fs::remove_dir_all(&dest)?;
-        } else {
-            fs::remove_file(&dest)?;
-        }
-        return Ok(format!("- plugin {}", dest.display()));
-    }
-    if plugin_present(&dest) {
-        return Ok("no changes".into());
-    }
-    let q = format!("install {PLUGIN_SRC_REL} into {PLUGIN_LOCAL} for Cursor?");
-    if !crate::setup::accepted(cfg, &q) {
-        return Ok(format!(
-            "offer {PLUGIN_SRC_REL} → {PLUGIN_LOCAL} (accept with --yes) {KETCH_INSTALL}"
-        ));
-    }
-    if let Some(dir) = dest.parent() {
-        fs::create_dir_all(dir).ok();
-    }
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&src, &dest)
-        .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))?;
-    #[cfg(not(unix))]
-    {
-        let _ = (&src, &dest);
-        anyhow::bail!("plugin link requires unix");
-    }
+    let report = link(cfg).run(&apply(cfg), remove)?;
     // Singleton (D21): the plugin is the MCP, so a previous `mcpServers.rtok`
     // entry from a plain install must go, else two writers serve one store.
-    let _ = strip_mcp_registration(cfg);
-    Ok(format!(
-        "+ plugin {PLUGIN_SRC_REL} → {} {PLUGIN_LOCAL}",
-        dest.display()
-    ))
-}
-
-/// Remove `mcpServers.rtok` from the Cursor `mcp.json` sibling of `hooks.json`.
-/// Best-effort: missing file or foreign content is not an error.
-fn strip_mcp_registration(cfg: &Config) -> Result<bool> {
-    Ok(unregister_mcp(cfg)? != "no changes")
+    if report.starts_with("+ plugin") {
+        let _ = unregister_mcp(cfg);
+    }
+    Ok(report)
 }
 
 /// True when `--yes` accepted the plugin, so `mcp.json` must not also register rtok.
 /// Also true when the plugin link already exists: the plugin *is* the MCP (D21
 /// singleton), so a later plain `rtok agent setup cursor` must not add a second entry.
 pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
-    !remove && (cfg.setup.yes || plugin_present(&plugin_dest(cfg)))
+    !remove && (cfg.setup.yes || link(cfg).linked())
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -168,7 +114,7 @@ fn insert_ours(root: &mut Value) -> String {
     }
     let arr = arr.as_array_mut().unwrap();
     if arr.iter().any(is_ours) {
-        return "no changes".into();
+        return NO_CHANGES.into();
     }
     arr.push(json!({"command": HOOK_CMD}));
     format!("+ beforeShellExecution {HOOK_CMD}")
@@ -179,12 +125,12 @@ fn strip_ours(root: &mut Value) -> String {
         .pointer_mut("/hooks/beforeShellExecution")
         .and_then(Value::as_array_mut)
     else {
-        return "no changes".into();
+        return NO_CHANGES.into();
     };
     let before = arr.len();
     arr.retain(|e| !is_ours(e));
     if arr.len() == before {
-        "no changes".into()
+        NO_CHANGES.into()
     } else {
         "- beforeShellExecution".into()
     }
@@ -237,12 +183,9 @@ mod tests {
         c.setup.yes = true;
         c.setup.backup = false;
         let first = offer_plugin(&c, false).unwrap();
-        assert!(
-            first.contains("plugins/cursor") || first.starts_with("+ plugin"),
-            "{first}"
-        );
-        assert!(plugin_present(&plugin_dest(&c)));
-        assert_eq!(offer_plugin(&c, false).unwrap(), "no changes");
+        assert!(first.starts_with("+ plugin"), "{first}");
+        assert!(link(&c).linked());
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -255,7 +198,7 @@ mod tests {
         assert!(!path.exists());
         let c = cfg(path.clone(), false);
         assert!(run(&c, false).unwrap().contains(HOOK_CMD));
-        assert_eq!(run(&c, false).unwrap(), "no changes");
+        assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"version\""));
         assert!(raw.contains(HOOK_CMD));

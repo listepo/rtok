@@ -3,24 +3,30 @@ title: Commands
 weight: 2
 ---
 
-Every command below is a surface onto the same plugin registry and the same SQLite store.
-The **Status** column is the task id in `plan.md` that delivers it — `done` means it works
-today, anything else prints `not implemented` and exits 0.
+Every command below is a surface onto the same plugin registry and the same SQLite store,
+and every one of them works today. A subcommand whose plugin was compiled out (for example
+`rtok run` without the `cmd` feature) prints `not implemented` and exits 0, so a stripped
+build never blocks the host.
 
-| Command | Does | Status |
-|---------|------|--------|
-| `rtok plugins` | list plugins: id, enabled, surfaces | done |
-| `rtok config show\|init\|validate\|get\|set\|path` | one config file; `show --sources` says where each value came from | P12 |
-| `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) | T2.1 |
-| `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools | T4.1 |
-| `rtok proxy` | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` hop: usage capture, optional compress mode | T5.1, P11 |
-| `rtok run -- <cmd>` | run a command, archive the raw output, print the filtered version | T3.1 |
-| `rtok expand <id>` | print an archived payload | T3.5 |
-| `rtok stats` | measurements from session logs and the proxy | T1.2 |
-| `rtok doctor` | inspect hooks, MCP servers, proxy chain | T1.4 |
-| `rtok agent setup claude` | install hooks / MCP / proxy into Claude Code, with backups | T2.3 |
-| `rtok agent remove claude` | take hooks / MCP / proxy back out, with backups | T10.9 |
-| `rtok bench` | A/B two host configurations on fixed tasks | T9.1 |
+| Command | Does |
+|---------|------|
+| `rtok plugins` | list plugins: id, enabled, surfaces |
+| `rtok config show\|init\|validate\|get\|set\|path` | one config file; `show --sources` says where each value came from |
+| `rtok hook <event>` | Claude Code hook entry point (stdin JSON → stdout JSON) |
+| `rtok mcp` | MCP server over stdio: `read`, `search`, `tree`, `expand`, `mem_*`, graph tools |
+| `rtok proxy` | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` hop: usage capture, optional compress mode |
+| `rtok dashboard` | local Slint/WASM UI over a WebSocket API, reading the same store |
+| `rtok run -- <cmd>` | run a command, archive the raw output, print the filtered version |
+| `rtok filter --stdin` | filter a payload without executing it (OpenCode `tool.execute.after`) |
+| `rtok expand <id>` | print an archived payload, whole or by `--lines` / `--grep` |
+| `rtok stats` | measurements from session logs and the proxy |
+| `rtok doctor` | inspect hooks, MCP servers, proxy chain — including what each costs per turn |
+| `rtok agent setup claude\|cursor\|codex\|opencode\|pi` | install into a host, with backups; `--dry-run` |
+| `rtok agent remove claude\|cursor\|codex\|opencode\|pi` | take rtok back out of a host, with backups; `--dry-run` |
+| `rtok graph index [path]` | build the tree-sitter symbol index for a tree |
+| `rtok memory import <file>` | import notes as JSONL, deduped by body hash |
+| `rtok otel flush\|status` | export the ledgers over OTLP/HTTP, or report the watermarks |
+| `rtok bench` | A/B two host configurations on fixed tasks |
 
 ## Every flag is a config key
 

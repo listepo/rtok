@@ -6,84 +6,44 @@
 //! registration, desktop and CLI see the same `~/.pi/agent/extensions`
 //! tree. Missing `rtok` fails open and names the ketch install.
 
-use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use rtok_agent_sdk::PluginLink;
 
+use super::{apply, plugin_src};
 use crate::config::Config;
 
 const PLUGIN_SRC_REL: &str = "plugins/pi";
 const PLUGIN_DIR_NAME: &str = "rtok";
-const KETCH_INSTALL: &str = "ketch install listepo/rtok";
-
-/// Source tree shipped in this repo.
-pub fn plugin_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(PLUGIN_SRC_REL)
-}
 
 /// Extension dest: `<extensions_path>/rtok` (default `~/.pi/agent/extensions/rtok`).
 pub fn plugin_dest(cfg: &Config) -> PathBuf {
     cfg.setup.pi.extensions_path.join(PLUGIN_DIR_NAME)
 }
 
-fn plugin_present(dest: &std::path::Path) -> bool {
-    dest.symlink_metadata().is_ok()
+fn link(cfg: &Config) -> PluginLink<'static> {
+    PluginLink {
+        src_rel: PLUGIN_SRC_REL,
+        src: plugin_src(PLUGIN_SRC_REL),
+        dest: plugin_dest(cfg),
+        label: None,
+        host: "pi",
+    }
 }
 
 /// Offer / link / unlink `plugins/pi` (D21, T10.6).
 /// Dry-run and the unaccepted offer MUST contain the substrings `plugins/pi`
 /// and `ketch install listepo/rtok`.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let dest = plugin_dest(cfg);
-    let src = plugin_src();
-    if cfg.setup.dry_run {
-        return Ok(format!(
-            "offer {PLUGIN_SRC_REL} → {} ({}) {KETCH_INSTALL}",
-            dest.display(),
-            src.display(),
-        ));
-    }
-    if remove {
-        if !plugin_present(&dest) {
-            return Ok("no changes".into());
-        }
-        if dest.is_dir() && !dest.is_symlink() {
-            fs::remove_dir_all(&dest)?;
-        } else {
-            fs::remove_file(&dest)?;
-        }
-        return Ok(format!("- plugin {}", dest.display()));
-    }
-    if plugin_present(&dest) {
-        return Ok("no changes".into());
-    }
-    let q = format!("install {PLUGIN_SRC_REL} into {} for pi?", dest.display());
-    if !crate::setup::accepted(cfg, &q) {
-        return Ok(format!(
-            "offer {PLUGIN_SRC_REL} → {} (accept with --yes) {KETCH_INSTALL}",
-            dest.display(),
-        ));
-    }
-    if let Some(dir) = dest.parent() {
-        fs::create_dir_all(dir).ok();
-    }
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&src, &dest)
-        .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))?;
-    #[cfg(not(unix))]
-    {
-        let _ = (&src, &dest);
-        anyhow::bail!("plugin link requires unix");
-    }
-    Ok(format!("+ plugin {PLUGIN_SRC_REL} → {}", dest.display()))
+    link(cfg).run(&apply(cfg), remove)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rtok_agent_sdk::NO_CHANGES;
     use std::fs;
-    use std::path::PathBuf;
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("rtok-pi-{name}-{}", std::process::id()));
@@ -119,13 +79,13 @@ mod tests {
         c.setup.backup = false;
         let first = offer_plugin(&c, false).unwrap();
         assert!(first.starts_with("+ plugin"), "{first}");
-        assert!(plugin_present(&plugin_dest(&c)));
-        assert_eq!(offer_plugin(&c, false).unwrap(), "no changes");
+        assert!(link(&c).linked());
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
         assert_eq!(
             offer_plugin(&c, true).unwrap(),
             format!("- plugin {}", plugin_dest(&c).display())
         );
-        assert!(!plugin_present(&plugin_dest(&c)));
+        assert!(!link(&c).linked());
         let _ = fs::remove_dir_all(dir);
     }
 }

@@ -714,7 +714,7 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     // here also means the installers must not take a second one of their own.
     if !cfg.setup.dry_run && cfg.setup.backup {
         for path in crate::setup::host_files(&cfg, &host) {
-            if let Some(bak) = crate::setup::claude::backup(&path)? {
+            if let Some(bak) = rtok_agent_sdk::backup(&path)? {
                 println!("backup {}", bak.display());
             }
         }

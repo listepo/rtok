@@ -1,17 +1,16 @@
 //! OpenCode installer (`rtok agent setup opencode --proxy`, plan T11.5).
 
-use std::fs;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
+use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
 use serde_json::{Value, json};
 
-use super::claude::{backup, read_settings};
+use super::apply;
 use crate::config::Config;
 
 /// Set, dry-run, or remove `env.OPENAI_BASE_URL` in OpenCode's JSON config.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.opencode.config_path;
-    let mut root = read_settings(path)?;
+    let mut root = read_json(path)?;
     if !root.is_object() {
         root = json!({});
     }
@@ -21,16 +20,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     } else {
         insert(&mut root, &url)
     };
-    if !cfg.setup.dry_run && report != "no changes" {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
+    write_json(&apply(cfg), path, &root, &report)?;
     Ok(report)
 }
 
@@ -46,7 +36,7 @@ fn insert(root: &mut Value, url: &str) -> String {
     }
     let prev = env.get("OPENAI_BASE_URL").cloned();
     if prev.as_ref() == Some(&want) {
-        return "no changes".into();
+        return NO_CHANGES.into();
     }
     env["OPENAI_BASE_URL"] = want;
     let revert = match prev.and_then(|v| v.as_str().map(str::to_string)) {
@@ -58,10 +48,10 @@ fn insert(root: &mut Value, url: &str) -> String {
 
 fn strip(root: &mut Value) -> String {
     let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) else {
-        return "no changes".into();
+        return NO_CHANGES.into();
     };
     if env.remove("OPENAI_BASE_URL").is_none() {
-        return "no changes".into();
+        return NO_CHANGES.into();
     }
     if env.is_empty() {
         root.as_object_mut().unwrap().remove("env");
@@ -72,6 +62,7 @@ fn strip(root: &mut Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
 
     fn cfg(dir: &str, dry: bool) -> (Config, PathBuf) {
@@ -102,12 +93,12 @@ mod tests {
         let (c, path) = cfg("apply", false);
         let first = run(&c, false).unwrap();
         assert!(first.contains("8790/v1"), "{first}");
-        assert_eq!(run(&c, false).unwrap(), "no changes");
+        assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("OPENAI_BASE_URL"), "{raw}");
         assert!(raw.ends_with('\n'), "{raw}");
         assert_eq!(run(&c, true).unwrap(), "- env.OPENAI_BASE_URL");
-        assert_eq!(run(&c, true).unwrap(), "no changes");
+        assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
         let gone = fs::read_to_string(&path).unwrap();
         assert!(!gone.contains("OPENAI_BASE_URL"), "{gone}");
         let _ = fs::remove_dir_all(path.parent().unwrap());

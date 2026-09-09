@@ -1,11 +1,14 @@
 //! Install rtok hooks into Claude Code `settings.json` (plan T2.3).
+//!
+//! What is Claude-specific is the `hooks` shape below; backup, the write gate and the
+//! `mcpServers` entry come from `rtok-agent-sdk` (D28).
 
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::Result;
+use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
 use serde_json::{Value, json};
-use std::fs;
-use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::apply;
 
 /// `(event, matcher)` — empty matcher omits the field.
 const ENTRIES: &[(&str, &str)] = &[
@@ -32,56 +35,14 @@ fn is_ours(cmd: &str, event: &str) -> bool {
 /// Apply, dry-run, or remove rtok hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.claude.settings_path;
-    let mut root = read_settings(path)?;
+    let mut root = read_json(path)?;
     let report = if remove {
         strip_ours(&mut root)
     } else {
         insert_ours(&mut root, cfg.setup.hook_timeout_s)
     };
-    if !cfg.setup.dry_run && report != "no changes" {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
+    write_json(&apply(cfg), path, &root, &report)?;
     Ok(report)
-}
-
-pub(crate) fn read_settings(path: &Path) -> Result<Value> {
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-    let raw = fs::read_to_string(path).with_context(|| path.display().to_string())?;
-    if raw.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(&raw).with_context(|| path.display().to_string())
-}
-
-/// Copy `path` to `<name>.bak-<unix-seconds>` beside it. `None` when there is no file yet.
-pub(crate) fn backup(path: &Path) -> Result<Option<std::path::PathBuf>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    // Two commands inside one second would otherwise share a name and the first copy would go.
-    let mut bak = path.with_file_name(format!("{name}.bak-{ts}"));
-    for n in 1..100 {
-        if !bak.exists() {
-            break;
-        }
-        bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
-    }
-    fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
-    Ok(Some(bak))
 }
 
 fn event_array<'a>(root: &'a mut Value, event: &str) -> &'a mut Vec<Value> {
@@ -141,7 +102,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
         added.push(format!("+ {event}{m} {}", command(event)));
     }
     if added.is_empty() {
-        "no changes".into()
+        NO_CHANGES.into()
     } else {
         format!("{}\n{} additions", added.join("\n"), added.len())
     }
@@ -149,7 +110,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
 
 fn strip_ours(root: &mut Value) -> String {
     let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
-        return "no changes".into();
+        return NO_CHANGES.into();
     };
     let mut removed = 0usize;
     for (event, entries) in hooks.iter_mut() {
@@ -176,7 +137,7 @@ fn strip_ours(root: &mut Value) -> String {
     }
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
     if removed == 0 {
-        "no changes".into()
+        NO_CHANGES.into()
     } else {
         format!("{removed} removed")
     }
@@ -184,75 +145,24 @@ fn strip_ours(root: &mut Value) -> String {
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    register_stdio_mcp(&cfg.doctor.claude_json, cfg)
-}
-
-/// Write `mcpServers.rtok` stdio entry at `path` (Claude `~/.claude.json` or Cursor `mcp.json`).
-pub(crate) fn register_stdio_mcp(path: &Path, cfg: &Config) -> Result<String> {
-    let mut root = read_settings(path)?;
-    if !root.is_object() {
-        root = json!({});
-    }
-    let entry = json!({"type": "stdio", "command": "rtok", "args": ["mcp"]});
-    let servers = root
-        .as_object_mut()
-        .unwrap()
-        .entry("mcpServers")
-        .or_insert_with(|| json!({}));
-    if !servers.is_object() {
-        *servers = json!({});
-    }
-    if servers.get("rtok") == Some(&entry) {
-        return Ok("no changes".into());
-    }
-    servers["rtok"] = entry;
-    if !cfg.setup.dry_run {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
-    Ok("mcpServers.rtok: rtok mcp".into())
+    rtok_agent_sdk::register_mcp(
+        &apply(cfg),
+        &cfg.doctor.claude_json,
+        "rtok",
+        "rtok",
+        &["mcp"],
+    )
 }
 
 /// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agent remove claude`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    unregister_stdio_mcp(&cfg.doctor.claude_json, cfg)
-}
-
-/// Drop the `rtok` entry from an `mcpServers` map. Foreign servers are left alone,
-/// and a map that ends up empty goes with it so the file reads as it did before.
-pub(crate) fn unregister_stdio_mcp(path: &Path, cfg: &Config) -> Result<String> {
-    if !path.exists() {
-        return Ok("no changes".into());
-    }
-    let mut root = read_settings(path)?;
-    let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
-        return Ok("no changes".into());
-    };
-    if servers.remove("rtok").is_none() {
-        return Ok("no changes".into());
-    }
-    if servers.is_empty() {
-        root.as_object_mut().unwrap().remove("mcpServers");
-    }
-    if !cfg.setup.dry_run {
-        if cfg.setup.backup {
-            backup(path)?;
-        }
-        fs::write(path, serde_json::to_string_pretty(&root)? + "\n")
-            .with_context(|| path.display().to_string())?;
-    }
-    Ok("- mcpServers.rtok".into())
+    rtok_agent_sdk::unregister_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn cfg(path: std::path::PathBuf, dry: bool) -> Config {
         let mut c = Config::default();
@@ -292,7 +202,7 @@ mod tests {
         assert!(!path.exists());
         c.setup.dry_run = false;
         assert!(register_mcp(&c).unwrap().contains("rtok mcp"));
-        assert_eq!(register_mcp(&c).unwrap(), "no changes");
+        assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"mcp\""), "{raw}");
         let _ = fs::remove_dir_all(dir);
@@ -304,7 +214,7 @@ mod tests {
         fs::write(&path, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#).unwrap();
         let first = run(&cfg(path.clone(), false), false).unwrap();
         assert!(first.contains("7 additions"), "{first}");
-        assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), "no changes");
+        assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), NO_CHANGES);
         let rm = run(&cfg(path.clone(), false), true).unwrap();
         assert!(rm.contains("removed"), "{rm}");
         let raw = fs::read_to_string(&path).unwrap();

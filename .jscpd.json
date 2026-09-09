@@ -1,5 +1,5 @@
 {
-  "pattern": "{src,crates/rtok-plugin-sdk/src}/**/*.rs",
+  "pattern": "{src,crates/rtok-plugin-sdk/src,crates/rtok-agent-sdk/src}/**/*.rs",
   "format": ["rust"],
   "minTokens": 50,
   "threshold": 2,

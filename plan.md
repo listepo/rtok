@@ -188,7 +188,7 @@ Charts are one decision too: pure-Rust SVG (`plotters`) embeds into all three fo
 JS charting library would make the HTML the only real format and the other two second-class.
 Check: `docs/report.md` names the choice, the two rejected options with the reason, and the
 measured size cost of the winner; a `dist` build stays inside the P17 budget.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3-Flash (zai-coding-plan)
 Complexity: 2/5
 
 **T22.1 `--format md`** · T22.0 · `src/report/mod.rs`, `src/report/markdown.rs`, `src/cli.rs`
@@ -314,7 +314,7 @@ routes through the same funnel instead of inserting on its own; there is one wri
 Fail open stays fail open: an unwritable log directory never turns into an error a plugin sees.
 Check: a plugin call leaves one line in the file and one row in the table; with `to_db = false`,
 one line and no row; a read-only log directory changes nothing about the call's result.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3-Flash (zai-coding-plan)
 Complexity: 2/5
 
 T24.2 (`rtok logs` and `rtok logs export`) is done 2026-09-09 — see `done.md` P24.
@@ -435,7 +435,7 @@ has today, Overview and Plugins; Calls, Doctor and Logs join the model with T15.
 Do: enumerate the pages each surface exposes and assert the sets are equal, so a page added to one
 fails the build until it exists on the other. This is D23's gate, and it replaces the prose promise.
 Check: adding a page to `rtok web` alone fails `just check` with the page's name in the message.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3-Flash (zai-coding-plan)
 Complexity: 1/5
 
 **T15.11 the model covers every reading command** · T15.0 · `src/web/model.rs`, `src/measure/stats.rs`, `src/cli.rs`

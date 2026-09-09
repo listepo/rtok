@@ -3,9 +3,9 @@ title: rtok
 layout: hextra-home
 ---
 
-{{< hextra/hero-badge link="https://github.com/listepo/rtok" >}}
+{{< hextra/hero-badge link="https://github.com/listepo/rtok/releases" >}}
   <div class="hx:w-2 hx:h-2 hx:rounded-full hx:bg-primary-400"></div>
-  <span>P0 scaffold done — measurement first</span>
+  <span>v0.0.1 — measurement first</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
 
@@ -56,5 +56,10 @@ layout: hextra-home
     title="Write your own plugin"
     subtitle="Public `Plugin` trait, in-tree modules behind Cargo features. No daemon, no subprocesses, no WASM."
     link="docs/reference/plugin-authoring"
+  >}}
+  {{< hextra/feature-card
+    title="Honest about the field"
+    subtitle="Eleven MCP tools for ~143 description tokens, against ~8 600 for the stack it replaces — plus what rtok is still behind on."
+    link="docs/reference/comparison"
   >}}
 {{< /hextra/feature-grid >}}

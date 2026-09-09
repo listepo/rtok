@@ -9,9 +9,10 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use rtok_agent_sdk::NO_CHANGES;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 
-use super::claude::backup;
+use super::apply;
 use crate::config::Config;
 
 const NAME: &str = "rtok";
@@ -52,17 +53,7 @@ fn load(path: &Path) -> Result<DocumentMut> {
 }
 
 fn persist(cfg: &Config, path: &Path, doc: &DocumentMut, report: &str) -> Result<()> {
-    if cfg.setup.dry_run || report == "no changes" {
-        return Ok(());
-    }
-    if cfg.setup.backup {
-        backup(path)?;
-    }
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).ok();
-    }
-    fs::write(path, doc.to_string()).with_context(|| path.display().to_string())?;
-    Ok(())
+    rtok_agent_sdk::write(&apply(cfg), path, &doc.to_string(), report)
 }
 
 fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<String> {
@@ -79,7 +70,7 @@ fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<St
         .and_then(Item::as_table)
         .is_some_and(is_ours)
     {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     }
     let mut entry = Table::new();
     entry["command"] = value(NAME);
@@ -99,7 +90,7 @@ fn strip_ours(doc: &mut DocumentMut) -> String {
     if removed {
         "- [mcp_servers.rtok]".into()
     } else {
-        "no changes".into()
+        NO_CHANGES.into()
     }
 }
 
@@ -129,7 +120,7 @@ fn insert_proxy(doc: &mut DocumentMut, url: &str) -> Result<String> {
                 && t.get("base_url").and_then(Item::as_str) == Some(url)
         });
     if old.as_deref() == Some(NAME) && ours {
-        return Ok("no changes".into());
+        return Ok(NO_CHANGES.into());
     }
     doc["model_provider"] = value(NAME);
     let tables = doc
@@ -165,7 +156,7 @@ fn strip_proxy(doc: &mut DocumentMut) -> String {
     if key || table {
         "- [model_providers.rtok]".into()
     } else {
-        "no changes".into()
+        NO_CHANGES.into()
     }
 }
 
@@ -209,7 +200,7 @@ mod tests {
         )
         .unwrap();
         assert!(run(&c, false).unwrap().starts_with("+ [mcp_servers.rtok]"));
-        assert_eq!(run(&c, false).unwrap(), "no changes");
+        assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.starts_with("# codex config\nmodel = \"o3\"\n"), "{raw}");
         assert!(
@@ -224,7 +215,7 @@ mod tests {
             Some("mcp")
         );
         assert_eq!(run(&c, true).unwrap(), "- [mcp_servers.rtok]");
-        assert_eq!(run(&c, true).unwrap(), "no changes");
+        assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
         assert!(!fs::read_to_string(&path).unwrap().contains("rtok"));
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -255,7 +246,7 @@ mod tests {
         fs::write(&path, "# keep me\nmodel = \"o3\"\n").unwrap();
         let first = register_proxy(&c, false).unwrap();
         assert!(first.contains("[model_providers.rtok]"), "{first}");
-        assert_eq!(register_proxy(&c, false).unwrap(), "no changes");
+        assert_eq!(register_proxy(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("model_provider = \"rtok\""), "{raw}");
         assert!(raw.contains("base_url"), "{raw}");
@@ -264,7 +255,7 @@ mod tests {
             register_proxy(&c, true).unwrap(),
             "- [model_providers.rtok]"
         );
-        assert_eq!(register_proxy(&c, true).unwrap(), "no changes");
+        assert_eq!(register_proxy(&c, true).unwrap(), NO_CHANGES);
         let gone = fs::read_to_string(&path).unwrap();
         assert!(!gone.contains("model_providers.rtok"), "{gone}");
         assert!(gone.contains("# keep me"), "{gone}");

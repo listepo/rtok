@@ -1,12 +1,10 @@
 //! `rtok agent setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
 
-use std::fs;
-use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
+use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
 use serde_json::{Value, json};
 
+use super::apply;
 use crate::config::Config;
 
 const LEGACY: &[&str] = &[
@@ -25,29 +23,24 @@ pub fn run(cfg: &Config) -> Result<String> {
     }
     let path = &cfg.setup.claude.settings_path;
     let mut root = read_json(path)?;
-    let mut diff = apply(&mut root);
+    let mut diff = rewrite(&mut root);
     let claude_json = &cfg.doctor.claude_json;
     if claude_json.exists() && claude_json != path {
         let mut mcp_root = read_json(claude_json)?;
         let mcp_diff = strip_mcp(&mut mcp_root);
         if !mcp_diff.is_empty() {
             diff.push_str(&format!("\n{mcp_diff}"));
-            if !cfg.setup.dry_run {
-                write_json(claude_json, &mcp_root, cfg.setup.backup)?;
-            }
+            write_json(&apply(cfg), claude_json, &mcp_root, &mcp_diff)?;
         }
     }
-    if !cfg.setup.dry_run {
-        write_json(path, &root, cfg.setup.backup)?;
-    }
     if diff.is_empty() {
-        Ok("no changes".into())
-    } else {
-        Ok(diff)
+        return Ok(NO_CHANGES.into());
     }
+    write_json(&apply(cfg), path, &root, &diff)?;
+    Ok(diff)
 }
 
-fn apply(root: &mut Value) -> String {
+fn rewrite(root: &mut Value) -> String {
     let mut lines = Vec::new();
     lines.extend(strip_hooks(root));
     if let Some(line) = retarget_proxy(root) {
@@ -142,35 +135,6 @@ fn count_rtok(root: &Value) -> usize {
         .count()
 }
 
-fn read_json(path: &Path) -> Result<Value> {
-    if !path.exists() {
-        return Ok(json!({}));
-    }
-    let raw = fs::read_to_string(path).with_context(|| path.display().to_string())?;
-    if raw.trim().is_empty() {
-        return Ok(json!({}));
-    }
-    serde_json::from_str(&raw).with_context(|| path.display().to_string())
-}
-
-fn write_json(path: &Path, root: &Value, do_backup: bool) -> Result<()> {
-    if do_backup && path.exists() {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        let bak = path.with_file_name(format!("{name}.bak-{ts}"));
-        fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
-    }
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).ok();
-    }
-    fs::write(path, serde_json::to_string_pretty(root)? + "\n")
-        .with_context(|| path.display().to_string())?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,7 +182,7 @@ mod tests {
     #[test]
     fn dry_run_keeps_eight_rtok_and_non_token_hooks() {
         let mut root = today();
-        let report = apply(&mut root);
+        let report = rewrite(&mut root);
         assert!(report.contains("remaining rtok hooks: 8"), "{report}");
         assert_eq!(count_rtok(&root), 8);
         let raw = serde_json::to_string(&root).unwrap();

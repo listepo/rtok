@@ -1,4 +1,8 @@
 //! Host installers (`rtok agent setup <host>`).
+//!
+//! Everything the five hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
+//! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28). What stays here is
+//! per-host: which file, which shape, which keys.
 
 pub mod claude;
 pub mod codex;
@@ -26,28 +30,22 @@ pub fn host_files(cfg: &crate::config::Config, host: &str) -> Vec<std::path::Pat
     }
 }
 
-/// D21 (6): the host plugin is offered, never forced. `--yes` accepts without asking; on a
-/// terminal we ask, and dialoguer owns that prompt — it restores the terminal afterwards and
-/// reads Ctrl-C and EOF as a no. Anywhere without a terminal — CI, a pipe, a host running setup
-/// for the user — an unanswered offer is a no, so `agent setup` stays non-interactive by default.
-/// `--dry-run` never reaches here: it describes the offer and returns before anything is asked.
-pub(crate) fn accepted(cfg: &crate::config::Config, question: &str) -> bool {
-    use std::io::IsTerminal;
-    if cfg.setup.yes {
-        return true;
+/// The `[setup]` flags an installer acts on, as the SDK spells them.
+pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
+    rtok_agent_sdk::Apply {
+        dry_run: cfg.setup.dry_run,
+        backup: cfg.setup.backup,
+        yes: cfg.setup.yes,
     }
-    if !std::io::stdin().is_terminal() {
-        return false;
-    }
-    dialoguer::Confirm::new()
-        .with_prompt(question)
-        .default(true)
-        .interact()
-        .unwrap_or(false)
 }
 
 pub(crate) fn openai_proxy_url(cfg: &crate::config::Config) -> String {
     format!("http://{}:{}/v1", cfg.proxy.bind, cfg.proxy.port)
+}
+
+/// The tree this repo ships a host plugin from (D21 (6)).
+pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
 }
 
 #[cfg(test)]
@@ -55,19 +53,13 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
-    /// The test harness has no terminal, which is exactly the CI / piped / host-driven case:
-    /// the offer must decline itself rather than block waiting for an answer nobody can give.
     #[test]
-    fn without_a_terminal_only_yes_accepts() {
+    fn apply_carries_the_setup_flags() {
         let mut cfg = Config::default();
-        assert!(
-            !accepted(&cfg, "install?"),
-            "a headless run must not accept"
-        );
+        cfg.setup.dry_run = true;
         cfg.setup.yes = true;
-        assert!(
-            accepted(&cfg, "install?"),
-            "--yes must accept without asking"
-        );
+        cfg.setup.backup = false;
+        let a = apply(&cfg);
+        assert!(a.dry_run && a.yes && !a.backup);
     }
 }

@@ -2,7 +2,7 @@
 # plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
 # toolchain and must not join `cargo test` here.
 [workspace]
-members = ["crates/rtok-plugin-sdk"]
+members = ["crates/rtok-agent-sdk", "crates/rtok-plugin-sdk"]
 exclude = ["crates/rtok-webui"]
 
 [package]
@@ -65,6 +65,7 @@ print_stdout = "allow"
 [dependencies]
 anyhow = "1.0.104"
 rtok-plugin-sdk = { version = "0.0.1", path = "crates/rtok-plugin-sdk" } # the plugin contract (D25)
+rtok-agent-sdk = { version = "0.0.1", path = "crates/rtok-agent-sdk" }   # the agent-host contract (D28)
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
