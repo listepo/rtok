@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 done.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -241,15 +241,8 @@ The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint 
 worth doing: `rtok tui` and `rtok web` are one operator model with two renderings (D23), so the
 first TUI task is the shared model, not a ratatui scaffold with its own queries.
 
-**T15.0 one operator model behind both surfaces** · T19.1 · `src/web/model.rs` (new), `src/web/mod.rs`
-Do: lift the values `rtok web` serves — Overview, Plugins, Calls, Doctor, Logs — out of the axum
-handlers into one module that returns them as plain data, and have the handlers render that. No
-new query, no second `Store` reader. `Plugin::dashboard_page` keeps its name: it is the page a
-plugin contributes to *both* surfaces, and renaming it would break the published plugin API.
-Check: `rtok web` serves byte-identical JSON to what P19 pinned; the model module is the only
-place that touches `Store` / `stats` / `doctor` for either surface.
-Status: open · Model: -
-Complexity: 2/5
+T15.0 (the shared model) is done 2026-09-09 — see `done.md` P15. It serves the two pages `rtok web`
+has today, Overview and Plugins; Calls, Doctor and Logs join the model with T15.5–T15.7.
 
 **T15.10 the two surfaces cannot drift** · T15.0 · `tests/surface_parity.rs` (new)
 Do: enumerate the pages each surface exposes and assert the sets are equal, so a page added to one
@@ -319,6 +312,7 @@ All code-closable gates passed (P8d, P19); the table is retired 2026-09-09 — n
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-09-09 | Every task carries `Complexity: n/5` (1 trivial … 5 hard); `AGENTS.md` Workflow makes it a claim precondition. `roadmap.md` §TUI got a Complexity column for T15.1–T15.9, the last open tasks without a rating. | User request: pick work by difficulty. |
 | 2026-09-08 | Gate P8c (T8.14): `graph-lbug` stays opt-in, never default. Clause (4) won (77×); (2) and (3) fail on the `graph-lbug` binary. | T8.14 release bench, this machine; numbers in `research.md` §2. |
 | 2026-09-01 | Estimator rates are `[estimator] code/prose/json/cjk` in config, not `core.estimator_chars_per_token`. | T0.5 needs four classes; one key per class is what `--calibrate` (T1.5) will rewrite. |
 | 2026-09-01 | Crate is a library plus a thin `src/main.rs`. | Tests, `examples/hello_plugin.rs` and every surface share one API; no code duplication in the bin. |

@@ -4,6 +4,19 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P15 — `rtok tui` (D17, D23) · T15.0 done 2026-09-09
+
+Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.0 one operator model behind both surfaces** · T19.1 · `src/web/model.rs` (new), `src/web/mod.rs`
+Do: lift the values `rtok web` serves — Overview, Plugins, Calls, Doctor, Logs — out of the axum handlers into one module that returns them as plain data, and have the handlers render that. No new query, no second `Store` reader. `Plugin::dashboard_page` keeps its name: it is the page a plugin contributes to *both* surfaces, and renaming it would break the published plugin API.
+Check: `rtok web` serves byte-identical JSON to what P19 pinned; the model module is the only place that touches `Store` / `stats` / `doctor` for either surface.
+Complexity: 2/5
+Status: done 2026-09-09
+Model: Claude Opus 5 (anthropic/claude-opus-5)
+Check result: `src/web/model.rs` owns `Snapshot` / `Stats` / `PluginPage` as typed plain data plus `Model::{overview, plugins}`; `src/web/mod.rs` no longer names `Store`, `Registry` or `DashboardPage` (`grep -E 'Store|stats|doctor' src/web/mod.rs` → 0 hits) and its ws frame is `serde_json::to_value(model::snapshot(cfg)).to_string()`. Byte-identity holds because both the old `json!` tree and the new structs land in a `serde_json::Value` (BTreeMap, no `preserve_order`), so key order and values are unchanged — pinned by the new `json_shape_is_what_p19_pinned` test beside the moved P19 test. `cargo test --lib web::` 2 passed; `just check` green (`tests/web.rs` 1 passed).
+Deviation: the page set stayed {Overview, Plugins} — what `rtok web` actually serves today. Calls, Doctor and Logs are named in D23 but exist on neither surface, so lifting them would have been new pages, not the extraction this task asks for; they arrive with T15.5–T15.7 and are then covered by the T15.10 parity test. No `pages()` enumeration was added for the same reason — T15.10 owns it.
+
 ## P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17)
 
 Goal: the index follows the working tree without a tool call paying for the walk. Plan: `plan.md` P8d.
