@@ -25,14 +25,12 @@ GitHub Release with the shell installer.
 **Or merge the release PR** (T18.5). On every push to `main`, `.github/workflows/release-plz.yml`
 runs [release-plz](https://release-plz.dev) with [`release-plz.toml`](../release-plz.toml): it keeps
 one pull request titled `release: v<version>` open with the next version in `Cargo.toml` and the
-`CHANGELOG.md` section for it (same `cliff.toml` groups as `just changelog`). The version is patch
-unless a commit since the last tag is `feat` (minor) or breaking (major); a version that was never
-tagged — `0.0.1` today — is kept, not raised. Merging the PR (merge commit or squash, so the title
-is in the commit message) runs `tools/release.sh patch --no-bump`, which dispatches **Release** for
-the version now in `Cargo.toml` and refuses to raise it. release-plz creates neither the tag nor
-the GitHub Release: dist does, and the `v*` tag dist pushes is how release-plz learns the version
-is out (`publish = false`, so tags are its only record). Both entry points end in the same script
-and the same workflow, so they cannot disagree on the version.
+`CHANGELOG.md` section for it (same `cliff.toml` groups as `just changelog`). Merging the PR (merge
+commit or squash, so the title is in the commit message — GitHub appends ` (#123)` when squashing,
+which the trigger allows for) runs `tools/release.sh patch --no-bump`, which dispatches **Release**
+for the version now in `Cargo.toml` and refuses to raise it. release-plz creates neither the tag
+nor the GitHub Release: dist does both. Both entry points end in the same script and the same
+workflow, so they cannot disagree on the version.
 
 **The release pull request cannot raise the version, and will not after v0.0.1** (measured
 2026-09-09, release-plz 0.3.163). release-plz decides whether a version has shipped by comparing
@@ -41,8 +39,9 @@ the packaged crate against the copy in the registry. With `publish = false` ther
 version is 0.0.1` every time, whatever is in the history. Reproduced in a clean clone with the
 `v0.0.1` tag fetched and `git describe` finding it, and it does not move with
 `git_tag_enable = true`, with an explicit `git_tag_name = "v{{ version }}"` (ketch's setting), or
-with a conventional `fix:` commit after the tag. `../ketch` is configured the same way and will
-meet this at its second release; it has only released `v0.1.0` so far.
+with a conventional `fix:` commit after the tag. `../ketch` is configured the same way — its own
+config comment says it ships a tarball, not a crate — so it should meet this at its second release.
+Untested there: it is still on `v0.1.0`.
 
 Nothing mis-releases as a result: merging a stale release pull request runs
 `tools/release.sh patch --no-bump`, which sees the version is already tagged and exits 0 without

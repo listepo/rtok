@@ -293,8 +293,12 @@ fn stop_hook_spawns_the_flush_and_stays_under_10ms() {
         "Stop",
         r#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#,
     );
-    // The child posts on its own; the hook did not wait for it.
-    for _ in 0..40 {
+    // The child posts on its own; the hook did not wait for it. The deadline has to clear
+    // `flush_secs` above with room to spare — at 40 × 50 ms it was 2 s against a 2 s flush
+    // interval, so the post landed on the boundary and the test failed on a loaded runner
+    // (ci run 34342891823). 400 matches the wait in `tests/proxy.rs`; a green run still breaks
+    // out on the first poll that sees the call.
+    for _ in 0..400 {
         if traces.calls() > 0 {
             break;
         }
