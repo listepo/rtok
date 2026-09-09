@@ -176,7 +176,7 @@ stayed empty, so nothing was published. Fix: a `gate` job runs
 its output; checked locally against a squash message, a merge-commit message (both match) and
 the T18.5 commit (no match); `actionlint` clean.
 
-**T18.6 the release runs only on a green test suite** · T18.2, T18.5 · `.github/workflows/verify.yml`, `.github/workflows/release-plz.yml`, `.github/workflows/bump.yml`, `dist-workspace.toml`, `docs/release.md`, `tests/otel.rs`
+**T18.6 the release runs only on a green test suite** · T18.2, T18.5 · `.github/workflows/verify.yml`, `.github/workflows/release-plz.yml`, `.github/workflows/bump.yml`, `dist-workspace.toml`, `docs/release.md`, `tests/otel.rs`, `Cargo.toml`
 Do: after v0.0.1 shipped, close the two holes the first real release exposed. (1) Nothing tested the code a release was cut from: `ci.yml` gates pull requests, and both release entry points dispatch `release.yml` without consulting it. Add a reusable `verify.yml` — the `ci.yml` matrix and recipes — and make the dispatch in `bump.yml` and in release-plz's `release` job depend on it. (2) `release-plz.yml` fell back to `GITHUB_TOKEN` when `RELEASE_PLZ_TOKEN` was absent, which opens a release pull request that starts no workflows: an empty checks list, not a red one. Fail the job with the reason instead. Modelled on `../ketch`, which runs the same gate inside its release and refuses to run without the token.
 Check: the gate is not a dist `plan-jobs` entry — prove why with the generated workflow, not from memory; `actionlint` clean on all three workflows; `dist plan` still parses `dist-workspace.toml` and `release.yml` is byte-identical to the committed one; `just check` green.
 Status: done 2026-09-09
@@ -234,6 +234,18 @@ consecutive local runs of that test pass, and two of them took 4.72 s and 6.39 s
 old 2 s deadline, so the budget was the cause and not the runner. ci is green on the fix.
 Not proven here: that a red `verify` actually blocks the dispatch. It needs a release run with a
 deliberately broken tree, and the only way to stage one is to publish from `main`.
+Follow-up, same day, by request: every trace of the Homebrew release is commented out rather than
+left half-described. `dist-workspace.toml` keeps `installers = ["shell"]` and carries the three
+lines that would turn the formula on (`installers = ["shell", "homebrew"]`, `tap`, `publish-jobs`)
+inside a delimited comment block saying it is off to be fixed later and blocked on
+`HOMEBREW_TAP_TOKEN`; `docs/release.md` replaces the turn-on section with a plain statement that
+`brew install rtok` is not a thing, followed by an HTML comment holding the three-step procedure;
+`Cargo.toml` keeps `repository` and `homepage` — dist reads both when it builds a formula — with a
+comment saying so. Checked: `dist plan` announces v0.0.1 with only the shell installer, updater and
+sha256 artifacts and no homebrew entry, `just dist-generate` leaves `release.yml` byte-identical
+(`git diff --stat` empty), and `just check` green. `README.md` line 23 and the `CHANGELOG.md` and
+`done.md` history were left alone: they record the ketch install path and past events, and neither
+offers a brew instruction.
 
 ## P17 — build size · done 2026-09-07 (T17.1–T17.2, Gate P17 passed)
 
