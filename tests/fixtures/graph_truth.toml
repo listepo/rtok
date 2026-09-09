@@ -9,6 +9,12 @@
 # `refs` is a must-appear subset, so it stays valid as the repo changes. No line numbers, for
 # the same reason. Names that collide with std or third-party methods (`metadata`, `line`,
 # `merge`, `extract`) are deliberately excluded: a hit there would not prove anything.
+#
+# T8.19 repair (2026-09-09), recorded here rather than done quietly: T23.5 added
+# `MemoryHost` (`crates/rtok-plugin-sdk/src/testing.rs`), which implements every capability
+# trait, so six fn names below gained a definition the 2026-09-04 scan could not have seen --
+# that, not an index regression, was the precision 0.864 failure. T26.1 removed both
+# `str_field` call sites, so that symbol's `refs` is now empty.
 
 [[symbol]]
 name = "Manifest"
@@ -82,37 +88,42 @@ refs = ["src/proxy/mod.rs"]
 name = "mark_symbols_stale"
 kind = "fn"
 # T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs; T23.3 added the
-# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl.
-defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs"]
+# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl; T23.5's
+# `MemoryHost` implements the same trait for tests (T8.19 repair).
+defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]
 name = "symbol_defs"
 kind = "fn"
 # T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs; T23.3 added the
-# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl.
-defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs"]
+# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl; T23.5's
+# `MemoryHost` implements the same trait for tests (T8.19 repair).
+defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]
 name = "insert_note"
 kind = "fn"
-# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time.
-defs = ["src/store/mod.rs", "src/plugin.rs"]
+# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
+# `MemoryHost` a third (T8.19 repair).
+defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs", "src/plugins/memory/mod.rs"]
 
 [[symbol]]
 name = "put_read_cache"
 kind = "fn"
-# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time.
-defs = ["src/store/mod.rs", "src/plugin.rs"]
+# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
+# `MemoryHost` a third (T8.19 repair).
+defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
 
 [[symbol]]
 name = "get_read_cache"
 kind = "fn"
-# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time.
-defs = ["src/store/mod.rs", "src/plugin.rs"]
+# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
+# `MemoryHost` a third (T8.19 repair).
+defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/guard/mod.rs", "src/plugins/read/cache.rs"]
 
 [[symbol]]
@@ -142,8 +153,9 @@ refs = ["src/hooks/mod.rs", "src/plugins/archive/mod.rs"]
 [[symbol]]
 name = "put_archive_decision"
 kind = "fn"
-# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time.
-defs = ["src/store/mod.rs", "src/plugin.rs"]
+# T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
+# `MemoryHost` a third (T8.19 repair).
+defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/archive/mod.rs", "tests/proxy.rs"]
 
 [[symbol]]
@@ -168,7 +180,9 @@ refs = ["src/proxy/anthropic.rs", "src/proxy/openai_chat.rs", "src/proxy/openai_
 name = "str_field"
 kind = "fn"
 defs = ["src/proxy/wire.rs"]
-refs = ["src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
+# T26.1 removed both call sites (T8.19 repair): a must-appear list may not name a site the
+# tree no longer has.
+refs = []
 
 [[symbol]]
 name = "read_settings"

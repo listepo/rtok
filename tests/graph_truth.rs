@@ -49,8 +49,9 @@ fn repo() -> PathBuf {
 
 /// Definitions must clear the P8b bar of 0.9 and do, at 1.0. References do not: the Rust tags
 /// query sees no type positions, nothing inside a macro body, and no path-qualified call, which
-/// is 74 of the 144 labelled sites. The floor below is a regression guard on the measured 0.351,
-/// not a target; `src/plugins/graph/PLAN.md` names the three constructs under "Known misses".
+/// is 74 of the 156 labelled sites. The floor below is a regression guard on the measured 0.339
+/// (0.351 at T8.8; repo drift, not index drift), not a target; `src/plugins/graph/PLAN.md`
+/// names the three constructs under "Known misses".
 #[test]
 fn labelled_symbols_are_found() {
     let dir = std::env::temp_dir().join(format!("rtok-truth-{}", std::process::id()));
@@ -68,7 +69,9 @@ fn labelled_symbols_are_found() {
     let (mut rwant, mut rgot) = (0usize, 0usize);
     let (mut def_returned, mut def_right) = (0usize, 0usize);
     let mut misses: Vec<String> = Vec::new();
-    for t in truth() {
+    let mut false_positives: Vec<(&Truth, Vec<String>)> = Vec::new();
+    let truth = truth();
+    for t in &truth {
         let defs: HashSet<String> = cx
             .store
             .symbol_defs(&key, &t.name)
@@ -85,6 +88,14 @@ fn labelled_symbols_are_found() {
             .collect();
         def_returned += defs.len();
         def_right += defs.iter().filter(|p| t.defs.contains(p)).count();
+        let fp: Vec<String> = defs
+            .iter()
+            .filter(|p| !t.defs.contains(p))
+            .cloned()
+            .collect();
+        if !fp.is_empty() {
+            false_positives.push((t, fp));
+        }
         for d in &t.defs {
             dwant += 1;
             if defs.contains(d) {
@@ -108,10 +119,16 @@ fn labelled_symbols_are_found() {
     let recall = got as f64 / want as f64;
     let precision = def_right as f64 / def_returned.max(1) as f64;
     println!(
-        "graph truth: {got}/{want} sites, recall {recall:.3}\n  definitions {dgot}/{dwant} recall {def_recall:.3} precision {precision:.3}\n  references {rgot}/{rwant} recall {ref_recall:.3}"
+        "graph_truth: precision {precision:.3} recall {recall:.3} over {} labels\n  sites {got}/{want}\n  definitions {dgot}/{dwant} recall {def_recall:.3} precision {precision:.3} ({def_right}/{def_returned})\n  references {rgot}/{rwant} recall {ref_recall:.3}",
+        truth.len()
     );
     for m in &misses {
         println!("  miss: {m}");
+    }
+    for (t, defs) in false_positives {
+        for p in defs {
+            println!("  def {} in {p} is not a labelled definition", t.name);
+        }
     }
     let _ = std::fs::remove_dir_all(&dir);
     assert!(
