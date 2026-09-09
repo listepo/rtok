@@ -4,6 +4,39 @@ Tasks move here from `plan.md` when their Check passed, `make check` is green, a
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.
 
+## P27 — `rtok-agent-sdk` (D28) · done 2026-09-09
+
+Goal: one contract every agent host installs through; a sixth host is a new `src/setup/<host>.rs`
+and nothing else. Plan: `plan.md` P27, decision D28.
+
+**T27.0 the crate exists and the five hosts move onto it** · T26.0 · `crates/rtok-agent-sdk/*`, `Cargo.toml`, `src/setup/*.rs`, `src/proxy/cli.rs`, `src/cli.rs`, `.jscpd.json`
+Do: the crate carries `Apply` (the `[setup]` flags: `dry_run`, `backup`, `yes`), `NO_CHANGES` as
+both the report and the write gate, `backup`, `read_json` / `write_json` / `write`, `register_mcp`
+/ `unregister_mcp`, `accepted` (dialoguer moves with it), and `PluginLink` — the offer/link/unlink
+`plugins/cursor` and `plugins/pi` both spell today. Three dependencies, none of them C, the line
+T23.0 drew for the plugin SDK. Claude, Cursor, Codex, OpenCode, pi, `proxy::cli` and `migrate` all
+route through it; no report string changes, because the host integration tests assert them.
+Check: `cargo test --workspace` green with the `agent setup`/`agent remove` integration tests
+(`tests/cursor_plugin.rs`, `tests/pi_plugin.rs`, `tests/agent_remove.rs`) unmodified; `just dup`
+does not regress; `rtok agent setup <host> --dry-run` prints the same lines as before for all five.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent)
+Check result: green, verified in a detached worktree. The three integration test files are
+byte-identical (`git diff <base>..HEAD --stat -- tests/` empty) and pass (7/6/4). Dry-run strings:
+base binary and new binary built, `agent setup <host> --dry-run` run for all five hosts in a
+sandboxed HOME, normalized and diffed — byte-identical. `just dup` improved: 36 clones / 1.42 %
+vs 49 / 2.17 % at base. `cargo test --workspace` had one failure, the pre-existing `graph_truth`
+red that T8.19 (same round) then fixed; the full `just check` on main after all three landings is
+green. Gate P27 holds: no production code under `src/setup/` writes a host file, copies a backup
+or symlinks — only test-fixture `fs::*` remains.
+Deviations: the bulk of the work was authored by an earlier session and left uncommitted (snapshotted
+to main as `5975877` "T27.0 (wip)"); this round completed and verified it — restored the three report
+strings the WIP had let drift (pi's dry-run source paren, cursor's `+ plugin` trailing label, cursor's
+declined-offer/question paren) and pinned all three in the SDK's unit tests, dropped `dialoguer` from
+the root manifest (it moved with `accepted`), and fmt. One inherited behaviour change kept: `migrate`
+no longer rewrites/backs-up when its diff is empty (the SDK's `NO_CHANGES` write gate) — no report
+string changed and no test asserted the old churn. 16 files, the task's own list in plan.md.
+
 ## P25 — `rtok agent sessions` (D27) · T25.0 done 2026-09-09
 
 **T25.0 a session knows whose it is** · - · `migrations/0010.sql` (new), `src/plugin.rs`, `src/hooks/mod.rs`, `src/store/mod.rs`, `src/config/layers.rs`
@@ -369,9 +402,44 @@ cap, so the budget clause is applied as published arithmetic — dist 17.4 MB + 
 arithmetic (≈ 61.8 MB, ~3.5×) is what fails the gate, which is why the smaller candidate wins. The
 site row for the new docs page is in _content.gotmpl. Repo Cargo.toml/Cargo.lock untouched.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.10 done 2026-09-09
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.10, T15.11 done 2026-09-09
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.11 the model covers every reading command** · T15.0 · `src/web/model.rs`, `src/measure/stats.rs`, `src/cli.rs`
+Do: move the queries the reading commands own into the D23 model, one command at a time, and have
+the command render what the model returns. `stats` is the hard one and goes first: it counts
+transcript files while the model sums `usage` rows, so the two disagree about what a session is —
+D27 says one of them is the model and the other is a renderer. `doctor`, `plugins`, `config show`,
+`logs`, `demon status` follow; each is a page.
+Check: `grep -r 'Store::open' src/` outside `src/web/model.rs` finds only writing commands and the
+three surfaces; `rtok stats` output is unchanged for a fixture store.
+Complexity: 4/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent)
+Check result: green. stats, doctor, plugins, config show (+ `config get` and `set`'s value re-print,
+which share its query), logs (+ export) and demon status/list now ask `src/web/model.rs`
+(`stats_report` / `plugin_stats` / `cache_health`, `doctor::page -> Report`, the Plugins page via a
+shared `render::plugins_table`, `config_entries` over the layered figment, `log_lines`, `demon::rows`);
+no reading command opens the `Store` any more. The grep after the move hits only `plugin.rs`
+`Runtime::open` (the hook/graph-index/otel runtime), `plugins/checkpoint.rs` (PreCompact restore on
+the hook surface), `proxy/mod.rs` (the proxy surface) and store tests. Output-unchanged proof:
+`tests/stats_model.rs` pins `rtok stats` table/`--json`/`--plugin cmd`/`--cache` byte-for-byte on a
+fixture store (goldens recorded from the pre-move binary), and nine more command variants (doctor
+plain and `--instructions`, plugins, config show/`--sources`/get, logs, logs export, demon status /
+list / `status <svc>`) each diffed empty against the pre-move binary — only the inherent
+`current_exe` path in doctor's self-listed MCP server differs between two binaries. The ws
+`Snapshot` is unchanged, so T15.10's `surface_parity` still passes with `pages()` at
+[overview, plugins]. Full `just check` green on the combined tree (with T24.1 + T15.10).
+Deviations: the stats-vs-model definitional conflict is resolved structurally, not renumbered — the
+model owns both definitions, one per page (Stats page: sessions = transcript files; Overview:
+usage-row sums), with the store's authoritative session definition left to T25.1's Sessions page;
+forcing one number would have changed output the Check pins without proving the old number wrong
+(recorded in the `stats_report` doc comment and the commit body). 11 files, +663/−199 — the task
+itself spans six commands. `rtok otel status` still reads through `Runtime::open`; it is not in the
+task's command list, and T15.12's enumeration should decide it. graph_truth entries for
+`plugin_json` (this task) and `read_settings` (T27.0, same round) were removed in the same landing —
+annotated in the fixture header, per T8.19's rule that a must-appear list may not name nonexistent
+sites.
 
 **T15.10 the two surfaces cannot drift** · T15.0 · `tests/surface_parity.rs` (new)
 Do: enumerate the pages each surface exposes and assert the sets are equal, so a page added to one
@@ -397,7 +465,38 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `src/web/model.rs` owns `Snapshot` / `Stats` / `PluginPage` as typed plain data plus `Model::{overview, plugins}`; `src/web/mod.rs` no longer names `Store`, `Registry` or `DashboardPage` (`grep -E 'Store|stats|doctor' src/web/mod.rs` → 0 hits) and its ws frame is `serde_json::to_value(model::snapshot(cfg)).to_string()`. Byte-identity holds because both the old `json!` tree and the new structs land in a `serde_json::Value` (BTreeMap, no `preserve_order`), so key order and values are unchanged — pinned by the new `json_shape_is_what_p19_pinned` test beside the moved P19 test. `cargo test --lib web::` 2 passed; `just check` green (`tests/web.rs` 1 passed).
 Deviation: the page set stayed {Overview, Plugins} — what `rtok web` actually serves today. Calls, Doctor and Logs are named in D23 but exist on neither surface, so lifting them would have been new pages, not the extraction this task asks for; they arrive with T15.5–T15.7 and are then covered by the T15.10 parity test. No `pages()` enumeration was added for the same reason — T15.10 owns it.
 
-## P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.18)
+## P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.19)
+
+**T8.19 `graph_truth` is red and nobody noticed** · T8.14 · `tests/graph_truth.rs`, `src/plugins/graph/index.rs`
+Do: `cargo test --test graph_truth` fails — `definition precision 0.864: a name resolved to a file
+it is not defined in` — and it failed identically at `ddda5d0`, so it has been red for at least a
+day of committed work while `just check` was still being reported green. Find out which: the index
+regressed and the labelled truth is right, or the truth file lists references the tree no longer
+has. Fix whichever is wrong; if the labels are the stale half, say so in the Check result rather
+than editing them quietly.
+Check: `cargo test --test graph_truth` passes, and the run prints the precision and recall it
+passed at, so the next regression names a number instead of a threshold.
+Complexity: 3/5
+Status: done 2026-09-09 · Model: GLM-5.3 (subagent)
+Check result: green — the labels were the stale half, edited openly. Definition recall was already
+1.000 (38/38); precision 0.864 was 38/44 because all six extra def rows were genuine definitions
+(`mark_symbols_stale`, `symbol_defs`, `insert_note`, `put_read_cache`, `get_read_cache`,
+`put_archive_decision`) in `crates/rtok-plugin-sdk/src/testing.rs` — real `impl MemoryHost`
+capability methods added by T23.5 after the fixture's 2026-09-04 scan, which the fixture header's
+"`defs` is complete" claim had silently stopped being true of. The six gained their def files,
+annotated "(T8.19 repair)"; `str_field`'s `refs` emptied (T26.1 removed both call sites). The
+resolver-gap suspicion in the task text does not hold: every one of the 68 missed ref sites was
+grepped — all still exist except `str_field`'s two; the `Surface`/`PreToolDecision`/
+`measurement_count` misses are the documented query limits (type positions, macro bodies,
+path-qualified calls) already priced into the recall floor. The test now leads with
+`graph_truth: precision 1.000 recall 0.510 over 28 labels / sites 76/149 / definitions 42/42 /
+references 34/107 (0.318)` and prints each miss by name, so the next regression names numbers and
+files; doc-comment counts updated to the measured values. On the "nobody noticed" half: `just
+check` was *not* skipping the test — no `#[ignore]`, no feature gate — it ran red through ten
+commits; that is a process fact, recorded here, CI untouched. Final full `just check` green.
+Deviations: no resolver code changed — `src/plugins/graph/index.rs` is untouched; 2 files. The
+landing round's own tasks staled two further entries (`plugin_json` — T15.11; `read_settings` —
+T27.0); both removed with annotations in the fixture header, same rule.
 
 **T8.18 the watcher tests stop racing the filesystem** · T8.16 · `src/plugins/graph/watch.rs`
 Do: `watcher_reindexes_new_file_while_calls_read_nothing` and

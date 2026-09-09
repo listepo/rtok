@@ -136,21 +136,7 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8c — `graph` on LadybugDB — tasks done; Gate P8c: clause (4) won 2026-09-08, `graph-lbug` stays opt-in (see `done.md` P8c).
 
-### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.18), Gate P8d passed — see `done.md` P8d.
-
-**T8.19 `graph_truth` is red and nobody noticed** · T8.14 · `tests/graph_truth.rs`, `src/plugins/graph/index.rs`
-Do: `cargo test --test graph_truth` fails — `definition precision 0.864: a name resolved to a file
-it is not defined in` — and it failed identically at `ddda5d0`, so it has been red for at least a
-day of committed work while `just check` was still being reported green. Find out which: the index
-regressed and the labelled truth is right, or the truth file lists references the tree no longer
-has (T26.1 removed two `str_field` uses, and `Surface`, `PreToolDecision` and `measurement_count`
-miss in a dozen files each, which reads like a resolver gap, not a stale label). Fix whichever is
-wrong; if the labels are the stale half, say so in the Check result rather than editing them
-quietly.
-Check: `cargo test --test graph_truth` passes, and the run prints the precision and recall it
-passed at, so the next regression names a number instead of a threshold.
-Status: in progress · Model: GLM-5.3 (subagent)
-Complexity: 3/5
+### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.19), Gate P8d passed — see `done.md` P8d.
 
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
 
@@ -383,18 +369,10 @@ will multiply on the next host. A second workspace crate, `crates/rtok-agent-sdk
 contract; `src/setup/<host>.rs` keeps only what is host-specific — which file, which shape, which
 keys.
 
-**T27.0 the crate exists and the five hosts move onto it** · T26.0 · `crates/rtok-agent-sdk/*`, `Cargo.toml`, `src/setup/*.rs`, `src/proxy/cli.rs`, `src/cli.rs`, `.jscpd.json`
-Do: the crate carries `Apply` (the `[setup]` flags: `dry_run`, `backup`, `yes`), `NO_CHANGES` as
-both the report and the write gate, `backup`, `read_json` / `write_json` / `write`, `register_mcp`
-/ `unregister_mcp`, `accepted` (dialoguer moves with it), and `PluginLink` — the offer/link/unlink
-`plugins/cursor` and `plugins/pi` both spell today. Three dependencies, none of them C, the line
-T23.0 drew for the plugin SDK. Claude, Cursor, Codex, OpenCode, pi, `proxy::cli` and `migrate` all
-route through it; no report string changes, because the host integration tests assert them.
-Check: `cargo test --workspace` green with the `agent setup`/`agent remove` integration tests
-(`tests/cursor_plugin.rs`, `tests/pi_plugin.rs`, `tests/agent_remove.rs`) unmodified; `just dup`
-does not regress; `rtok agent setup <host> --dry-run` prints the same lines as before for all five.
-Status: in progress · Model: GLM-5.3 (subagent)
-Complexity: 3/5
+T27.0 (the crate exists and the five hosts move onto it) is done 2026-09-09 — see `done.md` P27.
+**P27 is complete**: the five installers, `proxy::cli` and `migrate` all route through
+`crates/rtok-agent-sdk`, and Gate P27 holds — a sixth host is a new `src/setup/<host>.rs` and
+nothing else.
 
 Gate P27 (review): no module under `src/setup/` writes a host file, copies a backup, or symlinks a
 plugin directory itself — every one of those goes through `rtok-agent-sdk`. A sixth host is a new
@@ -406,20 +384,11 @@ The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint 
 worth doing: `rtok tui` and `rtok web` are one operator model with two renderings (D23), so the
 first TUI task is the shared model, not a ratatui scaffold with its own queries.
 
-T15.0 (the shared model) and T15.10 (the parity gate) are done 2026-09-09 — see `done.md` P15. It
-serves the two pages `rtok web` has today, Overview and Plugins; Calls, Doctor and Logs join the
-model with T15.5–T15.7.
-
-**T15.11 the model covers every reading command** · T15.0 · `src/web/model.rs`, `src/measure/stats.rs`, `src/cli.rs`
-Do: move the queries the reading commands own into the D23 model, one command at a time, and have
-the command render what the model returns. `stats` is the hard one and goes first: it counts
-transcript files while the model sums `usage` rows, so the two disagree about what a session is —
-D27 says one of them is the model and the other is a renderer. `doctor`, `plugins`, `config show`,
-`logs`, `demon status` follow; each is a page.
-Check: `grep -r 'Store::open' src/` outside `src/web/model.rs` finds only writing commands and the
-three surfaces; `rtok stats` output is unchanged for a fixture store.
-Status: in progress · Model: GLM-5.3 (subagent)
-Complexity: 4/5
+T15.0 (the shared model), T15.10 (the parity gate) and T15.11 (the model covers every reading
+command) are done 2026-09-09 — see `done.md` P15. The model serves the two Snapshot pages `rtok
+web` has today, Overview and Plugins; every reading command (stats, doctor, plugins, config show,
+logs, demon status/list) now asks the model and renders what it returns. Calls, Doctor and Logs
+become surfaced pages with T15.5–T15.7.
 
 **T15.12 the parity test enumerates commands, not pages** · T15.11, T15.10 · `tests/surface_parity.rs`
 Do: extend T15.10's test from "the two surfaces expose the same pages" to "every reading command has
@@ -493,7 +462,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**139 done · 26 open · 1 superseded — 166 tasks.**
+**142 done · 23 open · 1 superseded — 166 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -558,7 +527,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T8.16` | P8d graph freshness | watcher in `rtok mcp` (`notify`) | ✅ 2026-09-08 | 3/5 |
 | `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
 | `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | ✅ 2026-09-09 | 2/5 |
-| `T8.19` | P8d graph freshness | `graph_truth` is red and nobody noticed | open | 3/5 |
+| `T8.19` | P8d graph freshness | `graph_truth` is red and nobody noticed | ✅ 2026-09-09 | 3/5 |
 | `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
 | `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
 | `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |
@@ -612,7 +581,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | open | 2/5 |
 | `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
 | `T15.10` | P15 tui | the two surfaces cannot drift | ✅ 2026-09-09 | 1/5 |
-| `T15.11` | P15 tui | the model covers every reading command | open | 4/5 |
+| `T15.11` | P15 tui | the model covers every reading command | ✅ 2026-09-09 | 4/5 |
 | `T15.12` | P15 tui | the parity test enumerates commands, not pages | open | 2/5 |
 | `T16.1` | P16 otel | `[otel]` config | ✅ 2026-09-04 | — |
 | `T16.2` | P16 otel | export watermark and row readers | ✅ 2026-09-04 | — |
@@ -662,7 +631,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T25.3` | P25 agents | `rtok agent sessions watch` | open | 2/5 |
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
-| `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | open | 3/5 |
+| `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -734,3 +703,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | T8.18 added to P8d: the two watcher tests wait a fixed second for FSEvents and have flaked three times in one day, each time passing on a re-run. The fix is a poll to a generous cap instead of a deadline. | A gate that fails at random teaches everyone to re-run rather than to read it, which is the same as not having it — and P18's release runs on a green suite (T18.6). |
 | 2026-09-09 | Five tasks landed from one round of parallel agents — T24.2 (`rtok logs`, `logs export`), T24.4 (the demon pipes its children through the sink), T26.1 (the proxy's three real clones retired, `threshold` 3 → 2), T25.0 (a session records its host, project and cwd) and T8.18 (the watcher tests poll instead of racing). Each was verified in a detached worktree at its own staged tree, because the shared checkout carries other sessions' half-finished edits and a whole-tree `just check` there measures their work, not the task's. T8.19 opened: `graph_truth` is red and was already red at `ddda5d0`. | The agents can partition files but not compilation: three separate times a task's verification was blocked by an unrelated in-flight refactor. Staging explicit blobs and testing a detached worktree is what makes a parallel round committable one task at a time. |
 | 2026-09-09 | Decision D28 and phase P27 (T27.0): the agent-host half of `agent setup` becomes `crates/rtok-agent-sdk`, a second workspace crate the five host installers, `proxy::cli` and `migrate` all route through. | User request: one SDK for the agent hosts, every host plugin using it, starting with `rtok agent setup cursor`. |
+| 2026-09-09 | Three tasks landed from a second parallel round — T27.0 (`rtok-agent-sdk`, completing the snapshot another session had left uncommitted in the shared checkout: three drifted report strings restored and pinned, `dialoguer` dropped from the root manifest, jscpd 49 → 36 clones), T8.19 (`graph_truth` was red because the *labels* were the stale half — T23.5's `MemoryHost` methods — not the index; the test now prints its precision/recall, and the landing round also repaired two entries its own tasks had staled, `plugin_json` (T15.11) and `read_settings` (T27.0)) and T15.11 (every reading command renders the D23 model; `rtok stats` output pinned byte-identical by `tests/stats_model.rs`). The round ran mid-air with another three-task round (T15.10/T22.0/T24.1): each agent owned a worktree at its own HEAD, landings waited on the other round's dirty files, and the future `surface_parity` conflict was resolved before it happened by applying the other round's uncommitted diff to the T15.11 tree and running its test. | Two rounds can share main if landing is sequential and each waits for the files it must update to leave the other's working set; predicting the test-level collision before the rebase is what kept it a fast-forward. The one unforced error was `5975877` sweeping the docs/branding session's files into a "T27.0 (wip)" commit — a coordinator should commit only its own paths. |
