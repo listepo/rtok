@@ -138,6 +138,20 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.18), Gate P8d passed — see `done.md` P8d.
 
+**T8.19 `graph_truth` is red and nobody noticed** · T8.14 · `tests/graph_truth.rs`, `src/plugins/graph/index.rs`
+Do: `cargo test --test graph_truth` fails — `definition precision 0.864: a name resolved to a file
+it is not defined in` — and it failed identically at `ddda5d0`, so it has been red for at least a
+day of committed work while `just check` was still being reported green. Find out which: the index
+regressed and the labelled truth is right, or the truth file lists references the tree no longer
+has (T26.1 removed two `str_field` uses, and `Surface`, `PreToolDecision` and `measurement_count`
+miss in a dozen files each, which reads like a resolver gap, not a stale label). Fix whichever is
+wrong; if the labels are the stale half, say so in the Check result rather than editing them
+quietly.
+Check: `cargo test --test graph_truth` passes, and the run prints the precision and recall it
+passed at, so the next regression names a number instead of a threshold.
+Status: open · Model: -
+Complexity: 3/5
+
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
 
 ### P17 — build size — tasks done, Gate P17 passed 2026-09-07 (see `done.md` P17).
@@ -479,7 +493,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**136 done · 27 open · 1 superseded — 164 tasks.**
+**136 done · 28 open · 1 superseded — 165 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -544,6 +558,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T8.16` | P8d graph freshness | watcher in `rtok mcp` (`notify`) | ✅ 2026-09-08 | 3/5 |
 | `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
 | `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | ✅ 2026-09-09 | 2/5 |
+| `T8.19` | P8d graph freshness | `graph_truth` is red and nobody noticed | open | 3/5 |
 | `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
 | `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
 | `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |
@@ -715,3 +730,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | D27 and P25 added: `rtok agent sessions` (alias `agents`) lists what is running in the project — host, provider, model, the four token counts, start and duration — and `watch` repaints it live. It is a page in the D23 model first and a command second, which is D27: every reading command asks the model, so `rtok web` and `rtok tui` get the same view for free. T25.0 comes first because the data is unattributed today — the hook path writes NULL host, project and cwd, `pi` is not a row in `hosts`, and only Claude's `SessionEnd` ever sets `ended_at`. P15 gained T15.11 (move the reading commands' queries into the model) and T15.12 (the parity test walks commands, not pages). | User request 2026-09-09 (`agents sessions` со списком активных сессий, провайдером, именем агента, токенами input/output/cache, датой начала и длительностью, плюс `watch`; и: всё, что выводится в консоли или лежит в базе, должно быть в webui и tui). `rtok stats` counting transcript files while `rtok web` sums `usage` rows is the drift D23 predicted, already shipped. |
 | 2026-09-09 | P26 added: a copy-paste detector (jscpd, Rust tokenizer, `min-tokens 50`) joins `just check` at a threshold just above what the tree measures today — 2.14 % of lines, 46 clones — so new duplication fails while the existing clones wait for T26.1. `similarity-rs` would match on the AST rather than on tokens and is the better shape for Rust, but it is a `cargo install` to pin and build; jscpd answers the same question with a config file. | User request 2026-09-09 (добавить лучший копипаст-детектор для Rust). `AGENTS.md` has forbidden duplicated logic since T0.7 with nothing measuring it, and an agent working in ≤200-LOC slices is exactly who copies the neighbouring block to finish. |
 | 2026-09-09 | T8.18 added to P8d: the two watcher tests wait a fixed second for FSEvents and have flaked three times in one day, each time passing on a re-run. The fix is a poll to a generous cap instead of a deadline. | A gate that fails at random teaches everyone to re-run rather than to read it, which is the same as not having it — and P18's release runs on a green suite (T18.6). |
+| 2026-09-09 | Five tasks landed from one round of parallel agents — T24.2 (`rtok logs`, `logs export`), T24.4 (the demon pipes its children through the sink), T26.1 (the proxy's three real clones retired, `threshold` 3 → 2), T25.0 (a session records its host, project and cwd) and T8.18 (the watcher tests poll instead of racing). Each was verified in a detached worktree at its own staged tree, because the shared checkout carries other sessions' half-finished edits and a whole-tree `just check` there measures their work, not the task's. T8.19 opened: `graph_truth` is red and was already red at `ddda5d0`. | The agents can partition files but not compilation: three separate times a task's verification was blocked by an unrelated in-flight refactor. Staging explicit blobs and testing a detached worktree is what makes a parallel round committable one task at a time. |
