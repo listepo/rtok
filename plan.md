@@ -149,7 +149,7 @@ wrong; if the labels are the stale half, say so in the Check result rather than 
 quietly.
 Check: `cargo test --test graph_truth` passes, and the run prints the precision and recall it
 passed at, so the next regression names a number instead of a threshold.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent)
 Complexity: 3/5
 
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
@@ -415,7 +415,7 @@ route through it; no report string changes, because the host integration tests a
 Check: `cargo test --workspace` green with the `agent setup`/`agent remove` integration tests
 (`tests/cursor_plugin.rs`, `tests/pi_plugin.rs`, `tests/agent_remove.rs`) unmodified; `just dup`
 does not regress; `rtok agent setup <host> --dry-run` prints the same lines as before for all five.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent)
 Complexity: 3/5
 
 Gate P27 (review): no module under `src/setup/` writes a host file, copies a backup, or symlinks a
@@ -446,7 +446,7 @@ D27 says one of them is the model and the other is a renderer. `doctor`, `plugin
 `logs`, `demon status` follow; each is a page.
 Check: `grep -r 'Store::open' src/` outside `src/web/model.rs` finds only writing commands and the
 three surfaces; `rtok stats` output is unchanged for a fixture store.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent)
 Complexity: 4/5
 
 **T15.12 the parity test enumerates commands, not pages** · T15.11, T15.10 · `tests/surface_parity.rs`
