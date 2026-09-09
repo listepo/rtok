@@ -250,7 +250,8 @@ min_rows = 5
 | `report` | `--format`, `--out`, `--since` | `report.format`, `report.out`, `report.since` |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
-| `agent setup`, `agent remove` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
+| `agent setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
+| `agent remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |

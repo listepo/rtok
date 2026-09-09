@@ -401,14 +401,14 @@ Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
-### P10 — other hosts + release — T10.1–T10.6 done 2026-09-09 (D21)
+### P10 — other hosts + release — tasks done 2026-09-09 (D21; T10.7 superseded by T10.9)
 
 **T10.7 `setup --remove` strips MCP** · T10.1 · `src/cli.rs`, `src/setup/claude.rs`, `src/setup/cursor.rs`
 Do: `setup claude/cursor --remove` also removes `mcpServers.rtok` via the shared `unregister_stdio_mcp` helper (foreign servers kept); cursor keeps unlinking the plugin, and `--dry-run --remove` previews without touching the FS.
 Check: unit `unregister_strips_only_rtok_and_keeps_foreign` (both hosts); temp-HOME apply (`--mcp` / `--yes`) → `--remove` → second `--remove` is `no changes`, foreign entries kept; `just check` green.
 Complexity: 1/5 — two call sites plus one shared helper, no new flags, no config keys.
-Status: superseded by T10.9 (done 2026-09-09) — `rtok agent remove <host>` strips `mcpServers.rtok` through the shared `unregister_stdio_mcp` for both hosts, which is this Do in full. It was claimed `in progress` by another session at the time; nothing of that session's work was in the tree. If that session has local work, it should rebase onto T10.9 rather than land beside it.
-Model: Muse Spark (meta/muse-spark)
+Status: superseded by T10.9 (done 2026-09-09) — `rtok agent remove <host>` strips `mcpServers.rtok` through the shared `unregister_stdio_mcp` for both hosts, which is this Do in full (absorption recorded in `done.md` T10.9).
+Model: -
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
 
@@ -462,7 +462,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**142 done · 23 open · 1 superseded — 166 tasks.**
+**143 done · 23 open · 1 superseded — 167 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -542,6 +542,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T10.7` | P10 hosts | `setup --remove` strips MCP | ↦ superseded by T10.9 | 1/5 |
 | `T10.8` | P10 hosts | the installers move under `rtok agent` | ✅ 2026-09-09 | — |
 | `T10.9` | P10 hosts | `rtok agent remove <host>`, and a copy before either command | ✅ 2026-09-09 | — |
+| `T10.10` | P10 hosts | remove-spelling residue: flag help, docs rows | ✅ 2026-09-09 | 1/5 |
 | `T11.1` | P11 OpenAI wire | `Wire` adapter + Anthropic behind it | ✅ 2026-09-02 | — |
 | `T11.2` | P11 OpenAI wire | OpenAI Chat Completions wire | ✅ 2026-09-02 | — |
 | `T11.3` | P11 OpenAI wire | OpenAI Responses wire | ✅ 2026-09-03 | — |
@@ -704,3 +705,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | Five tasks landed from one round of parallel agents — T24.2 (`rtok logs`, `logs export`), T24.4 (the demon pipes its children through the sink), T26.1 (the proxy's three real clones retired, `threshold` 3 → 2), T25.0 (a session records its host, project and cwd) and T8.18 (the watcher tests poll instead of racing). Each was verified in a detached worktree at its own staged tree, because the shared checkout carries other sessions' half-finished edits and a whole-tree `just check` there measures their work, not the task's. T8.19 opened: `graph_truth` is red and was already red at `ddda5d0`. | The agents can partition files but not compilation: three separate times a task's verification was blocked by an unrelated in-flight refactor. Staging explicit blobs and testing a detached worktree is what makes a parallel round committable one task at a time. |
 | 2026-09-09 | Decision D28 and phase P27 (T27.0): the agent-host half of `agent setup` becomes `crates/rtok-agent-sdk`, a second workspace crate the five host installers, `proxy::cli` and `migrate` all route through. | User request: one SDK for the agent hosts, every host plugin using it, starting with `rtok agent setup cursor`. |
 | 2026-09-09 | Three tasks landed from a second parallel round — T27.0 (`rtok-agent-sdk`, completing the snapshot another session had left uncommitted in the shared checkout: three drifted report strings restored and pinned, `dialoguer` dropped from the root manifest, jscpd 49 → 36 clones), T8.19 (`graph_truth` was red because the *labels* were the stale half — T23.5's `MemoryHost` methods — not the index; the test now prints its precision/recall, and the landing round also repaired two entries its own tasks had staled, `plugin_json` (T15.11) and `read_settings` (T27.0)) and T15.11 (every reading command renders the D23 model; `rtok stats` output pinned byte-identical by `tests/stats_model.rs`). The round ran mid-air with another three-task round (T15.10/T22.0/T24.1): each agent owned a worktree at its own HEAD, landings waited on the other round's dirty files, and the future `surface_parity` conflict was resolved before it happened by applying the other round's uncommitted diff to the T15.11 tree and running its test. | Two rounds can share main if landing is sequential and each waits for the files it must update to leave the other's working set; predicting the test-level collision before the rebase is what kept it a fast-forward. The one unforced error was `5975877` sweeping the docs/branding session's files into a "T27.0 (wip)" commit — a coordinator should commit only its own paths. |
+| 2026-09-09 | T10.10 added to P10 and done: the residue of the T10.8/T10.9 rename — the `--remove` flag help still said "Delete rtok hook entries only" (false since T10.9 made removal complete), `docs/config.md` merged `agent setup` and `agent remove` into one flag row although `agent remove` takes only `--dry-run`, and `docs/comparison.md` still called the MCP half "task T10.7, in progress". One help string, one split table row, one stale comparison line; the built site is untracked (`site/public` is gitignored), so there is nothing to rebuild in the repo — the site mounts repo markdown, and the sources are what this fixes. The same commit resets T10.7's stale `Model:` claim to `-` (the stop convention) and trims its Status to the supersession fact. | Review of the T10.7 supersession: the design is sound, but its residue contradicted it — a help line and docs rows describing a removal smaller than the one the code performs, and a comparison page still calling a superseded task in progress. |

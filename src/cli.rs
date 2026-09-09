@@ -302,7 +302,7 @@ struct SetupArgs {
     /// Print the planned edits and exit
     #[arg(long)]
     dry_run: bool,
-    /// Delete rtok hook entries only
+    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agent remove <host>`
     #[arg(long)]
     remove: bool,
     /// Enable prompt modes (`terse,yagni`)

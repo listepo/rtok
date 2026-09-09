@@ -157,8 +157,8 @@ byte-stable injection and cache-preserving proxy rewrites exist for exactly this
 8. **One config, with provenance.** Every flag is a config key; `rtok config show --sources`
    names the layer each value came from. No tool in the survey can answer that question.
 9. **Reversible install.** `rtok agent setup claude --dry-run` prints the exact edits, the real run
-   backs up the settings file before writing it, and `--remove` takes the hook entries back
-   out. (Removing the MCP registration too is task T10.7, in progress.)
+   backs up the settings file before writing it, and `rtok agent remove claude` takes the hooks,
+   the MCP registration and the proxy variable back out (foreign entries stay).
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and
     against an independent validator that re-implements the spec. Cost when an endpoint is
