@@ -2,8 +2,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::plugin::{Ctx, Measurement, PostToolUse};
-use crate::tokens::Class;
+use rtok_plugin_sdk::{Class, Ctx, Measurement, PostToolUse};
 
 pub fn key(path: &str, mode: &str, range: Option<&str>) -> String {
     format!("{path}\t{mode}\t{}", range.unwrap_or(""))
@@ -65,13 +64,12 @@ fn hex_sha256(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::Runtime;
     use crate::plugins::read::read;
     use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
 
-    fn cx(name: &str) -> (Runtime, PathBuf) {
+    fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-dedup-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -79,7 +77,7 @@ mod tests {
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
         c.plugins.read.allow_paths = vec![dir.clone()];
-        (Runtime::open(c, name).unwrap(), dir)
+        (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]

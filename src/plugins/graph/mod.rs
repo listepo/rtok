@@ -17,10 +17,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use crate::plugin::{
-    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
+use rtok_plugin_sdk::{
+    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
 };
-use crate::tokens::Class;
 
 pub mod index;
 pub mod watch;

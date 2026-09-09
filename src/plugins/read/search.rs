@@ -7,9 +7,8 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 use regex::Regex;
 
-use crate::plugin::Ctx;
-
 use super::resolve;
+use rtok_plugin_sdk::Ctx;
 
 /// `path:line: snippet` rows, at most `max` (default `plugins.read.search_max`).
 pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<String> {
@@ -94,15 +93,14 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::{Ctx, Runtime};
-
-    fn cx(name: &str) -> Runtime {
+    use rtok_plugin_sdk::Ctx;
+    fn cx(name: &str) -> crate::plugin::Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-search-{name}-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        Runtime::open(c, name).unwrap()
+        crate::plugin::Runtime::open(c, name).unwrap()
     }
 
     #[test]

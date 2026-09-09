@@ -2,6 +2,10 @@
 
 **Owns** `src/plugins/guard/**`.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Deny only when the prior result is retrievable (an `archive` row exists); otherwise stay silent.
 - Normalise before comparing (trim, collapse whitespace, strip `cd … &&` prefixes) so trivially

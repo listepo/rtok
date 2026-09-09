@@ -1,6 +1,6 @@
 //! PreToolUse(Bash) rewrite to `rtok run --` (plan T3.4).
 
-use crate::plugin::{Ctx, PreToolDecision, PreToolUse};
+use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 use serde_json::json;
 
 fn first_word(cmd: &str) -> &str {
@@ -47,10 +47,9 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::{Ctx, Runtime};
-
+    use rtok_plugin_sdk::Ctx;
     fn decide(command: &str) -> Option<PreToolDecision> {
-        let cx = Runtime::in_memory("wrap").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("wrap").unwrap();
         let input = json!({"command": command, "description": "t"});
         let ev = PreToolUse {
             tool_name: "Bash",

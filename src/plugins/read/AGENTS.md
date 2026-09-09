@@ -3,6 +3,10 @@
 **Owns** `src/plugins/read/**` (`mod.rs`, `outline.rs`, `cache.rs`, `search.rs`, `hook.rs`),
 tree-sitter grammar features `lang-*` in `Cargo.toml`.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Root guard first: reject anything outside cwd/`allow_paths` before touching the filesystem.
 - Capped output always carries an archive id; the full content is retrievable via `expand`.

@@ -2,8 +2,7 @@
 //! feature of the same name (`default = all`). Order here is dispatch order.
 
 use crate::config::Config;
-use crate::plugin::{DashboardPage, Manifest, Plugin};
-
+use rtok_plugin_sdk::{DashboardPage, Manifest, Plugin};
 #[cfg(feature = "measure")]
 pub mod measure;
 

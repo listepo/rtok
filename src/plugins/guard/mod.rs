@@ -1,6 +1,6 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
-use crate::plugin::{
+use rtok_plugin_sdk::{
     Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
     Surface,
 };
@@ -107,17 +107,17 @@ fn payload(v: &Value) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::{Ctx, Runtime};
+    use rtok_plugin_sdk::Ctx;
     use serde_json::json;
 
-    fn setup() -> Runtime {
+    fn setup() -> crate::plugin::Runtime {
         let dir = std::env::temp_dir().join("rtok-t26-two-identical-read");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut cfg = Config::default();
         cfg.core.db_path = dir.join("db");
         cfg.core.archive_dir = dir.join("ar");
-        Runtime::open(cfg, "t26").unwrap()
+        crate::plugin::Runtime::open(cfg, "t26").unwrap()
     }
 
     #[test]

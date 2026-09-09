@@ -3,6 +3,10 @@
 **Owns** `src/plugins/graph/**` (`mod.rs`, `index.rs`), the `symbols` migrations, and the
 `symbol_*` methods in `src/store/symbols*.rs` (P8c).
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Native only (D6): never spawn, link or import an external graph tool. The index is built
   here from the tree-sitter-tags queries shared with `read`. A storage crate (`lbug`, D18) is

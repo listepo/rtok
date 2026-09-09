@@ -1,10 +1,9 @@
 //! Budgeted SessionStart / UserPromptSubmit injection (plan T2.4, D5).
 
-use crate::plugin::{
-    Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart, Surface,
+use rtok_plugin_sdk::{
+    Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart,
+    Surface,
 };
-use crate::tokens::Class;
-
 /// Catalogue plugin `inject`.
 pub struct Inject;
 
@@ -137,8 +136,6 @@ pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
-
     fn blob(tokens: u32, cx: &Ctx) -> String {
         let rate = cx
             .config::<crate::config::Estimator>("estimator")
@@ -156,7 +153,7 @@ mod tests {
 
     #[test]
     fn three_500_budget_800_drops_one_and_is_byte_stable() {
-        let cx = Runtime::in_memory("inject-t24").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("inject-t24").unwrap();
         let text = blob(500, &Ctx::new(&cx));
         assert_eq!(cx.estimate(&text, Class::Prose), 500);
         let offered = vec![
@@ -206,7 +203,7 @@ mod tests {
         assert!(text.contains("# terse"), "{text}");
         assert!(text.contains("# yagni"), "{text}");
         assert_eq!(text.matches("# terse").count(), 1);
-        let cx = Runtime::in_memory("t71").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("t71").unwrap();
         assert!(cx.estimate(TERSE, Class::Prose) <= 250);
         assert!(cx.estimate(YAGNI, Class::Prose) <= 250);
         out.clear();

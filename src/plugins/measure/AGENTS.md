@@ -3,6 +3,10 @@
 **Owns** `src/plugins/measure/**`, `src/measure/**` (parser, stats, baseline, cache report),
 `src/bench.rs`, `bench/tasks.toml`.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Estimates are labelled as estimates (±15 %); proxy `usage` rows are the only real counts.
 - Skip malformed transcript lines and *count* them; never abort a report on one bad line.

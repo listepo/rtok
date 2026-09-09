@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Result, bail};
 use serde_json::json;
 
-use crate::plugin::{
+use rtok_plugin_sdk::{
     Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
     ToolDef,
 };
@@ -163,10 +163,9 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::Runtime;
     use std::fs;
 
-    fn cx(name: &str) -> (Runtime, PathBuf) {
+    fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-read-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -174,7 +173,7 @@ mod tests {
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
         c.plugins.read.allow_paths = vec![dir.clone()];
-        (Runtime::open(c, name).unwrap(), dir)
+        (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]
@@ -217,7 +216,7 @@ mod tests {
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        let cx = Runtime::open(c, "mapmain").unwrap();
+        let cx = crate::plugin::Runtime::open(c, "mapmain").unwrap();
         let out = read(&Ctx::new(&cx), "src/main.rs", "map", None).unwrap();
         assert!(out.contains("fn main"), "{out}");
         let _ = fs::remove_dir_all(dir);

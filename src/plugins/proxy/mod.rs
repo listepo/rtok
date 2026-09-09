@@ -3,7 +3,7 @@
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 
-use crate::plugin::{DashboardPage, Manifest, Plugin, Surface};
+use rtok_plugin_sdk::{DashboardPage, Manifest, Plugin, Surface};
 
 pub struct Proxy;
 

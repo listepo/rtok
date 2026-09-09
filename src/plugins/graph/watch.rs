@@ -1,7 +1,7 @@
 //! Background re-index of the graph store. One writer (D18): a thread in `rtok mcp`.
 #![allow(unexpected_cfgs)]
-use crate::plugin::Ctx;
 use notify::{RecursiveMode, Watcher, event::Event};
+use rtok_plugin_sdk::Ctx;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -202,12 +202,11 @@ fn relevant(p: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
     use crate::plugins::graph::index::tests::cx as mk;
     use std::fs;
     use std::time::Duration;
 
-    fn arm(cx: &mut Runtime, watch: &str) {
+    fn arm(cx: &mut crate::plugin::Runtime, watch: &str) {
         cx.config.plugins.graph.auto_index = false;
         cx.config.plugins.graph.watch = watch.into();
     }

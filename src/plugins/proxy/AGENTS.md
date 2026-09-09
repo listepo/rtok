@@ -2,6 +2,10 @@
 
 **Owns** `src/plugins/proxy/**`, `src/proxy/**` (`mod.rs`, `cli.rs`).
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Passthrough is byte-exact: the T5.1 test compares response bytes against a mock upstream.
 - Added latency < 20 ms per request (definition of done #4). Do not buffer SSE streams.

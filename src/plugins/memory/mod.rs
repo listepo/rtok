@@ -2,10 +2,9 @@
 
 pub mod import;
 
-use crate::plugin::{
-    Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
+use rtok_plugin_sdk::{
+    Class, Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
 };
-use crate::tokens::Class;
 use serde_json::json;
 
 pub struct Memory;
@@ -114,11 +113,9 @@ pub fn mem_get(cx: &Ctx, id: i32) -> anyhow::Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
-
     #[test]
     fn save_three_search_hits_first_get_full_body() {
-        let cx = Runtime::in_memory("t61").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("t61").unwrap();
         let a = mem_save(
             &Ctx::new(&cx),
             "decision",
@@ -154,7 +151,7 @@ mod tests {
 
     #[test]
     fn twenty_notes_recall_five_titles_under_budget_stable() {
-        let cx = Runtime::in_memory("t62").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("t62").unwrap();
         // `recall` filters by the project derived from the working directory, so the notes
         // must be saved the same way — a hard-coded name only matched a checkout called `rtok`.
         for i in 0..20 {

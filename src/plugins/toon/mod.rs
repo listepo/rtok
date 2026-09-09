@@ -6,9 +6,9 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
-use crate::proxy::wire::{ToolResultRef, WireRequest};
-use crate::tokens::Class;
+use rtok_plugin_sdk::{
+    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef, WireRequest,
+};
 
 pub struct Toon;
 
@@ -179,15 +179,14 @@ fn decode_cell(s: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
     use crate::proxy::anthropic::ANTHROPIC;
-    use crate::proxy::wire::WireRequest;
+    use rtok_plugin_sdk::WireRequest;
     use serde_json::json;
 
-    fn cx(name: &str, enabled: bool, min_rows: u32) -> Runtime {
+    fn cx(name: &str, enabled: bool, min_rows: u32) -> crate::plugin::Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-toon-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cx = Runtime::in_memory("s").unwrap();
+        let mut cx = crate::plugin::Runtime::in_memory("s").unwrap();
         cx.config.core.archive_dir = dir;
         cx.config.plugins.toon.enabled = enabled;
         cx.config.plugins.toon.min_rows = min_rows;

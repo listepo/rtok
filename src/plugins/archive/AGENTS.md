@@ -2,6 +2,10 @@
 
 **Owns** `src/plugins/archive/**`.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Determinism: the same `tool_use_id` is rewritten to byte-identical text on every request.
   Persist the decision (id → archived, or id → expanded) in the DB before returning.

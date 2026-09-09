@@ -1,6 +1,6 @@
 //! PreToolUse(Read) advice (plan T4.6): deny native Read of large files not just edited.
 
-use crate::plugin::{Ctx, PreToolDecision, PreToolUse};
+use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 
 const REASON: &str =
     "use rtok read(mode=map) first; native Read allowed for files you are about to edit";
@@ -70,11 +70,11 @@ fn same_path(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::{Ctx, Runtime};
+    use rtok_plugin_sdk::Ctx;
     use serde_json::json;
     use std::fs;
 
-    fn cx(name: &str) -> Runtime {
+    fn cx(name: &str) -> crate::plugin::Runtime {
         let dir =
             std::env::temp_dir().join(format!("rtok-read-hook-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -82,7 +82,7 @@ mod tests {
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        Runtime::open(c, name).unwrap()
+        crate::plugin::Runtime::open(c, name).unwrap()
     }
 
     fn ev<'a>(input: &'a serde_json::Value) -> PreToolUse<'a> {

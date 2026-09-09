@@ -16,9 +16,9 @@
 
 use serde_json::Value;
 
-use crate::plugin::{Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface};
-use crate::proxy::wire::{ToolResultRef, WireRequest};
-use crate::tokens::Class;
+use rtok_plugin_sdk::{
+    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef, WireRequest,
+};
 
 pub struct Archive;
 
@@ -175,8 +175,6 @@ fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
-
     fn big(tag: &str) -> String {
         (1..=400)
             .map(|i| format!("{tag} line {i}: some shell output with words"))
@@ -184,10 +182,10 @@ mod tests {
             .join("\n")
     }
 
-    fn cx(name: &str) -> Runtime {
+    fn cx(name: &str) -> crate::plugin::Runtime {
         let dir = std::env::temp_dir().join(format!("rtok-archive-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cx = Runtime::in_memory("s").unwrap();
+        let mut cx = crate::plugin::Runtime::in_memory("s").unwrap();
         cx.config.core.archive_dir = dir;
         cx.config.proxy.mode = "compress".into();
         cx

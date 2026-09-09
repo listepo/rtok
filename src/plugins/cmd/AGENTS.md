@@ -3,6 +3,10 @@
 **Owns** `src/plugins/cmd/**` (`run.rs`, `rules.rs`, `formatters.rs`, `hook.rs`), `rules/default.toml`,
 `src/expand.rs`, `tests/cmd_golden/`.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - Lossless: the raw output is always archived before anything is shortened. `rtok expand <id>` must return it.
 - Exit code of the wrapped command is preserved exactly.

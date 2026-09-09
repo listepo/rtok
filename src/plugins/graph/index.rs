@@ -6,9 +6,9 @@ use std::path::Path;
 use anyhow::Result;
 use ignore::WalkBuilder;
 
-use crate::plugin::Ctx;
 use crate::plugins::read::outline;
 use crate::store;
+use rtok_plugin_sdk::Ctx;
 
 #[derive(Debug, Default)]
 pub struct Report {
@@ -162,19 +162,18 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
 pub(crate) mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::plugin::Runtime;
     use std::fs;
     use std::path::PathBuf;
 
     /// Fresh DB + archive dir under the temp dir; shared with the `mod.rs` tool tests.
-    pub(crate) fn cx(name: &str) -> (Runtime, PathBuf) {
+    pub(crate) fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-graph-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        (Runtime::open(c, name).unwrap(), dir)
+        (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
 
     #[test]

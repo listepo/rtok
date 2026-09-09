@@ -1,7 +1,6 @@
 //! PreCompact checkpoint + compact restore (plan T2.5).
 
-use crate::plugin::{Ctx, Injection};
-use crate::tokens::Class;
+use rtok_plugin_sdk::{Class, Ctx, Injection};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -140,8 +139,6 @@ pub fn offer(cx: &Ctx) -> Option<Injection> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::Runtime;
-
     const FIXTURE: &str = r#"{"type":"user","message":{"role":"user","content":"edit the three files"}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"src/a.rs"}},{"type":"tool_use","name":"Read","input":{"file_path":"src/b.rs"}},{"type":"tool_use","name":"Read","input":{"file_path":"src/c.rs"}}]}}
 {"type":"user","message":{"role":"user","content":[{"type":"text","text":"still failing with error: boom"}]}}
@@ -174,7 +171,7 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
-        let cx = Runtime::in_memory("budget").unwrap();
+        let cx = crate::plugin::Runtime::in_memory("budget").unwrap();
         for p in ["src/a.rs", "src/b.rs", "src/c.rs"] {
             assert!(body.contains(p) && text.contains(p), "{body}\n{text}");
         }

@@ -3,6 +3,10 @@
 **Owns** `src/plugins/memory/**` (`mod.rs`, `inject.rs`, `import.rs`), `src/plugins/checkpoint.rs`
 if split out per T2.5.
 
+**Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published
+`rtok-plugin-sdk` crate (`crates/rtok-plugin-sdk`), not from `crate::plugin` — import them as
+`rtok_plugin_sdk::…`.
+
 **Invariants**
 - No LLM calls. Notes are written by the agent through `mem_save` or extracted mechanically.
 - Recall injects titles and ids only; bodies are fetched on demand with `mem_get`.

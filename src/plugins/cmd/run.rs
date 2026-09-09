@@ -1,9 +1,8 @@
 //! `rtok run -- <cmd>`: capture, archive, print (plan T3.1). Unfiltered in this task.
 
 use crate::config::Config;
-use crate::plugin::{Archive, Measurement, Runtime};
-use crate::tokens::Class;
 use anyhow::{Result, bail};
+use rtok_plugin_sdk::{Archive, Class, Measurement};
 use std::process::Command;
 
 use super::formatters;
@@ -41,7 +40,7 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     let mut body = out.stdout;
     body.extend_from_slice(&out.stderr);
     let code = out.status.code().unwrap_or(1);
-    let cx = Runtime::open(cfg.clone(), "run")?;
+    let cx = crate::plugin::Runtime::open(cfg.clone(), "run")?;
     let id = cx.put_archive(&body)?;
     let before = String::from_utf8_lossy(&body);
     let family = args
