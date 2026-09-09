@@ -343,9 +343,24 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
 Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
 
-## P15 — `rtok tui` (D17, D23) · T15.0 done 2026-09-09
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.10 done 2026-09-09
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.10 the two surfaces cannot drift** · T15.0 · `tests/surface_parity.rs` (new)
+Do: enumerate the pages each surface exposes and assert the sets are equal, so a page added to one
+fails the build until it exists on the other. This is D23's gate, and it replaces the prose promise.
+Check: adding a page to `rtok web` alone fails `just check` with the page's name in the message.
+Status: done 2026-09-09 · Model: GLM-5.3-Flash (zai-coding-plan)
+Check result: tests/surface_parity.rs owns the page table T15.0 deferred — model::pages() returns
+[("overview", "usage"), ("plugins", "plugins")], and web_serves_exactly_the_pages_the_model_offers
+holds the web surface to it by parsing the frame rtok::web::frame sends on /ws (each side's set comes
+from its own source: the model's declaration vs. the wire's keys). cargo test --test surface_parity
+1 passed; fmt and clippy -D warnings clean, in a detached worktree at 5975877. The gate is real:
+adding a calls field to Snapshot alone fails with "assertion left == right failed: a page exists on
+one surface and not the other (D23) … right: ["calls", "overview", "plugins"]" — the page's name in
+the message — and the suite is inside just check's cargo test. rtok tui does not exist yet; its tabs
+plug into the same compare at T15.1+, and T15.12 extends the test to reading commands.
 
 **T15.0 one operator model behind both surfaces** · T19.1 · `src/web/model.rs` (new), `src/web/mod.rs`
 Do: lift the values `rtok web` serves — Overview, Plugins, Calls, Doctor, Logs — out of the axum handlers into one module that returns them as plain data, and have the handlers render that. No new query, no second `Store` reader. `Plugin::dashboard_page` keeps its name: it is the page a plugin contributes to *both* surfaces, and renaming it would break the published plugin API.

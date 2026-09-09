@@ -47,6 +47,14 @@ pub struct PluginPage {
     pub stats: Option<Stats>,
 }
 
+/// The pages the model offers, each as `(page, snapshot key)` — the wire key that
+/// carries the page's numbers; `type` is the wire envelope, not a page. D23: a page
+/// that exists on one surface and not the other is a defect, and
+/// `tests/surface_parity.rs` holds every surface to this list.
+pub fn pages() -> &'static [(&'static str, &'static str)] {
+    &[("overview", "usage"), ("plugins", "plugins")]
+}
+
 /// Open the store at `core.db_path` and read one snapshot. A store that will not open
 /// is not fatal for an operator surface: the pages render with zeros.
 pub fn snapshot(cfg: &Config) -> Snapshot {

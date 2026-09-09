@@ -95,8 +95,9 @@ async fn ws_upgrade(
 }
 
 /// One snapshot per tick, rendered from the operator model. Keys come out sorted, which
-/// is the wire the P19 UI already reads.
-fn frame(cfg: &Config) -> String {
+/// is the wire the P19 UI already reads. Public so the T15.10 parity test reads the
+/// frame the surface actually sends on `/ws`.
+pub fn frame(cfg: &Config) -> String {
     serde_json::to_value(model::snapshot(cfg))
         .unwrap_or_else(|_| json!({"type": "snapshot"}))
         .to_string()
