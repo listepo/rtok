@@ -337,8 +337,8 @@ pub fn proxy_flags(
     Some(flags)
 }
 
-/// Clap `Option<T>` overlay for `rtok dashboard` (`flag` layer).
-pub fn dashboard_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> {
+/// Clap `Option<T>` overlay for `rtok web` (`flag` layer).
+pub fn web_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> {
     let mut dash = Dict::new();
     if let Some(host) = host {
         dash.insert("host".into(), Value::from(host));
@@ -350,7 +350,7 @@ pub fn dashboard_flags(host: Option<String>, port: Option<u16>) -> Option<Dict> 
         return None;
     }
     let mut flags = Dict::new();
-    flags.insert("dashboard".into(), Value::from(dash));
+    flags.insert("web".into(), Value::from(dash));
     Some(flags)
 }
 

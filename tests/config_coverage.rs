@@ -102,6 +102,8 @@ fn config_key(path: &[&str], long: &str) -> String {
     match path {
         // `rtok agent setup|remove` keeps the `[setup]` table it had as `rtok setup`.
         ["agent", ..] => format!("setup.{name}"),
+        // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
+        ["dashboard", ..] => format!("web.{name}"),
         ["run", ..] | ["filter", ..] => match name {
             "shell" => "plugins.cmd.shell".into(),
             "no_trailer" => "plugins.cmd.trailer_min_lines".into(),

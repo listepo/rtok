@@ -75,7 +75,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | v0.2 |
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
-| `src/dashboard/` | axum WebSocket + static Slint WASM UI: `rtok dashboard` (D20). UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
+| `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Renders the operator model `rtok tui` also renders (D23). UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |

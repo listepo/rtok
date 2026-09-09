@@ -4,7 +4,7 @@ use std::future::IntoFuture;
 use std::sync::Arc;
 
 use rtok::config::Config;
-use rtok::dashboard::{DashState, app};
+use rtok::web::{DashState, app};
 
 async fn serve(label: &str) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
     let dir = std::env::temp_dir().join(format!("rtok-dash-{label}-{}", std::process::id()));
@@ -20,7 +20,7 @@ async fn serve(label: &str) -> (String, tokio::task::JoinHandle<std::io::Result<
 }
 
 #[tokio::test]
-async fn dashboard_health_and_index() {
+async fn web_health_and_index() {
     let (addr, task) = serve("health").await;
     let body = reqwest::Client::new()
         .get(format!("http://{addr}/health"))

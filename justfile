@@ -64,7 +64,7 @@ site-serve:
     {{hugo}} server --buildDrafts
 
 # Slint WASM UI, then API+UI on host:port
-dashboard host="127.0.0.1" port="3333":
+web host="127.0.0.1" port="3333":
     #!/usr/bin/env bash
     set -euo pipefail
     if command -v wasm-pack >/dev/null 2>&1; then
@@ -72,7 +72,7 @@ dashboard host="127.0.0.1" port="3333":
     else
         echo "wasm-pack not found; serving API only until cargo install wasm-pack" >&2
     fi
-    {{cargo}} run -q -- dashboard --host {{host}} --port {{port}}
+    {{cargo}} run -q -- web --host {{host}} --port {{port}}
 
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:

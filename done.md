@@ -662,6 +662,14 @@ Check result: green — `the_progress_bar_counts_the_files_the_walk_reached` (7 
 Deviation: none. `ProgressBar::hidden()` is the reason there is no `Option<&ProgressBar>` and no `cfg` in the walk — the no-op bar is indicatif's own answer to a caller with nothing to draw on.
 
 
+**T21.3 `rtok dashboard` becomes `rtok web`** · T19.1 · `src/web/`, `src/cli.rs`, `src/config/mod.rs` (+ `layers.rs`, `validate.rs`, `config/default.toml`, `docs/config.md`, `justfile`, `tests/web.rs`, `src/demon.rs`)
+Do: rename the command, the module and the config table. `rtok dashboard` stays as a hidden alias that runs the same code and prints its replacement on stderr, so anything already scripted keeps working — the shape T10.8 used for `rtok setup`. `[dashboard]` in an existing config file is accepted once with a warning and folded into `[web]`.
+Check: `rtok web --host/--port` serves what `rtok dashboard` did; the deprecated spelling still serves and warns; an old `[dashboard]` table loads; the T12.4 coverage test still maps every flag to a key; `just check` green.
+Status: done 2026-09-09 · Model: Opus 5
+Check result: green — `just check` clean, 166 lib tests, `tests/web.rs` (renamed from `dashboard.rs`) unchanged in substance, `config_coverage` green with the alias mapped to the one `[web]` table.
+Deviations: two, both deliberate. (1) `Plugin::dashboard_page` and `DashboardPage` keep their names. They are published plugin API (`docs/plugin-authoring.md`, `examples/`), and under D23 the page is the thing a plugin contributes to *both* surfaces — a surface-neutral name is the correct one, not a leftover. (2) The legacy `[dashboard]` table is a field on `Config`, not on a section, because `deny_unknown_fields` rejects an unknown *table* before `finish()` could migrate a key inside it; the mechanism is otherwise the same one `core.inject_budget_tokens` already uses. `README.md`, `AGENTS.md` and the site pages were not touched: another session holds uncommitted rewrites of them, and the rename has to land there in that session's copy, not over it.
+
+
 ## P20 — `demon` supervisor (D22)
 
 **T20.1 `rtok demon start|stop|restart|status|list|kill|update`** · T12.3 · `src/demon.rs`, `src/cli.rs`, `src/config/mod.rs` (+ `config/default.toml`, `docs/config.md`, `tests/demon.rs`)

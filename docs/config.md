@@ -100,7 +100,7 @@ timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
-[dashboard]                           # rtok dashboard
+[web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
 
@@ -240,7 +240,7 @@ min_rows = 5
 | global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
-| `dashboard` | `--host`, `--port` | `dashboard.host`, `dashboard.port` |
+| `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |

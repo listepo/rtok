@@ -310,13 +310,13 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 **Replaces.** Browser view of the same `Store` / `stats` the CLI uses (I-34). Complements ratatui `rtok tui` (P15).
 
-**Goal.** `rtok dashboard` — one process: axum WebSocket API + Slint WASM UI.
+**Goal.** `rtok web` — one process: axum WebSocket API + Slint WASM UI. Same pages as `rtok tui` (D23).
 
-**Surfaces.** `rtok dashboard --host --port` (D20, P19). Config `[dashboard]`.
+**Surfaces.** `rtok web --host --port` (D20, P19; `rtok dashboard` still runs, hidden and deprecated). Config `[web]`.
 
 | # | Task | What |
 |---|------|------|
-| 1 | T19.1 | `[dashboard]` host/port, CLI flags |
+| 1 | T19.1 | `[web]` host/port, CLI flags |
 | 2 | T19.2 | `/ws` snapshot, per-plugin pages, stats widget |
 | 3 | T19.3 | Slint WASM crate served from the same process |
 

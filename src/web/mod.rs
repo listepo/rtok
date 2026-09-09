@@ -47,14 +47,9 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 }
 
 pub async fn serve(cfg: Config) -> Result<()> {
-    let addr: SocketAddr = format!("{}:{}", cfg.dashboard.host, cfg.dashboard.port)
+    let addr: SocketAddr = format!("{}:{}", cfg.web.host, cfg.web.port)
         .parse()
-        .with_context(|| {
-            format!(
-                "dashboard bind {}:{}",
-                cfg.dashboard.host, cfg.dashboard.port
-            )
-        })?;
+        .with_context(|| format!("dashboard bind {}:{}", cfg.web.host, cfg.web.port))?;
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;
@@ -88,8 +83,8 @@ async fn index() -> Html<&'static str> {
 async fn health(State(state): State<Arc<DashState>>) -> Json<Value> {
     Json(json!({
         "ok": true,
-        "host": state.cfg.dashboard.host,
-        "port": state.cfg.dashboard.port,
+        "host": state.cfg.web.host,
+        "port": state.cfg.web.port,
     }))
 }
 

@@ -130,8 +130,8 @@ section! {
 }
 
 section! {
-    /// `[dashboard]` — `rtok dashboard` (P19). Slint WASM UI + WebSocket API.
-    Dashboard {
+    /// `[web]` — `rtok web` (P19). Slint WASM UI + WebSocket API, the same data as `rtok tui`.
+    Web {
         host: String = s("127.0.0.1"),
         port: u16 = 3333,
     }
@@ -417,7 +417,11 @@ pub struct Config {
     pub hook: Hook,
     pub mcp: Mcp,
     pub proxy: Proxy,
-    pub dashboard: Dashboard,
+    pub web: Web,
+    /// Renamed in T21.3: `[dashboard]` is now `[web]`. Accepted from an old file with a
+    /// warning, then dropped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dashboard: Option<Web>,
     pub demon: Demon,
     pub stats: Stats,
     pub bench: Bench,
@@ -528,6 +532,10 @@ impl Config {
                 "rtok: core.inject_budget_tokens is now plugins.inject.budget_tokens (using {budget})"
             );
             self.plugins.inject.budget_tokens = budget;
+        }
+        if let Some(web) = self.dashboard.take() {
+            eprintln!("rtok: [dashboard] is now [web] (using it)");
+            self.web = web;
         }
         self.home = home.to_path_buf();
         for path in [

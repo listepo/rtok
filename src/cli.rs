@@ -51,12 +51,12 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Local Slint/WASM dashboard (WebSocket API + UI)
-    Dashboard {
-        /// Override `[dashboard] host`
+    /// Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+    Web {
+        /// Override `[web] host`
         #[arg(long)]
         host: Option<String>,
-        /// Override `[dashboard] port`
+        /// Override `[web] port`
         #[arg(long)]
         port: Option<u16>,
     },
@@ -156,7 +156,15 @@ enum Cmd {
         #[command(subcommand)]
         action: GraphCmd,
     },
-    /// Keep `rtok proxy` (or `mcp` / `dashboard`) running in the background
+    /// Deprecated spelling of `rtok web`; still runs, still prints where to go
+    #[command(hide = true)]
+    Dashboard {
+        #[arg(long)]
+        host: Option<String>,
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    /// Keep `rtok proxy` (or `mcp` / `web`) running in the background
     Demon {
         #[command(subcommand)]
         action: DemonCmd,
@@ -490,10 +498,14 @@ pub fn run() -> Result<()> {
             }
             crate::proxy::serve_blocking(cfg)?;
         }
+        Cmd::Web { host, port } => {
+            let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
+            crate::web::serve_blocking(cfg)?;
+        }
         Cmd::Dashboard { host, port } => {
-            let cfg =
-                Config::load_with(config_file.as_deref(), layers::dashboard_flags(host, port))?;
-            crate::dashboard::serve_blocking(cfg)?;
+            eprintln!("warning: `rtok dashboard` is deprecated; use `rtok web`");
+            let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
+            crate::web::serve_blocking(cfg)?;
         }
         Cmd::Agent { action } => match action {
             AgentCmd::Setup(args) => setup_host(config_file.as_deref(), args)?,

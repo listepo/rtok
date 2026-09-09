@@ -14,7 +14,6 @@
 pub mod bench;
 pub mod cli;
 pub mod config;
-pub mod dashboard;
 pub mod demon;
 pub mod doctor;
 pub mod expand;
@@ -29,6 +28,7 @@ pub mod render;
 pub mod setup;
 pub mod store;
 pub mod tokens;
+pub mod web;
 
 /// The plugin contract at the crate root, so an external plugin crate writes
 /// `use rtok::{Ctx, Manifest, Plugin, Surface};`.

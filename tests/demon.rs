@@ -138,7 +138,7 @@ fn a_second_start_is_refused_and_list_names_every_service() {
     );
 
     let list = rtok(&["demon", "list"], &h);
-    for s in ["proxy", "mcp", "dashboard"] {
+    for s in ["proxy", "mcp", "web"] {
         assert!(list.contains(s), "list is missing {s}:\n{list}");
     }
     // `proxy` and `dashboard` were never started, so they must read as stopped, not as absent.
@@ -154,7 +154,7 @@ fn a_second_start_is_refused_and_list_names_every_service() {
     // The refusal is clap's, generated from the `Service` ValueEnum, and it names the choices.
     let err = String::from_utf8_lossy(&bad.stderr);
     assert!(err.contains("invalid value"), "{err}");
-    assert!(err.contains("proxy") && err.contains("dashboard"), "{err}");
+    assert!(err.contains("proxy") && err.contains("web"), "{err}");
 
     rtok(&["demon", "stop", "mcp"], &h);
     let _ = fs::remove_dir_all(&h);

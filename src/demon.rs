@@ -26,7 +26,7 @@ use crate::config::Config;
 pub enum Service {
     Proxy,
     Mcp,
-    Dashboard,
+    Web,
 }
 
 impl Service {
@@ -35,7 +35,7 @@ impl Service {
         match self {
             Self::Proxy => "proxy",
             Self::Mcp => "mcp",
-            Self::Dashboard => "dashboard",
+            Self::Web => "web",
         }
     }
 
