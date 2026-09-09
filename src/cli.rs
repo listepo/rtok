@@ -174,6 +174,14 @@ enum Cmd {
         #[command(subcommand)]
         action: OtelCmd,
     },
+    /// rtok's own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)
+    Logs {
+        #[command(subcommand)]
+        action: Option<LogsCmd>,
+        /// Override `[log] lines`
+        #[arg(long, global = true)]
+        lines: Option<usize>,
+    },
 }
 
 /// Every verb takes optional services; with none they act on what is already up, falling back
@@ -206,6 +214,12 @@ enum OtelCmd {
     Flush,
     /// Endpoint, watermarks, pending rows, last exporter log line
     Status,
+}
+
+#[derive(Subcommand)]
+enum LogsCmd {
+    /// Same selection, no numbering, no colour — for `rtok logs export > my.log`
+    Export,
 }
 
 #[cfg(feature = "memory")]
@@ -592,6 +606,20 @@ pub fn run() -> Result<()> {
             match action {
                 OtelCmd::Flush => println!("{}", crate::otel::export::flush_blocking(&cx)),
                 OtelCmd::Status => print!("{}", crate::otel::export::status(&cx)?),
+            }
+        }
+        Cmd::Logs { action, lines } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let out = match action {
+                None => crate::log::screen(&cfg, lines),
+                Some(LogsCmd::Export) => crate::log::tail(&cfg, lines),
+            };
+            if out.is_empty() {
+                println!("no logs yet");
+            } else {
+                for line in out {
+                    println!("{line}");
+                }
             }
         }
         #[cfg(not(feature = "cmd"))]

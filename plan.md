@@ -316,16 +316,7 @@ one line and no row; a read-only log directory changes nothing about the call's 
 Status: open · Model: -
 Complexity: 2/5
 
-**T24.2 `rtok logs` and `rtok logs export`** · T24.0 · `src/cli.rs`, `src/log.rs`, `tests/logs.rs` (new)
-Do: `rtok logs` prints the last `[log] lines` lines (`--lines N` overrides), newest first, reading
-back through the rotated files as far as it needs; each line numbered, `1` being the newest, with
-the level coloured through `render.rs` — one helper, not a second colour table. `rtok logs export`
-is the same selection with no numbers and no colour, for `rtok logs export > my.log`.
-Check: with 3 rotated files and `--lines 10`, the first line printed is the newest written and the
-tenth is ten lines back across the file boundary; `export` output is byte-identical to those lines
-with the numbering and ANSI stripped; both are empty and say so when nothing has been logged.
-Status: in progress · Model: Opus 5
-Complexity: 3/5
+T24.2 (`rtok logs` and `rtok logs export`) is done 2026-09-09 — see `done.md` P24.
 
 **T24.3 `rtok logs watch`** · T24.2 · `src/log.rs`, `src/cli.rs`
 Do: print the same last-`lines` screen, then follow: every new line appears above the previous one,
@@ -528,7 +519,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**131 done · 32 open · 1 superseded — 164 tasks.**
+**132 done · 31 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -687,7 +678,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T23.6` | P23 plugin SDK | the release publishes it | ✅ 2026-09-09 | 2/5 |
 | `T24.0` | P24 logs | `[log]`: a sink that rotates | ✅ 2026-09-09 | 3/5 |
 | `T24.1` | P24 logs | every log line goes through the funnel | open | 2/5 |
-| `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | open | 3/5 |
+| `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | open | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | open | 3/5 |
 | `T25.0` | P25 agents | a session knows whose it is | open | 3/5 |

@@ -68,6 +68,31 @@ pub fn spinner(what: &str) -> indicatif::ProgressBar {
     pb
 }
 
+/// Colour a stored log line's level (`<date> <time> <level> <source>/<name>: <message>`, T24.0's
+/// `log::line`): red error, yellow warn, dim debug, info plain. `rtok logs export` prints the same
+/// line through no such call, so piping stays byte-plain.
+pub fn log_line(text: &str) -> String {
+    let mut parts = text.splitn(4, ' ');
+    let (Some(date), Some(time), Some(level), Some(rest)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return text.to_string();
+    };
+    let level = match level {
+        "error" => level
+            .if_supports_color(Stream::Stdout, |t| t.red())
+            .to_string(),
+        "warn" => level
+            .if_supports_color(Stream::Stdout, |t| t.yellow())
+            .to_string(),
+        "debug" => level
+            .if_supports_color(Stream::Stdout, |t| t.dimmed())
+            .to_string(),
+        _ => level.to_string(),
+    };
+    format!("{date} {time} {level} {rest}")
+}
+
 /// A state word for a status table: green when the thing is up, red when it is not.
 pub fn state(word: &str, ok: bool) -> String {
     if ok {
@@ -107,5 +132,12 @@ mod tests {
             "+ added\n- gone\nno changes"
         );
         assert_eq!(state("running", true), "running");
+    }
+
+    #[test]
+    fn a_log_line_keeps_its_shape_with_colour_off() {
+        let line = "2026-09-09 15:04:05 warn test/tail: disk almost full";
+        assert_eq!(log_line(line), line);
+        assert_eq!(log_line("not a log line"), "not a log line");
     }
 }

@@ -106,6 +106,43 @@ fn nth(path: &Path, i: u32) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// The last `n` lines across `path`, then `.1`, `.2`, … newest first (plan T24.2). `n` is
+/// `[log] lines` unless the caller overrides it. Stops at the first file that does not exist —
+/// rotation is contiguous, so nothing sits behind a gap. Empty when nothing has been logged.
+pub fn tail(cfg: &Config, n: Option<usize>) -> Vec<String> {
+    let n = n.unwrap_or(cfg.log.lines);
+    let mut out = Vec::new();
+    let mut i = 0u32;
+    while out.len() < n {
+        let path = if i == 0 {
+            cfg.log.path.clone()
+        } else {
+            nth(&cfg.log.path, i)
+        };
+        let Ok(text) = fs::read_to_string(&path) else {
+            break;
+        };
+        for line in text.lines().rev() {
+            out.push(line.to_string());
+            if out.len() == n {
+                break;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// `rtok logs`: [`tail`] numbered (`1` newest) with the level coloured through
+/// [`crate::render::log_line`] — one colour table, not a second one here.
+pub fn screen(cfg: &Config, n: Option<usize>) -> Vec<String> {
+    tail(cfg, n)
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{} {}", i + 1, crate::render::log_line(line)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +222,53 @@ mod tests {
         cfg.log.level = "error".into();
         append(&cfg, "debug", "test", "quiet", "nothing");
         assert!(!cfg.log.path.exists());
+    }
+
+    /// 4 lines in each of the live file and 3 rotated siblings, newest last within each file —
+    /// the shape `rotate` leaves behind. `tail` must walk backwards across all four.
+    fn seed_rotated(dir: &Path) -> Config {
+        fs::create_dir_all(dir).unwrap();
+        let cfg = cfg_at(dir, 1 << 20, 3);
+        fs::write(&cfg.log.path, "live-1\nlive-2\nlive-3\nlive-4\n").unwrap();
+        fs::write(nth(&cfg.log.path, 1), "r1-1\nr1-2\nr1-3\nr1-4\n").unwrap();
+        fs::write(nth(&cfg.log.path, 2), "r2-1\nr2-2\nr2-3\nr2-4\n").unwrap();
+        fs::write(nth(&cfg.log.path, 3), "r3-1\nr3-2\nr3-3\nr3-4\n").unwrap();
+        cfg
+    }
+
+    #[test]
+    fn tail_reads_backwards_across_the_rotation_boundary() {
+        let dir = tmp("tail");
+        let cfg = seed_rotated(&dir);
+        let got = tail(&cfg, Some(10));
+        assert_eq!(
+            got,
+            vec![
+                "live-4", "live-3", "live-2", "live-1", "r1-4", "r1-3", "r1-2", "r1-1", "r2-4",
+                "r2-3",
+            ]
+        );
+    }
+
+    #[test]
+    fn tail_and_screen_are_empty_when_nothing_has_been_logged() {
+        let dir = tmp("empty");
+        let cfg = cfg_at(&dir, 1 << 20, 3);
+        assert!(tail(&cfg, Some(10)).is_empty());
+        assert!(screen(&cfg, Some(10)).is_empty());
+    }
+
+    #[test]
+    fn screen_numbers_newest_first_and_strips_to_the_same_lines_as_tail() {
+        let dir = tmp("screen");
+        let cfg = seed_rotated(&dir);
+        let numbered = screen(&cfg, Some(10));
+        let plain = tail(&cfg, Some(10));
+        assert_eq!(numbered.len(), plain.len());
+        for (i, (n, p)) in numbered.iter().zip(plain.iter()).enumerate() {
+            // No terminal in a test run, so `log_line` added no ANSI codes: stripping the
+            // leading "<n> " is the whole job.
+            assert_eq!(n, &format!("{} {p}", i + 1));
+        }
     }
 }
