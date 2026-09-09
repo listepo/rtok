@@ -138,6 +138,19 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.17), Gate P8d passed — see `done.md` P8d.
 
+**T8.18 the watcher tests stop racing the filesystem** · T8.16 · `src/plugins/graph/watch.rs`
+Do: `watcher_reindexes_new_file_while_calls_read_nothing` and
+`watchman_without_socket_falls_back_to_notify` give the watcher one second to observe a write and
+re-index. On a loaded machine FSEvents does not deliver in that window, and both tests have failed
+and then passed on a re-run three times on 2026-09-09 alone. A flaky gate is worse than a slow one:
+it trains everyone to re-run instead of to read. Replace the fixed deadline with a poll until a
+generous cap (the deadline is then only reached when the watcher is genuinely broken), and assert on
+the store's state rather than on timing.
+Check: both tests pass 20 consecutive runs (`cargo test --lib plugins::graph::watch` in a loop) and
+still fail within the cap when the watcher is disabled.
+Status: open · Model: -
+Complexity: 2/5
+
 ### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
 
 ### P17 — build size — tasks done, Gate P17 passed 2026-09-07 (see `done.md` P17).
@@ -523,7 +536,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**131 done · 31 open · 1 superseded — 163 tasks.**
+**131 done · 32 open · 1 superseded — 164 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -587,6 +600,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T8.15` | P8d graph freshness | `auto_index` and `watch` keys | ✅ 2026-09-08 | — |
 | `T8.16` | P8d graph freshness | watcher in `rtok mcp` (`notify`) | ✅ 2026-09-08 | 3/5 |
 | `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
+| `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | open | 2/5 |
 | `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
 | `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
 | `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |
@@ -757,3 +771,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | D26 and P24 added: `rtok logs`, `logs watch`, `logs export`, and a `[log]` table that bounds the file at 1 MiB × 5 and finally gives `core.log_file`, `log_level` and `log_to_db` — declared since T0.2, read nowhere — something to do. T24.4 rewires `demon` to pipe its children rather than hand them an fd, because a file the child holds open is a file rtok cannot rotate. | User request 2026-09-09 (команда `logs` с нумерацией строк, `watch` в реальном времени от новых к старым, `export`, размер и количество файлов в конфиге, путь настраивается). The supervisor D22 added makes long-running processes normal, which makes an unbounded log a disk-full bug. |
 | 2026-09-09 | D27 and P25 added: `rtok agent sessions` (alias `agents`) lists what is running in the project — host, provider, model, the four token counts, start and duration — and `watch` repaints it live. It is a page in the D23 model first and a command second, which is D27: every reading command asks the model, so `rtok web` and `rtok tui` get the same view for free. T25.0 comes first because the data is unattributed today — the hook path writes NULL host, project and cwd, `pi` is not a row in `hosts`, and only Claude's `SessionEnd` ever sets `ended_at`. P15 gained T15.11 (move the reading commands' queries into the model) and T15.12 (the parity test walks commands, not pages). | User request 2026-09-09 (`agents sessions` со списком активных сессий, провайдером, именем агента, токенами input/output/cache, датой начала и длительностью, плюс `watch`; и: всё, что выводится в консоли или лежит в базе, должно быть в webui и tui). `rtok stats` counting transcript files while `rtok web` sums `usage` rows is the drift D23 predicted, already shipped. |
 | 2026-09-09 | P26 added: a copy-paste detector (jscpd, Rust tokenizer, `min-tokens 50`) joins `just check` at a threshold just above what the tree measures today — 2.14 % of lines, 46 clones — so new duplication fails while the existing clones wait for T26.1. `similarity-rs` would match on the AST rather than on tokens and is the better shape for Rust, but it is a `cargo install` to pin and build; jscpd answers the same question with a config file. | User request 2026-09-09 (добавить лучший копипаст-детектор для Rust). `AGENTS.md` has forbidden duplicated logic since T0.7 with nothing measuring it, and an agent working in ≤200-LOC slices is exactly who copies the neighbouring block to finish. |
+| 2026-09-09 | T8.18 added to P8d: the two watcher tests wait a fixed second for FSEvents and have flaked three times in one day, each time passing on a re-run. The fix is a poll to a generous cap instead of a deadline. | A gate that fails at random teaches everyone to re-run rather than to read it, which is the same as not having it — and P18's release runs on a green suite (T18.6). |
