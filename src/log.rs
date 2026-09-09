@@ -1,9 +1,10 @@
 //! `[log]` — rtok's own log (plan T24.0, decision D26).
 //!
 //! One rotating text file: the thing an operator reads and `rtok logs` prints. The `logs` table
-//! keeps the same lines as rows for `rtok otel`; T24.1 makes both come out of one funnel.
+//! keeps the same lines as rows for `rtok otel`; [`record`] is the one funnel both come out of.
 
 use crate::config::{Config, Log};
+use crate::store::Store;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -56,6 +57,29 @@ pub fn stamp(secs: u64) -> String {
 pub fn line(secs: u64, level: &str, source: &str, name: &str, message: &str) -> String {
     let message = message.replace(['\n', '\r'], " ");
     format!("{} {level} {source}/{name}: {message}", stamp(secs))
+}
+
+/// The one path a log line takes (T24.1): [`append`] for the file, then the same line as a
+/// `logs` row unless `[log] to_db` is false — the file is then the only sink, which is the
+/// reason the key exists. One `[log] level` decision gates both; both writes fail open (D1).
+#[allow(clippy::too_many_arguments)]
+pub fn record(
+    cfg: &Config,
+    store: &Store,
+    session: Option<&str>,
+    call_id: Option<i32>,
+    level: &str,
+    source: &str,
+    name: &str,
+    message: &str,
+) {
+    if !enabled(cfg, level) {
+        return;
+    }
+    append(cfg, level, source, name, message);
+    if cfg.log.to_db {
+        let _ = store.insert_log(level, source, name, message, session, call_id, None);
+    }
 }
 
 /// Append one line, rotating first when it would take the file past `[log] max_bytes`.
@@ -270,5 +294,96 @@ mod tests {
             // leading "<n> " is the whole job.
             assert_eq!(n, &format!("{} {p}", i + 1));
         }
+    }
+
+    // ── T24.1: the funnel — one call, one line, one row ─────────────────────────────
+
+    use crate::plugin::Runtime;
+
+    #[test]
+    fn a_funnel_call_is_one_file_line_and_one_row() {
+        let dir = tmp("funnel");
+        let cfg = cfg_at(&dir, 1 << 20, 1);
+        let store = Store::open_in_memory().unwrap();
+        record(
+            &cfg,
+            &store,
+            Some("s1"),
+            None,
+            "info",
+            "plugin",
+            "read",
+            "hello",
+        );
+        assert_eq!(
+            fs::read_to_string(&cfg.log.path).unwrap().lines().count(),
+            1
+        );
+        let rows = store.logs_after(0, 10).unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].message, "hello");
+        assert_eq!(rows[0].session.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn to_db_false_leaves_the_file_as_the_only_sink() {
+        let dir = tmp("nodb");
+        let mut cfg = cfg_at(&dir, 1 << 20, 1);
+        cfg.log.to_db = false;
+        let store = Store::open_in_memory().unwrap();
+        record(&cfg, &store, Some("s1"), None, "warn", "plugin", "read", "");
+        assert_eq!(
+            fs::read_to_string(&cfg.log.path).unwrap().lines().count(),
+            1
+        );
+        assert!(store.logs_after(0, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_read_only_log_directory_changes_nothing_about_the_call() {
+        let dir = tmp("readonly");
+        fs::create_dir_all(&dir).unwrap();
+        let close = |ro: bool| {
+            let mut p = fs::metadata(&dir).unwrap().permissions();
+            p.set_readonly(ro);
+            fs::set_permissions(&dir, p).unwrap();
+        };
+        close(true);
+        // Root writes through the permission bit: the probe has to fail to proceed.
+        if fs::write(dir.join("probe"), b"").is_ok() {
+            close(false);
+            return;
+        }
+        let cfg = cfg_at(&dir, 1 << 20, 1);
+        let store = Store::open_in_memory().unwrap();
+        record(
+            &cfg,
+            &store,
+            Some("s1"),
+            None,
+            "error",
+            "plugin",
+            "read",
+            "boom",
+        );
+        close(false);
+        assert_eq!(store.logs_after(0, 10).unwrap().len(), 1, "row still lands");
+        assert!(!cfg.log.path.exists(), "file write failed silently");
+    }
+
+    #[test]
+    fn a_plugin_call_is_one_file_line_and_one_row() {
+        let dir = tmp("plugin-funnel");
+        let mut cx = Runtime::in_memory("s1").unwrap();
+        cx.config.log.path = dir.join("rtok.log");
+        cx.log("warn", "plugin", "read", "through the funnel");
+        assert_eq!(
+            fs::read_to_string(&cx.config.log.path)
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+        assert_eq!(cx.store.logs_after(0, 10).unwrap().len(), 1);
     }
 }

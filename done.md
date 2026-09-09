@@ -82,7 +82,7 @@ request with `npx skills add`. It is prose — a checklist for turning a clone r
 extraction — with no code and nothing executable, and it belongs beside the gate that produces the
 report T26.1 will work from.
 
-## P24 — `rtok logs` (D26) · T24.0, T24.2, T24.4 done 2026-09-09
+## P24 — `rtok logs` (D26) · T24.0, T24.1, T24.2, T24.4 done 2026-09-09
 
 **T24.4 the demon's own logs are bounded too** · T24.0 · `src/demon.rs`
 Do: today `supervise` hands the child a raw appending fd, so `<service>.log` grows without limit and
@@ -126,6 +126,29 @@ worktree while another session's SDK rename was mid-flight, so it verified in a 
 `git worktree` at HEAD holding only its four files, then removed it; the numbers above were re-run
 in the main tree afterwards. That session's uncommitted `rtok_agent_sdk::backup` line in
 `src/cli.rs` is excluded from this commit: it needs their `Cargo.toml`, which is not committed.
+
+**T24.1 every log line goes through the funnel** · T24.0 · `src/plugin.rs`, `src/proxy/mod.rs`
+Do: `Ctx::log` writes the file line *and* the `logs` row (`to_db` false skips the row, and the file
+is then the only sink — the reason the key exists). The proxy's private `log(store, …)` helper
+routes through the same funnel instead of inserting on its own; there is one writer, not two.
+Fail open stays fail open: an unwritable log directory never turns into an error a plugin sees.
+Check: a plugin call leaves one line in the file and one row in the table; with `to_db = false`,
+one line and no row; a read-only log directory changes nothing about the call's result.
+Status: done 2026-09-09 · Model: GLM-5.3-Flash (zai-coding-plan)
+Check result: green. All three writers are one: log::record is the funnel, Runtime::log and the proxy's
+log helper (including finish's log_err) both call it, and neither inserts a logs row on its own. A
+plugin call leaves exactly one line in the file and exactly one row in the table
+(a_funnel_call_is_one_file_line_and_one_row, a_plugin_call_is_one_file_line_and_one_row); with
+to_db = false one line lands and logs_after stays empty (to_db_false_leaves_the_file_as_the_only_sink);
+a read-only log directory changes nothing about the call — the row still lands, the file write fails
+silently (a_read_only_log_directory_changes_nothing_about_the_call, root-guarded). The proxy's rows
+keep the shape insert_log gave them (proxy_log_rows_keep_their_shape_through_the_funnel). cargo test
+--lib 187 passed; proxy/logs/otel/demon integration suites 29 passed; clippy -D warnings and fmt
+clean, verified in a detached worktree at 5975877. Note: [log] level (default info) now gates both
+sinks, so a line below level no longer reaches the logs table either — the funnel's one-decision
+semantics, not a regression. Deviation: the [core] log_file/log_level/log_to_db → [log] key migration
+T24.0's preamble deferred to "T24.1's commit" is not here — it needs src/config/mod.rs, a fourth
+file; after this commit core.log_file has no production reader, so it is a pure config commit of its own.
 
 **T24.0 `[log]`: a sink that rotates** · - · `src/log.rs` (new), `src/config/mod.rs`, `config/default.toml`
 Do: the section (`path` `~/.rtok/logs/rtok.log`, `max_bytes` 1048576, `files` 5, `lines` 200,

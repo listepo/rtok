@@ -297,7 +297,7 @@ fn compress(
         Ok(cx) => cx,
         Err(e) => {
             log(
-                &state.store,
+                state,
                 &r.session,
                 Some(r.call_id),
                 "error",
@@ -315,7 +315,7 @@ fn compress(
                 changed = true;
                 if let Err(e) = cx.record(&m) {
                     log(
-                        &state.store,
+                        state,
                         &r.session,
                         Some(r.call_id),
                         "error",
@@ -381,7 +381,7 @@ fn record(
         Ok(r) => Some(r),
         Err(e) => {
             log(
-                &state.store,
+                state,
                 &session,
                 None,
                 "error",
@@ -406,14 +406,12 @@ async fn finish(
     let Some(r) = recorded else { return };
     let session = r.session.clone();
     let log_err = |what: &str, e: anyhow::Error| {
-        let _ = state.store.insert_log(
-            "error",
-            "module",
-            "proxy",
-            &format!("{what}: {e:#}"),
-            Some(&session),
+        log(
+            state,
+            &session,
             Some(r.call_id),
-            None,
+            "error",
+            &format!("{what}: {e:#}"),
         );
     };
     if let Err(e) = state
@@ -456,7 +454,7 @@ async fn finish(
             }
         }
         None => log(
-            &state.store,
+            state,
             &session,
             Some(r.call_id),
             "info",
@@ -476,18 +474,21 @@ fn log_err(state: &ProxyState, recorded: &Option<Recorded>, start: Instant, msg:
             .store
             .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0);
     }
-    log(&state.store, &session, call_id, "error", msg);
+    log(state, &session, call_id, "error", msg);
 }
 
-fn log(store: &Store, session: &str, call_id: Option<i32>, level: &str, message: &str) {
-    let _ = store.insert_log(
+/// The proxy's log lines go through the one funnel (`log::record`), so the file line and
+/// the `logs` row come out of the same call as the plugin path's — one writer, not two.
+fn log(state: &ProxyState, session: &str, call_id: Option<i32>, level: &str, message: &str) {
+    crate::log::record(
+        &state.cfg,
+        &state.store,
+        Some(session),
+        call_id,
         level,
         "module",
         "proxy",
         message,
-        Some(session),
-        call_id,
-        None,
     );
 }
 
@@ -573,4 +574,45 @@ fn error_response(status: StatusCode, message: &str) -> AxumResponse {
         .header(CONTENT_TYPE, "application/json")
         .body(Body::from(body))
         .expect("static error response")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The proxy's rows come out of the same funnel as the plugin's, shaped exactly as
+    /// `insert_log` left them (T24.1). `logs.call_id` is a foreign key, so the session and
+    /// the `calls` row come first — the order `record` uses on every request.
+    #[test]
+    fn proxy_log_rows_keep_their_shape_through_the_funnel() {
+        let dir = std::env::temp_dir().join(format!("rtok-proxy-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.log.path = dir.join("rtok.log");
+        let state = ProxyState::new(&cfg).expect("proxy state");
+        state
+            .store
+            .upsert_session("sess", None, None, None, None)
+            .unwrap();
+        let call = state
+            .store
+            .insert_call("sess", "proxy", "api_request", None, None, None, None, None)
+            .unwrap();
+        log(&state, "sess", Some(call), "error", "boom");
+        let rows = state.store.logs_after(0, 10).unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        let r = &rows[0];
+        assert_eq!(
+            (r.level.as_str(), r.source.as_str(), r.name.as_str()),
+            ("error", "module", "proxy")
+        );
+        assert_eq!(r.message, "boom");
+        assert_eq!(r.session.as_deref(), Some("sess"));
+        assert_eq!(r.call_id, Some(call));
+        assert_eq!(r.plugin, None);
+        drop(state);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

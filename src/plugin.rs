@@ -129,30 +129,19 @@ impl Runtime {
             .insert_tokens(call_id, plugin, phase, source, tokens)
     }
 
-    /// Never returns `Err` to a plugin (fail open). On DB error, append to `log_file`.
+    /// Never returns `Err` to a plugin (fail open): [`crate::log::record`] is the funnel —
+    /// the file line and the `logs` row, each of which swallows its own errors (D1).
     pub fn log(&self, level: &str, source: &str, name: &str, message: &str) {
-        if let Err(e) = self.store.insert_log(
+        crate::log::record(
+            &self.config,
+            &self.store,
+            Some(&self.session),
+            None,
             level,
             source,
             name,
             message,
-            Some(&self.session),
-            None,
-            None,
-        ) {
-            let path = &self.config.core.log_file;
-            if let Some(dir) = path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-            {
-                use std::io::Write;
-                let _ = writeln!(f, "{level} {source}/{name}: {message} ({e})");
-            }
-        }
+        );
     }
 }
 
@@ -401,8 +390,12 @@ mod tests {
 
     #[test]
     fn log_survives_db_failure() {
-        let cx = Runtime::in_memory("s").unwrap();
+        let mut cx = Runtime::in_memory("s").unwrap();
+        cx.config.log.path =
+            std::env::temp_dir().join(format!("rtok-log-db-fail-{}.log", std::process::id()));
         cx.store.set_query_only().unwrap();
         cx.log("error", "plugin", "read", "boom");
+        assert!(cx.config.log.path.exists(), "file line written, row not");
+        let _ = std::fs::remove_file(&cx.config.log.path);
     }
 }
