@@ -343,6 +343,32 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
 Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
 
+## P22 — `rtok report` (D24) · T22.0 done 2026-09-09
+
+Goal: one artefact a person or a model can act on — the report renders the D23 operator model and computes nothing of its own. Plan: `plan.md` P22.
+
+**T22.0 pick the PDF renderer against the size gate** · T15.0 · `docs/report.md` (new)
+Do: D15-style survey before any code. At least three candidates priced honestly: `typst` as a
+library, `printpdf` + `svg2pdf`, and rendering through a browser. Judge each on (1) what it does to
+the release binary, which P17 already gates, (2) whether it keeps "one static binary, no runtime
+dependency" true, (3) whether HTML and PDF can come from *one* document rather than two layouts.
+Charts are one decision too: pure-Rust SVG (`plotters`) embeds into all three formats, where a
+JS charting library would make the HTML the only real format and the other two second-class.
+Check: `docs/report.md` names the choice, the two rejected options with the reason, and the
+measured size cost of the winner; a `dist` build stays inside the P17 budget.
+Status: done 2026-09-09 · Model: GLM-5.3-Flash (zai-coding-plan)
+Check result: green. docs/report.md names the choice (printpdf 0.12.8 + svg2pdf 0.13.0, plotters
+0.3.7 SVG for charts), the two rejected options with their reasons (typst: measured +42.30 MiB
+against an 18.27 MiB binary; browser rendering: a runtime dependency, rejected on criterion (2)
+without a build), and the measured size cost of the winner (+5.99 MiB release / +5.12 MiB
+dist-shaped) with the scratch commands and dates. All sizes from throwaway /tmp crates built
+2026-09-09 with P17's strip = "symbols" profile; a no-dep hello is the baseline, so the deltas are
+the per-candidate cost; each scratch binary was run and produced its artefact. P17 published no byte
+cap, so the budget clause is applied as published arithmetic — dist 17.4 MB + 5.12 MiB ≈ 22.8 MB
+(+31 %), the same size class P17 recorded — with the linked measurement due at T22.3; typst's
+arithmetic (≈ 61.8 MB, ~3.5×) is what fails the gate, which is why the smaller candidate wins. The
+site row for the new docs page is in _content.gotmpl. Repo Cargo.toml/Cargo.lock untouched.
+
 ## P15 — `rtok tui` (D17, D23) · T15.0, T15.10 done 2026-09-09
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.

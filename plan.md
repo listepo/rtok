@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 T23.3 T23.4 T23.5 T23.6 T24.1 T15.10 done; P23 complete.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 T23.3 T23.4 T23.5 T23.6 T24.1 T15.10 T22.0 done; P23 complete.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -178,18 +178,6 @@ per plugin, from `Measurement` rows only) · **Calls** (hooks / MCP / proxy, p50
 **Cache** (busts and their cause) · **Expand** (rate, and what was expanded) · **Config**
 (effective values with their origin, from `config show --sources`) · **Doctor** (what `rtok
 doctor` reports) · **Recommendations**.
-
-**T22.0 pick the PDF renderer against the size gate** · T15.0 · `docs/report.md` (new)
-Do: D15-style survey before any code. At least three candidates priced honestly: `typst` as a
-library, `printpdf` + `svg2pdf`, and rendering through a browser. Judge each on (1) what it does to
-the release binary, which P17 already gates, (2) whether it keeps "one static binary, no runtime
-dependency" true, (3) whether HTML and PDF can come from *one* document rather than two layouts.
-Charts are one decision too: pure-Rust SVG (`plotters`) embeds into all three formats, where a
-JS charting library would make the HTML the only real format and the other two second-class.
-Check: `docs/report.md` names the choice, the two rejected options with the reason, and the
-measured size cost of the winner; a `dist` build stays inside the P17 budget.
-Status: in progress · Model: GLM-5.3-Flash (zai-coding-plan)
-Complexity: 2/5
 
 **T22.1 `--format md`** · T22.0 · `src/report/mod.rs`, `src/report/markdown.rs`, `src/cli.rs`
 Do: the whole section set as Markdown, straight from the D23 model. Tables, no charts. Every
@@ -505,7 +493,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**138 done · 27 open · 1 superseded — 166 tasks.**
+**139 done · 26 open · 1 superseded — 166 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -650,7 +638,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T21.1` | P21 CLI presentation | the plugin offer actually asks | ✅ 2026-09-09 | — |
 | `T21.2` | P21 CLI presentation | `graph index` shows progress | ✅ 2026-09-09 | — |
 | `T21.3` | P21 CLI presentation | `rtok dashboard` becomes `rtok web` | ✅ 2026-09-09 | — |
-| `T22.0` | P22 report | pick the PDF renderer against the size gate | open | 2/5 |
+| `T22.0` | P22 report | pick the PDF renderer against the size gate | ✅ 2026-09-09 | 2/5 |
 | `T22.1` | P22 report | `--format md` | open | 3/5 |
 | `T22.2` | P22 report | `--format html` | open | 3/5 |
 | `T22.3` | P22 report | `--format pdf` | open | 4/5 |
