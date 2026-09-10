@@ -18,7 +18,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 /// What `rtok doctor` found, as data.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub hooks_total: usize,
     pub hooks_by_event: BTreeMap<String, usize>,
@@ -37,7 +37,7 @@ pub struct Report {
     pub instructions: Option<Instructions>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ServerInfo {
     pub name: String,
     pub cmd: String,
@@ -45,13 +45,13 @@ pub struct ServerInfo {
     pub desc_tokens: u32,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct Instructions {
     pub rows: Vec<InstructionRow>,
     pub duplicates: Vec<(String, Vec<String>)>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct InstructionRow {
     pub name: String,
     pub tokens: u32,
