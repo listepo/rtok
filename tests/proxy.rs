@@ -807,6 +807,9 @@ async fn proxy_compress_archives_six_turns_on_each_wire() {
 
 // ── proxy/core.enabled=false → plain reverse proxy (listener stays up) ──
 
+// Global live ring is process-wide; parallel tests that clear()/assert it must serialize.
+static LIVE_RING_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn plain_server(
     label: &str,
     up: &MockUpstream,
@@ -835,6 +838,7 @@ async fn plain_server(
 }
 
 async fn assert_plain_forward(label: &str, proxy_enabled: bool, core_enabled: bool) {
+    let _live_guard = LIVE_RING_TEST_LOCK.lock().await;
     rtok::proxy::live::clear();
     let up = MockUpstream::anthropic_messages_body();
     // mode=compress would rewrite if business logic ran; plain must ignore it.
@@ -890,15 +894,22 @@ async fn assert_plain_forward(label: &str, proxy_enabled: bool, core_enabled: bo
     assert!(!live.is_empty(), "{label}: live ring must show traffic");
     assert_eq!(live[0].path, "/v1/messages", "{label}");
     assert_eq!(live[0].status, 200, "{label}");
-    let live_body = reqwest::Client::new()
-        .get(format!("http://{addr}/live"))
-        .send()
-        .await
-        .expect("live")
-        .text()
-        .await
-        .expect("live body");
-    let live_http: Vec<serde_json::Value> = serde_json::from_str(&live_body).expect("live json");
+    let mut live_http: Vec<serde_json::Value> = Vec::new();
+    for _ in 0..200 {
+        let live_body = reqwest::Client::new()
+            .get(format!("http://{addr}/live"))
+            .send()
+            .await
+            .expect("live")
+            .text()
+            .await
+            .expect("live body");
+        live_http = serde_json::from_str(&live_body).expect("live json");
+        if !live_http.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
     assert!(!live_http.is_empty(), "{label} /live");
 
     let mut cfg = Config::default();
@@ -928,6 +939,7 @@ async fn core_disabled_is_plain_forward_with_no_bookkeeping() {
 
 #[tokio::test]
 async fn enabled_compress_still_archives_when_flags_on() {
+    let _live_guard = LIVE_RING_TEST_LOCK.lock().await;
     rtok::proxy::live::clear();
     let up = MockUpstream::anthropic_messages_body();
     let (addr, state, task) = plain_server("both-on", &up, "compress", true, true).await;
