@@ -312,7 +312,10 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
     .block(Block::default().title({
         let live = rows.iter().filter(|c| c.kind == "live_passthrough").count();
         if live > 0 {
-            format!("calls (last {n}, {live} live passthrough — not recorded)", n = rows.len())
+            format!(
+                "calls (last {n}, {live} live passthrough — not recorded)",
+                n = rows.len()
+            )
         } else {
             format!("calls (last {}, newest first)", rows.len())
         }

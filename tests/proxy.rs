@@ -805,7 +805,6 @@ async fn proxy_compress_archives_six_turns_on_each_wire() {
     }
 }
 
-
 // ── proxy/core.enabled=false → plain reverse proxy (listener stays up) ──
 
 async fn plain_server(
@@ -835,11 +834,7 @@ async fn plain_server(
     (addr, state, task)
 }
 
-async fn assert_plain_forward(
-    label: &str,
-    proxy_enabled: bool,
-    core_enabled: bool,
-) {
+async fn assert_plain_forward(label: &str, proxy_enabled: bool, core_enabled: bool) {
     rtok::proxy::live::clear();
     let up = MockUpstream::anthropic_messages_body();
     // mode=compress would rewrite if business logic ran; plain must ignore it.
