@@ -510,10 +510,57 @@ fn pct(sorted: &[f64], p: f64) -> Option<f64> {
 }
 
 /// The `rtok doctor` page (T15.11): hooks, MCP servers, proxy chains. Every probe runs on
-/// this call — since T15.6 the snapshot carries it, so a surface tick pays for the probes,
-/// each bounded by its `[doctor]` timeout.
+/// this call — the CLI and a cold snapshot miss pay once; each probe is bounded by its
+/// `[doctor]` timeout. Surfaces re-read through [`doctor_for_snapshot`] so a 2 s tick
+/// cannot re-spawn every MCP server (T15.6 hot path).
 pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
     doctor::page(cfg)
+}
+
+/// How long a snapshot may reuse the last doctor report. Shorter than a sitting at the
+/// Doctor tab feels stale; far longer than the 2 s tick, so MCP spawns are not the tick.
+const DOCTOR_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Snapshot-only doctor: same [`doctor`] probes, cached briefly so `rtok tui` / `rtok web`
+/// ticks do not spawn MCP servers every two seconds. `rtok doctor` still goes through
+/// [`doctor`] uncached. Tests bypass the cache so Check pins stay byte-identical to a
+/// direct probe.
+fn doctor_for_snapshot(cfg: &Config) -> Option<doctor::Report> {
+    if cfg!(test) {
+        return doctor(cfg).ok();
+    }
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+
+    struct Entry {
+        at: Instant,
+        key: String,
+        report: Option<doctor::Report>,
+    }
+    static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
+    let key = format!(
+        "{} {} {}",
+        cfg.doctor.settings_path.display(),
+        cfg.doctor.claude_json.display(),
+        cfg.doctor.mcp_json.display()
+    );
+    let lock = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = lock.lock()
+        && let Some(e) = guard.as_ref()
+        && e.key == key
+        && e.at.elapsed() < DOCTOR_SNAPSHOT_TTL
+    {
+        return e.report.clone();
+    }
+    let report = doctor(cfg).ok();
+    if let Ok(mut guard) = lock.lock() {
+        *guard = Some(Entry {
+            at: Instant::now(),
+            key,
+            report: report.clone(),
+        });
+    }
+    report
 }
 
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
@@ -558,9 +605,9 @@ impl<'a> Model<'a> {
             calls: self.calls(),
             sessions: self.sessions(0),
             // The one doctor query (D27): the snapshot carries what `rtok doctor`
-            // renders, so neither surface grows a probe of its own. A failed tick is
-            // `None`, never a failed snapshot — like Overview's zeros.
-            doctor: doctor(self.cfg).ok(),
+            // renders, so neither surface grows a probe of its own. Cached briefly —
+            // a failed or in-flight tick is `None`, never a failed snapshot.
+            doctor: doctor_for_snapshot(self.cfg),
             logs: self.log_lines(None),
         }
     }

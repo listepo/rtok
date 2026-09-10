@@ -345,7 +345,7 @@ fn time_of(ts: i64) -> String {
 
 fn placeholder(page: &str) -> Paragraph<'static> {
     Paragraph::new(format!(
-        "{page}: this page arrives with T15.3+ (roadmap P15)"
+        "{page}: on the model and the wire; TUI body not landed yet"
     ))
 }
 
