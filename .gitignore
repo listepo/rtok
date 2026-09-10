@@ -8,3 +8,4 @@
 /site/resources/
 /site/_vendor/
 /site/.hugo_build.lock
+report/jscpd-report.json

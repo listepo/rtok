@@ -182,7 +182,7 @@ against how often old tool results were actually re-read. Findings are ordered b
 would recover, and a finding with no number attached does not ship.
 Check: a fixture store triggers each rule exactly once and the text names the row count behind it;
 a healthy store produces an empty section that says so, not filler advice.
-Status: open · Model: -
+Status: in progress · Model: GLM-5.3 (subagent; tier GLM-5.3, effort High) — adopting the disconnected subagent-report-reco heap
 Complexity: 3/5
 
 Gate P22 (review): the three formats are one document — a test walks the Markdown, the HTML and the
@@ -513,15 +513,15 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T14.9` | P14 plugin design | `graph` design | ✅ 2026-09-02 | — |
 | `T14.10` | P14 plugin design | `toon` design | ✅ 2026-09-02 | — |
 | `T15.0` | P15 tui | one operator model behind both surfaces | ✅ 2026-09-09 | 2/5 |
-| `T15.1` | P15 tui | ratatui + crossterm scaffold, event loop *(`roadmap.md`)* | open | 2/5 |
-| `T15.2` | P15 tui | header · tabs · footer shell *(`roadmap.md`)* | open | 2/5 |
+| `T15.1` | P15 tui | ratatui + crossterm scaffold, event loop *(`roadmap.md`)* | ✅ 2026-09-09 | 2/5 |
+| `T15.2` | P15 tui | header · tabs · footer shell *(`roadmap.md`)* | ✅ 2026-09-09 | 2/5 |
 | `T15.3` | P15 tui | Overview tab (CTT, bars, sparkline) *(`roadmap.md`)* | ✅ 2026-09-10 | 3/5 |
-| `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | open | 3/5 |
-| `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | open | 3/5 |
-| `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | open | 1/5 |
-| `T15.7` | P15 tui | Logs tab *(`roadmap.md`)* | open | 2/5 |
+| `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | in progress 2026-09-10 · GLM-5.3 High | 3/5 |
+| `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | in progress 2026-09-10 · GLM-5.3 High | 3/5 |
+| `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | in progress 2026-09-10 · GLM-5.3 High (adopting the disconnected subagent-doctor-tab heap) | 1/5 |
+| `T15.7` | P15 tui | Logs tab *(`roadmap.md`)* | in progress 2026-09-10 · policy GLM-5.3-Flash Low | 2/5 |
 | `T15.8` | P15 tui | CLI + `[tui]` config *(`roadmap.md`)* | ✅ 2026-09-10 | 2/5 |
-| `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | open | 2/5 |
+| `T15.9` | P15 tui | TTY guard, `q` restores the terminal *(`roadmap.md`)* | in progress 2026-09-10 · policy GLM-5.3-Flash Low | 2/5 |
 | `T15.10` | P15 tui | the two surfaces cannot drift | ✅ 2026-09-09 | 1/5 |
 | `T15.11` | P15 tui | the model covers every reading command | ✅ 2026-09-09 | 4/5 |
 | `T15.12` | P15 tui | the parity test enumerates commands, not pages | ✅ 2026-09-09 | 2/5 |
