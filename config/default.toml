@@ -5,12 +5,9 @@
 [core]
 db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
-log_level   = "warn"                  # LEGACY unread (D26); use [log].level — retired by T24.5
-log_file    = "~/.rtok/rtok.log"      # LEGACY unread (D26); use [log].path — retired by T24.5
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
 retain_calls_days    = 30             # 0 = keep `calls` forever
-log_to_db            = true           # LEGACY unread (D26); use [log].to_db — retired by T24.5
 
 [log]                                 # rtok's own log (D26); `rtok logs` reads it
 path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5

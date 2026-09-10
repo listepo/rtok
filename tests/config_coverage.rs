@@ -111,7 +111,7 @@ fn config_key(path: &[&str], long: &str) -> String {
             "cmd" => "filter.cmd".into(),
             other => format!("plugins.cmd.{other}"),
         },
-        [] if name == "log_level" => "core.log_level".into(),
+        [] if name == "log_level" => "log.level".into(),
         [] => name.into(),
         _ => format!("{}.{name}", path.join(".")),
     }

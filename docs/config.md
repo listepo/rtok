@@ -55,9 +55,10 @@ Rules:
 ## Reference file
 
 This is `config/default.toml` verbatim. Every value shown is the default; a fresh
-`rtok config init` writes exactly this. Logging is `[log]` only (D26): `core.log_file`,
-`core.log_level` and `core.log_to_db` are still accepted by the schema today but are **unread**
-by production code — T24.5 retires them. Prefer `[log].path` / `level` / `to_db`.
+`rtok config init` writes exactly this. Logging is `[log]` only (D26). An old file's
+`core.log_file` / `log_level` / `log_to_db` still loads once with a warning and folds into
+`[log]`; `rtok config validate` rejects those keys because they are absent from the reference
+schema.
 
 ```toml
 # rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
@@ -67,14 +68,11 @@ by production code — T24.5 retires them. Prefer `[log].path` / `level` / `to_d
 [core]
 db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
-log_level   = "warn"                  # LEGACY unread (D26); use [log].level — retired by T24.5
-log_file    = "~/.rtok/rtok.log"      # LEGACY unread (D26); use [log].path — retired by T24.5
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
 retain_calls_days    = 30             # 0 = keep `calls` forever
-log_to_db            = true           # LEGACY unread (D26); use [log].to_db — retired by T24.5
 
-[log]                                 # rtok's own log (D26); `rtok logs` reads it — the only keys that work today
+[log]                                 # rtok's own log (D26); `rtok logs` reads it
 path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5
 max_bytes = 1048576                   # rotate past 1 MiB
 files     = 5                         # generations kept; older ones are deleted, never archived
@@ -292,3 +290,10 @@ Hooks are spawned by the host with a fixed command line; the only way to tune th
 file. The proxy and MCP server run for hours; restarting them to change a flag is a
 regression. And a bench needs two complete, reproducible configurations — which is a file
 per configuration, not a shell history.
+
+## Legacy keys
+
+`[dashboard]` folds into `[web]` (T21.3). `core.inject_budget_tokens` folds into
+`plugins.inject.budget_tokens` (T12.1). `core.log_file` / `log_level` / `log_to_db` fold into
+`[log].path` / `level` / `to_db` (T24.5, D26). Each prints one warning on load and is then
+dropped; `rtok config validate` rejects them because they are absent from the reference schema.

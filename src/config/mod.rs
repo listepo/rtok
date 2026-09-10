@@ -68,16 +68,25 @@ fn strs(v: &[&str]) -> Vec<String> {
 // ── core ────────────────────────────────────────────────────────────────────
 
 section! {
-    /// `[core]` — paths and logging shared by every surface.
+    /// `[core]` — paths shared by every surface. Logging lives in `[log]` (D26).
     Core {
         db_path: PathBuf = p("~/.rtok/rtok.db"),
         archive_dir: PathBuf = p("~/.rtok/archive"),
-        log_level: String = s("warn"),
-        log_file: PathBuf = p("~/.rtok/rtok.log"),
+        /// Removed in T24.5: it is now `log.level`. Accepted from an old file with a
+        /// warning, then dropped.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        log_level: Option<String> = None,
+        /// Removed in T24.5: it is now `log.path`. Accepted from an old file with a
+        /// warning, then dropped.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        log_file: Option<PathBuf> = None,
         session_env: String = s("CLAUDE_SESSION_ID"),
         call_io_inline_bytes: u32 = 65536,
         retain_calls_days: u32 = 30,
-        log_to_db: bool = true,
+        /// Removed in T24.5: it is now `log.to_db`. Accepted from an old file with a
+        /// warning, then dropped.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        log_to_db: Option<bool> = None,
         /// Removed in T12.1: it is now `plugins.inject.budget_tokens`. Accepted from an old
         /// file with a warning, then dropped.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,7 +108,7 @@ section! {
 
 section! {
     /// `[log]` — rtok's own log (P24, D26). One rotating text file, plus the `logs` rows
-    /// `rtok otel` exports. `[core] log_file`, `log_level` and `log_to_db` moved here.
+    /// `rtok otel` exports. Legacy `[core] log_file` / `log_level` / `log_to_db` migrate here.
     Log {
         path: PathBuf = p("~/.rtok/logs/rtok.log"),
         max_bytes: u64 = 1_048_576,
@@ -581,11 +590,23 @@ impl Config {
             eprintln!("rtok: [dashboard] is now [web] (using it)");
             self.web = web;
         }
+        // T24.5 / D26: `[core] log_*` → `[log]`. Taken once so they are not re-read.
+        if let Some(path) = self.core.log_file.take() {
+            eprintln!("rtok: core.log_file is now log.path (using {})", path.display());
+            self.log.path = path;
+        }
+        if let Some(level) = self.core.log_level.take() {
+            eprintln!("rtok: core.log_level is now log.level (using {level})");
+            self.log.level = level;
+        }
+        if let Some(to_db) = self.core.log_to_db.take() {
+            eprintln!("rtok: core.log_to_db is now log.to_db (using {to_db})");
+            self.log.to_db = to_db;
+        }
         self.home = home.to_path_buf();
         for path in [
             &mut self.core.db_path,
             &mut self.core.archive_dir,
-            &mut self.core.log_file,
             &mut self.log.path,
             &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
@@ -813,5 +834,44 @@ mod tests {
         cfg.finish(Path::new("/tmp/rtok-legacy"));
         assert_eq!(cfg.plugins.inject.budget_tokens, 250);
         assert_eq!(cfg.core.inject_budget_tokens, None);
+    }
+
+    /// T24.5: an old `[core] log_*` file folds into `[log]` once and clears the legacy keys.
+    #[test]
+    fn legacy_core_log_keys_migrate_into_log() {
+        let mut cfg: Config = parse(
+            "[core]\nlog_file = \"/tmp/old.log\"\nlog_level = \"debug\"\nlog_to_db = false\n",
+        )
+        .unwrap();
+        cfg.finish(Path::new("/tmp/rtok-legacy-log"));
+        assert_eq!(cfg.log.path, PathBuf::from("/tmp/old.log"));
+        assert_eq!(cfg.log.level, "debug");
+        assert!(!cfg.log.to_db);
+        assert_eq!(cfg.core.log_file, None);
+        assert_eq!(cfg.core.log_level, None);
+        assert_eq!(cfg.core.log_to_db, None);
+    }
+
+    /// T24.5: `config validate` rejects legacy keys — they are absent from the reference schema.
+    #[test]
+    fn validate_rejects_legacy_core_log_keys() {
+        let dir = std::env::temp_dir().join(format!("rtok-val-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.toml");
+        std::fs::write(
+            &path,
+            "[core]\nlog_file = \"/tmp/x.log\"\nlog_level = \"debug\"\nlog_to_db = false\n",
+        )
+        .unwrap();
+        let errs = validate::issues(&path).unwrap();
+        let joined = errs.join("\n");
+        assert!(
+            joined.contains("log_file")
+                || joined.contains("log_level")
+                || joined.contains("log_to_db"),
+            "expected unknown-key errors, got {errs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

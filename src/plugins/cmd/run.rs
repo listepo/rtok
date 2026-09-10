@@ -104,7 +104,7 @@ mod tests {
         let mut c = Config::default();
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
-        c.core.log_file = dir.join("rtok.log");
+        c.log.path = dir.join("rtok.log");
         (c, dir)
     }
 
