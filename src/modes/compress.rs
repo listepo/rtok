@@ -70,8 +70,9 @@ const KEEP_WORDS: &[&str] = &["not", "never", "no", "only", "except"];
 ///    code, never half-edit it).
 /// 2. Outside fences only: drop pleasantries (all intensities), then filler + articles at
 ///    Full/Ultra, then conjunction padding at Ultra.
-/// 3. Word drops are whole-token only; [`KEEP_WORDS`] is never stripped.
-/// 4. Inline `` `...` `` spans are copied as atoms so error strings stay exact.
+/// 3. Word drops are whole-token only; configured negation tokens are never stripped.
+/// 4. Whole-word drops preserve text through the next backtick, but phrase replacements
+///    are substring-based and can affect inline backtick spans.
 ///
 /// Deterministic and allocation-light; not a semantic summarizer.
 pub fn compress_prose(text: &str, intensity: CaveIntensity) -> String {
@@ -96,6 +97,7 @@ pub fn compress_prose(text: &str, intensity: CaveIntensity) -> String {
     out
 }
 
+/// Compress an unfenced prose segment and normalize whitespace within each line.
 fn compress_outside(prose: &str, intensity: CaveIntensity) -> String {
     let mut s = prose.to_string();
     for p in PLEASANTRIES {
@@ -117,6 +119,9 @@ fn compress_outside(prose: &str, intensity: CaveIntensity) -> String {
     cleanup_ws(&s)
 }
 
+/// Replace non-overlapping ASCII-case-insensitive substrings without requiring word boundaries.
+///
+/// `needle` must be nonempty and ASCII.
 fn replace_ci(hay: &str, needle: &str, with: &str) -> String {
     let lower = hay.to_ascii_lowercase();
     let n = needle.to_ascii_lowercase();
@@ -135,8 +140,10 @@ fn replace_ci(hay: &str, needle: &str, with: &str) -> String {
     out
 }
 
-/// Drop whole words from `words` when they appear as standalone tokens (ASCII word chars).
-/// Never drops [`KEEP_WORDS`]. Preserves content inside `...` and ``...``.
+/// Drop tokens made of ASCII letters and apostrophes when they match `words`.
+///
+/// Tokens in [`KEEP_WORDS`] remain. Text from a backtick through the next backtick is copied
+/// unchanged; an unmatched backtick preserves the rest of the input.
 fn strip_words(text: &str, words: &[&str]) -> String {
     let drop: std::collections::HashSet<&str> = words.iter().copied().collect();
     let keep: std::collections::HashSet<&str> = KEEP_WORDS.iter().copied().collect();
@@ -176,6 +183,7 @@ fn strip_words(text: &str, words: &[&str]) -> String {
     out
 }
 
+/// Collapse whitespace within each line, trim line edges, and normalize retained line endings.
 fn cleanup_ws(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut start = true;

@@ -66,7 +66,9 @@ pub fn evaluate_ladder(ctx: &LadderContext) -> LadderDecision {
     evaluate_ladder_at(ctx, PonyIntensity::Full)
 }
 
-/// Same as [`evaluate_ladder`], with intensity reserved for future ultra speculative bias.
+/// Apply the same rung precedence as [`evaluate_ladder`].
+///
+/// `intensity` is currently ignored and reserved for future speculative bias.
 pub fn evaluate_ladder_at(ctx: &LadderContext, intensity: PonyIntensity) -> LadderDecision {
     let _ = intensity; // rung order is intensity-invariant; ultra may tighten speculative upstream.
     if ctx.must_not_simplify {
