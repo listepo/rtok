@@ -1,8 +1,8 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
 use rtok_plugin_sdk::{
-    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
-    Surface,
+    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision,
+    PreToolUse, Surface,
 };
 use serde_json::Value;
 
@@ -37,12 +37,20 @@ impl Plugin for Guard {
             return None;
         }
         let reason = format!("duplicate; rtok expand {id}");
+        // AGENTS: denial Measurement carries the avoided result size (archive bytes).
+        let body = cx.get_archive(&id).ok().flatten().unwrap_or_default();
+        let avoided = body.len() as u64;
+        let est = if body.is_empty() {
+            0
+        } else {
+            cx.estimate(&String::from_utf8_lossy(&body), Class::Code)
+        };
         let _ = cx.record(&Measurement {
             plugin: "guard",
             kind: "guard",
-            before_bytes: 0,
+            before_bytes: avoided,
             after_bytes: 0,
-            est_before: 0,
+            est_before: est,
             est_after: 0,
             ref_id: Some(id.clone()),
             call_id: None,
@@ -152,5 +160,7 @@ mod tests {
         };
         assert!(g.pre_tool(&diff, &Ctx::new(&cx)).is_none());
         assert!(cx.store.measurement_count("guard").unwrap() >= 1);
+        let rows = cx.store.list_measurements("guard").unwrap();
+        assert!(rows.iter().any(|r| r.before_bytes > 0), "{rows:?}");
     }
 }
