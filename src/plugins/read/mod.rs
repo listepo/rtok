@@ -219,15 +219,12 @@ pub(crate) mod tests {
             let _ = fs::remove_dir_all(dir);
             return;
         }
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&cwd).unwrap();
-        // Drop allow_paths so only env cwd counts as the root.
-        // (cx was opened with allow_paths=[dir]; reopen without extras.)
-        let (cx, _) = crate::testutil::runtime("symlink2");
-        let err = read(&Ctx::new(&cx), "escape", "full", None)
+        // `read` passes the process cwd to `resolve`; calling `resolve` with `cwd` and no
+        // allow_paths checks the same guard without moving the cwd every parallel test shares
+        // (moving it failed `map_src_main_lists_fn_main` on ubuntu CI, 2026-09-11).
+        let err = resolve(&cwd, Path::new("escape"), &[])
             .unwrap_err()
             .to_string();
-        std::env::set_current_dir(prev).unwrap();
         let _ = fs::remove_file(&outside);
         assert!(err.contains("outside cwd"), "{err}");
         let _ = fs::remove_dir_all(dir);

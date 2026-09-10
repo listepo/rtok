@@ -15,6 +15,7 @@ Check: the walk and the stat gate stay on the calling thread. Files that pass th
 Deviation: the release bench is 2.0× faster, short of the Check's "≥ 3×". The bar was set against 13.8 s, when the per-file query compile was most of the time. After T35.1 what remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes, which is T35.3's work.
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Opus 5
+Found on push, 2026-09-11: ubuntu CI failed `map_src_main_lists_fn_main` with ENOENT, and macOS passed. `symlink_escape_is_err` moved the process cwd with `set_current_dir`, and the map test's relative `src/main.rs` resolved against the moved cwd. The race predates this task; the new timings exposed it. The test now calls `resolve` with the `cwd` it builds, which is the guard `read` runs against the process cwd, and no test moves the cwd any more.
 
 ## P34 — Hardening pass (2026-09-10) — T34.1–T34.9
 
