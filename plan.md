@@ -500,14 +500,7 @@ Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that record
 
 ### P35 — Graph index speed (goal: a cold index bound by cores, a watcher settle bound by the files that changed) — added 2026-09-10 (T34.9 measurements); open.
 
-Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s. A warm re-walk — what every watcher settle costs — is 50 ms. Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
-
-**T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`
-Do: one `OnceLock<TagsConfiguration>` per language (a failed compile stays an `Err`, never a panic); one `TagsContext` per thread.
-Check: `golden_per_language` and every graph test unchanged; the cold index line printed by `labelled_symbols_are_found` falls from 3.42 s to ≤ 1.5 s on this machine; research.md P8c cold row re-measured.
-Complexity: 2/5
-Status: open
-Model: -
+Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. A warm re-walk — what every watcher settle costs — is 50 ms. Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
 
 **T35.2 parse on worker threads, write from one** · T35.1 · `src/plugins/graph/index.rs`
 Do: stat-gate, read, hash and parse on `std::thread::scope` workers (or `ignore`'s parallel walker); rows go over a channel to the calling thread, the only writer (D18). Same `Report`, same rows.

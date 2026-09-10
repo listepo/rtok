@@ -75,7 +75,7 @@ Numbers from `cargo test --release --test graph_bench -- --ignored --nocapture`.
 | (1) `tests/graph_contract.rs` | 3 passed | 3 passed | unchanged, both |
 | (2) `rtok hook PostToolUse` p95, n=100 | 8.07 ms | 96.6 ms | ≤ 10 ms |
 | (3) warm `symbol` / `callers` / `impact(2)` | 17.9 / 17.5 / 26.8 ms | 797 / 776 / 873 ms | < 100 ms |
-| (3) cold index, 3 000 files | 13.8 s | 33.7 s | not gated |
+| (3) cold index, 3 000 files | 13.8 s; 341 ms after T35.1 (2026-09-11) | 33.7 s | not gated |
 | (4) `impact(4)` on fan-out fixture | CTE 28.5 s | path 371 ms (**77×**) | lbug ≥ 2× CTE |
 | (4) same fixture, Rust BFS | 2.61 s | 2.35 s | baseline |
 | (5) `just check` (liblbug already built) | 16.9 s | same command (clippy `--all-features`) | ≤ 2× default |

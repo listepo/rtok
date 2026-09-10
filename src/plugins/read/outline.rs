@@ -1,9 +1,9 @@
 //! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3).
 
 use std::path::Path;
+use std::sync::OnceLock;
 
-use anyhow::{Context, Result};
-use tree_sitter::Language;
+use anyhow::Result;
 use tree_sitter_tags::{TagsConfiguration, TagsContext};
 
 /// One tags-query hit (definition or reference).
@@ -51,7 +51,7 @@ pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
     let cfg = cfg?;
     let mut ctx = TagsContext::new();
     let (tags, _) = ctx
-        .generate_tags(&cfg, src.as_bytes(), None)
+        .generate_tags(cfg, src.as_bytes(), None)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     // Byte offset of each line start; `partition_point` turns a byte into a 1-based line.
     let starts: Vec<usize> = std::iter::once(0)
@@ -109,8 +109,26 @@ fn fallback(src: &str) -> String {
     format!("{body}\n(note: unknown language, showing lines 1-60)")
 }
 
-fn make(lang: Language, tags: &str, locals: &str) -> Option<Result<TagsConfiguration>> {
-    Some(TagsConfiguration::new(lang, tags, locals).context("tags query"))
+/// A language's compiled tags query, kept for the process. A failed compile keeps its message,
+/// so every later call gets the same `Err` rather than a retry.
+type Cached = OnceLock<Result<TagsConfiguration, String>>;
+
+fn cached(
+    cell: &'static Cached,
+    build: impl FnOnce() -> Result<TagsConfiguration, tree_sitter_tags::Error>,
+) -> Option<Result<&'static TagsConfiguration>> {
+    let cfg = cell.get_or_init(|| build().map_err(|e| format!("tags query: {e}")));
+    Some(cfg.as_ref().map_err(|e| anyhow::anyhow!("{e}")))
+}
+
+/// One `static` cell per match arm, so each language compiles at most once.
+macro_rules! compiled {
+    ($lang:expr, $tags:expr, $locals:expr) => {{
+        static CELL: Cached = OnceLock::new();
+        cached(&CELL, || {
+            TagsConfiguration::new($lang.into(), $tags, $locals)
+        })
+    }};
 }
 
 /// The upstream Rust tags query only sees bare and method calls; path-qualified calls
@@ -122,60 +140,50 @@ const RUST_SCOPED_CALL: &str = "
         name: (identifier) @name)) @reference.call
 ";
 
-// PERF(T35.1) where: here, on every `tags` call — each file of a graph index run, each outline.
-// What: compile each language's query once (a `OnceLock` per language), reuse a `TagsContext`
-// per thread. Why: the compile is 19 ms of a 26.5 ms `tags` on `graph/index.rs` (debug,
-// 2026-09-10), ~70 % of the 3.42 s cold index of this repo.
-fn config(path: &Path) -> Option<Result<TagsConfiguration>> {
+/// The query for `path`'s language, compiled on first use (T35.1): the compile was 19 ms of a
+/// 26.5 ms `tags` call on `graph/index.rs` (debug, 2026-09-10), paid again on every file.
+fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
     match path.extension()?.to_str()? {
         #[cfg(feature = "lang-rust")]
-        "rs" => make(
-            tree_sitter_rust::LANGUAGE.into(),
+        "rs" => compiled!(
+            tree_sitter_rust::LANGUAGE,
             &format!("{}{RUST_SCOPED_CALL}", tree_sitter_rust::TAGS_QUERY),
-            "",
+            ""
         ),
         #[cfg(feature = "lang-ts")]
-        "ts" => make(
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        "ts" => compiled!(
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
             tree_sitter_typescript::TAGS_QUERY,
-            tree_sitter_typescript::LOCALS_QUERY,
+            tree_sitter_typescript::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-ts")]
-        "tsx" => make(
-            tree_sitter_typescript::LANGUAGE_TSX.into(),
+        "tsx" => compiled!(
+            tree_sitter_typescript::LANGUAGE_TSX,
             tree_sitter_typescript::TAGS_QUERY,
-            tree_sitter_typescript::LOCALS_QUERY,
+            tree_sitter_typescript::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-js")]
-        "js" | "mjs" | "cjs" => make(
-            tree_sitter_javascript::LANGUAGE.into(),
+        "js" | "mjs" | "cjs" => compiled!(
+            tree_sitter_javascript::LANGUAGE,
             tree_sitter_javascript::TAGS_QUERY,
-            tree_sitter_javascript::LOCALS_QUERY,
+            tree_sitter_javascript::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-python")]
-        "py" => make(
-            tree_sitter_python::LANGUAGE.into(),
+        "py" => compiled!(
+            tree_sitter_python::LANGUAGE,
             tree_sitter_python::TAGS_QUERY,
-            "",
+            ""
         ),
         #[cfg(feature = "lang-dart")]
-        "dart" => make(
-            tree_sitter_dart::LANGUAGE.into(),
+        "dart" => compiled!(
+            tree_sitter_dart::LANGUAGE,
             tree_sitter_dart::TAGS_QUERY,
-            tree_sitter_dart::LOCALS_QUERY,
+            tree_sitter_dart::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-c")]
-        "c" | "h" => make(
-            tree_sitter_c::LANGUAGE.into(),
-            tree_sitter_c::TAGS_QUERY,
-            "",
-        ),
+        "c" | "h" => compiled!(tree_sitter_c::LANGUAGE, tree_sitter_c::TAGS_QUERY, ""),
         #[cfg(feature = "lang-go")]
-        "go" => make(
-            tree_sitter_go::LANGUAGE.into(),
-            tree_sitter_go::TAGS_QUERY,
-            "",
-        ),
+        "go" => compiled!(tree_sitter_go::LANGUAGE, tree_sitter_go::TAGS_QUERY, ""),
         _ => None,
     }
 }
@@ -222,6 +230,20 @@ mod tests {
                 "{path} signatures: {sig}"
             );
         }
+    }
+
+    /// Same pointer for two files of one language: the query compiled once (T35.1). A
+    /// recompile per call would hand back a fresh configuration each time.
+    #[test]
+    fn each_language_compiles_once() {
+        let a = config(Path::new("a.rs")).unwrap().unwrap();
+        let b = config(Path::new("src/b.rs")).unwrap().unwrap();
+        assert!(std::ptr::eq(a, b), "a second .rs file recompiled the query");
+        let ts = config(Path::new("a.ts")).unwrap().unwrap();
+        assert!(
+            !std::ptr::eq(a, ts),
+            "two languages share one configuration"
+        );
     }
 
     #[test]
