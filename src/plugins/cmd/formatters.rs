@@ -103,17 +103,13 @@ fn git_status(output: &str) -> String {
     }
 }
 
+/// The `rules/default.toml` rule for the command itself (`argv[0]`'s basename, as [`format`]
+/// keys on) — not for any word of its arguments: `git commit -m "fix grep"` is not a `grep`.
 fn pick(argv: &[String]) -> Rule {
-    let rules = rules::defaults();
-    let joined = argv.join(" ");
-    rules
+    let bin = bin(argv);
+    rules::defaults()
         .into_iter()
-        .find(|r| {
-            !r.match_cmd.is_empty()
-                && (joined
-                    .split_whitespace()
-                    .any(|w| w == r.match_cmd || w.ends_with(&format!("/{}", r.match_cmd))))
-        })
+        .find(|r| r.match_cmd == bin)
         .unwrap_or_default()
 }
 
@@ -175,5 +171,19 @@ mod tests {
             "id",
         );
         assert!(got.contains("AKIAIOSFODNN7EXAMPLE"), "{got}");
+    }
+
+    #[test]
+    fn rule_is_picked_by_the_command_not_an_argument() {
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            pick(&argv(&["/usr/bin/grep", "-rn", "x"])).match_cmd,
+            "grep"
+        );
+        assert_eq!(
+            pick(&argv(&["git", "commit", "-m", "fix grep"])).match_cmd,
+            ""
+        );
+        assert_eq!(pick(&argv(&["docker", "run", "node"])).match_cmd, "");
     }
 }

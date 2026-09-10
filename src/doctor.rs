@@ -505,7 +505,9 @@ fn next_upstream(url: &str, timeout: Duration) -> Option<String> {
         .map(str::to_string)
 }
 
-fn http_get(base: &str, path: &str, timeout: Duration) -> Option<String> {
+/// Body of a plain HTTP/1.1 GET to a local rtok endpoint (`/health`, `/live`); `None` on any
+/// failure. Shared with the operator model's `/live` fetch, so there is one hand-rolled client.
+pub(crate) fn http_get(base: &str, path: &str, timeout: Duration) -> Option<String> {
     let rest = base.split("://").nth(1).unwrap_or(base);
     let hostport = rest.split('/').next().unwrap_or(rest);
     let addr = hostport.to_socket_addrs().ok()?.next()?;
@@ -517,8 +519,9 @@ fn http_get(base: &str, path: &str, timeout: Duration) -> Option<String> {
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).ok()?;
     let text = String::from_utf8_lossy(&buf);
-    let body = text.split("\r\n\r\n").nth(1)?;
-    Some(body.to_string())
+    // `split_once`: a body with a blank line of its own is still the whole body.
+    text.split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_string())
 }
 
 #[cfg(test)]

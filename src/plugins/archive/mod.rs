@@ -47,21 +47,25 @@ impl Plugin for Archive {
     }
 }
 
-/// Rewrite every eligible wire-normalised result; one measurement per rewritten block, all
-/// under one `plugin_run` child call. The wire owns the provider-specific request shape.
-pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
+/// The results a proxy filter may rewrite: never the last `[plugins.archive] keep_turns` turns,
+/// which are what the model is working with now. `toon` obeys the same boundary, so it is
+/// decided here once rather than re-read by every plugin that shrinks old results.
+pub(crate) fn outside_live_zone<'a>(
+    results: Vec<ToolResultRef<'a>>,
+    cx: &Ctx,
+) -> impl Iterator<Item = ToolResultRef<'a>> {
     let keep = cx
         .plugin_config::<crate::config::Archive>("archive")
         .keep_turns as usize;
-    let mut out = Vec::new();
-    for result in results {
-        if result.turn < keep {
-            continue;
-        }
-        if let Some(m) = rewrite_block(&result.id, result.content, cx) {
-            out.push(m);
-        }
-    }
+    results.into_iter().filter(move |r| r.turn >= keep)
+}
+
+/// Rewrite every eligible wire-normalised result; one measurement per rewritten block, all
+/// under one `plugin_run` child call. The wire owns the provider-specific request shape.
+pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
+    let mut out: Vec<Measurement> = outside_live_zone(results, cx)
+        .filter_map(|r| rewrite_block(&r.id, r.content, cx))
+        .collect();
     if out.is_empty() {
         return out;
     }
