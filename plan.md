@@ -304,7 +304,7 @@ Gate P27 (review): no module under `src/setup/` writes a host file, copies a bac
 plugin directory itself — every one of those goes through `rtok-agent-sdk`. A sixth host is a new
 `src/setup/<host>.rs` and nothing else.
 
-### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.4–T15.5 open
+### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.5 open
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
 worth doing: `rtok tui` and `rtok web` are one operator model with two renderings (D23), so the
@@ -389,7 +389,7 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**153 done · 13 open · 1 superseded — 167 tasks.**
+**154 done · 12 open · 1 superseded — 167 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -502,7 +502,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T15.1` | P15 tui | ratatui + crossterm scaffold, event loop *(`roadmap.md`)* | ✅ 2026-09-09 | 2/5 |
 | `T15.2` | P15 tui | header · tabs · footer shell *(`roadmap.md`)* | ✅ 2026-09-09 | 2/5 |
 | `T15.3` | P15 tui | Overview tab (CTT, bars, sparkline) *(`roadmap.md`)* | ✅ 2026-09-10 | 3/5 |
-| `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | in progress 2026-09-10 · GLM-5.3 High | 3/5 |
+| `T15.4` | P15 tui | Plugins tab (toggle enabled) *(`roadmap.md`)* | ✅ 2026-09-10 | 3/5 |
 | `T15.5` | P15 tui | Calls tab (P13 rows + detail) *(`roadmap.md`)* | in progress 2026-09-10 · GLM-5.3 High | 3/5 |
 | `T15.6` | P15 tui | Doctor tab *(`roadmap.md`)* | ✅ 2026-09-10 | 1/5 |
 | `T15.7` | P15 tui | Logs tab *(`roadmap.md`)* | ✅ 2026-09-10 | 2/5 |

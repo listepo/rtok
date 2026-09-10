@@ -15,7 +15,6 @@ use anyhow::{Context, Result, bail};
 use crossterm::event::{self, Event, KeyEventKind};
 
 use crate::config::Config;
-use crate::web::model;
 
 /// `rtok tui`: alternate screen and raw mode until `q` / `Esc` / `Ctrl+C`. The terminal
 /// is restored on every exit path — the loop's errors are returned, not panicked on, and
@@ -28,23 +27,23 @@ pub fn run(cfg: Config) -> Result<()> {
     // file, this holds the line for `--tick-secs 0`.
     let tick = Duration::from_secs(cfg.tui.tick_secs.max(1));
     let mut app = app::App::new(&cfg);
-    let res = event_loop(&mut terminal, &mut app, &cfg, tick);
+    let res = event_loop(&mut terminal, &mut app, tick);
     ratatui::restore();
     res
 }
 
-/// Draw, then wait up to `tick` for a key: a press updates the state, a timeout
-/// re-reads the model — the same one-snapshot-per-tick shape `rtok web`'s socket serves.
+/// Draw, then wait up to `tick` for a key: a press updates the state, a timeout asks
+/// the App to re-read the model through the config it holds — the same
+/// one-snapshot-per-tick shape `rtok web`'s socket serves, from one owner (T15.4).
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut app::App,
-    cfg: &Config,
     tick: Duration,
 ) -> Result<()> {
     loop {
         terminal.draw(|frame| view::draw(frame, app))?;
         if !event::poll(tick)? {
-            app.refresh(model::snapshot(cfg));
+            app.tick();
             continue;
         }
         let Event::Key(key) = event::read()? else {

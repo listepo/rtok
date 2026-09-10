@@ -1,9 +1,10 @@
 //! The shell (T15.2): a header line, the tab bar, the page body, a footer. The tabs
 //! are the model's page list, never a second one (D23). The Overview tab renders CTT,
 //! per-plugin savings bars and a per-turn sparkline off the snapshot (T15.3); the
-//! Plugins page renders minimally until T15.4; Doctor (T15.6) renders the model's
-//! doctor page verbatim; Logs (T15.7) renders the model's log lines; a page the model
-//! adds ahead of its tab falls through to a placeholder that says so.
+//! Plugins tab lists the catalogue with a row cursor and a toggle that writes
+//! `plugins.<id>.enabled` through `config set`'s writer (T15.4); Doctor (T15.6) and
+//! Logs (T15.7) render their model pages; a page the model adds ahead of its tab falls
+//! through to a placeholder that says so.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -54,7 +55,7 @@ fn tab_bar(app: &App) -> Tabs<'_> {
 fn render_page(frame: &mut Frame, app: &App, area: Rect) {
     match app.page() {
         "overview" => render_overview(frame, app, area),
-        "plugins" => frame.render_widget(plugins_table(app), area),
+        "plugins" => render_plugins(frame, app, area),
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
         page => frame.render_widget(placeholder(page), area),
@@ -144,37 +145,64 @@ fn bar(saved: i64, max: i64) -> String {
 /// 80-column terminal with room to spare.
 const BAR_WIDTH: usize = 16;
 
-/// The model's Plugins page, minimally: the catalogue row per plugin. Toggling and
-/// detail are T15.4.
+/// The model's Plugins page (T15.4): the catalogue table with a text cursor marking
+/// the row a toggle would hit, and a status line below — the keys, and what the last
+/// toggle did. The toggle itself is [`App`]'s; this only renders what it left behind.
+fn render_plugins(frame: &mut Frame, app: &App, area: Rect) {
+    let [table, status] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
+    frame.render_widget(plugins_table(app), table);
+    frame.render_widget(Paragraph::new(plugins_status_line(app)), status);
+}
+
+/// One row per catalogue plugin, `>` on the cursor row, the `on` column saying what the
+/// model last read — which, after a toggle, is what the file now says.
 fn plugins_table(app: &App) -> Table<'static> {
-    let rows = app.snapshot().plugins.iter().map(|plugin| {
-        Row::new([
-            plugin.id.to_string(),
-            plugin.title.clone(),
-            if plugin.enabled { "on" } else { "off" }.to_string(),
-            plugin.stats.as_ref().map_or_else(
-                || "-".into(),
-                |stats| {
-                    format!(
-                        "{before}->{after} tok ({rows} rows)",
-                        before = stats.est_before,
-                        after = stats.est_after,
-                        rows = stats.rows
-                    )
-                },
-            ),
-        ])
-    });
+    let cursor = app.plugin_cursor();
+    let rows = app
+        .snapshot()
+        .plugins
+        .iter()
+        .enumerate()
+        .map(|(i, plugin)| {
+            Row::new([
+                if i == cursor { ">" } else { " " }.to_string(),
+                plugin.id.to_string(),
+                plugin.title.clone(),
+                if plugin.enabled { "on" } else { "off" }.to_string(),
+                plugin.stats.as_ref().map_or_else(
+                    || "-".into(),
+                    |stats| {
+                        format!(
+                            "{before}->{after} tok ({rows} rows)",
+                            before = stats.est_before,
+                            after = stats.est_after,
+                            rows = stats.rows
+                        )
+                    },
+                ),
+            ])
+        });
     Table::new(
         rows,
         [
+            Constraint::Length(1),
             Constraint::Length(9),
             Constraint::Min(24),
             Constraint::Length(4),
             Constraint::Min(24),
         ],
     )
-    .header(Row::new(["id", "title", "on", "saved"]))
+    .header(Row::new(["", "id", "title", "on", "saved"]))
+}
+
+/// The Plugins tab's status line: the row keys, and the last toggle's outcome until
+/// the cursor moves.
+fn plugins_status_line(app: &App) -> String {
+    let keys = "↑/↓ select · Space toggle";
+    match app.plugin_status() {
+        "" => keys.to_string(),
+        status => format!("{keys} · {status}"),
+    }
 }
 
 /// The model's Doctor page (T15.6), verbatim: the same text `rtok doctor` prints, from
@@ -335,6 +363,48 @@ mod tests {
         assert_eq!(bar(-3, 10), "");
         assert_eq!(bar(5, 0), "");
         assert_eq!(bar(1, 1_000_000), "█", "any positive saving draws");
+    }
+
+    /// T15.4: the Plugins tab lists every row the model serves, marks the cursor row,
+    /// and hints the toggle keys — so the tab, `rtok plugins` and the web Plugins page
+    /// agree on one catalogue (D23).
+    #[test]
+    fn plugins_tab_lists_rows_marks_the_cursor_and_hints_the_toggle() {
+        let mut app = App::new(&config());
+        app.key(KeyCode::Right, KeyModifiers::NONE);
+        let first = screen(&app);
+        for plugin in &app.snapshot().plugins {
+            assert!(first.contains(plugin.id), "{} is on screen", plugin.id);
+        }
+        assert!(first.contains("Space toggle"), "the key hint");
+        assert!(
+            first.contains("> measure"),
+            "the cursor marks the first row"
+        );
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert!(screen(&app).contains("> cmd"), "the cursor follows Down");
+    }
+
+    /// T15.4: a toggle writes `<home>/config.toml` through `config set`'s writer and
+    /// the tab shows the outcome in the row and the status line — both off the re-read
+    /// model, never the key press's hope. `toon`, the one default-off plugin, is the
+    /// interesting direction. Its own temp home, like the toggle test in `app`.
+    #[test]
+    fn plugins_toggle_shows_in_the_row_and_the_status_line() {
+        let dir = std::env::temp_dir().join(format!("rtok-tui-plugins-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = Config::load_from(&dir).expect("config");
+        let mut app = crate::tui::app::tests::cursor_on_plugin(&cfg, "toon");
+        app.key(KeyCode::Char(' '), KeyModifiers::NONE);
+        assert!(
+            Config::load_from(&dir)
+                .unwrap()
+                .plugin_enabled("toon", false),
+            "the file, not just the row"
+        );
+        let screen = screen(&app);
+        assert!(screen.contains("toon on"), "the status names the outcome");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A config whose store holds two sessions, three turns and two measured plugins,

@@ -621,6 +621,27 @@ impl Config {
             _ => default_on,
         }
     }
+
+    /// The writer mirror of [`Config::plugin_enabled`]: set `[plugins.<id>] enabled` on
+    /// the in-memory copy after the file was written through `validate::set` (the TUI's
+    /// plugin toggle, T15.4). An id outside the catalogue is nothing to mirror here —
+    /// `validate::set` is what refuses it against the schema.
+    pub fn set_plugin_enabled(&mut self, id: &str, on: bool) {
+        let p = &mut self.plugins;
+        match id {
+            "measure" => p.measure.enabled = on,
+            "cmd" => p.cmd.enabled = on,
+            "read" => p.read.enabled = on,
+            "archive" => p.archive.enabled = on,
+            "proxy" => p.proxy.enabled = on,
+            "inject" => p.inject.enabled = on,
+            "guard" => p.guard.enabled = on,
+            "memory" => p.memory.enabled = on,
+            "graph" => p.graph.enabled = on,
+            "toon" => p.toon.enabled = on,
+            _ => {}
+        }
+    }
 }
 
 /// `~/.rtok/x` → `<home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` → `$HOME/x`.
@@ -698,6 +719,19 @@ mod tests {
         // An id outside the catalogue falls back to the manifest's default_on.
         assert!(cfg.plugin_enabled("external", true));
         assert!(!cfg.plugin_enabled("external", false));
+    }
+
+    /// The writer mirror round-trips through the reader for every catalogue id (T15.4).
+    #[test]
+    fn set_plugin_enabled_flips_every_catalogue_id() {
+        let mut cfg = Config::default();
+        for (id, on) in CATALOGUE {
+            cfg.set_plugin_enabled(id, !on);
+            assert_eq!(cfg.plugin_enabled(id, on), !on, "{id}");
+        }
+        // An id outside the catalogue is nothing to set; the reader's fallback stands.
+        cfg.set_plugin_enabled("external", false);
+        assert!(cfg.plugin_enabled("external", true));
     }
 
     #[test]

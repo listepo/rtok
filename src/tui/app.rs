@@ -1,10 +1,12 @@
-//! Pure TUI state: which tab, what data, when it last refreshed. No terminal and no
-//! clock reach this module from outside a call — both arrive through [`super`]'s loop,
-//! which is what keeps the state transitions unit-testable without a tty.
+//! Pure TUI state: which tab, what data, when it last refreshed — and, on the Plugins
+//! tab, the row cursor and the toggle that writes `plugins.<id>.enabled` through `rtok
+//! config set`'s writer (T15.4). No terminal and no clock reach this module from
+//! outside a call — both arrive through [`super`]'s loop, which is what keeps the state
+//! transitions unit-testable without a tty.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::config::Config;
+use crate::config::{Config, validate};
 use crate::web::model::{self, Snapshot};
 
 /// The TUI's whole state. The tabs are [`model::pages`] by reference — there is no
@@ -15,6 +17,13 @@ pub struct App {
     snapshot: Snapshot,
     /// Unix seconds of the last model re-read; the screen stamps it with `log::stamp`.
     updated: u64,
+    /// The config the App reads the model through, so a toggle's re-read and every
+    /// later tick serve the same copy (T15.4) — the loop no longer holds its own.
+    cfg: Config,
+    /// The Plugins tab's row cursor: which plugin a toggle would hit (T15.4).
+    plugin_cursor: usize,
+    /// The Plugins tab's status line: the last toggle's outcome (T15.4).
+    plugin_status: String,
 }
 
 impl App {
@@ -31,6 +40,9 @@ impl App {
             selected,
             snapshot: model::snapshot(cfg),
             updated: crate::log::now(),
+            cfg: cfg.clone(),
+            plugin_cursor: 0,
+            plugin_status: String::new(),
         }
     }
 
@@ -49,6 +61,17 @@ impl App {
         self.selected
     }
 
+    /// The Plugins tab's row cursor, clamped to the rows the model serves (T15.4).
+    pub fn plugin_cursor(&self) -> usize {
+        self.plugin_cursor
+            .min(self.snapshot.plugins.len().saturating_sub(1))
+    }
+
+    /// The Plugins tab's status line: the last toggle's outcome, `""` until one (T15.4).
+    pub fn plugin_status(&self) -> &str {
+        &self.plugin_status
+    }
+
     /// The last snapshot the model served.
     pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
@@ -61,12 +84,23 @@ impl App {
 
     /// A tick's new data: one model snapshot, timestamped now.
     pub fn refresh(&mut self, snapshot: Snapshot) {
+        // The cursor stays on a row that still exists — a shorter page is not a panic.
+        self.plugin_cursor = self
+            .plugin_cursor
+            .min(snapshot.plugins.len().saturating_sub(1));
         self.snapshot = snapshot;
         self.updated = crate::log::now();
     }
 
+    /// The loop's tick: re-read the model through the config the App holds, so a
+    /// toggle's re-read and the next tick cannot disagree (T15.4).
+    pub fn tick(&mut self) {
+        self.refresh(model::snapshot(&self.cfg));
+    }
+
     /// One key press; returns `true` when the loop should stop. `Left`/`Right` wrap,
-    /// `1..=9` jump, everything else is the page's to claim (T15.3+).
+    /// `1..=9` jump, the Plugins page claims the row keys (T15.4), and everything else
+    /// is the page's to claim (T15.5+).
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
         if mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
             return true;
@@ -81,6 +115,14 @@ impl App {
                 self.step(1);
                 false
             }
+            // The Plugins tab's row keys; every other page falls through (a Space there
+            // reaches the digit arm, whose `to_digit` answer for ' ' is none).
+            KeyCode::Up | KeyCode::Down | KeyCode::Enter | KeyCode::Char(' ')
+                if self.page() == "plugins" =>
+            {
+                self.plugins_key(code);
+                false
+            }
             KeyCode::Char(c) => {
                 // 1..=9, not 0: tabs count from one and nine is plenty for a tab bar.
                 if let Some(d) = c.to_digit(10).filter(|d| (1..=9).contains(d)) {
@@ -89,6 +131,54 @@ impl App {
                 false
             }
             _ => false,
+        }
+    }
+
+    /// The Plugins tab's keys (T15.4): `Up`/`Down` move the row cursor, `Space`/`Enter`
+    /// toggle the selected plugin.
+    fn plugins_key(&mut self, code: KeyCode) {
+        let len = self.snapshot.plugins.len();
+        match code {
+            KeyCode::Up => {
+                self.plugin_cursor = self.plugin_cursor.saturating_sub(1);
+                self.plugin_status.clear();
+            }
+            KeyCode::Down => {
+                if len > 0 {
+                    self.plugin_cursor = (self.plugin_cursor + 1).min(len - 1);
+                }
+                self.plugin_status.clear();
+            }
+            KeyCode::Char(' ') | KeyCode::Enter => self.toggle_selected(),
+            _ => {}
+        }
+    }
+
+    /// Flip the selected plugin's `[plugins.<id>] enabled` (T15.4) through the one
+    /// config writer — [`validate::set`], the API `rtok config set` uses — never a
+    /// second one. The write always targets `<home>/config.toml`, as `config set`
+    /// does; the row then re-renders off the effective value through the layering (an
+    /// env override of the key still wins over the file, so the status line names what
+    /// a fresh `rtok plugins` would print, not what the key press hoped for). A
+    /// refusal — unknown plugin id, unwritable file — is a status line, not a crash:
+    /// an operator surface fails open (D1).
+    fn toggle_selected(&mut self) {
+        let Some(id) = self.snapshot.plugins.get(self.plugin_cursor).map(|p| p.id) else {
+            self.plugin_status = "no plugin to toggle".into();
+            return;
+        };
+        let written = !self.snapshot.plugins[self.plugin_cursor].enabled;
+        let key = format!("plugins.{id}.enabled");
+        match validate::set(&self.cfg.home, &key, &written.to_string(), false) {
+            Ok(_) => {
+                let on = Config::load_from(&self.cfg.home)
+                    .map(|reloaded| reloaded.plugin_enabled(id, true))
+                    .unwrap_or(written);
+                self.cfg.set_plugin_enabled(id, on);
+                self.plugin_status = format!("{id} {}", if on { "on" } else { "off" });
+                self.refresh(model::snapshot(&self.cfg));
+            }
+            Err(e) => self.plugin_status = format!("config set {key}: {e:#}"),
         }
     }
 
@@ -121,6 +211,31 @@ pub(super) mod tests {
         cfg.doctor.claude_json = dir.join("missing-claude.json");
         cfg.doctor.mcp_json = dir.join("missing-mcp.json");
         cfg
+    }
+
+    /// The Plugins tab with the row cursor on `id` — where the T15.4 toggle tests
+    /// start. `[tui] tab` picks the page (T15.8), so the helper says which tab it
+    /// means rather than counting pages; a model without the row fails the test.
+    pub(in crate::tui) fn cursor_on_plugin(cfg: &Config, id: &str) -> App {
+        let mut cfg = cfg.clone();
+        cfg.tui.tab = "plugins".into();
+        // Same hermetic doctor paths as `config()` — App::new ticks the snapshot (T15.6).
+        let home = cfg.home.clone();
+        cfg.doctor.settings_path = home.join("missing-settings.json");
+        cfg.doctor.claude_json = home.join("missing-claude.json");
+        cfg.doctor.mcp_json = home.join("missing-mcp.json");
+        let mut app = App::new(&cfg);
+        assert_eq!(app.page(), "plugins");
+        let i = app
+            .snapshot()
+            .plugins
+            .iter()
+            .position(|p| p.id == id)
+            .unwrap_or_else(|| panic!("no {id} row on the Plugins page"));
+        for _ in 0..i {
+            app.key(KeyCode::Down, KeyModifiers::NONE);
+        }
+        app
     }
 
     /// D23: the tab bar is the model's page list, never a second one.
@@ -199,5 +314,82 @@ pub(super) mod tests {
             app.snapshot().plugins.len(),
             model::snapshot(&cfg).plugins.len()
         );
+    }
+
+    /// T15.4: `Up`/`Down` move the Plugins tab's row cursor and clamp at both ends.
+    #[test]
+    fn plugins_cursor_moves_and_clamps() {
+        let mut app = App::new(&config());
+        app.key(KeyCode::Right, KeyModifiers::NONE);
+        let len = app.snapshot().plugins.len();
+        assert!(len >= 2, "the catalogue has rows to move between");
+        assert_eq!(app.plugin_cursor(), 0);
+        app.key(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.plugin_cursor(), 0, "Up at the top stays put");
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.plugin_cursor(), 1);
+        for _ in 0..=len {
+            app.key(KeyCode::Down, KeyModifiers::NONE);
+        }
+        assert_eq!(app.plugin_cursor(), len - 1, "Down clamps at the last row");
+    }
+
+    /// T15.4: the row keys are the Plugins page's, not global — on Overview they are
+    /// nothing, and a Space is not a quit either.
+    #[test]
+    fn row_keys_do_nothing_off_the_plugins_page() {
+        let mut app = App::new(&config());
+        for code in [
+            KeyCode::Up,
+            KeyCode::Down,
+            KeyCode::Enter,
+            KeyCode::Char(' '),
+        ] {
+            assert!(!app.key(code, KeyModifiers::NONE), "{code:?} is not a quit");
+            assert_eq!(app.page(), "overview", "{code:?} moved nothing");
+        }
+    }
+
+    /// T15.4: Space flips `plugins.<id>.enabled` through `rtok config set`'s own writer
+    /// (`validate::set` on `<home>/config.toml`), the row re-renders off the re-read
+    /// model, and the next tick serves the same answer. Its own temp home — the write
+    /// is real, just never the operator's file.
+    #[test]
+    fn space_toggles_the_selected_plugin_through_config_set() {
+        let dir = std::env::temp_dir().join(format!("rtok-tui-toggle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg = Config::load_from(&dir).expect("config");
+        let mut app = cursor_on_plugin(&cfg, "cmd");
+        let row = |app: &App| {
+            app.snapshot()
+                .plugins
+                .iter()
+                .find(|p| p.id == "cmd")
+                .expect("cmd row")
+                .enabled
+        };
+        assert!(Config::load_from(&dir).unwrap().plugin_enabled("cmd", true));
+        app.key(KeyCode::Char(' '), KeyModifiers::NONE);
+        assert!(
+            !Config::load_from(&dir).unwrap().plugin_enabled("cmd", true),
+            "the file changed — the write went through config set's writer"
+        );
+        assert!(!row(&app), "the row re-read the write");
+        assert!(
+            app.plugin_status().contains("cmd off"),
+            "the status names it"
+        );
+        app.tick();
+        assert!(
+            !row(&app),
+            "the next tick keeps the write, not the launch copy"
+        );
+        app.key(KeyCode::Enter, KeyModifiers::NONE); // Enter toggles too
+        assert!(
+            Config::load_from(&dir).unwrap().plugin_enabled("cmd", true),
+            "toggled back on"
+        );
+        assert!(row(&app));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
