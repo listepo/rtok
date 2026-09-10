@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: all §5 tasks done — 166 ✅, 1 superseded (T10.7 → T10.9); entries in `done.md`. Remaining work is Later versions (v0.2+) only.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: all §5 tasks done — 167 ✅; entries in `done.md`. Remaining work is Later versions (v0.2+) only.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -328,14 +328,10 @@ Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
-### P10 — other hosts + release — tasks done 2026-09-09 (D21; T10.7 superseded by T10.9)
+### P10 — other hosts + release — tasks done 2026-09-09 (D21; T10.7 done via T10.9)
 
-**T10.7 `setup --remove` strips MCP** · T10.1 · `src/cli.rs`, `src/setup/claude.rs`, `src/setup/cursor.rs`
-Do: `setup claude/cursor --remove` also removes `mcpServers.rtok` via the shared `unregister_stdio_mcp` helper (foreign servers kept); cursor keeps unlinking the plugin, and `--dry-run --remove` previews without touching the FS.
-Check: unit `unregister_strips_only_rtok_and_keeps_foreign` (both hosts); temp-HOME apply (`--mcp` / `--yes`) → `--remove` → second `--remove` is `no changes`, foreign entries kept; `just check` green.
-Complexity: 1/5 — two call sites plus one shared helper, no new flags, no config keys.
-Status: superseded by T10.9 (done 2026-09-09) — `rtok agent remove <host>` strips `mcpServers.rtok` through the shared `unregister_stdio_mcp` for both hosts, which is this Do in full (absorption recorded in `done.md` T10.9).
-Model: -
+T10.7 (`setup --remove` strips MCP) is in `done.md` — absorbed by T10.9.
+
 
 ### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11).
 
@@ -389,7 +385,7 @@ the entry is still above in §3 (none are). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**166 done · 0 open · 1 superseded — 167 tasks.**
+**167 done · 0 open — 167 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -466,7 +462,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T10.4` | P10 hosts | release | ✅ 2026-09-02 | — |
 | `T10.5` | P10 hosts | Cursor plugin offer | ✅ 2026-09-08 | — |
 | `T10.6` | P10 hosts | pi host plugin | ✅ 2026-09-09 | 2/5 |
-| `T10.7` | P10 hosts | `setup --remove` strips MCP | ↦ superseded by T10.9 | 1/5 |
+| `T10.7` | P10 hosts | `setup --remove` strips MCP | ✅ 2026-09-09 (via T10.9) | 1/5 |
 | `T10.8` | P10 hosts | the installers move under `rtok agent` | ✅ 2026-09-09 | — |
 | `T10.9` | P10 hosts | `rtok agent remove <host>`, and a copy before either command | ✅ 2026-09-09 | — |
 | `T10.10` | P10 hosts | remove-spelling residue: flag help, docs rows | ✅ 2026-09-09 | 1/5 |
@@ -565,6 +561,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 
 | Date | Change | Why |
 | D28 | **The agent-host contract is its own crate, `rtok-agent-sdk`.** Every `rtok agent setup <host>` / `agent remove <host>` installer goes through it: `Apply` (the `[setup]` flags), `NO_CHANGES` as both the report and the write gate, timestamped `backup`, `read_json` / `write_json` / `write`, `register_mcp` / `unregister_mcp`, `accepted` (the D21 (6) offer prompt), and `PluginLink` (offer, symlink, unlink a `plugins/<host>/` tree). What stays in `src/setup/<host>.rs` is host-specific and nothing else: which file, which shape, which keys. Same shape as D25 and the same three-dependency line, plus `dialoguer` for the one prompt. Added 2026-09-09 by user request. | Five installers plus `proxy::cli` and `migrate` carried seven copies of one write cycle (dry-run gate, backup, mkdir, pretty-print) and two near-identical plugin-offer bodies. D21 (6) makes that grow with every host added, and T26.0's detector exists to catch exactly this. One crate is also what makes "a sixth host is one new file" checkable rather than hoped for. |
+| 2026-09-10 | T10.7 counted ✅ via T10.9: moved from `plan.md` to `done.md` and dropped the superseded bucket from the §5 summary. The Do was already shipped inside T10.9; the separate row only confused the progress line. | User request 2026-09-10 (исправь 1 superseded (T10.7)). |
 |------|--------|-----|
 | 2026-09-09 | T23.2's Check asked for a `trybuild` case; the proof is a ```compile_fail doctest on `Plugin` instead. Same failure, same run, no new dev-dependency for one compile error. The task also touched 16 files, not ≤ 3: making a trait method required edits the trait and every implementor at once, and splitting it leaves the tree not compiling — the exemption T23.4 already has. | The dependency rule and D6 both argue against a crate whose whole job is to assert a compile error `cargo test` can assert. |
 | 2026-09-09 | T23.1 moved the contract's value types but not the `Plugin` trait; the trait names `Ctx` and `WireRequest` and moves in T23.3, whose Do now carries the SDK-side `Ctx<'a>` wrapper over `&dyn Host` (it keeps `cx.estimate` / `cx.record` / `cx.log` spelled the same, so T23.4 is import churn plus `cx.store.*`). `crates.io` also needs a `license` field the repository does not have — T23.6 blocks on the owner choosing one. | Splitting the move at the type/host line is what keeps each commit compiling; the licence is not an agent's call. |

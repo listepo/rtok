@@ -1952,6 +1952,16 @@ Check result: `rtok --help` lists `agent  Agent hosts (…)` and no `setup` row;
 Deviation: seventeen files, not three. Four are code (above); the other thirteen are the same string in prose — `README.md`, `AGENTS.md`, `migration.md`, `roadmap.md`, `docs/comparison.md`, `docs/config.md`, `config/default.toml`, two site pages, two plugin READMEs and six `//!` headers under `src/setup/`. Leaving them would have shipped a documented command that prints a deprecation warning, so they belong to the rename rather than to a follow-up. `ideas.md` I-17 and the P10 history above keep the old spelling: they record what was proposed and done on a date, not how to run rtok today.
 Found here, not fixed here: `plugins::graph::watch` has the same flake `tests/otel.rs` had. `watcher_reindexes_new_file_while_calls_read_nothing` and `watchman_without_socket_falls_back_to_notify` both failed on a `just check` that ran beside a second `cargo build`, then passed 5/5 alone — a 1 s deadline on an FSEvents re-index. Since T18.6 the release is gated on `just check`, so this is a random release failure waiting to happen; it belongs to the watcher, not to this task.
 
+**T10.7 `setup --remove` strips MCP** · T10.1 · `src/cli.rs`, `src/setup/claude.rs`, `src/setup/cursor.rs`
+Do: `setup claude/cursor --remove` also removes `mcpServers.rtok` via the shared `unregister_stdio_mcp` helper (foreign servers kept); cursor keeps unlinking the plugin, and `--dry-run --remove` previews without touching the FS.
+Check: unit `unregister_strips_only_rtok_and_keeps_foreign` (both hosts); temp-HOME apply (`--mcp` / `--yes`) → `--remove` → second `--remove` is `no changes`, foreign entries kept; `just check` green.
+Complexity: 1/5 — two call sites plus one shared helper, no new flags, no config keys.
+Status: done 2026-09-09
+Check result: Absorbed by T10.9 — `rtok agent remove <host>` strips `mcpServers.rtok` through the shared `unregister_stdio_mcp` for both hosts, which is this Do in full (recorded under done.md T10.9). No separate implementation; counted ✅ so the plan no longer carries a superseded row.
+Model: -
+
+Model: -
+
 **T10.9 `rtok agent remove <host>`, and a copy before either command** · T10.8, T10.7 · `src/cli.rs`, `src/setup/mod.rs`, `src/setup/claude.rs`, `src/setup/cursor.rs`, `src/proxy/cli.rs`, `tests/agent_remove.rs`
 Do: `rtok agent remove claude|cursor|codex|opencode|pi` as a command of its own rather than a `--remove` flag, and complete: hooks, the `mcpServers.rtok` entry, the proxy variable and the plugin link all go, foreign entries stay. Before either `agent setup` or `agent remove` touches anything, every config file that host owns is copied to `<name>.bak-<ts>` beside it and the copy is named on stdout.
 Check: per host, seed a foreign entry, install, remove, and assert rtok is gone and the foreign entry is not; the copy holds the file as the command found it; a second remove is `no changes`; `--dry-run` writes nothing and takes no copy; `just check` green.
