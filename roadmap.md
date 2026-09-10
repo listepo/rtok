@@ -358,7 +358,7 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 | 3 | T15.3 | Overview tab (CTT, bars, sparkline) · done 2026-09-10 | 3/5 |
 | 4 | T15.4 | Plugins tab (toggle enabled) · in progress 2026-09-10, GLM-5.3 round (tier GLM-5.3, High) | 3/5 |
 | 5 | T15.5 | Calls tab (P13 rows + detail) · in progress 2026-09-10, same round | 3/5 |
-| 6 | T15.6 | Doctor tab | 1/5 |
+| 6 | T15.6 | Doctor tab · done 2026-09-10 | 1/5 |
 | 7 | T15.7 | Logs tab · in progress 2026-09-10, same round (policy tier GLM-5.3-Flash, Low) | 2/5 |
 | 8 | T15.8–T15.9 | CLI, `[tui]` config · done 2026-09-10 (T15.8); TTY guard (T15.9) · in progress 2026-09-10, same round (policy tier GLM-5.3-Flash, Low) | 2/5 |
 

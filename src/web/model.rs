@@ -28,6 +28,10 @@ pub struct Snapshot {
     pub plugins: Vec<PluginPage>,
     /// Sessions page (T25.1): one row per session, newest first.
     pub sessions: Vec<SessionTotals>,
+    /// Doctor page (T15.6): what `rtok doctor` reports — hooks, MCP servers, proxy
+    /// chains. `None` when this tick's probes failed; the page renders the failure
+    /// rather than zeros, the way an unreadable store renders an empty page.
+    pub doctor: Option<doctor::Report>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -89,6 +93,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("overview", "usage"),
         ("plugins", "plugins"),
         ("sessions", "sessions"),
+        ("doctor", "doctor"),
     ]
 }
 
@@ -492,7 +497,8 @@ fn pct(sorted: &[f64], p: f64) -> Option<f64> {
 }
 
 /// The `rtok doctor` page (T15.11): hooks, MCP servers, proxy chains. Every probe runs on
-/// this call — a snapshot tick never pays for them.
+/// this call — since T15.6 the snapshot carries it, so a surface tick pays for the probes,
+/// each bounded by its `[doctor]` timeout.
 pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
     doctor::page(cfg)
 }
@@ -537,6 +543,10 @@ impl<'a> Model<'a> {
             usage: self.overview(),
             plugins: self.plugins(),
             sessions: self.sessions(0),
+            // The one doctor query (D27): the snapshot carries what `rtok doctor`
+            // renders, so neither surface grows a probe of its own. A failed tick is
+            // `None`, never a failed snapshot — like Overview's zeros.
+            doctor: doctor(self.cfg).ok(),
         }
     }
 
@@ -862,6 +872,31 @@ mod tests {
         assert!(
             rows.iter()
                 .any(|r| r["id"] == "a" && r["input"] == 30 && r["cache_read"] == 7)
+        );
+    }
+
+    /// T15.6's Check: the Doctor page rides the snapshot — the same `Report` the `doctor`
+    /// page function returns — so the tab, `rtok doctor` and the web frame agree (D23).
+    #[test]
+    fn doctor_page_rides_the_snapshot() {
+        let cx = Runtime::in_memory("dash").unwrap();
+        let mut cfg = cx.config.clone();
+        let dir = std::env::temp_dir().join(format!("rtok-model-doctor-{}", std::process::id()));
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let snap = Model::new(&cfg, Some(&cx.store)).snapshot();
+        let direct = doctor(&cfg).expect("doctor page");
+        let carried = snap
+            .doctor
+            .as_ref()
+            .expect("snapshot carries the doctor page");
+        assert_eq!(carried.to_text(), direct.to_text());
+        // The wire frame gains the page; `tests/surface_parity.rs` pins the key set.
+        let v = serde_json::to_value(&snap).unwrap();
+        assert!(
+            v["doctor"]["hooks_total"].is_number(),
+            "doctor rides the frame"
         );
     }
 

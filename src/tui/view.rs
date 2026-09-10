@@ -1,8 +1,9 @@
 //! The shell (T15.2): a header line, the tab bar, the page body, a footer. The tabs
 //! are the model's page list, never a second one (D23). The Overview tab renders CTT,
 //! per-plugin savings bars and a per-turn sparkline off the snapshot (T15.3); the
-//! Plugins page renders minimally until T15.4, and a page the model adds ahead of its
-//! tab falls through to a placeholder that says so.
+//! Plugins page renders minimally until T15.4; Doctor (T15.6) renders the model's
+//! doctor page verbatim; a page the model adds ahead of its tab falls through to a
+//! placeholder that says so.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -54,6 +55,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
     match app.page() {
         "overview" => render_overview(frame, app, area),
         "plugins" => frame.render_widget(plugins_table(app), area),
+        "doctor" => frame.render_widget(doctor(app), area),
         page => frame.render_widget(placeholder(page), area),
     }
 }
@@ -174,6 +176,17 @@ fn plugins_table(app: &App) -> Table<'static> {
     .header(Row::new(["id", "title", "on", "saved"]))
 }
 
+/// The model's Doctor page (T15.6), verbatim: the same text `rtok doctor` prints, from
+/// the same model query the command renders (D27) — the snapshot already carries it,
+/// so this is a rendering, not a second probe run. `None` is a failed tick, not an
+/// empty page.
+fn doctor(app: &App) -> Paragraph<'static> {
+    Paragraph::new(app.snapshot().doctor.as_ref().map_or_else(
+        || "doctor did not answer this tick — `rtok doctor` has the details".to_string(),
+        |report| report.to_text(),
+    ))
+}
+
 fn placeholder(page: &str) -> Paragraph<'static> {
     Paragraph::new(format!(
         "{page}: this page arrives with T15.3+ (roadmap P15)"
@@ -274,6 +287,30 @@ mod tests {
                 screen.contains(&"█".repeat(blocks)),
                 "{id} draws {blocks} blocks"
             );
+        }
+    }
+
+    /// T15.6: the Doctor tab shows what `rtok doctor` reports — hooks, MCP, proxy —
+    /// rendered off the snapshot the model served, never a second probe run.
+    #[test]
+    fn doctor_tab_shows_what_rtok_doctor_reports() {
+        let mut app = App::new(&config());
+        while app.page() != "doctor" {
+            app.key(KeyCode::Right, KeyModifiers::NONE);
+        }
+        let screen = screen(&app);
+        let text = app
+            .snapshot()
+            .doctor
+            .as_ref()
+            .map_or_else(String::new, |report| report.to_text());
+        assert!(text.contains("hooks"), "the page is the doctor report");
+        for line in text.lines().take(3) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            assert!(screen.contains(line), "line `{line}` is on screen");
         }
     }
 

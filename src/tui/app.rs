@@ -114,7 +114,13 @@ pub(super) mod tests {
     pub(in crate::tui) fn config() -> Config {
         let dir = std::env::temp_dir().join(format!("rtok-tui-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        Config::load_from(&dir).expect("config")
+        let mut cfg = Config::load_from(&dir).expect("config");
+        // Hermetic probes: the snapshot carries the doctor page (T15.6), so every
+        // `App::new` would otherwise spawn this machine's MCP servers.
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg
     }
 
     /// D23: the tab bar is the model's page list, never a second one.
