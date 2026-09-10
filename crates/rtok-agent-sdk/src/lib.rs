@@ -249,12 +249,17 @@ impl PluginLink<'_> {
             if !self.linked() {
                 return Ok(NO_CHANGES.into());
             }
-            if self.dest.is_dir() && !self.dest.is_symlink() {
-                fs::remove_dir_all(&self.dest)?;
-            } else {
+            // Install refuses to overwrite a foreign directory; remove must not wipe one
+            // either. Only unlink a symlink (or a plain file) that we could have created.
+            let meta = self.dest.symlink_metadata()?;
+            if meta.file_type().is_symlink() || meta.file_type().is_file() {
                 fs::remove_file(&self.dest)?;
+                return Ok(format!("- plugin {}", self.dest.display()));
             }
-            return Ok(format!("- plugin {}", self.dest.display()));
+            return Ok(format!(
+                "leave {} (not an rtok link; remove by hand)",
+                self.dest.display()
+            ));
         }
         if self.linked() {
             return Ok(NO_CHANGES.into());
@@ -468,6 +473,33 @@ mod tests {
         assert!(link.run(&yes, true).unwrap().starts_with("- plugin"));
         assert!(!link.linked());
         assert_eq!(link.run(&yes, true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn remove_leaves_a_foreign_directory_alone() {
+        let dir = tmp("foreign");
+        let dest = dir.join("host/plugins/rtok");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("mine.txt"), "keep").unwrap();
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src: dir.join("plugins/demo"),
+            dest: dest.clone(),
+            label: Some("~/.demo/plugins"),
+            host: "demo",
+        };
+        let yes = Apply {
+            dry_run: false,
+            backup: false,
+            yes: true,
+        };
+        let report = link.run(&yes, true).unwrap();
+        assert!(
+            report.starts_with("leave "),
+            "foreign dir must survive: {report}"
+        );
+        assert!(dest.join("mine.txt").exists(), "contents must stay");
         let _ = fs::remove_dir_all(dir);
     }
 }

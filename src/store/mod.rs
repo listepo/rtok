@@ -147,13 +147,16 @@ impl Store {
         source: Option<&str>,
     ) -> Result<()> {
         let mut conn = self.lock()?;
+        // COALESCE keeps a non-NULL value: a later writer that does not know the
+        // attribution (proxy/mcp pass None for project/cwd; Runtime::insert_call
+        // passes None for source) must not wipe what an earlier hook already set.
         sql_query(
             "INSERT INTO sessions (id, host_id, project, cwd, source) VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
-               host_id = excluded.host_id,
-               project = excluded.project,
-               cwd = excluded.cwd,
-               source = excluded.source",
+               host_id = COALESCE(excluded.host_id, sessions.host_id),
+               project = COALESCE(excluded.project, sessions.project),
+               cwd = COALESCE(excluded.cwd, sessions.cwd),
+               source = COALESCE(excluded.source, sessions.source)",
         )
         .bind::<Text, _>(id)
         .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(host_id)
@@ -1402,6 +1405,51 @@ mod tests {
         assert!(io[0].request_archive.is_some());
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A later upsert that omits attribution must not wipe what an earlier one set —
+    /// hook → proxy (same session id) used to NULL out project/cwd; Runtime → proxy
+    /// used to NULL out source.
+    #[test]
+    fn upsert_session_keeps_non_null_attribution() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().expect("seeded");
+        store
+            .upsert_session("s1", Some(claude), Some("rtok"), Some("/tmp/rtok"), None)
+            .unwrap();
+        store
+            .upsert_session("s1", Some(claude), None, None, Some("proxy"))
+            .unwrap();
+        let (slug, project, cwd) = store.session_row("s1").unwrap().unwrap();
+        assert_eq!(slug.as_deref(), Some("claude"));
+        assert_eq!(project.as_deref(), Some("rtok"), "project survived a None upsert");
+        assert_eq!(cwd.as_deref(), Some("/tmp/rtok"), "cwd survived a None upsert");
+        let mut conn = store.lock().unwrap();
+        #[derive(QueryableByName)]
+        struct Src {
+            #[diesel(sql_type = Nullable<Text>)]
+            source: Option<String>,
+        }
+        let rows: Vec<Src> = sql_query("SELECT source FROM sessions WHERE id = ?")
+            .bind::<Text, _>("s1")
+            .load(&mut *conn)
+            .unwrap();
+        assert_eq!(rows[0].source.as_deref(), Some("proxy"));
+        // And a Runtime-shaped upsert (source None) must keep the proxy source.
+        drop(conn);
+        store
+            .upsert_session("s1", Some(claude), None, None, None)
+            .unwrap();
+        let mut conn = store.lock().unwrap();
+        let rows: Vec<Src> = sql_query("SELECT source FROM sessions WHERE id = ?")
+            .bind::<Text, _>("s1")
+            .load(&mut *conn)
+            .unwrap();
+        assert_eq!(
+            rows[0].source.as_deref(),
+            Some("proxy"),
+            "source survived a None upsert"
+        );
     }
 
     #[test]

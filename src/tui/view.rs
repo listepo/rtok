@@ -59,6 +59,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "overview" => render_overview(frame, app, area),
         "plugins" => render_plugins(frame, app, area),
         "calls" => render_calls(frame, app, area),
+        "sessions" => frame.render_widget(sessions_text(app), area),
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
         page => frame.render_widget(placeholder(page), area),
@@ -341,6 +342,19 @@ fn time_of(ts: i64) -> String {
     crate::log::stamp(ts.max(0) as u64)
         .rsplit_once(' ')
         .map_or_else(|| "-".into(), |(_, t)| t.to_string())
+}
+
+/// The model's Sessions page (T25.1 / D23): the same table `rtok agent sessions`
+/// prints, built from the snapshot so the TUI cannot disagree with the CLI.
+fn sessions_text(app: &App) -> Paragraph<'static> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // `all = true`: the operator model carries every session; the CLI's default
+    // live-only filter is a flag, not a second page.
+    let text = crate::render::sessions_table(&app.snapshot().sessions, true, now);
+    Paragraph::new(text)
 }
 
 fn placeholder(page: &str) -> Paragraph<'static> {

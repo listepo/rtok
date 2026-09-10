@@ -279,7 +279,7 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
     let args_s = args.to_string();
     let before = i64::from(cx.estimate(&args_s, Class::Json));
     let after = i64::from(cx.estimate(result, Class::Json));
-    let host = cx.store.host_id(&cx.config.hook.host)?;
+    let host = cx.store.host_id(&cx.config.hook.host)?.or(Some(6));
     cx.store
         .upsert_session(&cx.session, host, None, None, Some("mcp"))?;
     let call_id = cx.store.insert_call(
