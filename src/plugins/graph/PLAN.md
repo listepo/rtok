@@ -103,6 +103,13 @@ query can reach into them; type positions and `scoped_identifier` calls would ne
 query on top of the grammar's. Recorded as I-31; not attempted in v0.2, where every task is about
 what the index already holds.
 
+Since then rtok's own `RUST_SCOPED_CALL` (`src/plugins/read/outline.rs`) captures path-qualified
+calls. `reference_capture_matches_the_known_misses` (`tests/graph_truth.rs`) pins the current set
+on a one-file repo: plain, path-qualified and method calls found; type positions and macro
+arguments missed. Re-scored 2026-09-10 after a fixture repair (T34.9): 147 sites, definitions
+42/42, references 32/105, recall 0.305. The fall from 0.351 is labels the tree dropped, not the
+index; `every_label_names_a_file_that_mentions_the_symbol` now catches those.
+
 ### Rejected in this round
 
 - A separate `explore` tool (codegraph) — the same result is `symbol` with a body; a fifth tool is description tokens for nothing.

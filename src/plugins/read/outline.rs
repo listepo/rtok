@@ -122,6 +122,10 @@ const RUST_SCOPED_CALL: &str = "
         name: (identifier) @name)) @reference.call
 ";
 
+// PERF(T35.1) where: here, on every `tags` call — each file of a graph index run, each outline.
+// What: compile each language's query once (a `OnceLock` per language), reuse a `TagsContext`
+// per thread. Why: the compile is 19 ms of a 26.5 ms `tags` on `graph/index.rs` (debug,
+// 2026-09-10), ~70 % of the 3.42 s cold index of this repo.
 fn config(path: &Path) -> Option<Result<TagsConfiguration>> {
     match path.extension()?.to_str()? {
         #[cfg(feature = "lang-rust")]

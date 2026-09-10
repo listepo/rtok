@@ -9,13 +9,12 @@ use std::time::{Duration, Instant};
 const QUIET: Duration = Duration::from_millis(250);
 
 pub fn run(cx: &Ctx, root: &Path, stop: &AtomicBool) {
-    run_with(
-        cx,
-        root,
-        stop,
-        &AtomicUsize::new(0),
-        |e: notify::Result<Event>| e.ok().map(|ev| ev.paths).unwrap_or_default(),
-    );
+    run_with(cx, root, stop, &AtomicUsize::new(0), paths);
+}
+
+/// The paths an event names; a watcher error names none.
+fn paths(e: notify::Result<Event>) -> Vec<PathBuf> {
+    e.ok().map(|ev| ev.paths).unwrap_or_default()
 }
 
 pub fn run_with<F>(cx: &Ctx, root: &Path, stop: &AtomicBool, runs: &AtomicUsize, events: F)
@@ -150,7 +149,7 @@ fn suffixes() -> Vec<PathBuf> {
     s
 }
 
-fn notify_loop<F>(cx: &Ctx, root: &Path, stop: &AtomicBool, runs: &AtomicUsize, mut events: F)
+fn notify_loop<F>(cx: &Ctx, root: &Path, stop: &AtomicBool, runs: &AtomicUsize, events: F)
 where
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
@@ -166,6 +165,21 @@ where
         eprintln!("watch: {e}");
         return;
     }
+    pump(cx, root, stop, runs, &rx, events);
+}
+
+/// The debounce loop, apart from the OS watcher so tests can feed it events directly. Ends on
+/// `stop` or when the sender is gone (the watcher died), never spins.
+fn pump<F>(
+    cx: &Ctx,
+    root: &Path,
+    stop: &AtomicBool,
+    runs: &AtomicUsize,
+    rx: &std::sync::mpsc::Receiver<notify::Result<Event>>,
+    mut events: F,
+) where
+    F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
+{
     let mut last = Instant::now();
     let mut dirty = false;
     loop {
@@ -186,6 +200,10 @@ where
     }
 }
 
+// PERF(T35.4) where: here, once per quiet burst of edits. What: keep the event paths and index
+// only those; walk everything only on a rescan or overflow event. Why: one changed file
+// re-walks and stats the whole root — 50 ms for this 127-file repo in debug (2026-09-10),
+// growing with the tree, against the P8d promise of an edit visible within 1 s.
 fn settle(cx: &Ctx, root: &Path, runs: &AtomicUsize, last: &mut Instant, dirty: &mut bool) {
     if *dirty && last.elapsed() >= QUIET {
         let _ = super::index::run(cx, root, false);
@@ -247,16 +265,37 @@ mod tests {
         );
     }
 
-    /// FSEvents delivers the first event on a fresh stream late (~1 s on this
-    /// machine); later events arrive in microseconds. Prime the stream with a
-    /// probe file so the timed write below measures the watcher, not setup.
+    /// Prime the stream so the timed write after it measures the watcher, not setup. A write
+    /// made before the FSEvents stream is live is never delivered, and nothing signals "live":
+    /// waiting on a single probe write sat out the whole `REINDEX_CAP` whenever it was lost.
+    /// Rewrite the probe every two quiet windows until the watcher indexes it, so priming costs
+    /// the stream's start-up and no more.
     fn warm_watcher(cx: &Ctx, dir: &Path) {
-        fs::write(dir.join("warm.rs"), "pub fn warm_probe() {}\n").unwrap();
-        let _ = wait_contains(cx, dir, "warm_probe", "warm.rs:1");
-        let _ = fs::remove_file(dir.join("warm.rs"));
+        let probe = dir.join("warm.rs");
+        let indexed = || {
+            super::super::symbol(cx, dir, "warm_probe")
+                .unwrap()
+                .contains("warm.rs:1")
+        };
+        let cap = Instant::now() + REINDEX_CAP;
+        for n in 0.. {
+            fs::write(&probe, format!("pub fn warm_probe() {{}}\n// {n}\n")).unwrap();
+            let retry = Instant::now() + 2 * QUIET;
+            while Instant::now() < retry && !indexed() {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            if indexed() || Instant::now() >= cap {
+                break;
+            }
+        }
+        let _ = fs::remove_file(&probe);
         let _ = wait_contains(cx, dir, "warm_probe", "no definition of warm_probe");
     }
 
+    /// The one end-to-end check through a real FSEvents stream: a new file is indexed, the call
+    /// itself reads nothing, a deleted file's rows go. Slow by nature: priming the stream plus
+    /// three quiet windows (probe, write, delete), each a real OS round trip. The loop's logic
+    /// is covered without the OS by the `pump` tests below — add cases there, not here.
     #[test]
     fn watcher_reindexes_new_file_while_calls_read_nothing() {
         let (mut cx, dir) = mk("watch-new");
@@ -285,6 +324,10 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// 200 real writes coalesce into ≤ 3 runs. ~0.6 s: the writes plus one quiet window, no
+    /// priming. Only a bound — FSEvents batches as it likes, and 0 also passes when the stream
+    /// goes live after the writes; `irrelevant_events_never_run_and_a_burst_runs_once` pins the
+    /// exact count.
     #[test]
     fn bursts_coalesce_to_few_runs() {
         let (mut cx, dir) = mk("watch-burst");
@@ -315,6 +358,121 @@ mod tests {
         assert!(!relevant(Path::new(".git/HEAD")));
         assert!(!relevant(Path::new("foo/bar.md")));
         assert!(relevant(Path::new("src/lib.rs")));
+    }
+
+    /// What FSEvents would deliver for `p`, without the OS in the loop.
+    fn ev(p: PathBuf) -> notify::Result<Event> {
+        Ok(Event::new(notify::EventKind::Any).add_path(p))
+    }
+
+    /// Feeds `sent` to `pump` and lets it run for one quiet window past the last run it was
+    /// waiting for, so a surplus run shows up too. Returns the run count. Costs QUIET plus a
+    /// few 50 ms ticks; there is no stream to start, so no ~1 s first-event delay to prime.
+    fn pump_events(
+        rt: &crate::plugin::Runtime,
+        dir: &Path,
+        sent: Vec<PathBuf>,
+        want: usize,
+    ) -> usize {
+        let (stop, runs) = (AtomicBool::new(false), AtomicUsize::new(0));
+        let (tx, rx) = std::sync::mpsc::channel();
+        for p in sent {
+            tx.send(ev(p)).unwrap();
+        }
+        let (stop_r, runs_r) = (&stop, &runs);
+        std::thread::scope(|s| {
+            s.spawn(move || pump(&Ctx::new(rt), dir, stop_r, runs_r, &rx, paths));
+            let cap = Instant::now() + REINDEX_CAP;
+            while runs.load(Ordering::Relaxed) < want && Instant::now() < cap {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            // One more quiet window: a surplus run would land in it.
+            std::thread::sleep(QUIET + 4 * POLL_INTERVAL);
+            stop.store(true, Ordering::Relaxed);
+        });
+        drop(tx);
+        runs.load(Ordering::Relaxed)
+    }
+
+    /// `settle` alone: inside QUIET nothing runs, after it exactly one index run clears `dirty`,
+    /// a clean state never runs. No thread and no sleep — time passes by moving `last` back —
+    /// so the cost is one one-file index.
+    #[test]
+    fn settle_runs_once_after_quiet_and_never_when_clean() {
+        let (rt, dir) = mk("watch-settle");
+        fs::write(dir.join("a.rs"), "pub fn settled() {}\n").unwrap();
+        let cx = Ctx::new(&rt);
+        let key = super::super::index::canon(&dir);
+        let runs = AtomicUsize::new(0);
+        let (mut last, mut dirty) = (Instant::now(), true);
+        settle(&cx, &dir, &runs, &mut last, &mut dirty);
+        assert_eq!(
+            (runs.load(Ordering::Relaxed), dirty),
+            (0, true),
+            "ran inside QUIET"
+        );
+        last = Instant::now() - QUIET;
+        settle(&cx, &dir, &runs, &mut last, &mut dirty);
+        assert_eq!((runs.load(Ordering::Relaxed), dirty), (1, false));
+        assert_eq!(cx.symbol_defs(&key, "settled").unwrap().len(), 1);
+        last = Instant::now() - QUIET;
+        settle(&cx, &dir, &runs, &mut last, &mut dirty);
+        assert_eq!(runs.load(Ordering::Relaxed), 1, "a clean state ran again");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `.git/` churn and non-source files never wake the indexer; a burst of relevant events
+    /// runs it exactly once. Exact, where `bursts_coalesce_to_few_runs` can only bound the count
+    /// (≤ 3), because FSEvents decides how the 200 writes are batched.
+    #[test]
+    fn irrelevant_events_never_run_and_a_burst_runs_once() {
+        let (rt, dir) = mk("watch-noise");
+        fs::write(dir.join("a.rs"), "pub fn seed() {}\n").unwrap();
+        let noise = ["README.md", ".git/index", "target/lib.o"].map(|p| dir.join(p));
+        assert_eq!(pump_events(&rt, &dir, noise.to_vec(), 0), 0);
+        let burst = (0..50).map(|_| dir.join("a.rs")).collect();
+        assert_eq!(pump_events(&rt, &dir, burst, 1), 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// An edit and a rename each re-index once; the rename drops the old path's rows (the
+    /// walk's `delete_symbols_missing`). Two quiet windows, well under a second.
+    #[test]
+    fn edit_and_rename_events_reindex_once_each() {
+        let (rt, dir) = mk("watch-pump");
+        fs::write(dir.join("a.rs"), "pub fn old_name() {}\n").unwrap();
+        let cx = Ctx::new(&rt);
+        super::super::index::run(&cx, &dir, false).unwrap();
+        let key = super::super::index::canon(&dir);
+        let defs = |n: &str| -> Vec<String> {
+            let rows = cx.symbol_defs(&key, n).unwrap();
+            rows.into_iter().map(|(p, ..)| p).collect()
+        };
+        // A different length, so the (mtime, size) gate cannot call the edit unchanged.
+        fs::write(dir.join("a.rs"), "pub fn new_name_longer() {}\n").unwrap();
+        assert_eq!(pump_events(&rt, &dir, vec![dir.join("a.rs")], 1), 1);
+        assert_eq!(defs("new_name_longer"), ["a.rs"]);
+        assert!(defs("old_name").is_empty(), "edit kept the old definition");
+        fs::rename(dir.join("a.rs"), dir.join("b.rs")).unwrap();
+        let moved = vec![dir.join("a.rs"), dir.join("b.rs")];
+        assert_eq!(pump_events(&rt, &dir, moved, 1), 1);
+        assert_eq!(defs("new_name_longer"), ["b.rs"], "rename kept a.rs rows");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// The loop ends on `stop` while its channel is still open, and on a dead channel (the
+    /// watcher dropped) without `stop`: the MCP thread outlives neither. A regression hangs.
+    #[test]
+    fn pump_ends_on_stop_or_on_a_dead_channel() {
+        let (rt, dir) = mk("watch-end");
+        let cx = Ctx::new(&rt);
+        let runs = AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        pump(&cx, &dir, &AtomicBool::new(true), &runs, &rx, paths);
+        drop(tx);
+        pump(&cx, &dir, &AtomicBool::new(false), &runs, &rx, paths);
+        assert_eq!(runs.load(Ordering::Relaxed), 0);
+        let _ = fs::remove_dir_all(dir);
     }
 
     /// T8.17 Gate P8d (1) under `watchman`: the daemon's edit is visible in

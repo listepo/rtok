@@ -50,6 +50,16 @@ pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
 /// [`run`] reporting each source file it reaches to `pb`. Only `rtok graph index` passes a real
 /// bar; the MCP tool and the background watcher pass `ProgressBar::hidden()`, because neither
 /// owns the terminal it would be drawing on.
+// PERF(T35.2) where: the walk loop below — every cold index (`rtok graph index`, the MCP
+// tools, the watcher). What: parse on `std::thread::scope` workers; this thread stays the only
+// writer (D18). Why: one thread reads, hashes and parses each file in turn while the other
+// cores idle (3 000 files: 13.8 s release, research.md P8c). Async gains nothing: parsing is
+// CPU work and there is one writer, so no I/O wait to overlap.
+// PERF(T35.3) where: `cx.symbol_stat` below. What: load the root's `(path, sha, mtime, size)`
+// once into a map. Why: one SELECT per file on every run, warm runs included.
+// PERF(T35.5) where: the stat and sha gates below. What: an extractor fingerprint per root; a
+// mismatch drops the root's rows and indexes cold. Why: the gates see only file changes, so
+// after a tags-query, grammar or `scoped` change an untouched file keeps the old extractor's rows.
 pub fn run_with(
     cx: &Ctx,
     root: &Path,
@@ -161,19 +171,12 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::config::Config;
     use std::fs;
     use std::path::PathBuf;
 
     /// Fresh DB + archive dir under the temp dir; shared with the `mod.rs` tool tests.
     pub(crate) fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rtok-graph-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        (crate::plugin::Runtime::open(c, name).unwrap(), dir)
+        crate::testutil::runtime(name)
     }
 
     #[test]
