@@ -58,8 +58,10 @@ pub mod openai_responses;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
-/// in-memory read well above them.
-const MAX_REQUEST_BYTES: usize = 256 * 1024 * 1024;
+/// in-memory read well above them. Also caps how much of a streamed response the tee
+/// task buffers for recording (see `handle`) — one constant for both, since both exist
+/// only to bound memory, not to reject legitimate traffic.
+const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
 
 /// Shared server state: the DB, the upstream client and the effective `[proxy]` settings.
 pub struct ProxyState {
@@ -162,7 +164,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     let (parts, body) = req.into_parts();
     let headers = parts.headers.clone();
 
-    let request_body = match axum::body::to_bytes(body, MAX_REQUEST_BYTES).await {
+    let request_body = match axum::body::to_bytes(body, MAX_BODY_BYTES).await {
         Ok(b) => b,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
     };
@@ -272,11 +274,19 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     let body_stream = upstream.bytes_stream();
     tokio::spawn(async move {
         let mut buf: Vec<u8> = Vec::new();
+        // True response size, independent of `buf`: every chunk still reaches the client
+        // via `tx` once `buf` stops growing, so this is the only accurate byte count past
+        // the cap (an upstream streaming gigabytes must not grow `buf` without bound).
+        let mut total_bytes: usize = 0;
         let mut stream = body_stream;
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
-                    buf.extend_from_slice(&bytes);
+                    total_bytes += bytes.len();
+                    if buf.len() < MAX_BODY_BYTES {
+                        let room = MAX_BODY_BYTES - buf.len();
+                        buf.extend_from_slice(&bytes[..bytes.len().min(room)]);
+                    }
                     if tx.send(Ok(bytes)).await.is_err() {
                         break; // client went away; record what we have
                     }
@@ -297,7 +307,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                 model: model_live,
                 status: status_code,
                 request_bytes: req_len,
-                response_bytes: buf.len(),
+                response_bytes: total_bytes,
                 ms: start.elapsed().as_secs_f64() * 1000.0,
             });
         } else {
@@ -309,6 +319,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                 content_type.as_deref(),
                 &request_body,
                 &buf,
+                total_bytes,
             )
             .await;
         }
@@ -455,6 +466,11 @@ fn record(
 
 /// After the body was fully forwarded: `calls.ms`, `call_io`, then `usage` + provider
 /// `tokens` when the response carried a usage block. All best-effort.
+///
+/// `response_total_bytes` is the true response size; `response_body` may be a shorter,
+/// capped buffer (see `handle`'s tee task and `MAX_BODY_BYTES`) — a truncated buffer means
+/// `call_io` and usage parsing only see the retained prefix, never that they panic on it.
+#[allow(clippy::too_many_arguments)]
 async fn finish(
     state: &ProxyState,
     recorded: &Option<Recorded>,
@@ -463,6 +479,7 @@ async fn finish(
     content_type: Option<&str>,
     request_body: &[u8],
     response_body: &[u8],
+    response_total_bytes: usize,
 ) {
     let Some(r) = recorded else { return };
     let session = r.session.clone();
@@ -480,6 +497,22 @@ async fn finish(
         .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0)
     {
         log_err("set_call_ms", e);
+    }
+    if response_total_bytes > response_body.len() {
+        // The true size, since call_io's recorded response_bytes reflects only what was
+        // retained under MAX_BODY_BYTES — surface the gap instead of under-reporting it.
+        log(
+            state,
+            &session,
+            Some(r.call_id),
+            "error",
+            &format!(
+                "response body truncated for recording: {response_total_bytes} bytes \
+                 received, {} retained (MAX_BODY_BYTES); call_io and usage reflect only \
+                 the retained bytes",
+                response_body.len()
+            ),
+        );
     }
     if let Err(e) = state.store.insert_call_io(
         r.call_id,
@@ -514,13 +547,16 @@ async fn finish(
                 log_err("tokens", e);
             }
         }
-        None => log(
+        // Endpoints this build has no wire for (e.g. /v1/models) never carry usage —
+        // logging here on every such request would be noise, not a signal.
+        None if wire.is_some() => log(
             state,
             &session,
             Some(r.call_id),
             "info",
             "no usage in upstream response",
         ),
+        None => {}
     }
 }
 

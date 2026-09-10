@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, turn_setup};
+use super::wire::{ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup};
 
 pub static ANTHROPIC: Anthropic = Anthropic;
 
@@ -71,20 +71,17 @@ impl Wire for Anthropic {
 }
 
 fn usage_block(value: &Value) -> Option<Usage> {
-    value
-        .get("usage")
-        .or_else(|| {
-            value
-                .get("message")
-                .and_then(|message| message.get("usage"))
-        })
-        .filter(|usage| usage.is_object())
-        .map(|usage| Usage {
-            input: int_field(usage, "input_tokens"),
-            cache_create: int_field(usage, "cache_creation_input_tokens"),
-            cache_read: int_field(usage, "cache_read_input_tokens"),
-            output: int_field(usage, "output_tokens"),
-        })
+    find_usage(
+        value,
+        &UsageFields {
+            alt_parent: Some("message"),
+            input: "input_tokens",
+            output: "output_tokens",
+            cache_create: Some("cache_creation_input_tokens"),
+            cache_read: "cache_read_input_tokens",
+            cache_read_details: None,
+        },
+    )
 }
 
 #[cfg(test)]

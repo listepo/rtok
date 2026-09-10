@@ -120,6 +120,52 @@ pub(super) fn int_field(usage: &Value, name: &str) -> i64 {
     v.as_f64().map(|n| n as i64).unwrap_or(0)
 }
 
+/// Field names one wire's usage block needs to build a [`Usage`] — the three wires'
+/// `usage_block` functions differed only in where the object sits and which keys it
+/// reads, so this is the one place that walk lives. `alt_parent` covers Anthropic's
+/// `message.usage` and Responses' `response.usage` aliases; `cache_read_details` covers
+/// the OpenAI wires' nested `*_tokens_details` object. `cache_create` is `None` on both
+/// OpenAI wires, which report no cache-write signal — that difference stays explicit
+/// here rather than being papered over with a fake field name.
+pub(super) struct UsageFields {
+    pub alt_parent: Option<&'static str>,
+    pub input: &'static str,
+    pub output: &'static str,
+    pub cache_create: Option<&'static str>,
+    pub cache_read: &'static str,
+    pub cache_read_details: Option<&'static str>,
+}
+
+/// Find `value`'s usage object (optionally nested under `fields.alt_parent`) and read it
+/// through `fields`. Shared by all three wires' `usage_block`.
+pub(super) fn find_usage(value: &Value, fields: &UsageFields) -> Option<Usage> {
+    let usage = value
+        .get("usage")
+        .or_else(|| {
+            fields
+                .alt_parent
+                .and_then(|parent| value.get(parent))
+                .and_then(|parent| parent.get("usage"))
+        })
+        .filter(|usage| usage.is_object())?;
+    let cache_read = match fields.cache_read_details {
+        Some(details) => usage
+            .get(details)
+            .map(|d| int_field(d, fields.cache_read))
+            .unwrap_or_default(),
+        None => int_field(usage, fields.cache_read),
+    };
+    Some(Usage {
+        input: int_field(usage, fields.input),
+        cache_create: fields
+            .cache_create
+            .map(|f| int_field(usage, f))
+            .unwrap_or(0),
+        cache_read,
+        output: int_field(usage, fields.output),
+    })
+}
+
 /// Decode JSON or SSE response usage through the selected provider wire.
 pub fn usage_from_response(
     wire: &dyn Wire,
