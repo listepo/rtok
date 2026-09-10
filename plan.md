@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: P0 done 2026-09-02 (T0.1–T0.8); P12 T12.1–T12.4 done; P13 T13.1–T13.4 done (see `done.md`); P14 done; T1.1–T1.5 and T2.1–T2.6 done; T3.1–T3.6 done; T6.1–T6.3 T7.1–T7.2 done; T4.1 T4.2 T4.3 T4.4 T4.5 T4.6 T4.7 T5.0 T5.1 T5.2 T8.1 T8.2 T9.1 T9.2 T9.3 T9.4 T9.5 T10.1 T10.2 T10.3 T10.4 T11.1 T11.2 T11.3 T11.4 T11.5 T11.6 T11.7 T8.3 T8.4 T8.8 T8.5 T8.6 T8.7 T8.9 T16.1 T16.2 T16.3 T16.4 T16.5 T16.6 T16.7 T16.8 T8.10 T8.11 T8.12 T17.1 T18.1 T18.2 T18.3 T18.4 T17.2 T8.16 T8.17 T15.0 T23.0 T23.1 T23.2 T23.3 T23.4 T23.5 T23.6 T24.1 T15.10 T22.0 T22.5 done; P23 complete.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: all §5 tasks done — 166 ✅, 1 superseded (T10.7 → T10.9); entries in `done.md`. Remaining work is Later versions (v0.2+) only.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -34,7 +34,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D26 | **One log with two readers: a rotating text file a person reads, and the `logs` table OTel exports.** Today neither exists as a thing you can look at — `core.log_file` is written only when the DB insert fails, and `core.log_level` and `core.log_to_db` are declared and read nowhere. `[log]` replaces all three and means them: one funnel writes a line to the file and a row to the table, so the two cannot disagree; the file is what `rtok logs` prints and what an operator greps at 3am, the table is what `rtok otel` ships. The file is bounded — `max_bytes` (1 MiB) and `files` (5) — because an unbounded log on a laptop is a disk-full bug waiting for a long-running `rtok proxy`, which is exactly what `demon` keeps alive. Rotation deletes; nothing is archived, since a log line is not a saving and D2's lossless rule does not reach it. Added 2026-09-09 by user request. | A log nobody can read is not logging, and three config keys that do nothing are worse than none. Bounding it is the same argument as D22: the surfaces `demon` supervises run for days. |
 | D27 | **Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`.** D23 made the two surfaces one model; this says what that model has to cover. Every *reading* command — `stats`, `doctor`, `plugins`, `config show`, `logs`, `demon status`, `agents sessions`, `report` — gets its numbers by asking the model, and the CLI becomes one renderer of it rather than the only place the query lives. This is not theory: `rtok stats` and `rtok web` already disagree about what a session is, because one counts transcript files and the other sums `usage` rows, and neither is wrong on its own terms. Writing commands stay CLI-only — a surface that shows numbers is not a surface that mutates a tree — and so does anything whose output is a stream rather than a state (`rtok run`, `rtok expand`, `hook`, `mcp`). The gate is a test that enumerates the reading commands, not a promise in prose (T15.12). Added 2026-09-09 by user request. | The value of an operator surface is that the answer does not depend on which window you opened. Every command that keeps its own query is one more way for two windows to disagree, and the cost of fixing that grows with each command shipped before the rule exists. |
 
-Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a daemon besides `proxy`/`mcp`; a WASM plugin host. Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
+Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a WASM plugin host. (`rtok demon` was promoted to P20 / D22.) Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
 ## 1. Architecture
 
@@ -110,23 +110,23 @@ Gate P0: done 2026-09-03 (historical freeze at T0.8) — see `done.md` P0; §6 r
 
 ### P2 — Hook surface — tasks done, Gate P2 passed 2026-09-03 (see `done.md` P2).
 
-### P3 — `cmd` plugin (goal: every Bash output archived, filtered, measured)
+### P3 — `cmd` plugin (goal: every Bash output archived, filtered, measured) — tasks done 2026-09-02 (see `done.md` P3).
 
 Gate P3: removed 2026-09-09 — one working day of live traffic plus `expand` rate; not code-closable. Evidence kept: `research.md` §2 (Bash 7.71 M est. tokens baseline). Re-add as a task only with a dated traffic window.
 
-### P4 — `read` plugin + MCP server (goal: replace lean-ctx's 78 tools with 5 and the 3.1 K/turn banner with 0)
+### P4 — `read` plugin + MCP server (goal: replace lean-ctx's 78 tools with 5 and the 3.1 K/turn banner with 0) — tasks done 2026-09-02 (see `done.md` P4).
 
 Gate P4: removed 2026-09-09 — one day with legacy tools disabled plus `stats` compare; not code-closable. Evidence kept: `research.md` §2 (Read 3.07 M, lean-ctx 0.86 M MCP rows).
 
-### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results)
+### P5 — `proxy` + `archive` (goal: ground-truth usage and cache-safe shrinking of old tool results) — tasks done 2026-09-02 (see `done.md` P5).
 
 Gate P5: removed 2026-09-09 — 2 d passthrough + 2 d compress with live `usage` rows; the proxy has served no requests here, so `expand` rate and `cache_read` per turn are unmeasurable in code. Evidence kept: replay estimate `research.md` §2 (`archive replay (estimate)` CTT 11.81 G → 8.42 G, −28.7 %, 1 803 candidates). To re-run: point `ANTHROPIC_BASE_URL` at `rtok proxy` (T5.2 `setup --proxy`), two days `passthrough`, two days `--mode compress`, then `rtok stats --cache` and `rtok stats --plugin archive --json` (`expand_rate`).
 
-### P6 — `memory` plugin (goal: one memory instead of two, zero LLM cost)
+### P6 — `memory` plugin (goal: one memory instead of two, zero LLM cost) — tasks done 2026-09-02 (see `done.md`).
 
 Gate P6: removed 2026-09-09 — one week with engram + claude-mem disabled plus subjective recall judgement; not code-closable. Evidence kept: `rtok doctor` MCP description rows in `research.md` §2.
 
-### P7 — modes + instruction hygiene
+### P7 — modes + instruction hygiene — tasks done 2026-09-02 (see `done.md`).
 
 Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail judgement; not code-closable. Harness kept: T9.1 `rtok bench`.
 
@@ -150,7 +150,7 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P21 — CLI presentation — T21.1–T21.3 done 2026-09-09; see `done.md` P21. Started as T20.2 (owo-colors).
 
-### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24)
+### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24); T22.0–T22.5 done 2026-09-10 (see `done.md` P22).
 
 `rtok report [--format md|html|pdf] [--ai] [--out <path>] [--since <window>]`. Depends on T15.0:
 until the operator model exists, a report would be a fourth reader of the `Store` and would start
@@ -177,7 +177,7 @@ others. `rtok report` adds no query of its own: `src/report/` touches the D23 mo
 else. Every number in the output is traceable to rows, and the recommendation section is empty
 rather than invented when there is nothing to say.
 
-### P23 — `rtok-plugin-sdk` (goal: one published contract every plugin implements) — added 2026-09-09 (D25)
+### P23 — `rtok-plugin-sdk` (goal: one published contract every plugin implements) — added 2026-09-09 (D25); T23.0–T23.6 done 2026-09-09 (see `done.md` P23).
 
 A new crate in a new workspace, `crates/rtok-plugin-sdk`, published to crates.io. The ten
 catalogue plugins move onto it, so the SDK is proved by the plugins that ship rather than by an
@@ -272,7 +272,7 @@ Gate P25 (review): every session rtok knows about has a host and a project, `age
 numbers equal `rtok stats` over the same window, and the page exists on `rtok web` and `rtok tui`
 without a second query (D27).
 
-### P26 — duplication gate (goal: "don't duplicate logic" is checked, not remembered) — added 2026-09-09
+### P26 — duplication gate (goal: "don't duplicate logic" is checked, not remembered) — added 2026-09-09; T26.0–T26.1 done 2026-09-09 (see `done.md` P26).
 
 `AGENTS.md` has said "don't duplicate code or logic: reuse an existing helper, or extract one shared
 helper" since T0.7, and nothing measures it. `just check` gates format, lints, tests and the minimum
@@ -284,7 +284,7 @@ T26.0 (`just dup`, jscpd in the gate) is done 2026-09-09 — see `done.md` P26.
 
 T26.1 (retire what it found) is done 2026-09-09 — see `done.md` P26.
 
-### P27 — `rtok-agent-sdk` (goal: one contract every agent host installs through) — added 2026-09-09 (D28)
+### P27 — `rtok-agent-sdk` (goal: one contract every agent host installs through) — added 2026-09-09 (D28); T27.0 done 2026-09-09 (see `done.md` P27).
 
 P23 gave the *plugin* side of rtok a published contract. The *host* side has none: five installers
 under `src/setup/` plus `src/proxy/cli.rs` each carry their own copy of the same four moves —
@@ -304,7 +304,7 @@ Gate P27 (review): no module under `src/setup/` writes a host file, copies a bac
 plugin directory itself — every one of those goes through `rtok-agent-sdk`. A sixth host is a new
 `src/setup/<host>.rs` and nothing else.
 
-### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.1–T15.9 done
+### P15 — `rtok tui` (D17, D23) — promoted from `roadmap.md` 2026-09-09; T15.0–T15.12 done (T15.3–T15.9 2026-09-10).
 
 The tasks are in `roadmap.md` §`tui`. What this section adds is the constraint that makes them
 worth doing: `rtok tui` and `rtok web` are one operator model with two renderings (D23), so the
@@ -314,7 +314,7 @@ T15.0 (the shared model), T15.10 (the parity gate) and T15.11 (the model covers 
 command) are done 2026-09-09 — see `done.md` P15. The model serves the two Snapshot pages `rtok
 web` has today, Overview and Plugins; every reading command (stats, doctor, plugins, config show,
 logs, demon status/list) now asks the model and renders what it returns. Calls, Doctor and Logs
-become surfaced pages with T15.5–T15.7.
+are surfaced pages (T15.5–T15.7, done 2026-09-10).
 
 T15.12 (the parity test enumerates commands, not pages) is done 2026-09-09 — see `done.md` P15.
 `every_command_is_exempt_or_renders_a_page_of_the_model` walks `Cli::command()` the way
@@ -337,7 +337,7 @@ Complexity: 1/5 — two call sites plus one shared helper, no new flags, no conf
 Status: superseded by T10.9 (done 2026-09-09) — `rtok agent remove <host>` strips `mcpServers.rtok` through the shared `unregister_stdio_mcp` for both hosts, which is this Do in full (absorption recorded in `done.md` T10.9).
 Model: -
 
-### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11)
+### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11).
 
 Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passthrough + 2 d compress; needs live Codex traffic, not code-closable. Re-add with a dated traffic window; record in `research.md` §2.
 
@@ -375,7 +375,7 @@ Removed 2026-09-09 (needs days of live traffic, not code): old row 2 — `rtok s
 
 ## 5. Order of value (if time is short)
 
-P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, daemon, WASM) start only after §4 v0.1 done.
+P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, WASM) start only after §4 v0.1 done; daemon promoted to P20.
 
 The gate table that stood here (added 2026-09-08, retired 2026-09-09) is gone: every code-closable
 gate passed, and the traffic/user-gated ones were removed — see §6. What replaces it is the whole
@@ -384,10 +384,12 @@ list, not only what is left.
 ### Every task, its status and its complexity
 
 Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
-task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` means the
-entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table is an index, never the
+task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` would mean
+the entry is still above in §3 (none are). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
+
+**166 done · 0 open · 1 superseded — 167 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|

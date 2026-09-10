@@ -17,7 +17,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D14) and 
 | A saving that is not a `Measurement` row does not exist | `plugin::Measurement` is the only type `Ctx::record` accepts; `measurements` table |
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
-| v0.1: no daemon, no subprocess plugins, no WASM (v0.2+ may add daemon/WASM; D6 unchanged) | plugins are in-tree modules behind Cargo features |
+| v0.1: no daemon on the hook path, no subprocess plugins, no WASM (D1/D6); `rtok demon` supervises long-running surfaces only (D22) | plugins are in-tree modules behind Cargo features; WASM remains Later |
 | Every plugin is written here from scratch; no third-party tool on any code path (D6) | `Manifest` has no adapter kind; T0.8 Check greps `src/plugins` for retired tool names |
 | Every CLI flag is a config key; one precedence rule (D12, D14) | clap 4 derive; figment layers + provenance; toml_edit for `config set`; `tests/config_coverage.rs` walks the clap tree |
 
@@ -26,7 +26,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D14) and 
 ```
 ┌────────────────────────────── surfaces ───────────────────────────────┐
 │  rtok hook <event>        rtok mcp              rtok proxy            │
-│  rtok tui (v0.2)          ratatui operator dashboard (D17)            │
+│  rtok tui                ratatui operator dashboard (D17, P15)       │
 │  (stdin JSON → stdout)    (stdio JSON-RPC)      (ANTHROPIC_BASE_URL,  │
 │                                                  OPENAI_BASE_URL)      │
 │  src/hooks/               src/mcp.rs            src/proxy/            │
@@ -73,7 +73,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/mcp.rs` | rmcp stdio server built from `Plugin::mcp_tools()` | T4.1 |
 | `src/proxy/` | axum passthrough + `compress` mode via `Plugin::proxy_filter()` | T5.1 |
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
-| `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | v0.2 |
+| `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | P15 |
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
 | `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Renders the operator model `rtok tui` also renders (D23). UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
@@ -205,7 +205,8 @@ under 5 %.
 ## 11. Not in v0.1
 
 v0.1 has no LLM-based compression, embeddings, type-resolved call graph (the `graph` plugin
-is a tree-sitter-tags index), semantic response cache, daemon, WASM plugin host, or ratatui TUI (`rtok tui`, P15). Those
-are **v0.2+** (`plan.md` Later versions, `ideas.md` Later, `roadmap.md` Later), not discarded.
+is a tree-sitter-tags index), semantic response cache, or WASM plugin host. Those remain
+**v0.2+** (`plan.md` Later versions, `ideas.md` Later, `roadmap.md` Later), not discarded.
+`rtok tui` (P15) and `rtok demon` (P20) shipped in-tree after promotion from Later.
 Adapters over third-party tools stay out of *this repo* at every version (D6); a later WASM
 host loads plugins that live outside this repo.
