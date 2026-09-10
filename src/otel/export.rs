@@ -1,15 +1,18 @@
 //! T16.5 (D19): read past each watermark, encode, POST, advance on 2xx. Never panics: a
 //! failure is one `logs` row (`source = otel`), the marks stay, and the report says so.
+//! T16.9: an exclusive file lock serialises concurrent flushers across processes.
 //! A 404 on `/v1/logs` or `/v1/metrics` is a backend without that pipeline (Jaeger): the
 //! stream is skipped, its mark stays, nothing is logged — else every flush would add the
 //! `logs` row that the next flush fails on.
 
+use std::fs::OpenOptions;
 use std::fmt;
 use std::fmt::Write as _;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
+use rustix::fs::{FlockOperation, flock};
 
 use super::{map, metrics, otlp};
 use crate::config::{Config, Endpoint};
@@ -62,9 +65,24 @@ pub fn resource(cx: &Runtime) -> otlp::Resource {
 }
 
 /// One flush: traces (ended sessions + calls), then logs. Errors are reported, not returned.
+/// Cross-process single-flight (T16.9): an exclusive file lock beside the DB so proxy /
+/// mcp / hook-spawned `rtok otel flush` cannot double-post the same watermarks. Waiting
+/// keeps at-least-once: the loser runs after and finds the marks already advanced.
 pub async fn flush(cx: &Runtime) -> Report {
     let Some(ep) = cx.config.otel.resolve() else {
         return Report::default();
+    };
+    let _guard = match flush_lock(cx) {
+        Ok(g) => g,
+        Err(e) => {
+            let msg = format!("flush lock: {e}");
+            cx.log("error", "otel", "flush", &msg);
+            return Report {
+                enabled: true,
+                error: Some(msg),
+                ..Report::default()
+            };
+        }
     };
     let mut rep = Report {
         enabled: true,
@@ -76,6 +94,27 @@ pub async fn flush(cx: &Runtime) -> Report {
         rep.error = Some(msg);
     }
     rep
+}
+
+/// Advisory lock file next to the DB. Held for the whole flush; dropped on return.
+fn flush_lock(cx: &Runtime) -> std::io::Result<FlushLock> {
+    let path = cx.config.core.db_path.with_extension("otel-flush.lock");
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let file = OpenOptions::new().create(true).write(true).truncate(false).open(&path)?;
+    flock(&file, FlockOperation::LockExclusive)?;
+    Ok(FlushLock { file })
+}
+
+struct FlushLock {
+    file: std::fs::File,
+}
+
+impl Drop for FlushLock {
+    fn drop(&mut self) {
+        let _ = flock(&self.file, FlockOperation::Unlock);
+    }
 }
 
 async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()> {

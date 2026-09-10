@@ -53,7 +53,8 @@ exit 0 with `otel: no endpoint` when export is off.
 A hook never opens a socket: it hands the work to a child process, which is why hook p95 stays
 under 10 ms with export on. Delivery is at-least-once behind a per-stream watermark that only
 advances on a 2xx; span ids are derived from row ids, so a re-sent span is byte-identical and
-collectors merge it.
+collectors merge it. Concurrent flushers (proxy timer, mcp timer, hook-spawned child) take an
+exclusive file lock beside the DB so they hand off rather than double-post the same batch (T16.9).
 
 **Known debt (T16.9):** `proxy` and `mcp` timer flushes can overlap a detached `rtok otel flush`
 from `Stop`/`SessionEnd`. Concurrent processes may race the same watermark and double-export a

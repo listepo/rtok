@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use httpmock::prelude::*;
 use rtok::config::Config;
@@ -407,5 +408,56 @@ fn metrics_repeat_the_totals_every_flush() {
     let r = flush_blocking(&cx);
     assert_eq!((r.spans, r.logs, r.points), (0, 0, 8));
     metrics.assert_calls(2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T16.9: two overlapping flushes against one store post each row once. The exclusive
+/// lock serialises them; the second finds watermarks already advanced.
+#[test]
+fn concurrent_flushes_post_each_row_once() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}").delay(Duration::from_millis(250));
+    });
+    let logs = server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}");
+    });
+    let _metrics = server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}");
+    });
+    let dir = home("race");
+    // Two runtimes, one DB — the cross-process case (proxy + hook child).
+    let cx_a = ctx(&dir, &server.base_url());
+    seed(&cx_a);
+    let cx_b = ctx(&dir, &server.base_url());
+
+    let a = std::thread::spawn(move || flush_blocking(&cx_a));
+    std::thread::sleep(Duration::from_millis(30));
+    let b = std::thread::spawn(move || flush_blocking(&cx_b));
+    let (ra, rb) = (a.join().unwrap(), b.join().unwrap());
+    assert_eq!(ra.error, None, "{ra}");
+    assert_eq!(rb.error, None, "{rb}");
+    // Exactly one flusher posts the call spans; the other sees an empty batch.
+    assert_eq!(
+        ra.spans + rb.spans,
+        3,
+        "spans must not double: {ra:?} {rb:?}"
+    );
+    assert_eq!(
+        ra.logs + rb.logs,
+        1,
+        "logs must not double: {ra:?} {rb:?}"
+    );
+    traces.assert_calls(1);
+    logs.assert_calls(1);
+
+    let cx = ctx(&dir, &server.base_url());
+    assert_eq!(cx.store.otel_mark("calls").unwrap(), 3);
+    assert_eq!(cx.store.otel_mark("logs").unwrap(), 1);
+    let (pending_calls, pending_logs) = cx.store.otel_pending().unwrap();
+    assert_eq!((pending_calls, pending_logs), (0, 0));
     let _ = std::fs::remove_dir_all(&dir);
 }
