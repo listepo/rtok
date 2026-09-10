@@ -99,24 +99,116 @@ pub fn compress_prose(text: &str, intensity: CaveIntensity) -> String {
 
 /// Compress an unfenced prose segment and normalize whitespace within each line.
 fn compress_outside(prose: &str, intensity: CaveIntensity) -> String {
-    let mut s = prose.to_string();
-    for p in PLEASANTRIES {
-        // Case-insensitive replace for leading pleasantries.
-        s = replace_ci(&s, p, "");
-    }
-    match intensity {
-        CaveIntensity::Lite => {}
-        CaveIntensity::Full | CaveIntensity::Ultra => {
-            s = strip_words(&s, FILLER_WORDS);
-            s = strip_words(&s, ARTICLES);
-            if matches!(intensity, CaveIntensity::Ultra) {
-                for p in CONJUNCTION_PAD {
-                    s = replace_ci(&s, p, " ");
+    let segments = inline_segments(prose);
+    let last = segments.len().saturating_sub(1);
+    let mut out = String::with_capacity(prose.len());
+
+    for (index, segment) in segments.into_iter().enumerate() {
+        match segment {
+            InlineSegment::Protected(span) => out.push_str(span),
+            InlineSegment::Prose(segment) => {
+                let mut s = if index == 0 {
+                    strip_leading_pleasantries(segment)
+                } else {
+                    segment.to_string()
+                };
+                match intensity {
+                    CaveIntensity::Lite => {}
+                    CaveIntensity::Full | CaveIntensity::Ultra => {
+                        s = strip_words(&s, FILLER_WORDS);
+                        s = strip_words(&s, ARTICLES);
+                        if matches!(intensity, CaveIntensity::Ultra) {
+                            for p in CONJUNCTION_PAD {
+                                s = replace_ci(&s, p, " ");
+                            }
+                        }
+                    }
                 }
+                out.push_str(&cleanup_ws_segment(&s, index > 0, index < last));
             }
         }
     }
-    cleanup_ws(&s)
+    out
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InlineSegment<'a> {
+    Prose(&'a str),
+    Protected(&'a str),
+}
+
+/// Split prose into editable text and matching backtick-delimited spans.
+/// An unmatched delimiter protects the remainder rather than risking code corruption.
+fn inline_segments(text: &str) -> Vec<InlineSegment<'_>> {
+    let bytes = text.as_bytes();
+    let mut segments = Vec::new();
+    let mut prose_start = 0;
+    let mut cursor = 0;
+
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'`' {
+            cursor += 1;
+            continue;
+        }
+
+        let opener = cursor;
+        while cursor < bytes.len() && bytes[cursor] == b'`' {
+            cursor += 1;
+        }
+        let delimiter_len = cursor - opener;
+        let mut closing_end = None;
+
+        while cursor < bytes.len() {
+            if bytes[cursor] != b'`' {
+                cursor += 1;
+                continue;
+            }
+            let closing = cursor;
+            while cursor < bytes.len() && bytes[cursor] == b'`' {
+                cursor += 1;
+            }
+            if cursor - closing == delimiter_len {
+                closing_end = Some(cursor);
+                break;
+            }
+        }
+
+        if prose_start < opener {
+            segments.push(InlineSegment::Prose(&text[prose_start..opener]));
+        }
+        if let Some(end) = closing_end {
+            segments.push(InlineSegment::Protected(&text[opener..end]));
+            prose_start = end;
+        } else {
+            segments.push(InlineSegment::Protected(&text[opener..]));
+            prose_start = bytes.len();
+        }
+    }
+
+    if prose_start < bytes.len() {
+        segments.push(InlineSegment::Prose(&text[prose_start..]));
+    }
+    segments
+}
+
+fn strip_leading_pleasantries(text: &str) -> String {
+    let mut rest = text;
+    loop {
+        let trimmed = rest.trim_start_matches(char::is_whitespace);
+        let Some(phrase) = PLEASANTRIES.iter().find(|phrase| {
+            trimmed
+                .get(..phrase.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(phrase))
+                && trimmed[phrase.len()..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '\'')
+        }) else {
+            break;
+        };
+        rest = &trimmed[phrase.len()..];
+    }
+    rest.to_string()
 }
 
 /// Replace non-overlapping ASCII-case-insensitive substrings without requiring word boundaries.
@@ -127,40 +219,25 @@ fn replace_ci(hay: &str, needle: &str, with: &str) -> String {
     let n = needle.to_ascii_lowercase();
     let mut out = String::with_capacity(hay.len());
     let mut i = 0;
-    let bytes = hay.as_bytes();
     while let Some(rel) = lower[i..].find(&n) {
         let at = i + rel;
         out.push_str(&hay[i..at]);
         out.push_str(with);
         i = at + needle.len();
         // Advance by needle byte length on original (ASCII phrases only).
-        let _ = bytes;
     }
     out.push_str(&hay[i..]);
     out
 }
 
-/// Drop tokens made of ASCII letters and apostrophes when they match `words`.
-///
-/// Tokens in [`KEEP_WORDS`] remain. Text from a backtick through the next backtick is copied
-/// unchanged; an unmatched backtick preserves the rest of the input.
+/// Drop whole words from `words` when they appear as standalone tokens (ASCII word chars).
+/// Never drops [`KEEP_WORDS`]. Inline code has already been removed from this prose segment.
 fn strip_words(text: &str, words: &[&str]) -> String {
     let drop: std::collections::HashSet<&str> = words.iter().copied().collect();
     let keep: std::collections::HashSet<&str> = KEEP_WORDS.iter().copied().collect();
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
-        // Preserve inline backticks as atomic spans.
-        if c == '`' {
-            out.push('`');
-            for d in chars.by_ref() {
-                out.push(d);
-                if d == '`' {
-                    break;
-                }
-            }
-            continue;
-        }
         if c.is_ascii_alphabetic() {
             let mut word = String::new();
             word.push(c);
@@ -183,7 +260,27 @@ fn strip_words(text: &str, words: &[&str]) -> String {
     out
 }
 
-/// Collapse whitespace within each line, trim line edges, and normalize retained line endings.
+fn cleanup_ws_segment(s: &str, preserve_start: bool, preserve_end: bool) -> String {
+    const EDGE: char = '\u{e000}';
+    let mut padded = String::with_capacity(s.len() + 2 * EDGE.len_utf8());
+    if preserve_start {
+        padded.push(EDGE);
+    }
+    padded.push_str(s);
+    if preserve_end {
+        padded.push(EDGE);
+    }
+
+    let mut cleaned = cleanup_ws(&padded);
+    if preserve_start {
+        cleaned.remove(0);
+    }
+    if preserve_end {
+        cleaned.pop();
+    }
+    cleaned
+}
+
 fn cleanup_ws(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut start = true;
@@ -244,5 +341,44 @@ mod tests {
         assert!(!out.starts_with("Sure"), "{out}");
         assert!(out.contains("really"), "{out}");
         assert!(out.contains("The"), "{out}");
+    }
+
+    #[test]
+    fn protects_inline_backtick_spans() {
+        let in_ = "Sure! The answer is just `Sure! The really exact value` and the result.";
+        assert_eq!(
+            compress_prose(in_, CaveIntensity::Full),
+            "answer is `Sure! The really exact value` and result."
+        );
+    }
+
+    #[test]
+    fn protects_double_backtick_spans() {
+        let in_ = "Of course! Use ``the really `simple` value`` and the helper.";
+        assert_eq!(
+            compress_prose(in_, CaveIntensity::Full),
+            "Use ``the really `simple` value`` and helper."
+        );
+    }
+
+    #[test]
+    fn preserves_whitespace_inside_backtick_spans() {
+        let in_ = "The result is `left   middle\n  right` for the test.";
+        assert_eq!(
+            compress_prose(in_, CaveIntensity::Full),
+            "result is `left   middle\n  right` for test."
+        );
+    }
+
+    #[test]
+    fn removes_only_complete_leading_pleasantries() {
+        assert_eq!(
+            compress_prose("Assure! Sure! The result.", CaveIntensity::Lite),
+            "Assure! Sure! The result."
+        );
+        assert_eq!(
+            compress_prose("Sure! Sure thing! Done.", CaveIntensity::Lite),
+            "Done."
+        );
     }
 }

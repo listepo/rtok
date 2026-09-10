@@ -15,8 +15,8 @@
 //! We deliberately do **not** vendor or wrap JuliusBrussee/caveman or DietrichGebert/ponytail.
 //! Those tools inspired the behaviour; the implementation is native and measured in
 //! `tests/mode_bench.rs`. Numbers and the “why we are better” write-up live in
-//! [`research.md`](../../research.md) (modes subsection) and
-//! [`docs/comparison.md`](../../docs/comparison.md) § Prompt-level.
+//! [`research.md`](https://github.com/listepo/rtok/blob/main/research.md) (modes subsection) and
+//! [`docs/comparison.md`](https://github.com/listepo/rtok/blob/main/docs/comparison.md) § Prompt-level.
 //!
 //! Aliases `cave` → `terse` and `pony` → `yagni` are inject-only naming sugar; the files and
 //! this module keep the rtok names.
