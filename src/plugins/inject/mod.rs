@@ -60,8 +60,8 @@ const YAGNI: &str = include_str!("../../../modes/yagni.md");
 
 fn builtin(name: &str) -> Option<&'static str> {
     match name {
-        "terse" => Some(TERSE),
-        "yagni" => Some(YAGNI),
+        "terse" | "cave" => Some(TERSE),
+        "yagni" | "pony" => Some(YAGNI),
         _ => None,
     }
 }
