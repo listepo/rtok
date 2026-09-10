@@ -70,6 +70,10 @@ pub struct Overview {
     /// to the last [`OVERVIEW_TURNS`]. A `usage` row carries no timestamp, so across
     /// sessions this is session order, not wall-clock order.
     pub turns: Vec<i64>,
+    /// Persistent operator warnings for the whole disabled period (e.g. proxy plain
+    /// mode). Empty when none; omitted from the wire when empty so the P19 shape stays.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alerts: Vec<String>,
 }
 
 /// Points of the Overview sparkline: wider than any terminal the TUI draws on, and
@@ -626,10 +630,25 @@ impl<'a> Model<'a> {
     /// Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first, through
     /// the store's one `recent_calls` read — the model keeps no second reader (D27).
     /// No store, or one that will not read: an empty page, like Overview's zeros.
+    /// When the proxy is in plain mode, in-memory live passthrough rows are prepended
+    /// (negative ids; kind `live_passthrough`) so TUI/web still show traffic flowing.
     pub fn calls(&self) -> Vec<CallRow> {
-        self.store
+        let mut rows = self
+            .store
             .and_then(|s| s.recent_calls(CALLS_ROWS as i64).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let live = live_calls(self.cfg);
+        if !live.is_empty() {
+            let mut merged: Vec<CallRow> = live
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| live_as_call_row(-(i as i32 + 1), c))
+                .collect();
+            merged.append(&mut rows);
+            merged.truncate(CALLS_ROWS);
+            return merged;
+        }
+        rows
     }
 
     /// Overview: provider usage totals across every API, plus the CTT and per-turn
@@ -637,7 +656,10 @@ impl<'a> Model<'a> {
     /// uses (`usage_sessions` + `usage_rows`), so this adds no `Store` method (D27).
     /// No store, or one that will not read: zeros, like before.
     pub fn overview(&self) -> Overview {
-        let mut out = Overview::default();
+        let mut out = Overview {
+            alerts: crate::proxy::live::alerts(self.cfg),
+            ..Overview::default()
+        };
         let Some(store) = self.store else {
             return out;
         };
@@ -718,6 +740,62 @@ impl<'a> Model<'a> {
     }
 }
 
+fn live_calls(cfg: &Config) -> Vec<crate::proxy::LiveCall> {
+    if cfg.proxy.enabled && cfg.core.enabled {
+        return Vec::new();
+    }
+    // Prefer the running proxy's /live (cross-process); fall back to this process's ring.
+    fetch_live(cfg).unwrap_or_else(crate::proxy::live::snapshot)
+}
+
+fn fetch_live(cfg: &Config) -> Option<Vec<crate::proxy::LiveCall>> {
+    let url = format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port);
+    let timeout = std::time::Duration::from_millis(cfg.doctor.probe_timeout_ms.max(100));
+    let body = http_get_body(&url, "/live", timeout)?;
+    serde_json::from_str(&body).ok()
+}
+
+fn http_get_body(base: &str, path: &str, timeout: std::time::Duration) -> Option<String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpStream, ToSocketAddrs};
+    let rest = base.split("://").nth(1).unwrap_or(base);
+    let hostport = rest.split('/').next().unwrap_or(rest);
+    let addr = hostport.to_socket_addrs().ok()?.next()?;
+    let mut stream = TcpStream::connect_timeout(&addr, timeout).ok()?;
+    stream.set_read_timeout(Some(timeout)).ok()?;
+    stream.set_write_timeout(Some(timeout)).ok()?;
+    let req = format!("GET {path} HTTP/1.1\r\nHost: {hostport}\r\nConnection: close\r\n\r\n");
+    stream.write_all(req.as_bytes()).ok()?;
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf);
+    text.split("\r\n\r\n").nth(1).map(str::to_string)
+}
+
+fn live_as_call_row(id: i32, c: crate::proxy::LiveCall) -> CallRow {
+    CallRow {
+        id,
+        ts: c.ts,
+        session: "(live)".into(),
+        surface: "proxy".into(),
+        kind: "live_passthrough".into(),
+        plugin: None,
+        name: Some(c.path),
+        parent_id: None,
+        ms: Some(c.ms),
+        ok: if c.status < 400 { 1 } else { 0 },
+        error: None,
+        host: None,
+        provider: c.provider,
+        model: c.model,
+        api: None,
+        input: Some(c.request_bytes as i64),
+        cache_create: None,
+        cache_read: None,
+        output: Some(c.response_bytes as i64),
+    }
+}
+
 fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
     let p = &cfg.plugins;
     match id {
@@ -741,7 +819,11 @@ fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
         ],
         "graph" => vec![kv("max_tokens", p.graph.max_tokens)],
         "toon" => vec![kv("min_rows", p.toon.min_rows)],
-        "proxy" => vec![kv("mode", &cfg.proxy.mode), kv("port", cfg.proxy.port)],
+        "proxy" => vec![
+            kv("enabled", cfg.proxy.enabled),
+            kv("mode", &cfg.proxy.mode),
+            kv("port", cfg.proxy.port),
+        ],
         "measure" => vec![kv("since", &cfg.stats.since)],
         _ => vec![],
     }

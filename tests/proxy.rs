@@ -288,7 +288,10 @@ async fn proxy_health_reports_ok_and_mode() {
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
     let body = resp.text().await.expect("health body");
     let v: serde_json::Value = serde_json::from_str(&body).expect("json");
-    assert_eq!(v, serde_json::json!({"ok": true, "mode": "passthrough"}));
+    assert_eq!(
+        v,
+        serde_json::json!({"ok": true, "mode": "passthrough", "enabled": true, "recording": true})
+    );
     task.abort();
 }
 
@@ -800,4 +803,187 @@ async fn proxy_compress_archives_six_turns_on_each_wire() {
         );
         task.abort();
     }
+}
+
+
+// ── proxy/core.enabled=false → plain reverse proxy (listener stays up) ──
+
+async fn plain_server(
+    label: &str,
+    up: &MockUpstream,
+    mode: &str,
+    proxy_enabled: bool,
+    core_enabled: bool,
+) -> (
+    String,
+    Arc<ProxyState>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+) {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-plain-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = up.base_url();
+    cfg.proxy.mode = mode.to_string();
+    cfg.proxy.enabled = proxy_enabled;
+    cfg.core.enabled = core_enabled;
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+    (addr, state, task)
+}
+
+async fn assert_plain_forward(
+    label: &str,
+    proxy_enabled: bool,
+    core_enabled: bool,
+) {
+    rtok::proxy::live::clear();
+    let up = MockUpstream::anthropic_messages_body();
+    // mode=compress would rewrite if business logic ran; plain must ignore it.
+    let (addr, state, task) =
+        plain_server(label, &up, "compress", proxy_enabled, core_enabled).await;
+
+    let health = reqwest::Client::new()
+        .get(format!("http://{addr}/health"))
+        .send()
+        .await
+        .expect("health");
+    assert_eq!(health.status(), reqwest::StatusCode::OK, "{label}");
+    let hv: serde_json::Value =
+        serde_json::from_str(&health.text().await.expect("health body")).expect("health json");
+    assert_eq!(hv["ok"], true, "{label}");
+    assert_eq!(hv["mode"], "passthrough", "{label}");
+    assert_eq!(hv["enabled"], false, "{label}");
+    assert_eq!(hv["recording"], false, "{label}");
+
+    let resp = t51_post(&addr, t53_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK, "{label}");
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+    up.assert_upstream_called_once();
+
+    // Give any accidental recorder task a moment; plain must leave the DB empty.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        state.store.count_kind("api_request").expect("calls"),
+        0,
+        "{label}: no calls rows"
+    );
+    assert_eq!(
+        state.store.usage_rows(T53_SESSION).expect("usage").len(),
+        0,
+        "{label}: no usage rows"
+    );
+    assert_eq!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements"),
+        0,
+        "{label}: no archive measurements"
+    );
+
+    for _ in 0..200 {
+        if !rtok::proxy::live::snapshot().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let live = rtok::proxy::live::snapshot();
+    assert!(!live.is_empty(), "{label}: live ring must show traffic");
+    assert_eq!(live[0].path, "/v1/messages", "{label}");
+    assert_eq!(live[0].status, 200, "{label}");
+    let live_body = reqwest::Client::new()
+        .get(format!("http://{addr}/live"))
+        .send()
+        .await
+        .expect("live")
+        .text()
+        .await
+        .expect("live body");
+    let live_http: Vec<serde_json::Value> = serde_json::from_str(&live_body).expect("live json");
+    assert!(!live_http.is_empty(), "{label} /live");
+
+    let mut cfg = Config::default();
+    cfg.proxy.enabled = proxy_enabled;
+    cfg.core.enabled = core_enabled;
+    let snap = rtok::web::model::Model::new(&cfg, Some(&state.store)).snapshot();
+    assert!(
+        !snap.usage.alerts.is_empty(),
+        "{label}: persistent alert until re-enabled"
+    );
+    assert!(
+        snap.calls.iter().any(|c| c.kind == "live_passthrough"),
+        "{label}: Calls page shows live passthrough rows"
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_disabled_is_plain_forward_with_no_bookkeeping() {
+    assert_plain_forward("proxy-off", false, true).await;
+}
+
+#[tokio::test]
+async fn core_disabled_is_plain_forward_with_no_bookkeeping() {
+    assert_plain_forward("core-off", true, false).await;
+}
+
+#[tokio::test]
+async fn enabled_compress_still_archives_when_flags_on() {
+    rtok::proxy::live::clear();
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = plain_server("both-on", &up, "compress", true, true).await;
+    let health = reqwest::Client::new()
+        .get(format!("http://{addr}/health"))
+        .send()
+        .await
+        .expect("health");
+    let hv: serde_json::Value =
+        serde_json::from_str(&health.text().await.expect("health body")).expect("health json");
+    assert_eq!(hv["ok"], true);
+    assert_eq!(hv["mode"], "compress");
+    assert_eq!(hv["enabled"], true);
+    assert_eq!(hv["recording"], true);
+
+    let resp = t51_post(&addr, t53_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+
+    let rows = t51_usage(&state.store, T53_SESSION).await;
+    assert_eq!(rows.len(), 1);
+    let sent = state
+        .store
+        .call_io_request(rows[0].call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    let body: serde_json::Value = serde_json::from_slice(&sent).expect("json");
+    let contents: Vec<&str> = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .map(|m| m["content"][0]["content"].as_str().unwrap())
+        .collect();
+    assert!(
+        contents[0].starts_with("[archived "),
+        "compress still rewrites when enabled"
+    );
+    assert!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements")
+            > 0
+    );
+    let cfg = Config::default();
+    let snap = rtok::web::model::Model::new(&cfg, Some(&state.store)).snapshot();
+    assert!(snap.usage.alerts.is_empty(), "no alert when enabled");
+    assert!(
+        snap.calls.iter().all(|c| c.kind != "live_passthrough"),
+        "no live rows when recording"
+    );
+    task.abort();
 }

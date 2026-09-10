@@ -17,16 +17,38 @@ use super::app::App;
 use crate::store::CallRow;
 use crate::web::model::PluginPage;
 
-/// One screen: header · tabs · body · footer.
+/// One screen: header · [alert] · tabs · body · footer.
+/// The alert row stays up for the whole disabled period (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
-    let [header, tabs, body, footer] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .areas(frame.area());
+    let alert = app.snapshot().usage.alerts.first().cloned();
+    let areas = if alert.is_some() {
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area())
+    } else {
+        // Same five slots; alert row height 0 when absent.
+        Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(0),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area())
+    };
+    let [header, alert_area, tabs, body, footer] = areas;
     frame.render_widget(Paragraph::new(header_line(frame.area())), header);
+    if let Some(msg) = alert {
+        frame.render_widget(
+            Paragraph::new(format!("⚠ {msg}")).style(Style::new().bold()),
+            alert_area,
+        );
+    }
     frame.render_widget(tab_bar(app), tabs);
     render_page(frame, app, body);
     frame.render_widget(Paragraph::new(footer_line(app)), footer);
@@ -96,7 +118,11 @@ fn render_overview(frame: &mut Frame, app: &App, area: Rect) {
 fn overview_text(app: &App) -> Paragraph<'static> {
     let usage = &app.snapshot().usage;
     let totals = &usage.totals;
-    let mut lines = vec![
+    let mut lines = Vec::new();
+    for a in &usage.alerts {
+        lines.push(Line::from(format!("⚠ {a}")));
+    }
+    lines.extend([
         Line::from("usage totals (usage rows, all apis)"),
         Line::from(format!("input        {}", totals.input)),
         Line::from(format!("output       {}", totals.output)),
@@ -107,7 +133,7 @@ fn overview_text(app: &App) -> Paragraph<'static> {
             usage.ctt
         )),
         Line::from("saved by plugin (Measurement rows)"),
-    ];
+    ]);
     lines.extend(savings_lines(&app.snapshot().plugins));
     Paragraph::new(lines)
 }
@@ -227,10 +253,12 @@ fn doctor(app: &App) -> Paragraph<'static> {
 fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
     let rows = &app.snapshot().calls;
     if rows.is_empty() {
-        frame.render_widget(
-            Paragraph::new("no calls yet (the ledger fills as hooks, MCP and the proxy run)"),
-            area,
-        );
+        let msg = if !app.snapshot().usage.alerts.is_empty() {
+            "proxy disabled — live passthrough (not recorded); no traffic yet"
+        } else {
+            "no calls yet (the ledger fills as hooks, MCP and the proxy run)"
+        };
+        frame.render_widget(Paragraph::new(msg), area);
         return;
     }
     let (list, detail) = if app.calls_detail() {
@@ -281,7 +309,14 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
     .header(Row::new([
         "when", "surf", "kind", "name", "session", "ms", "tok",
     ]))
-    .block(Block::default().title(format!("calls (last {}, newest first)", rows.len())))
+    .block(Block::default().title({
+        let live = rows.iter().filter(|c| c.kind == "live_passthrough").count();
+        if live > 0 {
+            format!("calls (last {n}, {live} live passthrough — not recorded)", n = rows.len())
+        } else {
+            format!("calls (last {}, newest first)", rows.len())
+        }
+    }))
 }
 
 /// The selected row's full fields: every column the ledger keeps, the slugs its ids

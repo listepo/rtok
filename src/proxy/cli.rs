@@ -12,9 +12,25 @@ use super::ProxyState;
 use crate::config::Config;
 use crate::setup::apply;
 
-/// `GET /health` → `{"ok":true,"mode":"passthrough"}`.
+/// `GET /health` → `{"ok":true,"mode":…}`. When config disables proxy/core business
+/// logic: `mode=passthrough`, `enabled=false`, `recording=false` (listener still up).
 pub async fn health(State(state): State<Arc<ProxyState>>) -> Json<Value> {
-    Json(json!({"ok": true, "mode": state.mode}))
+    if state.plain() {
+        Json(json!({
+            "ok": true,
+            "mode": "passthrough",
+            "enabled": false,
+            "recording": false,
+            "live": super::live::snapshot().len(),
+        }))
+    } else {
+        Json(json!({"ok": true, "mode": state.mode, "enabled": true, "recording": true}))
+    }
+}
+
+/// `GET /live` → newest-first plain-proxy request summaries (in-memory only).
+pub async fn live_calls() -> Json<Value> {
+    Json(json!(super::live::snapshot()))
 }
 
 /// Set `env.ANTHROPIC_BASE_URL` in Claude settings.json to this proxy (backup).

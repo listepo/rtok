@@ -70,6 +70,10 @@ fn strs(v: &[&str]) -> Vec<String> {
 section! {
     /// `[core]` — paths shared by every surface. Logging lives in `[log]` (D26).
     Core {
+        /// Kill-switch for business logic. When false the process stays up; the HTTP
+        /// proxy (and any other long-running surface that would apply plugins/bookkeeping)
+        /// runs as a plain forwarder until the process exits. Disabling never stops the listener.
+        enabled: bool = true,
         db_path: PathBuf = p("~/.rtok/rtok.db"),
         archive_dir: PathBuf = p("~/.rtok/archive"),
         /// Removed in T24.5: it is now `log.level`. Accepted from an old file with a
@@ -140,6 +144,9 @@ section! {
 section! {
     /// `[proxy]` — the proxy server itself; the usage-capture plugin is `[plugins.proxy]`.
     Proxy {
+        /// When false the HTTP listener stays up but every request is byte-forwarded with
+        /// no compress / bookkeeping / request shaping. Only killing the process stops HTTP.
+        enabled: bool = true,
         bind: String = s("127.0.0.1"),
         port: u16 = 8790,
         mode: String = s("passthrough"),

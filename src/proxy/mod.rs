@@ -17,6 +17,10 @@
 //! (`source = provider`) with the four counters; and one `usage` row whose
 //! `call_id` points at the `calls` row. Session id: `metadata.user_id`, else the
 //! `x-rtok-session` header, else the sha256 of the request body.
+//!
+//! When `proxy.enabled` or `core.enabled` is false the listener still serves, but every
+//! request is a plain reverse proxy (no record / compress / prepare). Only killing the
+//! process stops HTTP — flipping those flags never shuts the listener down.
 
 use std::io;
 use std::path::PathBuf;
@@ -47,6 +51,8 @@ use wire::{Wire, WireRequest};
 
 pub mod anthropic;
 pub mod cli;
+pub mod live;
+pub use live::LiveCall;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod wire;
@@ -103,12 +109,20 @@ impl ProxyState {
             _ => &self.upstream,
         }
     }
+
+    /// Config kill-switches: `proxy.enabled` or `core.enabled` false → byte-forward only.
+    /// The listener stays up; only process exit stops HTTP. Flags are read from the Config
+    /// loaded at start (restart picks up file changes).
+    pub fn plain(&self) -> bool {
+        !self.cfg.proxy.enabled || !self.cfg.core.enabled
+    }
 }
 
 /// The axum app: `/health` plus a fallback that forwards every other path upstream.
 pub fn app(state: Arc<ProxyState>) -> Router {
     Router::new()
         .route("/health", get(cli::health))
+        .route("/live", get(cli::live_calls))
         .fallback(proxy)
         .with_state(state)
 }
@@ -153,29 +167,37 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
     };
 
-    // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
-    let parsed = serde_json::from_slice::<Value>(&request_body).ok();
     let wire = wire::for_path(&path);
-    let recorded = record(
-        &state,
-        wire,
-        &path,
-        parsed.as_ref(),
-        &headers,
-        &request_body,
-    );
-    // From here on `request_body` is what upstream sees (and what `call_io` records).
-    let request_body = if state.mode == "compress" {
-        wire.map_or(request_body.clone(), |wire| {
-            compress(&state, wire, parsed, recorded.as_ref(), request_body)
-        })
+    // Plain mode (`proxy.enabled` / `core.enabled` false): byte-identical forward, no
+    // bookkeeping, compress, or request shaping. Listener stays up until process exit.
+    let plain = state.plain();
+    let (request_body, recorded) = if plain {
+        (request_body, None)
     } else {
-        request_body
-    };
-    // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`).
-    let request_body = match wire {
-        Some(wire) => prepare(&state, wire, request_body),
-        None => request_body,
+        // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
+        let parsed = serde_json::from_slice::<Value>(&request_body).ok();
+        let recorded = record(
+            &state,
+            wire,
+            &path,
+            parsed.as_ref(),
+            &headers,
+            &request_body,
+        );
+        // From here on `request_body` is what upstream sees (and what `call_io` records).
+        let request_body = if state.mode == "compress" {
+            wire.map_or(request_body.clone(), |wire| {
+                compress(&state, wire, parsed, recorded.as_ref(), request_body)
+            })
+        } else {
+            request_body
+        };
+        // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`).
+        let request_body = match wire {
+            Some(wire) => prepare(&state, wire, request_body),
+            None => request_body,
+        };
+        (request_body, recorded)
     };
 
     let target = match upstream_url(state.upstream_for(wire), &path, query.as_deref()) {
@@ -192,12 +214,29 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     let upstream = match rb.body(request_body.clone()).send().await {
         Ok(r) => r,
         Err(e) => {
-            log_err(
-                &state,
-                &recorded,
-                start,
-                &format!("upstream {method} {path}: {e}"),
-            );
+            if plain {
+                let model = serde_json::from_slice::<Value>(&request_body)
+                    .ok()
+                    .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string));
+                live::push(live::LiveCall {
+                    ts: crate::log::now() as i64,
+                    method: method.to_string(),
+                    path: path.clone(),
+                    provider: wire.map(Wire::provider).map(str::to_string),
+                    model,
+                    status: StatusCode::BAD_GATEWAY.as_u16(),
+                    request_bytes: request_body.len(),
+                    response_bytes: 0,
+                    ms: start.elapsed().as_secs_f64() * 1000.0,
+                });
+            } else {
+                log_err(
+                    &state,
+                    &recorded,
+                    start,
+                    &format!("upstream {method} {path}: {e}"),
+                );
+            }
             return error_response(
                 StatusCode::BAD_GATEWAY,
                 &format!("rtok proxy: upstream error: {e}"),
@@ -220,6 +259,14 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
 
     // Tee the upstream body: forward each chunk to the client *and* buffer it for the
     // `call_io`/`usage` rows, which the spawned task writes after the stream ends.
+    let status_code = status.as_u16();
+    let method_s = method.to_string();
+    let path_s = path.clone();
+    let req_len = request_body.len();
+    let model_live = serde_json::from_slice::<Value>(&request_body)
+        .ok()
+        .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string));
+    let provider_live = wire.map(Wire::provider).map(str::to_string);
     let (tx, rx) = mpsc::channel::<Result<Bytes, io::Error>>(32);
     let recorder = state.clone();
     let body_stream = upstream.bytes_stream();
@@ -241,16 +288,30 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
             }
         }
         drop(tx);
-        finish(
-            &recorder,
-            &recorded,
-            start,
-            wire,
-            content_type.as_deref(),
-            &request_body,
-            &buf,
-        )
-        .await;
+        if plain {
+            live::push(live::LiveCall {
+                ts: crate::log::now() as i64,
+                method: method_s,
+                path: path_s,
+                provider: provider_live,
+                model: model_live,
+                status: status_code,
+                request_bytes: req_len,
+                response_bytes: buf.len(),
+                ms: start.elapsed().as_secs_f64() * 1000.0,
+            });
+        } else {
+            finish(
+                &recorder,
+                &recorded,
+                start,
+                wire,
+                content_type.as_deref(),
+                &request_body,
+                &buf,
+            )
+            .await;
+        }
     });
 
     let client_stream = unfold(rx, |mut rx| async move {

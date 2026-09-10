@@ -66,6 +66,7 @@ schema.
 # Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
 
 [core]
+enabled     = true                    # false = plain proxy (no business logic); HTTP stays up until process exit
 db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
@@ -99,6 +100,7 @@ max_description_tokens  = 60          # enforced by a test (T4.1)
 max_result_chars        = 20000       # above this, head/tail + archive id
 
 [proxy]                               # rtok proxy
+enabled         = true                # false = plain reverse proxy (bypass compress/bookkeeping); does NOT stop HTTP
 bind            = "127.0.0.1"
 port            = 8790
 mode            = "passthrough"       # passthrough | compress
