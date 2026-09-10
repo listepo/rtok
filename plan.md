@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: all §5 tasks done — 167 ✅; entries in `done.md`. Remaining work is Later versions (v0.2+) only.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 167 ✅, 6 open (residual bug-hunt debt T10.11/T11.8/T16.9/T19.4/T22.6/T24.5); entries in `done.md`. Later versions (v0.2+) still deferred.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -138,19 +138,40 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.19), Gate P8d passed — see `done.md` P8d.
 
-### P16 — OpenTelemetry export — tasks done, Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18).
+### P16 — OpenTelemetry export — Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18); residual open: T16.9.
+
+**T16.9 concurrent flush must not double-export** · T16.6 · `src/otel/export.rs`, `src/otel/`
+Do: when `rtok proxy` and `rtok mcp` timer flushes overlap a detached `rtok otel flush` from `Stop`/`SessionEnd`, serializers must not race the same `otel_export` watermarks — today concurrent processes can double-post a batch and leave pending counts that disagree with what the collector received. Single-flight the flush (DB lock / advisory / exclusive writer) so overlapping exporters hand off rather than both export the same rows.
+Check: a test that starts two overlapping flushes against one store and a mock collector posts each row once and advances each watermark exactly once; `rtok otel status` pending matches the unsent remainder; `just check` green.
+Complexity: 3/5
+Status: open
+Model: -
 
 ### P17 — build size — tasks done, Gate P17 passed 2026-09-07 (see `done.md` P17).
 
 ### P18 — release — tasks done, v0.0.1 published 2026-09-08 (see `done.md` P18); Gate P18 removed 2026-09-09 (needs a real release run, not code).
 
-### P19 — web dashboard — tasks done, Gate P19 passed 2026-09-09 (see `done.md` P19).
+### P19 — web dashboard — Gate P19 passed 2026-09-09 (see `done.md` P19); residual open: T19.4.
+
+**T19.4 WASM webui renders every `model::pages()` entry** · T19.3 · `crates/rtok-webui/**`, `src/web/`
+Do: the Slint WASM UI still shows the Plugins strip only. Sessions / Calls / Logs / Doctor (and Overview) ride the D23 snapshot and `model::pages()` and render on `rtok tui`, but are not rendered in `crates/rtok-webui` — a page that exists on one surface and not the other is a D23 defect. Bring the WASM UI up to the model page set.
+Check: every id from `model::pages()` appears in the WASM UI; a snapshot carrying Sessions/Calls/Logs/Doctor makes those pages visible; T15.10 surface-parity still green; `just check` green.
+Complexity: 3/5
+Status: open
+Model: -
 
 ### P20 — `demon` supervisor — T20.1, T20.2 done 2026-09-09 (D22); see `done.md` P20.
 
 ### P21 — CLI presentation — T21.1–T21.3 done 2026-09-09; see `done.md` P21. Started as T20.2 (owo-colors).
 
-### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24); T22.0–T22.5 done 2026-09-10 (see `done.md` P22).
+### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24); T22.0–T22.5 done 2026-09-10 (see `done.md` P22); residual open: T22.6.
+
+**T22.6 `idle-hook` must not false-positive on busy PostToolUse** · T22.5 · `src/report/advice.rs`
+Do: `kinds_for_hook` maps `PostToolUse` to no Measurement kinds (`_ => &[]`), so any PostToolUse with ≥ `OFTEN_HOOK_CALLS` emits an `idle-hook` recommendation even when the path is busy (guard cache fill, read invalidation, graph stale marks). Fix the rule so productive PostToolUse side-effects are recognised — or exclude events whose work is not a Measurement kind by design — and keep true idle hooks flagged.
+Check: a fixture with ≥10 PostToolUse calls and guard/read activity produces no `idle-hook` finding for `PostToolUse`; a truly idle event still does; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
 
 `rtok report [--format md|html|pdf] [--ai] [--out <path>] [--since <window>]`. Depends on T15.0:
 until the operator model exists, a report would be a fourth reader of the `Store` and would start
@@ -221,7 +242,7 @@ Gate P23 (review): the SDK compiles on its own — a scratch crate that depends 
 `rtok stats --json` and `rtok web`'s snapshot are byte-identical to the pre-refactor output on the
 same store. The P17 size gate still passes.
 
-### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26) · done 2026-09-09 (T24.0–T24.4), see `done.md` P24
+### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26) · T24.0–T24.4 done 2026-09-09 (see `done.md` P24); residual open: T24.5
 
 `rtok logs [--lines N]` · `rtok logs watch` · `rtok logs export`. Config table `[log]`: `path`,
 `max_bytes`, `files`, `lines`, `level`, `to_db`. It absorbs the three `[core]` keys that pretend to
@@ -241,6 +262,13 @@ one T25.3 reuses.
 Complexity: 3/5
 
 T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
+
+**T24.5 retire unread `[core] log_file` / `log_level` / `log_to_db`** · T24.1 · `src/config/`, `config/default.toml`, `docs/config.md`
+Do: the three `[core]` keys stay in the schema and the reference file but production readers use only `[log]` (D26). Fold them the way `[dashboard]` folded into `[web]` (accept once with a warning, map into `[log]`), then drop them from the typed schema so `[log]` is the only authority.
+Check: a config that sets only legacy `core.log_*` loads into effective `[log]` with a warning; after the drop, `rtok config validate` rejects the old keys; `docs/config.md` and `config/default.toml` match the schema; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
 
 ### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27) · done 2026-09-09 (T25.0–T25.3), see `done.md` P25
 
@@ -328,12 +356,27 @@ Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
-### P10 — other hosts + release — tasks done 2026-09-09 (D21; T10.7 done via T10.9)
+### P10 — other hosts + release — mostly done 2026-09-09 (D21; T10.7 done via T10.9); residual open: T10.11
 
 T10.7 (`setup --remove` strips MCP) is in `done.md` — absorbed by T10.9.
 
+**T10.11 Cursor host: wire PostToolUse, not only beforeShellExecution** · T10.1 · `src/setup/cursor.rs`, `src/hooks/types.rs`
+Do: Cursor setup writes only `hooks.beforeShellExecution`, and `HookInput::adapt_cursor` only maps that shape onto PreToolUse. Guard's read cache and read's PostToolUse(Edit|Write) invalidation therefore never populate on Cursor. Register Cursor's after-tool / PostToolUse-equivalent hook, adapt its payload into `PostToolUse`, and keep fail-open ≤ 10 ms (D1).
+Check: Cursor-shaped after-tool stdin adapts to `PostToolUse`; after a Cursor PostToolUse(Read) the guard cache has a row; `rtok agent setup cursor --dry-run` lists the after-tool entry beside `beforeShellExecution`; `just check` green.
+Complexity: 3/5
+Status: open
+Model: -
 
-### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11).
+
+### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11); residual open: T11.8
+
+**T11.8 `toon` rewrite respects archive live-zone `keep_turns`** · T11.7 · `src/plugins/toon/mod.rs`
+Do: `toon`'s `proxy_filter` rewrites every tabular tool result it sees. Archive's live zone (`plugins.archive.keep_turns` turns from the end) must stay untouched — the same boundary `archive` already uses — so a just-returned table is not TOON-encoded while it is still live context.
+Check: with `keep_turns = 2`, tabular JSON in the last two turns is unchanged and older tabular blocks encode; Measurement rows only for the older ones; default-off still leaves request bytes identical; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
 
 Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passthrough + 2 d compress; needs live Codex traffic, not code-closable. Re-add with a dated traffic window; record in `research.md` §2.
 
@@ -381,11 +424,11 @@ list, not only what is left.
 
 Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
 task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` would mean
-the entry is still above in §3 (none are). This table is an index, never the
+the entry is still above in §3. This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**167 done · 0 open — 167 tasks.**
+**167 done · 6 open — 173 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -466,6 +509,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T10.8` | P10 hosts | the installers move under `rtok agent` | ✅ 2026-09-09 | — |
 | `T10.9` | P10 hosts | `rtok agent remove <host>`, and a copy before either command | ✅ 2026-09-09 | — |
 | `T10.10` | P10 hosts | remove-spelling residue: flag help, docs rows | ✅ 2026-09-09 | 1/5 |
+| `T10.11` | P10 hosts | Cursor PostToolUse adapt (not only beforeShellExecution) | open | 3/5 |
 | `T11.1` | P11 OpenAI wire | `Wire` adapter + Anthropic behind it | ✅ 2026-09-02 | — |
 | `T11.2` | P11 OpenAI wire | OpenAI Chat Completions wire | ✅ 2026-09-02 | — |
 | `T11.3` | P11 OpenAI wire | OpenAI Responses wire | ✅ 2026-09-03 | — |
@@ -473,6 +517,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T11.5` | P11 OpenAI wire | setup for OpenAI hosts | ✅ 2026-09-03 | — |
 | `T11.6` | P11 OpenAI wire | `usage.api` + per-API stats | ✅ 2026-09-03 | — |
 | `T11.7` | P11 OpenAI wire | `toon` on Wire tool results | ✅ 2026-09-03 | — |
+| `T11.8` | P11 OpenAI wire | `toon` respects archive `keep_turns` live zone | open | 2/5 |
 | `T12.1` | P12 config | typed schema + reference file | ✅ 2026-09-02 | — |
 | `T12.2` | P12 config | layering + precedence + `config show` | ✅ 2026-09-02 | — |
 | `T12.3` | P12 config | `config validate` + `config set` | ✅ 2026-09-02 | — |
@@ -515,6 +560,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T16.6` | P16 otel | triggers off the hook path | ✅ 2026-09-04 | — |
 | `T16.7` | P16 otel | metrics | ✅ 2026-09-04 | — |
 | `T16.8` | P16 otel | docs and live check | ✅ 2026-09-04 | — |
+| `T16.9` | P16 otel | concurrent flush must not double-export | open | 3/5 |
 | `T17.1` | P17 build size | dev, release and dist profiles | ✅ 2026-09-04 | — |
 | `T17.2` | P17 build size | pin cargo-cache | ✅ 2026-09-05 | — |
 | `T18.1` | P18 release | version 0.0.1 and a dispatchable release | ✅ 2026-09-04 | — |
@@ -526,6 +572,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T19.1` | P19 web | `[dashboard]` config, CLI, flags | ✅ 2026-09-08 | — |
 | `T19.2` | P19 web | WebSocket snapshot | ✅ 2026-09-08 | — |
 | `T19.3` | P19 web | Slint WASM UI | ✅ 2026-09-08 | — |
+| `T19.4` | P19 web | WASM UI renders every `model::pages()` entry | open | 3/5 |
 | `T20.1` | P20 demon | `rtok demon start\|stop\|restart\|status\|list\|kill\|update` | ✅ 2026-09-09 | 3/5 |
 | `T20.2` | P20 demon | owo-colors owns the colour question | ✅ 2026-09-09 | — |
 | `T21.1` | P21 CLI presentation | the plugin offer actually asks | ✅ 2026-09-09 | — |
@@ -537,6 +584,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T22.3` | P22 report | `--format pdf` | ✅ 2026-09-10 | 4/5 |
 | `T22.4` | P22 report | `--ai` | ✅ 2026-09-09 | 3/5 |
 | `T22.5` | P22 report | recommendations | ✅ 2026-09-10 | 3/5 |
+| `T22.6` | P22 report | `idle-hook` false-positives on busy PostToolUse | open | 2/5 |
 | `T23.0` | P23 plugin SDK | where the boundary goes | ✅ 2026-09-09 | 3/5 |
 | `T23.1` | P23 plugin SDK | the crate exists and owns the contract | ✅ 2026-09-09 | 3/5 |
 | `T23.2` | P23 plugin SDK | required methods are required | ✅ 2026-09-09 | 2/5 |
@@ -549,6 +597,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | ✅ 2026-09-09 | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | ✅ 2026-09-09 | 3/5 |
+| `T24.5` | P24 logs | retire unread `[core] log_*` keys | open | 2/5 |
 | `T25.0` | P25 agents | a session knows whose it is | ✅ 2026-09-09 | 3/5 |
 | `T25.1` | P25 agents | one reader, in the model | ✅ 2026-09-09 | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | ✅ 2026-09-09 | 2/5 |
@@ -631,3 +680,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | Three tasks landed from a second parallel round — T27.0 (`rtok-agent-sdk`, completing the snapshot another session had left uncommitted in the shared checkout: three drifted report strings restored and pinned, `dialoguer` dropped from the root manifest, jscpd 49 → 36 clones), T8.19 (`graph_truth` was red because the *labels* were the stale half — T23.5's `MemoryHost` methods — not the index; the test now prints its precision/recall, and the landing round also repaired two entries its own tasks had staled, `plugin_json` (T15.11) and `read_settings` (T27.0)) and T15.11 (every reading command renders the D23 model; `rtok stats` output pinned byte-identical by `tests/stats_model.rs`). The round ran mid-air with another three-task round (T15.10/T22.0/T24.1): each agent owned a worktree at its own HEAD, landings waited on the other round's dirty files, and the future `surface_parity` conflict was resolved before it happened by applying the other round's uncommitted diff to the T15.11 tree and running its test. | Two rounds can share main if landing is sequential and each waits for the files it must update to leave the other's working set; predicting the test-level collision before the rebase is what kept it a fast-forward. The one unforced error was `5975877` sweeping the docs/branding session's files into a "T27.0 (wip)" commit — a coordinator should commit only its own paths. |
 | 2026-09-09 | T10.10 added to P10 and done: the residue of the T10.8/T10.9 rename — the `--remove` flag help still said "Delete rtok hook entries only" (false since T10.9 made removal complete), `docs/config.md` merged `agent setup` and `agent remove` into one flag row although `agent remove` takes only `--dry-run`, and `docs/comparison.md` still called the MCP half "task T10.7, in progress". One help string, one split table row, one stale comparison line; the built site is untracked (`site/public` is gitignored), so there is nothing to rebuild in the repo — the site mounts repo markdown, and the sources are what this fixes. The same commit resets T10.7's stale `Model:` claim to `-` (the stop convention) and trims its Status to the supersession fact. | Review of the T10.7 supersession: the design is sound, but its residue contradicted it — a help line and docs rows describing a removal smaller than the one the code performs, and a comparison page still calling a superseded task in progress. |
 | 2026-09-09 | Seven tasks landed from a third parallel round, six agents by the user's model policy (3/5 → GLM-5.3 effort High; 1–2/5 → GLM-5.3-Flash effort Low; the harness exposes no per-agent model selection, so every agent ran GLM-5.3 and the Flash tier is recorded as policy): T22.1 (`rtok report --format md`, the document from `model::report_ledgers`, D24 held — `src/report/` imports only the model), T24.3 (`logs watch` — in-place newest-first repaint, content-based rotation detection, piped degrades to plain rows; `watch_loop` is the T25.3 skeleton), T25.1 + T25.2 (`session_totals` one-statement CTE join; the Sessions page rides the snapshot and `pages()`; `rtok agent sessions` renders it — the second command after `plugins` with a real page, which is why T15.12's `COMMAND_PAGES` lists it), T15.12 (the parity test walks `Cli::command()`: 2 commands map to pages, 37 carry exempt reasons), and T15.1 + T15.2 (ratatui/crossterm scaffold + shell; tabs are `model::pages()` by reference). The staggered sixth agent (T25.2) started the moment T25.1 landed — dependencies were honest, never spec-guessed. Integration classifications (`report`, `logs watch`, `tui`, `agent sessions`) were added at landing by the coordinator, as the test's data-list design intended. | The parity gate did exactly what D23 built it for: three landings would each have shipped a one-surface command, and the test named every one at integration. Two agents edited plan.md/done.md despite instructions not to — stripping those hunks at landing was cheaper than resolving four-way bookkeeping conflicts; the claim-everything-in-one-commit convention held. Residue note: test runs still create a literal `./~/.rtok` directory in CWD when env is lost under ptys (T10.10 fixed the adjacent docs residue; the directory itself still wants an owner). |
+| 2026-09-10 | Residual bug-hunt debt captured as six open tasks under existing phases (no new phase, no Later/v0.2+ edits): **T10.11** (P10 — Cursor only wires `beforeShellExecution`, so guard/read caches never populate), **T11.8** (P11 — `toon` ignores archive live-zone `keep_turns`), **T16.9** (P16 — proxy + mcp + hook `otel flush` race), **T19.4** (P19 — WASM webui thin vs `model::pages()`), **T22.6** (P22 — `idle-hook` false-positives on busy PostToolUse), **T24.5** (P24 — legacy `[core] log_*` still in schema but unread; only `[log]` used, D26). Docs that claimed the opposite updated in the same round (`docs/config.md`, `docs/otel.md`, `architecture.md`, README sources example). | Bug hunts found shipped defects with no plan Checks; implementers need Do/Check before fixing. Extending closed phases keeps ownership with the module that already owns the behaviour.
