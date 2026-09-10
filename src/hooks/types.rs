@@ -46,8 +46,9 @@ pub struct HookInput {
 }
 
 impl HookInput {
-    /// Cursor `beforeShellExecution`: top-level `command` + `conversation_id`.
-    /// Claude PreToolUse: `tool_name=Bash` + `tool_input.command`.
+    /// Cursor shell hooks: top-level `command` + `conversation_id`.
+    /// `beforeShellExecution` → Claude PreToolUse (`tool_name=Bash`, `tool_input.command`).
+    /// `afterShellExecution` → Claude PostToolUse (+ `tool_response` from `output`/`stdout`).
     pub fn adapt_cursor(&mut self, event: &str) {
         if self.session_id.is_empty()
             && let Some(id) = self.extra.get("conversation_id").and_then(|v| v.as_str())
@@ -60,17 +61,34 @@ impl HookInput {
             }
             return;
         }
-        if let Some(cmd) = self
+        let Some(cmd) = self
             .extra
             .get("command")
             .and_then(|v| v.as_str())
             .map(str::to_string)
-        {
-            self.tool_name = Some("Bash".into());
-            self.tool_input = Some(serde_json::json!({"command": cmd}));
+        else {
+            if self.hook_event_name.is_empty() {
+                self.hook_event_name = event.to_string();
+            }
+            return;
+        };
+        self.tool_name = Some("Bash".into());
+        self.tool_input = Some(serde_json::json!({"command": cmd}));
+        let after = matches!(event, "PostToolUse" | "afterShellExecution")
+            || self.hook_event_name == "afterShellExecution";
+        if after {
+            self.hook_event_name = "PostToolUse".into();
+            if self.tool_response.is_none() {
+                self.tool_response = Some(
+                    self.extra
+                        .get("output")
+                        .or_else(|| self.extra.get("stdout"))
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new())),
+                );
+            }
+        } else {
             self.hook_event_name = "PreToolUse".into();
-        } else if self.hook_event_name.is_empty() {
-            self.hook_event_name = event.to_string();
         }
     }
 
@@ -216,5 +234,40 @@ mod tests {
         assert_eq!(json["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(json.get("continue").is_none());
         assert_eq!(serde_json::from_value::<HookOutput>(json).unwrap(), out);
+    }
+
+    #[test]
+    fn cursor_after_shell_maps_to_post_tool_use() {
+        let raw = serde_json::json!({
+            "hook_event_name": "afterShellExecution",
+            "command": "ls -la",
+            "output": "total 0\n",
+            "conversation_id": "sess-after",
+            "cwd": "/tmp"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_cursor("PostToolUse");
+        assert_eq!(input.session_id, "sess-after");
+        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert_eq!(input.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(input.tool_input.as_ref().unwrap()["command"], "ls -la");
+        assert_eq!(input.tool_response.as_ref().unwrap(), "total 0\n");
+        assert!(input.post_tool().is_some());
+        assert!(input.pre_tool().is_none());
+    }
+
+    #[test]
+    fn cursor_before_shell_still_maps_to_pre_tool_use() {
+        let raw = serde_json::json!({
+            "hook_event_name": "beforeShellExecution",
+            "command": "pwd",
+            "conversation_id": "sess-before"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_cursor("PreToolUse");
+        assert_eq!(input.hook_event_name, "PreToolUse");
+        assert!(input.pre_tool().is_some());
+        assert!(input.post_tool().is_none());
+        assert!(input.tool_response.is_none());
     }
 }

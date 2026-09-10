@@ -1,10 +1,11 @@
 //! Cursor installer (`rtok agent setup cursor`) and field mapping (plan T10.1).
 //!
-//! Cursor `beforeShellExecution` stdin uses top-level `command` and
-//! `conversation_id`. rtok's PreToolUse path expects `tool_name=Bash` and
-//! `tool_input.command`. [`crate::hooks::types::HookInput::adapt_cursor`]
-//! performs that map when `[hook] host` is `cursor` (also `--host cursor`).
-//! Cursor `hooks.json` is `{version, hooks.beforeShellExecution[].command}`.
+//! Cursor shell stdin uses top-level `command` and `conversation_id`.
+//! `beforeShellExecution` → PreToolUse; `afterShellExecution` → PostToolUse
+//! (`output`/`stdout` → `tool_response`) so guard/read caches populate.
+//! [`crate::hooks::types::HookInput::adapt_cursor`] performs that map when
+//! `[hook] host` is `cursor` (also `--host cursor`).
+//! Cursor `hooks.json` is `{version, hooks.before|afterShellExecution[].command}`.
 
 use std::path::PathBuf;
 
@@ -15,9 +16,10 @@ use serde_json::{Value, json};
 use super::{apply, plugin_src};
 use crate::config::Config;
 
-const HOOK_CMD: &str = "rtok hook PreToolUse --host cursor";
+const PRE_CMD: &str = "rtok hook PreToolUse --host cursor";
+const POST_CMD: &str = "rtok hook PostToolUse --host cursor";
 
-/// Apply, dry-run, or remove the Cursor `beforeShellExecution` entry.
+/// Apply, dry-run, or remove Cursor before/after shell hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.cursor.hooks_path;
     let mut root = read_json(path)?;
@@ -104,40 +106,70 @@ fn insert_ours(root: &mut Value) -> String {
     if !hooks.is_object() {
         *hooks = json!({});
     }
+    let mut added = Vec::new();
+    for (event, cmd) in [
+        ("beforeShellExecution", PRE_CMD),
+        ("afterShellExecution", POST_CMD),
+    ] {
+        if insert_hook(hooks, event, cmd) {
+            added.push(format!("+ {event} {cmd}"));
+        }
+    }
+    if added.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        added.join("\n")
+    }
+}
+
+fn insert_hook(hooks: &mut Value, event: &str, cmd: &str) -> bool {
     let arr = hooks
         .as_object_mut()
         .unwrap()
-        .entry("beforeShellExecution")
+        .entry(event)
         .or_insert_with(|| json!([]));
     if !arr.is_array() {
         *arr = json!([]);
     }
     let arr = arr.as_array_mut().unwrap();
-    if arr.iter().any(is_ours) {
-        return NO_CHANGES.into();
+    if arr.iter().any(|e| is_cmd(e, cmd)) {
+        return false;
     }
-    arr.push(json!({"command": HOOK_CMD}));
-    format!("+ beforeShellExecution {HOOK_CMD}")
+    arr.push(json!({"command": cmd}));
+    true
 }
 
 fn strip_ours(root: &mut Value) -> String {
-    let Some(arr) = root
-        .pointer_mut("/hooks/beforeShellExecution")
-        .and_then(Value::as_array_mut)
-    else {
-        return NO_CHANGES.into();
-    };
-    let before = arr.len();
-    arr.retain(|e| !is_ours(e));
-    if arr.len() == before {
+    let mut removed = Vec::new();
+    for event in ["beforeShellExecution", "afterShellExecution"] {
+        let Some(arr) = root
+            .pointer_mut(&format!("/hooks/{event}"))
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        let before = arr.len();
+        arr.retain(|e| !is_ours(e));
+        if arr.len() != before {
+            removed.push(format!("- {event}"));
+        }
+    }
+    if removed.is_empty() {
         NO_CHANGES.into()
     } else {
-        "- beforeShellExecution".into()
+        removed.join("\n")
     }
 }
 
+fn is_cmd(entry: &Value, cmd: &str) -> bool {
+    entry.get("command").and_then(Value::as_str) == Some(cmd)
+}
+
 fn is_ours(entry: &Value) -> bool {
-    entry.get("command").and_then(Value::as_str) == Some(HOOK_CMD)
+    matches!(
+        entry.get("command").and_then(Value::as_str),
+        Some(PRE_CMD) | Some(POST_CMD)
+    )
 }
 
 #[cfg(test)]
@@ -195,13 +227,16 @@ mod tests {
         let path = dir.join("hooks.json");
         let dry = run(&cfg(path.clone(), true), false).unwrap();
         assert!(dry.contains("beforeShellExecution"), "{dry}");
+        assert!(dry.contains("afterShellExecution"), "{dry}");
         assert!(!path.exists());
         let c = cfg(path.clone(), false);
-        assert!(run(&c, false).unwrap().contains(HOOK_CMD));
+        assert!(run(&c, false).unwrap().contains(PRE_CMD));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"version\""));
-        assert!(raw.contains(HOOK_CMD));
+        assert!(raw.contains(PRE_CMD));
+        assert!(raw.contains(POST_CMD));
+        assert!(raw.contains("afterShellExecution"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -228,6 +263,50 @@ mod tests {
             .as_str()
             .unwrap_or("");
         assert!(cmd.contains("rtok run --") && cmd.contains("ls -la"), "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cursor_after_shell_reaches_post_tool_use() {
+        let dir = tmp("after");
+        let mut c = Config::default();
+        c.hook.host = "cursor".into();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        let cx = Runtime::open(c, "cur").unwrap();
+        let raw = json!({
+            "hook_event_name": "afterShellExecution",
+            "command": "echo hi",
+            "output": "hi\n",
+            "cwd": "/tmp",
+            "conversation_id": "sess-2"
+        });
+        let bytes = serde_json::to_vec(&raw).unwrap();
+        let mut input: HookInput = serde_json::from_slice(&bytes).unwrap();
+        input.adapt_cursor("PostToolUse");
+        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert!(input.post_tool().is_some());
+        let out = dispatch(&bytes, &input, &cx);
+        // Fail open: PostToolUse may be {} when plugins add no context.
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert!(v.is_object(), "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn setup_writes_after_shell_hook() {
+        let dir = tmp("after-setup");
+        let path = dir.join("hooks.json");
+        let c = cfg(path.clone(), false);
+        let report = run(&c, false).unwrap();
+        assert!(report.contains("afterShellExecution"), "{report}");
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
+        assert!(
+            after.iter().any(|e| e["command"] == POST_CMD),
+            "{root}"
+        );
+        assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
 }

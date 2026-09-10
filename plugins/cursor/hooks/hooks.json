@@ -3,6 +3,9 @@
   "hooks": {
     "beforeShellExecution": [
       { "command": "rtok hook PreToolUse --host cursor" }
+    ],
+    "afterShellExecution": [
+      { "command": "rtok hook PostToolUse --host cursor" }
     ]
   }
 }
