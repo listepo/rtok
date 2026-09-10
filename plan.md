@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 170 ✅, 3 open (residual bug-hunt debt T10.11/T11.8/T19.4); entries in `done.md`. Later versions (v0.2+) still deferred.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 170 ✅, 21 open (residual T10.11/T11.8/T19.4 + v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -34,7 +34,7 @@ Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in 
 | D26 | **One log with two readers: a rotating text file a person reads, and the `logs` table OTel exports.** Today neither exists as a thing you can look at — `core.log_file` is written only when the DB insert fails, and `core.log_level` and `core.log_to_db` are declared and read nowhere. `[log]` replaces all three and means them: one funnel writes a line to the file and a row to the table, so the two cannot disagree; the file is what `rtok logs` prints and what an operator greps at 3am, the table is what `rtok otel` ships. The file is bounded — `max_bytes` (1 MiB) and `files` (5) — because an unbounded log on a laptop is a disk-full bug waiting for a long-running `rtok proxy`, which is exactly what `demon` keeps alive. Rotation deletes; nothing is archived, since a log line is not a saving and D2's lossless rule does not reach it. Added 2026-09-09 by user request. | A log nobody can read is not logging, and three config keys that do nothing are worse than none. Bounding it is the same argument as D22: the surfaces `demon` supervises run for days. |
 | D27 | **Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`.** D23 made the two surfaces one model; this says what that model has to cover. Every *reading* command — `stats`, `doctor`, `plugins`, `config show`, `logs`, `demon status`, `agents sessions`, `report` — gets its numbers by asking the model, and the CLI becomes one renderer of it rather than the only place the query lives. This is not theory: `rtok stats` and `rtok web` already disagree about what a session is, because one counts transcript files and the other sums `usage` rows, and neither is wrong on its own terms. Writing commands stay CLI-only — a surface that shows numbers is not a surface that mutates a tree — and so does anything whose output is a stream rather than a state (`rtok run`, `rtok expand`, `hook`, `mcp`). The gate is a test that enumerates the reading commands, not a promise in prose (T15.12). Added 2026-09-09 by user request. | The value of an operator surface is that the answer does not depend on which window you opened. Every command that keeps its own query is one more way for two windows to disagree, and the cost of fixing that grows with each command shipped before the rule exists. |
 
-Deferred to **v0.2+** (not rejected; do not implement while v0.1 tasks are open). Catalogue and first Checks: `ideas.md` Later and `roadmap.md` Later. LLM-based compression (LLMLingua, claude-mem style extraction); embeddings / semantic search; LSP-grade call graph (v0.1 `graph` is tree-sitter-tags); semantic response cache (bifrost); a WASM plugin host. (`rtok demon` was promoted to P20 / D22.) Each needs a numbered phase in this file and a measurement Check before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
+Deferred to **v0.2+** (not rejected). Promoted 2026-09-10 to numbered phases P28–P33 in this file (catalogue still in `ideas.md` Later / `roadmap.md` Later). LLM-based compression (P28); embeddings / semantic search (P29); LSP-grade call graph (P30; v0.1 `graph` is tree-sitter-tags); semantic response cache (P31); WASM plugin host (P32); tiered session context (P33). (`rtok demon` was promoted to P20 / D22; TUI to P15.) Each phase has open tasks and a measurement Gate before it ships. (Formerly listed as v0.1 non-goals “rejected on evidence”. Codex Responses-API proxy moved into v0.1 as P11 on 2026-09-01, D11.)
 
 ## 1. Architecture
 
@@ -367,19 +367,181 @@ Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passt
 
 ### P14 — per-plugin design research — tasks done, Gate P14 passed 2026-09-03 (see `done.md` P14).
 
-### Later versions (v0.2+) — deferred, not rejected — added 2026-09-02
+### Later versions (v0.2+) — promoted to P28–P33 on 2026-09-10
 
-Do not start these while v0.1 work is open. When v0.1 is done, promote each row to a numbered phase with a Check. Detail: `ideas.md` Later, `roadmap.md` Later.
+v0.1 §5 is done. Rows below are promoted (Daemon/TUI already elsewhere). Detail: `ideas.md` Later, `roadmap.md` Later. Open tasks live in the phase sections that follow.
 
-| Version | Work | First Check (when scheduled) |
-|---------|------|------------------------------|
-| v0.2 | **LLM compression** — optional `compress` / `memory` extractor (LLMLingua-2, claude-mem-style). Default off. | `rtok bench` vs v0.1 lossless path: cost per passed task must not rise; expand still recovers originals where the source is not regenerable. |
-| v0.2 | **Embeddings / semantic search** — optional backend for `memory` search and `graph` (mem0, code-review-graph embeddings). | FTS5 remains default; embed path is a config flag; a fixture note is found by both. |
-| v0.2 | **LSP graph** — `graph` may add a serena-grade LSP backend behind the same MCP tools (`symbol`/`callers`/`outline`). Tags index stays default. | Same MCP names; LSP off → tags-only bytes; LSP on → at least one fixture where tags miss and LSP hits. |
-| v0.2 | **Semantic response cache** — bifrost-like, opt-in. | Off → identical proxy bytes; on → documented false-hit rate on the P9 task set (must be 0 on that set or the feature stays off). |
-| ~~v0.2~~ | **Daemon** — promoted to P20 (D22) 2026-09-09 on user request, narrowed: it supervises `proxy`/`mcp`/`dashboard` instead of being a fourth surface of its own. | Hooks still fail open in ≤ 10 ms if the daemon is down (D1) — kept as the P20 gate clause. |
-| v0.2 | **WASM plugin host** — load out-of-tree plugins without linking them into this repo. D6 still: this repo does not vendor those plugins. | `Registry::from_plugins` plus one example `.wasm` that records a `Measurement`; in-tree plugins unchanged. |
-| v0.2 | **Tiered session context** (OpenViking L0/L1/L2). | Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task. |
+| Version | Work | Phase |
+|---------|------|-------|
+| ~~v0.2~~ | **LLM compression** — optional `compress` / `memory` extractor (LLMLingua-2, claude-mem-style). Default off. | **P28** (I-21) |
+| ~~v0.2~~ | **Embeddings / semantic search** — optional backend for `memory` search and `graph` (mem0, code-review-graph embeddings). | **P29** (I-22) |
+| ~~v0.2~~ | **LSP graph** — `graph` may add a serena-grade LSP backend behind the same MCP tools (`symbol`/`callers`/`outline`). Tags index stays default. | **P30** (I-24) |
+| ~~v0.2~~ | **Semantic response cache** — bifrost-like, opt-in. | **P31** (I-23) |
+| ~~v0.2~~ | **Daemon** — promoted to P20 (D22) 2026-09-09 on user request, narrowed: it supervises `proxy`/`mcp`/`dashboard` instead of being a fourth surface of its own. | **P20** (D22) |
+| ~~v0.2~~ | **WASM plugin host** — load out-of-tree plugins without linking them into this repo. D6 still: this repo does not vendor those plugins. | **P32** (I-26) |
+| ~~v0.2~~ | **Tiered session context** (OpenViking L0/L1/L2). | **P33** (I-25) |
+
+### P28 — LLM compression (goal: optional `compress` / `memory` extractor that does not raise cost per passed task vs lossless) — added 2026-09-10 (I-21); open.
+
+Optional LLM-based compression and/or observation extraction (LLMLingua-2, claude-mem-style). Default off. Ship only if a bench beats v0.1 lossless; `expand` still recovers originals where the source is not regenerable.
+
+**T28.0 design note: LLM compression vs lossless** · — · `src/plugins/compress/PLAN.md` or `src/plugins/memory/PLAN.md` (extend), `docs/` as needed
+Do: D15-style survey of LLMLingua-2, claude-mem extraction, and at least one other compressor. Name the mechanism rtok will use, what stays lossless, what is default-off, and the falsifier (cost per passed task rises, or expand cannot recover a non-regenerable original). No implementation.
+Check: the PLAN names ≥ 3 alternatives with version/date, the chosen mechanism, rejected options, and the Gate P28 number it must beat.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T28.1 config / feature flag (default off)** · T28.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add a config flag (and matching CLI override if needed) that enables the compressor / extractor; default off. Document the key. No compression logic yet — reading the flag and refusing unknown keys is enough.
+Check: `rtok config show` lists the new key as off by default; turning it on via config or env is visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T28.2 implement optional compress / memory extractor** · T28.1 · plugin sources under `src/plugins/`
+Do: implement the chosen path behind the flag. Record a `Measurement`. When the source is not regenerable, `expand` still recovers the original. Default-off path is byte-identical to today's lossless behaviour.
+Check: with the flag off, proxy/archive/inject bytes match pre-P28; with the flag on, a fixture compresses and `expand` recovers where required.
+Complexity: 4/5
+Status: open
+Model: -
+
+Gate P28 (review): `rtok bench` vs v0.1 lossless path — cost per passed task must not rise; expand still recovers originals where the source is not regenerable. Feature stays off until this Gate holds.
+
+### P29 — Embeddings / semantic search (goal: optional embed backend beside FTS5, same fixtures found by both) — added 2026-09-10 (I-22); open.
+
+Optional embeddings / semantic search for `memory` search and `graph` (mem0, code-review-graph embeddings). FTS5 remains the default.
+
+**T29.0 design/survey: embeddings beside FTS5** · — · `src/plugins/memory/PLAN.md` and/or `src/plugins/graph/PLAN.md`
+Do: survey mem0, code-review-graph embeddings, and at least one other embed path. Decide where vectors live, how they stay optional, and how a fixture is proven found by both FTS5 and embed. No implementation.
+Check: the PLAN names ≥ 3 alternatives, the chosen backend, rejected options, and the Gate P29 fixture shape.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T29.1 config flag (FTS5 default)** · T29.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add a config flag that selects the embed path; FTS5 remains default when the flag is off/absent. Document it.
+Check: default config keeps FTS5-only behaviour; enabling the flag is visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T29.2 implement optional embed search** · T29.1 · `memory` / `graph` plugin sources
+Do: implement the embed backend behind the flag. Progressive disclosure / existing MCP tool names stay. A fixture note is indexed so both FTS5 and embed find it.
+Check: flag off → FTS5-only bytes/behaviour; flag on → the fixture note is returned by both search paths.
+Complexity: 4/5
+Status: open
+Model: -
+
+Gate P29 (review): FTS5 remains default; embed path is a config flag; a fixture note is found by both.
+
+### P30 — LSP graph backend (goal: optional serena-grade LSP behind the same MCP tools; tags stay default) — added 2026-09-10 (I-24); open.
+
+`graph` may add an LSP / type-resolved backend behind `symbol` / `callers` / `outline`. Tags index stays default.
+
+**T30.0 design/survey: LSP behind tags MCP** · — · `src/plugins/graph/PLAN.md`
+Do: survey serena-grade LSP backends and how they map onto the existing MCP tool names. Tags remain default; LSP is optional. Name one fixture where tags miss and LSP hits. No implementation.
+Check: the PLAN names ≥ 3 alternatives, the MCP-name stability rule, rejected options, and the Gate P30 fixture.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T30.1 config flag (tags default)** · T30.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add a config flag that enables the LSP backend; tags-only when off. Document it.
+Check: default keeps tags-only; enabling the flag is visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T30.2 implement optional LSP backend** · T30.1 · `src/plugins/graph/`
+Do: implement the LSP path behind the flag, same MCP tool names. Off → tags-only bytes; on → at least the Gate fixture where tags miss and LSP hits.
+Check: same MCP names; LSP off → tags-only bytes; LSP on → the fixture hits on LSP and misses on tags.
+Complexity: 4/5
+Status: open
+Model: -
+
+Gate P30 (review): Same MCP names; LSP off → tags-only bytes; LSP on → at least one fixture where tags miss and LSP hits.
+
+### P31 — Semantic response cache (goal: bifrost-like opt-in cache with zero false hits on the P9 set) — added 2026-09-10 (I-23); open.
+
+Optional semantic response cache (similarity threshold) on the proxy. Opt-in; a hit can be a wrong answer, so false-hit Check is mandatory.
+
+**T31.0 design/survey: semantic cache** · — · `src/plugins/proxy/PLAN.md` or `src/proxy/` design note
+Do: survey bifrost and at least two other semantic-cache approaches. Define similarity threshold, opt-in shape, and how false hits are measured on the P9 task set. No implementation.
+Check: the PLAN names ≥ 3 alternatives, rejected options, and the false-hit Check protocol for Gate P31.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T31.1 config flag (opt-in, default off)** · T31.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add the opt-in flag and threshold knobs; default off. Document them.
+Check: default proxy behaviour unchanged; enabling the flag is visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T31.2 implement opt-in semantic cache** · T31.1 · `src/proxy/` / proxy plugin
+Do: implement the cache behind the flag. Off → identical proxy bytes to today. On → cache hits only under the documented threshold; record measurements.
+Check: off → identical proxy bytes; on → documented false-hit rate runnable on the P9 set.
+Complexity: 4/5
+Status: open
+Model: -
+
+Gate P31 (review): Off → identical proxy bytes; on → documented false-hit rate on the P9 task set (must be 0 on that set or the feature stays off).
+
+### P32 — WASM plugin host (goal: load out-of-tree `.wasm` plugins via `from_plugins` without vendoring them) — added 2026-09-10 (I-26); open.
+
+WASM plugin host for third-party plugins that do not link into this repo. D6 holds: this repo does not vendor those plugins. In-tree plugins unchanged.
+
+**T32.0 design/survey: WASM host** · — · `crates/rtok-plugin-sdk/PLAN.md` or `docs/plugin-authoring.md` extension
+Do: survey WASM runtimes suitable for a static Rust binary (at least three). Define the `from_plugins` load path, the Measurement example contract, and what stays in-process for in-tree plugins. D6 call-out: no vendored third-party plugins in this repo. No implementation.
+Check: the PLAN names ≥ 3 runtimes, the chosen host, rejected options, and the Gate P32 example shape.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T32.1 config / feature flag for WASM host** · T32.0 · `config/default.toml`, `docs/config.md`, Cargo features as needed
+Do: add the flag / Cargo feature that enables loading `.wasm` plugins; default off so in-tree builds stay unchanged.
+Check: default build and config do not load WASM; enabling the flag is documented and visible; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T32.2 implement WASM host + example Measurement** · T32.1 · host loader, example `.wasm`, `Registry::from_plugins`
+Do: `Registry::from_plugins` loads one example `.wasm` that records a `Measurement`. In-tree plugins unchanged. D6: example may live as a build artefact / docs sample, not a vendored third-party plugin.
+Check: `Registry::from_plugins` plus the example `.wasm` records a `Measurement`; in-tree plugin tests unchanged.
+Complexity: 5/5
+Status: open
+Model: -
+
+Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that records a `Measurement`; in-tree plugins unchanged. D6 holds.
+
+### P33 — Tiered session context (goal: optional OpenViking-style L0/L1/L2 loading, measured vs archive+inject) — added 2026-09-10 (I-25); open.
+
+Optional tiered session context (OpenViking L0/L1/L2) for `archive` / `inject`. Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive until Gate P33.
+
+**T33.0 design/survey: L0/L1/L2 tiers + AGPL** · — · `src/plugins/archive/PLAN.md` and/or `inject` PLAN
+Do: survey OpenViking L0/L1/L2 and at least two other tiered-context schemes. Call out AGPL (or other) license implications in the PLAN before any code. Define how tiers compose with v0.1 `archive`+`inject` and what "measured against" means for Gate P33. No implementation.
+Check: the PLAN names ≥ 3 alternatives, an explicit AGPL (or license) call-out, rejected options, and the Gate P33 measurement shape.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T33.1 config flag (default off)** · T33.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add the opt-in flag for tiered loading; default off (v0.1 archive+inject unchanged). Document license note beside the key.
+Check: default behaviour unchanged; flag visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T33.2 implement optional L0/L1/L2 loading** · T33.1 · `archive` / `inject` plugin sources
+Do: implement tiered loading behind the flag. Lossless `expand` still required where the source is not regenerable. Measure against v0.1 archive+inject on a documented fixture/session window.
+Check: flag off → identical to v0.1 archive+inject; flag on → tiers load and the comparison numbers for Gate P33 are produced.
+Complexity: 4/5
+Status: open
+Model: -
+
+Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task/PLAN. Feature stays off until the measurement is recorded.
 
 
 ## 4. Definition of done for v0.1 (code-closable only; traffic/user-gated rows removed 2026-09-09, see §6)
@@ -395,7 +557,7 @@ Removed 2026-09-09 (needs days of live traffic, not code): old row 2 — `rtok s
 
 ## 5. Order of value (if time is short)
 
-P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions (LLM compression, embeddings, LSP graph, WASM) start only after §4 v0.1 done; daemon promoted to P20.
+P1 (measure) → P2 (hooks) → P5 (proxy passthrough for ground truth) → P3 (cmd) → P4 (read) → P5 compress → P9 (bench + retire). P6–P8, P10 and P11 only after P9 shows the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. P12 (config) is not optional and comes right after P0's gate, before any task adds a flag. P13 (ORM + action store) comes right after P12, before P1 writes any rows. P14 is not a phase you sit down and finish: T14.0 lands with P12/P13, then each T14.x lands in the commit before its plugin's first task (T14.1 before T1.1, T14.6 before T2.4, T14.2 before T3.1, …). v0.2+ Later versions are P28–P33 (LLM compression, embeddings, LSP graph, semantic cache, WASM, tiered context); daemon promoted to P20; TUI to P15.
 
 The gate table that stood here (added 2026-09-08, retired 2026-09-09) is gone: every code-closable
 gate passed, and the traffic/user-gated ones were removed — see §6. What replaces it is the whole
@@ -405,11 +567,11 @@ list, not only what is left.
 
 Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
 task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` would mean
-the entry is still above in §3. This table is an index, never the
+the entry is still above in §3 (residual T10.11/T11.8/T19.4 + P28–P33). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**167 done · 6 open — 173 tasks.**
+**170 done · 21 open — 191 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -586,6 +748,24 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
 | `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
+| `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | open | 3/5 |
+| `T28.1` | P28 LLM compression | config / feature flag (default off) | open | 2/5 |
+| `T28.2` | P28 LLM compression | implement optional compress / memory extractor | open | 4/5 |
+| `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | open | 3/5 |
+| `T29.1` | P29 embeddings | config flag (FTS5 default) | open | 2/5 |
+| `T29.2` | P29 embeddings | implement optional embed search | open | 4/5 |
+| `T30.0` | P30 LSP graph | design/survey: LSP behind tags MCP | open | 3/5 |
+| `T30.1` | P30 LSP graph | config flag (tags default) | open | 2/5 |
+| `T30.2` | P30 LSP graph | implement optional LSP backend | open | 4/5 |
+| `T31.0` | P31 semantic cache | design/survey: semantic cache | open | 3/5 |
+| `T31.1` | P31 semantic cache | config flag (opt-in, default off) | open | 2/5 |
+| `T31.2` | P31 semantic cache | implement opt-in semantic cache | open | 4/5 |
+| `T32.0` | P32 WASM host | design/survey: WASM host | open | 3/5 |
+| `T32.1` | P32 WASM host | config / feature flag for WASM host | open | 2/5 |
+| `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
+| `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | open | 3/5 |
+| `T33.1` | P33 tiered context | config flag (default off) | open | 2/5 |
+| `T33.2` | P33 tiered context | implement optional L0/L1/L2 loading | open | 4/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
 
@@ -661,4 +841,5 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | Three tasks landed from a second parallel round — T27.0 (`rtok-agent-sdk`, completing the snapshot another session had left uncommitted in the shared checkout: three drifted report strings restored and pinned, `dialoguer` dropped from the root manifest, jscpd 49 → 36 clones), T8.19 (`graph_truth` was red because the *labels* were the stale half — T23.5's `MemoryHost` methods — not the index; the test now prints its precision/recall, and the landing round also repaired two entries its own tasks had staled, `plugin_json` (T15.11) and `read_settings` (T27.0)) and T15.11 (every reading command renders the D23 model; `rtok stats` output pinned byte-identical by `tests/stats_model.rs`). The round ran mid-air with another three-task round (T15.10/T22.0/T24.1): each agent owned a worktree at its own HEAD, landings waited on the other round's dirty files, and the future `surface_parity` conflict was resolved before it happened by applying the other round's uncommitted diff to the T15.11 tree and running its test. | Two rounds can share main if landing is sequential and each waits for the files it must update to leave the other's working set; predicting the test-level collision before the rebase is what kept it a fast-forward. The one unforced error was `5975877` sweeping the docs/branding session's files into a "T27.0 (wip)" commit — a coordinator should commit only its own paths. |
 | 2026-09-09 | T10.10 added to P10 and done: the residue of the T10.8/T10.9 rename — the `--remove` flag help still said "Delete rtok hook entries only" (false since T10.9 made removal complete), `docs/config.md` merged `agent setup` and `agent remove` into one flag row although `agent remove` takes only `--dry-run`, and `docs/comparison.md` still called the MCP half "task T10.7, in progress". One help string, one split table row, one stale comparison line; the built site is untracked (`site/public` is gitignored), so there is nothing to rebuild in the repo — the site mounts repo markdown, and the sources are what this fixes. The same commit resets T10.7's stale `Model:` claim to `-` (the stop convention) and trims its Status to the supersession fact. | Review of the T10.7 supersession: the design is sound, but its residue contradicted it — a help line and docs rows describing a removal smaller than the one the code performs, and a comparison page still calling a superseded task in progress. |
 | 2026-09-09 | Seven tasks landed from a third parallel round, six agents by the user's model policy (3/5 → GLM-5.3 effort High; 1–2/5 → GLM-5.3-Flash effort Low; the harness exposes no per-agent model selection, so every agent ran GLM-5.3 and the Flash tier is recorded as policy): T22.1 (`rtok report --format md`, the document from `model::report_ledgers`, D24 held — `src/report/` imports only the model), T24.3 (`logs watch` — in-place newest-first repaint, content-based rotation detection, piped degrades to plain rows; `watch_loop` is the T25.3 skeleton), T25.1 + T25.2 (`session_totals` one-statement CTE join; the Sessions page rides the snapshot and `pages()`; `rtok agent sessions` renders it — the second command after `plugins` with a real page, which is why T15.12's `COMMAND_PAGES` lists it), T15.12 (the parity test walks `Cli::command()`: 2 commands map to pages, 37 carry exempt reasons), and T15.1 + T15.2 (ratatui/crossterm scaffold + shell; tabs are `model::pages()` by reference). The staggered sixth agent (T25.2) started the moment T25.1 landed — dependencies were honest, never spec-guessed. Integration classifications (`report`, `logs watch`, `tui`, `agent sessions`) were added at landing by the coordinator, as the test's data-list design intended. | The parity gate did exactly what D23 built it for: three landings would each have shipped a one-surface command, and the test named every one at integration. Two agents edited plan.md/done.md despite instructions not to — stripping those hunks at landing was cheaper than resolving four-way bookkeeping conflicts; the claim-everything-in-one-commit convention held. Residue note: test runs still create a literal `./~/.rtok` directory in CWD when env is lost under ptys (T10.10 fixed the adjacent docs residue; the directory itself still wants an owner). |
-| 2026-09-10 | Residual bug-hunt debt captured as six open tasks under existing phases (no new phase, no Later/v0.2+ edits): **T10.11** (P10 — Cursor only wires `beforeShellExecution`, so guard/read caches never populate), **T11.8** (P11 — `toon` ignores archive live-zone `keep_turns`), **T16.9** (P16 — proxy + mcp + hook `otel flush` race), **T19.4** (P19 — WASM webui thin vs `model::pages()`), **T22.6** (P22 — `idle-hook` false-positives on busy PostToolUse), **T24.5** (P24 — legacy `[core] log_*` still in schema but unread; only `[log]` used, D26). Docs that claimed the opposite updated in the same round (`docs/config.md`, `docs/otel.md`, `architecture.md`, README sources example). | Bug hunts found shipped defects with no plan Checks; implementers need Do/Check before fixing. Extending closed phases keeps ownership with the module that already owns the behaviour.
+| 2026-09-10 | Residual bug-hunt debt captured as six open tasks under existing phases (no new phase, no Later/v0.2+ edits): **T10.11** (P10 — Cursor only wires `beforeShellExecution`, so guard/read caches never populate), **T11.8** (P11 — `toon` ignores archive live-zone `keep_turns`), **T16.9** (P16 — proxy + mcp + hook `otel flush` race), **T19.4** (P19 — WASM webui thin vs `model::pages()`), **T22.6** (P22 — `idle-hook` false-positives on busy PostToolUse), **T24.5** (P24 — legacy `[core] log_*` still in schema but unread; only `[log]` used, D26). Docs that claimed the opposite updated in the same round (`docs/config.md`, `docs/otel.md`, `architecture.md`, README sources example). | Bug hunts found shipped defects with no plan Checks; implementers need Do/Check before fixing. Extending closed phases keeps ownership with the module that already owns the behaviour. |
+| 2026-09-10 | Promoted Later versions table to P28–P33 open tasks (LLM compression I-21, embeddings I-22, LSP graph I-24, semantic cache I-23, WASM host I-26, tiered context I-25). Daemon/TUI stay P20/P15 — not re-added. `ideas.md` Later ticked promoted; `roadmap.md` Later points at phase ids. No implementation. | User request 2026-09-10: create numbered plan tasks for Later (v0.2+). |

@@ -88,18 +88,18 @@ that v0.1 does not schedule.
 
 ## Later (v0.2+)
 
-Scheduled for a higher version, **not rejected**. Do not implement while v0.1 tasks are open.
-When v0.1 is done, promote each ID to a numbered phase in `plan.md` (Later versions table)
-and a row on `roadmap.md` Later. v0.1 `graph` stays tags-only; v0.1 hooks stay process-per-event.
+Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 promoted
+2026-09-10 to `plan.md` P28–P33 (see Later versions table / phase sections).
+`roadmap.md` Later points at those phase ids. v0.1 `graph` stays tags-only; v0.1 hooks stay process-per-event.
 
 | ID | Inspired by | Area | Proposition | Why v0.2+, not v0.1 |
 |----|-------------|------|-------------|---------------------|
-| I-21 | LLMLingua-2, claude-mem extraction | `compress` / `memory` | LLM-based compression and/or observation extraction. Default off. | Costs tokens; quality risk on code. Ship only if a bench beats v0.1 lossless. |
-| I-22 | code-review-graph embeddings, mem0 | `memory`, `graph` | Optional embeddings / semantic search beside FTS5. | No measured need in current sessions; FTS5 is enough for v0.1. |
-| I-23 | bifrost | `proxy` | Semantic response cache (similarity threshold). Opt-in. | Agent contexts rarely repeat; a hit can be a wrong answer. Needs a false-hit Check. |
-| I-24 | serena | `graph` | LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
-| I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
-| I-26 | (architecture) | core | WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
+| I-21 | LLMLingua-2, claude-mem extraction | `compress` / `memory` | **promoted P28** — LLM-based compression and/or observation extraction. Default off. | Costs tokens; quality risk on code. Ship only if a bench beats v0.1 lossless. |
+| I-22 | code-review-graph embeddings, mem0 | `memory`, `graph` | **promoted P29** — Optional embeddings / semantic search beside FTS5. | No measured need in current sessions; FTS5 is enough for v0.1. |
+| I-23 | bifrost | `proxy` | **promoted P31** — Semantic response cache (similarity threshold). Opt-in. | Agent contexts rarely repeat; a hit can be a wrong answer. Needs a false-hit Check. |
+| I-24 | serena | `graph` | **promoted P30** — LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
+| I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | **promoted P33** — Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
+| I-26 | (architecture) | core | **promoted P32** — WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
 
 ---
 

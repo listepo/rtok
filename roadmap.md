@@ -392,16 +392,16 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 ## Later (v0.2+)
 
-Not v0.1 work. Same plugins, extra backends. Promote from `ideas.md` Later when v0.1 is done
-(`plan.md` Later versions).
+Not v0.1 work. Same plugins, extra backends. Promoted 2026-09-10 from `ideas.md` Later into
+`plan.md` phases P28–P33 (Daemon/TUI already P20/P15).
 
-| Plugin / area | v0.2 plan | Ideas |
-|---------------|-----------|-------|
-| ~~TUI~~ | Promoted to P15 (D17/D23) — `rtok tui` shipped. | I-01 |
-| `memory` | Optional LLM extractor (claude-mem style) and embeddings beside FTS5. Default off. Progressive disclosure stays. | I-21, I-22, I-13 |
-| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. | I-24, I-22, I-14, I-15 |
-| `archive` / `inject` | Optional LLM compression of old context; optional L0/L1/L2 tiers. Lossless `expand` still required where the source is not regenerable. | I-21, I-25 |
-| `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 |
-| ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | I-26 |
-| core | WASM host for out-of-tree plugins (`from_plugins` + `.wasm` example). | I-27 |
+| Plugin / area | v0.2 plan | Ideas / phase |
+|---------------|-----------|---------------|
+| ~~TUI~~ | Promoted to P15 (D17/D23) — `rtok tui` shipped. | I-01 → P15 |
+| `memory` | Optional LLM extractor (claude-mem style) and embeddings beside FTS5. Default off. Progressive disclosure stays. | I-21 → **P28**; I-22 → **P29**; I-13 |
+| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. | I-24 → **P30**; I-22 → **P29**; I-14, I-15 |
+| `archive` / `inject` | Optional LLM compression of old context; optional L0/L1/L2 tiers. Lossless `expand` still required where the source is not regenerable. | I-21 → **P28**; I-25 → **P33** |
+| `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 → **P31** |
+| ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |
+| core | WASM host for out-of-tree plugins (`from_plugins` + `.wasm` example). | I-26 → **P32** |
 
