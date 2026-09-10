@@ -40,9 +40,28 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     let mut body = out.stdout;
     body.extend_from_slice(&out.stderr);
     let code = out.status.code().unwrap_or(1);
-    let cx = crate::plugin::Runtime::open(cfg.clone(), "run")?;
-    let id = cx.put_archive(&body)?;
     let before = String::from_utf8_lossy(&body);
+    let cx = match crate::plugin::Runtime::open(cfg.clone(), "run") {
+        Ok(cx) => cx,
+        Err(_) => {
+            // Fail open on the CLI path too: never swallow the command's output (D4).
+            print!("{before}");
+            if !before.is_empty() && !before.ends_with('\n') {
+                println!();
+            }
+            return Ok(code);
+        }
+    };
+    let id = match cx.put_archive(before.as_bytes()) {
+        Ok(id) => id,
+        Err(_) => {
+            print!("{before}");
+            if !before.is_empty() && !before.ends_with('\n') {
+                println!();
+            }
+            return Ok(code);
+        }
+    };
     let family = args
         .first()
         .map(|a| a.rsplit('/').next().unwrap_or(a).to_string())
