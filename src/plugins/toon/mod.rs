@@ -2,7 +2,8 @@
 //! until A/B measured.
 //!
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
-//! dependency (D6) — the behaviour is re-implemented here.
+//! dependency (D6) — the behaviour is re-implemented here. Proxy rewrite respects the
+//! same live-zone / `archive.keep_turns` rule as `archive` (recent turns stay intact).
 
 use serde_json::Value;
 
@@ -39,8 +40,15 @@ impl Plugin for Toon {
 
 fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let min_rows = cx.plugin_config::<crate::config::Toon>("toon").min_rows as usize;
+    // Same live-zone rule as `archive`: never touch the last `keep_turns` turns.
+    let keep = cx
+        .plugin_config::<crate::config::Archive>("archive")
+        .keep_turns as usize;
     let mut out = Vec::new();
     for result in results {
+        if result.turn < keep {
+            continue;
+        }
         if let Some(m) = rewrite_block(result.content, cx, min_rows) {
             out.push(m);
         }
@@ -196,12 +204,31 @@ mod tests {
         cx.config.core.archive_dir = dir;
         cx.config.plugins.toon.enabled = enabled;
         cx.config.plugins.toon.min_rows = min_rows;
+        // Encoding unit tests use a single turn; live-zone coverage sets keep_turns itself.
+        cx.config.plugins.archive.keep_turns = 0;
         cx
     }
 
     fn tool_req(table: Value) -> Value {
         let content = serde_json::to_string_pretty(&table).unwrap();
         json!({"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content": content}]}]})
+    }
+
+    /// Six user turns, each with the same tabular tool result. Turns are counted from
+    /// the end (`turn` = users after this one), matching the Anthropic wire.
+    fn six_turn_req(table: Value) -> Value {
+        let content = serde_json::to_string_pretty(&table).unwrap();
+        let mut messages = Vec::new();
+        for i in 1..=6 {
+            messages.push(json!({
+                "role": "user",
+                "content": [{"type":"tool_result","tool_use_id": format!("t{i}"), "content": content}]
+            }));
+            if i < 6 {
+                messages.push(json!({"role":"assistant","content":"ok"}));
+            }
+        }
+        json!({"messages": messages})
     }
 
     fn rows_3x4() -> Value {
@@ -251,5 +278,44 @@ mod tests {
         let keys = tabular_keys(&table, 3).unwrap();
         let encoded = encode(table.as_array().unwrap(), &keys);
         assert_eq!(decode(&encoded).unwrap(), table);
+    }
+
+    #[test]
+    fn live_zone_turns_are_untouched() {
+        let mut cx = cx("live", true, 3);
+        cx.config.plugins.archive.keep_turns = 4;
+        let table = rows_3x4();
+        let mut body = six_turn_req(table.clone());
+        let original = body.clone();
+        let ms = filter(&mut body, &Ctx::new(&cx));
+        // keep_turns=4 → only turns with turn>=4 rewrite (first two of six).
+        assert_eq!(ms.len(), 2, "only older-than-live-zone results encode");
+        let texts: Vec<_> = (0..6)
+            .map(|i| {
+                // message index: user, assistant, user, ... → user at 2*i
+                body["messages"][2 * i]["content"][0]["content"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(
+            texts[0].starts_with("[toon "),
+            "turn1 should encode: {}",
+            texts[0]
+        );
+        assert!(
+            texts[1].starts_with("[toon "),
+            "turn2 should encode: {}",
+            texts[1]
+        );
+        let pretty = serde_json::to_string_pretty(&table).unwrap();
+        for t in &texts[2..] {
+            assert_eq!(t, &pretty, "live-zone turn must stay original");
+        }
+        // Prefix before first rewrite stays byte-stable vs a fresh filter of the original.
+        let mut again = original.clone();
+        filter(&mut again, &Ctx::new(&cx));
+        assert_eq!(body, again);
     }
 }
