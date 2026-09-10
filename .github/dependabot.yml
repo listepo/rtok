@@ -1,0 +1,36 @@
+# Dependency updates as pull requests (T18.7). ci.yml runs `just check` on every pull request,
+# so an update merges only on a green suite. Commit prefixes land in cliff.toml's Tooling group.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # A release waits a week before a pull request opens, so a yanked or broken version is
+    # usually caught upstream first.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: deps
+    groups:
+      # The parser and every grammar share one ABI, and a grammar bump changes the tags its
+      # query sees, so they move together (a stored index keeps the old rows until T35.5).
+      tree-sitter:
+        patterns: ["tree-sitter*"]
+      # Everything else short of a major bump: one pull request a week, not one per crate.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    # release.yml is written by tools/dist-generate.sh (`dist generate` plus a patch); an edit
+    # here is lost on the next generate. Its actions move when dist is upgraded.
+    exclude-paths:
+      - .github/workflows/release.yml
+    groups:
+      actions:
+        patterns: ["*"]

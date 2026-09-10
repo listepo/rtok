@@ -1329,6 +1329,12 @@ sha256 artifacts and no homebrew entry, `just dist-generate` leaves `release.yml
 `done.md` history were left alone: they record the ketch install path and past events, and neither
 offers a brew instruction.
 
+**T18.7 dependency updates as pull requests** · T18.6 · `.github/dependabot.yml`
+Do: nothing proposed dependency updates; crates and actions moved only when bumped by hand. The owner asked for Dependabot (2026-09-11).
+Check: weekly cargo and github-actions updates, each landing on `ci.yml`'s pull-request `just check`. Cargo updates wait a 7-day cooldown. `tree-sitter*` moves as one group: the parser and grammars share an ABI, and a grammar bump changes the tags a stored index keeps until T35.5. Other minor and patch crates share one weekly pull request, and actions share one group. `release.yml` is excluded because `tools/dist-generate.sh` writes it and an edit would be lost on the next generate. The `deps:` and `ci:` prefixes land in `cliff.toml`'s Tooling group. `site/go.mod` (one Hugo theme) and `plugins/pi/package.json` (no dependencies) are left out: `docs.yml` builds the site only on `main`, so a theme bump would be checked after the merge. Every key is in SchemaStore's `dependabot-2.0.json`; GitHub's first Dependabot run is the remaining check.
+Complexity: 1/5
+Status: done 2026-09-11 · Model: Opus 5
+
 ## P17 — build size · done 2026-09-07 (T17.1–T17.2, Gate P17 passed)
 
 Goal: what a contributor compiles and what a user downloads stop growing with the dependency list. Plan: `plan.md` P17. Numbers: `research.md` §2 "Build size (T17.1, Gate P17)".
