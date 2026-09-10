@@ -2,8 +2,8 @@
 //! are the model's page list, never a second one (D23). The Overview tab renders CTT,
 //! per-plugin savings bars and a per-turn sparkline off the snapshot (T15.3); the
 //! Plugins page renders minimally until T15.4; Doctor (T15.6) renders the model's
-//! doctor page verbatim; a page the model adds ahead of its tab falls through to a
-//! placeholder that says so.
+//! doctor page verbatim; Logs (T15.7) renders the model's log lines; a page the model
+//! adds ahead of its tab falls through to a placeholder that says so.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -56,6 +56,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "overview" => render_overview(frame, app, area),
         "plugins" => frame.render_widget(plugins_table(app), area),
         "doctor" => frame.render_widget(doctor(app), area),
+        "logs" => frame.render_widget(logs_text(app), area),
         page => frame.render_widget(placeholder(page), area),
     }
 }
@@ -191,6 +192,19 @@ fn placeholder(page: &str) -> Paragraph<'static> {
     Paragraph::new(format!(
         "{page}: this page arrives with T15.3+ (roadmap P15)"
     ))
+}
+
+/// The model's Logs page (T15.7): the snapshot's log lines verbatim, newest first —
+/// the selection (last `[log] lines`, newest first) is the model's, the same one
+/// `rtok logs` screens; the numbering and colour are the CLI's, not a second table
+/// here. Nothing scrolls yet (T15.2 owns the keys): the page shows the newest lines
+/// the bound allows, long lines truncated by the terminal's width.
+fn logs_text(app: &App) -> Paragraph<'static> {
+    let logs = &app.snapshot().logs;
+    if logs.is_empty() {
+        return Paragraph::new("no logs yet");
+    }
+    Paragraph::new(logs.iter().cloned().map(Line::from).collect::<Vec<_>>())
 }
 
 /// Key hints and when the data last came off the model.
@@ -353,6 +367,83 @@ mod tests {
             })
             .unwrap();
         }
+        cfg
+    }
+
+    /// T15.7: the Logs tab shows the model's log lines — the same selection `rtok logs`
+    /// screens — newest first, and says so in the CLI's words when nothing is logged.
+    #[test]
+    fn logs_tab_renders_the_model_lines_newest_first() {
+        let cfg = logged(0, &[]);
+        let mut app = App::new(&cfg);
+        select(&mut app, "logs");
+        assert!(screen(&app).contains("no logs yet"), "the empty state");
+
+        let cfg = logged(3, &["oldest", "middle", "newest"]);
+        let mut app = App::new(&cfg);
+        select(&mut app, "logs");
+        let screen = screen(&app);
+        for marker in ["oldest", "middle", "newest"] {
+            assert!(screen.contains(marker), "{marker} is on screen");
+        }
+        assert!(
+            screen.find("newest").unwrap() < screen.find("oldest").unwrap(),
+            "newest is the first line on screen"
+        );
+    }
+
+    /// The page's bound is the model's: `[log] lines` lines ride the snapshot, so the
+    /// tab shows that many and not the file.
+    #[test]
+    fn logs_tab_honors_the_log_lines_bound() {
+        let cfg = logged(2, &["one", "two", "three"]);
+        let mut app = App::new(&cfg);
+        assert_eq!(
+            app.snapshot().logs.len(),
+            2,
+            "the snapshot carries the bound"
+        );
+        select(&mut app, "logs");
+        let screen = screen(&app);
+        assert!(
+            screen.contains("three") && screen.contains("two"),
+            "the two newest"
+        );
+        assert!(!screen.contains("one"), "the bound dropped the oldest");
+    }
+
+    /// Jump the app to a named tab with the digit key the shell owns (tabs count
+    /// from one).
+    fn select(app: &mut App, page: &str) {
+        let idx = app
+            .tab_names()
+            .iter()
+            .position(|name| *name == page)
+            .expect("the model offers the page");
+        assert!(idx < 9, "digits reach the first nine tabs");
+        app.key(
+            KeyCode::Char((b'1' + idx as u8) as char),
+            KeyModifiers::NONE,
+        );
+    }
+
+    /// A config whose log file holds one line per marker, oldest first, and
+    /// `[log] lines` set to `lines` — `0` for the empty-state case. Its own temp dir
+    /// (keyed by the bound, so the parallel tests never share one), like `seeded`:
+    /// the log path is the config's, so the store stays untouched.
+    fn logged(lines: usize, markers: &[&str]) -> Config {
+        let dir =
+            std::env::temp_dir().join(format!("rtok-tui-logs-{lines}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.log.lines = lines;
+        std::fs::create_dir_all(cfg.log.path.parent().expect("log dir")).unwrap();
+        let body = markers
+            .iter()
+            .map(|m| format!("2026-09-10 12:00:00 info tui/test: {m}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&cfg.log.path, format!("{body}\n")).unwrap();
         cfg
     }
 

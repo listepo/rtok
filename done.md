@@ -699,9 +699,21 @@ outside this task, so the charts are the same series drawn natively (T22.0's own
 two separate files, never a merged page; its fontdb-on-bare-Linux hazard goes away with it). New
 dependency: `printpdf 0.12.8` — the paged-PDF renderer the T22.0 survey chose.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.6, T15.8, T15.9, T15.10, T15.11, T15.12 done (T15.3, T15.6, T15.8, T15.9 2026-09-10, rest 2026-09-09)
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.6, T15.7, T15.8, T15.9, T15.10, T15.11, T15.12 done (T15.3, T15.6–T15.9 2026-09-10, rest 2026-09-09)
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.7 Logs tab** · T15.0 · `src/tui/view.rs`, `src/web/model.rs`, `tests/surface_parity.rs`
+Do (roadmap §TUI): Logs tab — render the model's log lines off the snapshot, newest first,
+bound by `[log] lines` (the same selection `rtok logs` screens).
+Complexity: 2/5
+Status: done 2026-09-10 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, Low) — cherry-picked from agent/T15.7 onto main after T15.6/T15.9
+Check result: green. Snapshot gains `logs: Vec<String>` via `Model::log_lines(None)`;
+`pages()` gains `("logs","logs")`; `logs` moves from surface_parity EXEMPT to COMMAND_PAGES.
+Plain lines (no CLI ANSI numbering/colour). Tests: `logs_tab_renders_the_model_lines_newest_first`,
+`logs_tab_honors_the_log_lines_bound`. Conflicts with T15.6 resolved by keeping both doctor and
+logs pages. Originating worktree `just check` green; focused lib tests green after cherry-pick.
+Deviations: none to the spec.
 
 **T15.9 TTY guard, `q` restores the terminal** · T15.1 · `src/tui/mod.rs`, `tests/tui_tty.rs`
 Do (roadmap §TUI): refuse `rtok tui` without a TTY before `try_init` touches terminal state;

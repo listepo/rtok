@@ -71,6 +71,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("agent sessions", "sessions"),
     // the Doctor page rides the snapshot since T15.6, so `rtok doctor` renders it
     ("doctor", "doctor"),
+    // the Logs page rides the snapshot since T15.7, so `rtok logs` renders it
+    ("logs", "logs"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -147,10 +149,6 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "config get",
         "renders model::config_entries; no snapshot page yet",
-    ),
-    (
-        "logs",
-        "renders Model::log_lines; the Logs tab surfaces it (T15.7)",
     ),
     (
         "logs export",

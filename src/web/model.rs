@@ -32,6 +32,10 @@ pub struct Snapshot {
     /// chains. `None` when this tick's probes failed; the page renders the failure
     /// rather than zeros, the way an unreadable store renders an empty page.
     pub doctor: Option<doctor::Report>,
+    /// Logs page (T15.7): the last `[log] lines` log lines, newest first — the same
+    /// selection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot
+    /// makes the page both surfaces' (D23); `[log] lines` is the frame's bound too.
+    pub logs: Vec<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -94,6 +98,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("plugins", "plugins"),
         ("sessions", "sessions"),
         ("doctor", "doctor"),
+        ("logs", "logs"),
     ]
 }
 
@@ -547,6 +552,7 @@ impl<'a> Model<'a> {
             // renders, so neither surface grows a probe of its own. A failed tick is
             // `None`, never a failed snapshot — like Overview's zeros.
             doctor: doctor(self.cfg).ok(),
+            logs: self.log_lines(None),
         }
     }
 
