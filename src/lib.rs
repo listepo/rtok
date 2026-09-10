@@ -32,6 +32,8 @@ pub mod render;
 pub mod report;
 pub mod setup;
 pub mod store;
+#[cfg(test)]
+pub(crate) mod testutil;
 pub mod tokens;
 pub mod tui;
 pub mod web;

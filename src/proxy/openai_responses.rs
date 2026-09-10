@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, turn_setup};
+use super::wire::{ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup};
 
 pub static OPENAI_RESPONSES: OpenAiResponses = OpenAiResponses;
 
@@ -72,19 +72,17 @@ impl Wire for OpenAiResponses {
 /// A streamed response reports usage once, on the final `response.completed` event, which
 /// nests it under `response`. There is no cache-creation signal on this wire.
 fn usage_block(value: &Value) -> Option<Usage> {
-    value
-        .get("usage")
-        .or_else(|| value.get("response").and_then(|resp| resp.get("usage")))
-        .filter(|usage| usage.is_object())
-        .map(|usage| Usage {
-            input: int_field(usage, "input_tokens"),
-            cache_create: 0,
-            cache_read: usage
-                .get("input_tokens_details")
-                .map(|details| int_field(details, "cached_tokens"))
-                .unwrap_or_default(),
-            output: int_field(usage, "output_tokens"),
-        })
+    find_usage(
+        value,
+        &UsageFields {
+            alt_parent: Some("response"),
+            input: "input_tokens",
+            output: "output_tokens",
+            cache_create: None,
+            cache_read: "cached_tokens",
+            cache_read_details: Some("input_tokens_details"),
+        },
+    )
 }
 
 #[cfg(test)]

@@ -58,3 +58,48 @@ pub fn document(cfg: &Config, home: &Path, config_file: Option<&Path>) -> Result
         recommendations,
     })
 }
+
+/// Each value's share of the largest value in `pairs`, in `0.0..=1.0` — the one
+/// scale computation [`html::bars`](super::html) and [`pdf::bars`](super::pdf) both
+/// need, so the two renderers can't drift apart on how a bar's length is derived.
+/// Negatives count as 0 (a chart never draws a negative-width bar); an all-zero
+/// series gives all 0.0 rather than dividing by zero.
+pub(super) fn bar_shares(pairs: &[(String, i64)]) -> Vec<f64> {
+    let max = pairs
+        .iter()
+        .map(|(_, v)| (*v).max(0))
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    pairs
+        .iter()
+        .map(|(_, v)| (*v).max(0) as f64 / max as f64)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bar_shares;
+
+    #[test]
+    fn bar_shares_scales_to_the_max_and_floors_negatives() {
+        let pairs = vec![
+            ("a".to_string(), 10),
+            ("b".to_string(), 5),
+            ("c".to_string(), -3),
+        ];
+        assert_eq!(bar_shares(&pairs), vec![1.0, 0.5, 0.0]);
+    }
+
+    #[test]
+    fn bar_shares_all_zero_is_all_zero() {
+        let pairs = vec![("a".to_string(), 0), ("b".to_string(), 0)];
+        assert_eq!(bar_shares(&pairs), vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn bar_shares_empty_is_empty() {
+        let pairs: Vec<(String, i64)> = Vec::new();
+        assert_eq!(bar_shares(&pairs), Vec::<f64>::new());
+    }
+}

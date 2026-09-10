@@ -75,20 +75,12 @@ fn same_path(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use rtok_plugin_sdk::Ctx;
     use serde_json::json;
     use std::fs;
 
     fn cx(name: &str) -> crate::plugin::Runtime {
-        let dir =
-            std::env::temp_dir().join(format!("rtok-read-hook-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        crate::plugin::Runtime::open(c, name).unwrap()
+        crate::testutil::runtime(name).0
     }
 
     fn ev<'a>(input: &'a serde_json::Value) -> PreToolUse<'a> {

@@ -1,6 +1,67 @@
 # rtok — completed tasks
 
 
+## P34 — Hardening pass (2026-09-10) — T34.1–T34.9
+
+Goal: a bug hunt over the store, proxy, hooks and report, the tests those bugs lacked, and one
+helper where two copies had drifted. Found by four read-only audits; each fix names its test.
+
+**T34.1 store: concurrent writers, atomic purge, literal read-cache prefix** · T0.3 · `src/store/mod.rs`
+Do: hooks, `rtok mcp`, `rtok proxy` and the detached otel flush share one SQLite file with the default `busy_timeout` of 0, so an overlapping write failed with "database is locked" (the Ubuntu CI flake). `purge_calls_older_than` ran four statements outside a transaction and hit the `calls` foreign keys from `usage`, `measurements` and child calls after the first deletes had committed. `clear_read_cache` matched `LIKE 'path\t%'`, so `_`, `%` and ASCII case in a file name cleared other files' cache rows. `spill` and `put_archive` each wrote the archive file and row, one of them labelled every archive `cmd`.
+Check: `busy_timeout = 1000` on open; purge in one transaction with one cutoff, detaching ledger rows (a saving outlives its call); a `substr` prefix compare; one `write_archive`. Tests `purge_drops_old_calls_and_detaches_their_ledger_rows`, `clear_read_cache_drops_only_that_path_and_its_mode_keys`.
+Complexity: 3/5
+Status: done 2026-09-10 · Model: Opus 5
+
+**T34.2 latency gates use nearest-rank p95** · T2.2 · `tests/common/mod.rs`, `tests/otel.rs`, `tests/latency.rs`, `tests/graph_bench.rs`
+Do: three gates took `samples[n * 95 / 100]`, one rank high — at n = 20 (the debug otel gate) that is the maximum, so one slow spawn failed it.
+Check: one `common::p95` (`ceil(0.95·n) − 1`) in all three.
+Complexity: 1/5
+Status: done 2026-09-10 · Model: Opus 5
+
+**T34.3 one test fixture instead of eleven** · — · `src/testutil.rs`, `src/plugin.rs`, unit tests in `expand`, `mcp`, `cmd`, `memory`, `read`, `graph`, `guard`, `tui`
+Do: eleven test modules each built a temp dir and a `Config` pointing into it; `guard` reused one fixed dir across runs, and every `tui` test shared (and deleted) one `rtok-tui-<pid>` dir, so parallel tests failed with os error 22. `Runtime::open` and `in_memory` duplicated their construction.
+Check: `testutil::{tmp_dir, config, runtime}` (a fresh dir per call, `same_tag_gives_distinct_dirs`); `Runtime::with_store`. New tests: `bash_repeat_behind_cd_prefix_denies` (guard's Bash key was untested), `dot_dot_escape_is_err` (read's lexical escape).
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Opus 5
+
+**T34.4 report: one bar scale, UTF-8-safe PDF text** · T22.1 · `src/report/{mod,html,pdf}.rs`
+Do: `pdf::bars` cut labels with `&label[..26]`, which panics inside a multi-byte character; `split_word` chunked bytes and printed U+FFFD. HTML and PDF each scaled bars.
+Check: `report::bar_shares` shared; char-based truncation and splitting. Tests `bars_truncates_long_multibyte_label_without_panicking`, `split_word_splits_on_chars_not_bytes`, `bar_shares` cases.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Sonnet 5 (subagent)
+
+**T34.5 agent-sdk writes host configs atomically** · T27.0 · `crates/rtok-agent-sdk/src/lib.rs`
+Do: `write` truncated `~/.claude.json` and friends in place — a crash mid-write lost the host config, and a symlinked (dotfile-managed) config was replaced by a file.
+Check: temp file beside the target, permissions copied, `rename`; the symlink's target is written. Tests `write_leaves_no_temp_file_behind`, `write_preserves_existing_permissions`, `write_through_a_symlink_updates_the_target_and_keeps_the_link`.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Sonnet 5 (subagent)
+
+**T34.6 proxy: bounded tee, one usage reader** · P5 · `src/proxy/{mod,wire,anthropic,openai_chat,openai_responses}.rs`
+Do: the response tee buffered the whole upstream body with no cap; each wire re-implemented usage extraction; "no usage in upstream response" was logged for every non-model path.
+Check: the tee keeps at most `MAX_BODY_BYTES` (the client still gets every byte; the true size is logged when cut); `wire::find_usage` with per-wire field names; the log fires only for a known wire. Existing wire usage tests unchanged and green.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Sonnet 5 (subagent)
+
+**T34.7 `otel.headers` never prints** · P16 · `src/config/layers.rs`, `docs/config.md`
+Do: `config show/get/set` and `rtok report` printed OTLP ingestion keys from `otel.headers`.
+Check: `SECRET_KEYS` in `layers::entries` → `<redacted>` when set, source kept. Test `otel_headers_are_redacted_when_set`.
+Complexity: 1/5
+Status: done 2026-09-10 · Model: Opus 5
+
+**T34.8 small bugs behind duplicated helpers** · — · `src/plugins/cmd/formatters.rs`, `src/plugins/{archive,toon}/mod.rs`, `src/doctor.rs`, `src/web/model.rs`
+Do: `rtok run` picked a filter rule when any argument word named a tool (`git commit -m "fix grep"` → the `grep` rule). `archive` and `toon` each re-read the live-zone boundary. `doctor` and the operator model each carried a raw HTTP GET, both cutting a body at its first blank line.
+Check: `pick` keys on `argv[0]` (`rule_is_picked_by_the_command_not_an_argument`; goldens unchanged); `archive::outside_live_zone` shared (`live_zone_turns_are_untouched` green); one `doctor::http_get` with `split_once`.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Opus 5
+
+**T34.9 graph tests that name their failure** · T8.8, T8.16 · `tests/graph_truth.rs`, `tests/fixtures/graph_truth.toml`, `src/plugins/graph/{watch.rs,PLAN.md}`
+Do: ref recall fell to 0.290, under its 0.30 floor, with the index unchanged. T34.6 had moved every `int_field` call into `wire.rs`, and T15.11 had already emptied `src/cli.rs` of `Registry` and `Replay`; a stale label scores as a miss. The watcher's debounce loop was testable only through FSEvents, which can only bound a run count.
+Check: `every_label_names_a_file_that_mentions_the_symbol` names stale labels without indexing (0.03 s); the fixture is repaired with a header note; ref recall 0.305. `reference_capture_matches_the_known_misses` pins plain, path-qualified and method calls as found and type positions and macro arguments as missed. `pump` is split from `notify_loop`, and four tests drive it without FSEvents: `settle_runs_once_after_quiet_and_never_when_clean`, `irrelevant_events_never_run_and_a_burst_runs_once`, `edit_and_rename_events_reindex_once_each`, `pump_ends_on_stop_or_on_a_dead_channel`. `warm_watcher` rewrites its probe until the stream indexes it: a single probe written before the stream went live sat out the 10 s cap, so the two FSEvents tests fell from 10.8 s and 10.5 s to 2.0 s and 1.7 s, and the watch module from 10.9 s to 4.4 s with four more tests. The speed-ups are measured and filed as P35, with `PERF(T35.n)` comments at the code.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: Opus 5
+
+Not done, noted: an otel exporter backoff after a failed post, and `isMonotonic` on a sum that can go negative (both P16 follow-ups); `~` expansion on Windows.
+
 ## Residual bug-hunt (2026-09-10) — T10.11, T11.8, T16.9, T22.6, T24.5
 
 **T10.11 Cursor host: wire PostToolUse, not only beforeShellExecution** · T10.1 · `src/setup/cursor.rs`, `src/hooks/types.rs`

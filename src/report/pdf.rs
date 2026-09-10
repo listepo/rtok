@@ -214,20 +214,17 @@ fn content_page(items: Vec<PageItem>) -> PdfPage {
 /// The HTML bars' geometry in millimetres: same pairs, same order, same
 /// title — a bar per pair scaled to the maximum, label left, value right.
 fn bars(ops: &mut Vec<Op>, mut y: f32, pairs: &[(String, i64)]) -> f32 {
-    let max = pairs
-        .iter()
-        .map(|(_, v)| (*v).max(0))
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    for (label, v) in pairs {
-        let label = if label.len() > 26 {
-            &label[..26]
+    let shares = super::bar_shares(pairs);
+    for ((label, v), share) in pairs.iter().zip(shares.iter()) {
+        // Truncate on chars, not bytes: plugin ids come from external plugins
+        // and a byte cut can land inside a multi-byte UTF-8 char.
+        let label: String = if label.chars().count() > 26 {
+            label.chars().take(26).collect()
         } else {
-            label
+            label.clone()
         };
-        show(ops, LEFT, y, BuiltinFont::Helvetica, 8.0, label);
-        let w = (*v).max(0) as f32 / max as f32 * 90.0;
+        show(ops, LEFT, y, BuiltinFont::Helvetica, 8.0, &label);
+        let w = *share as f32 * 90.0;
         ops.push(Op::SetFillColor { col: gray() });
         ops.push(Op::DrawRectangle {
             rectangle: Rect {
@@ -484,13 +481,13 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
 }
 
 fn split_word(word: &str, width: usize) -> Vec<String> {
-    if word.len() <= width {
+    let chars: Vec<char> = word.chars().collect();
+    if chars.len() <= width {
         return vec![word.to_string()];
     }
-    word.as_bytes()
-        .chunks(width)
-        .map(|c| String::from_utf8_lossy(c).into_owned())
-        .collect()
+    // Chunk on chars, not bytes: a byte chunk can cut a multi-byte UTF-8 char
+    // in half, which `from_utf8_lossy` then replaces with U+FFFD.
+    chars.chunks(width).map(|c| c.iter().collect()).collect()
 }
 
 /// Builtin Helvetica is WinAnsi: map the punctuation the report emits, pass
@@ -512,4 +509,29 @@ fn ansi(s: &str) -> String {
             _ => "?".to_string(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A label longer than 26 chars, all multi-byte, must not panic when
+    /// `bars` truncates it (regression: byte slicing used to land mid-char).
+    #[test]
+    fn bars_truncates_long_multibyte_label_without_panicking() {
+        let mut ops = Vec::new();
+        let label = "é".repeat(30);
+        let pairs = vec![(label, 5i64)];
+        bars(&mut ops, TOP, &pairs);
+    }
+
+    #[test]
+    fn split_word_splits_on_chars_not_bytes() {
+        assert_eq!(split_word("ééééé", 2), vec!["éé", "éé", "é"]);
+    }
+
+    #[test]
+    fn split_word_leaves_short_word_unchanged() {
+        assert_eq!(split_word("short", 26), vec!["short"]);
+    }
 }

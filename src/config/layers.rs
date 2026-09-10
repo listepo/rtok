@@ -394,6 +394,10 @@ pub fn leaf_keys() -> Vec<String> {
     keys
 }
 
+/// Keys whose value is a credential (an OTLP ingestion key rides in `otel.headers`): `config
+/// show/get/set` and `report` say that one is set and where from, never what it is.
+const SECRET_KEYS: &[&str] = &["otel.headers"];
+
 pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
     let table = env_leaf_table();
     let mut keys: Vec<&String> = table.values().map(|(dotted, _)| dotted).collect();
@@ -407,7 +411,11 @@ pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
                 .find_metadata(key)
                 .map(|m| m.name.to_string())
                 .unwrap_or_else(|| "default".to_string());
-            Some((key.clone(), display(&value), source))
+            let mut shown = display(&value);
+            if SECRET_KEYS.contains(&key.as_str()) && !shown.is_empty() {
+                shown = "<redacted>".into();
+            }
+            Some((key.clone(), shown, source))
         })
         .collect()
 }
@@ -488,6 +496,21 @@ mod tests {
         assert_eq!(cfg.tui.tab, "plugins");
         assert_eq!(cfg.tui.tick_secs, 5);
         assert!(tui_flags(None, None).is_none());
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn otel_headers_are_redacted_when_set() {
+        let home = tmp("redact");
+        let headers = |env: &[(&str, &str)]| {
+            entries(&fig(&home, env, None))
+                .into_iter()
+                .find(|(k, ..)| k == "otel.headers")
+                .unwrap()
+                .1
+        };
+        assert_eq!(headers(&[("OTEL_HEADERS", "x-key=secret")]), "<redacted>");
+        assert_eq!(headers(&[]), "", "unset stays visibly unset");
         let _ = std::fs::remove_dir_all(&home);
     }
 

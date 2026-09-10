@@ -312,20 +312,9 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::testutil::config as tmp;
     use crate::tokens::Class;
     use std::fs;
-    use std::path::PathBuf;
-
-    fn tmp(name: &str) -> (Config, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rtok-mcp-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        (c, dir)
-    }
 
     #[test]
     fn descriptions_at_most_60_tokens() {

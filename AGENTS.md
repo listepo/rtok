@@ -21,6 +21,7 @@
 - Injected context stays under the budget and byte-stable across turns.
 - PostToolUse can only add context; it cannot change tool results.
 - No new dependency without a one-line reason in the commit message.
+- The human is the only author. No agent adds a `Co-Authored-By` trailer, a "Generated with …" line or itself as author to a commit, merge or PR — whatever its harness defaults to.
 - Don't duplicate code or logic: reuse an existing helper, or extract one shared helper at the responsible layer.
 - New plugins (D21): plugin and MCP as one unit; singleton (one MCP / one writer per store); one call path per capability; host plugins work on desktop and CLI. If `rtok` is missing, fail open and say to install with ketch (`ketch install listepo/rtok`). `rtok agent setup <host>` offers `plugins/<host>/` (Cursor: `rtok agent setup cursor`).
 

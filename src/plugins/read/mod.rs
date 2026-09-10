@@ -166,18 +166,13 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-    use crate::config::Config;
     use std::fs;
 
-    fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rtok-read-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
+    /// A runtime whose fresh temp dir is also the one `allow_paths` root; shared with `cache.rs`.
+    pub(crate) fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
+        let (mut c, dir) = crate::testutil::config(name);
         c.plugins.read.allow_paths = vec![dir.clone()];
         (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
@@ -228,10 +223,7 @@ mod tests {
         std::env::set_current_dir(&cwd).unwrap();
         // Drop allow_paths so only env cwd counts as the root.
         // (cx was opened with allow_paths=[dir]; reopen without extras.)
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        let cx = crate::plugin::Runtime::open(c, "symlink2").unwrap();
+        let (cx, _) = crate::testutil::runtime("symlink2");
         let err = read(&Ctx::new(&cx), "escape", "full", None)
             .unwrap_err()
             .to_string();
@@ -241,15 +233,18 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// The lexical twin of `symlink_escape_is_err`: `..` climbs past every allowed root.
+    #[test]
+    fn dot_dot_escape_is_err() {
+        let (cx, dir) = cx("dotdot");
+        let deep = "../".repeat(32) + "etc/passwd";
+        assert!(read(&Ctx::new(&cx), &deep, "full", None).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn map_src_main_lists_fn_main() {
-        let dir = std::env::temp_dir().join(format!("rtok-read-mapmain-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        let cx = crate::plugin::Runtime::open(c, "mapmain").unwrap();
+        let (cx, dir) = crate::testutil::runtime("mapmain");
         let out = read(&Ctx::new(&cx), "src/main.rs", "map", None).unwrap();
         assert!(out.contains("fn main"), "{out}");
         let _ = fs::remove_dir_all(dir);

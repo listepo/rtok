@@ -252,8 +252,9 @@ pub(super) mod tests {
     use super::*;
 
     pub(in crate::tui) fn config() -> Config {
-        let dir = std::env::temp_dir().join(format!("rtok-tui-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        // A dir per call: one shared `rtok-tui-<pid>` was deleted by each parallel test
+        // while another was still opening its store in it (os error 22).
+        let dir = crate::testutil::tmp_dir("tui");
         let mut cfg = Config::load_from(&dir).expect("config");
         // Hermetic probes: the snapshot carries the doctor page (T15.6), so every
         // `App::new` would otherwise spawn this machine's MCP servers.

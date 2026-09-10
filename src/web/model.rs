@@ -751,25 +751,8 @@ fn live_calls(cfg: &Config) -> Vec<crate::proxy::LiveCall> {
 fn fetch_live(cfg: &Config) -> Option<Vec<crate::proxy::LiveCall>> {
     let url = format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port);
     let timeout = std::time::Duration::from_millis(cfg.doctor.probe_timeout_ms.max(100));
-    let body = http_get_body(&url, "/live", timeout)?;
+    let body = crate::doctor::http_get(&url, "/live", timeout)?;
     serde_json::from_str(&body).ok()
-}
-
-fn http_get_body(base: &str, path: &str, timeout: std::time::Duration) -> Option<String> {
-    use std::io::{Read, Write};
-    use std::net::{TcpStream, ToSocketAddrs};
-    let rest = base.split("://").nth(1).unwrap_or(base);
-    let hostport = rest.split('/').next().unwrap_or(rest);
-    let addr = hostport.to_socket_addrs().ok()?.next()?;
-    let mut stream = TcpStream::connect_timeout(&addr, timeout).ok()?;
-    stream.set_read_timeout(Some(timeout)).ok()?;
-    stream.set_write_timeout(Some(timeout)).ok()?;
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {hostport}\r\nConnection: close\r\n\r\n");
-    stream.write_all(req.as_bytes()).ok()?;
-    let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).ok()?;
-    let text = String::from_utf8_lossy(&buf);
-    text.split("\r\n\r\n").nth(1).map(str::to_string)
 }
 
 fn live_as_call_row(id: i32, c: crate::proxy::LiveCall) -> CallRow {

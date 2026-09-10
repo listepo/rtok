@@ -53,6 +53,10 @@ impl Store {
     ) -> Result<usize> {
         let mut conn = self.lock()?;
         // One transaction per file: thousands of autocommit inserts dominated index time.
+        // PERF(T35.3) where: the row loop below, per file of a cold index (this repo: 18 093
+        // rows over 127 files). What: multi-row INSERTs chunked under SQLite's variable limit,
+        // one transaction per batch of files. Why: ~140 single-row INSERTs per file. Not yet
+        // measured apart from the parse — measure before changing.
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
             diesel::delete(
                 symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))),
@@ -103,6 +107,8 @@ impl Store {
             .select(symbols::path)
             .distinct()
             .load(&mut *conn)?;
+        // PERF(T35.3) where: this loop, after a branch switch drops many files. What: one
+        // DELETE over the missing set. Why: one DELETE per vanished path.
         let mut n = 0usize;
         for p in have {
             if !keep.contains(&p) {

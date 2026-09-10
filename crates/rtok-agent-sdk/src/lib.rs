@@ -98,6 +98,13 @@ pub fn read_json(path: &Path) -> Result<Value> {
 
 /// Write `body` at `path`, gated by `apply` and `report`: a dry run and a [`NO_CHANGES`] report
 /// write nothing, and the previous file is backed up first when asked.
+///
+/// Writes atomically: `body` lands in a sibling temp file first, then an `fs::rename` swaps it
+/// over the target, so a kill/crash/full-disk between the two steps never leaves the host's
+/// config empty or half-written — the target is either the old file or the fully-written new
+/// one, never a partial write. When `path` is a symlink (dotfile managers replace host config
+/// files with one), the temp file lands beside, and the rename lands on, the file it points to,
+/// so the symlink itself survives.
 pub fn write(apply: &Apply, path: &Path, body: &str, report: &str) -> Result<()> {
     if !apply.writes(report) {
         return Ok(());
@@ -108,7 +115,30 @@ pub fn write(apply: &Apply, path: &Path, body: &str, report: &str) -> Result<()>
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).ok();
     }
-    fs::write(path, body).with_context(|| path.display().to_string())
+    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    write_atomic(&target, body).with_context(|| target.display().to_string())
+}
+
+/// [`write`]'s atomic swap: write `body` to `.<name>.rtok-tmp-<pid>` beside `target`, copy
+/// `target`'s permissions onto it when `target` exists (a 0600 `~/.claude.json` must stay
+/// 0600), then `fs::rename` the temp file over `target` — atomic on one filesystem. Any failed
+/// step cleans up the temp file before returning the error.
+fn write_atomic(target: &Path, body: &str) -> Result<()> {
+    let dir = target.parent().unwrap_or(Path::new("."));
+    let name = target.file_name().unwrap_or_default().to_string_lossy();
+    let tmp = dir.join(format!(".{name}.rtok-tmp-{}", std::process::id()));
+    let result: Result<()> = (|| -> Result<()> {
+        fs::write(&tmp, body)?;
+        if let Ok(meta) = fs::metadata(target) {
+            fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        fs::rename(&tmp, target)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
 }
 
 /// [`write`] for a JSON document: pretty-printed with the trailing newline host files carry.
@@ -360,6 +390,66 @@ mod tests {
             .collect();
         assert_eq!(baks.len(), 1, "one backup per write");
         assert_eq!(fs::read_to_string(baks[0].path()).unwrap(), "one\n");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn write_leaves_no_temp_file_behind() {
+        let dir = tmp("atomic");
+        let path = dir.join("settings.json");
+        write(&apply(), &path, "one\n", "+ something").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "one\n");
+        write(&apply(), &path, "two\n", "+ something else").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "two\n");
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".rtok-tmp-"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp file left behind: {leftovers:?}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_preserves_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tmp("perms");
+        let path = dir.join(".claude.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+
+        write(&apply(), &path, "{\"a\":1}\n", "+ something").unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "write must not loosen an existing file's permissions"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_a_symlink_updates_the_target_and_keeps_the_link() {
+        let dir = tmp("symlink");
+        let real = dir.join("real.json");
+        fs::write(&real, "{}\n").unwrap();
+        let link = dir.join("linked.json");
+        symlink(&real, &link).unwrap();
+
+        write(&apply(), &link, "{\"a\":1}\n", "+ something").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "write must not replace the symlink with a plain file"
+        );
+        assert_eq!(fs::read_to_string(&real).unwrap(), "{\"a\":1}\n");
+        assert_eq!(fs::read_to_string(&link).unwrap(), "{\"a\":1}\n");
         let _ = fs::remove_dir_all(dir);
     }
 

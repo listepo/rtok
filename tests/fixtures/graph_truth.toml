@@ -21,6 +21,13 @@
 # longer has, so it is removed rather than left to miss. T27.0 (2026-09-09):
 # `read_settings` became the SDK's `read_json` -- its entry is gone for the
 # same reason (def and all three call sites).
+#
+# T34.6 (2026-09-10): `wire::find_usage` took over every `int_field` call, so the three wire
+# files no longer name it and its `refs` is `wire.rs` alone. The three stale labels read as a
+# ref-recall drop 0.318 -> 0.290 with the index unchanged;
+# `every_label_names_a_file_that_mentions_the_symbol` now names such a label instead. Its
+# first run also found `Registry` and `Replay` labelled in `src/cli.rs`, which T15.11 had
+# emptied of both (the calls moved to `src/web/model.rs`, where they are now labelled).
 
 [[symbol]]
 name = "Manifest"
@@ -38,7 +45,7 @@ refs = ["examples/hello_plugin.rs", "src/expand.rs", "src/plugins/archive/mod.rs
 name = "Registry"
 kind = "struct"
 defs = ["src/plugins/mod.rs"]
-refs = ["examples/mcp_tool.rs", "src/cli.rs", "src/hooks/mod.rs", "src/mcp.rs", "src/proxy/mod.rs"]
+refs = ["examples/mcp_tool.rs", "src/hooks/mod.rs", "src/mcp.rs", "src/proxy/mod.rs", "src/web/model.rs"]
 
 [[symbol]]
 name = "ToolDef"
@@ -70,7 +77,7 @@ refs = ["src/plugins/archive/mod.rs", "src/proxy/anthropic.rs", "src/proxy/opena
 name = "Replay"
 kind = "struct"
 defs = ["src/measure/stats.rs"]
-refs = ["src/cli.rs", "src/measure/baseline.rs"]
+refs = ["src/measure/baseline.rs", "src/web/model.rs"]
 
 [[symbol]]
 name = "Surface"
@@ -180,7 +187,7 @@ refs = ["src/hooks/mod.rs", "src/mcp.rs", "src/measure/cache.rs", "src/proxy/mod
 name = "int_field"
 kind = "fn"
 defs = ["src/proxy/wire.rs"]
-refs = ["src/proxy/anthropic.rs", "src/proxy/openai_chat.rs", "src/proxy/openai_responses.rs"]
+refs = ["src/proxy/wire.rs"]
 
 [[symbol]]
 name = "str_field"

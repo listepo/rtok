@@ -41,19 +41,9 @@ impl Plugin for Toon {
 fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let min_rows = cx.plugin_config::<crate::config::Toon>("toon").min_rows as usize;
     // Same live-zone rule as `archive`: never touch the last `keep_turns` turns.
-    let keep = cx
-        .plugin_config::<crate::config::Archive>("archive")
-        .keep_turns as usize;
-    let mut out = Vec::new();
-    for result in results {
-        if result.turn < keep {
-            continue;
-        }
-        if let Some(m) = rewrite_block(result.content, cx, min_rows) {
-            out.push(m);
-        }
-    }
-    out
+    crate::plugins::archive::outside_live_zone(results, cx)
+        .filter_map(|r| rewrite_block(r.content, cx, min_rows))
+        .collect()
 }
 
 fn rewrite_block(content: &mut Value, cx: &Ctx, min_rows: usize) -> Option<Measurement> {

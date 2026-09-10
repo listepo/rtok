@@ -2,7 +2,7 @@
 
 use serde_json::{Map, Value};
 
-use super::wire::{ToolResultRef, ToolResults, Usage, Wire, int_field, turn_setup};
+use super::wire::{ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup};
 
 pub static OPENAI_CHAT: OpenAiChat = OpenAiChat;
 
@@ -86,18 +86,17 @@ impl Wire for OpenAiChat {
 /// `input` here is the billed prompt total and `cache_read` is the cached slice of it.
 /// There is no cache-creation signal on this wire, so `cache_create` is always 0.
 fn usage_block(value: &Value) -> Option<Usage> {
-    value
-        .get("usage")
-        .filter(|usage| usage.is_object())
-        .map(|usage| Usage {
-            input: int_field(usage, "prompt_tokens"),
-            cache_create: 0,
-            cache_read: usage
-                .get("prompt_tokens_details")
-                .map(|details| int_field(details, "cached_tokens"))
-                .unwrap_or_default(),
-            output: int_field(usage, "completion_tokens"),
-        })
+    find_usage(
+        value,
+        &UsageFields {
+            alt_parent: None,
+            input: "prompt_tokens",
+            output: "completion_tokens",
+            cache_create: None,
+            cache_read: "cached_tokens",
+            cache_read_details: Some("prompt_tokens_details"),
+        },
+    )
 }
 
 #[cfg(test)]

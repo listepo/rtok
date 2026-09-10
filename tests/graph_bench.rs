@@ -13,6 +13,8 @@ use rtok::plugin::{Ctx, Runtime};
 use rtok::plugins::graph::{callers, impact, index, symbol};
 use rtok::store::Store;
 
+mod common;
+
 #[ignore]
 #[test]
 fn p8c_numbers() {
@@ -183,7 +185,7 @@ fn hook_p95() {
         assert!(out.status.success());
     }
     samples.sort();
-    let p95 = samples[(N * 95) / 100];
+    let p95 = common::p95(&samples);
     eprintln!(
         "hook_PostToolUse n={N} p50 {:?} p95 {p95:?} max {:?}",
         samples[N / 2],

@@ -92,15 +92,9 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use rtok_plugin_sdk::Ctx;
     fn cx(name: &str) -> crate::plugin::Runtime {
-        let dir = std::env::temp_dir().join(format!("rtok-search-{name}-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        crate::plugin::Runtime::open(c, name).unwrap()
+        crate::testutil::runtime(name).0
     }
 
     #[test]

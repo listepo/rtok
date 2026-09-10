@@ -234,12 +234,7 @@ fn bars(title: &str, pairs: &[(String, i64)]) -> String {
     if pairs.is_empty() {
         return format!("<p>No data for {}.</p>\n", esc(title));
     }
-    let max = pairs
-        .iter()
-        .map(|(_, v)| (*v).max(0))
-        .max()
-        .unwrap_or(0)
-        .max(1);
+    let shares = super::bar_shares(pairs);
     let mut o = format!(
         "<svg class=\"chart\" width=\"600\" height=\"{}\" role=\"img\" aria-label=\"{}\">\n",
         pairs.len() * 24 + 8,
@@ -247,7 +242,7 @@ fn bars(title: &str, pairs: &[(String, i64)]) -> String {
     );
     for (i, (label, v)) in pairs.iter().enumerate() {
         let y = i * 24 + 4;
-        let wd = ((*v).max(0) as f64 / max as f64 * 440.0) as i64;
+        let wd = (shares[i] * 440.0) as i64;
         o.push_str(&format!(
             "<text x=\"0\" y=\"{}\" font-size=\"12\">{}</text><rect x=\"140\" y=\"{y}\" width=\"{wd}\" height=\"14\"/><text x=\"{}\" y=\"{}\" font-size=\"12\">{}</text>\n",
             y + 12,

@@ -48,21 +48,15 @@ impl Runtime {
     /// Open the store at `config.core.db_path`.
     pub fn open(config: Config, session: impl Into<String>) -> Result<Self> {
         let store = Store::open(&config.core.db_path)?;
-        let host_id = store.host_id(&config.hook.host)?.or(Some(6));
-        Ok(Self {
-            config,
-            store,
-            session: session.into(),
-            call_id: None,
-            host_id,
-            cwd: None,
-        })
+        Self::with_store(config, store, session)
     }
 
     /// Default config + in-memory store, for tests and examples.
     pub fn in_memory(session: impl Into<String>) -> Result<Self> {
-        let config = Config::default();
-        let store = Store::open_in_memory()?;
+        Self::with_store(Config::default(), Store::open_in_memory()?, session)
+    }
+
+    fn with_store(config: Config, store: Store, session: impl Into<String>) -> Result<Self> {
         let host_id = store.host_id(&config.hook.host)?.or(Some(6));
         Ok(Self {
             config,
