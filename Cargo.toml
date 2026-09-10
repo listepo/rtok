@@ -18,6 +18,11 @@ description = "Token-reduction CLI for AI coding agents: hooks, MCP server and A
 # archives, and `cargo publish` at the workspace level must not reach this package.
 publish = false
 
+# Opt the binary back into cargo-dist: publish = false would otherwise hide it from
+# `dist generate` / Release (same as cargo-dist's own guidance).
+[package.metadata.dist]
+dist = true
+
 [[bin]]
 name = "rtok"
 path = "src/main.rs"

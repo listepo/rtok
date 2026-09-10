@@ -5,10 +5,11 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push/PR commit cancels the previous run for the same ref.
+# One Pages deploy at a time; never cancel one half-done (same as listepo/ketch).
+# PR / push builds share the group so they queue instead of racing the deploy.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 permissions:
   contents: read

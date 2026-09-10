@@ -7,34 +7,25 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
-# The installers to generate for each app
-installers = ["shell"]
-#
-# --- Homebrew: commented out on purpose, to be fixed later -------------------
-#
-# Everything below is the whole Homebrew release. It is off, not deleted, so
-# turning it on is uncommenting these three lines plus `just dist-generate`.
-#
-# It cannot be turned on from this repository today: `publish-homebrew-formula`
-# runs *after* the GitHub Release is created and pushes to the tap with
-# HOMEBREW_TAP_TOKEN, which this repository does not have. Without the secret
-# every release ends red having already published — worse than shipping no
-# formula at all. The tap itself does exist (listepo/homebrew-tap, carrying
-# ketch's cask), so the secret is the only missing piece; the steps are in
-# docs/release.md, and it needs a decision from the owner, not a code change.
-#
-# Until then `brew install` is not a way to get rtok. The shell installer and
-# `ketch install listepo/rtok` both read the Release archives directly and need
-# no formula, so nothing is blocked by this being off.
-#
-# installers = ["shell", "homebrew"]
-# tap = "listepo/homebrew-tap"
-# publish-jobs = ["homebrew"]
-# -----------------------------------------------------------------------------
+# The installers to generate for each app.
+# Homebrew builds Formula/rtok.rb as a Release asset only. Do NOT add
+# publish-jobs = ["homebrew"]: that job needs HOMEBREW_TAP_TOKEN and pushes
+# straight to listepo/homebrew-tap. The tap instead opens a PR via its own
+# sync-rtok.yml (GITHUB_TOKEN in the tap repo) — see docs/release.md.
+installers = ["shell", "homebrew"]
+tap = "listepo/homebrew-tap"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
+# Sign macOS binaries with the Developer ID in MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD.
+# dist expects CODESIGN_*; just dist-generate patches the generated workflow to the MACOS_*
+# names this repo already has, and .github/build-setup.yml discovers CODESIGN_IDENTITY.
+macos-sign = true
+# release.yml is post-patched to MACOS_* secrets; see tools/dist-generate.sh
+allow-dirty = ["ci"]
+# Injected into build-local-artifacts after checkout; discovers CODESIGN_IDENTITY on macOS.
+github-build-setup = "../build-setup.yml"
 # T18.1: start a release from the Actions tab. dist creates the tag itself, so `bump.yml` only has
 # to land the version commit; a tag push still triggers the workflow for anyone releasing by hand.
 dispatch-releases = true

@@ -56,9 +56,10 @@ readme-check:
 dist-plan:
     {{dist}} plan
 
-# regenerate .github/workflows/release.yml from dist-workspace.toml
+# regenerate .github/workflows/release.yml from dist-workspace.toml, then map
+# CODESIGN_* secret names to MACOS_* (see tools/dist-generate.sh).
 dist-generate:
-    {{dist}} generate
+    DIST="{{dist}}" tools/dist-generate.sh
 
 # T18.2: release the version in Cargo.toml, or the next one if that is already tagged.
 # Same script the Bump workflow runs, so local and CI cannot disagree.

@@ -27,11 +27,19 @@ curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bas
 ketch install listepo/rtok
 ```
 
+Or Homebrew (once the formula PR in [listepo/homebrew-tap](https://github.com/listepo/homebrew-tap)
+has been merged for that release):
+
+```bash
+brew install listepo/tap/rtok
+```
+
 The dist installer also gives you `rtok-update`; run it to move to the newest release.
 
-The binaries are not codesigned or notarised. Downloading an archive through a browser will make
-macOS quarantine it; the installer above and ketch are not affected. What turning that on would
-involve is written down in [docs/release.md](docs/release.md).
+macOS release binaries are codesigned with the Developer ID (notarisation is still off). A
+browser download of a `.tar.xz` may still quarantine the file until Gatekeeper has checked it;
+the installer above and `ketch install listepo/rtok` do not set quarantine. Details:
+[docs/release.md](docs/release.md).
 
 Building from source works on any platform Rust supports:
 

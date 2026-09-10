@@ -1,0 +1,16 @@
+# rtok as a ketch package.
+#
+# Inference from github:listepo/rtok already works; this file is what
+# `ketch push` sends to the registry and what docs / `ketch info` show.
+# Schema: listepo/ketch docs/MANIFESTS.md.
+
+name = "rtok"
+source = "github:listepo/rtok"
+description = "Reduce the context AI coding agents must carry"
+homepage = "https://github.com/listepo/rtok"
+
+# Prefer the platform .tar.xz archives dist publishes; skip the self-updater
+# sidecar and the source tarball so scoring cannot pick those by mistake.
+[asset]
+include = ["*-apple-darwin.tar.xz", "*-linux-gnu.tar.xz"]
+exclude = ["*-update*", "source.tar.gz"]
