@@ -10,6 +10,8 @@ use rtok::config::Config;
 use rtok::otel::export::flush_blocking;
 use rtok::plugin::{Measurement, Runtime};
 
+mod common;
+
 fn home(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("rtok-otel-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -358,7 +360,7 @@ fn hooks_stay_fast_with_an_unreachable_endpoint() {
     let n = if cfg!(debug_assertions) { 20 } else { 100 };
     let mut samples: Vec<_> = (0..n).map(|_| once()).collect();
     samples.sort();
-    let p95 = samples[(n * 95) / 100];
+    let p95 = common::p95(&samples);
     let bar = if cfg!(debug_assertions) {
         std::time::Duration::from_millis(200)
     } else {

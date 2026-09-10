@@ -5,6 +5,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+mod common;
+
 const N: usize = 200;
 const P95_MAX: Duration = Duration::from_millis(10);
 
@@ -48,7 +50,7 @@ fn p95_under_10ms(event: &str, fixture: &[u8]) {
     }
 
     samples.sort();
-    let p95 = samples[(N * 95) / 100];
+    let p95 = common::p95(&samples);
     eprintln!(
         "{event}: n={N} p50 {:?} p95 {p95:?} max {:?}",
         samples[N / 2],
