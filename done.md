@@ -1,12 +1,19 @@
 # rtok — completed tasks
 
 
-## P35 — Graph index speed (open) — T35.1
+## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.2
 
 **T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`
 Do: `outline::config` compiled the language's tags query on every `tags` call. That was 19 ms of a 26.5 ms call on `graph/index.rs`, paid by each file of an index run and by each outline.
 Check: one `OnceLock` per language, kept for the process. A failed compile keeps its message, so every call gets the same `Err` and never a retry. `each_language_compiles_once` checks that two `.rs` files get the same configuration and a `.ts` file a different one. `golden_per_language` and the graph tests are unchanged: definitions 42/42, ref recall 0.305. The cold debug index of this repo fell from 3.42 s to 1.38 s and 1.30 s over two runs (127 files, 18 100 rows, 2026-09-11). The release `graph_bench` cold index of 3 000 files fell from 13.8 s to 341 ms (research.md P8c). A `TagsContext` per thread was not added: it builds a parser and a cursor and does not compile a query, so no measurement points at it.
 Complexity: 2/5
+Status: done 2026-09-11 · Model: Opus 5
+
+**T35.2 parse on worker threads, write from one** · T35.1 · `src/plugins/graph/index.rs`
+Do: after T35.1 one thread still read, hashed and parsed each file in turn while the other cores idled. The owner made it the first task in P35 (2026-09-11).
+Check: the walk and the stat gate stay on the calling thread. Files that pass the gate go to one worker per core (`std::thread::scope`), and their results reach the one writer (D18) in walk order through a reorder buffer, so the store gets a sequential run's writes in a sequential run's order. The channel is bounded, so a slow writer stalls the workers; a failed write drops the receiver and stops them. New tests: `parsed_files_are_written_in_walk_order` (32 files, the early ones largest) and `a_failed_write_stops_the_workers`. The seven existing index tests stay green, `second_run_inserts_zero` and `two_roots_do_not_evict_each_other` among them. The cold debug index of this repo fell from 1.30–1.38 s to 281–296 ms (127 files, two runs). The release `graph_bench` index of 3 000 files fell from 341 ms to 172–174 ms, 9 000 rows both times. Definitions 42/42, ref recall 0.305. Gate P35 is met.
+Deviation: the release bench is 2.0× faster, short of the Check's "≥ 3×". The bar was set against 13.8 s, when the per-file query compile was most of the time. After T35.1 what remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes, which is T35.3's work.
+Complexity: 3/5
 Status: done 2026-09-11 · Model: Opus 5
 
 ## P34 — Hardening pass (2026-09-10) — T34.1–T34.9

@@ -1,7 +1,8 @@
 //! Tree-sitter-tags symbol index (plan T8.1).
 
-use std::collections::HashSet;
-use std::path::Path;
+use std::collections::{BTreeMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use ignore::WalkBuilder;
@@ -18,6 +19,9 @@ pub struct Report {
     /// Files whose bytes were read (T8.4). A warm run over an untouched tree reads none.
     pub read: u32,
 }
+
+/// One symbol row: name, kind, line, is-definition, end line, enclosing definition.
+type Row = (String, String, i32, bool, i32, String);
 
 /// `(mtime_nanos, size)` — the freshness key. Nanos keep two edits in the same second apart;
 /// an unreadable timestamp reads as 0, which never matches a stored stat, so the file is read.
@@ -50,16 +54,15 @@ pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
 /// [`run`] reporting each source file it reaches to `pb`. Only `rtok graph index` passes a real
 /// bar; the MCP tool and the background watcher pass `ProgressBar::hidden()`, because neither
 /// owns the terminal it would be drawing on.
-// PERF(T35.2) where: the walk loop below — every cold index (`rtok graph index`, the MCP
-// tools, the watcher). What: parse on `std::thread::scope` workers; this thread stays the only
-// writer (D18). Why: one thread reads, hashes and parses each file in turn while the other
-// cores idle (3 000 files: 13.8 s release, research.md P8c). Async gains nothing: parsing is
-// CPU work and there is one writer, so no I/O wait to overlap.
+///
+/// The walk and the stat gate run here. The files that pass the gate are read, hashed and parsed
+/// on one worker per core (T35.2); every write stays on this thread (D18), in walk order.
 // PERF(T35.3) where: `cx.symbol_stat` below. What: load the root's `(path, sha, mtime, size)`
 // once into a map. Why: one SELECT per file on every run, warm runs included.
-// PERF(T35.5) where: the stat and sha gates below. What: an extractor fingerprint per root; a
-// mismatch drops the root's rows and indexes cold. Why: the gates see only file changes, so
-// after a tags-query, grammar or `scoped` change an untouched file keeps the old extractor's rows.
+// PERF(T35.5) where: the stat gate below and the sha gate in `parse`. What: an extractor
+// fingerprint per root; a mismatch drops the root's rows and indexes cold. Why: the gates see
+// only file changes, so after a tags-query, grammar or `scoped` change an untouched file keeps
+// the old extractor's rows.
 pub fn run_with(
     cx: &Ctx,
     root: &Path,
@@ -70,6 +73,7 @@ pub fn run_with(
     let rk = canon(&root);
     let mut report = Report::default();
     let mut keep = HashSet::new();
+    let mut jobs = Vec::new();
     for entry in WalkBuilder::new(&root).hidden(false).build() {
         let Ok(entry) = entry else {
             continue;
@@ -87,40 +91,46 @@ pub fn run_with(
             .to_string_lossy()
             .replace('\\', "/");
         keep.insert(rel.clone());
-        pb.inc(1);
         let stat = entry.metadata().as_ref().map(stat_key).unwrap_or((0, 0));
         let known = cx.symbol_stat(&rk, &rel)?;
         // Same mtime and size: git's rule for "unchanged". Nothing is opened.
         if known.as_ref().is_some_and(|(_, m, s)| (*m, *s) == stat) && stat != (0, 0) {
             report.skipped += 1;
+            pb.inc(1);
             continue;
         }
-        let Ok(src) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        report.read += 1;
-        let sha = store::hex_sha256(src.as_bytes());
-        if known.as_ref().is_some_and(|(h, _, _)| h == &sha) {
-            // Touched but not changed: move the freshness key so the next run skips on stat.
-            if !dry_run {
-                cx.touch_symbols(&rk, &rel, stat.0, stat.1)?;
-            }
-            report.skipped += 1;
-            continue;
-        }
-        let hits = match outline::tags(path, &src) {
-            Ok(h) => h,
-            Err(_) => continue,
-        };
-        let rows = scoped(&hits);
-        let n = if dry_run {
-            rows.len()
-        } else {
-            cx.replace_symbols(&rk, &rel, &sha, stat, &rows)?
-        };
-        report.indexed += 1;
-        report.inserted += n;
+        jobs.push(Job {
+            path: path.to_path_buf(),
+            rel,
+            stat,
+            known: known.map(|(sha, _, _)| sha),
+        });
     }
+    each_parsed(&jobs, |job, parsed| {
+        pb.inc(1);
+        match parsed {
+            Parsed::Unreadable => {}
+            Parsed::Unparsed => report.read += 1,
+            Parsed::Same => {
+                // Touched but not changed: move the freshness key so the next run skips on stat.
+                report.read += 1;
+                report.skipped += 1;
+                if !dry_run {
+                    cx.touch_symbols(&rk, &job.rel, job.stat.0, job.stat.1)?;
+                }
+            }
+            Parsed::Rows(sha, rows) => {
+                report.read += 1;
+                report.indexed += 1;
+                report.inserted += if dry_run {
+                    rows.len()
+                } else {
+                    cx.replace_symbols(&rk, &job.rel, &sha, job.stat, &rows)?
+                };
+            }
+        }
+        Ok(())
+    })?;
     if !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &keep);
     }
@@ -128,10 +138,80 @@ pub fn run_with(
     Ok(report)
 }
 
+/// A file the stat gate could not skip, with the sha the store holds for it.
+struct Job {
+    path: PathBuf,
+    rel: String,
+    stat: (i64, i64),
+    known: Option<String>,
+}
+
+/// What a worker made of a [`Job`]; the calling thread turns it into store writes.
+enum Parsed {
+    Unreadable,
+    /// Read, but the grammar returned an error.
+    Unparsed,
+    /// Same bytes as the stored sha.
+    Same,
+    Rows(String, Vec<Row>),
+}
+
+fn parse(job: &Job) -> Parsed {
+    let Ok(src) = std::fs::read_to_string(&job.path) else {
+        return Parsed::Unreadable;
+    };
+    let sha = store::hex_sha256(src.as_bytes());
+    if job.known.as_deref() == Some(sha.as_str()) {
+        return Parsed::Same;
+    }
+    match outline::tags(&job.path, &src) {
+        Ok(hits) => Parsed::Rows(sha, scoped(&hits)),
+        Err(_) => Parsed::Unparsed,
+    }
+}
+
+/// Parses `jobs` on up to one worker per core and hands each result to `write` on this thread
+/// in `jobs` order, so the store sees exactly the writes of a sequential run. The channel is
+/// bounded, so a slow writer stalls the workers instead of piling rows up in memory. An `Err`
+/// from `write` drops the receiver, and each worker stops at its next send.
+fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) -> Result<()> {
+    let workers = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(jobs.len());
+    let next = AtomicUsize::new(0);
+    let (tx, rx) = std::sync::mpsc::sync_channel(workers.max(1) * 2);
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            let (tx, next) = (tx.clone(), &next);
+            s.spawn(move || {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(job) = jobs.get(i) else { break };
+                    if tx.send((i, parse(job))).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tx);
+        // Results arrive in finishing order; an early one waits here for its turn.
+        let mut early = BTreeMap::new();
+        let mut due = 0;
+        for (i, parsed) in rx {
+            early.insert(i, parsed);
+            while let Some(parsed) = early.remove(&due) {
+                write(&jobs[due], parsed)?;
+                due += 1;
+            }
+        }
+        Ok(())
+    })
+}
+
 /// Rows for one file, each reference tagged with the innermost definition enclosing it
 /// (T8.5). Ties break to the smaller span, so a nested `fn` wins over the `impl` around it;
 /// a reference outside every definition gets `""`, which reads as file level.
-fn scoped(hits: &[outline::TagHit]) -> Vec<(String, String, i32, bool, i32, String)> {
+fn scoped(hits: &[outline::TagHit]) -> Vec<Row> {
     let defs: Vec<(usize, usize, &str)> = hits
         .iter()
         .filter(|h| h.is_def)
@@ -282,6 +362,64 @@ pub(crate) mod tests {
         let r = run_with(&Ctx::new(&cx), &dir, false, &pb).unwrap();
         assert_eq!(r.indexed, 7);
         assert_eq!(pb.position(), 7, "the bar and the report must agree");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T35.2: jobs whose parse time falls with their index, so later workers finish first.
+    fn uneven_jobs(dir: &Path) -> Vec<Job> {
+        (0..32)
+            .map(|i| {
+                let rel = format!("f{i:02}.rs");
+                let body: String = (0..(32 - i) * 40)
+                    .map(|j| format!("fn f{i}_{j}() {{ g(); }}\n"))
+                    .collect();
+                fs::write(dir.join(&rel), body).unwrap();
+                Job {
+                    path: dir.join(&rel),
+                    rel,
+                    stat: (0, 0),
+                    known: None,
+                }
+            })
+            .collect()
+    }
+
+    /// T35.2: workers finish in any order, but each result reaches the writer in walk
+    /// order, so the store gets a sequential run's writes in a sequential run's order.
+    #[test]
+    fn parsed_files_are_written_in_walk_order() {
+        let (_cx, dir) = cx("order");
+        let jobs = uneven_jobs(&dir);
+        let mut seen = Vec::new();
+        each_parsed(&jobs, |job, parsed| {
+            assert!(
+                matches!(parsed, Parsed::Rows(..)),
+                "{} did not parse",
+                job.rel
+            );
+            seen.push(job.rel.clone());
+            Ok(())
+        })
+        .unwrap();
+        let want: Vec<&str> = jobs.iter().map(|j| j.rel.as_str()).collect();
+        assert_eq!(seen, want);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T35.2: a failed write ends the run with its error; the workers see the closed
+    /// channel and stop rather than parse the rest or block on a full channel.
+    #[test]
+    fn a_failed_write_stops_the_workers() {
+        let (_cx, dir) = cx("stop");
+        let jobs = uneven_jobs(&dir);
+        let mut writes = 0;
+        let err = each_parsed(&jobs, |_, _| {
+            writes += 1;
+            anyhow::bail!("disk full")
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "disk full");
+        assert_eq!(writes, 1, "no write after the first error");
         let _ = fs::remove_dir_all(dir);
     }
 

@@ -500,14 +500,7 @@ Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that record
 
 ### P35 — Graph index speed (goal: a cold index bound by cores, a watcher settle bound by the files that changed) — added 2026-09-10 (T34.9 measurements); open.
 
-Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. A warm re-walk — what every watcher settle costs — is 50 ms. Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
-
-**T35.2 parse on worker threads, write from one** · T35.1 · `src/plugins/graph/index.rs`
-Do: stat-gate, read, hash and parse on `std::thread::scope` workers (or `ignore`'s parallel walker); rows go over a channel to the calling thread, the only writer (D18). Same `Report`, same rows.
-Check: rows and `Report` identical to a sequential run on this repo; `second_run_inserts_zero` and `two_roots_do_not_evict_each_other` green; the `graph_bench` cold 3 000-file release index ≥ 3× faster.
-Complexity: 3/5
-Status: open
-Model: -
+Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. A warm re-walk — what every watcher settle costs — is 50 ms. Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
 
 **T35.3 batched store I/O for the index** · T35.2 · `src/store/symbols.rs`, `src/plugins/graph/index.rs`
 Do: measure first. Then one query for the root's `(path, sha, mtime, size)` instead of a `symbol_stat` per file; multi-row INSERTs chunked under SQLite's variable limit; one DELETE for vanished paths. `graph-lbug` keeps its own path.
@@ -530,7 +523,7 @@ Complexity: 3/5
 Status: open
 Model: -
 
-Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 000-file release index ≤ 4 s; every graph test green, rows unchanged.
+Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 000-file release index ≤ 4 s; every graph test green, rows unchanged. Met 2026-09-11: 281–296 ms debug, 172–174 ms release, graph tests green.
 
 ### P34 — Hardening pass (bugs, tests, one helper per job) · done 2026-09-10 (T34.1–T34.9) — see `done.md` P34.
 
