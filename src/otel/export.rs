@@ -5,9 +5,9 @@
 //! stream is skipped, its mark stays, nothing is logged — else every flush would add the
 //! `logs` row that the next flush fails on.
 
-use std::fs::OpenOptions;
 use std::fmt;
 use std::fmt::Write as _;
+use std::fs::OpenOptions;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -102,7 +102,11 @@ fn flush_lock(cx: &Runtime) -> std::io::Result<FlushLock> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let file = OpenOptions::new().create(true).write(true).truncate(false).open(&path)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)?;
     flock(&file, FlockOperation::LockExclusive)?;
     Ok(FlushLock { file })
 }

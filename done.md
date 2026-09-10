@@ -1037,7 +1037,7 @@ Status: done 2026-09-08
 Model: Muse Spark 1.3 Contributor
 Check result: `tests/graph_contract.rs` 3 passed with defaults; new `auto_index_false_is_stale_until_explicit_index` (old line, `index_for` read 0, `index::run` shows new line) and `auto_index_false_empty_root_still_answers` green; `config_coverage` + `default_toml_is_the_defaults` green; `rtok config set plugins.graph.watch bogus` exits 1, `notify` accepted; `just check` green. Deviation (Check wording vs semantics): under `auto_index = false` the contract's `edited_and_deleted_files_are_reflected` fails with the old counts (2 passed, 1 failed) — that staleness is exactly what this task specifies, and the T8.16 watcher (Gate P8d (1)) is what makes edits visible again with `Report.read == 0`. Extra files beyond the task list: `config/default.toml` (the keys themselves or `default_toml_is_the_defaults` fails) and `src/config/validate.rs` (the `watch` enum the Do requires).
 
-## P19 — web dashboard · done 2026-09-09 (T19.1–T19.3, Gate P19 passed)
+## P19 — web dashboard · done 2026-09-09 (T19.1–T19.4, Gate P19 passed; T19.4 2026-09-10)
 
 Goal: one command serves a Slint WASM UI and a WebSocket API over the same Store the CLI uses. Plan: `plan.md` P19.
 
@@ -1062,6 +1062,13 @@ Status: done 2026-09-08
 Model: Cursor Grok 4.6
 Check result: `crates/rtok-webui` present (`ui/app.slint` + `web_sys::WebSocket` client). `wasm-pack` is not on PATH, so the WASM pack step is skipped as the Check allows; `cargo check` in that crate compiles the `.slint` (native lib). `just dashboard` still serves `/ws` and warns until `wasm-pack` is installed.
 Follow-up 2026-09-09: wasm-pack 0.15.0 present — `wasm-pack build --release --target web --out-dir pkg` green (48 s); `rtok dashboard --port 3334` serves `/` 200 with canvas + module, `pkg/rtok_webui.js` 200 (91 KB), wasm 200 (10.5 MB), `/ws` 10 plugins with `saves_tokens` stats. Gate P19 passed (no human eyeball on pixels; everything an agent can verify is green).
+
+**T19.4 WASM webui renders every `model::pages()` entry** · T19.3 · `crates/rtok-webui/**`, `src/web/`
+Do: the Slint WASM UI still shows the Plugins strip only. Sessions / Calls / Logs / Doctor (and Overview) ride the D23 snapshot and `model::pages()` and render on `rtok tui`, but are not rendered in `crates/rtok-webui` — a page that exists on one surface and not the other is a D23 defect. Bring the WASM UI up to the model page set.
+Check: every id from `model::pages()` appears in the WASM UI; a snapshot carrying Sessions/Calls/Logs/Doctor makes those pages visible; T15.10 surface-parity still green; `just check` green.
+Complexity: 3/5
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. WASM UI tab bar is `PAGE_IDS` = every `model::pages()` id (overview/plugins/calls/sessions/doctor/logs); Slint bodies for each; snapshot parser paints Sessions/Calls/Logs/Doctor from the `/ws` frame. `cargo test --manifest-path crates/rtok-webui/Cargo.toml` 3/3; `cargo test --test surface_parity` 3/3 (incl. `wasm_ui_renders_every_model_page`); T15.10 still green; `just check` green (isolated target dir — shared target raced with another worktree).
 
 ## P18 — release · tasks done 2026-09-04 (gate needs the first real release)
 

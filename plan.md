@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 172 ✅, 19 open (residual T19.4 + v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 173 ✅, 18 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -145,14 +145,7 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P18 — release — tasks done, v0.0.1 published 2026-09-08 (see `done.md` P18); Gate P18 removed 2026-09-09 (needs a real release run, not code).
 
-### P19 — web dashboard — Gate P19 passed 2026-09-09 (see `done.md` P19); residual open: T19.4.
-
-**T19.4 WASM webui renders every `model::pages()` entry** · T19.3 · `crates/rtok-webui/**`, `src/web/`
-Do: the Slint WASM UI still shows the Plugins strip only. Sessions / Calls / Logs / Doctor (and Overview) ride the D23 snapshot and `model::pages()` and render on `rtok tui`, but are not rendered in `crates/rtok-webui` — a page that exists on one surface and not the other is a D23 defect. Bring the WASM UI up to the model page set.
-Check: every id from `model::pages()` appears in the WASM UI; a snapshot carrying Sessions/Calls/Logs/Doctor makes those pages visible; T15.10 surface-parity still green; `just check` green.
-Complexity: 3/5
-Status: open
-Model: -
+### P19 — web dashboard — Gate P19 passed 2026-09-09 (see `done.md` P19); T19.4 done 2026-09-10.
 
 ### P20 — `demon` supervisor — T20.1, T20.2 done 2026-09-09 (D22); see `done.md` P20.
 
@@ -556,11 +549,11 @@ list, not only what is left.
 
 Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
 task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` would mean
-the entry is still above in §3 (residual T19.4 + P28–P33). This table is an index, never the
+the entry is still above in §3 (P28–P33). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**172 done · 19 open — 191 tasks.**
+**173 done · 18 open — 191 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -704,7 +697,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T19.1` | P19 web | `[dashboard]` config, CLI, flags | ✅ 2026-09-08 | — |
 | `T19.2` | P19 web | WebSocket snapshot | ✅ 2026-09-08 | — |
 | `T19.3` | P19 web | Slint WASM UI | ✅ 2026-09-08 | — |
-| `T19.4` | P19 web | WASM UI renders every `model::pages()` entry | open | 3/5 |
+| `T19.4` | P19 web | WASM UI renders every `model::pages()` entry | ✅ 2026-09-10 | 3/5 |
 | `T20.1` | P20 demon | `rtok demon start\|stop\|restart\|status\|list\|kill\|update` | ✅ 2026-09-09 | 3/5 |
 | `T20.2` | P20 demon | owo-colors owns the colour question | ✅ 2026-09-09 | — |
 | `T21.1` | P21 CLI presentation | the plugin offer actually asks | ✅ 2026-09-09 | — |

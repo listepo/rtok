@@ -1,5 +1,10 @@
 import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
 
+export struct PageTab {
+    id: string,
+    title: string,
+}
+
 export struct PluginRow {
     id: string,
     title: string,
@@ -14,6 +19,33 @@ export struct PluginRow {
     est-before: int,
     est-after: int,
     rows: int,
+}
+
+export struct CallRow {
+    when: string,
+    surface: string,
+    kind: string,
+    name: string,
+    session: string,
+    ms: string,
+    tokens: string,
+    subtitle: string,
+    detail: string,
+}
+
+export struct SessionRow {
+    id: string,
+    host: string,
+    provider: string,
+    model: string,
+    input: int,
+    output: int,
+    cache-create: int,
+    cache-read: int,
+    live: bool,
+    status: string,
+    activity: string,
+    summary: string,
 }
 
 /// Shared stats strip for plugins that record Measurement / usage rows.
@@ -65,22 +97,38 @@ export component MainWindow inherits Window {
     preferred-height: 640px;
     background: #121216;
 
+    /// Tab bar is `model::pages()` order (D23) — never a second list.
+    in-out property <[PageTab]> pages;
+    in-out property <int> page-index: 0;
+    property <string> page-id: pages[page-index].id;
+
     in-out property <[PluginRow]> plugins;
-    in-out property <int> current: 0;
+    in-out property <int> plugin-cursor: 0;
+    property <PluginRow> selected-plugin: plugins[plugin-cursor];
+
     in property <int> usage-input;
     in property <int> usage-output;
     in property <int> usage-cache-read;
     in property <int> usage-cache-create;
-    in property <string> status: "connecting";
+    in property <int> usage-ctt;
+    in property <string> overview-savings;
+    in property <string> overview-turns;
 
-    property <PluginRow> selected: plugins[current];
+    in-out property <[CallRow]> calls;
+    in-out property <int> call-cursor: 0;
+    property <CallRow> selected-call: calls[call-cursor];
+
+    in-out property <[SessionRow]> sessions;
+    in property <string> doctor-text;
+    in-out property <[string]> logs;
+    in property <string> status: "connecting";
 
     HorizontalBox {
         padding: 12px;
         spacing: 12px;
 
         Rectangle {
-            width: 220px;
+            width: 160px;
             border-radius: 8px;
             background: #1a1a20;
             VerticalBox {
@@ -88,19 +136,19 @@ export component MainWindow inherits Window {
                 Text { text: "rtok"; color: #fff; font-size: 20px; font-weight: 700; }
                 Text { text: status; color: #888; font-size: 11px; }
                 ListView {
-                    for p[i] in plugins: Rectangle {
+                    for p[i] in pages: Rectangle {
                         height: 36px;
                         border-radius: 6px;
-                        background: i == current ? #2a3a4a : transparent;
+                        background: i == page-index ? #2a3a4a : transparent;
                         TouchArea {
-                            clicked => { current = i; }
+                            clicked => { page-index = i; }
                         }
                         HorizontalBox {
                             padding-left: 8px;
                             alignment: start;
                             Text {
                                 text: p.title;
-                                color: p.enabled ? #eee : #888;
+                                color: #eee;
                                 vertical-alignment: center;
                             }
                         }
@@ -109,10 +157,11 @@ export component MainWindow inherits Window {
             }
         }
 
-        ScrollView {
+        if page-id == "overview": ScrollView {
             VerticalBox {
                 spacing: 12px;
-                Text { text: "usage"; color: #888; font-size: 11px; }
+                Text { text: "overview"; color: #fff; font-size: 22px; font-weight: 700; }
+                Text { text: "usage totals (usage rows, all apis)"; color: #888; font-size: 11px; }
                 TokenStatsWidget {
                     input-tokens: usage-input;
                     output-tokens: usage-output;
@@ -122,21 +171,175 @@ export component MainWindow inherits Window {
                     est-after: 0;
                     rows: 0;
                 }
-                Text { text: selected.title; color: #fff; font-size: 22px; font-weight: 700; }
-                Text {
-                    text: selected.enabled ? "enabled" : "disabled";
-                    color: selected.enabled ? #8fd19e : #c97;
+                Text { text: "ctt  \{usage-ctt} (input-side tok × turns after)"; color: #eee; }
+                Text { text: "saved by plugin (Measurement rows)"; color: #888; font-size: 11px; }
+                Text { text: overview-savings; color: #ccc; wrap: word-wrap; }
+                Text { text: overview-turns; color: #aaa; wrap: word-wrap; }
+            }
+        }
+
+        if page-id == "plugins": HorizontalBox {
+            spacing: 12px;
+            Rectangle {
+                width: 220px;
+                border-radius: 8px;
+                background: #1a1a20;
+                VerticalBox {
+                    padding: 8px;
+                    Text { text: "plugins"; color: #fff; font-size: 16px; font-weight: 600; }
+                    ListView {
+                        for p[i] in plugins: Rectangle {
+                            height: 36px;
+                            border-radius: 6px;
+                            background: i == plugin-cursor ? #2a3a4a : transparent;
+                            TouchArea {
+                                clicked => { plugin-cursor = i; }
+                            }
+                            HorizontalBox {
+                                padding-left: 8px;
+                                alignment: start;
+                                Text {
+                                    text: p.title;
+                                    color: p.enabled ? #eee : #888;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
                 }
-                Text { text: selected.summary; color: #ccc; wrap: word-wrap; }
-                Text { text: selected.fields; color: #aaa; wrap: word-wrap; }
-                if selected.saves-tokens: TokenStatsWidget {
-                    input-tokens: selected.input-tokens;
-                    output-tokens: selected.output-tokens;
-                    cache-read: selected.cache-read;
-                    cache-create: selected.cache-create;
-                    est-before: selected.est-before;
-                    est-after: selected.est-after;
-                    rows: selected.rows;
+            }
+            ScrollView {
+                VerticalBox {
+                    spacing: 12px;
+                    Text { text: selected-plugin.title; color: #fff; font-size: 22px; font-weight: 700; }
+                    Text {
+                        text: selected-plugin.enabled ? "enabled" : "disabled";
+                        color: selected-plugin.enabled ? #8fd19e : #c97;
+                    }
+                    Text { text: selected-plugin.summary; color: #ccc; wrap: word-wrap; }
+                    Text { text: selected-plugin.fields; color: #aaa; wrap: word-wrap; }
+                    if selected-plugin.saves-tokens: TokenStatsWidget {
+                        input-tokens: selected-plugin.input-tokens;
+                        output-tokens: selected-plugin.output-tokens;
+                        cache-read: selected-plugin.cache-read;
+                        cache-create: selected-plugin.cache-create;
+                        est-before: selected-plugin.est-before;
+                        est-after: selected-plugin.est-after;
+                        rows: selected-plugin.rows;
+                    }
+                }
+            }
+        }
+
+        if page-id == "calls": HorizontalBox {
+            spacing: 12px;
+            Rectangle {
+                width: 420px;
+                border-radius: 8px;
+                background: #1a1a20;
+                VerticalBox {
+                    padding: 8px;
+                    Text { text: "calls (newest first)"; color: #fff; font-size: 16px; font-weight: 600; }
+                    if calls.length == 0: Text {
+                        text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
+                        color: #888;
+                        wrap: word-wrap;
+                    }
+                    ListView {
+                        for c[i] in calls: Rectangle {
+                            height: 40px;
+                            border-radius: 6px;
+                            background: i == call-cursor ? #2a3a4a : transparent;
+                            TouchArea {
+                                clicked => { call-cursor = i; }
+                            }
+                            VerticalBox {
+                                padding-left: 8px;
+                                spacing: 0;
+                                Text {
+                                    text: "\{c.when}  \{c.surface}  \{c.kind}";
+                                    color: #eee;
+                                    font-size: 12px;
+                                }
+                                Text {
+                                    text: c.subtitle;
+                                    color: #888;
+                                    font-size: 11px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            ScrollView {
+                VerticalBox {
+                    spacing: 8px;
+                    Text { text: "detail"; color: #888; font-size: 11px; }
+                    if calls.length == 0: Text { text: ""; }
+                    if calls.length > 0: Text {
+                        text: selected-call.detail;
+                        color: #ccc;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        if page-id == "sessions": ScrollView {
+            VerticalBox {
+                spacing: 8px;
+                Text { text: "sessions"; color: #fff; font-size: 22px; font-weight: 700; }
+                if sessions.length == 0: Text {
+                    text: "no sessions yet";
+                    color: #888;
+                }
+                for s in sessions: Rectangle {
+                    border-radius: 6px;
+                    background: #1e1e24;
+                    VerticalBox {
+                        padding: 10px;
+                        spacing: 2px;
+                        Text {
+                            text: s.summary;
+                            color: #eee;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: s.activity;
+                            color: #888;
+                            font-size: 11px;
+                        }
+                        Text {
+                            text: s.status;
+                            color: #ccc;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        if page-id == "doctor": ScrollView {
+            VerticalBox {
+                spacing: 8px;
+                Text { text: "doctor"; color: #fff; font-size: 22px; font-weight: 700; }
+                Text { text: doctor-text; color: #ccc; wrap: word-wrap; }
+            }
+        }
+
+        if page-id == "logs": ScrollView {
+            VerticalBox {
+                spacing: 4px;
+                Text { text: "logs"; color: #fff; font-size: 22px; font-weight: 700; }
+                if logs.length == 0: Text {
+                    text: "no logs yet";
+                    color: #888;
+                }
+                for line in logs: Text {
+                    text: line;
+                    color: #ccc;
+                    wrap: word-wrap;
+                    font-size: 12px;
                 }
             }
         }

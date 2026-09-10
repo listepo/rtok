@@ -1422,8 +1422,16 @@ mod tests {
             .unwrap();
         let (slug, project, cwd) = store.session_row("s1").unwrap().unwrap();
         assert_eq!(slug.as_deref(), Some("claude"));
-        assert_eq!(project.as_deref(), Some("rtok"), "project survived a None upsert");
-        assert_eq!(cwd.as_deref(), Some("/tmp/rtok"), "cwd survived a None upsert");
+        assert_eq!(
+            project.as_deref(),
+            Some("rtok"),
+            "project survived a None upsert"
+        );
+        assert_eq!(
+            cwd.as_deref(),
+            Some("/tmp/rtok"),
+            "cwd survived a None upsert"
+        );
         let mut conn = store.lock().unwrap();
         #[derive(QueryableByName)]
         struct Src {

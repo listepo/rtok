@@ -418,7 +418,9 @@ fn concurrent_flushes_post_each_row_once() {
     let server = MockServer::start();
     let traces = server.mock(|when, then| {
         when.method(POST).path("/v1/traces");
-        then.status(200).body("{}").delay(Duration::from_millis(250));
+        then.status(200)
+            .body("{}")
+            .delay(Duration::from_millis(250));
     });
     let logs = server.mock(|when, then| {
         when.method(POST).path("/v1/logs");
@@ -446,11 +448,7 @@ fn concurrent_flushes_post_each_row_once() {
         3,
         "spans must not double: {ra:?} {rb:?}"
     );
-    assert_eq!(
-        ra.logs + rb.logs,
-        1,
-        "logs must not double: {ra:?} {rb:?}"
-    );
+    assert_eq!(ra.logs + rb.logs, 1, "logs must not double: {ra:?} {rb:?}");
     traces.assert_calls(1);
     logs.assert_calls(1);
 

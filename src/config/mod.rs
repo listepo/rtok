@@ -599,7 +599,10 @@ impl Config {
         }
         // T24.5 / D26: `[core] log_*` → `[log]`. Taken once so they are not re-read.
         if let Some(path) = self.core.log_file.take() {
-            eprintln!("rtok: core.log_file is now log.path (using {})", path.display());
+            eprintln!(
+                "rtok: core.log_file is now log.path (using {})",
+                path.display()
+            );
             self.log.path = path;
         }
         if let Some(level) = self.core.log_level.take() {

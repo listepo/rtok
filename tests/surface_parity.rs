@@ -61,6 +61,46 @@ fn web_serves_exactly_the_pages_the_model_offers() {
     );
 }
 
+/// T19.4: the Slint WASM UI's tab bar is `model::pages()`, not a second list. The webui
+/// crate is outside the workspace (wasm toolchain), so this reads its `PAGE_IDS` from
+/// source — the same pin `rtok-webui`'s own `page_ids_cover_the_d23_set` holds locally.
+#[test]
+fn wasm_ui_renders_every_model_page() {
+    let lib = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let slint = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    ));
+    let model: Vec<&str> = model::pages().iter().map(|(page, _)| *page).collect();
+    // PAGE_IDS array contents, in order — strip the const block between `[` and `];`.
+    let start = lib
+        .find("pub const PAGE_IDS")
+        .and_then(|i| lib[i..].find("= &[").map(|j| i + j + "= &[".len()))
+        .expect("PAGE_IDS = &[...] in rtok-webui");
+    let close = lib[start..].find(']').expect("PAGE_IDS ]");
+    let wasm: Vec<&str> = lib[start..start + close]
+        .split(',')
+        .filter_map(|s| {
+            let s = s.trim();
+            let s = s.strip_prefix('"')?.strip_suffix('"')?;
+            Some(s)
+        })
+        .collect();
+    assert_eq!(
+        model, wasm,
+        "WASM PAGE_IDS drifted from model::pages() (D23 / T19.4)"
+    );
+    for page in &model {
+        assert!(
+            slint.contains(&format!("page-id == \"{page}\"")),
+            "app.slint has no body for page `{page}`"
+        );
+    }
+}
+
 /// Reading commands and the page of the model they render: (command path, page). The
 /// page must be one `model::pages()` offers — a page both surfaces carry in the frame.
 /// The mapping is many-to-one: several commands may render the same page.

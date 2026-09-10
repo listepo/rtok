@@ -302,10 +302,7 @@ mod tests {
         assert!(report.contains("afterShellExecution"), "{report}");
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
-        assert!(
-            after.iter().any(|e| e["command"] == POST_CMD),
-            "{root}"
-        );
+        assert!(after.iter().any(|e| e["command"] == POST_CMD), "{root}");
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
