@@ -58,12 +58,18 @@ fn edits_path(stdin: &str, path: &str) -> bool {
 }
 
 /// Exact match, or relative-vs-absolute (`src/main.rs` vs `/repo/src/main.rs`).
+/// Component-aware: `/repo/main.rs` must not match `ain.rs`.
 fn same_path(a: &str, b: &str) -> bool {
     let (a, b) = (a.trim(), b.trim());
     if a.is_empty() || b.is_empty() {
         return false;
     }
-    a == b || a.ends_with(&format!("/{b}")) || b.ends_with(&format!("/{a}"))
+    if a == b {
+        return true;
+    }
+    let a_path = std::path::Path::new(a);
+    let b_path = std::path::Path::new(b);
+    a_path.ends_with(b_path) || b_path.ends_with(a_path)
 }
 
 #[cfg(test)]
@@ -144,5 +150,12 @@ mod tests {
         fs::write(&p, "x".repeat(2048)).unwrap();
         let input = json!({"file_path": p.to_str().unwrap()});
         assert!(pre_tool(&ev(&input), &Ctx::new(&cx)).is_none());
+    }
+
+    #[test]
+    fn same_path_rejects_suffix_false_positive() {
+        assert!(!same_path("/repo/main.rs", "ain.rs"));
+        assert!(same_path("/repo/src/main.rs", "src/main.rs"));
+        assert!(same_path("src/main.rs", "/repo/src/main.rs"));
     }
 }

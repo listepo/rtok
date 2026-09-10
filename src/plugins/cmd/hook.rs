@@ -23,6 +23,12 @@ fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
     {
         return true;
     }
+    // AGENTS: trailing `&` (background) — also `sleep 10&` with no space before `&`.
+    // Do not treat `&&` as background.
+    let t = cmd.trim_end();
+    if t.ends_with('&') && !t.ends_with("&&") {
+        return true;
+    }
     false
 }
 
@@ -78,5 +84,12 @@ mod tests {
     fn heredoc_and_sudo_untouched() {
         assert!(decide("cat <<EOF").is_none());
         assert!(decide("sudo ls").is_none());
+    }
+
+    #[test]
+    fn trailing_ampersand_untouched() {
+        assert!(decide("sleep 10 &").is_none());
+        assert!(decide("sleep 10&").is_none());
+        assert!(decide("true && false").is_some(), "&& is not background");
     }
 }

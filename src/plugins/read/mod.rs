@@ -108,7 +108,13 @@ pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<Path
     } else {
         normalize(cwd, path)
     };
-    if under(&abs, cwd) || extra.iter().any(|r| under(&abs, r)) {
+    // Lexical allow, then (when the path exists) reject symlink escapes past the root.
+    let check = abs.canonicalize().unwrap_or_else(|_| abs.clone());
+    let roots: Vec<PathBuf> = std::iter::once(cwd.to_path_buf())
+        .chain(extra.iter().cloned())
+        .map(|r| r.canonicalize().unwrap_or(r))
+        .collect();
+    if roots.iter().any(|r| under(&check, r)) {
         return Ok(abs);
     }
     bail!("path outside cwd: {}", path.display())
@@ -199,11 +205,38 @@ mod tests {
     }
 
     #[test]
-    fn dotdot_etc_passwd_is_err() {
-        let (cx, dir) = cx("guard");
-        let err = read(&Ctx::new(&cx), "../etc/passwd", "full", None)
+    fn symlink_escape_is_err() {
+        let (_cx, dir) = cx("symlink");
+        let cwd = dir.join("cwd");
+        fs::create_dir_all(&cwd).unwrap();
+        // Target lives beside the allow_paths root, not under it.
+        let outside = dir
+            .parent()
+            .unwrap()
+            .join(format!("rtok-read-symlink-out-{}", std::process::id()));
+        fs::write(&outside, "secret\n").unwrap();
+        let link = cwd.join("escape");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        #[cfg(not(unix))]
+        {
+            let _ = fs::remove_file(&outside);
+            let _ = fs::remove_dir_all(dir);
+            return;
+        }
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&cwd).unwrap();
+        // Drop allow_paths so only env cwd counts as the root.
+        // (cx was opened with allow_paths=[dir]; reopen without extras.)
+        let mut c = Config::default();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        let cx = crate::plugin::Runtime::open(c, "symlink2").unwrap();
+        let err = read(&Ctx::new(&cx), "escape", "full", None)
             .unwrap_err()
             .to_string();
+        std::env::set_current_dir(prev).unwrap();
+        let _ = fs::remove_file(&outside);
         assert!(err.contains("outside cwd"), "{err}");
         let _ = fs::remove_dir_all(dir);
     }
