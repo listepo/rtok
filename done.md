@@ -699,9 +699,24 @@ outside this task, so the charts are the same series drawn natively (T22.0's own
 two separate files, never a merged page; its fontdb-on-bare-Linux hazard goes away with it). New
 dependency: `printpdf 0.12.8` — the paged-PDF renderer the T22.0 survey chose.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.4, T15.6, T15.7, T15.8, T15.9, T15.10, T15.11, T15.12 done (T15.3–T15.4, T15.6–T15.9 2026-09-10, rest 2026-09-09)
+## P15 — `rtok tui` (D17, D23) · T15.0–T15.12 done (T15.3–T15.9 2026-09-10, rest 2026-09-09)
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.5 Calls tab (P13 rows + detail)** · T15.0 · `src/store/mod.rs`, `src/web/model.rs`, `src/tui/{app,view}.rs`
+Do (roadmap §TUI): Calls tab — list P13 ledger rows (newest first) with Enter/z detail pane
+for the selected row; the page rides the snapshot (D23/D27).
+Complexity: 3/5
+Status: done 2026-09-10 · Model: GLM-5.3 (subagent; High) — cherry-picked from agent/T15.5 onto main after T15.4/T15.6/T15.7/T15.9
+Check result: green. `Store::recent_calls(limit)` joins host/provider/model slugs and newest
+usage; `Model::calls` + Snapshot.`calls` + `pages()` `("calls","calls")`; bound `CALLS_ROWS=120`.
+App `CallsState` + page-scoped Up/Down/Enter/z; view list + detail pane. Tests:
+`recent_calls_is_newest_first_bounded_and_linked`, `calls_page_is_the_store_read_and_rides_the_snapshot`,
+view list/detail/empty, `calls_page_claims_its_keys_and_clamps_the_selection`. Conflicts with
+T15.4/T15.6/T15.7 resolved keeping all pages; `fresh_store` shared with Overview seeding.
+All 24 `tui::` tests + surface_parity green after cherry-pick.
+Deviations: 4 files, +648/−12 on the originating commit (over ≤200 LOC/≤3 files — store+model+app+view
+by construction; T15.3/T25.1 precedent).
 
 **T15.4 Plugins tab (toggle enabled)** · T15.0 · `src/tui/{app,view,mod}.rs`, `src/config/mod.rs`
 Do (roadmap §TUI): Plugins tab — row cursor and toggle that writes `plugins.<id>.enabled`

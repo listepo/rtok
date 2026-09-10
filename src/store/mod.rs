@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Integer, Nullable, Text};
+use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -934,6 +934,33 @@ impl Store {
         .map_err(Into::into)
     }
 
+    /// The Calls page's one read (T15.5, D27): the newest `limit` `calls` rows, newest
+    /// first, each with the slugs its ids point at and — when the call recorded one —
+    /// its newest `usage` row linked (the same linkage [`Store::call_detail`] serves the
+    /// otel span). One statement, so no renderer can re-derive a field differently.
+    pub fn recent_calls(&self, limit: i64) -> Result<Vec<CallRow>> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "SELECT c.id AS id, c.ts AS ts, c.session_id AS session, c.surface AS surface,
+                    c.kind AS kind, c.plugin AS plugin, c.name AS name,
+                    c.parent_id AS parent_id, c.ms AS ms, c.ok AS ok, c.error AS error,
+                    h.slug AS host, p.slug AS provider, m.slug AS model,
+                    u.api AS api, u.input AS input, u.cache_create AS cache_create,
+                    u.cache_read AS cache_read, u.output AS output
+             FROM calls c
+             LEFT JOIN hosts h ON h.id = c.host_id
+             LEFT JOIN providers p ON p.id = c.provider_id
+             LEFT JOIN models m ON m.id = c.model_id
+             LEFT JOIN usage u ON u.call_id = c.id
+                  AND u.id = (SELECT MAX(id) FROM usage WHERE call_id = c.id)
+             ORDER BY c.id DESC
+             LIMIT ?",
+        )
+        .bind::<BigInt, _>(limit)
+        .load::<CallRow>(&mut *conn)
+        .map_err(Into::into)
+    }
+
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
     pub fn model_slug_of_call(&self, call_id: i32) -> Result<Option<String>> {
         let mut conn = self.lock()?;
@@ -1123,6 +1150,53 @@ pub struct SessionTotals {
     pub last_activity: i64,
     #[diesel(sql_type = Nullable<BigInt>)]
     pub ended_at: Option<i64>,
+}
+
+/// One `calls` row as the Calls page serves it ([`Store::recent_calls`], T15.5): the
+/// ledger's own columns plus the slugs its ids point at and — when the call is one
+/// that recorded usage — the newest `usage` row linked to it. One query's output, so
+/// no renderer can re-derive a field differently (D27); `api` `None` means no usage
+/// row is linked (a hook, MCP call or plugin run carries none).
+#[derive(Debug, Clone, PartialEq, Serialize, QueryableByName)]
+pub struct CallRow {
+    #[diesel(sql_type = Integer)]
+    pub id: i32,
+    #[diesel(sql_type = BigInt)]
+    pub ts: i64,
+    #[diesel(sql_type = Text)]
+    pub session: String,
+    #[diesel(sql_type = Text)]
+    pub surface: String,
+    #[diesel(sql_type = Text)]
+    pub kind: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub plugin: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub name: Option<String>,
+    #[diesel(sql_type = Nullable<Integer>)]
+    pub parent_id: Option<i32>,
+    #[diesel(sql_type = Nullable<Double>)]
+    pub ms: Option<f64>,
+    #[diesel(sql_type = Integer)]
+    pub ok: i32,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub error: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub host: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub provider: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub model: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub api: Option<String>,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub input: Option<i64>,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub cache_create: Option<i64>,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub cache_read: Option<i64>,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub output: Option<i64>,
 }
 
 #[cfg(test)]
@@ -1539,5 +1613,81 @@ mod tests {
         let only_c = store.session_totals(3000).unwrap();
         assert_eq!(only_c.len(), 1);
         assert_eq!(only_c[0].id, "c");
+    }
+
+    /// T15.5's Check: `recent_calls` is the Calls page's one read — newest first,
+    /// bounded, the three slugs joined, and the newest `usage` row linked when the call
+    /// has one (the same row `call_detail` serves the otel span).
+    #[test]
+    fn recent_calls_is_newest_first_bounded_and_linked() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap().expect("0002 seeds claude");
+        store
+            .upsert_session("s", Some(claude), None, None, Some("proxy"))
+            .unwrap();
+        let (pid, mid) = store.upsert_model("anthropic", "claude-x").unwrap();
+        let hook = store
+            .insert_call("s", "hook", "hook", None, None, None, None, Some("Stop"))
+            .unwrap();
+        let run = store
+            .insert_call(
+                "s",
+                "hook",
+                "plugin_run",
+                None,
+                None,
+                None,
+                Some("cmd"),
+                None,
+            )
+            .unwrap();
+        store.set_call_parent(run, hook).unwrap();
+        let api = store
+            .insert_call(
+                "s",
+                "proxy",
+                "api_request",
+                Some(claude),
+                Some(pid),
+                Some(mid),
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        store.set_call_ms(api, 12.5).unwrap();
+        store
+            .insert_usage("s", Some("claude-x"), "anthropic", 10, 1, 2, 3, api)
+            .unwrap();
+        // A second usage row on the same call: the linkage is the newest, not the sum.
+        store
+            .insert_usage("s", Some("claude-x"), "anthropic", 20, 0, 5, 4, api)
+            .unwrap();
+
+        let rows = store.recent_calls(10).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.id).collect::<Vec<_>>(),
+            vec![api, run, hook],
+            "newest first"
+        );
+        let top = &rows[0];
+        assert_eq!(top.api.as_deref(), Some("anthropic"));
+        assert_eq!(
+            (top.input, top.cache_create, top.cache_read, top.output),
+            (Some(20), Some(0), Some(5), Some(4))
+        );
+        assert_eq!(top.ms, Some(12.5));
+        assert_eq!(top.host.as_deref(), Some("claude"));
+        assert_eq!(top.provider.as_deref(), Some("anthropic"));
+        assert_eq!(top.model.as_deref(), Some("claude-x"));
+        assert_eq!(top.parent_id, None);
+        let nested = &rows[1];
+        assert_eq!(nested.parent_id, Some(hook), "the plugin run nests");
+        assert!(nested.api.is_none(), "a plugin run carries no usage");
+        assert!(rows[2].api.is_none(), "a hook call carries no usage");
+
+        // The bound: only the newest survive it.
+        let bounded = store.recent_calls(1).unwrap();
+        assert_eq!(bounded.len(), 1);
+        assert_eq!(bounded[0].id, api);
     }
 }

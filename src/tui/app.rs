@@ -24,6 +24,17 @@ pub struct App {
     plugin_cursor: usize,
     /// The Plugins tab's status line: the last toggle's outcome (T15.4).
     plugin_status: String,
+    /// The Calls page's own state (T15.5): which row is selected and whether its detail
+    /// pane is open.
+    calls: CallsState,
+}
+
+/// Selection and detail state of the Calls page (T15.5). The row list lives in the
+/// snapshot (D23); this only remembers where the cursor sits on it.
+#[derive(Default)]
+struct CallsState {
+    selected: usize,
+    detail: bool,
 }
 
 impl App {
@@ -43,6 +54,7 @@ impl App {
             cfg: cfg.clone(),
             plugin_cursor: 0,
             plugin_status: String::new(),
+            calls: CallsState::default(),
         }
     }
 
@@ -98,12 +110,50 @@ impl App {
         self.refresh(model::snapshot(&self.cfg));
     }
 
+    /// The Calls page's selected row (T15.5), clamped to the rows it holds — a refresh
+    /// that shrinks the page can move the selection, never past its end.
+    pub fn calls_selected(&self) -> usize {
+        self.calls
+            .selected
+            .min(self.snapshot.calls.len().saturating_sub(1))
+    }
+
+    /// Whether the Calls page's detail pane is open (T15.5).
+    pub fn calls_detail(&self) -> bool {
+        self.calls.detail
+    }
+
+    /// The Calls page's keys (T15.5): `Up`/`Down` walk the rows, `Enter`/`z` expand the
+    /// selected one. Returns `true` when the key was consumed; the shell's keys
+    /// (`q`, arrows, digits) are never reached here.
+    fn calls_key(&mut self, code: KeyCode) -> bool {
+        let last = self.snapshot.calls.len().saturating_sub(1);
+        match code {
+            KeyCode::Up => {
+                self.calls.selected = self.calls.selected.saturating_sub(1);
+                true
+            }
+            KeyCode::Down => {
+                self.calls.selected = (self.calls.selected + 1).min(last);
+                true
+            }
+            KeyCode::Enter | KeyCode::Char('z') if !self.snapshot.calls.is_empty() => {
+                self.calls.detail = !self.calls.detail;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// One key press; returns `true` when the loop should stop. `Left`/`Right` wrap,
-    /// `1..=9` jump, the Plugins page claims the row keys (T15.4), and everything else
-    /// is the page's to claim (T15.5+).
+    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z` (T15.5); the Plugins
+    /// page claims the row keys (T15.4); everything else is the next page's to claim.
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
         if mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
             return true;
+        }
+        if self.page() == "calls" && self.calls_key(code) {
+            return false;
         }
         match code {
             KeyCode::Char('q') | KeyCode::Esc => true,
@@ -391,5 +441,79 @@ pub(super) mod tests {
         );
         assert!(row(&app));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T15.5: the Calls page claims `Up`/`Down`/`Enter`/`z` — the selection clamps to
+    /// the rows it holds and the detail toggles — while the shell's keys keep working
+    /// on the same page.
+    #[test]
+    fn calls_page_claims_its_keys_and_clamps_the_selection() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        let calls = model::pages()
+            .iter()
+            .position(|(p, _)| *p == "calls")
+            .unwrap();
+        app.select(calls);
+        assert!(app.snapshot().calls.is_empty(), "nothing seeded");
+        assert_eq!(app.calls_selected(), 0);
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        app.key(KeyCode::Up, KeyModifiers::NONE);
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.calls_selected(), 0, "clamped on an empty page");
+        assert!(!app.calls_detail(), "Enter does nothing with no rows");
+
+        // Two rows: the selection walks and clamps at both ends, Enter/z toggle.
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.calls = vec![row(7), row(8)];
+            snap
+        });
+        app.key(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.calls_selected(), 0, "clamped at the newest row");
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.calls_selected(), 1);
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.calls_selected(), 1, "clamped at the oldest row");
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.calls_detail());
+        app.key(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert!(!app.calls_detail(), "z closes what Enter opened");
+
+        // A refresh that shrinks the page moves the selection back inside it.
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.calls = vec![row(9)];
+            snap
+        });
+        assert_eq!(app.calls_selected(), 0);
+
+        // The shell's keys still work on the Calls page.
+        assert!(app.key(KeyCode::Char('q'), KeyModifiers::NONE), "q quits");
+    }
+
+    /// A bare ledger row for the selection test — the view's tests seed real ones.
+    fn row(id: i32) -> crate::store::CallRow {
+        crate::store::CallRow {
+            id,
+            ts: 0,
+            session: "s".into(),
+            surface: "hook".into(),
+            kind: "hook".into(),
+            plugin: None,
+            name: None,
+            parent_id: None,
+            ms: None,
+            ok: 1,
+            error: None,
+            host: None,
+            provider: None,
+            model: None,
+            api: None,
+            input: None,
+            cache_create: None,
+            cache_read: None,
+            output: None,
+        }
     }
 }

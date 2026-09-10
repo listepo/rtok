@@ -15,7 +15,7 @@ use crate::demon::{self, Service};
 use crate::doctor;
 use crate::measure::{cache, stats};
 use crate::plugins::Registry;
-use crate::store::{SessionTotals, Store};
+use crate::store::{CallRow, SessionTotals, Store};
 
 /// Everything a surface needs for one refresh.
 #[derive(Debug, Serialize)]
@@ -26,6 +26,8 @@ pub struct Snapshot {
     pub usage: Overview,
     /// Plugins page: one entry per catalogue plugin.
     pub plugins: Vec<PluginPage>,
+    /// Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first.
+    pub calls: Vec<CallRow>,
     /// Sessions page (T25.1): one row per session, newest first.
     pub sessions: Vec<SessionTotals>,
     /// Doctor page (T15.6): what `rtok doctor` reports — hooks, MCP servers, proxy
@@ -74,6 +76,11 @@ pub struct Overview {
 /// small enough that the `/ws` frame stays cheap at one snapshot per 2 s tick.
 pub const OVERVIEW_TURNS: usize = 120;
 
+/// Rows the Calls page rides (T15.5): the same budget as [`OVERVIEW_TURNS`] — more
+/// rows than a terminal shows at once, and the `/ws` frame stays cheap at one
+/// snapshot per 2 s tick.
+pub const CALLS_ROWS: usize = 120;
+
 /// A plugin's page: its manifest, the static copy it contributes through
 /// `Plugin::dashboard_page`, and the stats widget when it saves tokens.
 #[derive(Debug, Serialize)]
@@ -96,6 +103,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
     &[
         ("overview", "usage"),
         ("plugins", "plugins"),
+        ("calls", "calls"),
         ("sessions", "sessions"),
         ("doctor", "doctor"),
         ("logs", "logs"),
@@ -547,6 +555,7 @@ impl<'a> Model<'a> {
             kind: "snapshot",
             usage: self.overview(),
             plugins: self.plugins(),
+            calls: self.calls(),
             sessions: self.sessions(0),
             // The one doctor query (D27): the snapshot carries what `rtok doctor`
             // renders, so neither surface grows a probe of its own. A failed tick is
@@ -564,6 +573,15 @@ impl<'a> Model<'a> {
     pub fn sessions(&self, since: i64) -> Vec<SessionTotals> {
         self.store
             .and_then(|s| s.session_totals(since).ok())
+            .unwrap_or_default()
+    }
+
+    /// Calls page (T15.5): the last [`CALLS_ROWS`] ledger rows, newest first, through
+    /// the store's one `recent_calls` read — the model keeps no second reader (D27).
+    /// No store, or one that will not read: an empty page, like Overview's zeros.
+    pub fn calls(&self) -> Vec<CallRow> {
+        self.store
+            .and_then(|s| s.recent_calls(CALLS_ROWS as i64).ok())
             .unwrap_or_default()
     }
 
@@ -904,6 +922,76 @@ mod tests {
             v["doctor"]["hooks_total"].is_number(),
             "doctor rides the frame"
         );
+    }
+
+    /// T15.5's Check: the Calls page is the store's one `recent_calls` read verbatim
+    /// (D27), newest first, and rides the snapshot's `calls` key — so the tab and the
+    /// `/ws` frame carry the same rows. One proxy call with its usage row and host,
+    /// provider and model slugs; one hook call with none of those.
+    #[test]
+    fn calls_page_is_the_store_read_and_rides_the_snapshot() {
+        let cx = Runtime::in_memory("dash").unwrap();
+        let claude = cx
+            .store
+            .host_id("claude")
+            .unwrap()
+            .expect("0002 seeds claude");
+        cx.store
+            .upsert_session("s", Some(claude), None, None, Some("proxy"))
+            .unwrap();
+        let (pid, mid) = cx.store.upsert_model("anthropic", "claude-x").unwrap();
+        let hook = cx
+            .store
+            .insert_call("s", "hook", "hook", None, None, None, None, Some("Stop"))
+            .unwrap();
+        let api = cx
+            .store
+            .insert_call(
+                "s",
+                "proxy",
+                "api_request",
+                Some(claude),
+                Some(pid),
+                Some(mid),
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        cx.store.set_call_ms(api, 12.5).unwrap();
+        cx.store
+            .insert_usage("s", Some("claude-x"), "anthropic", 10, 1, 2, 3, api)
+            .unwrap();
+
+        let model = Model::new(&cx.config, Some(&cx.store));
+        assert_eq!(
+            model.calls(),
+            cx.store.recent_calls(CALLS_ROWS as i64).unwrap(),
+            "the page is the store read, not a second query"
+        );
+        let rows = model.calls();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, api, "newest first");
+        assert_eq!(rows[0].api.as_deref(), Some("anthropic"));
+        assert_eq!(
+            (
+                rows[0].input,
+                rows[0].cache_create,
+                rows[0].cache_read,
+                rows[0].output
+            ),
+            (Some(10), Some(1), Some(2), Some(3))
+        );
+        assert_eq!(rows[0].ms, Some(12.5));
+        assert_eq!(rows[0].host.as_deref(), Some("claude"));
+        assert_eq!(rows[1].id, hook);
+        assert_eq!(rows[1].api, None, "a hook call carries no usage linkage");
+        // The wire frame gains the page; `tests/surface_parity.rs` pins the key set.
+        let v = serde_json::to_value(model.snapshot()).unwrap();
+        let wire = v["calls"].as_array().expect("calls rides the frame");
+        assert_eq!(wire.len(), 2);
+        assert_eq!(wire[0]["api"], "anthropic");
+        assert_eq!(wire[0]["ms"], 12.5);
+        assert_eq!(wire[1]["api"], serde_json::json!(null));
     }
 
     /// The report's percentile, pinned where it is defined: nearest rank, so

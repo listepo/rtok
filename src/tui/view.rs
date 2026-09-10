@@ -2,9 +2,10 @@
 //! are the model's page list, never a second one (D23). The Overview tab renders CTT,
 //! per-plugin savings bars and a per-turn sparkline off the snapshot (T15.3); the
 //! Plugins tab lists the catalogue with a row cursor and a toggle that writes
-//! `plugins.<id>.enabled` through `config set`'s writer (T15.4); Doctor (T15.6) and
-//! Logs (T15.7) render their model pages; a page the model adds ahead of its tab falls
-//! through to a placeholder that says so.
+//! `plugins.<id>.enabled` through `config set`'s writer (T15.4); Calls (T15.5) lists
+//! ledger rows with a detail pane; Doctor (T15.6) and Logs (T15.7) render their model
+//! pages; a page the model adds ahead of its tab falls through to a placeholder that
+//! says so.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -13,6 +14,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Row, Sparkline, Table, Tabs};
 
 use super::app::App;
+use crate::store::CallRow;
 use crate::web::model::PluginPage;
 
 /// One screen: header · tabs · body · footer.
@@ -56,6 +58,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
     match app.page() {
         "overview" => render_overview(frame, app, area),
         "plugins" => render_plugins(frame, app, area),
+        "calls" => render_calls(frame, app, area),
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
         page => frame.render_widget(placeholder(page), area),
@@ -214,6 +217,130 @@ fn doctor(app: &App) -> Paragraph<'static> {
         || "doctor did not answer this tick — `rtok doctor` has the details".to_string(),
         |report| report.to_text(),
     ))
+}
+
+/// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
+/// kind, session, latency and the linked usage tokens — with `Enter`/`z` expanding the
+/// selected row's full fields below the list. Every value is the snapshot's row (D23),
+/// never a second query.
+fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
+    let rows = &app.snapshot().calls;
+    if rows.is_empty() {
+        frame.render_widget(
+            Paragraph::new("no calls yet (the ledger fills as hooks, MCP and the proxy run)"),
+            area,
+        );
+        return;
+    }
+    let (list, detail) = if app.calls_detail() {
+        let [l, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(area);
+        (l, Some(d))
+    } else {
+        (area, None)
+    };
+    let selected = app.calls_selected();
+    frame.render_widget(calls_table(rows, selected), list);
+    if let Some(area) = detail {
+        frame.render_widget(call_detail(&rows[selected]), area);
+    }
+}
+
+/// The list: one row per call, the selected one bold. Tokens are the linked usage
+/// row's four counters summed; a dash says the ledger carries none there.
+fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
+    let table_rows = rows.iter().enumerate().map(|(i, c)| {
+        let row = Row::new([
+            time_of(c.ts),
+            c.surface.clone(),
+            c.kind.clone(),
+            c.name.clone().unwrap_or_else(|| "-".into()),
+            c.session.clone(),
+            c.ms.map_or_else(|| "-".into(), |ms| format!("{ms:.1}")),
+            c.input
+                .map_or_else(|| "-".into(), |_| format!("{} tok", linked_tokens(c))),
+        ]);
+        if i == selected {
+            row.style(Style::new().bold())
+        } else {
+            row
+        }
+    });
+    Table::new(
+        table_rows,
+        [
+            Constraint::Length(8),
+            Constraint::Length(5),
+            Constraint::Length(11),
+            Constraint::Min(10),
+            Constraint::Min(12),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ],
+    )
+    .header(Row::new([
+        "when", "surf", "kind", "name", "session", "ms", "tok",
+    ]))
+    .block(Block::default().title(format!("calls (last {}, newest first)", rows.len())))
+}
+
+/// The selected row's full fields: every column the ledger keeps, the slugs its ids
+/// point at, and the usage/api linkage when the call recorded one.
+fn call_detail(c: &CallRow) -> Paragraph<'static> {
+    let dash = |v: Option<&str>| v.unwrap_or("-").to_string();
+    let mut lines = vec![
+        Line::from(format!(
+            "ts {} UTC · ok {} · error {}",
+            crate::log::stamp(c.ts.max(0) as u64),
+            c.ok,
+            dash(c.error.as_deref())
+        )),
+        Line::from(format!(
+            "session {} · surface {} · kind {}",
+            c.session, c.surface, c.kind
+        )),
+        Line::from(format!(
+            "name {} · plugin {} · parent {}",
+            dash(c.name.as_deref()),
+            dash(c.plugin.as_deref()),
+            c.parent_id.map_or_else(|| "-".into(), |p| p.to_string())
+        )),
+        Line::from(format!(
+            "host {} · provider {} · model {}",
+            dash(c.host.as_deref()),
+            dash(c.provider.as_deref()),
+            dash(c.model.as_deref())
+        )),
+        Line::from(format!(
+            "ms {}",
+            c.ms.map_or_else(|| "-".into(), |ms| ms.to_string())
+        )),
+    ];
+    lines.push(Line::from(match (c.api.as_deref(), c.input) {
+        (Some(api), Some(input)) => format!(
+            "usage ({api}) input {input} cache create {} cache read {} output {} = {} tok",
+            c.cache_create.unwrap_or(0),
+            c.cache_read.unwrap_or(0),
+            c.output.unwrap_or(0),
+            linked_tokens(c)
+        ),
+        _ => "usage no row linked (only an api request records one)".to_string(),
+    }));
+    Paragraph::new(lines).block(Block::default().title(format!("call {}", c.id)))
+}
+
+/// The linked usage row's four counters summed.
+fn linked_tokens(c: &CallRow) -> i64 {
+    c.input.unwrap_or(0)
+        + c.cache_create.unwrap_or(0)
+        + c.cache_read.unwrap_or(0)
+        + c.output.unwrap_or(0)
+}
+
+/// `HH:MM:SS` — `log::stamp`'s time half; the full date is in the detail view.
+fn time_of(ts: i64) -> String {
+    crate::log::stamp(ts.max(0) as u64)
+        .rsplit_once(' ')
+        .map_or_else(|| "-".into(), |(_, t)| t.to_string())
 }
 
 fn placeholder(page: &str) -> Paragraph<'static> {
@@ -407,16 +534,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A config whose store holds two sessions, three turns and two measured plugins,
-    /// so the Overview tab has numbers worth rendering. Its own temp dir, not the
-    /// shared `config()` one: seeding writes while other tests hold the shared store
-    /// open.
-    fn seeded() -> Config {
-        let dir = std::env::temp_dir().join(format!("rtok-tui-overview-{}", std::process::id()));
+    /// A config plus its store, in the caller's own numbered temp dir — seeding writes
+    /// while other tests hold the shared `config()` store open, and two seeding tests
+    /// running concurrently must not delete each other's store mid-migration (T15.3's
+    /// `seeded` and T15.5's `calls_seeded` share this, so the shape lives once).
+    fn fresh_store(name: &str) -> (Config, crate::store::Store) {
+        static DIR: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-tui-{name}-{}-{}",
+            std::process::id(),
+            DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
-        let cfg = Config::load_from(&dir).expect("config");
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let store = crate::store::Store::open(&cfg.core.db_path).expect("seed store");
+        (cfg, store)
+    }
+
+    /// A config whose store holds two sessions, three turns and two measured plugins,
+    /// so the Overview tab has numbers worth rendering.
+    fn seeded() -> Config {
+        let (cfg, store) = fresh_store("overview");
         {
-            let store = crate::store::Store::open(&cfg.core.db_path).expect("seed store");
             store.insert_proxy_turn("a", 1_500, 0, 0, 1_111).unwrap();
             store.insert_proxy_turn("a", 40, 0, 1_200, 2_222).unwrap();
             store
@@ -514,6 +656,144 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(&cfg.log.path, format!("{body}\n")).unwrap();
+        // Hermetic doctor paths — App::new ticks the snapshot (T15.6).
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg
+    }
+
+    /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
+    /// session, latency, the linked usage tokens — straight off the snapshot (D23), and
+    /// the detail pane is closed until a key opens it.
+    #[test]
+    fn calls_tab_lists_rows_newest_first() {
+        let mut app = App::new(&calls_seeded());
+        app.key(KeyCode::Char('3'), KeyModifiers::NONE);
+        assert_eq!(app.page(), "calls");
+        let screen = screen(&app);
+        for what in ["api_request", "mcp_call", "plugin_run", "PostToolUse"] {
+            assert!(screen.contains(what), "{what} is on screen");
+        }
+        assert!(screen.contains("12.5"), "the recorded latency");
+        assert!(screen.contains("16 tok"), "the linked usage summed");
+        // Newest first: the api_request row (inserted last) sits above the plugin_run
+        // one, which sits above the hook row.
+        let (api, run, hook) = (
+            screen.find("api_request").unwrap(),
+            screen.find("plugin_run").unwrap(),
+            screen.find("PostToolUse").unwrap(),
+        );
+        assert!(api < run && run < hook);
+        assert!(!screen.contains("usage ("), "no detail until Enter/z");
+    }
+
+    /// T15.5: `Enter`/`z` expand the selected row — the full ledger fields plus the
+    /// usage/api linkage — and collapse it again; the selection walks with `Up`/`Down`
+    /// and the detail follows it.
+    #[test]
+    fn enter_expands_the_selected_row_and_z_collapses_it() {
+        let mut app = App::new(&calls_seeded());
+        app.key(KeyCode::Char('3'), KeyModifiers::NONE);
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(open.contains("input 10"), "the linkage's counters");
+        assert!(open.contains("cache read 2"));
+        assert!(open.contains("usage (anthropic)"));
+        assert!(open.contains("claude-x"), "the model slug joined");
+        app.key(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert!(!screen(&app).contains("input 10"), "z closes the pane");
+
+        // The selection walks to the mcp row; the detail follows it and says there is
+        // no usage linkage to show.
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(open.contains("mcp_call"), "the mcp row is the selection");
+        assert!(open.contains("no row linked"));
+    }
+
+    /// An empty ledger is an empty page, and its keys do nothing — not a panic.
+    #[test]
+    fn calls_keys_do_nothing_on_an_empty_ledger() {
+        let mut app = App::new(&config());
+        app.key(KeyCode::Char('3'), KeyModifiers::NONE);
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(!app.calls_detail());
+        assert!(screen(&app).contains("no calls yet"));
+    }
+
+    /// A config whose store holds four calls across two sessions — a hook, a plugin run
+    /// nested under it, an mcp call, and a proxied api request with its usage row and
+    /// host/provider/model slugs — so the Calls tab has rows worth listing and a
+    /// linkage worth expanding.
+    fn calls_seeded() -> Config {
+        let (cfg, store) = fresh_store("calls");
+        {
+            let claude = store.host_id("claude").unwrap().expect("0002 seeds claude");
+            store
+                .upsert_session("older", None, None, None, Some("hook"))
+                .unwrap();
+            store
+                .upsert_session("newer", None, None, None, Some("proxy"))
+                .unwrap();
+            let hook = store
+                .insert_call(
+                    "older",
+                    "hook",
+                    "hook",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("PostToolUse"),
+                )
+                .unwrap();
+            let run = store
+                .insert_call(
+                    "older",
+                    "hook",
+                    "plugin_run",
+                    None,
+                    None,
+                    None,
+                    Some("cmd"),
+                    None,
+                )
+                .unwrap();
+            store.set_call_parent(run, hook).unwrap();
+            let mcp = store
+                .insert_call(
+                    "newer",
+                    "mcp",
+                    "mcp_call",
+                    None,
+                    None,
+                    None,
+                    Some("toon"),
+                    Some("plan_next"),
+                )
+                .unwrap();
+            store.set_call_ms(mcp, 3.0).unwrap();
+            let (pid, mid) = store.upsert_model("anthropic", "claude-x").unwrap();
+            let api = store
+                .insert_call(
+                    "newer",
+                    "proxy",
+                    "api_request",
+                    Some(claude),
+                    Some(pid),
+                    Some(mid),
+                    None,
+                    Some("/v1/messages"),
+                )
+                .unwrap();
+            store.set_call_ms(api, 12.5).unwrap();
+            store
+                .insert_usage("newer", Some("claude-x"), "anthropic", 10, 1, 2, 3, api)
+                .unwrap();
+        }
         cfg
     }
 
