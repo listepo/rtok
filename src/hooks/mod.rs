@@ -177,6 +177,10 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
             inj.push(i);
         }
     }
+    // No offerings → no Measurement noise (D3): UserPromptSubmit usually has none.
+    if inj.is_empty() {
+        return HookOutput::default();
+    }
     #[cfg(feature = "inject")]
     let text = crate::plugins::inject::apply(&Ctx::new(cx), inj);
     #[cfg(not(feature = "inject"))]
