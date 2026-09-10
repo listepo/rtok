@@ -1,5 +1,26 @@
 # rtok — completed tasks
 
+
+## Residual bug-hunt (2026-09-10) — T16.9, T22.6, T24.5
+
+**T16.9 concurrent flush must not double-export** · T16.6 · `src/otel/export.rs`, `tests/otel.rs`, `Cargo.toml`, `docs/otel.md`
+Do: when `rtok proxy` and `rtok mcp` timer flushes overlap a detached `rtok otel flush` from `Stop`/`SessionEnd`, serializers must not race the same `otel_export` watermarks — today concurrent processes can double-post a batch and leave pending counts that disagree with what the collector received. Single-flight the flush (DB lock / advisory / exclusive writer) so overlapping exporters hand off rather than both export the same rows.
+Check: a test that starts two overlapping flushes against one store and a mock collector posts each row once and advances each watermark exactly once; `rtok otel status` pending matches the unsent remainder; `just check` green.
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. `flush` takes an exclusive `flock` on `<db>.otel-flush.lock` (rustix `fs`) for the whole export; a waiting peer runs after and finds marks advanced (at-least-once, no double-post). `concurrent_flushes_post_each_row_once` overlaps two runtimes on one DB against a delayed mock collector — 3 spans + 1 log posted once, marks 3/1, pending 0. `mise exec -- cargo test` green; clippy `-D warnings` clean.
+
+**T22.6 `idle-hook` must not false-positive on busy PostToolUse** · T22.5 · `src/report/advice.rs`, `tests/report.rs`
+Do: `kinds_for_hook` maps `PostToolUse` to no Measurement kinds (`_ => &[]`), so any PostToolUse with ≥ `OFTEN_HOOK_CALLS` emits an `idle-hook` recommendation even when the path is busy (guard cache fill, read invalidation, graph stale marks). Fix the rule so productive PostToolUse side-effects are recognised — or exclude events whose work is not a Measurement kind by design — and keep true idle hooks flagged.
+Check: a fixture with ≥10 PostToolUse calls and guard/read activity produces no `idle-hook` finding for `PostToolUse`; a truly idle event still does; `just check` green.
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. `idle_hooks` only considers idle-by-design events (`PreCompact` / `Stop` / `SessionEnd`); `PostToolUse` is excluded. Advice fixture uses 12 `PreCompact` (fires once) plus 12 `PostToolUse` (silent); healthy store with 12 `PostToolUse` stays empty. `cargo test --test report` 6/6 green.
+
+**T24.5 retire unread `[core] log_file` / `log_level` / `log_to_db`** · T24.1 · `src/config/`, `config/default.toml`, `docs/config.md`
+Do: the three `[core]` keys stay in the schema and the reference file but production readers use only `[log]` (D26). Fold them the way `[dashboard]` folded into `[web]` (accept once with a warning, map into `[log]`), then drop them from the typed schema so `[log]` is the only authority.
+Check: a config that sets only legacy `core.log_*` loads into effective `[log]` with a warning; after the drop, `rtok config validate` rejects the old keys; `docs/config.md` and `config/default.toml` match the schema; `just check` green.
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. `core.log_file` / `log_level` / `log_to_db` are `Option` with `skip_serializing_if`, removed from `default.toml`; `finish()` migrates into `[log]` with one warning each and `take()`s them. `legacy_core_log_keys_migrate_into_log` and `validate_rejects_legacy_core_log_keys` green; `default_toml_is_the_defaults` green. Docs Legacy keys section + reference file match.
+
 Tasks move here from `plan.md` when their Check passed, `make check` is green, and the work is
 committed as `<task-id>: <title>`. Newest phase first. Task text is kept verbatim so the
 history of what was asked stays readable next to what was delivered.

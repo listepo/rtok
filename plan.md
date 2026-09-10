@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 167 ✅, 6 open (residual bug-hunt debt T10.11/T11.8/T16.9/T19.4/T22.6/T24.5); entries in `done.md`. Later versions (v0.2+) still deferred.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 170 ✅, 3 open (residual bug-hunt debt T10.11/T11.8/T19.4); entries in `done.md`. Later versions (v0.2+) still deferred.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -138,14 +138,8 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 
 ### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.19), Gate P8d passed — see `done.md` P8d.
 
-### P16 — OpenTelemetry export — Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18); residual open: T16.9.
+### P16 — OpenTelemetry export — Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18); T16.9 done 2026-09-10.
 
-**T16.9 concurrent flush must not double-export** · T16.6 · `src/otel/export.rs`, `src/otel/`
-Do: when `rtok proxy` and `rtok mcp` timer flushes overlap a detached `rtok otel flush` from `Stop`/`SessionEnd`, serializers must not race the same `otel_export` watermarks — today concurrent processes can double-post a batch and leave pending counts that disagree with what the collector received. Single-flight the flush (DB lock / advisory / exclusive writer) so overlapping exporters hand off rather than both export the same rows.
-Check: a test that starts two overlapping flushes against one store and a mock collector posts each row once and advances each watermark exactly once; `rtok otel status` pending matches the unsent remainder; `just check` green.
-Complexity: 3/5
-Status: open
-Model: -
 
 ### P17 — build size — tasks done, Gate P17 passed 2026-09-07 (see `done.md` P17).
 
@@ -164,14 +158,8 @@ Model: -
 
 ### P21 — CLI presentation — T21.1–T21.3 done 2026-09-09; see `done.md` P21. Started as T20.2 (owo-colors).
 
-### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24); T22.0–T22.5 done 2026-09-10 (see `done.md` P22); residual open: T22.6.
+### P22 — `rtok report` (goal: one artefact a person or a model can act on) — added 2026-09-09 (D24); T22.0–T22.6 done 2026-09-10 (see `done.md` P22).
 
-**T22.6 `idle-hook` must not false-positive on busy PostToolUse** · T22.5 · `src/report/advice.rs`
-Do: `kinds_for_hook` maps `PostToolUse` to no Measurement kinds (`_ => &[]`), so any PostToolUse with ≥ `OFTEN_HOOK_CALLS` emits an `idle-hook` recommendation even when the path is busy (guard cache fill, read invalidation, graph stale marks). Fix the rule so productive PostToolUse side-effects are recognised — or exclude events whose work is not a Measurement kind by design — and keep true idle hooks flagged.
-Check: a fixture with ≥10 PostToolUse calls and guard/read activity produces no `idle-hook` finding for `PostToolUse`; a truly idle event still does; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
 
 `rtok report [--format md|html|pdf] [--ai] [--out <path>] [--since <window>]`. Depends on T15.0:
 until the operator model exists, a report would be a fourth reader of the `Store` and would start
@@ -242,7 +230,7 @@ Gate P23 (review): the SDK compiles on its own — a scratch crate that depends 
 `rtok stats --json` and `rtok web`'s snapshot are byte-identical to the pre-refactor output on the
 same store. The P17 size gate still passes.
 
-### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26) · T24.0–T24.4 done 2026-09-09 (see `done.md` P24); residual open: T24.5
+### P24 — `rtok logs` (goal: the log is a file you can read, and it cannot eat the disk) — added 2026-09-09 (D26) · T24.0–T24.5 done 2026-09-10 (see `done.md` P24)
 
 `rtok logs [--lines N]` · `rtok logs watch` · `rtok logs export`. Config table `[log]`: `path`,
 `max_bytes`, `files`, `lines`, `level`, `to_db`. It absorbs the three `[core]` keys that pretend to
@@ -250,8 +238,7 @@ do this today — `log_file`, `log_level`, `log_to_db` — which are migrated wi
 `[dashboard]` was in T21.3, and are read for real for the first time.
 
 T24.0 (the `[log]` section and a sink that rotates) and T24.1 (every log line through the funnel)
-are done 2026-09-09 — see `done.md` P24. The `[core]` keys are still where they were: T24.1 left
-`core.log_file` without a production reader, so moving them is a pure config commit of its own.
+are done 2026-09-09 — see `done.md` P24. T24.5 migrates the unread `[core] log_*` keys into `[log]`.
 
 T24.2 (`rtok logs` and `rtok logs export`) is done 2026-09-09 — see `done.md` P24.
 
@@ -263,12 +250,6 @@ Complexity: 3/5
 
 T24.4 (the demon's own logs are bounded too) is done 2026-09-09 — see `done.md` P24.
 
-**T24.5 retire unread `[core] log_file` / `log_level` / `log_to_db`** · T24.1 · `src/config/`, `config/default.toml`, `docs/config.md`
-Do: the three `[core]` keys stay in the schema and the reference file but production readers use only `[log]` (D26). Fold them the way `[dashboard]` folded into `[web]` (accept once with a warning, map into `[log]`), then drop them from the typed schema so `[log]` is the only authority.
-Check: a config that sets only legacy `core.log_*` loads into effective `[log]` with a warning; after the drop, `rtok config validate` rejects the old keys; `docs/config.md` and `config/default.toml` match the schema; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
 
 ### P25 — `rtok agents sessions` (goal: what is running in this project right now, and what it costs) — added 2026-09-09 (D27) · done 2026-09-09 (T25.0–T25.3), see `done.md` P25
 
@@ -560,7 +541,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T16.6` | P16 otel | triggers off the hook path | ✅ 2026-09-04 | — |
 | `T16.7` | P16 otel | metrics | ✅ 2026-09-04 | — |
 | `T16.8` | P16 otel | docs and live check | ✅ 2026-09-04 | — |
-| `T16.9` | P16 otel | concurrent flush must not double-export | open | 3/5 |
+| `T16.9` | P16 otel | concurrent flush must not double-export | ✅ 2026-09-10 | 3/5 |
 | `T17.1` | P17 build size | dev, release and dist profiles | ✅ 2026-09-04 | — |
 | `T17.2` | P17 build size | pin cargo-cache | ✅ 2026-09-05 | — |
 | `T18.1` | P18 release | version 0.0.1 and a dispatchable release | ✅ 2026-09-04 | — |
@@ -584,7 +565,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T22.3` | P22 report | `--format pdf` | ✅ 2026-09-10 | 4/5 |
 | `T22.4` | P22 report | `--ai` | ✅ 2026-09-09 | 3/5 |
 | `T22.5` | P22 report | recommendations | ✅ 2026-09-10 | 3/5 |
-| `T22.6` | P22 report | `idle-hook` false-positives on busy PostToolUse | open | 2/5 |
+| `T22.6` | P22 report | `idle-hook` false-positives on busy PostToolUse | ✅ 2026-09-10 | 2/5 |
 | `T23.0` | P23 plugin SDK | where the boundary goes | ✅ 2026-09-09 | 3/5 |
 | `T23.1` | P23 plugin SDK | the crate exists and owns the contract | ✅ 2026-09-09 | 3/5 |
 | `T23.2` | P23 plugin SDK | required methods are required | ✅ 2026-09-09 | 2/5 |
@@ -597,7 +578,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T24.2` | P24 logs | `rtok logs` and `rtok logs export` | ✅ 2026-09-09 | 3/5 |
 | `T24.3` | P24 logs | `rtok logs watch` | ✅ 2026-09-09 | 3/5 |
 | `T24.4` | P24 logs | the demon's own logs are bounded too | ✅ 2026-09-09 | 3/5 |
-| `T24.5` | P24 logs | retire unread `[core] log_*` keys | open | 2/5 |
+| `T24.5` | P24 logs | retire unread `[core] log_*` keys | ✅ 2026-09-10 | 2/5 |
 | `T25.0` | P25 agents | a session knows whose it is | ✅ 2026-09-09 | 3/5 |
 | `T25.1` | P25 agents | one reader, in the model | ✅ 2026-09-09 | 3/5 |
 | `T25.2` | P25 agents | `rtok agent sessions` | ✅ 2026-09-09 | 2/5 |
