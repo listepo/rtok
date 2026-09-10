@@ -1,7 +1,22 @@
 # rtok — completed tasks
 
 
-## Residual bug-hunt (2026-09-10) — T16.9, T22.6, T24.5
+## Residual bug-hunt (2026-09-10) — T10.11, T11.8, T16.9, T22.6, T24.5
+
+**T10.11 Cursor host: wire PostToolUse, not only beforeShellExecution** · T10.1 · `src/setup/cursor.rs`, `src/hooks/types.rs`
+Do: Cursor setup writes only `hooks.beforeShellExecution`, and `HookInput::adapt_cursor` only maps that shape onto PreToolUse. Guard's read cache and read's PostToolUse(Edit|Write) invalidation therefore never populate on Cursor. Register Cursor's after-tool / PostToolUse-equivalent hook, adapt its payload into `PostToolUse`, and keep fail-open ≤ 10 ms (D1).
+Check: Cursor-shaped after-tool stdin adapts to `PostToolUse`; after a Cursor PostToolUse(Read) the guard cache has a row; `rtok agent setup cursor --dry-run` lists the after-tool entry beside `beforeShellExecution`; `just check` green.
+Complexity: 3/5
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. `adapt_cursor` maps Cursor `afterShellExecution` to `PostToolUse` (`output`/`stdout` → `tool_response`); setup + `plugins/cursor/hooks/hooks.json` register `afterShellExecution` → `rtok hook PostToolUse --host cursor`. Unit tests `cursor_after_shell_maps_to_post_tool_use`, `setup_writes_after_shell_hook`; `cargo test --test cursor_plugin` green. Shell-only path (afterFileEdit/read not in this Do).
+
+**T11.8 `toon` rewrite respects archive live-zone `keep_turns`** · T11.7 · `src/plugins/toon/mod.rs`
+Do: `toon`'s `proxy_filter` rewrites every tabular tool result it sees. Archive's live zone (`plugins.archive.keep_turns` turns from the end) must stay untouched — the same boundary `archive` already uses — so a just-returned table is not TOON-encoded while it is still live context.
+Check: with `keep_turns = 2`, tabular JSON in the last two turns is unchanged and older tabular blocks encode; Measurement rows only for the older ones; default-off still leaves request bytes identical; `just check` green.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: GLM-5.3
+Check result: green. `toon` skips `result.turn < archive.keep_turns` (same live-zone rule as archive). Test `live_zone_turns_are_untouched`; related toon/lib tests green.
+
 
 **T16.9 concurrent flush must not double-export** · T16.6 · `src/otel/export.rs`, `tests/otel.rs`, `Cargo.toml`, `docs/otel.md`
 Do: when `rtok proxy` and `rtok mcp` timer flushes overlap a detached `rtok otel flush` from `Stop`/`SessionEnd`, serializers must not race the same `otel_export` watermarks — today concurrent processes can double-post a batch and leave pending counts that disagree with what the collector received. Single-flight the flush (DB lock / advisory / exclusive writer) so overlapping exporters hand off rather than both export the same rows.

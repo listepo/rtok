@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 170 ✅, 21 open (residual T10.11/T11.8/T19.4 + v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 172 ✅, 19 open (residual T19.4 + v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -337,26 +337,15 @@ Complexity: 2/5
 
 ### P9 — A/B bench + migration — tasks done; Gate P9 removed 2026-09-09 (not code-closable). Detail in `migration.md`.
 
-### P10 — other hosts + release — mostly done 2026-09-09 (D21; T10.7 done via T10.9); residual open: T10.11
+### P10 — other hosts + release — mostly done 2026-09-09 (D21; T10.7 done via T10.9); T10.11 done 2026-09-10 (see `done.md`)
 
 T10.7 (`setup --remove` strips MCP) is in `done.md` — absorbed by T10.9.
 
-**T10.11 Cursor host: wire PostToolUse, not only beforeShellExecution** · T10.1 · `src/setup/cursor.rs`, `src/hooks/types.rs`
-Do: Cursor setup writes only `hooks.beforeShellExecution`, and `HookInput::adapt_cursor` only maps that shape onto PreToolUse. Guard's read cache and read's PostToolUse(Edit|Write) invalidation therefore never populate on Cursor. Register Cursor's after-tool / PostToolUse-equivalent hook, adapt its payload into `PostToolUse`, and keep fail-open ≤ 10 ms (D1).
-Check: Cursor-shaped after-tool stdin adapts to `PostToolUse`; after a Cursor PostToolUse(Read) the guard cache has a row; `rtok agent setup cursor --dry-run` lists the after-tool entry beside `beforeShellExecution`; `just check` green.
-Complexity: 3/5
-Status: open
-Model: -
 
 
-### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11); residual open: T11.8
 
-**T11.8 `toon` rewrite respects archive live-zone `keep_turns`** · T11.7 · `src/plugins/toon/mod.rs`
-Do: `toon`'s `proxy_filter` rewrites every tabular tool result it sees. Archive's live zone (`plugins.archive.keep_turns` turns from the end) must stay untouched — the same boundary `archive` already uses — so a just-returned table is not TOON-encoded while it is still live context.
-Check: with `keep_turns = 2`, tabular JSON in the last two turns is unchanged and older tabular blocks encode; Measurement rows only for the older ones; default-off still leaves request bytes identical; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
+### P11 — OpenAI API surface (goal: same proxy, same plugins, same numbers for OpenAI-API hosts) — added 2026-09-01 (D11); tasks done 2026-09-03 (see `done.md` P11); T11.8 done 2026-09-10 (see `done.md`)
+
 
 
 Gate P11: removed 2026-09-09 — one OpenAI-API host through the proxy 2 d passthrough + 2 d compress; needs live Codex traffic, not code-closable. Re-add with a dated traffic window; record in `research.md` §2.
@@ -567,11 +556,11 @@ list, not only what is left.
 
 Every task in this file and in `done.md`, with its phase, status and difficulty. A ✅ means the
 task is finished and its full entry — Do, Check, Check result — is in `done.md`; `open` would mean
-the entry is still above in §3 (residual T10.11/T11.8/T19.4 + P28–P33). This table is an index, never the
+the entry is still above in §3 (residual T19.4 + P28–P33). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**170 done · 21 open — 191 tasks.**
+**172 done · 19 open — 191 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -652,7 +641,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T10.8` | P10 hosts | the installers move under `rtok agent` | ✅ 2026-09-09 | — |
 | `T10.9` | P10 hosts | `rtok agent remove <host>`, and a copy before either command | ✅ 2026-09-09 | — |
 | `T10.10` | P10 hosts | remove-spelling residue: flag help, docs rows | ✅ 2026-09-09 | 1/5 |
-| `T10.11` | P10 hosts | Cursor PostToolUse adapt (not only beforeShellExecution) | open | 3/5 |
+| `T10.11` | P10 hosts | Cursor PostToolUse adapt (not only beforeShellExecution) | ✅ 2026-09-10 | 3/5 |
 | `T11.1` | P11 OpenAI wire | `Wire` adapter + Anthropic behind it | ✅ 2026-09-02 | — |
 | `T11.2` | P11 OpenAI wire | OpenAI Chat Completions wire | ✅ 2026-09-02 | — |
 | `T11.3` | P11 OpenAI wire | OpenAI Responses wire | ✅ 2026-09-03 | — |
@@ -660,7 +649,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T11.5` | P11 OpenAI wire | setup for OpenAI hosts | ✅ 2026-09-03 | — |
 | `T11.6` | P11 OpenAI wire | `usage.api` + per-API stats | ✅ 2026-09-03 | — |
 | `T11.7` | P11 OpenAI wire | `toon` on Wire tool results | ✅ 2026-09-03 | — |
-| `T11.8` | P11 OpenAI wire | `toon` respects archive `keep_turns` live zone | open | 2/5 |
+| `T11.8` | P11 OpenAI wire | `toon` respects archive `keep_turns` live zone | ✅ 2026-09-10 | 2/5 |
 | `T12.1` | P12 config | typed schema + reference file | ✅ 2026-09-02 | — |
 | `T12.2` | P12 config | layering + precedence + `config show` | ✅ 2026-09-02 | — |
 | `T12.3` | P12 config | `config validate` + `config set` | ✅ 2026-09-02 | — |
