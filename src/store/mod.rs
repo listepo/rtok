@@ -56,7 +56,13 @@ impl Store {
         let url = path.to_str().context("db path is not UTF-8")?;
         let mut conn =
             SqliteConnection::establish(url).with_context(|| path.display().to_string())?;
-        conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        // Hooks, the MCP server, the proxy and the detached `otel flush` child all write this one
+        // file. SQLite's default busy timeout is 0, so a second writer failed at once with
+        // "database is locked" instead of waiting the few ms the first one holds the lock. First,
+        // so switching to WAL waits too; 1 s bounds how long a hook can wait before it fails open.
+        conn.batch_execute(
+            "PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
+        )?;
         Self::init(conn, path.parent())
     }
 
@@ -361,22 +367,8 @@ impl Store {
         }
         // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
         if let Some(dir) = archive_dir {
-            std::fs::create_dir_all(dir)?;
-            let path = dir.join(&sha);
-            std::fs::write(&path, body)?;
-            let mut conn = self.lock()?;
-            diesel::insert_into(archive::table)
-                .values((
-                    archive::id.eq(&sha),
-                    archive::session.eq(""),
-                    archive::bytes.eq(n),
-                    archive::path.eq(path.to_string_lossy().as_ref()),
-                    archive::sha256.eq(&sha),
-                ))
-                .on_conflict(archive::id)
-                .do_nothing() // the same body twice (T5.3 repeat requests) is one archive row
-                .execute(&mut *conn)?;
-            return Ok((None, Some(sha), n, Some(hex_sha256(body))));
+            self.write_archive("", body, &sha, dir)?;
+            return Ok((None, Some(sha.clone()), n, Some(sha)));
         }
         Ok((None, None, n, Some(sha)))
     }
@@ -384,24 +376,32 @@ impl Store {
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
     pub fn put_archive(&self, session: &str, body: &[u8], dir: &Path) -> Result<String> {
         let sha = hex_sha256(body);
+        self.write_archive(session, body, &sha, dir)?;
+        Ok(sha)
+    }
+
+    /// The one archive write behind [`Self::put_archive`] and `call_io` spills: the body under
+    /// its sha256 in `dir`, then one row per distinct body (the same body twice — T5.3 repeat
+    /// requests — is one row). `tool` stays NULL: neither caller knows which plugin archived, and
+    /// the column used to say `cmd` for every plugin.
+    fn write_archive(&self, session: &str, body: &[u8], sha: &str, dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir)?;
-        let path = dir.join(&sha);
+        let path = dir.join(sha);
         std::fs::write(&path, body)?;
         let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
         let mut conn = self.lock()?;
         diesel::insert_into(archive::table)
             .values((
-                archive::id.eq(&sha),
+                archive::id.eq(sha),
                 archive::session.eq(session),
-                archive::tool.eq(Some("cmd")),
                 archive::bytes.eq(n),
                 archive::path.eq(path.to_string_lossy().as_ref()),
-                archive::sha256.eq(&sha),
+                archive::sha256.eq(sha),
             ))
             .on_conflict(archive::id)
             .do_nothing()
             .execute(&mut *conn)?;
-        Ok(sha)
+        Ok(())
     }
 
     /// T5.3: the persisted decision for a `tool_use_id`, if the archive plugin made one.
@@ -634,14 +634,19 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// Drop cache rows for `path` and `path\t…` mode/range keys (T4.4).
+    /// Drop cache rows for `path` and `path\t…` mode/range keys (T4.4). A prefix compare, not
+    /// `LIKE`: `%` and `_` are ordinary file-name characters, and `LIKE` ignores ASCII case.
     pub fn clear_read_cache(&self, session: &str, path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query("DELETE FROM read_cache WHERE session = ? AND (path = ? OR path LIKE ?)")
-            .bind::<Text, _>(session)
-            .bind::<Text, _>(path)
-            .bind::<Text, _>(format!("{path}\t%"))
-            .execute(&mut *conn)?;
+        let keyed = format!("{path}\t");
+        sql_query(
+            "DELETE FROM read_cache WHERE session = ? AND (path = ? OR substr(path, 1, length(?)) = ?)",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(path)
+        .bind::<Text, _>(&keyed)
+        .bind::<Text, _>(&keyed)
+        .execute(&mut *conn)?;
         Ok(())
     }
 
@@ -1006,26 +1011,37 @@ impl Store {
         Ok(())
     }
 
+    /// Drop `calls` older than `days` with the rows that only describe them (`logs`, `tokens`,
+    /// `call_io`). Ledger rows that point at a dropped call — `usage`, `measurements`, a newer
+    /// child call — are kept and detached: a saving is not deleted with its call, and without the
+    /// detach `foreign_keys = ON` refused the delete after the first three had already committed.
+    /// One transaction and one cutoff, so it is all of it or none of it.
     pub fn purge_calls_older_than(&self, days: i64) -> Result<usize> {
         if days <= 0 {
             return Ok(0);
         }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        let cutoff = now.saturating_sub(days.saturating_mul(86_400));
+        let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
-        sql_query("DELETE FROM logs WHERE ts < unixepoch() - ? * 86400")
-            .bind::<BigInt, _>(days)
-            .execute(&mut *conn)?;
-        sql_query("DELETE FROM tokens WHERE ts < unixepoch() - ? * 86400")
-            .bind::<BigInt, _>(days)
-            .execute(&mut *conn)?;
-        sql_query(
-            "DELETE FROM call_io WHERE call_id IN (SELECT id FROM calls WHERE ts < unixepoch() - ? * 86400)",
-        )
-        .bind::<BigInt, _>(days)
-        .execute(&mut *conn)?;
-        let n = sql_query("DELETE FROM calls WHERE ts < unixepoch() - ? * 86400")
-            .bind::<BigInt, _>(days)
-            .execute(&mut *conn)?;
-        Ok(n)
+        conn.transaction::<_, diesel::result::Error, _>(|c| {
+            for sql in [
+                format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
+                format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
+                format!("DELETE FROM call_io WHERE call_id IN {old}"),
+                format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
+                format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
+                format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
+            ] {
+                sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
+            }
+            sql_query("DELETE FROM calls WHERE ts < ?1")
+                .bind::<BigInt, _>(cutoff)
+                .execute(c)
+        })
+        .map_err(Into::into)
     }
 
     #[cfg(test)]
@@ -1745,5 +1761,112 @@ mod tests {
         let bounded = store.recent_calls(1).unwrap();
         assert_eq!(bounded.len(), 1);
         assert_eq!(bounded[0].id, api);
+    }
+
+    /// `%`, `_` and case are literal in the prefix compare — `LIKE` treated them as a pattern
+    /// and dropped cached reads of other files.
+    #[test]
+    fn clear_read_cache_drops_only_that_path_and_its_mode_keys() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap();
+        for s in ["s", "other"] {
+            store
+                .upsert_session(s, claude, None, None, Some("hook"))
+                .unwrap();
+        }
+        let gone = ["/a/x_1.rs", "/a/x_1.rs\tmap", "/a/x_1.rs\tlines\t1-9"];
+        let kept = [
+            "/a/xa1.rs\tmap",
+            "/a/X_1.RS\tmap",
+            "/a/x_1.rsx",
+            "/a/%\tmap",
+        ];
+        for p in gone.iter().chain(&kept) {
+            store.put_read_cache("s", p, "h", None).unwrap();
+        }
+        store
+            .put_read_cache("other", "/a/x_1.rs", "h", None)
+            .unwrap();
+        store.clear_read_cache("s", "/a/x_1.rs").unwrap();
+        store.clear_read_cache("s", "/a/%").unwrap();
+        let cached = |s: &str, p: &str| store.get_read_cache(s, p).unwrap().is_some();
+        for p in gone {
+            assert!(!cached("s", p), "{p:?} should be cleared");
+        }
+        for p in &kept[..3] {
+            assert!(cached("s", p), "{p:?} is another file");
+        }
+        assert!(
+            !cached("s", "/a/%\tmap"),
+            "a literal `%` path clears its own keys"
+        );
+        assert!(cached("other", "/a/x_1.rs"), "other sessions keep theirs");
+    }
+
+    /// An old call's own rows go; the ledger rows that point at it stay, detached — and the
+    /// foreign keys never refuse the delete.
+    #[test]
+    fn purge_drops_old_calls_and_detaches_their_ledger_rows() {
+        let store = Store::open_in_memory().unwrap();
+        let claude = store.host_id("claude").unwrap();
+        store
+            .upsert_session("s", claude, None, None, Some("proxy"))
+            .unwrap();
+        let call = |kind| {
+            store
+                .insert_call("s", "proxy", kind, None, None, None, None, None)
+                .unwrap()
+        };
+        let (old, child, fresh) = (call("api_request"), call("plugin_run"), call("hook"));
+        store.set_call_parent(child, old).unwrap();
+        store
+            .insert_usage("s", None, "anthropic", 1, 0, 0, 1, old)
+            .unwrap();
+        let m = Measurement {
+            plugin: "cmd",
+            kind: "rule",
+            before_bytes: 10,
+            after_bytes: 5,
+            est_before: 3,
+            est_after: 1,
+            ref_id: None,
+            call_id: Some(old),
+        };
+        store.insert_measurement("s", &m).unwrap();
+        store.insert_provider_tokens(old, 1, 0, 0, 1).unwrap();
+        store
+            .insert_call_io(old, Some(b"{}"), None, 1024, None)
+            .unwrap();
+        store
+            .insert_log("info", "proxy", "x", "m", Some("s"), Some(old), None)
+            .unwrap();
+        let n = |sql: &str| -> i64 {
+            let mut conn = store.lock().unwrap();
+            sql_query(sql).load::<Count>(&mut *conn).unwrap()[0].n
+        };
+        {
+            let mut conn = store.lock().unwrap();
+            sql_query("UPDATE calls SET ts = 0 WHERE id = ?")
+                .bind::<Integer, _>(old)
+                .execute(&mut *conn)
+                .unwrap();
+        }
+
+        assert_eq!(store.purge_calls_older_than(1).unwrap(), 1);
+        let ids = |sql: &str| n(&format!("SELECT count(*) AS n FROM calls WHERE {sql}"));
+        assert_eq!(ids(&format!("id IN ({child}, {fresh})")), 2);
+        assert_eq!(ids("parent_id IS NOT NULL"), 0, "the child is detached");
+        for t in ["usage", "measurements"] {
+            let sql = format!("SELECT count(*) AS n FROM {t} WHERE call_id IS NULL");
+            assert_eq!(n(&sql), 1, "{t} row kept, detached");
+        }
+        for t in ["tokens", "call_io", "logs"] {
+            assert_eq!(n(&format!("SELECT count(*) AS n FROM {t}")), 0, "{t}");
+        }
+        assert_eq!(
+            store.purge_calls_older_than(0).unwrap(),
+            0,
+            "days <= 0 is a no-op"
+        );
     }
 }
