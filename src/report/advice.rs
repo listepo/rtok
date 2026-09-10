@@ -12,13 +12,21 @@ use crate::web::model::ReportLedgers;
 pub const OFTEN_HOOK_CALLS: u64 = 10;
 
 /// The `Measurement` kinds an event can produce. `PreToolUse` denies through `guard`;
-/// `PostToolUse` / `PreCompact` record nothing; injections record `inject` via `apply`.
+/// injections record `inject` via `apply`. `PostToolUse` does side-effects that are not
+/// Measurement kinds (guard cache, read invalidation) — busy, not idle.
 fn kinds_for_hook(event: &str) -> &'static [&'static str] {
     match event {
         "PreToolUse" => &["guard"],
         "SessionStart" | "UserPromptSubmit" | "PostCompact" => &["inject"],
         _ => &[],
     }
+}
+
+/// Hooks that are idle by design: they should not fire often and never record a
+/// `Measurement`. `PostToolUse` is deliberately excluded — a busy healthy session
+/// fires it constantly without a Measurement kind on that path (T22.6).
+fn idle_by_design(event: &str) -> bool {
+    matches!(event, "PreCompact" | "Stop" | "SessionEnd")
 }
 
 /// "1 row" / "N rows" — evidence strings name counts, so they decline them.
@@ -123,10 +131,13 @@ fn cache_busts(ledgers: &ReportLedgers, push: Push<'_>) {
     }
 }
 
-/// (4) Hooks that fire often and produce no `Measurement`: latency on the 10 ms path.
+/// (4) Idle-by-design hooks that fire often: latency on the 10 ms path for nothing.
 fn idle_hooks(ledgers: &ReportLedgers, push: Push<'_>) {
     let kinds = &ledgers.savings.kinds;
     for h in &ledgers.calls.hooks {
+        if !idle_by_design(&h.name) {
+            continue;
+        }
         let worked = kinds_for_hook(&h.name)
             .iter()
             .any(|want| kinds.iter().any(|have| have.as_str() == *want));

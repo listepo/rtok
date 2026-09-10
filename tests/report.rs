@@ -368,9 +368,9 @@ fn html_holds_every_markdown_number_and_fetches_nothing() {
     let _ = fs::remove_dir_all(&h);
 }
 
-/// T22.5 Check, first clause: one store in which every rule fires exactly once —
-/// expand 1-of-3 (33.3% > 5%), a negative-net plugin, one tools bust, 12 PostToolUse
-/// calls with nothing recorded on that path, inject over budget, one re-read.
+/// T22.5/T22.6 Check, first clause: one store in which every rule fires exactly once —
+/// expand 1-of-3 (33.3% > 5%), a negative-net plugin, one tools bust, 12 PreCompact
+/// calls (idle-by-design; PostToolUse is excluded — T22.6), inject over budget, one re-read.
 fn seed_advice(home: &Path) {
     let cfg = rtok::config::Config::load_from(home).expect("config");
     let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
@@ -378,9 +378,14 @@ fn seed_advice(home: &Path) {
         .upsert_session("adv", None, None, None, Some("proxy"))
         .unwrap();
 
-    // Hooks: 12 PostToolUse (often, nothing recorded there), 2 PreToolUse and 1
-    // SessionStart below the threshold.
-    for (event, n) in [("PostToolUse", 12), ("PreToolUse", 2), ("SessionStart", 1)] {
+    // Hooks: 12 PreCompact (idle-by-design, often), 2 PreToolUse and 1 SessionStart
+    // below the threshold; also 12 PostToolUse so a busy productive path stays quiet.
+    for (event, n) in [
+        ("PreCompact", 12),
+        ("PostToolUse", 12),
+        ("PreToolUse", 2),
+        ("SessionStart", 1),
+    ] {
         for _ in 0..n {
             store
                 .insert_call("adv", "hook", "hook", None, None, None, None, Some(event))
@@ -491,8 +496,19 @@ fn each_rule_fires_once_in_recoverable_order() {
         "the bust names its turn: {out}"
     );
     assert!(
-        out.contains("12 hook `PostToolUse` rows in window"),
+        out.contains("12 hook `PreCompact` rows in window"),
         "hook rows: {out}"
+    );
+    // PostToolUse appears in Calls, but must not be the idle-hook subject.
+    let idle = out
+        .split("- **idle-hook**:")
+        .nth(1)
+        .and_then(|s| s.split("
+- **").next())
+        .unwrap_or("");
+    assert!(
+        !idle.contains("PostToolUse"),
+        "busy PostToolUse must not trigger idle-hook: {idle}"
     );
     assert!(
         out.contains("1 inject Measurement row"),
@@ -540,6 +556,21 @@ fn healthy_store_has_no_recommendations() {
                 None,
                 None,
                 Some("PreToolUse"),
+            )
+            .unwrap();
+    }
+    // Busy healthy PostToolUse must not false-trigger idle-hook (T22.6).
+    for _ in 0..12 {
+        store
+            .insert_call(
+                "ok",
+                "hook",
+                "hook",
+                None,
+                None,
+                None,
+                None,
+                Some("PostToolUse"),
             )
             .unwrap();
     }
