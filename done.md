@@ -1341,6 +1341,7 @@ Do: nothing proposed dependency updates; crates and actions moved only when bump
 Check: weekly cargo and github-actions updates, each landing on `ci.yml`'s pull-request `just check`. Cargo updates wait a 7-day cooldown. `tree-sitter*` moves as one group: the parser and grammars share an ABI, and a grammar bump changes the tags a stored index keeps until T35.5. Other minor and patch crates share one weekly pull request, and actions share one group. `release.yml` is excluded because `tools/dist-generate.sh` writes it and an edit would be lost on the next generate. The `deps:` and `ci:` prefixes land in `cliff.toml`'s Tooling group. `site/go.mod` (one Hugo theme) and `plugins/pi/package.json` (no dependencies) are left out: `docs.yml` builds the site only on `main`, so a theme bump would be checked after the merge. Every key is in SchemaStore's `dependabot-2.0.json`; GitHub's first Dependabot run is the remaining check.
 Complexity: 1/5
 Status: done 2026-09-11 · Model: Opus 5
+Found on the first run, 2026-09-11. Dependabot ranked `minor-and-patch`, which has no patterns, as more specific than `tree-sitter`. Every tree-sitter crate therefore fell into `minor-and-patch`, and a 0.x major bump (tree-sitter-python 0.23 → 0.25, #13) opened alone. `minor-and-patch` now excludes `tree-sitter*`. The same run confirmed `exclude-paths`: the actions group (#10) left `release.yml` untouched.
 
 ## P17 — build size · done 2026-09-07 (T17.1–T17.2, Gate P17 passed)
 

@@ -18,7 +18,10 @@ updates:
       tree-sitter:
         patterns: ["tree-sitter*"]
       # Everything else short of a major bump: one pull request a week, not one per crate.
+      # Dependabot ranks a group without patterns as the more specific one, so tree-sitter
+      # is excluded here or it never reaches its own group (first run, 2026-09-11).
       minor-and-patch:
+        exclude-patterns: ["tree-sitter*"]
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions
