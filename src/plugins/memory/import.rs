@@ -77,18 +77,8 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::config as cfg;
     use std::fs;
-
-    fn cfg(name: &str) -> (Config, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rtok-import-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        c.log.path = dir.join("rtok.log");
-        (c, dir)
-    }
 
     fn fifty() -> String {
         (0..50)

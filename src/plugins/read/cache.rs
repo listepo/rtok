@@ -63,22 +63,10 @@ fn hex_sha256(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::plugins::read::read;
+    use crate::plugins::read::tests::cx;
     use serde_json::json;
     use std::fs;
-    use std::path::PathBuf;
-
-    fn cx(name: &str) -> (crate::plugin::Runtime, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rtok-dedup-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        c.plugins.read.allow_paths = vec![dir.clone()];
-        (crate::plugin::Runtime::open(c, name).unwrap(), dir)
-    }
 
     #[test]
     fn two_identical_reads_second_is_short() {

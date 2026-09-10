@@ -63,17 +63,9 @@ fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     fn cfg(name: &str) -> Config {
-        let dir = std::env::temp_dir().join(format!("rtok-expand-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let mut c = Config::default();
-        c.core.db_path = dir.join("rtok.db");
-        c.core.archive_dir = dir.join("archive");
-        c.log.path = dir.join("rtok.log");
-        c
+        crate::testutil::config(name).0
     }
 
     #[test]

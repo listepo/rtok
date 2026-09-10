@@ -114,18 +114,38 @@ fn payload(v: &Value) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use rtok_plugin_sdk::Ctx;
     use serde_json::json;
 
     fn setup() -> crate::plugin::Runtime {
-        let dir = std::env::temp_dir().join("rtok-t26-two-identical-read");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut cfg = Config::default();
-        cfg.core.db_path = dir.join("db");
-        cfg.core.archive_dir = dir.join("ar");
-        crate::plugin::Runtime::open(cfg, "t26").unwrap()
+        crate::testutil::runtime("guard").0
+    }
+
+    /// The Bash key collapses whitespace and strips leading `cd … &&` hops, so the same
+    /// command run from a `cd` prefix is the same result.
+    #[test]
+    fn bash_repeat_behind_cd_prefix_denies() {
+        let cx = setup();
+        let g = Guard;
+        let first = json!({"command": "cargo   test"});
+        let resp = json!({"stdout": "test result: ok. 3 passed"});
+        let post = PostToolUse {
+            tool_name: "Bash",
+            tool_input: &first,
+            tool_response: &resp,
+        };
+        assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
+        let again = json!({"command": "cd /repo && cd sub && cargo test"});
+        let pre = |input| PreToolUse {
+            tool_name: "Bash",
+            tool_input: input,
+        };
+        assert!(matches!(
+            g.pre_tool(&pre(&again), &Ctx::new(&cx)),
+            Some(PreToolDecision::Deny { .. })
+        ));
+        let other = json!({"command": "cargo build"});
+        assert!(g.pre_tool(&pre(&other), &Ctx::new(&cx)).is_none());
     }
 
     #[test]
