@@ -19,8 +19,15 @@ something to the model at those points goes through here, under one budget.
 SessionStart output is byte-identical across runs with unchanged state — no timestamps, no
 counters — so the host's prompt cache keeps hitting.
 
-Modes (`terse`, `yagni`) are markdown files under `~/.rtok/modes/`, ≤ 250 tokens each,
+Modes (`terse`, `yagni`; aliases `cave`→terse, `pony`→yagni) are markdown files under
+`~/.rtok/modes/` (builtins via `include_str!`), ≤ 250 estimated prose tokens each,
 enabled with `rtok agent setup --mode terse,yagni`, injected once per session at priority 5.
+Enriched terse captures caveman-style full-intensity rules (shortest reply, fence-safe
+exactness, auto-clarity); yagni captures the ponytail YAGNI ladder. Structured helpers live
+in `rtok::modes` (`compress_prose`, `evaluate_ladder`) — native safety nets beyond prompt-only
+modes, not wraps of third-party tools (D6). Fixture comparison vs weak caveman-lite /
+naive-Minimum baselines (and why we win): `research.md` modes subsection and
+`docs/comparison.md` § Prompt-level; re-run with `cargo test --test mode_bench -- --nocapture`.
 
 ## Config
 

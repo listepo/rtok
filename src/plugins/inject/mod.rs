@@ -58,10 +58,11 @@ impl Plugin for Inject {
 const TERSE: &str = include_str!("../../../modes/terse.md");
 const YAGNI: &str = include_str!("../../../modes/yagni.md");
 
+/// Resolve canonical mode names and their compatibility aliases to embedded markdown.
 fn builtin(name: &str) -> Option<&'static str> {
     match name {
-        "terse" => Some(TERSE),
-        "yagni" => Some(YAGNI),
+        "terse" | "cave" => Some(TERSE),
+        "yagni" | "pony" => Some(YAGNI),
         _ => None,
     }
 }

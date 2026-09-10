@@ -10,6 +10,7 @@
 //! - [`hooks`]   — Claude Code hook I/O types
 //! - [`doctor`]  — `rtok doctor`
 //! - [`measure`] — JSONL ingest, `rtok stats` (P1)
+//! - [`modes`]   — terse compress + YAGNI ladder helpers (D6/D7)
 //! - [`tui`]     — `rtok tui`, the terminal rendering of the operator model (D23)
 
 pub mod bench;
@@ -22,6 +23,7 @@ pub mod hooks;
 pub mod log;
 pub mod mcp;
 pub mod measure;
+pub mod modes;
 pub mod otel;
 pub mod plugin;
 pub mod plugins;
