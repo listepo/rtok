@@ -52,6 +52,10 @@ Rules:
 | `rtok config get <key>` | print one effective value, e.g. `rtok config get proxy.port` |
 | `rtok config set <key> <value>` | edit the user file in place, preserving comments (uses `toml_edit`) |
 
+Credentials never print: `otel.headers` (it carries OTLP ingestion keys) shows as `<redacted>`
+once set, in `show`, `get`, `set` and `rtok report` — its source still shows. Read the file itself
+to see the value.
+
 ## Reference file
 
 This is `config/default.toml` verbatim. Every value shown is the default; a fresh
