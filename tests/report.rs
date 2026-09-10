@@ -215,8 +215,41 @@ fn fixture_numbers_are_traceable_to_rows() {
     sorted.sort_unstable();
     assert_eq!(order, sorted, "the section set is fixed and ordered");
 
-    // Recommendations is the T22.5 placeholder: the heading renders, the list says so.
-    assert!(out.contains("No recommendations."));
+    // Recommendations (T22.5): the fixture's 33.3% expand rate, one tools bust and one
+    // re-read each fire exactly once, most recoverable tokens first; nothing else does
+    // (cmd/archive net positive, no inject rows, 2 unnamed hook calls below the often
+    // threshold, no non-positive plugin).
+    for rule in ["cache-bust", "expand-rate", "archive-window"] {
+        assert_eq!(
+            out.matches(&format!("- **{rule}**:")).count(),
+            1,
+            "{rule} fires once: {out}"
+        );
+    }
+    for rule in ["retire-plugin", "inject-budget", "idle-hook"] {
+        assert!(
+            !out.contains(&format!("- **{rule}**:")),
+            "{rule} stays silent: {out}"
+        );
+    }
+    assert!(out.contains("33.3%"), "rate with its row counts: {out}");
+    assert!(
+        out.contains("3 archive_decisions rows"),
+        "row counts: {out}"
+    );
+    assert!(
+        out.contains("session s1 turn 3"),
+        "the bust names its turn: {out}"
+    );
+    let pos = |rule: &str| out.find(&format!("- **{rule}**:")).unwrap();
+    assert!(
+        pos("cache-bust") < pos("expand-rate") && pos("expand-rate") < pos("archive-window"),
+        "ordered by recoverable tokens: {out}"
+    );
+    assert!(
+        !out.contains("No recommendations."),
+        "the fixture has findings to report"
+    );
 
     let _ = fs::remove_dir_all(&h);
 }
@@ -332,5 +365,223 @@ fn html_holds_every_markdown_number_and_fetches_nothing() {
         "external reference outside code: {}",
         &bare[..bare.len().min(200)]
     );
+    let _ = fs::remove_dir_all(&h);
+}
+
+/// T22.5 Check, first clause: one store in which every rule fires exactly once —
+/// expand 1-of-3 (33.3% > 5%), a negative-net plugin, one tools bust, 12 PostToolUse
+/// calls with nothing recorded on that path, inject over budget, one re-read.
+fn seed_advice(home: &Path) {
+    let cfg = rtok::config::Config::load_from(home).expect("config");
+    let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+    store
+        .upsert_session("adv", None, None, None, Some("proxy"))
+        .unwrap();
+
+    // Hooks: 12 PostToolUse (often, nothing recorded there), 2 PreToolUse and 1
+    // SessionStart below the threshold.
+    for (event, n) in [("PostToolUse", 12), ("PreToolUse", 2), ("SessionStart", 1)] {
+        for _ in 0..n {
+            store
+                .insert_call("adv", "hook", "hook", None, None, None, None, Some(event))
+                .unwrap();
+        }
+    }
+
+    // Usage: the `stats --cache` bust pattern — one tools-cause bust at turn 3.
+    for (body, create, read) in [
+        (BODY_A, 0, 0),
+        (BODY_A, 500, 30_000),
+        (BODY_MORE_TOOLS, 31_000, 200),
+    ] {
+        let id = store
+            .insert_call("adv", "proxy", "api_request", None, None, None, None, None)
+            .unwrap();
+        store
+            .insert_call_io(id, Some(body.as_bytes()), None, 1 << 20, None)
+            .unwrap();
+        store
+            .insert_usage("adv", Some("m"), "anthropic", 100, create, read, 5, id)
+            .unwrap();
+    }
+
+    // Archive: 3 pointers, one frozen — the 33.3% rate and the one re-read.
+    let mut first_archive_id = String::new();
+    for (i, body) in [b"first payload\n".as_slice(), b"second", b"third"]
+        .into_iter()
+        .enumerate()
+    {
+        let archive_id = store
+            .put_archive("adv", body, &cfg.core.archive_dir)
+            .unwrap();
+        if i == 0 {
+            first_archive_id = archive_id.clone();
+        }
+        store
+            .put_archive_decision(&format!("u{i}"), &archive_id, "adv", "head…")
+            .unwrap();
+    }
+    store.mark_expanded(&first_archive_id).unwrap();
+
+    // Measurements: cmd and archive net positive, inject 1500/turn over the 800 budget,
+    // toon net −15 (the one plugin to retire); the expand row names the frozen id.
+    for (plugin, kind, est_before, est_after, ref_id) in [
+        ("cmd", "filter", 25, 10, None),
+        (
+            "archive",
+            "pointer",
+            100,
+            20,
+            Some(first_archive_id.clone()),
+        ),
+        ("archive", "expand", 0, 5, Some(first_archive_id.clone())),
+        ("inject", "inject", 2000, 1500, None),
+        ("toon", "table", 10, 25, None),
+    ] {
+        store
+            .insert_measurement(
+                "adv",
+                &rtok::Measurement {
+                    plugin,
+                    kind,
+                    before_bytes: 100,
+                    after_bytes: 40,
+                    est_before,
+                    est_after,
+                    ref_id,
+                    call_id: None,
+                },
+            )
+            .unwrap();
+    }
+}
+
+/// T22.5 Check, first clause: each rule fires exactly once, ordered by recoverable
+/// tokens (31000 bust, 700 inject excess, 15 toon loss, 5 + 5 expand, 0 idle hook),
+/// and every finding names the row count behind it.
+#[test]
+fn each_rule_fires_once_in_recoverable_order() {
+    let h = home("advice");
+    seed_advice(&h);
+    let out = rtok(&["report"], &h);
+    println!("{out}");
+
+    for rule in [
+        "expand-rate",
+        "retire-plugin",
+        "cache-bust",
+        "idle-hook",
+        "inject-budget",
+        "archive-window",
+    ] {
+        assert_eq!(
+            out.matches(&format!("- **{rule}**:")).count(),
+            1,
+            "{rule} fires exactly once: {out}"
+        );
+    }
+    // Every finding names the row count behind it.
+    assert!(
+        out.contains("3 archive_decisions rows"),
+        "expand rows: {out}"
+    );
+    assert!(out.contains("1 toon Measurement row"), "retire rows: {out}");
+    assert!(
+        out.contains("session adv turn 3"),
+        "the bust names its turn: {out}"
+    );
+    assert!(
+        out.contains("12 hook `PostToolUse` rows in window"),
+        "hook rows: {out}"
+    );
+    assert!(
+        out.contains("1 inject Measurement row"),
+        "inject rows: {out}"
+    );
+    assert!(out.contains("budget_tokens 800"), "the budget: {out}");
+    assert!(out.contains("keep_turns 4"), "the window setting: {out}");
+    // Ordered by the tokens each would recover.
+    let pos = |rule: &str| out.find(&format!("- **{rule}**:")).unwrap();
+    let order = [
+        "cache-bust",
+        "inject-budget",
+        "retire-plugin",
+        "expand-rate",
+        "archive-window",
+        "idle-hook",
+    ];
+    let positions: Vec<usize> = order.iter().map(|r| pos(r)).collect();
+    let mut sorted = positions.clone();
+    sorted.sort_unstable();
+    assert_eq!(positions, sorted, "most recoverable tokens first: {out}");
+
+    let _ = fs::remove_dir_all(&h);
+}
+
+/// T22.5 Check, second clause: a healthy store — positive savings, no busts, no
+/// re-reads, injections under budget, quiet hooks — gets an empty section that says
+/// so, not filler advice.
+#[test]
+fn healthy_store_has_no_recommendations() {
+    let h = home("healthy");
+    let cfg = rtok::config::Config::load_from(&h).expect("config");
+    let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+    store
+        .upsert_session("ok", None, None, None, Some("proxy"))
+        .unwrap();
+    for _ in 0..2 {
+        store
+            .insert_call(
+                "ok",
+                "hook",
+                "hook",
+                None,
+                None,
+                None,
+                None,
+                Some("PreToolUse"),
+            )
+            .unwrap();
+    }
+    let id = store
+        .insert_call("ok", "proxy", "api_request", None, None, None, None, None)
+        .unwrap();
+    store
+        .insert_call_io(id, Some(BODY_A.as_bytes()), None, 1 << 20, None)
+        .unwrap();
+    store
+        .insert_usage("ok", Some("m"), "anthropic", 100, 0, 0, 5, id)
+        .unwrap();
+    for (plugin, kind, est_before, est_after) in [
+        ("cmd", "filter", 25, 10),
+        ("archive", "pointer", 100, 20),
+        ("inject", "inject", 500, 400),
+    ] {
+        store
+            .insert_measurement(
+                "ok",
+                &rtok::Measurement {
+                    plugin,
+                    kind,
+                    before_bytes: 100,
+                    after_bytes: 40,
+                    est_before,
+                    est_after,
+                    ref_id: None,
+                    call_id: None,
+                },
+            )
+            .unwrap();
+    }
+    let out = rtok(&["report"], &h);
+    println!("{out}");
+
+    assert!(out.contains("## Recommendations"));
+    assert!(out.contains("No recommendations."));
+    assert!(
+        !out.contains("- **"),
+        "no findings on a healthy store: {out}"
+    );
+
     let _ = fs::remove_dir_all(&h);
 }

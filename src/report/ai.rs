@@ -354,6 +354,7 @@ mod tests {
                     }],
                     total_rows: 1,
                     total_saved: 15,
+                    kinds: vec!["filter".into()],
                 },
                 calls: ReportCallsSection {
                     rows: vec![ReportCalls {
@@ -365,18 +366,31 @@ mod tests {
                     }],
                     in_window: 2,
                     total: 2,
+                    hooks: vec![ReportHook {
+                        name: "PreToolUse".into(),
+                        calls: 2,
+                    }],
                 },
                 cache: ReportCache {
                     sessions: 1,
                     turns: 3,
                     busts: 1,
                     by_cause: [("tools".to_string(), 1)].into(),
+                    detail: vec![ReportBust {
+                        session: "s1".into(),
+                        turn: 3,
+                        cause: "tools".into(),
+                        cache_create: 31_000,
+                        cache_read: 200,
+                    }],
                 },
                 expand: ReportExpand {
                     decisions: 3,
                     expanded: 1,
                     rate: 1.0 / 3.0,
                     expanded_ids: vec!["abc".into()],
+                    cost: 5,
+                    cost_rows: 1,
                 },
             },
             config: vec![crate::web::model::ConfigEntry {

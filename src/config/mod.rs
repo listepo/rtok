@@ -270,7 +270,12 @@ section! {
 
 section! {
     /// `[expand]` — `rtok expand <id>`.
-    Expand { max_lines: u32 = 0 }
+    Expand {
+        max_lines: u32 = 0,
+        /// Ceiling on the live-zone re-read rate (T22.5): above it, `rtok report`
+        /// finds the compression lossier in practice than it looks.
+        max_rate: f64 = 0.05,
+    }
 }
 
 section! {

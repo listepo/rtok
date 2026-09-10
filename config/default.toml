@@ -118,6 +118,7 @@ extensions_path = "~/.pi/agent/extensions"
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
+max_rate  = 0.05                      # re-read ceiling; above it the report flags lossy compression (T22.5)
 
 [filter]                              # rtok filter --stdin (T10.2)
 cmd = ""                              # command family hint when the caller knows it (--cmd)

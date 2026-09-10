@@ -223,6 +223,9 @@ pub struct ReportSavingsSection {
     pub rows: Vec<ReportSavings>,
     pub total_rows: u64,
     pub total_saved: i64,
+    /// Every distinct `Measurement` kind present, sorted — T22.5 matches hook events
+    /// against these instead of growing a per-event query.
+    pub kinds: Vec<String>,
 }
 
 /// Latency of one surface; p50/p95 are nearest-rank over the calls that recorded an `ms`.
@@ -242,6 +245,15 @@ pub struct ReportCallsSection {
     pub rows: Vec<ReportCalls>,
     pub in_window: u64,
     pub total: u64,
+    /// Hook-surface calls in window by event, busiest first (T22.5 rule 4).
+    pub hooks: Vec<ReportHook>,
+}
+
+/// One hook event's in-window `calls` rows; `"unknown"` when the row names no event.
+#[derive(Debug, Serialize)]
+pub struct ReportHook {
+    pub name: String,
+    pub calls: u64,
 }
 
 /// Cache busts and their cause, aggregated from the `stats --cache` page.
@@ -252,6 +264,20 @@ pub struct ReportCache {
     pub busts: u64,
     /// Busts per cause (`tools` | `system` | `unknown`), cause order.
     pub by_cause: Vec<(String, u64)>,
+    /// Every bust with its turn named, in session/turn order (T22.5 rule 3 keeps
+    /// `tools` / `system`). `turn` is 1-based in request order, the numbering
+    /// `stats --cache` prints.
+    pub detail: Vec<ReportBust>,
+}
+
+/// One prompt-cache bust: which session, which turn, what it re-wrote.
+#[derive(Debug, Serialize)]
+pub struct ReportBust {
+    pub session: String,
+    pub turn: u64,
+    pub cause: String,
+    pub cache_create: i64,
+    pub cache_read: i64,
 }
 
 /// The archive plugin's honesty metric (T5.4): how often a live-zone pointer had to be
@@ -265,6 +291,10 @@ pub struct ReportExpand {
     pub rate: f64,
     /// Archive ids a `rtok expand` froze — `Measurement` rows, kind `expand`, `ref_id`.
     pub expanded_ids: Vec<String>,
+    /// Σ est_after over those rows — what the re-reads cost (T22.5 rules 1 and 6).
+    pub cost: i64,
+    /// How many `expand` rows that sum came from.
+    pub cost_rows: u64,
 }
 
 /// Every ledger section of the report, from one store open.
@@ -322,6 +352,7 @@ fn report_window(cfg: &Config, store: &Store) -> Result<ReportWindow> {
 
 fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
     let mut rows = Vec::new();
+    let mut kinds = std::collections::BTreeSet::new();
     let (mut total_rows, mut total_saved) = (0u64, 0i64);
     for (id, _) in crate::config::CATALOGUE {
         let ms = store.list_measurements(id)?;
@@ -332,6 +363,7 @@ fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
         for m in &ms {
             before += i64::from(m.est_before);
             after += i64::from(m.est_after);
+            kinds.insert(m.kind.clone());
         }
         total_rows += ms.len() as u64;
         total_saved += before - after;
@@ -347,6 +379,7 @@ fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
         rows,
         total_rows,
         total_saved,
+        kinds: kinds.into_iter().collect(),
     })
 }
 
@@ -372,19 +405,44 @@ fn report_calls(store: &Store, from: i64) -> Result<ReportCallsSection> {
         in_window: all.iter().filter(|c| c.ts >= from).count() as u64,
         total: all.len() as u64,
         rows,
+        hooks: report_hooks(&all, from),
     })
+}
+
+/// Hook-surface `calls` rows in window grouped by event name, busiest first.
+fn report_hooks(all: &[crate::store::models::Call], from: i64) -> Vec<ReportHook> {
+    let mut by_name: std::collections::BTreeMap<String, u64> = Default::default();
+    for c in all.iter().filter(|c| c.surface == "hook" && c.ts >= from) {
+        *by_name
+            .entry(c.name.clone().unwrap_or_else(|| "unknown".into()))
+            .or_default() += 1;
+    }
+    let mut hooks: Vec<ReportHook> = by_name
+        .into_iter()
+        .map(|(name, calls)| ReportHook { name, calls })
+        .collect();
+    hooks.sort_by(|a, b| b.calls.cmp(&a.calls).then(a.name.cmp(&b.name)));
+    hooks
 }
 
 fn report_cache(store: &Store) -> Result<ReportCache> {
     let health = cache::report(store)?;
     let mut by_cause: std::collections::BTreeMap<String, u64> = Default::default();
+    let mut detail = Vec::new();
     let (mut turns, mut busts) = (0u64, 0u64);
     for h in &health {
         turns += h.turns.len() as u64;
         busts += h.busts as u64;
-        for t in &h.turns {
+        for (i, t) in h.turns.iter().enumerate() {
             if let Some(cause) = &t.bust {
                 *by_cause.entry(cause.clone()).or_default() += 1;
+                detail.push(ReportBust {
+                    session: h.session.clone(),
+                    turn: i as u64 + 1,
+                    cause: cause.clone(),
+                    cache_create: t.cache_create,
+                    cache_read: t.cache_read,
+                });
             }
         }
     }
@@ -393,17 +451,23 @@ fn report_cache(store: &Store) -> Result<ReportCache> {
         turns,
         busts,
         by_cause: by_cause.into_iter().collect(),
+        detail,
     })
 }
 
 fn report_expand(store: &Store) -> Result<ReportExpand> {
     let (decisions, expanded) = store.archive_decision_counts()?;
-    let expanded_ids = store
-        .list_measurements("archive")?
-        .into_iter()
-        .filter(|m| m.kind == "expand")
-        .filter_map(|m| m.ref_id)
-        .collect();
+    let mut expanded_ids = Vec::new();
+    let (mut cost, mut cost_rows) = (0i64, 0u64);
+    for m in store.list_measurements("archive")? {
+        if m.kind == "expand" {
+            cost += i64::from(m.est_after);
+            cost_rows += 1;
+            if let Some(id) = m.ref_id {
+                expanded_ids.push(id);
+            }
+        }
+    }
     Ok(ReportExpand {
         rate: if decisions > 0 {
             expanded as f64 / decisions as f64
@@ -413,6 +477,8 @@ fn report_expand(store: &Store) -> Result<ReportExpand> {
         decisions,
         expanded,
         expanded_ids,
+        cost,
+        cost_rows,
     })
 }
 
