@@ -135,11 +135,26 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
     fs::create_dir_all(&cfg.demon.state_dir)?;
     let exe = std::env::current_exe()?;
     for service in targets(cfg, named, false)? {
-        if let Some(st) = read(cfg, service)
-            && alive(st.supervisor)
-        {
-            println!("{service} already running (supervisor {})", st.supervisor);
-            continue;
+        if let Some(st) = read(cfg, service) {
+            if alive(st.supervisor) {
+                println!("{service} already running (supervisor {})", st.supervisor);
+                continue;
+            }
+            // A supervisor that died from outside can leave its child up. Starting another
+            // supervisor would put two owners on the same port — retire the orphan first.
+            if alive(st.child) {
+                signal(st.child, Signal::TERM);
+                for _ in 0..40 {
+                    if !alive(st.child) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                if alive(st.child) {
+                    signal(st.child, Signal::KILL);
+                }
+            }
+            let _ = fs::remove_file(file(cfg, service, "json"));
         }
         let _ = fs::remove_file(file(cfg, service, "stop"));
         let mut cmd = Command::new(&exe);

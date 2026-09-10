@@ -645,10 +645,20 @@ impl Config {
 }
 
 /// `~/.rtok/x` → `<home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` → `$HOME/x`.
+/// Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them literal is how
+/// tests without `finish` used to create a `./~` directory in the repo.
 fn expand(path: &Path, home: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
+    if raw == "~/.rtok" || raw == "~/.rtok/" {
+        return home.to_path_buf();
+    }
     if let Some(rest) = raw.strip_prefix("~/.rtok/") {
         return home.join(rest);
+    }
+    if raw == "~" {
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf());
     }
     match (raw.strip_prefix("~/"), std::env::var_os("HOME")) {
         (Some(rest), Some(h)) => PathBuf::from(h).join(rest),
@@ -780,6 +790,21 @@ mod tests {
         let err = parse("[proxy]\nprot = 1\n").unwrap_err();
         assert!(err.to_string().contains("prot"), "{err}");
         assert!(parse("[nope]\nx = 1\n").is_err());
+    }
+
+    #[test]
+    fn expand_covers_bare_tilde_and_rtok_home_dir() {
+        let home = Path::new("/tmp/rtok-home");
+        assert_eq!(expand(Path::new("~/.rtok"), home), home);
+        assert_eq!(expand(Path::new("~/.rtok/"), home), home);
+        assert_eq!(expand(Path::new("~/.rtok/db"), home), home.join("db"));
+        if let Some(h) = std::env::var_os("HOME") {
+            assert_eq!(expand(Path::new("~"), home), PathBuf::from(&h));
+            assert_eq!(
+                expand(Path::new("~/.claude/settings.json"), home),
+                PathBuf::from(h).join(".claude/settings.json")
+            );
+        }
     }
 
     #[test]
