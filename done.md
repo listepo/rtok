@@ -499,7 +499,7 @@ Model: Claude Opus 5 (anthropic/claude-opus-5)
 Check result: `crates/rtok-plugin-sdk/PLAN.md` chooses the middle line (C) — trait, events, value types and host capability traits in the crate; `Store`, `Config` and every surface stay in `rtok`; crate dependencies are `serde`, `serde_json`, `anyhow`. Rejected with reasons: (A) runtime-in-SDK publishes 4 112 lines of host internals and makes a plugin author compile diesel plus bundled SQLite; (B) contract-only cannot record a `Measurement`, which makes it useless under D3; (C′) out-of-process spends most of D1's 10 ms budget on a hop, and is kept as the v0.2+ WASM host. Capability list is five traits — `Archive`, `Notes`, `ReadCache`, `Symbols`, `Ledger` — plus `Host`; the `Store` methods behind them are the measured 26 (`grep -rhoE "cx\.store\.[a-z_0-9]+" src/plugins/ | sort -u`, 2026-09-09: symbols 11, ledger 6, archive 3, read cache 3, notes 4 — the task text said 29 from a rougher first count). Required methods: `manifest()` and `dashboard_page()`, with the reason for each. Outside comparisons priced from the crates.io API on 2026-09-09: `bevy_app` 0.19.1 (17 direct deps), `tower-layer`/`tower-service` 0.3.3 (0), `nu-plugin` 0.115.1 / `nu-protocol` 0.115.1 (8 / 38). `Falsified by:` names the condition that sends the line back to option A. `tests/plugin_plans.rs` now walks this file too, so the D15 structure is enforced rather than promised: `cargo test --test plugin_plans` 8 passed; `just check` green.
 Deviation: the task text priced (C) as "contract plus `Config` and `tokens`". The survey moves neither — `Config` would publish ~100 config keys as semver surface, and the estimator needs the host's rates, so both stay behind `Host` (`plugin_config::<T>()`, `estimate()`). Same line, one notch tighter.
 
-## P22 — `rtok report` (D24) · T22.0–T22.2, T22.4 done 2026-09-09
+## P22 — `rtok report` (D24) · T22.0–T22.4 done 2026-09-10
 
 Goal: one artefact a person or a model can act on — the report renders the D23 operator model and computes nothing of its own. Plan: `plan.md` P22.
 
@@ -632,6 +632,44 @@ tests), and the toon dogfood needs the 2-word `pub(crate)` share; precedent T22.
 (+370, whose entry already named this task's share as the home for its `ms()` mirror — that mirror
 stays theirs to retire). No new dependency. Landing note: verified both before (`a054922`) and
 after (`1246857`) T22.2's landing; the dispatch rides T22.2's committed `emit()`.
+
+**T22.3 `--format pdf`** · T22.0, T22.2 · `src/report/pdf.rs` (new), `tests/report_pdf.rs` (new), `src/cli.rs`, `src/report/mod.rs`, `Cargo.toml`, `Cargo.lock`
+Do: the renderer T22.0 chose, over the same document and the same SVG charts. Paged, with a table
+of contents.
+Check: the PDF has the same section headings in the same order as the HTML, and the release binary
+still passes the P17 size gate with the renderer linked in.
+Complexity: 4/5
+Status: done 2026-09-10 · Model: Muse Spark 1.3 (subagent-pdf)
+Check result: green. `src/report/pdf.rs` (new) renders the same eight sections in the P22 order
+over the same `Document` — A4, Helvetica only (no font files ship, which is why T22.0 picked this
+renderer), a contents page with page numbers plus viewer bookmarks, native bar charts over the
+identical pairs, order and titles as the HTML bars, streams uncompressed so every figure stays
+greppable in the artifact. `tests/report_pdf.rs` (new) 2 passed:
+`pdf_has_the_html_headings_in_order_and_the_charts` walks `--format html` and `--format pdf` over
+one store — the eight `(Title)` headings in the same order in the contents list and the body, one
+chart label per series, ≥2 `/Type/Page`s, `%PDF-`/`%%EOF`;
+`empty_store_pdf_keeps_all_headings` keeps all eight headings with `(No rows in window.)`. CLI:
+`Pdf` joins the `ReportFormat` ValueEnum (D14); the shared `emit()` sink now takes bytes (the PDF
+is binary; md/html/ai pass `.as_bytes()`, stdout bytes unchanged). Verified in a detached worktree
+at `b7d4c2e` with an isolated target dir (the shared-target contention T22.4 noted):
+`cargo fmt --check` clean, `cargo clippy --workspace --all-targets --all-features -D warnings`
+clean, `cargo test --workspace` green (all suites incl. doctests), `cargo build
+--no-default-features --features measure` silent, `just dup` exit 0 (38 clones, none from the new
+files). P17, linked measurement (release, `strip = "symbols"`, isolated target dir):
+release `rtok` 20 988 304 B → 23 212 128 B (delta +2 223 824 B / +2.12 MiB, +10.6 %),
+measured 2026-09-10 on the pre-T15.8 tree plus this task (T15.8/T15.3 landed after the measurement; CLI/model lines only, same size class) — inside T22.0's projected +5.99 MiB
+class (its scratch over-estimated: a hello-binary baseline pulls different dependency
+paths than rtok's real feature set); P17 holds (no byte cap published, same size class). An empty-store PDF is 22 595 B over 4 pages; its xref offsets were validated
+object-by-object with a dependency-free script (31 live objects, headings ordered).
+Deviations: ~720 added lines across 4 tracked files + 2 new (brief: ≤200) — the Check's own
+content (8 evidenced sections plus the Op-stream layout T22.0 priced as "a second layout by
+construction", plus the walk-both parity test) does not fit 200; precedent T22.1 (+880), T22.2
+(+370) and T22.4 (+750). `svg2pdf` is not linked although T22.0 named it: verified in its 0.13.0
+source that `to_pdf` returns a standalone one-page PDF, and printpdf 0.12 has no PDF-page import
+(only `UseXobject` for registered objects) — merging the two would be byte-level PDF surgery, far
+outside this task, so the charts are the same series drawn natively (T22.0's own scratch produced
+two separate files, never a merged page; its fontdb-on-bare-Linux hazard goes away with it). New
+dependency: `printpdf 0.12.8` — the paged-PDF renderer the T22.0 survey chose.
 
 ## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.8, T15.10, T15.11, T15.12 done (T15.3, T15.8 2026-09-10, rest 2026-09-09)
 

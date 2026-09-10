@@ -10,6 +10,7 @@
 pub mod ai;
 pub mod html;
 pub mod markdown;
+pub mod pdf;
 
 use std::path::Path;
 

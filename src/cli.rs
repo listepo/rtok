@@ -192,9 +192,9 @@ enum Cmd {
         #[arg(long, global = true)]
         lines: Option<usize>,
     },
-    /// The operator model as one document (D24): Markdown and HTML now, pdf later
+    /// The operator model as one document (D24): Markdown, HTML and PDF
     Report {
-        /// Output format (`pdf` T22.3)
+        /// Output format
         #[arg(long, value_enum, default_value = "md")]
         format: ReportFormat,
         /// Write to this path instead of stdout
@@ -250,11 +250,12 @@ enum LogsCmd {
 }
 
 /// `--format` for `rtok report` (D14: a `ValueEnum`, like `demon`'s `Service`, so clap
-/// validates, lists and completes it). T22.3 adds the `Pdf` variant here.
+/// validates, lists and completes it). `Pdf` landed with T22.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ReportFormat {
     Md,
     Html,
+    Pdf,
 }
 
 impl ReportFormat {
@@ -262,6 +263,7 @@ impl ReportFormat {
         match self {
             Self::Md => "md",
             Self::Html => "html",
+            Self::Pdf => "pdf",
         }
     }
 }
@@ -774,13 +776,23 @@ pub fn run() -> Result<()> {
             let home = Config::home_dir();
             let doc = crate::report::document(&cfg, &home, config_file.as_deref())?;
             if cfg.report.ai {
-                emit(&cfg.report.out, &crate::report::ai::render(&doc, &cfg))?;
+                emit(
+                    &cfg.report.out,
+                    crate::report::ai::render(&doc, &cfg).as_bytes(),
+                )?;
                 return Ok(());
             }
             match cfg.report.format.as_str() {
-                "md" => emit(&cfg.report.out, &crate::report::markdown::render(&doc))?,
-                "html" => emit(&cfg.report.out, &crate::report::html::render(&doc))?,
-                other => bail!("--format {other} is not built yet (T22.3 adds pdf)"),
+                "md" => emit(
+                    &cfg.report.out,
+                    crate::report::markdown::render(&doc).as_bytes(),
+                )?,
+                "html" => emit(
+                    &cfg.report.out,
+                    crate::report::html::render(&doc).as_bytes(),
+                )?,
+                "pdf" => emit(&cfg.report.out, &crate::report::pdf::render(&doc))?,
+                other => bail!("--format {other} is unknown (md, html, pdf)"),
             }
         }
         #[cfg(not(feature = "cmd"))]
@@ -1006,9 +1018,11 @@ fn doctor_flags(instructions: bool) -> Option<figment::value::Dict> {
 
 /// The report's sink (D12: `report.out`): stdout when empty, else the file. One sink
 /// for every `--format` so the renderings cannot disagree about where it went.
-fn emit(out: &std::path::Path, body: &str) -> Result<()> {
+/// Bytes, not `&str`: the PDF renderer emits binary, and the text renderings are
+/// UTF-8 either way.
+fn emit(out: &std::path::Path, body: &[u8]) -> Result<()> {
     if out.as_os_str().is_empty() {
-        print!("{body}");
+        std::io::Write::write_all(&mut std::io::stdout(), body)?;
     } else {
         std::fs::write(out, body)?;
         println!("{}", out.display());

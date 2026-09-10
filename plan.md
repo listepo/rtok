@@ -168,15 +168,7 @@ doctor` reports) · **Recommendations**.
 T22.1 (`--format md`) and T22.2 (`--format html`) are done 2026-09-09 — see `done.md` P22.
 The Markdown document carries the whole section set, every number with its row count and window,
 and reads through the D23 model only (`model::report_ledgers`); `--format` is a ValueEnum with
-`md` and `html` until T22.3 lands `pdf`.
-
-**T22.3 `--format pdf`** · T22.0, T22.2 · `src/report/pdf.rs`
-Do: the renderer T22.0 chose, over the same document and the same SVG charts. Paged, with a table
-of contents.
-Check: the PDF has the same section headings in the same order as the HTML, and the release binary
-still passes the P17 size gate with the renderer linked in.
-Status: open · Model: -
-Complexity: 4/5
+`md`, `html` and `pdf`.
 
 **T22.5 recommendations** · T22.1 · `src/report/advice.rs`
 Do: rules over the ledgers, never a model call. Each finding prints what triggered it and the rows
@@ -560,7 +552,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T22.0` | P22 report | pick the PDF renderer against the size gate | ✅ 2026-09-09 | 2/5 |
 | `T22.1` | P22 report | `--format md` | ✅ 2026-09-09 | 3/5 |
 | `T22.2` | P22 report | `--format html` | ✅ 2026-09-09 | 3/5 |
-| `T22.3` | P22 report | `--format pdf` | open | 4/5 |
+| `T22.3` | P22 report | `--format pdf` | ✅ 2026-09-10 | 4/5 |
 | `T22.4` | P22 report | `--ai` | ✅ 2026-09-09 | 3/5 |
 | `T22.5` | P22 report | recommendations | open | 3/5 |
 | `T23.0` | P23 plugin SDK | where the boundary goes | ✅ 2026-09-09 | 3/5 |
