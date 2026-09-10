@@ -8,17 +8,21 @@
 mod app;
 mod view;
 
+use std::io::{self, IsTerminal};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use crossterm::event::{self, Event, KeyEventKind};
 
 use crate::config::Config;
 use crate::web::model;
 
 /// `rtok tui`: alternate screen and raw mode until `q` / `Esc` / `Ctrl+C`. The terminal
-/// is restored on every exit path — the loop's errors are returned, not panicked on.
+/// is restored on every exit path — the loop's errors are returned, not panicked on, and
+/// a panic still restores first: `try_init` installs ratatui's panic hook (0.30.2
+/// `init.rs::set_panic_hook`), which calls `restore` before the previous hook unwinds.
 pub fn run(cfg: Config) -> Result<()> {
+    check_tty(io::stdin().is_terminal(), io::stdout().is_terminal())?;
     let mut terminal = ratatui::try_init().context("terminal init — is stdout a tty?")?;
     // `max(1)`: a zero cadence would busy-poll; `config validate` rejects it in the
     // file, this holds the line for `--tick-secs 0`.
@@ -49,5 +53,32 @@ fn event_loop(
         if key.kind == KeyEventKind::Press && app.key(key.code, key.modifiers) {
             return Ok(());
         }
+    }
+}
+
+/// T15.9: both streams must be a tty — keys arrive on stdin, the screen is written to
+/// stdout, and a pipe on either (CI, `rtok tui | less`, a daemon) would trap the caller
+/// in raw mode or garble its pipe. Refused here, before `try_init`, no terminal state is
+/// ever touched, so there is nothing to restore and no escape code reaches the pipe.
+fn check_tty(stdin: bool, stdout: bool) -> Result<()> {
+    if stdin && stdout {
+        Ok(())
+    } else {
+        bail!("rtok tui needs a terminal on stdin and stdout; run it interactively, not piped")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T15.9: the guard decides on the two tty flags alone, so every combination is
+    /// deterministic here — both streams, or refusal.
+    #[test]
+    fn tty_guard_demands_both_streams() {
+        assert!(check_tty(true, true).is_ok());
+        assert!(check_tty(true, false).is_err());
+        assert!(check_tty(false, true).is_err());
+        assert!(check_tty(false, false).is_err());
     }
 }

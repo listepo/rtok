@@ -699,9 +699,22 @@ outside this task, so the charts are the same series drawn natively (T22.0's own
 two separate files, never a merged page; its fontdb-on-bare-Linux hazard goes away with it). New
 dependency: `printpdf 0.12.8` — the paged-PDF renderer the T22.0 survey chose.
 
-## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.6, T15.8, T15.10, T15.11, T15.12 done (T15.3, T15.6, T15.8 2026-09-10, rest 2026-09-09)
+## P15 — `rtok tui` (D17, D23) · T15.0, T15.1, T15.2, T15.3, T15.6, T15.8, T15.9, T15.10, T15.11, T15.12 done (T15.3, T15.6, T15.8, T15.9 2026-09-10, rest 2026-09-09)
 
 Goal: `rtok tui` and `rtok web` are two renderings of one operator model. Plan: `plan.md` P15.
+
+**T15.9 TTY guard, `q` restores the terminal** · T15.1 · `src/tui/mod.rs`, `tests/tui_tty.rs`
+Do (roadmap §TUI): refuse `rtok tui` without a TTY before `try_init` touches terminal state;
+`q` / Esc / Ctrl-C restore via `run()`'s `restore()` on every loop exit (T15.1); ratatui's
+`try_init` already installs the panic hook that restores.
+Complexity: 2/5
+Status: done 2026-09-10 · Model: GLM-5.3 (subagent; policy tier GLM-5.3-Flash, Low) — cherry-picked from agent/T15.9
+Check result: green. Guard message names both stdin and stdout; exit 1 via anyhow Termination;
+no escape codes on the refuse path. `tests/tui_tty.rs` runs the real binary with all stdio
+piped (exit 1, one stderr line, clean stdout, no ESC); unit test covers all four tty-flag
+combinations. `just check` green on the originating worktree; cherry-picked onto main after
+T15.6.
+Deviations: none. No second panic hook added.
 
 **T15.6 Doctor tab** · T15.0 · `src/web/model.rs`, `src/tui/{app,view}.rs`, `tests/surface_parity.rs`
 Do (roadmap §TUI): Doctor tab — render what `rtok doctor` reports off the shared D23 model

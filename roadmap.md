@@ -360,7 +360,7 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 | 5 | T15.5 | Calls tab (P13 rows + detail) · in progress 2026-09-10, same round | 3/5 |
 | 6 | T15.6 | Doctor tab · done 2026-09-10 | 1/5 |
 | 7 | T15.7 | Logs tab · in progress 2026-09-10, same round (policy tier GLM-5.3-Flash, Low) | 2/5 |
-| 8 | T15.8–T15.9 | CLI, `[tui]` config · done 2026-09-10 (T15.8); TTY guard (T15.9) · in progress 2026-09-10, same round (policy tier GLM-5.3-Flash, Low) | 2/5 |
+| 8 | T15.8–T15.9 | CLI, `[tui]` config · done 2026-09-10 (T15.8); TTY guard · done 2026-09-10 (T15.9) | 2/5 |
 
 **Gate P15.** Overview numbers match `rtok stats --json`; `q` restores terminal.
 
