@@ -103,7 +103,7 @@ tree-sitter-tags = { version = "0.25", optional = true } # definition tags from 
 tree-sitter-rust = { version = "0.24.2", optional = true } # lang-rust tags (T4.3)
 tree-sitter-javascript = { version = "0.23", optional = true } # lang-js tags (T4.3)
 tree-sitter-typescript = { version = "0.23", optional = true } # lang-ts tags (T4.3)
-tree-sitter-python = { version = "0.23", optional = true } # lang-python tags (T4.3)
+tree-sitter-python = { version = "0.25", optional = true } # lang-python tags (T4.3)
 tree-sitter-c = { version = "0.23", optional = true } # lang-c tags (T4.3)
 tree-sitter-go = { version = "0.23", optional = true } # lang-go tags (T4.3)
 tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
