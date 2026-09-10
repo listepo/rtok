@@ -75,9 +75,9 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | P15 |
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
-| `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Renders the operator model `rtok tui` also renders (D23). UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
+| `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Serves the D23 operator model `rtok tui` also renders; the WASM UI itself is still thin (Plugins strip) vs `model::pages()` — Sessions/Calls/Logs/Doctor are T19.4. UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
-| `src/setup/` | host installers (claude, cursor, codex) with backups and `--dry-run` | T2.3, P10 |
+| `src/setup/` | host installers (claude, cursor, codex, opencode, pi) with backups and `--dry-run`. Cursor today wires only `beforeShellExecution` → PreToolUse (`adapt_cursor`); PostToolUse/guard cache on Cursor is T10.11. | T2.3, P10 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
 | `tests/fixtures/hooks/*.json` | one real payload per hook event | T0.6 |
 
@@ -185,8 +185,10 @@ under 5 %.
 - **New hook event**: add fields to `HookInput`, a view struct in `plugin.rs`, an accessor,
   a fixture, and a trait method with a default body.
 - **New host** (Cursor, OpenCode, Codex): a `src/setup/<host>.rs` installer plus, if the
-  payload differs, a field mapping into `HookInput`. The plugins do not change.
-- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait; operator TUI (`src/tui/`, D17) and web dashboard (`src/dashboard/`, D20) read `Store`/`stats`/`doctor`; dashboard also calls `Plugin::dashboard_page`. They do not run on the hook path;
+  payload differs, a field mapping into `HookInput`. The plugins do not change. Cursor's
+  installer currently registers only `beforeShellExecution` (PreToolUse); after-tool /
+  PostToolUse adapt is open as T10.11 — without it guard/read caches never populate on Cursor.
+- **New surface**: a new module under `src/` that builds a `Registry` and calls the trait; operator TUI (`src/tui/`, D17) and web (`src/web/`, D20) read `Store`/`stats`/`doctor` through the D23 model; both call `Plugin::dashboard_page`. They do not run on the hook path;
   add a `Surface` variant so manifests can declare it.
 - **New API wire format** (e.g. Gemini): implement `Wire` in `src/proxy/<name>.rs` — route
   match, tool-result accessor, usage parser for body and SSE — plus fixtures. Plugins do not

@@ -55,6 +55,12 @@ under 10 ms with export on. Delivery is at-least-once behind a per-stream waterm
 advances on a 2xx; span ids are derived from row ids, so a re-sent span is byte-identical and
 collectors merge it.
 
+**Known debt (T16.9):** `proxy` and `mcp` timer flushes can overlap a detached `rtok otel flush`
+from `Stop`/`SessionEnd`. Concurrent processes may race the same watermark and double-export a
+batch; pending counts in `rtok otel status` can then disagree with what the collector received.
+Until T16.9 lands, prefer a single long-running surface when debugging export, or flush by hand
+with `rtok proxy` / `rtok mcp` stopped.
+
 ## What you see
 
 | Ledger row | Span | Key attributes |

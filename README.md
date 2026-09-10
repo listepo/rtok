@@ -178,8 +178,8 @@ rtok config show --sources
 
 ```text
 core.db_path = ~/.rtok/rtok.db (user)
-core.log_level = warn (user)
-dashboard.port = 3333 (user)
+log.level = info (user)
+web.port = 3333 (user)
 estimator.code = 3.5 (user)
 …
 ```

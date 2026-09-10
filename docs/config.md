@@ -55,7 +55,9 @@ Rules:
 ## Reference file
 
 This is `config/default.toml` verbatim. Every value shown is the default; a fresh
-`rtok config init` writes exactly this.
+`rtok config init` writes exactly this. Logging is `[log]` only (D26): `core.log_file`,
+`core.log_level` and `core.log_to_db` are still accepted by the schema today but are **unread**
+by production code — T24.5 retires them. Prefer `[log].path` / `level` / `to_db`.
 
 ```toml
 # rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
@@ -65,12 +67,20 @@ This is `config/default.toml` verbatim. Every value shown is the default; a fres
 [core]
 db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
-log_level   = "warn"                  # error | warn | info | debug
-log_file    = "~/.rtok/rtok.log"      # hooks never write to stderr; they log here
+log_level   = "warn"                  # LEGACY unread (D26); use [log].level — retired by T24.5
+log_file    = "~/.rtok/rtok.log"      # LEGACY unread (D26); use [log].path — retired by T24.5
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
 retain_calls_days    = 30             # 0 = keep `calls` forever
-log_to_db            = true           # also write `logs` rows; log_file is always written
+log_to_db            = true           # LEGACY unread (D26); use [log].to_db — retired by T24.5
+
+[log]                                 # rtok's own log (D26); `rtok logs` reads it — the only keys that work today
+path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5
+max_bytes = 1048576                   # rotate past 1 MiB
+files     = 5                         # generations kept; older ones are deleted, never archived
+lines     = 200                       # what `rtok logs` prints when --lines is not given
+level     = "info"                    # error | warn | info | debug
+to_db     = true                      # also write a `logs` row for `rtok otel`
 
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5
@@ -152,7 +162,7 @@ proxy        = false                  # also set the base URL          (--proxy)
 [setup.claude]
 settings_path = "~/.claude/settings.json"
 [setup.cursor]
-hooks_path    = "~/.cursor/hooks.json"
+hooks_path    = "~/.cursor/hooks.json"  # today: beforeShellExecution only (T10.11 wires PostToolUse)
 [setup.codex]
 config_path   = "~/.codex/config.toml"
 [setup.opencode]
