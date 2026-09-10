@@ -389,8 +389,6 @@ entry is above in §3 (or, for T15.1–T15.9, in `roadmap.md` §TUI). This table
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**155 done · 11 open · 1 superseded — 167 tasks.**
-
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
 | `T0.1` | P0 scaffold | cargo project | ✅ 2026-09-01 | — |
