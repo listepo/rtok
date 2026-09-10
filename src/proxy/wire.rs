@@ -108,9 +108,16 @@ pub(super) fn turn_setup<'a>(
     Some((entries, total))
 }
 
-/// Read an integer usage counter, treating an absent or non-integer field as zero.
+/// Read an integer usage counter, treating an absent or non-numeric field as zero.
+/// Whole-number JSON floats (`10.0`) count too — some providers emit them.
 pub(super) fn int_field(usage: &Value, name: &str) -> i64 {
-    usage.get(name).and_then(Value::as_i64).unwrap_or_default()
+    let Some(v) = usage.get(name) else {
+        return 0;
+    };
+    if let Some(n) = v.as_i64() {
+        return n;
+    }
+    v.as_f64().map(|n| n as i64).unwrap_or(0)
 }
 
 /// Decode JSON or SSE response usage through the selected provider wire.
@@ -142,5 +149,19 @@ pub fn usage_from_response(
         found.then_some(usage)
     } else {
         wire.usage_from_body(&serde_json::from_slice(body).ok()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::int_field;
+    use serde_json::json;
+
+    #[test]
+    fn int_field_accepts_whole_number_floats() {
+        let usage = json!({"input_tokens": 10.0, "output_tokens": 2});
+        assert_eq!(int_field(&usage, "input_tokens"), 10);
+        assert_eq!(int_field(&usage, "output_tokens"), 2);
+        assert_eq!(int_field(&usage, "missing"), 0);
     }
 }
