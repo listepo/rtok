@@ -25,7 +25,9 @@ enabled with `rtok agent setup --mode terse,yagni`, injected once per session at
 Enriched terse captures caveman-style full-intensity rules (shortest reply, fence-safe
 exactness, auto-clarity); yagni captures the ponytail YAGNI ladder. Structured helpers live
 in `rtok::modes` (`compress_prose`, `evaluate_ladder`) — native safety nets beyond prompt-only
-modes, not wraps of third-party tools (D6).
+modes, not wraps of third-party tools (D6). Fixture comparison vs weak caveman-lite /
+naive-Minimum baselines (and why we win): `research.md` modes subsection and
+`docs/comparison.md` § Prompt-level; re-run with `cargo test --test mode_bench -- --nocapture`.
 
 ## Config
 

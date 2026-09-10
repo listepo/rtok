@@ -360,6 +360,63 @@ Your local meters (each measures a different slice, none the bill):
 - API side: prompt caching 1.25× (5-min write), 2× (1-h write), 0.1× read (0.025× Fable/Mythos 5.1). Context editing strategies `clear_tool_uses_20250919`, `clear_thinking_20251015`, `compact_20260112` (trigger 100 K, keep 3). `count_tokens` is free and rate-limited. Memory tool `memory_20250818`. Claude Code issue #81967: tools-array mutation invalidates the cache (up to −274 K tokens observed).
 - Other hosts: Cursor `hooks.json` (before/after shell), OpenCode plugin API `tool.execute.after` (the one host that can replace results), Codex (MCP; proxy needs Responses API), Gemini CLI (MCP).
 
+### `modes` terse/yagni vs caveman/ponytail-style (2026-09-10)
+
+Branch `feat/modes-cave-pony`. Native helpers in `src/modes/` + enriched `modes/terse.md` /
+`modes/yagni.md` via `plugins::inject`. **Not** a wrap of JuliusBrussee/caveman or
+DietrichGebert/ponytail (D6); prompt text stays data (D7). Re-run:
+`cargo test --test mode_bench -- --nocapture`.
+
+Estimator: prose 4.2 chars/token (same `Estimator` as the rest of the suite). Baselines are
+honest and weak on purpose — not the vendors' marketing figures from §4.
+
+#### Compress (caveman-style)
+
+17 agent-reply fixtures with fluff, ``` fences, backtick error strings, and critical
+negations. Weak **caveman-lite** strips only `Sure!` / `I'd be happy to help…`. Ours is
+`compress_prose(…, CaveIntensity::Full)`.
+
+| Metric | Weak caveman-lite | rtok Full | Notes |
+|--------|-------------------|-----------|-------|
+| Avg chars saved / fixture | 12.2 | **36.2** | |
+| Char save % (corpus) | 11.7 % | **34.9 %** | |
+| Est. tokens saved (sum) | 50 | **147** | |
+| Fence bodies | n/a (lite may leave fluff outside) | **byte-identical** to input | Hard fail if mutated |
+| Negation tokens | — | **kept** (`not`/`never`/`no`) | |
+
+Why this shape: caveman's Go shrink path is out-of-process and has corrupted inline code
+(#112). A deterministic in-process stripper that refuses to touch fences is the reversible,
+CI-checkable analogue — and it still beats the weak lite baseline by ~3× on chars and
+tokens on this fixture set.
+
+#### Ladder (ponytail-style)
+
+14 labelled contexts (speculative skip, reuse, stdlib, native-before-dep, security
+`must_not_simplify`, …). Naive baseline = always [`LadderDecision::Minimum`] (unstructured
+“be lazy” without a ladder).
+
+| Metric | Naive always-Minimum | rtok `evaluate_ladder` |
+|--------|----------------------|------------------------|
+| Correct rung | 4 / 14 (**29 %**) | **14 / 14 (100 %)** |
+
+Why better: a prompt-only YAGNI mode has no typed state; models default to “write the
+smallest new code,” which is wrong when the right answer is skip, reuse, or native
+platform. Security work forces Minimum even when `speculative` is set.
+
+#### Mode markdown budgets (inject)
+
+| Mode | Est. tokens | Chars | Cap |
+|------|------------:|------:|-----|
+| `terse.md` | 162 | 679 | ≤ 250 |
+| `yagni.md` | 145 | 613 | ≤ 250 |
+
+Aliases `cave`→`terse`, `pony`→`yagni` resolve to the same builtins at SessionStart.
+
+**Reading vs §4 vendor claims.** We still do **not** claim caveman's 65 % or ponytail's
+−54 % LOC against a live bill. This gate shows the native path wins the re-runnable
+fixture contest and stays inside the inject budget — the same honesty bar as the offline
+T9.2 A/B zeros.
+
 ## 4. Comparison matrix
 
 Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendor's number; "Measured" is yours or an independent source.
@@ -369,8 +426,8 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 | rtk (rtk-ai) | command output | ~80 filters, TOML custom filters, `gain` (bytes/4) | PreToolUse rewrite | Rust · Apache-2.0 · 78.2 k | ✓ · ✓ · ✗ (drops lines) | 60–90 % | 40 % of bash bytes (yours); JetBrains bill +7.6 %/0 % |
 | lean-ctx (yvgude) | file reads, search, shell | 78 MCP tools, 10 read modes, 95+ shell patterns, dedup re-reads | MCP + hooks (deny Grep/Glob) | Rust · Apache-2.0 · 3.7 k | ✓ · ✓ · ~ (expand) | 75 % (own) | +3.1 K/turn injection; 0 output saved |
 | headroom (headroomlabs-ai) | API request | JSON crusher, code compressor, cache-aligned live zone, CCR retrieve | proxy + MCP + wrap | Python 82 %/Rust 13 % · Apache-2.0 · 68.3 k | ✓ · ✓ · ✓ (retrieve) | up to 95 % | 11.3 % 30 d, 3.2 % today (yours) |
-| caveman (JuliusBrussee) | prose + request | terse mode, shrink-hook, proxy record/compress, TOON, MCP compress/retrieve | prompt + proxy + MCP | Go · custom · 102 k | ✓ · ✓ · ~ | 65 % output | 8.5 % agentic (JetBrains); 0 here (proxy inert); issue #112 corrupts inline code |
-| ponytail (DietrichGebert) | model output | YAGNI ladder prompt | prompt file | JS · MIT · 120 k | ✓ · ✓ · n/a | −54 % LOC, −22 % tokens (own bench, Haiku 4.5, n=4) | none independent |
+| caveman (JuliusBrussee) | prose + request | terse mode, shrink-hook, proxy record/compress, TOON, MCP compress/retrieve | prompt + proxy + MCP | Go · custom · 102 k | ✓ · ✓ · ~ | 65 % output | 8.5 % agentic (JetBrains); 0 here (proxy inert); issue #112 corrupts inline code; rtok native Full beats weak-lite 34.9 % vs 11.7 % chars on 17 fixtures (2026-09-10, see modes subsection) |
+| ponytail (DietrichGebert) | model output | YAGNI ladder prompt | prompt file | JS · MIT · 120 k | ✓ · ✓ · n/a | −54 % LOC, −22 % tokens (own bench, Haiku 4.5, n=4) | none independent; rtok typed ladder 14/14 vs naive Minimum 4/14 on 14 fixtures (2026-09-10, modes subsection) |
 | token-optimizer (alexgreensh) | reads, bash, archive, compaction, coaching | delta reads, structure maps, bash compress (111 cmds), archive >4 KB, checkpoints, quality nudges | hooks (Python subprocess) | Python · PolyForm-NC · 2.1 k | ✓ · ✓ · ✓ (archive) | "$313/mo" | author's own meter only; 27 hooks on your machine |
 | codebase-memory-mcp (DeusData) | code graph | tree-sitter 158 grammars + hybrid LSP (11 langs) → SQLite (zstd), 15 tools, Cypher-like queries | MCP | C · MIT · 42.1 k (v0.7.0, 2026-09-04) | ✓ · ✓ · n/a | 99.2 % on 5 queries; Linux kernel 3 min | exits on start here (0 tools, `doctor` 2026-09-02); 281 MB binary, 141 MB cache |
 | codegraph (colbymchenry) | code graph | `.codegraph/codegraph.db` (SQLite+FTS5), one `codegraph_explore` tool | CLI + MCP | C/TS · MIT · 69.4 k (2026-09-04) | ✓ · ✓ · n/a | −88 % tool calls, −62 % tokens (7 repos) | 97 MB `.codegraph/` for one repo (cross-code); no binary here |
@@ -386,6 +443,7 @@ Stars/language/license from the GitHub API on 2026-09-01. "Claimed" is the vendo
 | bifrost (maximhq) | gateway | semantic cache (redis, 0.9 threshold) | proxy | Go · Apache-2.0 · 7.7 k | ✓ · embeddings · ✗ | — | agent contexts never repeat; a hit is a wrong answer |
 | Anthropic native | platform | prompt caching, context editing, memory tool, deferred tools, auto-compact | API/Claude Code | — | ✓ · — · ✓ | — | free; align with it, do not fight it |
 | **Your stack today** | all layers | 10 tools, 81 hooks, 2 proxies (+bifrost in Docker) | hooks + MCP + proxy | mixed | ✓ · mostly · mixed | — | 3–40 % per slice; no end-to-end number |
+| **rtok `modes` (terse/yagni)** | model output / prose | enriched prompt modes + native `compress_prose` / `evaluate_ladder` | inject + `src/modes` | Rust · (in-tree) | ✓ · ✓ · ✓ fences | none claimed on bill | fixture bench 2026-09-10: 34.9 % chars / 147 tok vs lite; ladder 14/14; budgets 162/145 |
 | **Proposed `rtok`** | all layers | 10 plugins, 1 binary, 3 surfaces, measurement + bench | hooks + MCP + proxy | Rust | ✓ · ✓ · ✓ by default | none until measured | `rtok stats`, `rtok bench` |
 
 ## 5. Your stack vs. the proposed app
@@ -427,10 +485,12 @@ Every alternative in `src/plugins/*/PLAN.md` with the survey date. Stars/version
 | headroom savings / live zone / proxy / audit | 2026-09-01 | measure, read, archive, proxy |
 | token-optimizer dashboard / bash_compress / structure map / archive / refetch | 2026-09-01 | measure, cmd, read, archive, guard |
 | lean-ctx ctx_shell / read modes / banner / deny Grep | 2026-09-01 | cmd, read, inject, guard |
-| caveman shrink / proxy / TOON | 2026-09-01 | archive, proxy, toon |
+| caveman shrink / proxy / TOON | 2026-09-01 | archive, proxy, toon, inject/modes |
 | engram | 2026-09-01 | inject, memory |
 | claude-mem | 2026-09-01 | inject, memory |
-| ponytail | 2026-09-01 | inject |
+| ponytail | 2026-09-01 | inject, `src/modes` ladder |
+| rtok modes terse/yagni (native) | fixture bench 2026-09-10 | inject, `src/modes`, `tests/mode_bench.rs` |
+
 | codebase-memory-mcp | v0.7.0 · 2026-09-04 | graph |
 | codegraph | 2026-09-04 | graph |
 | code-review-graph | 2.3.7 · 2026-09-04 | graph |

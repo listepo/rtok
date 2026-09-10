@@ -1,4 +1,18 @@
 //! Deterministic English fluff stripper that never mutates fenced code bodies.
+//!
+//! # Why deterministic, not LLM / not caveman's Go proxy
+//!
+//! Caveman's shrink path is a separate process (and its issue #112 has corrupted inline
+//! code). We need something that:
+//! - runs inside the rtok binary (D6 — no wrap),
+//! - is byte-stable and testable without a network,
+//! - **never** touches ``` fences or `` `backtick` `` spans (lossless for code / errors),
+//! - never drops negation tokens (`not` / `never` / `no` / `only` / `except`) so “do not
+//!   delete” cannot become “delete”.
+//!
+//! Intensities mirror caveman's lite/full/ultra naming so the inject prompt and this helper
+//! stay aligned; `Lite` matches the weak baseline in `tests/mode_bench.rs`, `Full` is what
+//! we claim against that baseline.
 
 /// Caveman-style compression intensity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,8 +62,18 @@ const CONJUNCTION_PAD: &[&str] = &["and then", "and also", "as well as"];
 /// Negation / critical words that must never be dropped as whole tokens.
 const KEEP_WORDS: &[&str] = &["not", "never", "no", "only", "except"];
 
-/// Strip English fluff from `text` at `intensity`. Fenced ``` blocks are copied verbatim
-/// (opening fence through closing fence inclusive). Deterministic.
+/// Strip English fluff from `text` at `intensity`.
+///
+/// Algorithm (why this shape):
+/// 1. Split on ``` fences first — copy each fence body **verbatim** (opening through
+///    closing fence). Unclosed fence → preserve the remainder untouched (fail closed on
+///    code, never half-edit it).
+/// 2. Outside fences only: drop pleasantries (all intensities), then filler + articles at
+///    Full/Ultra, then conjunction padding at Ultra.
+/// 3. Word drops are whole-token only; [`KEEP_WORDS`] is never stripped.
+/// 4. Inline `` `...` `` spans are copied as atoms so error strings stay exact.
+///
+/// Deterministic and allocation-light; not a semantic summarizer.
 pub fn compress_prose(text: &str, intensity: CaveIntensity) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;

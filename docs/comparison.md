@@ -7,7 +7,7 @@ session transcripts — is
 that survey: what each category does well, what rtok does differently, and which of rtok's
 claims are backed by a row in a database rather than by a README.
 
-Survey date 2026-09-01, refreshed 2026-09-04/09. Star counts and versions move; the
+Survey date 2026-09-01, refreshed 2026-09-04/09/10 (modes bench). Star counts and versions move; the
 mechanisms do not.
 
 ## 1. The short version
@@ -100,9 +100,28 @@ bodies, never bodies at `SessionStart` — for 3 tools and no model calls.
 
 The cheapest lever in the field, because output tokens are 20 % of the bill on standard
 models and **39 % on Fable/Mythos 5.1** where cache reads cost 0.025×. ponytail's own bench
-claims −54 % LOC and −22 % tokens; no independent check exists. rtok ships the same idea as
-optional prompt modes (`rtok agent setup claude --mode terse,yagni`) and does not claim a number
-for them.
+claims −54 % LOC and −22 % tokens; no independent check exists. caveman claims 65 % output
+shrink; JetBrains measured **8.5 %** on agentic work, and issue #112 has corrupted inline
+code.
+
+rtok ships the same *ideas* as optional prompt modes
+(`rtok agent setup claude --mode terse,yagni`, aliases `cave`/`pony`) plus native helpers in
+`src/modes/` — not a wrap of either tool (D6). Modes are markdown data under `modes/`
+injected once per session inside the shared **800-token** budget (D7); measured mode sizes
+2026-09-10: `terse` **162** est. tokens, `yagni` **145** (cap 250 each).
+
+Structured A/B against honest weak baselines (`cargo test --test mode_bench -- --nocapture`,
+2026-09-10; full write-up in [`research.md`](../research.md) modes subsection):
+
+| Slice | Baseline | rtok | Why better |
+|-------|----------|------|------------|
+| Prose compress (17 fixtures) | weak caveman-lite: **11.7 %** chars, **50** tok saved | Full: **34.9 %** chars, **147** tok saved | Fence bodies byte-identical; negations (`not`/`never`/`no`) kept — caveman #112 class of bug is a hard fail here |
+| YAGNI ladder (14 fixtures) | naive always-Minimum: **4/14 (29 %)** | typed ladder: **14/14 (100 %)** | Prompt-only “be lazy” collapses to Minimum; the ladder can Skip / Reuse / Stdlib / Native first |
+| Injection cost | caveman MCP ~485 desc tokens + separate prompt; ponytail another file | modes share inject budget; aliases resolve to the same builtins | One binary, byte-stable injection, no Go/JS on the path |
+
+These are **fixture benches**, not a live bill delta — same honesty rule as the README A/B
+zeros. They show the native path beats the weak baselines we can re-run in CI; they do not
+replace an end-to-end `rtok bench` with a provider.
 
 ### Formats — TOON, LLMLingua-2
 

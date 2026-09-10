@@ -1,4 +1,20 @@
 //! Structured YAGNI ladder — typed decisions instead of prompt-only “always minimum”.
+//!
+//! # Why a typed ladder, not only `modes/yagni.md`
+//!
+//! Ponytail is a prompt file: the model may still emit a custom helper when stdlib would do.
+//! A prompt-only agent that “tries to be lazy” but has no structure often collapses to
+//! **always write the minimum new code** — which is wrong when the right answer is skip,
+//! reuse, or native platform. `evaluate_ladder` makes the rung order explicit and testable.
+//!
+//! Rung order (first match wins), same as the yagni mode text:
+//! YAGNI skip → reuse → stdlib → native → installed dep → one-liner → minimum.
+//!
+//! `must_not_simplify` short-circuits to [`LadderDecision::Minimum`] so security / data-loss
+//! / a11y / validation work is never golfed away — that override beats even `speculative`.
+//!
+//! [`naive_always_minimum`] is the honest “prompt-only / unstructured” baseline used in
+//! `tests/mode_bench.rs`, not a claim about ponytail's published LOC numbers.
 
 /// Ponytail-style intensity. Affects only how aggressively speculative work is skipped;
 /// the rung order stays the same.

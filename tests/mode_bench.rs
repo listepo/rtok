@@ -1,5 +1,18 @@
 //! Comparative benches: native compress/ladder vs weak caveman / naive YAGNI baselines.
-//! Measures chars, estimated tokens, and rung accuracy — never dollars (Measurement philosophy).
+//!
+//! # Why these baselines (not vendor marketing)
+//!
+//! - **caveman-lite**: only the weakest Sure! / I'd-be-happy strips — the part every terse
+//!   mode does. We do not claim against caveman's unpublished full shrink pipeline or its
+//!   65 % vendor figure (JetBrains measured 8.5 % agentic; research.md §4).
+//! - **naive_always_minimum**: unstructured “be lazy” without a ladder — the failure mode of
+//!   prompt-only YAGNI. We do not claim against ponytail's −54 % LOC own-bench (n=4, no
+//!   independent check).
+//!
+//! Metrics: chars, estimated prose tokens (`Estimator` prose 4.2), fence identity, negation
+//! retention, ladder rung accuracy. Never dollars — same Measurement philosophy as the rest
+//! of rtok. Re-run: `cargo test --test mode_bench -- --nocapture`.
+//! Published write-up: `research.md` (modes subsection), `docs/comparison.md` § Prompt-level.
 
 use rtok::config::Estimator;
 use rtok::modes::{
