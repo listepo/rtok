@@ -4,8 +4,8 @@
 the D15 survey the task asks for: three candidates priced on what they do to the release
 binary that P17 gates, whether they keep "one static binary, no runtime dependency" true, and
 whether the HTML and the PDF come from one document (D24) rather than two layouts. Every size
-below was measured on this machine, 2026-09-09, with throwaway scratch crates under `/tmp`;
-the repo's `Cargo.toml` was never touched.
+below was measured on this machine — the scratch rows on 2026-09-09, under `/tmp`, without
+touching the repo's `Cargo.toml`; the linked row on 2026-09-10, from worktrees of this repo.
 
 ## Problem
 
@@ -96,6 +96,22 @@ T22.3 links the renderer:
 - typst, for contrast (arithmetic, not built with dist): 17.4 MB + 44.35 MB ≈ **61.8 MB**,
   ~3.5×. Outside the budget under any reading; this is why the smaller candidate wins.
 
+**Linked, measured 2026-09-10** (macOS arm64, rustc 1.97.1 via mise, release profile with the
+repo's `strip = "symbols"`, isolated target dirs): pre-T22.3 `bcc5da0` 21 089 200 B
+(20.11 MiB) → T22.3 `ba4c90a` 23 262 832 B (22.19 MiB; built at `df68bf4` — the two commits
+above `ba4c90a` touch `.gitignore`/`plan.md`/`roadmap.md` only) — delta **+2 173 632 B
+(+2.07 MiB, +10.3 %)**, 2 172 496 B under the 25 435 328 B projection. Commands:
+`git worktree add --detach /tmp/rtok-t223-base bcc5da0`, then in each tree
+`CARGO_TARGET_DIR=$PWD/target mise exec -- cargo build --release`; sizes
+`stat -f%z target/release/rtok`. The delta lands materially under the scratch's +5.99 MiB,
+which fires this page's first falsification clause as a re-price: the scratch priced
+printpdf + svg2pdf + usvg against a no-dep hello, the landed tree links printpdf only with
+its hard `azul-layout` dep (`svg2pdf`/`usvg` are absent from `Cargo.lock`; the charts are
+drawn natively, `done.md` T22.3), and rtok's real feature set shares more of that tree than
+a hello baseline does. The gate holds on the measured numbers — +10.3 % over the pre-report
+binary, same size class — and the release binary renders the empty-store PDF (25 954 B,
+`%PDF-1.3`…`%%EOF`) end-to-end.
+
 If a cap is ever written into the gate, +31 % is the number it has to be checked against —
 and the fallback is not typst, it is dropping paged PDF or trimming printpdf's
 `azul-layout` dependency (printpdf 0.8 predates it and would likely cost less; unmeasured
@@ -105,7 +121,8 @@ here, noted as the lever).
 
 - T22.3's linked build measuring materially outside +5.0–6.3 MiB over the pre-report binary
   (rtok's real feature set can pull different paths than a scratch). Then re-price, or drop
-  paged PDF.
+  paged PDF. Fired 2026-09-10, below the band (+2.07 MiB): re-priced in `Budget
+  arithmetic`, paged PDF kept.
 - A report requirement printpdf cannot meet without rtok growing its own line breaker or
   shaper (CJK text, unbroken strings wider than the page). Then the honest answer is a
   degraded PDF (truncated cell, landscape table), not 42 MiB of typesetting engine.
