@@ -108,9 +108,16 @@ impl Runtime {
             self.cwd.as_deref(),
             None,
         )?;
-        let id =
-            self.store
-                .insert_call(&self.session, surface, kind, None, None, None, plugin, name)?;
+        let id = self.store.insert_call(
+            &self.session,
+            surface,
+            kind,
+            self.host_id,
+            None,
+            None,
+            plugin,
+            name,
+        )?;
         if let Some(parent) = self.call_id {
             self.store.set_call_parent(id, parent)?;
         }
