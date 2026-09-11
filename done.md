@@ -1,6 +1,14 @@
 # rtok — completed tasks
 
 
+## P36 — second bug-hunt residue (open) — T36.19
+
+**T36.19 a setup backup is never overwritten** · — · `crates/rtok-agent-sdk/src/lib.rs`
+Do: the `.bak` collision loop gives up after 99 iterations and then `fs::copy` overwrites an existing backup.
+Check: with 100 pre-existing `.bak-*` names the install still refuses to clobber one (unique name or an error). `cargo test -p rtok-agent-sdk`, all 9 tests pass, including `backup_skips_a_hundred_preexisting_names_without_clobbering`.
+Complexity: 1/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
 ## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.5
 
 **T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`

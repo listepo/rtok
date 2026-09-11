@@ -72,11 +72,10 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         .as_secs();
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     // Two commands inside one second would otherwise share a name and the first copy would go.
+    let mut n = 0u32;
     let mut bak = path.with_file_name(format!("{name}.bak-{ts}"));
-    for n in 1..100 {
-        if !bak.exists() {
-            break;
-        }
+    while bak.exists() {
+        n += 1;
         bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
@@ -336,6 +335,7 @@ fn symlink(src: &Path, dest: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn tmp(name: &str) -> PathBuf {
         let dir =
@@ -392,6 +392,51 @@ mod tests {
         assert_eq!(fs::read_to_string(baks[0].path()).unwrap(), "one\n");
         let _ = fs::remove_dir_all(dir);
     }
+
+    #[rstest]
+    fn backup_skips_a_hundred_preexisting_names_without_clobbering() {
+        let dir = tmp("backup-collision");
+        let path = dir.join("settings.json");
+        fs::write(&path, "v0").unwrap();
+
+        let first = backup(&path).unwrap().unwrap();
+        let first_name = first.file_name().unwrap().to_string_lossy();
+        let stem = first_name.strip_prefix("settings.json.bak-").unwrap();
+        let ts = stem.split('-').next().unwrap();
+
+        fs::write(&path, "v1").unwrap();
+        for n in 1..100 {
+            let slot = dir.join(format!("settings.json.bak-{ts}-{n}"));
+            fs::write(&slot, format!("slot-{n}")).unwrap();
+        }
+
+        let contents_before: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".bak-"))
+            .map(|e| (e.path(), fs::read_to_string(e.path()).unwrap()))
+            .collect();
+        assert_eq!(contents_before.len(), 100, "base plus slots 1..=99");
+
+        fs::write(&path, "v2").unwrap();
+        let second = backup(&path).unwrap().unwrap();
+        assert_eq!(
+            second.file_name().unwrap().to_string_lossy(),
+            format!("settings.json.bak-{ts}-100")
+        );
+        assert_eq!(fs::read_to_string(&second).unwrap(), "v2");
+
+        for (bak_path, content) in contents_before {
+            assert_eq!(
+                fs::read_to_string(&bak_path).unwrap(),
+                content,
+                "pre-existing backup must survive: {}",
+                bak_path.display()
+            );
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
 
     #[test]
     fn write_leaves_no_temp_file_behind() {

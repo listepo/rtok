@@ -635,13 +635,6 @@ Complexity: 3/5
 Status: open
 Model: -
 
-**T36.19 a setup backup is never overwritten** · — · `crates/rtok-agent-sdk/src/lib.rs`
-Do: the `.bak` collision loop gives up after 99 iterations and then `fs::copy` overwrites an existing backup.
-Check: with 100 pre-existing `.bak-*` names the install still refuses to clobber one (unique name or an error).
-Complexity: 1/5
-Status: open
-Model: -
-
 **T36.20 archive rows and inline bodies keep their attribution** · — · `src/store/mod.rs`
 Do: (a) `spill` writes every `call_io` body with `archive.session = ""`, so archived bodies are unattributable — thread the session through; (b) inline bodies are stored from `String::from_utf8_lossy`, so `request_json` is not the byte string `request_sha256` hashes — store the bytes or hash the lossy form; (c) `insert_measurement` clamps with `unwrap_or(i64::MAX)`, a silently wrong saving where a checked conversion should error.
 Check: an archived `call_io` body carries its session; the recorded sha256 matches the stored text; an out-of-range estimate is an error, not a clamp.
