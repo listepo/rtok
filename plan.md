@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 181 ✅, 33 open (v0.2+ P28–P33 and P35, bug-hunt residue P36); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 182 ✅, 32 open (v0.2+ P28–P33 and P35, bug-hunt residue P36); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -508,13 +508,6 @@ Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) call
 ### P36 — second bug-hunt residue (goal: the defects a module audit found and one session did not fix) — added 2026-09-11; open.
 
 Written after a read-only audit of every module (`src/store`, `src/measure`, `src/proxy`, `src/plugins/*`, `src/config`, `src/cli`, `src/log`, `src/otel`, `src/report`, `src/tui`, `src/web`, `src/setup`, `crates/*`) whose fixes landed as `1afd465..3180376`. Each task below is a verified defect with a concrete reproduction, not a preference; the commit range is the evidence that the rest of that audit is done. One task = one commit, as always.
-
-**T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
-Do: `outline::supported()` is never called and `plugins.read.languages` is never read. Either restrict `mode = map|signatures` to the configured languages, or delete the key and the helper (a config key that changes nothing is worse than none — the D26 argument).
-Check: whichever way, `just check` green and no documented key is unread (`docs/config.md` and the schema agree).
-Complexity: 2/5
-Status: open
-Model: -
 
 **T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
 Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.

@@ -212,7 +212,6 @@ advice           = true               # false = never deny native Read
 allow_paths      = []                 # extra roots outside cwd
 search_max       = 50
 tree_depth       = 2
-languages        = ["rust", "ts", "js", "python", "dart", "c", "go"]
 
 [plugins.archive]
 enabled    = true

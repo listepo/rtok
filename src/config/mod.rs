@@ -397,7 +397,6 @@ section! {
         allow_paths: Vec<PathBuf> = Vec::new(),
         search_max: u32 = 50,
         tree_depth: u32 = 2,
-        languages: Vec<String> = strs(&["rust", "ts", "js", "python", "dart", "c", "go"]),
     }
 }
 
