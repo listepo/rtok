@@ -10,6 +10,13 @@ Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test --test surface_parity` — 4 passed, including `web_doctor_instruction_audit_matches_cli_order`; `mise exec -- cargo test --manifest-path crates/rtok-webui/Cargo.toml doctor_of` — 1 passed (`doctor_of_renders_instruction_audit`).
 
+**T36.20 archive rows and inline bodies keep their attribution** · — · `src/store/mod.rs`
+Do: (a) `spill` writes every `call_io` body with `archive.session = ""`, so archived bodies are unattributable — thread the session through; (b) inline bodies are stored from `String::from_utf8_lossy`, so `request_json` is not the byte string `request_sha256` hashes — store the bytes or hash the lossy form; (c) `insert_measurement` clamps with `unwrap_or(i64::MAX)`, a silently wrong saving where a checked conversion should error.
+Check: an archived `call_io` body carries its session; the recorded sha256 matches the stored text; an out-of-range estimate is an error, not a clamp.
+Complexity: 2/5
+Status: done 2026-09-11 · Model: Composer 2.5
+Evidence: `mise exec -- cargo test --lib store` — `spill_archive_carries_session`, `inline_sha256_matches_stored_text`, `insert_measurement_rejects_out_of_range_estimates` pass (rstest); T36.2 `live_zone_pointer` retained.
+
 **T36.7 `--config` is honoured by every `config` subcommand** · — · `src/cli.rs`, `src/config/validate.rs`, `src/config/mod.rs`
 Do: `config init|set|path|validate` resolve `<home>/config.toml` and ignore `--config`/`RTOK_CONFIG`, while `show`/`get` honour it: `rtok --config ci.toml config set proxy.port 2222` reads ci.toml and writes the home file. Add one `Config::user_path(home, config_file)` and use it everywhere.
 Check: `--config /tmp/ci.toml config set/get/validate/path` all act on `/tmp/ci.toml`; a test pins the path in the output.

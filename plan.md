@@ -558,13 +558,6 @@ Complexity: 3/5
 Status: open
 Model: -
 
-**T36.20 archive rows and inline bodies keep their attribution** · — · `src/store/mod.rs`
-Do: (a) `spill` writes every `call_io` body with `archive.session = ""`, so archived bodies are unattributable — thread the session through; (b) inline bodies are stored from `String::from_utf8_lossy`, so `request_json` is not the byte string `request_sha256` hashes — store the bytes or hash the lossy form; (c) `insert_measurement` clamps with `unwrap_or(i64::MAX)`, a silently wrong saving where a checked conversion should error.
-Check: an archived `call_io` body carries its session; the recorded sha256 matches the stored text; an out-of-range estimate is an error, not a clamp.
-Complexity: 2/5
-Status: open
-Model: -
-
 Gate P36 (review): every task above is either fixed with a test that fails on the old code, or moved to `done.md` with the Check that closed it; `just check` green; no new config key is added by this phase.
 
 

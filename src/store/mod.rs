@@ -140,16 +140,20 @@ impl Store {
 
     /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
     pub fn insert_measurement(&self, session: &str, m: &Measurement) -> Result<()> {
+        let before_bytes = i64::try_from(m.before_bytes).context("measurement before_bytes")?;
+        let after_bytes = i64::try_from(m.after_bytes).context("measurement after_bytes")?;
+        let est_before = i32::try_from(m.est_before).context("measurement est_before")?;
+        let est_after = i32::try_from(m.est_after).context("measurement est_after")?;
         let mut conn = self.lock()?;
         diesel::insert_into(measurements::table)
             .values((
                 measurements::session.eq(session),
                 measurements::plugin.eq(m.plugin),
                 measurements::kind.eq(m.kind),
-                measurements::before_bytes.eq(i64::try_from(m.before_bytes).unwrap_or(i64::MAX)),
-                measurements::after_bytes.eq(i64::try_from(m.after_bytes).unwrap_or(i64::MAX)),
-                measurements::est_before.eq(i32::try_from(m.est_before).unwrap_or(i32::MAX)),
-                measurements::est_after.eq(i32::try_from(m.est_after).unwrap_or(i32::MAX)),
+                measurements::before_bytes.eq(before_bytes),
+                measurements::after_bytes.eq(after_bytes),
+                measurements::est_before.eq(est_before),
+                measurements::est_after.eq(est_after),
                 measurements::ref_id.eq(m.ref_id.as_deref()),
                 measurements::call_id.eq(m.call_id),
             ))
@@ -344,6 +348,15 @@ impl Store {
         Ok(tokens::table.count().get_result(&mut *conn)?)
     }
 
+    fn call_session(&self, call_id: i32) -> Result<String> {
+        let mut conn = self.lock()?;
+        calls::table
+            .filter(calls::id.eq(call_id))
+            .select(calls::session_id)
+            .first(&mut *conn)
+            .with_context(|| format!("call {call_id} has no session"))
+    }
+
     pub fn insert_call_io(
         &self,
         call_id: i32,
@@ -352,10 +365,11 @@ impl Store {
         inline_cap: usize,
         archive_dir: Option<&Path>,
     ) -> Result<()> {
+        let session = self.call_session(call_id)?;
         let (req_json, req_arch, req_bytes, req_sha) =
-            self.spill(request, inline_cap, archive_dir)?;
+            self.spill(&session, request, inline_cap, archive_dir)?;
         let (res_json, res_arch, res_bytes, res_sha) =
-            self.spill(response, inline_cap, archive_dir)?;
+            self.spill(&session, response, inline_cap, archive_dir)?;
         let mut conn = self.lock()?;
         diesel::insert_into(call_io::table)
             .values((
@@ -373,23 +387,25 @@ impl Store {
         Ok(())
     }
 
-    fn spill(&self, body: Option<&[u8]>, cap: usize, archive_dir: Option<&Path>) -> Result<Spill> {
+    fn spill(
+        &self,
+        session: &str,
+        body: Option<&[u8]>,
+        cap: usize,
+        archive_dir: Option<&Path>,
+    ) -> Result<Spill> {
         let Some(body) = body else {
             return Ok((None, None, 0, None));
         };
         let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
-        let sha = hex_sha256(body);
         if body.len() <= cap {
-            return Ok((
-                Some(String::from_utf8_lossy(body).into_owned()),
-                None,
-                n,
-                Some(sha),
-            ));
+            let (text, sha) = inline_body(body);
+            return Ok((Some(text), None, n, Some(sha)));
         }
         // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
+        let sha = hex_sha256(body);
         if let Some(dir) = archive_dir {
-            self.write_archive("", body, &sha, dir)?;
+            self.write_archive(session, body, &sha, dir)?;
             return Ok((None, Some(sha.clone()), n, Some(sha)));
         }
         Ok((None, None, n, Some(sha)))
@@ -472,6 +488,7 @@ impl Store {
         .execute(&mut *conn)?;
         Ok(())
     }
+
 
     /// Live-zone pointer text for one archive id (T36.2: attribute expand rows to toon vs archive).
     pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
@@ -1129,6 +1146,13 @@ type Spill = (Option<String>, Option<String>, i64, Option<String>);
 #[cfg(test)]
 type SessionRow = (Option<String>, Option<String>, Option<String>);
 
+/// Lossy UTF-8 text stored inline and the sha256 of that exact string.
+fn inline_body(body: &[u8]) -> (String, String) {
+    let text = String::from_utf8_lossy(body).into_owned();
+    let sha = hex_sha256(text.as_bytes());
+    (text, sha)
+}
+
 pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
@@ -1163,6 +1187,7 @@ pub struct MeasRow {
     pub est_after: i32,
     pub ref_id: Option<String>,
 }
+
 
 #[derive(Debug, QueryableByName)]
 struct PointerRow {
@@ -1299,6 +1324,8 @@ pub struct CallRow {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use schema::notes;
 
@@ -1968,4 +1995,97 @@ mod tests {
             "days <= 0 is a no-op"
         );
     }
+
+    #[rstest]
+    fn spill_archive_carries_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-arch-sess-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_session("sess-a", Some(1), None, None, None).unwrap();
+        let call_id = store
+            .insert_call("sess-a", "proxy", "api_request", Some(1), None, None, None, None)
+            .unwrap();
+        let body = vec![b'x'; 70 * 1024];
+        store
+            .insert_call_io(call_id, Some(&body), None, 64 * 1024, Some(&dir))
+            .unwrap();
+        let mut conn = store.lock().unwrap();
+        #[derive(QueryableByName)]
+        struct Arch {
+            #[diesel(sql_type = Text)]
+            session: String,
+        }
+        let arch: Arch = sql_query("SELECT session FROM archive LIMIT 1")
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(arch.session, "sess-a");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[rstest]
+    fn inline_sha256_matches_stored_text() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_session("s", Some(1), None, None, None).unwrap();
+        let call_id = store
+            .insert_call("s", "mcp", "mcp_call", Some(1), None, None, None, None)
+            .unwrap();
+        store
+            .insert_call_io(call_id, Some(b"plain"), None, 1 << 20, None)
+            .unwrap();
+        #[derive(QueryableByName)]
+        struct Io {
+            #[diesel(sql_type = Nullable<Text>)]
+            request_json: Option<String>,
+            #[diesel(sql_type = Nullable<Text>)]
+            request_sha256: Option<String>,
+        }
+        {
+            let mut conn = store.lock().unwrap();
+            let row: Io = sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
+                .bind::<Integer, _>(call_id)
+                .get_result(&mut *conn)
+                .unwrap();
+            let text = row.request_json.unwrap();
+            assert_eq!(text, "plain");
+            assert_eq!(row.request_sha256.unwrap(), hex_sha256(text.as_bytes()));
+        }
+
+        let bad = [b'b', b'a', b'd', 0xff, 0xfe, b'o', b'k'];
+        let call_id2 = store
+            .insert_call("s", "mcp", "mcp_call", Some(1), None, None, None, None)
+            .unwrap();
+        store
+            .insert_call_io(call_id2, Some(&bad), None, 1 << 20, None)
+            .unwrap();
+        let mut conn = store.lock().unwrap();
+        let row2: Io = sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
+            .bind::<Integer, _>(call_id2)
+            .get_result(&mut *conn)
+            .unwrap();
+        let text2 = row2.request_json.unwrap();
+        assert_eq!(text2, String::from_utf8_lossy(&bad));
+        assert_eq!(row2.request_sha256.unwrap(), hex_sha256(text2.as_bytes()));
+    }
+
+    #[rstest]
+    fn insert_measurement_rejects_out_of_range_estimates() {
+        let store = Store::open_in_memory().unwrap();
+        let m = Measurement {
+            plugin: "cmd",
+            kind: "rule",
+            before_bytes: 1,
+            after_bytes: 1,
+            est_before: i32::MAX as u32 + 1,
+            est_after: 1,
+            ref_id: None,
+            call_id: None,
+        };
+        let err = store.insert_measurement("s", &m).unwrap_err();
+        assert!(
+            err.to_string().contains("est_before"),
+            "expected est_before error, got {err}"
+        );
+    }
+
 }
