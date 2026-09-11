@@ -367,13 +367,6 @@ v0.1 §5 is done. Rows below are promoted (Daemon/TUI already elsewhere). Detail
 
 Optional LLM-based compression and/or observation extraction (LLMLingua-2, claude-mem-style). Default off. Ship only if a bench beats v0.1 lossless; `expand` still recovers originals where the source is not regenerable.
 
-**T28.1 config / feature flag (default off)** · T28.0 · `config/default.toml`, `docs/config.md`, config schema
-Do: add a config flag (and matching CLI override if needed) that enables the compressor / extractor; default off. Document the key. No compression logic yet — reading the flag and refusing unknown keys is enough.
-Check: `rtok config show` lists the new key as off by default; turning it on via config or env is visible in `config show --sources`; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T28.2 implement optional compress / memory extractor** · T28.1 · plugin sources under `src/plugins/`
 Do: implement the chosen path behind the flag. Record a `Measurement`. When the source is not regenerable, `expand` still recovers the original. Default-off path is byte-identical to today's lossless behaviour.
 Check: with the flag off, proxy/archive/inject bytes match pre-P28; with the flag on, a fixture compresses and `expand` recovers where required.
@@ -710,7 +703,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
 | `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
 | `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | ✅ 2026-09-11 | 3/5 |
-| `T28.1` | P28 LLM compression | config / feature flag (default off) | open | 2/5 |
+| `T28.1` | P28 LLM compression | config / feature flag (default off) | ✅ 2026-09-12 | 2/5 |
 | `T28.2` | P28 LLM compression | implement optional compress / memory extractor | open | 4/5 |
 | `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | ✅ 2026-09-11 | 3/5 |
 | `T29.1` | P29 embeddings | config flag (FTS5 default) | open | 2/5 |

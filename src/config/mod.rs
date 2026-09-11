@@ -365,6 +365,7 @@ section! {
         memory: Memory = Memory::default(),
         graph: Graph = Graph::default(),
         toon: Toon = Toon::default(),
+        compress: Compress = Compress::default(),
     }
 }
 
@@ -461,6 +462,13 @@ section! {
     Toon {
         enabled: bool = false,
         min_rows: u32 = 5,
+    }
+}
+
+section! {
+    /// `[plugins.compress]`
+    Compress {
+        enabled: bool = false,
     }
 }
 
@@ -929,6 +937,30 @@ mod tests {
         let err = parse("[proxy]\nprot = 1\n").unwrap_err();
         assert!(err.to_string().contains("prot"), "{err}");
         assert!(parse("[nope]\nx = 1\n").is_err());
+        assert!(parse("[plugins.compress]\nunknown = true\n").is_err());
+    }
+
+    #[test]
+    fn compress_defaults_off_and_overlays_turn_on() {
+        use super::layers;
+
+        assert!(!Config::default().plugins.compress.enabled);
+
+        let cfg: Config = parse("[plugins.compress]\nenabled = true\n").unwrap();
+        assert!(cfg.plugins.compress.enabled);
+
+        let home = tmp("compress-env");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join(".env"), "RTOK_PLUGINS_COMPRESS_ENABLED=true\n").unwrap();
+        let cfg = layers::load(&home, None, None).unwrap();
+        assert!(cfg.plugins.compress.enabled);
+        let row = layers::entries(&layers::figment(&home, None, None))
+            .into_iter()
+            .find(|(k, _, _)| k == "plugins.compress.enabled")
+            .expect("leaf key listed");
+        assert_eq!(row.1, "true");
+        assert_eq!(row.2, "dotenv");
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

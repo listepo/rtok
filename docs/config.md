@@ -250,6 +250,9 @@ watch      = "off"                    # off | notify | watchman: background re-i
 [plugins.toon]
 enabled  = false
 min_rows = 5
+
+[plugins.compress]
+enabled = false                       # optional LLM compression / memory extractor (P28); off until Gate P28
 ```
 
 ## OpenTelemetry

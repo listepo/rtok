@@ -191,3 +191,6 @@ watch      = "off"                    # off | notify | watchman (P8d): backgroun
 [plugins.toon]
 enabled  = false
 min_rows = 5
+
+[plugins.compress]
+enabled = false                       # optional LLM compression lane (P28); off until Gate P28
