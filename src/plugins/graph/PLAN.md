@@ -184,3 +184,83 @@ SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stays opt-in. Full table:
 - A `SymbolIndex` trait with dynamic dispatch — one `impl Store` per `cfg`-selected file is the whole seam; a trait is an interface for a backend that has not earned its place.
 - Exposing Cypher as a fifth tool (I-14 stays rejected) — the surface is four tools and 62 description tokens; the store is not the model's business.
 - Linking the prebuilt `liblbug.a` by default — an unpinned download in `build.rs` is not a reproducible build: from source, or pinned with a checksum, or the gate fails.
+
+
+## P30 survey — LSP behind tags MCP (2026-09-11)
+
+Survey for **T30.0** (`plan.md` P30). No implementation; feature stays **off** until Gate P30 passes with a recorded `Measurement` row. Sources: `research.md` §4 (serena, codebase-memory-mcp), `docs/comparison.md` §5, serena `solidlsp` (`rust_analyzer.py`, PR #1173 PATH detection, 2026), rust-analyzer book + `lsp/ext.rs` (`workspace/symbol` scope/kind filters), clangd 20 release notes (outgoing call hierarchy, 2026), typescript-language-server `lsp-server.ts` (NavTree + References, `didOpen` / `projectLoadingFinish`, 2026). Complexity: 3/5. Claimed: Composer 2.5.
+
+### Problem (what tags cannot see)
+
+T8.8 measured reference recall **0.305–0.351** on this repo (`research.md` §2; `PLAN.md` "Known misses"). Definitions are complete (30/30); **74 reference misses** cluster on three constructs the tree-sitter Rust tags query never captures: **type positions** (64), **macro argument bodies** (9), and (before `RUST_SCOPED_CALL`) path-qualified calls (1). The gap matrix already names **dynamic dispatch, traits, generics** as over-approximation by name on the tags path (I-24). Serena's LSP backend is the precision ceiling the field offers (`research.md`: 22 tools ~1 494 desc tokens; times out at 30 s here; most precise). rtok's v0.1 answer is four tools in **62 description tokens** and warm calls in **23–26 ms** — P30 must not trade that surface for serena's tool list.
+
+### Serena / field reference (behaviour spec, not a dependency)
+
+Serena (oraios, MIT, ~28.7 k★) implements **solidlsp**: a Python JSON-RPC client that **spawns** a language server per language (`RustAnalyzer` → `rust-analyzer` from rustup, validated `PATH`, or common install paths). Its MCP tools are thin wrappers over LSP — e.g. `find_symbol` → `workspace/symbol` + `textDocument/definition`, `find_referencing_symbols` → `textDocument/references`, `get_symbols_overview` → `textDocument/documentSymbol`. It ships **22 tools** (rename, replace body, …) rtok deliberately does not expose. **D6 forbids spawning serena** (rejected in v0.1 `PLAN.md` §Rejected); P30 re-implements the *precision* of that stack natively: an in-tree LSP client talking to **standard language-server binaries**, not to serena or codebase-memory-mcp.
+
+codebase-memory-mcp's **hybrid LSP dispatch** (11 langs) is the same idea at a different scale: tree-sitter index plus LSP for precision gaps. rtok already has the tree-sitter half; P30 adds the LSP half behind one config flag.
+
+### Backend alternatives (≥ 3)
+
+| Alternative | Version / date | Gets right | Gets wrong for rtok |
+|-------------|----------------|------------|---------------------|
+| **A. Native Rust LSP client + spawned language-server binaries** | rust-analyzer (rust-lang, 2026); clangd 20+ (LLVM, 2026); typescript-language-server (master, 2026) | **D6-native** client in `src/plugins/graph/`; serena-grade type resolution; one long-lived server per `(root, language)` over stdio; maps cleanly onto the four existing MCP tools | Cold start + project load (serena **30 s timeout** here); must `didOpen` files and wait for `projectLoadingFinish` (tsserver returns partial refs until then); proc-macros / `build.rs` need a compilable workspace; three binaries to detect on `PATH`, not one index |
+| **B. Full backend swap (`tags` default, `lsp` optional)** | rtok config (T30.1) | Gate P30 is honest: **flag off → byte-identical tags answers**; flag on → every `symbol` / `callers` / `impact` / `outline` call routes through LSP only; no duplicate tool names | No fast path when LSP is slow; tags index work is wasted while `lsp` is on unless we also skip indexing (T30.2 choice) |
+| **C. Tags-first with LSP fallback on miss** | codebase-memory-mcp hybrid pattern (spec) | Keeps **23 ms** warm tags for the common case; LSP only when `symbol_refs` is empty or a precision bit is set | **Fails Gate P30 "off → tags-only bytes"** if fallback runs with the flag nominally off; two divergent code paths per tool; harder to test (`graph_contract.rs` needs deterministic mode) |
+| **D. Rust-only LSP ship, other languages later** | rust-analyzer only at T30.2 | Smallest T30.2; rtok's own repo is the gate fixture language; clangd/tsserver adapters share the same client trait | TS/C++ repos get no lift until a follow-up; risks a Rust-shaped API in the client |
+
+**Chosen direction (T30.1+):** **A + B** — native in-process JSON-RPC client, spawn **rust-analyzer** / **clangd** / **typescript-language-server** from `PATH` (with `--version` smoke test, serena PR #1173 pattern), `plugins.graph.backend = "tags"` (default) vs `"lsp"`. Language picked by file extension and project markers (`Cargo.toml`, `compile_commands.json`, `tsconfig.json`). **C** rejected for gate honesty; **D** is an acceptable T30.2 slice if scope bites, but the survey prices all three servers now so adapters do not surprise a later task.
+
+### LSP method → MCP tool mapping (stable names)
+
+Agents, hooks, and `tests/graph_contract.rs` pin **`symbol`**, **`callers`**, **`impact`**, **`outline`** — not serena's `find_symbol`, not a fifth tool. LSP is an implementation detail behind `graph` `invoke`; `mcp_tools()` and `tools/call` stay unchanged (T8.9 lesson).
+
+| MCP tool (unchanged) | Tags backend today | LSP backend (when `backend = "lsp"`) | Notes |
+|----------------------|-------------------|--------------------------------------|-------|
+| **`symbol(name)`** | `symbol_defs` + body lines from disk | `workspace/symbol` (query = name; rust-analyzer `searchScope` / `searchKind` when supported) → `textDocument/definition` or hover range → read definition body from disk; same cap + `expand` | Trait/default items: `textDocument/implementation` enriches impl sites serena exposes as separate tools — fold into `symbol` lines, no new tool |
+| **`callers(name)`** | `symbol_ref_groups` (scope edges from tags) | Resolve definition → `textDocument/references` (`includeDeclaration: false`) → map each ref to enclosing `documentSymbol` for `path  scope ×N (Lline)` shape (T8.5) | rust-analyzer `find_all_refs` excludes imports/tests per config; same grouping contract as tags |
+| **`outline(path)`** | `read` map mode / per-file tags | `textDocument/didOpen` if needed → `textDocument/documentSymbol` (hierarchical) | tsserver: NavTree requires open buffer + loaded project (issue #256); wait on `projectLoadingFinish` progress |
+| **`impact(name, depth)`** | BFS over stored `scope` edges | `textDocument/prepareCallHierarchy` at definition → repeated `callHierarchy/incomingCalls` to `depth` (rust-analyzer + clangd 20+; same BFS shape as `impact_bfs`) | Outgoing direction is callees, not callers — do not add a tool; depth cap unchanged (max 4) |
+
+### MCP-name stability rule
+
+1. **No renames, no aliases, no serena names in `tools/list`.** Hosts hardcode `symbol`, `callers`, `impact`, `outline`.
+2. **No fifth graph tool** for LSP-only affordances (rename, `find_implementations`, Cypher). Extra precision is folded into the four responses or left to `read`.
+3. **`plugins.graph.backend = "tags"` path is tags-only** — when `backend` is `"tags"` (default), responses are **byte-identical** to today's tags implementation (Gate P30 clause 1). Enabling `"lsp"` may change bytes; disabling must restore them.
+4. **`graph_contract.rs` is the contract** — output shape changes only in a task commit that updates expected strings; both backends must pass or the backend is not done.
+
+### Mechanism (T30.1 / T30.2 sketch)
+
+1. **Config** (T30.1): `plugins.graph.backend = "tags" | "lsp"` (default **`tags`**); optional `plugins.graph.lsp.server.<lang>.path` overrides per language (serena `ls_specific_settings` shape, spec only).
+2. **Lifecycle**: one LSP session per MCP server process per workspace root; `initialize` with `rootUri`, `didOpen` on demand; shutdown on MCP exit. **Not** on the hook path (D1 ≤ 10 ms).
+3. **Dispatch** in `mod.rs`: `backend == "tags"` → existing `index` + `symbol_*` store methods; `backend == "lsp"` → `lsp::` module, no tags walk on that call (index may still run for `tags` mode only).
+4. **Measurement**: each LSP tool call records `plugin=graph`, `method=lsp.<tool>`, latency ms — compare against tags warm **23–26 ms** in `research.md`; unrecorded precision claims do not exist (D3).
+
+### Gate P30 fixture (tags miss, LSP hit)
+
+**Fixture:** `tests/graph_truth.rs` → `reference_capture_matches_the_known_misses` (`truth-constructs` temp repo). Source pinned in-test:
+
+```rust
+pub struct OnlyTyped;
+pub fn user(r: Recv, t: Vec<OnlyTyped>) { /* … */ }
+```
+
+| Query | Tags (`backend = "tags"`) | LSP (`backend = "lsp"`, rust-analyzer) |
+|-------|---------------------------|----------------------------------------|
+| Reference to `OnlyTyped` in `user`'s signature | **Miss** — `symbol_refs("OnlyTyped")` empty (type position; 64/74 T8.8 misses) | **Hit** — `textDocument/references` on the `OnlyTyped` struct definition returns the `Vec<OnlyTyped>` site in `user` |
+| `callers("OnlyTyped")` after grouping | Empty / no rows | At least one row naming `user` as the enclosing scope |
+
+T30.2 adds `tests/graph_lsp_gate.rs` (or extends `graph_contract.rs`) that runs the same file with `backend = "lsp"` against a functional `rust-analyzer` on `PATH`; skips when absent. **Secondary** candidate (not the gate): `&dyn Trait` dispatch — tags over-approximate by name; LSP resolves the trait method's `references` — but the gate uses the already-measured **type-position miss** so the row cites T8.8 evidence.
+
+**Gate P30 (review):** Same four MCP names; `backend = "tags"` → tags-only bytes unchanged; `backend = "lsp"` → fixture above hits on LSP and misses on tags; one `Measurement` row recorded.
+
+### Rejected (P30)
+
+- **Spawning serena / solidlsp / codebase-memory-mcp** — D6; already rejected in v0.1 §Rejected; circular measurement.
+- **Exposing serena-shaped MCP tools** (`find_symbol`, `find_referencing_symbols`, …) — breaks MCP-name stability and `graph_contract.rs`.
+- **Default-on LSP** — tags stay default; cold index **1.3 s** debug / **341 ms** release on 3 000 files (P35) beats LSP startup for most calls.
+- **Hybrid tags+LSP per call without a mode flag (alternative C)** — cannot satisfy "off → tags-only bytes".
+- **LSP on the hook path** — violates D1 ≤ 10 ms; graph stays MCP-only for LSP.
+- **Embedding rust-analyzer as a library** — no stable in-process API; subprocess is the portable seam (serena, VS Code, clangd all spawn).
+- **A fifth tool for call hierarchy / implementations** — `impact` and richer `symbol` lines absorb it; surface stays four tools / ≤ 150 description tokens (`doctor`).
+- **Claiming serena's precision without a `Measurement` row** — research.md already notes serena timeout here; gate must be local fixture + dated command.
