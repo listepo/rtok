@@ -465,6 +465,7 @@ section! {
         max_tokens: u32 = 2000,
         body_lines: u32 = 40,
         auto_index: bool = true,
+        backend: String = s("tags"),
         watch: String = s("off"),
     }
 }
@@ -991,6 +992,22 @@ mod tests {
     fn memory_embed_enabled_from_file() {
         let cfg: Config = parse("[plugins.memory.embed]\nenabled = true\n").unwrap();
         assert!(cfg.plugins.memory.embed.enabled);
+    }
+
+    #[test]
+    fn graph_backend_defaults_to_tags() {
+        assert_eq!(Config::default().plugins.graph.backend, "tags");
+    }
+
+    #[test]
+    fn graph_backend_overlay_from_toml() {
+        let cfg = parse("[plugins.graph]\nbackend = \"lsp\"\n").unwrap();
+        assert_eq!(cfg.plugins.graph.backend, "lsp");
+    }
+
+    #[test]
+    fn graph_backend_unknown_key_is_an_error() {
+        assert!(parse("[plugins.graph]\nback_end = \"lsp\"\n").is_err());
     }
 
     #[test]

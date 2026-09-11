@@ -397,12 +397,6 @@ Gate P29 (review): FTS5 remains default; embed path is a config flag; a fixture 
 `graph` may add an LSP / type-resolved backend behind `symbol` / `callers` / `outline`. Tags index stays default.
 
 
-**T30.1 config flag (tags default)** · T30.0 · `config/default.toml`, `docs/config.md`, config schema
-Do: add a config flag that enables the LSP backend; tags-only when off. Document it.
-Check: default keeps tags-only; enabling the flag is visible in `config show --sources`; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
 
 **T30.2 implement optional LSP backend** · T30.1 · `src/plugins/graph/`
 Do: implement the LSP path behind the flag, same MCP tool names. Off → tags-only bytes; on → at least the Gate fixture where tags miss and LSP hits.
@@ -719,7 +713,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T29.1` | P29 embeddings | config flag (FTS5 default) | ✅ 2026-09-12 | 2/5 |
 | `T29.2` | P29 embeddings | implement optional embed search | open | 4/5 |
 | `T30.0` | P30 LSP graph | design/survey: LSP behind tags MCP | ✅ 2026-09-11 | 3/5 |
-| `T30.1` | P30 LSP graph | config flag (tags default) | open | 2/5 |
+| `T30.1` | P30 LSP graph | config flag (tags default) | ✅ 2026-09-12 | 2/5 |
 | `T30.2` | P30 LSP graph | implement optional LSP backend | open | 4/5 |
 | `T31.0` | P31 semantic cache | design/survey: semantic cache | ✅ 2026-09-11 | 3/5 |
 | `T31.1` | P31 semantic cache | config flag (opt-in, default off) | open | 2/5 |
