@@ -246,17 +246,28 @@ fn settle(
     *rescan = false;
 }
 
-fn relevant(p: &Path) -> bool {
-    crate::plugins::read::outline::supported(p) && !p.components().any(|c| c.as_os_str() == ".git")
+fn git_path(p: &Path) -> bool {
+    p.components().any(|c| c.as_os_str() == ".git")
 }
 
-/// A path the incremental indexer cannot see (unsupported or a directory): trigger a rescan
-/// so vanished rows drop, but ignore `.git` noise (T36.17).
+fn relevant(p: &Path) -> bool {
+    crate::plugins::read::outline::supported(p) && !git_path(p)
+}
+
+/// Source files go to `pending`. A directory (still there, or just removed with no extension)
+/// forces a rescan so vanished children drop (T36.17). Existing unsupported files — the store,
+/// WAL, logs, docs — must not: they used to clear `pending` and reset the quiet window on every
+/// SQLite write when the DB lived under the watch root (Linux inotify reports each WAL write).
 fn absorb_event(p: PathBuf, pending: &mut HashSet<PathBuf>, rescan: &mut bool) -> bool {
+    if git_path(&p) {
+        return false;
+    }
     if relevant(&p) {
         pending.insert(p);
-        true
-    } else if !p.components().any(|c| c.as_os_str() == ".git") {
+        return true;
+    }
+    let directory = p.is_dir() || (!p.exists() && p.extension().is_none());
+    if directory {
         *rescan = true;
         pending.clear();
         true
@@ -338,7 +349,8 @@ mod tests {
             }
         }
         let _ = fs::remove_file(&probe);
-        let _ = wait_contains(cx, dir, "warm_probe", "no definition of warm_probe");
+        let gone = wait_contains(cx, dir, "warm_probe", "no definition of warm_probe");
+        assert_reindexed(gone, cx, dir, "warm_probe", "no definition of warm_probe");
     }
 
     /// The one end-to-end check through a real FSEvents stream: a new file is indexed, the call
@@ -349,22 +361,27 @@ mod tests {
     fn watcher_reindexes_new_file_while_calls_read_nothing() {
         let (mut cx, dir) = mk("watch-new");
         arm(&mut cx, "notify");
-        fs::write(dir.join("lib.rs"), "pub fn seed() {}\n").unwrap();
-        super::super::index::run(&Ctx::new(&cx), &dir, false).unwrap();
+        // The store lives in `dir`; watch a sibling tree so WAL writes are not inotify events.
+        let root = dir.join("proj");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("lib.rs"), "pub fn seed() {}\n").unwrap();
+        super::super::index::run(&Ctx::new(&cx), &root, false).unwrap();
         let stop = AtomicBool::new(false);
         let (found, read, gone) = std::thread::scope(|s| {
-            s.spawn(|| run(&Ctx::new(&cx), &dir, &stop));
+            s.spawn(|| run(&Ctx::new(&cx), &root, &stop));
             std::thread::sleep(Duration::from_millis(80));
-            warm_watcher(&Ctx::new(&cx), &dir);
-            fs::write(dir.join("watched.rs"), "pub fn watched() {}\n").unwrap();
-            let found = wait_contains(&Ctx::new(&cx), &dir, "watched", "watched.rs:1");
-            let read = super::super::index_for(&Ctx::new(&cx), &dir).unwrap().read;
-            let _ = fs::remove_file(dir.join("watched.rs"));
-            let gone = wait_contains(&Ctx::new(&cx), &dir, "watched", "no definition of watched");
+            warm_watcher(&Ctx::new(&cx), &root);
+            fs::write(root.join("watched.rs"), "pub fn watched() {}\n").unwrap();
+            let found = wait_contains(&Ctx::new(&cx), &root, "watched", "watched.rs:1");
+            let read = super::super::index_for(&Ctx::new(&cx), &root).unwrap().read;
+            // Drain create-side CLOSE_WRITE/ATTRIB so they do not share a settle with the delete.
+            std::thread::sleep(QUIET + POLL_INTERVAL);
+            let _ = fs::remove_file(root.join("watched.rs"));
+            let gone = wait_contains(&Ctx::new(&cx), &root, "watched", "no definition of watched");
             stop.store(true, Ordering::Relaxed);
             (found, read, gone)
         });
-        assert_reindexed(found, &Ctx::new(&cx), &dir, "watched", "watched.rs:1");
+        assert_reindexed(found, &Ctx::new(&cx), &root, "watched", "watched.rs:1");
         assert_eq!(read, 0, "the call itself must open no file");
         assert!(
             gone,
@@ -407,6 +424,32 @@ mod tests {
         assert!(!relevant(Path::new(".git/HEAD")));
         assert!(!relevant(Path::new("foo/bar.md")));
         assert!(relevant(Path::new("src/lib.rs")));
+    }
+
+    /// A live store/log/doc file must not swallow a pending source path (the Linux flake:
+    /// WAL writes cleared `pending` and reset quiet, so a delete never settled).
+    #[test]
+    fn unsupported_file_does_not_clear_pending_or_rescan() {
+        let (_rt, dir) = mk("watch-db-noise");
+        fs::write(dir.join("rtok.db"), "x").unwrap();
+        let mut pending = HashSet::from([dir.join("watched.rs")]);
+        let mut rescan = false;
+        assert!(!absorb_event(
+            dir.join("rtok.db"),
+            &mut pending,
+            &mut rescan
+        ));
+        assert!(
+            !rescan && pending.len() == 1,
+            "existing unsupported file triggered a rescan"
+        );
+        let gone_dir = dir.join("src/module");
+        assert!(absorb_event(gone_dir, &mut pending, &mut rescan));
+        assert!(
+            rescan && pending.is_empty(),
+            "removed directory must rescan"
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     /// What FSEvents would deliver for `p`, without the OS in the loop.
