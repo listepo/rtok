@@ -14,7 +14,60 @@ pub struct Rule {
 }
 
 const BUILTIN_KEEP: &[&str] = &["error", "warning", "panic", "fail", "traceback"];
-const FAIL_TAIL: usize = 80;
+
+/// `[plugins.cmd]` knobs shared by `pick` and `apply`.
+#[derive(Clone, Debug)]
+pub struct Settings {
+    fail_tail_lines: usize,
+    rules: Vec<Rule>,
+}
+
+impl Settings {
+    pub fn from_config(cfg: &crate::config::Config) -> Self {
+        Self::load(&cfg.plugins.cmd.rules, cfg.plugins.cmd.fail_tail_lines)
+    }
+
+    /// Built-in defaults only (golden tests and fail-open paths without config).
+    pub fn builtin() -> Self {
+        Self {
+            fail_tail_lines: 80,
+            rules: defaults(),
+        }
+    }
+
+    fn load(rules_path: &std::path::Path, fail_tail_lines: u32) -> Self {
+        let user = if rules_path.is_file() {
+            std::fs::read_to_string(rules_path)
+                .map(|s| parse(&s))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        Self {
+            fail_tail_lines: fail_tail_lines.max(1) as usize,
+            rules: merge_rules(defaults(), user),
+        }
+    }
+
+    pub fn pick(&self, bin: &str) -> Rule {
+        self.rules
+            .iter()
+            .find(|r| r.match_cmd == bin)
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+fn merge_rules(mut base: Vec<Rule>, user: Vec<Rule>) -> Vec<Rule> {
+    for ur in user {
+        if let Some(i) = base.iter().position(|r| r.match_cmd == ur.match_cmd) {
+            base[i] = ur;
+        } else {
+            base.push(ur);
+        }
+    }
+    base
+}
 
 impl Default for Rule {
     fn default() -> Self {
@@ -74,11 +127,17 @@ fn dedupe(lines: Vec<String>) -> Vec<String> {
     out
 }
 
-/// Apply `rule` to `output`. `exit != 0` → last 80 lines, untouched.
-pub fn apply(output: &str, exit: i32, rule: &Rule, archive_id: &str) -> String {
+/// Apply `rule` to `output`. `exit != 0` → last `settings.fail_tail_lines` lines, untouched.
+pub fn apply(
+    settings: &Settings,
+    output: &str,
+    exit: i32,
+    rule: &Rule,
+    archive_id: &str,
+) -> String {
     let mut lines: Vec<String> = output.lines().map(str::to_string).collect();
     if exit != 0 {
-        let n = lines.len().saturating_sub(FAIL_TAIL);
+        let n = lines.len().saturating_sub(settings.fail_tail_lines);
         return lines[n..].join("\n");
     }
     lines.retain(|l| is_keep(l, rule) || !is_drop(l, rule));
@@ -173,6 +232,27 @@ fn parse(s: &str) -> Vec<Rule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn settings(fail_tail_lines: u32) -> Settings {
+        Settings {
+            fail_tail_lines: fail_tail_lines.max(1) as usize,
+            rules: defaults(),
+        }
+    }
+
+    fn exit_nonzero_tail(fail_tail_lines: u32, expect_count: usize, expect_start: &str, expect_end: &str) {
+        let body = (0..100)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let s = settings(fail_tail_lines);
+        let out = apply(&s, &body, 3, &Rule::default(), "id");
+        assert_eq!(out.lines().count(), expect_count);
+        assert!(out.starts_with(expect_start), "{out}");
+        assert!(out.ends_with(expect_end), "{out}");
+        assert!(!out.contains("omitted"));
+    }
 
     #[test]
     fn three_hundred_ok_keeps_error_under_20() {
@@ -184,22 +264,54 @@ mod tests {
             tail: 5,
             ..Rule::default()
         };
-        let out = apply(&body.join("\n"), 0, &rule, "abc");
+        let s = settings(80);
+        let out = apply(&s, &body.join("\n"), 0, &rule, "abc");
         let n = out.lines().count();
         assert!(n <= 20, "{n} lines:\n{out}");
         assert!(out.contains("error: boom"), "{out}");
     }
 
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(80, 80, "line 20\n", "line 99")]
+    #[case(3, 3, "line 97\n", "line 99")]
+    fn exit_nonzero_fail_tail_lines(
+        #[case] fail_tail_lines: u32,
+        #[case] expect_count: usize,
+        #[case] expect_start: &str,
+        #[case] expect_end: &str,
+    ) {
+        exit_nonzero_tail(fail_tail_lines, expect_count, expect_start, expect_end);
+    }
+
     #[test]
-    fn exit_3_returns_last_80_untouched() {
-        let body = (0..100)
-            .map(|i| format!("line {i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = apply(&body, 3, &Rule::default(), "id");
-        assert_eq!(out.lines().count(), 80);
-        assert!(out.starts_with("line 20\n"), "{out}");
-        assert!(out.ends_with("line 99"), "{out}");
-        assert!(!out.contains("omitted"));
+    fn user_rules_file_changes_output_for_match_cmd() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rules.toml");
+        fs::write(
+            &path,
+            "[echo]\nmax_lines = 2\nhead = 1\ntail = 1\ndedupe = false\n",
+        )
+        .unwrap();
+        let s = Settings::load(&path, 80);
+        let body = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let rule = s.pick("echo");
+        let out = apply(&s, &body, 0, &rule, "id");
+        assert_eq!(out.lines().count(), 2, "{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_rule_overrides_builtin_match_cmd() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-ovr-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rules.toml");
+        fs::write(&path, "[grep]\nmax_lines = 5\nhead = 2\ntail = 2\ndedupe = false\n")
+            .unwrap();
+        let s = Settings::load(&path, 80);
+        assert_eq!(s.pick("grep").max_lines, 5);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

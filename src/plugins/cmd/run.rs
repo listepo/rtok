@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use rtok_plugin_sdk::{Archive, Class, Measurement};
 use std::process::Command;
 
-use super::formatters;
+use super::{formatters, rules};
 
 pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
@@ -78,8 +78,9 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
             return Ok(code);
         }
     };
+    let settings = rules::Settings::from_config(cfg);
     let family = formatters::family(args);
-    let (filtered, kind) = formatters::compress(args, &before, code, &id);
+    let (filtered, kind) = formatters::compress(&settings, args, &before, code, &id);
     print!("{filtered}");
     if !filtered.is_empty() && !filtered.ends_with('\n') {
         println!();

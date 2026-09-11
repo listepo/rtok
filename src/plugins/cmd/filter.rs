@@ -1,11 +1,16 @@
 //! `rtok filter --stdin`: compress stdin without executing (plan T10.2).
 
-use super::formatters;
+use crate::config::Config;
+
+use super::{formatters, rules};
 
 /// Filter `input` as if it were the stdout of `cmd`. Fail-open: never error.
 pub fn run(cmd: &str, input: &str) -> String {
+    let settings = Config::load_with(None, None)
+        .map(|c| rules::Settings::from_config(&c))
+        .unwrap_or_else(|_| rules::Settings::builtin());
     let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
-    formatters::compress(&argv, input, 0, "").0
+    formatters::compress(&settings, &argv, input, 0, "").0
 }
 
 #[cfg(test)]

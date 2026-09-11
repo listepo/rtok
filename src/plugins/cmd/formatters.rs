@@ -1,9 +1,10 @@
 //! Per-family stdout compactors (plan T3.3). `None` → fall back to rules.
 
-use super::rules::{self, Rule};
+use super::rules;
 
 /// Compact `output`. Kind is `formatter`, `rule`, or `raw`.
 pub fn compress(
+    settings: &rules::Settings,
     argv: &[String],
     output: &str,
     exit: i32,
@@ -13,8 +14,8 @@ pub fn compress(
     if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
-    let rule = pick(&argv);
-    let s = rules::apply(output, exit, &rule, archive_id);
+    let rule = settings.pick(bin(&argv));
+    let s = rules::apply(settings, output, exit, &rule, archive_id);
     let kind = if s.len() < output.len() {
         "rule"
     } else {
@@ -179,16 +180,6 @@ fn keep(output: &str, needles: &[&str]) -> String {
     lines.join("\n")
 }
 
-/// The `rules/default.toml` rule for the command itself (`argv[0]`'s basename, as [`format`]
-/// keys on) — not for any word of its arguments: `git commit -m "fix grep"` is not a `grep`.
-fn pick(argv: &[String]) -> Rule {
-    let bin = bin(argv);
-    rules::defaults()
-        .into_iter()
-        .find(|r| r.match_cmd == bin)
-        .unwrap_or_default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,6 +209,7 @@ mod tests {
 
     #[test]
     fn ten_families_and_aws_key_unredacted() {
+        let settings = rules::Settings::builtin();
         let dir = goldens();
         let mut n = 0u32;
         let mut files: Vec<_> = fs::read_dir(&dir)
@@ -232,7 +224,7 @@ mod tests {
             n += 1;
             let raw = fs::read_to_string(&p).unwrap();
             let (argv, exit, output) = parse_in(&raw);
-            let (got, _) = compress(&argv, &output, exit, "deadbeef");
+            let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
             let outp = p.with_extension("out");
             let want = fs::read_to_string(&outp).unwrap();
             assert_eq!(got.trim_end(), want.trim_end(), "{}", p.display());
@@ -241,6 +233,7 @@ mod tests {
         let secret = fs::read_to_string(dir.join("cat.in")).unwrap();
         assert!(secret.contains("AKIAIOSFODNN7EXAMPLE"));
         let (got, _) = compress(
+            &settings,
             &["cat".into(), "secrets.env".into()],
             &parse_in(&secret).2,
             0,
@@ -251,17 +244,18 @@ mod tests {
 
     #[test]
     fn rule_is_picked_by_the_command_not_an_argument() {
+        let settings = rules::Settings::builtin();
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            pick(&family_argv(&argv(&["/usr/bin/grep", "-rn", "x"]))).match_cmd,
+            settings.pick(bin(&family_argv(&argv(&["/usr/bin/grep", "-rn", "x"])))).match_cmd,
             "grep"
         );
         assert_eq!(
-            pick(&family_argv(&argv(&["git", "commit", "-m", "fix grep"]))).match_cmd,
+            settings.pick(bin(&family_argv(&argv(&["git", "commit", "-m", "fix grep"])))).match_cmd,
             ""
         );
         assert_eq!(
-            pick(&family_argv(&argv(&["docker", "run", "node"]))).match_cmd,
+            settings.pick(bin(&family_argv(&argv(&["docker", "run", "node"])))).match_cmd,
             ""
         );
     }
@@ -284,9 +278,10 @@ mod tests {
             }
             checked += 1;
             let joined = vec![argv.join(" ")];
+            let settings = rules::Settings::builtin();
             assert_eq!(
-                compress(&joined, &output, exit, "id"),
-                compress(&argv, &output, exit, "id"),
+                compress(&settings, &joined, &output, exit, "id"),
+                compress(&settings, &argv, &output, exit, "id"),
                 "{}: one quoted argv filtered differently",
                 p.display()
             );
