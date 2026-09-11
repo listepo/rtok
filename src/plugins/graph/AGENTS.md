@@ -24,7 +24,6 @@
   task whose commit updates the expected strings; a backend must pass the file untouched.
 - A tool listed by `mcp_tools()` is routed in `src/mcp.rs` `invoke` — `tools/list` and
   `tools/call` must agree (T8.9 found `impact` listed and unreachable).
-- P35 remaining: T35.4 (watcher indexes changed paths) then T35.5 (extractor fingerprint).
-  **T35.3 batched store I/O is last** — do not claim it until those two are done (user 2026-09-11).
+- P35: T35.4 and T35.5 done (2026-09-11). **T35.3 batched store I/O is last** (user 2026-09-11).
 
 **Checks**: `plan.md` T8.13–T8.17; earlier ones in `done.md`.

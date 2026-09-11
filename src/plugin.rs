@@ -336,6 +336,14 @@ impl Symbols for Runtime {
         self.store.mark_symbols_stale(abs_path)
     }
 
+    fn extractor_fingerprint(&self, root: &str) -> Result<Option<String>> {
+        self.store.extractor_fingerprint(root)
+    }
+
+    fn set_extractor_fingerprint(&self, root: &str, fp: &str) -> Result<()> {
+        self.store.set_extractor_fingerprint(root, fp)
+    }
+
     fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
         self.store.symbol_defs(root, name)
     }

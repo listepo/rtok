@@ -134,7 +134,7 @@ macro_rules! compiled {
 /// The upstream Rust tags query only sees bare and method calls; path-qualified calls
 /// (`tokens::estimate(..)`) are the common form, so `callers` (T8.2) needs this pattern too.
 #[cfg(feature = "lang-rust")]
-const RUST_SCOPED_CALL: &str = "
+pub(crate) const RUST_SCOPED_CALL: &str = "
 (call_expression
     function: (scoped_identifier
         name: (identifier) @name)) @reference.call

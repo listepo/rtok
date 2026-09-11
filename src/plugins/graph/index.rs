@@ -94,6 +94,12 @@ pub fn run_with(
 ) -> Result<Report> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
+    let current_fp = extractor_fingerprint();
+    let stored_fp = cx.extractor_fingerprint(&rk)?;
+    let fp_stale = stored_fp.as_deref() != Some(current_fp.as_str());
+    if fp_stale && !dry_run {
+        let _ = cx.delete_symbols_missing(&rk, &HashSet::new());
+    }
     let mut report = Report::default();
     let mut keep = HashSet::new();
     let mut jobs = Vec::new();
@@ -156,6 +162,9 @@ pub fn run_with(
     })?;
     if !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &keep);
+        if fp_stale {
+            cx.set_extractor_fingerprint(&rk, &current_fp)?;
+        }
     }
     pb.finish_and_clear();
     Ok(report)
@@ -301,6 +310,35 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
     })
 }
 
+/// Bump when [`scoped`] changes (T35.5).
+const INDEX_VERSION: u32 = 1;
+
+/// Hex sha256 of `INDEX_VERSION` and every tags query string used by [`outline::tags`].
+fn extractor_fingerprint() -> String {
+    let mut bytes = INDEX_VERSION.to_le_bytes().to_vec();
+    #[cfg(feature = "lang-c")]
+    bytes.extend_from_slice(tree_sitter_c::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-dart")]
+    bytes.extend_from_slice(tree_sitter_dart::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-go")]
+    bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-js")]
+    bytes.extend_from_slice(tree_sitter_javascript::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-python")]
+    bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-rust")]
+    {
+        bytes.extend_from_slice(tree_sitter_rust::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::RUST_SCOPED_CALL.as_bytes());
+    }
+    #[cfg(feature = "lang-ts")]
+    {
+        bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
+    }
+    store::hex_sha256(&bytes)
+}
+
 /// Rows for one file, each reference tagged with the innermost definition enclosing it
 /// (T8.5). Ties break to the smaller span, so a nested `fn` wins over the `impl` around it;
 /// a reference outside every definition gets `""`, which reads as file level.
@@ -409,6 +447,34 @@ pub(crate) mod tests {
         assert!(
             cx.store.has_symbol_def(&kb, "beta").unwrap(),
             "a's stale mark dropped b's src/main.rs"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T35.5: a stale extractor fingerprint drops the root and indexes cold.
+    #[test]
+    fn reindexes_when_extractor_fingerprint_mismatches() {
+        let (cx, dir) = cx("fp");
+        for i in 0..3 {
+            fs::write(dir.join(format!("f{i}.rs")), format!("fn f{i}() {{}}\n")).unwrap();
+        }
+        let ctx = Ctx::new(&cx);
+        let first = run(&ctx, &dir, false).unwrap();
+        assert_eq!(first.read, 3, "cold run reads every file");
+        let warm = run(&ctx, &dir, false).unwrap();
+        assert!(
+            warm.skipped > 0 || warm.read == 0,
+            "second run must be warm"
+        );
+        let k = canon(&dir);
+        cx.store.set_extractor_fingerprint(&k, "deadbeef").unwrap();
+        let reindex = run(&ctx, &dir, false).unwrap();
+        assert_eq!(reindex.read, 3, "mismatch must re-read every file");
+        assert_eq!(reindex.indexed, 3, "mismatch must re-index every file");
+        assert_eq!(
+            run(&ctx, &dir, false).unwrap().read,
+            0,
+            "third run is warm again"
         );
         let _ = fs::remove_dir_all(dir);
     }

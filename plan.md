@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 177 ✅, 14 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 181 ✅, 12 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -387,12 +387,6 @@ Gate P28 (review): `rtok bench` vs v0.1 lossless path — cost per passed task m
 
 Optional embeddings / semantic search for `memory` search and `graph` (mem0, code-review-graph embeddings). FTS5 remains the default.
 
-**T29.0 design/survey: embeddings beside FTS5** · — · `src/plugins/memory/PLAN.md` and/or `src/plugins/graph/PLAN.md`
-Do: survey mem0, code-review-graph embeddings, and at least one other embed path. Decide where vectors live, how they stay optional, and how a fixture is proven found by both FTS5 and embed. No implementation.
-Check: the PLAN names ≥ 3 alternatives, the chosen backend, rejected options, and the Gate P29 fixture shape.
-Complexity: 3/5
-Status: open
-Model: -
 
 **T29.1 config flag (FTS5 default)** · T29.0 · `config/default.toml`, `docs/config.md`, config schema
 Do: add a config flag that selects the embed path; FTS5 remains default when the flag is off/absent. Document it.
@@ -414,12 +408,6 @@ Gate P29 (review): FTS5 remains default; embed path is a config flag; a fixture 
 
 `graph` may add an LSP / type-resolved backend behind `symbol` / `callers` / `outline`. Tags index stays default.
 
-**T30.0 design/survey: LSP behind tags MCP** · — · `src/plugins/graph/PLAN.md`
-Do: survey serena-grade LSP backends and how they map onto the existing MCP tool names. Tags remain default; LSP is optional. Name one fixture where tags miss and LSP hits. No implementation.
-Check: the PLAN names ≥ 3 alternatives, the MCP-name stability rule, rejected options, and the Gate P30 fixture.
-Complexity: 3/5
-Status: open
-Model: -
 
 **T30.1 config flag (tags default)** · T30.0 · `config/default.toml`, `docs/config.md`, config schema
 Do: add a config flag that enables the LSP backend; tags-only when off. Document it.
@@ -461,12 +449,6 @@ Gate P31 (review): Off → identical proxy bytes; on → documented false-hit ra
 
 WASM plugin host for third-party plugins that do not link into this repo. D6 holds: this repo does not vendor those plugins. In-tree plugins unchanged.
 
-**T32.0 design/survey: WASM host** · — · `crates/rtok-plugin-sdk/PLAN.md` or `docs/plugin-authoring.md` extension
-Do: survey WASM runtimes suitable for a static Rust binary (at least three). Define the `from_plugins` load path, the Measurement example contract, and what stays in-process for in-tree plugins. D6 call-out: no vendored third-party plugins in this repo. No implementation.
-Check: the PLAN names ≥ 3 runtimes, the chosen host, rejected options, and the Gate P32 example shape.
-Complexity: 3/5
-Status: open
-Model: -
 
 **T32.1 config / feature flag for WASM host** · T32.0 · `config/default.toml`, `docs/config.md`, Cargo features as needed
 Do: add the flag / Cargo feature that enables loading `.wasm` plugins; default off so in-tree builds stay unchanged.
@@ -486,24 +468,18 @@ Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that record
 
 ### P35 — Graph index speed (goal: a cold index bound by cores, a watcher settle bound by the files that changed) — added 2026-09-10 (T34.9 measurements); open.
 
-Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. T35.4 (2026-09-11) indexes only changed paths on watcher settle; overflow and `need_rescan` still full-walk. T35.3 remains last among remaining P35 tasks (user 2026-09-11). Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
+Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. T35.4 (2026-09-11) indexes only changed paths on watcher settle; overflow and `need_rescan` still full-walk. T35.5 (2026-09-11) rebuilds a root when the extractor fingerprint mismatches. T35.3 remains last among remaining P35 tasks (user 2026-09-11). Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
 
 **T35.3 batched store I/O for the index** · T35.2 · `src/store/symbols.rs`, `src/plugins/graph/index.rs`
 Do: measure first. Then one query for the root's `(path, sha, mtime, size)` instead of a `symbol_stat` per file; multi-row INSERTs chunked under SQLite's variable limit; one DELETE for vanished paths. `graph-lbug` keeps its own path.
 
-Agents: last among remaining P35. Do T35.5 first; do not claim T35.3 until T35.5 is done (user 2026-09-11). A prior multi-row INSERT + process-wide stats cache made the cold index slower; keep only if the Check holds.
+Agents: last among remaining P35 (user 2026-09-11). A prior multi-row INSERT + process-wide stats cache made the cold index slower; keep only if the Check holds.
 
 Check: kept only if the cold index falls ≥ 20 % on top of T35.1–T35.2; the store is row-for-row equal.
 Complexity: 2/5
 Status: open
 Model: -
 
-**T35.5 rebuild a root when the extractor changes** · T8.1 · `src/plugins/graph/index.rs`, `src/store/symbols.rs`, `src/store/symbols_lbug.rs`, a migration
-Do: a fingerprint of the extractor — every tags query string, the tree-sitter grammar crate versions, an `INDEX_VERSION` bumped when `scoped` changes — stored per root. A mismatch drops the root's rows and indexes it cold; a match changes nothing. Today a query change (T8.2's `RUST_SCOPED_CALL`, say) reaches only files edited afterwards.
-Check: a test indexes, changes the stored fingerprint and re-runs: every file is re-read (`read == indexed`), and the run after reads 0.
-Complexity: 3/5
-Status: open
-Model: -
 
 Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 000-file release index ≤ 4 s; every graph test green, rows unchanged. Met 2026-09-11: 281–296 ms debug, 172–174 ms release, graph tests green.
 
@@ -737,16 +713,16 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | ✅ 2026-09-11 | 3/5 |
 | `T28.1` | P28 LLM compression | config / feature flag (default off) | open | 2/5 |
 | `T28.2` | P28 LLM compression | implement optional compress / memory extractor | open | 4/5 |
-| `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | open | 3/5 |
+| `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | ✅ 2026-09-11 | 3/5 |
 | `T29.1` | P29 embeddings | config flag (FTS5 default) | open | 2/5 |
 | `T29.2` | P29 embeddings | implement optional embed search | open | 4/5 |
-| `T30.0` | P30 LSP graph | design/survey: LSP behind tags MCP | open | 3/5 |
+| `T30.0` | P30 LSP graph | design/survey: LSP behind tags MCP | ✅ 2026-09-11 | 3/5 |
 | `T30.1` | P30 LSP graph | config flag (tags default) | open | 2/5 |
 | `T30.2` | P30 LSP graph | implement optional LSP backend | open | 4/5 |
 | `T31.0` | P31 semantic cache | design/survey: semantic cache | ✅ 2026-09-11 | 3/5 |
 | `T31.1` | P31 semantic cache | config flag (opt-in, default off) | open | 2/5 |
 | `T31.2` | P31 semantic cache | implement opt-in semantic cache | open | 4/5 |
-| `T32.0` | P32 WASM host | design/survey: WASM host | open | 3/5 |
+| `T32.0` | P32 WASM host | design/survey: WASM host | ✅ 2026-09-11 | 3/5 |
 | `T32.1` | P32 WASM host | config / feature flag for WASM host | open | 2/5 |
 | `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
 | `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | ✅ 2026-09-11 | 3/5 |

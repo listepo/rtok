@@ -274,6 +274,18 @@ pub trait Symbols {
     /// Drop what was indexed for one absolute path — the file changed under the index.
     fn mark_symbols_stale(&self, abs_path: &str) -> Result<()>;
 
+    /// Extractor fingerprint stored for `root`, if any (T35.5).
+    fn extractor_fingerprint(&self, root: &str) -> Result<Option<String>> {
+        let _ = root;
+        Ok(None)
+    }
+
+    /// Record the extractor fingerprint for `root` after a cold index (T35.5).
+    fn set_extractor_fingerprint(&self, root: &str, fp: &str) -> Result<()> {
+        let _ = (root, fp);
+        Ok(())
+    }
+
     /// Definitions of `name`: `(path, kind, line, end_line)`.
     fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>>;
 

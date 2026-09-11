@@ -1,7 +1,7 @@
 # rtok — completed tasks
 
 
-## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.4
+## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.5
 
 **T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`
 Do: `outline::config` compiled the language's tags query on every `tags` call. That was 19 ms of a 26.5 ms call on `graph/index.rs`, paid by each file of an index run and by each outline.
@@ -23,6 +23,14 @@ Check: `pump` and FSEvents watch tests green (`graph::watch` 9/9). New `run_chan
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
+**T35.5 rebuild a root when the extractor changes** · T8.1 · `src/plugins/graph/index.rs`, `src/store/symbols.rs`, `src/store/symbols_lbug.rs`, a migration
+Do: a fingerprint of the extractor — every tags query string, the tree-sitter grammar crate versions, an `INDEX_VERSION` bumped when `scoped` changes — stored per root. A mismatch drops the root's rows and indexes it cold; a match changes nothing. Today a query change (T8.2's `RUST_SCOPED_CALL`, say) reaches only files edited afterwards.
+Check: `reindexes_when_extractor_fingerprint_mismatches` — 3 files, tamper fingerprint to deadbeef, `read == indexed == 3`, next run `read == 0`. Fingerprint = sha256(`INDEX_VERSION` || tags queries including `RUST_SCOPED_CALL`). SQLite table `extractor` (`0011.sql`). `graph-lbug` keeps the same `Store` methods. `graph::index` 11/11.
+Complexity: 3/5
+Deviation: Host trait + `plugin.rs` + `symbols_lbug.rs` + `outline.rs` `pub(crate)` `RUST_SCOPED_CALL` — more than 3 files because both Store backends must compile and the hook `Host` needs the methods.
+Status: done 2026-09-11 · Model: Composer 2.5
+
+
 ## P28 — LLM compression (design; open) — T28.0
 
 **T28.0 design note: LLM compression vs lossless** · — · `src/plugins/compress/PLAN.md` or `src/plugins/memory/PLAN.md` (extend), `docs/` as needed
@@ -31,6 +39,23 @@ Check: PLAN (`src/plugins/compress/PLAN.md`) names LLMLingua-2, claude-mem, Sele
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
+## P29 — Embeddings / semantic search (design; open) — T29.0
+
+**T29.0 design/survey: embeddings beside FTS5** · — · `src/plugins/memory/PLAN.md` and/or `src/plugins/graph/PLAN.md`
+Do: survey mem0, code-review-graph embeddings, and at least one other embed path. Decide where vectors live, how they stay optional, and how a fixture is proven found by both FTS5 and embed. No implementation.
+Check: PLAN (`src/plugins/memory/PLAN.md` v0.2 survey): ≥ 3 alternatives (mem0, code-review-graph, sqlite-vec chosen); vectors in `rtok.db`; Gate fixture `p29-gate-arctic-tern`.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+## P30 — LSP graph backend (design; open) — T30.0
+
+**T30.0 design/survey: LSP behind tags MCP** · — · `src/plugins/graph/PLAN.md`
+Do: survey serena-grade LSP backends and how they map onto the existing MCP tool names. Tags remain default; LSP is optional. Name one fixture where tags miss and LSP hits. No implementation.
+Check: PLAN (`src/plugins/graph/PLAN.md` P30 survey): rust-analyzer / clangd / tsserver surveyed; MCP names stable; Gate P30 `OnlyTyped` type-position miss.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+
 ## P31 — Semantic response cache (design; open) — T31.0
 
 **T31.0 design/survey: semantic cache** · — · `src/plugins/proxy/PLAN.md` or `src/proxy/` design note
@@ -38,6 +63,15 @@ Do: survey bifrost and at least two other semantic-cache approaches. Define simi
 Check: PLAN (`src/plugins/proxy/PLAN.md`) names ≥ 3 alternatives (bifrost, GPTCache, RedisVL); rejected wrapping; false-hit protocol = 0 false-hit pairs on frozen P9 `call_io` at cosine ≥ 0.99.
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
+
+## P32 — WASM plugin host (design; open) — T32.0
+
+**T32.0 design/survey: WASM host** · — · `crates/rtok-plugin-sdk/PLAN.md` or `docs/plugin-authoring.md` extension
+Do: survey WASM runtimes suitable for a static Rust binary (at least three). Define the `from_plugins` load path, the Measurement example contract, and what stays in-process for in-tree plugins. D6 call-out: no vendored third-party plugins in this repo. No implementation.
+Check: PLAN (`crates/rtok-plugin-sdk/PLAN.md`): Wasmtime / Wasmi / Wasm3; chosen Wasmi; WASM not on hook; Gate P32 `wasm-demo` `Measurement`.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
 
 ## P33 — Tiered session context (design; open) — T33.0
 

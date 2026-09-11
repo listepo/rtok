@@ -270,6 +270,36 @@ impl Store {
         Ok(())
     }
 
+    pub fn extractor_fingerprint(&self, root: &str) -> Result<Option<String>> {
+        use diesel::prelude::*;
+        use diesel::sql_query;
+        use diesel::sql_types::Text;
+        let mut conn = self.lock()?;
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            fingerprint: String,
+        }
+        let rows: Vec<Row> = sql_query("SELECT fingerprint FROM extractor WHERE root = ?")
+            .bind::<Text, _>(root)
+            .load(&mut *conn)?;
+        Ok(rows.first().map(|r| r.fingerprint.clone()))
+    }
+
+    pub fn set_extractor_fingerprint(&self, root: &str, fp: &str) -> Result<()> {
+        use diesel::sql_query;
+        use diesel::sql_types::Text;
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO extractor (root, fingerprint) VALUES (?, ?)
+             ON CONFLICT(root) DO UPDATE SET fingerprint = excluded.fingerprint",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(fp)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
     /// Definitions of `name` as `(path, kind, line)`, ordered by path then line (T8.2 `symbol`).
     pub fn symbol_defs(&self, root: &str, name: &str) -> Result<Vec<(String, String, i32, i32)>> {
         let rows = self.graph.rows(
