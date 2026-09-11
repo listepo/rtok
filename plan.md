@@ -565,13 +565,6 @@ Complexity: 2/5
 Status: open
 Model: -
 
-**T36.17 a removed directory leaves the index** · — · `src/plugins/graph/watch.rs`
-Do: `relevant()` accepts only supported *files*, so `rm -rf src/<dir>` never reaches `run_changed` and rows for the deleted files keep being served (`callers`/`impact` name them; `symbol` prints an empty body). Treat a non-relevant, non-`.git` event path as a rescan trigger.
-Check: deleting a directory removes its rows without a full walk being needed for the call that follows.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
 Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
 Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).

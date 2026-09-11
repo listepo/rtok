@@ -106,9 +106,7 @@ async fn watchman_loop(
                     Ok(SubscriptionData::Canceled) => break,
                     Ok(SubscriptionData::FilesChanged(payload)) => {
                         for f in payload.files.unwrap_or_default() {
-                            let p = root.join(f.name.as_path());
-                            if relevant(&p) {
-                                pending.insert(p);
+                            if absorb_event(root.join(f.name.as_path()), &mut pending, &mut rescan) {
                                 last = Instant::now();
                             }
                         }
@@ -203,8 +201,7 @@ fn pump<F>(
                 }
                 let mut touched = false;
                 for p in events(ev) {
-                    if relevant(&p) {
-                        pending.insert(p);
+                    if absorb_event(p, &mut pending, &mut rescan) {
                         touched = true;
                     }
                 }
@@ -253,10 +250,26 @@ fn relevant(p: &Path) -> bool {
     crate::plugins::read::outline::supported(p) && !p.components().any(|c| c.as_os_str() == ".git")
 }
 
+/// A path the incremental indexer cannot see (unsupported or a directory): trigger a rescan
+/// so vanished rows drop, but ignore `.git` noise (T36.17).
+fn absorb_event(p: PathBuf, pending: &mut HashSet<PathBuf>, rescan: &mut bool) -> bool {
+    if relevant(&p) {
+        pending.insert(p);
+        true
+    } else if !p.components().any(|c| c.as_os_str() == ".git") {
+        *rescan = true;
+        pending.clear();
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::plugins::graph::index::tests::cx as mk;
+    use rstest::rstest;
     use std::fs;
     use std::time::Duration;
 
@@ -461,17 +474,48 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// `.git/` churn and non-source files never wake the indexer; a burst of relevant events
+    /// `.git/` churn never wakes the indexer; a burst of relevant events
     /// runs it exactly once. Exact, where `bursts_coalesce_to_few_runs` can only bound the count
     /// (≤ 3), because FSEvents decides how the 200 writes are batched.
     #[test]
     fn irrelevant_events_never_run_and_a_burst_runs_once() {
         let (rt, dir) = mk("watch-noise");
         fs::write(dir.join("a.rs"), "pub fn seed() {}\n").unwrap();
-        let noise = ["README.md", ".git/index", "target/lib.o"].map(|p| dir.join(p));
+        let noise = [".git/index", ".git/HEAD"].map(|p| dir.join(p));
         assert_eq!(pump_events(&rt, &dir, noise.to_vec(), 0), 0);
         let burst = (0..50).map(|_| dir.join("a.rs")).collect();
         assert_eq!(pump_events(&rt, &dir, burst, 1), 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T36.17: `rm -rf src/<dir>` names the directory, not each `.rs` file; without a rescan
+    /// trigger the deleted files' rows linger and `symbol` still names them.
+    #[rstest]
+    fn removed_directory_drops_index_rows() {
+        let (mut rt, dir) = mk("watch-rmdir");
+        arm(&mut rt, "notify");
+        let module = dir.join("src/module");
+        fs::create_dir_all(&module).unwrap();
+        fs::write(module.join("gone.rs"), "pub fn vanished() {}\n").unwrap();
+        let cx = Ctx::new(&rt);
+        super::super::index::run(&cx, &dir, false).unwrap();
+        let key = super::super::index::canon(&dir);
+        assert_eq!(cx.symbol_defs(&key, "vanished").unwrap().len(), 1);
+        fs::remove_dir_all(&module).unwrap();
+        assert_eq!(
+            pump_events(&rt, &dir, vec![module], 1),
+            1,
+            "directory removal must re-index once"
+        );
+        assert!(
+            cx.symbol_defs(&key, "vanished").unwrap().is_empty(),
+            "deleted directory kept its rows"
+        );
+        assert_eq!(
+            super::super::index_for(&cx, &dir).unwrap().read,
+            0,
+            "the call that follows must not walk"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
