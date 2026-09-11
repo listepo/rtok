@@ -707,24 +707,33 @@ impl Store {
     /// Request bodies of the newest `limit` hook calls in this session (T4.6
     /// edit window: a PreToolUse(Read) checks them for a recent Edit|Write).
     /// The live call's own row has no `call_io` yet, so it never matches itself.
+    /// The newest `limit` hook bodies for this session, as JSON where the body was kept.
+    ///
+    /// A row whose body exceeded `core.call_io_inline_bytes` comes back as `""` rather than
+    /// being left out: the caller (`read`'s edit window) must see that *something* happened
+    /// it cannot read and fail open, instead of concluding no edit happened. Dropping these
+    /// rows is what made a 70 KiB `Write` followed by a native `Read` of the same file end in
+    /// a deny.
     pub fn recent_hook_inputs(&self, session: &str, limit: i64) -> Result<Vec<String>> {
         #[derive(QueryableByName)]
         struct Body {
-            #[diesel(sql_type = Text)]
-            request_json: String,
+            #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+            request_json: Option<String>,
         }
         let mut conn = self.lock()?;
         let rows: Vec<Body> = sql_query(
             "SELECT call_io.request_json AS request_json FROM calls
              JOIN call_io ON call_io.call_id = calls.id
              WHERE calls.session_id = ? AND calls.kind = 'hook'
-               AND call_io.request_json IS NOT NULL
              ORDER BY calls.id DESC LIMIT ?",
         )
         .bind::<Text, _>(session)
         .bind::<BigInt, _>(limit)
         .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.request_json).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| r.request_json.unwrap_or_default())
+            .collect())
     }
 
     /// Hook/call rows in this session at or after `ts` (window for `guard`).

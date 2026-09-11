@@ -28,13 +28,15 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
 const WINDOW_CALLS: i64 = 10;
 
 /// True when a PostToolUse(Edit|Write) for `path` sits in the window.
-/// Fail open: any store error allows the Read (unmodified input, D1).
+/// Fail open: a store error allows the Read (unmodified input, D1), and so does a hook
+/// body the store could not keep (empty string) — the window cannot rule out an edit of
+/// this file, and denying a Read of a file the agent just wrote is the worse error.
 fn recently_edited(cx: &Ctx, path: &str) -> bool {
     let bodies = match cx.recent_hook_inputs(WINDOW_CALLS) {
         Ok(b) => b,
         Err(_) => return true,
     };
-    bodies.iter().any(|b| edits_path(b, path))
+    bodies.iter().any(|b| b.is_empty() || edits_path(b, path))
 }
 
 fn edits_path(stdin: &str, path: &str) -> bool {
@@ -149,5 +151,42 @@ mod tests {
         assert!(!same_path("/repo/main.rs", "ain.rs"));
         assert!(same_path("/repo/src/main.rs", "src/main.rs"));
         assert!(same_path("src/main.rs", "/repo/src/main.rs"));
+    }
+
+    /// A hook body the store could not keep (above `core.call_io_inline_bytes`, no archive
+    /// dir) comes back empty. The window must fail open there: a big `Write` followed by a
+    /// native `Read` of the same file used to be denied because the write was invisible.
+    #[test]
+    fn an_unreadable_hook_body_allows_the_read() {
+        let cx = cx("elided");
+        let dir = cx.config.core.archive_dir.parent().unwrap().to_path_buf();
+        let p = dir.join("elided-big.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let big = "x".repeat(70 * 1024);
+        let stdin = serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": p.to_str().unwrap()},
+            "pad": big,
+        });
+        let id = cx.record_call("hook", "hook", None).unwrap();
+        cx.store
+            .insert_call_io(
+                id,
+                Some(&serde_json::to_vec(&stdin).unwrap()),
+                None,
+                65536,
+                None,
+            )
+            .unwrap();
+        assert!(
+            cx.store.recent_hook_inputs(&cx.session, 10).unwrap()[0].is_empty(),
+            "the body is elided, not stored"
+        );
+        let input = json!({"file_path": p.to_str().unwrap()});
+        assert!(
+            pre_tool(&ev(&input), &Ctx::new(&cx)).is_none(),
+            "an unreadable window must not deny a file this session may have written"
+        );
     }
 }
