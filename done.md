@@ -3,6 +3,13 @@
 
 ## P36 — second bug-hunt residue (open) — T36.19
 
+**T36.14 live passthrough rows are not labelled tokens** · — · `src/web/model.rs`, `src/tui/view.rs`
+Do: a plain-proxy row stores byte counts in `input`/`output`, and the Calls page renders their sum as `… tok` while no `usage` row exists for it.
+Check: a live row shows bytes (or `-`), and a linked api_request row still shows tokens. `cargo test --lib call_size_label_distinguishes live_passthrough_rows_show_bytes_not_tokens calls_tab_lists_rows_newest_first`, all pass (rstest).
+Complexity: 1/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+
 **T36.16 `graph` reads each file once** · — · `src/plugins/graph/mod.rs`, `src/plugins/graph/index.rs`
 Do: (a) `symbol` re-reads the whole file for every definition row (500 one-line definitions = 500 reads before the cap truncates); cache the last `(path, contents)`; (b) the cap budget scales `text.len()` (bytes) against a char-based estimate, so a CJK-heavy file's head can exceed `plugins.graph.max_tokens` by ~3× — scale and compare in chars; (c) a file that cannot be decoded or parsed is never recorded, so it is re-read and re-parsed on every call forever — record the stat with an empty-sha sentinel.
 Check: `symbol` on the 500-definition fixture reads the file once (counting fixture or a stat counter); a CJK fixture's capped output estimates ≤ `max_tokens`; a latin-1 fixture is not re-read on a second warm call. `cargo test --lib graph`, all pass, including `symbol_reads_each_source_file_once`, `cjk_capped_output_respects_max_tokens`, and `latin1_file_is_not_reread_on_warm_index` (rstest).

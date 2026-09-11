@@ -572,13 +572,6 @@ Complexity: 2/5
 Status: open
 Model: -
 
-**T36.14 live passthrough rows are not labelled tokens** · — · `src/web/model.rs`, `src/tui/view.rs`
-Do: a plain-proxy row stores byte counts in `input`/`output`, and the Calls page renders their sum as `… tok` while no `usage` row exists for it.
-Check: a live row shows bytes (or `-`), and a linked api_request row still shows tokens.
-Complexity: 1/5
-Status: open
-Model: -
-
 **T36.15 the web Doctor page carries the instruction audit** · — · `crates/rtok-webui/src/lib.rs`
 Do: `doctor_of` stops after `autoCompactWindow`; `doctor::Report::to_text` appends the `instructions` section (per-file rows and duplicates) that the snapshot already carries, so the D23 parity claim is false for that page.
 Check: the page renders the same instruction rows in the same order as `rtok doctor`; `tests/surface_parity.rs` covers it.

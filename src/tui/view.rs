@@ -15,7 +15,7 @@ use ratatui::widgets::{Block, Paragraph, Row, Sparkline, Table, Tabs};
 
 use super::app::App;
 use crate::store::CallRow;
-use crate::web::model::PluginPage;
+use crate::web::model::{self, PluginPage};
 
 /// One screen: header · [alert] · tabs · body · footer.
 /// The alert row stays up for the whole disabled period (proxy/core enabled=false).
@@ -285,8 +285,7 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
             c.name.clone().unwrap_or_else(|| "-".into()),
             c.session.clone(),
             c.ms.map_or_else(|| "-".into(), |ms| format!("{ms:.1}")),
-            c.input
-                .map_or_else(|| "-".into(), |_| format!("{} tok", linked_tokens(c))),
+            model::call_size_label(c),
         ]);
         if i == selected {
             row.style(Style::new().bold())
@@ -360,19 +359,11 @@ fn call_detail(c: &CallRow) -> Paragraph<'static> {
             c.cache_create.unwrap_or(0),
             c.cache_read.unwrap_or(0),
             c.output.unwrap_or(0),
-            linked_tokens(c)
+            model::call_linked_tokens(c)
         ),
         _ => "usage no row linked (only an api request records one)".to_string(),
     }));
     Paragraph::new(lines).block(Block::default().title(format!("call {}", c.id)))
-}
-
-/// The linked usage row's four counters summed.
-fn linked_tokens(c: &CallRow) -> i64 {
-    c.input.unwrap_or(0)
-        + c.cache_create.unwrap_or(0)
-        + c.cache_read.unwrap_or(0)
-        + c.output.unwrap_or(0)
 }
 
 /// `HH:MM:SS` — `log::stamp`'s time half; the full date is in the detail view.
@@ -428,6 +419,7 @@ mod tests {
     use crate::config::Config;
     use crate::plugin::{Measurement, Runtime};
     use crate::tui::app::tests::config;
+    use rstest::rstest;
     use crossterm::event::{KeyCode, KeyModifiers};
     use ratatui::backend::TestBackend;
 
@@ -718,6 +710,30 @@ mod tests {
     /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
     /// session, latency, the linked usage tokens — straight off the snapshot (D23), and
     /// the detail pane is closed until a key opens it.
+
+    #[rstest]
+    fn live_passthrough_rows_show_bytes_not_tokens() {
+        crate::proxy::live::clear();
+        crate::proxy::live::push(crate::proxy::LiveCall {
+            ts: 1,
+            method: "POST".into(),
+            path: "/v1/messages".into(),
+            provider: None,
+            model: None,
+            status: 200,
+            request_bytes: 100,
+            response_bytes: 50,
+            ms: 5.0,
+        });
+        let mut cfg = calls_seeded();
+        cfg.proxy.enabled = false;
+        let mut app = App::new(&cfg);
+        app.key(KeyCode::Char('3'), KeyModifiers::NONE);
+        let screen = screen(&app);
+        assert!(screen.contains("150 B"), "live passthrough sums request+response bytes");
+        assert!(screen.contains("16 tok"), "linked api_request still shows tokens");
+        crate::proxy::live::clear();
+    }
     #[test]
     fn calls_tab_lists_rows_newest_first() {
         let mut app = App::new(&calls_seeded());

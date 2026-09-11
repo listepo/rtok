@@ -543,7 +543,7 @@ fn doctor_for_snapshot(cfg: &Config) -> Option<doctor::Report> {
     }
     static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
     let key = format!(
-        "{} {} {}",
+        "{}{}{}",
         cfg.doctor.settings_path.display(),
         cfg.doctor.claude_json.display(),
         cfg.doctor.mcp_json.display()
@@ -779,6 +779,29 @@ fn live_as_call_row(id: i32, c: crate::proxy::LiveCall) -> CallRow {
     }
 }
 
+/// The Calls page size column: bytes for in-memory plain-proxy rows, tokens when a
+/// `usage` row is linked (`api` set), otherwise `-`.
+pub fn call_size_label(c: &CallRow) -> String {
+    if c.kind == "live_passthrough" {
+        return match (c.input, c.output) {
+            (None, None) => "-".into(),
+            _ => format!("{} B", c.input.unwrap_or(0) + c.output.unwrap_or(0)),
+        };
+    }
+    if c.api.is_some() && c.input.is_some() {
+        return format!("{} tok", call_linked_tokens(c));
+    }
+    "-".into()
+}
+
+/// Sum of the four counters on a usage-linked call row.
+pub fn call_linked_tokens(c: &CallRow) -> i64 {
+    c.input.unwrap_or(0)
+        + c.cache_create.unwrap_or(0)
+        + c.cache_read.unwrap_or(0)
+        + c.output.unwrap_or(0)
+}
+
 fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
     let p = &cfg.plugins;
     match id {
@@ -819,6 +842,7 @@ fn kv(k: &str, v: impl ToString) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use crate::plugin::{Measurement, Runtime};
 
     fn fixture() -> Runtime {
@@ -1106,6 +1130,44 @@ mod tests {
         assert_eq!(wire[1]["api"], serde_json::json!(null));
     }
 
+
+    #[rstest]
+    #[case("live_passthrough", None, None, None, None, None, "-")]
+    #[case("live_passthrough", Some(100), None, None, Some(50), None, "150 B")]
+    #[case("api_request", Some(10), Some(1), Some(2), Some(3), Some("anthropic"), "16 tok")]
+    #[case("hook", None, None, None, None, None, "-")]
+    fn call_size_label_distinguishes_bytes_from_tokens(
+        #[case] kind: &str,
+        #[case] input: Option<i64>,
+        #[case] cache_create: Option<i64>,
+        #[case] cache_read: Option<i64>,
+        #[case] output: Option<i64>,
+        #[case] api: Option<&str>,
+        #[case] want: &str,
+    ) {
+        let row = CallRow {
+            id: 1,
+            ts: 0,
+            session: "s".into(),
+            surface: "proxy".into(),
+            kind: kind.into(),
+            plugin: None,
+            name: None,
+            parent_id: None,
+            ms: None,
+            ok: 1,
+            error: None,
+            host: None,
+            provider: None,
+            model: None,
+            api: api.map(str::to_string),
+            input,
+            cache_create,
+            cache_read,
+            output,
+        };
+        assert_eq!(call_size_label(&row), want);
+    }
     /// The report's percentile, pinned where it is defined: nearest rank, so
     /// `tests/report.rs` can assert the p50/p95 the fixture's ms values must produce.
     #[test]
