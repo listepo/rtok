@@ -248,6 +248,13 @@ impl Symbols for MemoryHost {
         Ok(None)
     }
 
+    fn symbol_stats(
+        &self,
+        _root: &str,
+    ) -> Result<std::collections::HashMap<String, (String, i64, i64)>> {
+        Ok(std::collections::HashMap::new())
+    }
+
     fn touch_symbols(&self, _root: &str, _path: &str, _mtime: i64, _size: i64) -> Result<()> {
         Ok(())
     }
@@ -259,6 +266,14 @@ impl Symbols for MemoryHost {
         _file_sha: &str,
         _stat: (i64, i64),
         _rows: &[(String, String, i32, bool, i32, String)],
+    ) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn replace_symbol_files(
+        &self,
+        _root: &str,
+        _files: &crate::host::SymbolFileBatch,
     ) -> Result<usize> {
         Ok(0)
     }

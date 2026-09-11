@@ -103,6 +103,7 @@ pub fn run_with(
     if fp_stale && !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &HashSet::new());
     }
+    let stats = cx.symbol_stats(&rk)?;
     let mut report = Report::default();
     let mut keep = HashSet::new();
     let mut jobs = Vec::new();
@@ -124,7 +125,7 @@ pub fn run_with(
             .replace('\\', "/");
         keep.insert(rel.clone());
         let stat = entry.metadata().as_ref().map(stat_key).unwrap_or((0, 0));
-        let known = cx.symbol_stat(&rk, &rel)?;
+        let known = stats.get(&rel).cloned();
         // Same mtime and size: git's rule for "unchanged". Nothing is opened.
         if known.as_ref().is_some_and(|(_, m, s)| (*m, *s) == stat) && stat != (0, 0) {
             report.skipped += 1;
@@ -138,10 +139,25 @@ pub fn run_with(
             known: known.map(|(sha, _, _)| sha),
         });
     }
+    let mut pending = Vec::new();
+    let mut touches = Vec::new();
     each_parsed(&jobs, |job, parsed| {
         pb.inc(1);
-        write_parsed(cx, &rk, job, parsed, dry_run, &mut report)
+        stage_parsed(job, parsed, &mut report, &mut pending, &mut touches);
+        if !dry_run && pending.len() >= 64 {
+            report.inserted += cx.replace_symbol_files(&rk, &pending)?;
+            pending.clear();
+        }
+        Ok(())
     })?;
+    if !dry_run {
+        if !pending.is_empty() {
+            report.inserted += cx.replace_symbol_files(&rk, &pending)?;
+        }
+        for (path, stat) in touches {
+            cx.touch_symbols(&rk, &path, stat.0, stat.1)?;
+        }
+    }
     if !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &keep);
         if fp_stale {
@@ -240,44 +256,34 @@ enum Parsed {
     Rows(String, Vec<Row>),
 }
 
-fn write_parsed(
-    cx: &Ctx,
-    rk: &str,
+type PendingFile = (String, String, (i64, i64), Vec<Row>);
+
+fn stage_parsed(
     job: &Job,
     parsed: Parsed,
-    dry_run: bool,
     report: &mut Report,
-) -> Result<()> {
+    pending: &mut Vec<PendingFile>,
+    touches: &mut Vec<(String, (i64, i64))>,
+) {
     match parsed {
         Parsed::Unreadable => {
-            if !dry_run {
-                cx.replace_symbols(rk, &job.rel, EMPTY_SHA, job.stat, &[])?;
-            }
+            pending.push((job.rel.clone(), EMPTY_SHA.to_string(), job.stat, Vec::new()))
         }
         Parsed::Unparsed => {
             report.read += 1;
-            if !dry_run {
-                cx.replace_symbols(rk, &job.rel, EMPTY_SHA, job.stat, &[])?;
-            }
+            pending.push((job.rel.clone(), EMPTY_SHA.to_string(), job.stat, Vec::new()));
         }
         Parsed::Same => {
             report.read += 1;
             report.skipped += 1;
-            if !dry_run {
-                cx.touch_symbols(rk, &job.rel, job.stat.0, job.stat.1)?;
-            }
+            touches.push((job.rel.clone(), job.stat));
         }
         Parsed::Rows(sha, rows) => {
             report.read += 1;
             report.indexed += 1;
-            report.inserted += if dry_run {
-                rows.len()
-            } else {
-                cx.replace_symbols(rk, &job.rel, &sha, job.stat, &rows)?
-            };
+            pending.push((job.rel.clone(), sha, job.stat, rows));
         }
     }
-    Ok(())
 }
 
 fn parse(job: &Job) -> Parsed {

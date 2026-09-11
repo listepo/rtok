@@ -242,6 +242,11 @@ pub trait Ledger {
     fn calls_since(&self, ts: i64) -> Result<i64>;
 }
 
+/// Symbol rows for one indexed file.
+pub type SymbolFileRows = Vec<(String, String, i32, bool, i32, String)>;
+/// Batched cold-index writes: `(path, sha, stat, rows)` per file.
+pub type SymbolFileBatch = Vec<(String, String, (i64, i64), SymbolFileRows)>;
+
 /// The symbol index behind `symbol` / `callers` / `impact`: definitions and references
 /// extracted from source, keyed by repository root and relative path.
 ///
@@ -253,6 +258,12 @@ pub trait Symbols {
 
     /// The recorded `(sha, mtime, size)` for one file, if it has been indexed.
     fn symbol_stat(&self, root: &str, path: &str) -> Result<Option<(String, i64, i64)>>;
+
+    /// Every indexed file's `(sha, mtime, size)` under `root` (T35.3).
+    fn symbol_stats(
+        &self,
+        root: &str,
+    ) -> Result<std::collections::HashMap<String, (String, i64, i64)>>;
 
     /// Update a file's mtime and size without re-parsing it — the content is unchanged.
     fn touch_symbols(&self, root: &str, path: &str, mtime: i64, size: i64) -> Result<()>;
@@ -267,6 +278,9 @@ pub trait Symbols {
         stat: (i64, i64),
         rows: &[(String, String, i32, bool, i32, String)],
     ) -> Result<usize>;
+
+    /// Replace many files in one transaction (T35.3 cold index).
+    fn replace_symbol_files(&self, root: &str, files: &SymbolFileBatch) -> Result<usize>;
 
     /// Drop every indexed file under `root` that is not in `keep`; returns how many went.
     fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize>;

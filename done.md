@@ -155,6 +155,12 @@ Check: one `OnceLock` per language, kept for the process. A failed compile keeps
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Opus 5
 
+**T35.3 batched store I/O for the index** · T35.2 · `src/store/symbols.rs`, `src/plugins/graph/index.rs`, `src/plugin.rs`, `crates/rtok-plugin-sdk/src/host.rs`
+Do: measure first. Then one query for the root's `(path, sha, mtime, size)` instead of a `symbol_stat` per file; multi-row INSERTs chunked under SQLite's variable limit; one DELETE for vanished paths. `graph-lbug` keeps its own path.
+Check: `symbol_stats` loads every file stat in one DISTINCT query; cold `run_with` stages writes and flushes them through `replace_symbol_files` in transactions of 64 files with multi-row INSERTs chunked at 90 rows; `delete_symbols_missing` issues one `DELETE` (or `eq_any` for partial roots). Twelve `index` tests and `graph_truth` stay green; release `graph_bench` cold index of 3 000 files still yields 9 000 rows. Measured on this machine before patch (release, three runs): 251–328 ms (median 309 ms). After: 153–223 ms (median 197 ms, −36 %). Debug `labelled_symbols_are_found` cold index 380 ms (high run-to-run variance on this host). `graph-lbug` untouched.
+Complexity: 2/5
+Status: done 2026-09-12 · Model: Composer 2.5
+
 **T35.2 parse on worker threads, write from one** · T35.1 · `src/plugins/graph/index.rs`
 Do: after T35.1 one thread still read, hashed and parsed each file in turn while the other cores idled. The owner made it the first task in P35 (2026-09-11).
 Check: the walk and the stat gate stay on the calling thread. Files that pass the gate go to one worker per core (`std::thread::scope`), and their results reach the one writer (D18) in walk order through a reorder buffer, so the store gets a sequential run's writes in a sequential run's order. The channel is bounded, so a slow writer stalls the workers; a failed write drops the receiver and stops them. New tests: `parsed_files_are_written_in_walk_order` (32 files, the early ones largest) and `a_failed_write_stops_the_workers`. The seven existing index tests stay green, `second_run_inserts_zero` and `two_roots_do_not_evict_each_other` among them. The cold debug index of this repo fell from 1.30–1.38 s to 281–296 ms (127 files, two runs). The release `graph_bench` index of 3 000 files fell from 341 ms to 172–174 ms, 9 000 rows both times. Definitions 42/42, ref recall 0.305. Gate P35 is met.

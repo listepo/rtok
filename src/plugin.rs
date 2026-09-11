@@ -313,6 +313,13 @@ impl Symbols for Runtime {
         self.store.symbol_stat(root, path)
     }
 
+    fn symbol_stats(
+        &self,
+        root: &str,
+    ) -> Result<std::collections::HashMap<String, (String, i64, i64)>> {
+        self.store.symbol_stats(root)
+    }
+
     fn touch_symbols(&self, root: &str, path: &str, mtime: i64, size: i64) -> Result<()> {
         self.store.touch_symbols(root, path, mtime, size)
     }
@@ -326,6 +333,14 @@ impl Symbols for Runtime {
         rows: &[(String, String, i32, bool, i32, String)],
     ) -> Result<usize> {
         self.store.replace_symbols(root, path, file_sha, stat, rows)
+    }
+
+    fn replace_symbol_files(
+        &self,
+        root: &str,
+        files: &rtok_plugin_sdk::SymbolFileBatch,
+    ) -> Result<usize> {
+        self.store.replace_symbol_files(root, files)
     }
 
     fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize> {

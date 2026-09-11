@@ -438,17 +438,6 @@ Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that record
 
 Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. T35.4 (2026-09-11) indexes only changed paths on watcher settle; overflow and `need_rescan` still full-walk. T35.5 (2026-09-11) rebuilds a root when the extractor fingerprint mismatches. T35.3 remains last among remaining P35 tasks (user 2026-09-11). Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
 
-**T35.3 batched store I/O for the index** · T35.2 · `src/store/symbols.rs`, `src/plugins/graph/index.rs`
-Do: measure first. Then one query for the root's `(path, sha, mtime, size)` instead of a `symbol_stat` per file; multi-row INSERTs chunked under SQLite's variable limit; one DELETE for vanished paths. `graph-lbug` keeps its own path. Do not add LadybugDB work (P39 freeze).
-
-Agents: last among remaining P35 (user 2026-09-11). A prior multi-row INSERT + process-wide stats cache made the cold index slower; keep only if the Check holds.
-
-Check: kept only if the cold index falls ≥ 20 % on top of T35.1–T35.2; the store is row-for-row equal.
-Complexity: 2/5
-Status: open
-Model: -
-
-
 Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 000-file release index ≤ 4 s; every graph test green, rows unchanged. Met 2026-09-11: 281–296 ms debug, 172–174 ms release, graph tests green.
 
 ### P34 — Hardening pass (bugs, tests, one helper per job) · done 2026-09-10 (T34.1–T34.9) — see `done.md` P34.

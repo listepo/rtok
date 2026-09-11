@@ -1,7 +1,7 @@
 //! T8.10 (P8c): the `graph` plugin's symbol index over SQLite. A second `impl Store`, so
 //! T8.11's `lbug` backend is a sibling file selected by `cfg` and no signature moves.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use diesel::prelude::*;
@@ -11,6 +11,7 @@ use diesel::sql_types::{Integer, Text};
 use super::Store;
 use super::schema::symbols;
 
+const INSERT_CHUNK: usize = 999 / 11;
 impl Store {
     /// Rows indexed under one repo root (T8.3). Every symbol call is scoped to a root, so
     /// two repos in the one store (D8) never evict or answer for each other.
@@ -33,6 +34,24 @@ impl Store {
             .optional()?)
     }
 
+    pub fn symbol_stats(&self, root: &str) -> Result<HashMap<String, (String, i64, i64)>> {
+        let mut conn = self.lock()?;
+        let rows: Vec<(String, String, i64, i64)> = symbols::table
+            .filter(symbols::root.eq(root))
+            .select((
+                symbols::path,
+                symbols::file_sha,
+                symbols::mtime,
+                symbols::size,
+            ))
+            .distinct()
+            .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|(p, s, m, z)| (p, (s, m, z)))
+            .collect())
+    }
+
     /// Record a new stat for a file whose content hashed the same (T8.4): the rows stand,
     /// only the freshness key moves, so the next run skips it on the stat alone.
     pub fn touch_symbols(&self, root: &str, path: &str, mtime: i64, size: i64) -> Result<()> {
@@ -41,6 +60,67 @@ impl Store {
             .set((symbols::mtime.eq(mtime), symbols::size.eq(size)))
             .execute(&mut *conn)?;
         Ok(())
+    }
+
+    pub fn replace_symbol_files(
+        &self,
+        root: &str,
+        files: &rtok_plugin_sdk::SymbolFileBatch,
+    ) -> Result<usize> {
+        if files.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.lock()?;
+        Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            let mut inserted = 0usize;
+            for (path, file_sha, stat, rows) in files {
+                diesel::delete(
+                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&path))),
+                )
+                .execute(conn)?;
+                if rows.is_empty() {
+                    diesel::insert_into(symbols::table)
+                        .values((
+                            symbols::root.eq(root),
+                            symbols::path.eq(&path),
+                            symbols::name.eq(""),
+                            symbols::kind.eq(""),
+                            symbols::line.eq(0),
+                            symbols::is_def.eq(0),
+                            symbols::file_sha.eq(&file_sha),
+                            symbols::mtime.eq(stat.0),
+                            symbols::size.eq(stat.1),
+                        ))
+                        .execute(conn)?;
+                    continue;
+                }
+                for chunk in rows.chunks(INSERT_CHUNK) {
+                    let values: Vec<_> = chunk
+                        .iter()
+                        .map(|(name, kind, line, is_def, end_line, scope)| {
+                            (
+                                symbols::root.eq(root),
+                                symbols::path.eq(&path),
+                                symbols::name.eq(name),
+                                symbols::kind.eq(kind),
+                                symbols::line.eq(line),
+                                symbols::is_def.eq(i32::from(*is_def)),
+                                symbols::file_sha.eq(&file_sha),
+                                symbols::mtime.eq(stat.0),
+                                symbols::size.eq(stat.1),
+                                symbols::end_line.eq(end_line),
+                                symbols::scope.eq(scope),
+                            )
+                        })
+                        .collect();
+                    diesel::insert_into(symbols::table)
+                        .values(&values)
+                        .execute(conn)?;
+                }
+                inserted += rows.len();
+            }
+            Ok(inserted)
+        })?)
     }
 
     pub fn replace_symbols(
@@ -79,21 +159,27 @@ impl Store {
                     .execute(conn)?;
                 return Ok(0);
             }
-            for (name, kind, line, is_def, end_line, scope) in rows {
+            for chunk in rows.chunks(INSERT_CHUNK) {
+                let values: Vec<_> = chunk
+                    .iter()
+                    .map(|(name, kind, line, is_def, end_line, scope)| {
+                        (
+                            symbols::root.eq(root),
+                            symbols::path.eq(path),
+                            symbols::name.eq(name),
+                            symbols::kind.eq(kind),
+                            symbols::line.eq(line),
+                            symbols::is_def.eq(i32::from(*is_def)),
+                            symbols::file_sha.eq(file_sha),
+                            symbols::mtime.eq(stat.0),
+                            symbols::size.eq(stat.1),
+                            symbols::end_line.eq(end_line),
+                            symbols::scope.eq(scope),
+                        )
+                    })
+                    .collect();
                 diesel::insert_into(symbols::table)
-                    .values((
-                        symbols::root.eq(root),
-                        symbols::path.eq(path),
-                        symbols::name.eq(name),
-                        symbols::kind.eq(kind),
-                        symbols::line.eq(line),
-                        symbols::is_def.eq(i32::from(*is_def)),
-                        symbols::file_sha.eq(file_sha),
-                        symbols::mtime.eq(stat.0),
-                        symbols::size.eq(stat.1),
-                        symbols::end_line.eq(end_line),
-                        symbols::scope.eq(scope),
-                    ))
+                    .values(&values)
                     .execute(conn)?;
             }
             Ok(rows.len())
@@ -102,23 +188,29 @@ impl Store {
 
     pub fn delete_symbols_missing(&self, root: &str, keep: &HashSet<String>) -> Result<usize> {
         let mut conn = self.lock()?;
+        if keep.is_empty() {
+            return Ok(
+                diesel::delete(symbols::table.filter(symbols::root.eq(root)))
+                    .execute(&mut *conn)?,
+            );
+        }
         let have: Vec<String> = symbols::table
             .filter(symbols::root.eq(root))
             .select(symbols::path)
             .distinct()
             .load(&mut *conn)?;
-        // PERF(T35.3) where: this loop, after a branch switch drops many files. What: one
-        // DELETE over the missing set. Why: one DELETE per vanished path.
-        let mut n = 0usize;
-        for p in have {
-            if !keep.contains(&p) {
-                n += diesel::delete(
-                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&p))),
-                )
-                .execute(&mut *conn)?;
-            }
+        let missing: Vec<&str> = have
+            .iter()
+            .filter(|p| !keep.contains(p.as_str()))
+            .map(String::as_str)
+            .collect();
+        if missing.is_empty() {
+            return Ok(0);
         }
-        Ok(n)
+        Ok(diesel::delete(
+            symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq_any(&missing))),
+        )
+        .execute(&mut *conn)?)
     }
 
     /// Drop rows for one canonical absolute file path. No indexing on the hook path.
