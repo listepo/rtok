@@ -516,13 +516,6 @@ Complexity: 2/5
 Status: open
 Model: -
 
-**T36.7 `--config` is honoured by every `config` subcommand** · — · `src/cli.rs`, `src/config/validate.rs`, `src/config/mod.rs`
-Do: `config init|set|path|validate` resolve `<home>/config.toml` and ignore `--config`/`RTOK_CONFIG`, while `show`/`get` honour it: `rtok --config ci.toml config set proxy.port 2222` reads ci.toml and writes the home file. Add one `Config::user_path(home, config_file)` and use it everywhere.
-Check: `--config /tmp/ci.toml config set/get/validate/path` all act on `/tmp/ci.toml`; a test pins the path in the output.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T36.8 legacy-key fold cannot outrank env or flags** · — · `src/config/mod.rs`, `src/config/layers.rs`
 Do: `[dashboard]`, `core.log_file`, `core.log_level`, `core.log_to_db` and `core.inject_budget_tokens` are folded after `extract()`, so a stale file key overrides `RTOK_*` and `--flags` (`rtok web --port 5555` binds the file's 4444), and `config show --sources` reports the pre-fold value and source. Fold inside the figment below project/env/flag, or apply a legacy value only while the new key is still at its default, and build `--sources` rows from the folded result.
 Check: a legacy file key loses to `RTOK_*` and to a flag; `show --sources` names the layer whose value is in effect.

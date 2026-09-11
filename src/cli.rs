@@ -427,13 +427,14 @@ pub fn run() -> Result<()> {
         }
         Cmd::Config { action } => {
             let home = Config::home_dir();
+            let user = Config::user_path(&home, config_file.as_deref());
             match action {
                 ConfigCmd::Init { force, dry_run } => {
-                    let (path, diff) = Config::init_maybe(&home, force, dry_run)?;
+                    let (path, diff) = Config::init_maybe(&home, config_file.as_deref(), force, dry_run)?;
                     println!("{}", path.display());
                     print_diff(&diff);
                 }
-                ConfigCmd::Path => println!("{}", Config::path_for(&home).display()),
+                ConfigCmd::Path => println!("{}", user.display()),
                 ConfigCmd::Show { sources, json } => {
                     let rows = model::config_entries(&home, config_file.as_deref())?;
                     show(&rows, sources, json)?;
@@ -446,7 +447,7 @@ pub fn run() -> Result<()> {
                     }
                 }
                 ConfigCmd::Validate { path } => {
-                    let path = path.unwrap_or_else(|| Config::path_for(&home));
+                    let path = path.unwrap_or(user);
                     let errs = validate::issues(&path)?;
                     if errs.is_empty() {
                         println!("ok {}", path.display());
@@ -462,7 +463,7 @@ pub fn run() -> Result<()> {
                     value,
                     dry_run,
                 } => {
-                    let (_, diff) = validate::set(&home, &key, &value, dry_run)?;
+                    let (_, diff) = validate::set_with(&home, config_file.as_deref(), &key, &value, dry_run)?;
                     if dry_run {
                         // Nothing was written, so the loader would still report the old value.
                         print_diff(&diff);

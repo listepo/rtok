@@ -44,15 +44,26 @@ fn issues_in(path: &Path, text: &str) -> Vec<String> {
 /// `dry_run` renders that diff and writes nothing; the value is validated either way, so a
 /// preview refuses exactly what the real run would refuse.
 pub fn set(home: &Path, key: &str, raw: &str, dry_run: bool) -> Result<(PathBuf, String)> {
+    set_with(home, None, key, raw, dry_run)
+}
+
+/// [`set`] with an explicit `--config` / `RTOK_CONFIG` override.
+pub fn set_with(
+    home: &Path,
+    config_file: Option<&Path>,
+    key: &str,
+    raw: &str,
+    dry_run: bool,
+) -> Result<(PathBuf, String)> {
     if key.is_empty() || key.split('.').any(|p| p.is_empty()) {
         bail!("empty key");
     }
-    let path = Config::path_for(home);
+    let path = Config::user_path(home, config_file);
     if !path.exists() {
         if dry_run {
             bail!("no config file yet; run `rtok config init` first");
         }
-        Config::init(home, false)?;
+        Config::init_maybe(home, config_file, false, false)?;
     }
     let before = std::fs::read_to_string(&path)?;
     let mut doc: DocumentMut = before.parse().with_context(|| path.display().to_string())?;
@@ -356,6 +367,42 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("# rtok proxy"), "{text}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    use rstest::rstest;
+    use super::super::layers;
+
+    /// T36.7: `config path` / `set` / `get` / `validate` all resolve `--config`.
+    #[rstest]
+    fn config_subcommands_honour_config_flag() {
+        let home = tmp("cfg-flag");
+        let ci = home.join("ci.toml");
+        std::fs::write(&ci, "[proxy]\nport = 1111\n").unwrap();
+
+        assert_eq!(Config::user_path(&home, Some(&ci)), ci);
+
+        set_with(&home, Some(&ci), "proxy.port", "2222", false).unwrap();
+        assert!(
+            std::fs::read_to_string(&ci).unwrap().contains("2222"),
+            "set must write --config file"
+        );
+        assert!(
+            !Config::path_for(&home).exists(),
+            "set must not write <home>/config.toml"
+        );
+
+        let cfg = layers::load(&home, Some(&ci), None).unwrap();
+        assert_eq!(cfg.proxy.port, 2222);
+
+        let errs = issues(&ci).unwrap();
+        assert!(errs.is_empty(), "{errs:?}");
+        let ok = format!("ok {}", ci.display());
+        assert!(
+            ok.contains(&ci.display().to_string()),
+            "validate must name the config path: {ok}"
+        );
+
         let _ = std::fs::remove_dir_all(&home);
     }
 }

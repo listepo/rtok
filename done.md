@@ -3,6 +3,13 @@
 
 ## P36 — second bug-hunt residue (open) — T36.19
 
+**T36.7 `--config` is honoured by every `config` subcommand** · — · `src/cli.rs`, `src/config/validate.rs`, `src/config/mod.rs`
+Do: `config init|set|path|validate` resolve `<home>/config.toml` and ignore `--config`/`RTOK_CONFIG`, while `show`/`get` honour it: `rtok --config ci.toml config set proxy.port 2222` reads ci.toml and writes the home file. Add one `Config::user_path(home, config_file)` and use it everywhere.
+Check: `--config /tmp/ci.toml config set/get/validate/path` all act on `/tmp/ci.toml`; a test pins the path in the output.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+Evidence: `mise exec -- cargo test config` — 32 passed, including `config_subcommands_honour_config_flag` (`path`/`get`/`set`/`validate` all honour `--config /tmp/ci.toml`).
+
 **T36.14 live passthrough rows are not labelled tokens** · — · `src/web/model.rs`, `src/tui/view.rs`
 Do: a plain-proxy row stores byte counts in `input`/`output`, and the Calls page renders their sum as `… tok` while no `usage` row exists for it.
 Check: a live row shows bytes (or `-`), and a linked api_request row still shows tokens. `cargo test --lib call_size_label_distinguishes live_passthrough_rows_show_bytes_not_tokens calls_tab_lists_rows_newest_first`, all pass (rstest).

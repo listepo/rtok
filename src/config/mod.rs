@@ -513,6 +513,14 @@ impl Config {
         home.join("config.toml")
     }
 
+    /// User config file: `--config`, else `RTOK_CONFIG`, else [`path_for`].
+    pub fn user_path(home: &Path, config_file: Option<&Path>) -> PathBuf {
+        config_file
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("RTOK_CONFIG").map(PathBuf::from))
+            .unwrap_or_else(|| Self::path_for(home))
+    }
+
     pub fn load() -> Result<Self> {
         Self::load_with(None, None)
     }
@@ -566,20 +574,27 @@ impl Config {
     /// Write the reference file verbatim, so its comments survive. Refuses to clobber
     /// an existing file unless `force`.
     pub fn init(home: &Path, force: bool) -> Result<PathBuf> {
-        Self::init_maybe(home, force, false).map(|(p, _)| p)
+        Self::init_maybe(home, None, force, false).map(|(p, _)| p)
     }
 
     /// [`Config::init`] with a preview: `dry_run` renders the `git diff` it would write and
     /// leaves the disk alone. The diff is empty when the file already is the reference file.
-    pub fn init_maybe(home: &Path, force: bool, dry_run: bool) -> Result<(PathBuf, String)> {
-        let path = Self::path_for(home);
+    pub fn init_maybe(
+        home: &Path,
+        config_file: Option<&Path>,
+        force: bool,
+        dry_run: bool,
+    ) -> Result<(PathBuf, String)> {
+        let path = Self::user_path(home, config_file);
         if path.exists() && !force {
             bail!("{} exists; pass --force to overwrite", path.display());
         }
         let before = std::fs::read_to_string(&path).unwrap_or_default();
         let diff = crate::render::file_diff(&path, &before, DEFAULT_TOML);
         if !dry_run {
-            std::fs::create_dir_all(home)?;
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             std::fs::write(&path, DEFAULT_TOML).with_context(|| path.display().to_string())?;
         }
         Ok((path, diff))
