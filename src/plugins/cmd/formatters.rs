@@ -65,10 +65,7 @@ fn format(argv: &[String], output: &str) -> Option<String> {
             &["error[", "error:", "-->", "Finished", "warning:"],
         )),
         ("git", "status") => Some(git_status(output)),
-        ("git", "diff") => Some(keep(
-            output,
-            &["diff --git", "@@", "file changed", "+++", "--- a/"],
-        )),
+        ("git", "diff") => Some(git_diff(output)),
         ("git", "log") => Some(output.lines().take(20).collect::<Vec<_>>().join("\n")),
         ("pytest", _) => Some(keep(
             output,
@@ -80,6 +77,87 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
         _ => None,
     }
+}
+
+/// `git diff`: the changed lines *are* the answer, so only the blob-hash bookkeeping goes.
+/// A needle list here (`"+++"`, `"--- a/"`) matched the file headers and dropped every
+/// `+`/`-` line, i.e. the whole change.
+fn git_diff(output: &str) -> String {
+    output
+        .lines()
+        .filter(|l| !l.starts_with("index "))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `git status`: the branch line, what changed, and the untracked paths listed under their
+/// header. Porcelain codes are read on the raw line — `trim_start` used to eat the first
+/// column, so `" M x"` could never match — and an indented path belongs to the section
+/// header above it. Action hints and section boilerplate are dropped; empty output falls
+/// back to the first 15 lines rather than to nothing.
+fn git_status(output: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut untracked = false;
+    for line in output.lines() {
+        let head = line.trim_start();
+        if head.starts_with("Untracked files:") {
+            untracked = true;
+            out.push(head.to_string());
+        } else if is_status_entry(head) {
+            untracked = false;
+            out.push(head.to_string());
+        } else if is_porcelain(line) {
+            untracked = false;
+            out.push(line.to_string());
+        } else if untracked && line.starts_with(['\t', ' ']) && !head.starts_with("(use ") {
+            // An untracked path, indented under its header in the long format.
+            out.push(head.to_string());
+        }
+    }
+    if out.is_empty() {
+        output.lines().take(15).collect::<Vec<_>>().join("\n")
+    } else {
+        out.join("\n")
+    }
+}
+
+/// Long-format entries and the one-line summaries worth keeping.
+fn is_status_entry(head: &str) -> bool {
+    const VERBS: &[&str] = &[
+        "modified:",
+        "new file:",
+        "deleted:",
+        "renamed:",
+        "copied:",
+        "both modified:",
+        "both added:",
+        "both deleted:",
+        "added by us:",
+        "unmerged:",
+    ];
+    const LINES: &[&str] = &[
+        "On branch ",
+        "Your branch ",
+        "HEAD detached ",
+        "nothing to commit",
+        "no changes added to commit",
+        "nothing added to commit",
+    ];
+    VERBS.iter().any(|v| head.starts_with(v)) || LINES.iter().any(|l| head.starts_with(l))
+}
+
+/// `XY path` in the short/porcelain format: two status columns, then a space. Both columns
+/// are meaningful (` M` modified in the worktree, `??` untracked), so the line is never
+/// trimmed before this test.
+fn is_porcelain(line: &str) -> bool {
+    let b = line.as_bytes();
+    let column = |c: u8| {
+        matches!(
+            c,
+            b' ' | b'M' | b'A' | b'D' | b'R' | b'C' | b'U' | b'?' | b'!'
+        )
+    };
+    b.len() > 3 && column(b[0]) && column(b[1]) && b[2] == b' '
 }
 
 fn keep(output: &str, needles: &[&str]) -> String {
@@ -99,30 +177,6 @@ fn keep(output: &str, needles: &[&str]) -> String {
             .join("\n");
     }
     lines.join("\n")
-}
-
-fn git_status(output: &str) -> String {
-    let mut out = Vec::new();
-    for line in output.lines() {
-        let t = line.trim_start();
-        if t.starts_with("On branch ")
-            || t.starts_with("modified:")
-            || t.starts_with("new file:")
-            || t.starts_with("deleted:")
-            || t.starts_with("renamed:")
-            || t.starts_with("Untracked")
-            || t.starts_with("?? ")
-            || t.starts_with(" M ")
-            || t.starts_with("M  ")
-        {
-            out.push(t);
-        }
-    }
-    if out.is_empty() {
-        output.lines().take(15).collect::<Vec<_>>().join("\n")
-    } else {
-        out.join("\n")
-    }
 }
 
 /// The `rules/default.toml` rule for the command itself (`argv[0]`'s basename, as [`format`]
