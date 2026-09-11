@@ -537,13 +537,6 @@ Complexity: 2/5
 Status: open
 Model: -
 
-**T36.5 `read` cap includes its own marker** · — · `src/plugins/read/mod.rs`
-Do: `cap()` returns `max_chars` characters *plus* the `… archived <id> …` marker, so every capped read overshoots the configured cap.
-Check: a fixture over `plugins.read.max_chars` returns at most `max_chars` characters including the marker, and still carries a working archive id.
-Complexity: 1/5
-Status: open
-Model: -
-
 **T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
 Do: `outline::supported()` is never called and `plugins.read.languages` is never read. Either restrict `mode = map|signatures` to the configured languages, or delete the key and the helper (a config key that changes nothing is worse than none — the D26 argument).
 Check: whichever way, `just check` green and no documented key is unread (`docs/config.md` and the schema agree).

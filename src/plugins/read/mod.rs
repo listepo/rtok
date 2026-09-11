@@ -150,8 +150,10 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
         return Ok(text);
     }
     let id = cx.put_archive(text.as_bytes())?;
+    let marker = format!("\n… archived {id} …\n");
+    let body_budget = max.saturating_sub(marker.chars().count());
+    let keep = body_budget / 2;
     let chars: Vec<char> = text.chars().collect();
-    let keep = (max / 2).max(1);
     let head: String = chars.iter().take(keep).collect();
     let tail: String = chars
         .iter()
@@ -162,12 +164,13 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
         .into_iter()
         .rev()
         .collect();
-    Ok(format!("{head}\n… archived {id} …\n{tail}"))
+    Ok(format!("{head}{marker}{tail}"))
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use rstest::rstest;
     use std::fs;
 
     /// A runtime whose fresh temp dir is also the one `allow_paths` root; shared with `cache.rs`.
@@ -187,15 +190,51 @@ pub(crate) mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    #[test]
+    #[rstest]
     fn hundred_kb_is_capped_with_archive_id() {
         let (cx, dir) = cx("big");
+        let max = cx.config.plugins.read.max_chars as usize;
         let p = dir.join("big.txt");
         let blob = "x".repeat(100 * 1024);
         fs::write(&p, &blob).unwrap();
         let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
         assert!(out.contains("archived"), "{out}");
+        assert!(out.chars().count() <= max, "cap includes marker: {}/{}", out.chars().count(), max);
         assert!(out.chars().count() < blob.len(), "capped");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn archive_id(out: &str) -> &str {
+        const PRE: &str = "… archived ";
+        const SUF: &str = " …";
+        let start = out.find(PRE).expect("archive marker") + PRE.len();
+        let rest = &out[start..];
+        &rest[..rest.find(SUF).expect("archive marker end")]
+    }
+
+    #[rstest]
+    #[case(500)]
+    #[case(200)]
+    fn cap_includes_marker_in_max_chars(#[case] max_chars: u32) {
+        let (mut c, dir) = crate::testutil::config("cap-marker");
+        c.plugins.read.allow_paths = vec![dir.clone()];
+        c.plugins.read.max_chars = max_chars;
+        let cx = crate::plugin::Runtime::open(c, "cap-marker").unwrap();
+        let blob = "abcdefghij".repeat(200);
+        let p = dir.join("cap.txt");
+        fs::write(&p, &blob).unwrap();
+        let expected = format!("1:{blob}");
+        let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
+        let max = max_chars as usize;
+        assert!(
+            out.chars().count() <= max,
+            "output {} chars exceeds max {}",
+            out.chars().count(),
+            max
+        );
+        let id = archive_id(&out);
+        let archived = String::from_utf8(cx.store.get_archive(id, None).unwrap().unwrap()).unwrap();
+        assert_eq!(archived, expected);
         let _ = fs::remove_dir_all(dir);
     }
 
