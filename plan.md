@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 181 ✅, 12 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 181 ✅, 33 open (v0.2+ P28–P33 and P35, bug-hunt residue P36); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -505,6 +505,152 @@ Model: -
 
 Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task/PLAN. Feature stays off until the measurement is recorded.
 
+### P36 — second bug-hunt residue (goal: the defects a module audit found and one session did not fix) — added 2026-09-11; open.
+
+Written after a read-only audit of every module (`src/store`, `src/measure`, `src/proxy`, `src/plugins/*`, `src/config`, `src/cli`, `src/log`, `src/otel`, `src/report`, `src/tui`, `src/web`, `src/setup`, `crates/*`) whose fixes landed as `1afd465..3180376`. Each task below is a verified defect with a concrete reproduction, not a preference; the commit range is the evidence that the rest of that audit is done. One task = one commit, as always.
+
+**T36.1 toon escapes control characters in a quoted cell** · — · `src/plugins/toon/mod.rs`
+Do: `encode_cell` detects `\n` and then emits it literally, so a row physically spans two lines while the header claims N; escape `\n`, `\r`, `\t` and unescape them in `decode_cell`.
+Check: a fixture with a newline inside a cell round-trips (`round_trip_values`), and the emitted block has exactly N row lines.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.2 toon persists a live-zone decision and archives the original string** · T36.1 · `src/plugins/toon/mod.rs`
+Do: `rewrite_block` never calls `archive_decision`/`put_archive_decision`, so `expand <toon-id>` does not stick (the next request re-encodes) and `expand::fetch` never records the expand Measurement; it also archives `serde_json::to_vec(&table)` — a re-serialised copy — while toon/README.md promises the original.
+Check: `rtok expand <toon-id>` freezes the id for the next request and increments the toon expand row; the archived bytes equal the original text.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.3 `cmd` honours `plugins.cmd.rules` and `fail_tail_lines`** · — · `src/plugins/cmd/rules.rs`, `formatters.rs`, `run.rs`, `filter.rs`
+Do: both keys are documented in `docs/config.md` and read nowhere: the user rule file is only tilde-expanded, and the non-zero-exit tail is the `FAIL_TAIL = 80` constant. Thread the `[plugins.cmd]` knobs into `pick()`/`apply()` through one settings value so both call paths agree.
+Check: a rules file with a `match_cmd` rule changes the output for that command; `fail_tail_lines = 3` keeps three lines on a failing command.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.4 rules trailer counts every line it dropped** · T36.3 · `src/plugins/cmd/rules.rs`
+Do: the omitted counter only increments for lines the pick loop skipped, not for `take` lines dropped by `max` (nor for lines after the mid-loop `break`), so the trailer under-reports and the promised tail can disappear.
+Check: a fixture whose `max_lines` cap drops `take` lines reports the true omitted count.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.5 `read` cap includes its own marker** · — · `src/plugins/read/mod.rs`
+Do: `cap()` returns `max_chars` characters *plus* the `… archived <id> …` marker, so every capped read overshoots the configured cap.
+Check: a fixture over `plugins.read.max_chars` returns at most `max_chars` characters including the marker, and still carries a working archive id.
+Complexity: 1/5
+Status: open
+Model: -
+
+**T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
+Do: `outline::supported()` is never called and `plugins.read.languages` is never read. Either restrict `mode = map|signatures` to the configured languages, or delete the key and the helper (a config key that changes nothing is worse than none — the D26 argument).
+Check: whichever way, `just check` green and no documented key is unread (`docs/config.md` and the schema agree).
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.7 `--config` is honoured by every `config` subcommand** · — · `src/cli.rs`, `src/config/validate.rs`, `src/config/mod.rs`
+Do: `config init|set|path|validate` resolve `<home>/config.toml` and ignore `--config`/`RTOK_CONFIG`, while `show`/`get` honour it: `rtok --config ci.toml config set proxy.port 2222` reads ci.toml and writes the home file. Add one `Config::user_path(home, config_file)` and use it everywhere.
+Check: `--config /tmp/ci.toml config set/get/validate/path` all act on `/tmp/ci.toml`; a test pins the path in the output.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.8 legacy-key fold cannot outrank env or flags** · — · `src/config/mod.rs`, `src/config/layers.rs`
+Do: `[dashboard]`, `core.log_file`, `core.log_level`, `core.log_to_db` and `core.inject_budget_tokens` are folded after `extract()`, so a stale file key overrides `RTOK_*` and `--flags` (`rtok web --port 5555` binds the file's 4444), and `config show --sources` reports the pre-fold value and source. Fold inside the figment below project/env/flag, or apply a legacy value only while the new key is still at its default, and build `--sources` rows from the folded result.
+Check: a legacy file key loses to `RTOK_*` and to a flag; `show --sources` names the layer whose value is in effect.
+Complexity: 4/5
+Status: open
+Model: -
+
+**T36.9 `~` expands for every path key** · — · `src/config/mod.rs`
+Do: `report.out`, `bench.tasks`, `bench.configs.*` and `plugins.read.allow_paths` are missing from the expansion list, so `[report] out = "~/rtok-report.md"` fails with `No such file or directory` although `docs/config.md` says paths accept `~`.
+Check: a test walks every `PathBuf` leaf of `Config::default()` and fails if one is not expanded.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.10 the two documented output caps exist** · — · `src/expand.rs`, `src/mcp.rs`, `src/config/mod.rs`
+Do: `expand.max_lines` and `mcp.max_result_chars` are declared, documented and read by nothing. Apply both in one shared line-slicing helper used by `expand::run` and the MCP `expand` tool (they already duplicate `take(b).skip(a-1)`).
+Check: `[expand] max_lines = 100` truncates a larger payload and the output says so; the MCP result honours `max_result_chars`.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.11 retention actually runs** · — · `src/store/mod.rs`, `src/proxy/mod.rs`, `src/mcp.rs`
+Do: `purge_calls_older_than` has no caller and `core.retain_calls_days` is read nowhere, so `calls`/`call_io`/`tokens`/`logs`/`usage` and `~/.rtok/archive/` grow without bound on exactly the long-running surfaces `demon` keeps alive.
+Check: with `retain_calls_days = 1` and an old row seeded, a proxy/mcp session purges it and its archive file; a test asserts the row count falls.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.12 the OTel exporter cannot lose or block a stream** · — · `src/otel/export.rs`
+Do: (a) the `only_ties` shortcut skips the whole traces block when the only new session ended in the second the watermark already covers, so that session's `invoke_agent` span is never posted (make the sessions watermark identity-based, or drop the shortcut and let the backend dedupe by `span_id`); (b) a 404 on `/v1/traces` returns `Err`, so logs and metrics are never attempted and every flush re-posts a doomed traces batch — the module header promises the stream is skipped and its mark kept.
+Check: a session that ends in a watermark second is posted exactly once; a traces-404 collector still receives logs and metrics, with one `skipped` line.
+Complexity: 4/5
+Status: open
+Model: -
+
+**T36.13 PDF page numbers match the pages** · — · `src/report/pdf.rs`
+Do: `starts.push(pages.len())` is recorded before the pagination loop may push a fresh page, so the ToC and every bookmark name the previous page for sections that start one.
+Check: in a multi-page report the ToC entry and the outline destination agree with the heading's real page.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.14 live passthrough rows are not labelled tokens** · — · `src/web/model.rs`, `src/tui/view.rs`
+Do: a plain-proxy row stores byte counts in `input`/`output`, and the Calls page renders their sum as `… tok` while no `usage` row exists for it.
+Check: a live row shows bytes (or `-`), and a linked api_request row still shows tokens.
+Complexity: 1/5
+Status: open
+Model: -
+
+**T36.15 the web Doctor page carries the instruction audit** · — · `crates/rtok-webui/src/lib.rs`
+Do: `doctor_of` stops after `autoCompactWindow`; `doctor::Report::to_text` appends the `instructions` section (per-file rows and duplicates) that the snapshot already carries, so the D23 parity claim is false for that page.
+Check: the page renders the same instruction rows in the same order as `rtok doctor`; `tests/surface_parity.rs` covers it.
+Complexity: 2/5
+Status: open
+Model: -
+
+**T36.16 `graph` reads each file once** · — · `src/plugins/graph/mod.rs`, `src/plugins/graph/index.rs`
+Do: (a) `symbol` re-reads the whole file for every definition row (500 one-line definitions = 500 reads before the cap truncates); cache the last `(path, contents)`; (b) the cap budget scales `text.len()` (bytes) against a char-based estimate, so a CJK-heavy file's head can exceed `plugins.graph.max_tokens` by ~3× — scale and compare in chars; (c) a file that cannot be decoded or parsed is never recorded, so it is re-read and re-parsed on every call forever — record the stat with an empty-sha sentinel.
+Check: `symbol` on the 500-definition fixture reads the file once (counting fixture or a stat counter); a CJK fixture's capped output estimates ≤ `max_tokens`; a latin-1 fixture is not re-read on a second warm call.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.17 a removed directory leaves the index** · — · `src/plugins/graph/watch.rs`
+Do: `relevant()` accepts only supported *files*, so `rm -rf src/<dir>` never reaches `run_changed` and rows for the deleted files keep being served (`callers`/`impact` name them; `symbol` prints an empty body). Treat a non-relevant, non-`.git` event path as a rescan trigger.
+Check: deleting a directory removes its rows without a full walk being needed for the call that follows.
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
+Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
+Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).
+Complexity: 3/5
+Status: open
+Model: -
+
+**T36.19 a setup backup is never overwritten** · — · `crates/rtok-agent-sdk/src/lib.rs`
+Do: the `.bak` collision loop gives up after 99 iterations and then `fs::copy` overwrites an existing backup.
+Check: with 100 pre-existing `.bak-*` names the install still refuses to clobber one (unique name or an error).
+Complexity: 1/5
+Status: open
+Model: -
+
+**T36.20 archive rows and inline bodies keep their attribution** · — · `src/store/mod.rs`
+Do: (a) `spill` writes every `call_io` body with `archive.session = ""`, so archived bodies are unattributable — thread the session through; (b) inline bodies are stored from `String::from_utf8_lossy`, so `request_json` is not the byte string `request_sha256` hashes — store the bytes or hash the lossy form; (c) `insert_measurement` clamps with `unwrap_or(i64::MAX)`, a silently wrong saving where a checked conversion should error.
+Check: an archived `call_io` body carries its session; the recorded sha256 matches the stored text; an out-of-range estimate is an error, not a clamp.
+Complexity: 2/5
+Status: open
+Model: -
+
+Gate P36 (review): every task above is either fixed with a test that fails on the old code, or moved to `done.md` with the Check that closed it; `just check` green; no new config key is added by this phase.
+
 
 ## 4. Definition of done for v0.1 (code-closable only; traffic/user-gated rows removed 2026-09-09, see §6)
 
@@ -805,3 +951,4 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | 2026-09-09 | Seven tasks landed from a third parallel round, six agents by the user's model policy (3/5 → GLM-5.3 effort High; 1–2/5 → GLM-5.3-Flash effort Low; the harness exposes no per-agent model selection, so every agent ran GLM-5.3 and the Flash tier is recorded as policy): T22.1 (`rtok report --format md`, the document from `model::report_ledgers`, D24 held — `src/report/` imports only the model), T24.3 (`logs watch` — in-place newest-first repaint, content-based rotation detection, piped degrades to plain rows; `watch_loop` is the T25.3 skeleton), T25.1 + T25.2 (`session_totals` one-statement CTE join; the Sessions page rides the snapshot and `pages()`; `rtok agent sessions` renders it — the second command after `plugins` with a real page, which is why T15.12's `COMMAND_PAGES` lists it), T15.12 (the parity test walks `Cli::command()`: 2 commands map to pages, 37 carry exempt reasons), and T15.1 + T15.2 (ratatui/crossterm scaffold + shell; tabs are `model::pages()` by reference). The staggered sixth agent (T25.2) started the moment T25.1 landed — dependencies were honest, never spec-guessed. Integration classifications (`report`, `logs watch`, `tui`, `agent sessions`) were added at landing by the coordinator, as the test's data-list design intended. | The parity gate did exactly what D23 built it for: three landings would each have shipped a one-surface command, and the test named every one at integration. Two agents edited plan.md/done.md despite instructions not to — stripping those hunks at landing was cheaper than resolving four-way bookkeeping conflicts; the claim-everything-in-one-commit convention held. Residue note: test runs still create a literal `./~/.rtok` directory in CWD when env is lost under ptys (T10.10 fixed the adjacent docs residue; the directory itself still wants an owner). |
 | 2026-09-10 | Residual bug-hunt debt captured as six open tasks under existing phases (no new phase, no Later/v0.2+ edits): **T10.11** (P10 — Cursor only wires `beforeShellExecution`, so guard/read caches never populate), **T11.8** (P11 — `toon` ignores archive live-zone `keep_turns`), **T16.9** (P16 — proxy + mcp + hook `otel flush` race), **T19.4** (P19 — WASM webui thin vs `model::pages()`), **T22.6** (P22 — `idle-hook` false-positives on busy PostToolUse), **T24.5** (P24 — legacy `[core] log_*` still in schema but unread; only `[log]` used, D26). Docs that claimed the opposite updated in the same round (`docs/config.md`, `docs/otel.md`, `architecture.md`, README sources example). | Bug hunts found shipped defects with no plan Checks; implementers need Do/Check before fixing. Extending closed phases keeps ownership with the module that already owns the behaviour. |
 | 2026-09-10 | Promoted Later versions table to P28–P33 open tasks (LLM compression I-21, embeddings I-22, LSP graph I-24, semantic cache I-23, WASM host I-26, tiered context I-25). Daemon/TUI stay P20/P15 — not re-added. `ideas.md` Later ticked promoted; `roadmap.md` Later points at phase ids. No implementation. | User request 2026-09-10: create numbered plan tasks for Later (v0.2+). |
+| 2026-09-11 | Bug hunt and fix round (`1afd465..3180376`, 15 commits): `graph-lbug` did not compile (missing `RunQueryDsl`), `plugin_plans`/`plugin_plans_walks_existing` were red, `agent setup claude` panicked on a `hooks` key of the wrong shape, `config set` panicked through a scalar path, the `cmd` family never matched the command the hook actually wraps and `git diff`/`git status` dropped the changes they exist to show, `cmd run`/`filter` archived lossy or nothing at all, `archive` replayed another session's pointer, migrations were not atomic, FTS5 `MATCH` read user text as syntax, the read advice denied files whose hook body was elided, the proxy forwarded `accept-encoding` it cannot decode, OpenAI token totals double-counted the cached slice, and `bench --timeout`, `proxy.timeout_s` and a few more documented keys did nothing. The residue is **P36** (20 open tasks) rather than more prose, and every P36 entry carries the reproduction that found it. | User request 2026-09-11: find and fix bugs, improve the code, then write the remainder into the plan. |
