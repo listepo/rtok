@@ -152,6 +152,7 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 /// [`app`] directly instead.
 pub async fn serve(cfg: &Config) -> Result<()> {
     let state = Arc::new(ProxyState::new(cfg)?);
+    state.store.run_retention(cfg.core.retain_calls_days)?;
     crate::otel::export::spawn_tick(cfg);
     let addr = format!("{}:{}", cfg.proxy.bind, cfg.proxy.port);
     let listener = TcpListener::bind(&addr)
@@ -702,6 +703,7 @@ fn error_response(status: StatusCode, message: &str) -> AxumResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     /// The proxy's rows come out of the same funnel as the plugin's, shaped exactly as
     /// `insert_log` left them (T24.1). `logs.call_id` is a foreign key, so the session and
@@ -736,6 +738,35 @@ mod tests {
         assert_eq!(r.call_id, Some(call));
         assert_eq!(r.plugin, None);
         drop(state);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[rstest]
+    fn retention_runs_on_proxy_session_start() {
+        use crate::config::Config;
+
+        let dir = std::env::temp_dir().join(format!("rtok-proxy-retain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg.core.retain_calls_days = 1;
+        {
+            let store = Store::open(&cfg.core.db_path).unwrap();
+            store.upsert_session("sess", Some(1), None, None, Some("proxy")).unwrap();
+            let call = store
+                .insert_call("sess", "proxy", "api_request", Some(1), None, None, None, None)
+                .unwrap();
+            let body = vec![b'y'; 70 * 1024];
+            store
+                .insert_call_io(call, Some(&body), None, 64 * 1024, Some(&cfg.core.archive_dir))
+                .unwrap();
+            store.set_call_ts(call, 0).unwrap();
+        }
+        let state = ProxyState::new(&cfg).expect("proxy state");
+        state.store.run_retention(cfg.core.retain_calls_days).unwrap();
+        assert_eq!(state.store.count_calls().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

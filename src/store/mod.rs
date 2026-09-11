@@ -348,6 +348,22 @@ impl Store {
         Ok(tokens::table.count().get_result(&mut *conn)?)
     }
 
+    #[cfg(test)]
+    pub fn count_calls(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(calls::table.count().get_result(&mut *conn)?)
+    }
+
+    #[cfg(test)]
+    pub fn set_call_ts(&self, call_id: i32, ts: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query("UPDATE calls SET ts = ?1 WHERE id = ?2")
+            .bind::<BigInt, _>(ts)
+            .bind::<Integer, _>(call_id)
+            .execute(&mut *conn)?;
+        Ok(())
+    }
+
     fn call_session(&self, call_id: i32) -> Result<String> {
         let mut conn = self.lock()?;
         calls::table
@@ -1115,7 +1131,7 @@ impl Store {
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
         let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
-        conn.transaction::<_, diesel::result::Error, _>(|c| {
+        let paths = conn.transaction::<_, diesel::result::Error, _>(|c| {
             for sql in [
                 format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
                 format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
@@ -1126,11 +1142,48 @@ impl Store {
             ] {
                 sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
             }
-            sql_query("DELETE FROM calls WHERE ts < ?1")
+            #[derive(QueryableByName)]
+            struct ArchPath {
+                #[diesel(sql_type = Text)]
+                id: String,
+                #[diesel(sql_type = Text)]
+                path: String,
+            }
+            let orphans: Vec<ArchPath> = sql_query(
+                "SELECT a.id, a.path FROM archive a
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM call_io c
+                   WHERE c.request_archive = a.id OR c.response_archive = a.id
+                 )",
+            )
+            .load(c)?;
+            for arch in &orphans {
+                sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
+                    .bind::<Text, _>(&arch.id)
+                    .execute(c)?;
+                sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
+                    .bind::<Text, _>(&arch.id)
+                    .execute(c)?;
+                sql_query("DELETE FROM archive WHERE id = ?1")
+                    .bind::<Text, _>(&arch.id)
+                    .execute(c)?;
+            }
+            let n = sql_query("DELETE FROM calls WHERE ts < ?1")
                 .bind::<BigInt, _>(cutoff)
-                .execute(c)
+                .execute(c)?;
+            Ok((n, orphans.into_iter().map(|a| PathBuf::from(a.path)).collect::<Vec<_>>()))
         })
-        .map_err(Into::into)
+        .map_err(anyhow::Error::from)?;
+        for path in paths.1 {
+            let _ = std::fs::remove_file(path);
+        }
+        Ok(paths.0)
+    }
+
+    /// Apply `core.retain_calls_days` (0 = keep forever). Proxy and MCP call this once at session
+    /// start.
+    pub fn run_retention(&self, retain_calls_days: u32) -> Result<usize> {
+        self.purge_calls_older_than(i64::from(retain_calls_days))
     }
 
     #[cfg(test)]
@@ -1327,6 +1380,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::config::Config;
     use schema::notes;
 
     #[derive(QueryableByName)]
@@ -1994,6 +2048,36 @@ mod tests {
             0,
             "days <= 0 is a no-op"
         );
+    }
+
+
+    #[rstest]
+    fn run_retention_purges_old_call_and_archive() {
+        let dir = std::env::temp_dir().join(format!("rtok-retain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg.core.retain_calls_days = 1;
+        let store = Store::open(&cfg.core.db_path).unwrap();
+        store.upsert_session("sess", Some(1), None, None, Some("proxy")).unwrap();
+        let call = store
+            .insert_call("sess", "proxy", "api_request", Some(1), None, None, None, None)
+            .unwrap();
+        let body = vec![b'x'; 70 * 1024];
+        store
+            .insert_call_io(call, Some(&body), None, 64 * 1024, Some(&cfg.core.archive_dir))
+            .unwrap();
+        store.set_call_ts(call, 0).unwrap();
+        let arch_path = cfg.core.archive_dir.join(hex_sha256(&body));
+        assert!(arch_path.is_file());
+        assert_eq!(store.count_calls().unwrap(), 1);
+
+        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
+        assert_eq!(store.count_calls().unwrap(), 0);
+        assert!(!arch_path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[rstest]

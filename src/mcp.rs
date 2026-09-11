@@ -27,6 +27,7 @@ fn expand_def() -> ToolDef {
 #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
     let server = Server::new(cfg)?;
+    server.cx.store.run_retention(cfg.core.retain_calls_days)?;
     crate::otel::export::spawn_ticker(cfg);
     // P8d watcher (T8.16): a thread inside this process, never a second writer.
     // Any value but `off` arms it; `watchman` gets its own backend in T8.17.
@@ -336,8 +337,9 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    use crate::store::Store;
     use crate::testutil::config as tmp;
+    use rstest::rstest;
     use crate::tokens::Class;
     use std::fs;
 
@@ -400,6 +402,28 @@ mod tests {
         assert_eq!(server.cx.store.count_kind("mcp_call").unwrap(), 1);
         assert_eq!(server.cx.store.count_call_io().unwrap(), 1);
         assert_eq!(server.cx.store.count_tokens().unwrap(), 3);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[rstest]
+    fn retention_runs_on_mcp_session_start() {
+        let (mut cfg, dir) = tmp("mcp-retain");
+        cfg.core.retain_calls_days = 1;
+        {
+            let store = Store::open(&cfg.core.db_path).unwrap();
+            store.upsert_session("sess", Some(1), None, None, Some("mcp")).unwrap();
+            let call = store
+                .insert_call("sess", "mcp", "mcp_call", Some(1), None, None, None, None)
+                .unwrap();
+            let body = vec![b'z'; 70 * 1024];
+            store
+                .insert_call_io(call, Some(&body), None, 64 * 1024, Some(&cfg.core.archive_dir))
+                .unwrap();
+            store.set_call_ts(call, 0).unwrap();
+        }
+        let server = Server::new(&cfg).unwrap();
+        server.cx.store.run_retention(cfg.core.retain_calls_days).unwrap();
+        assert_eq!(server.cx.store.count_calls().unwrap(), 0);
         let _ = fs::remove_dir_all(dir);
     }
 }

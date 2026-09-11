@@ -524,13 +524,6 @@ Status: open
 Model: -
 
 
-**T36.11 retention actually runs** · — · `src/store/mod.rs`, `src/proxy/mod.rs`, `src/mcp.rs`
-Do: `purge_calls_older_than` has no caller and `core.retain_calls_days` is read nowhere, so `calls`/`call_io`/`tokens`/`logs`/`usage` and `~/.rtok/archive/` grow without bound on exactly the long-running surfaces `demon` keeps alive.
-Check: with `retain_calls_days = 1` and an old row seeded, a proxy/mcp session purges it and its archive file; a test asserts the row count falls.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
 Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
 Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).
