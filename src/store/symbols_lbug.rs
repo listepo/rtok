@@ -287,6 +287,7 @@ impl Store {
     }
 
     pub fn set_extractor_fingerprint(&self, root: &str, fp: &str) -> Result<()> {
+        use diesel::RunQueryDsl;
         use diesel::sql_query;
         use diesel::sql_types::Text;
         let mut conn = self.lock()?;
