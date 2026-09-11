@@ -35,6 +35,13 @@ fn shell(cfg: &Config) -> String {
     }
 }
 
+/// Whether the printed output needs the `expand` pointer. A line count above
+/// `trailer_min_lines` is the old rule; anything the filter shortened needs it too, however
+/// short the command was.
+fn needs_pointer(lines: u32, trailer_min_lines: u32, printed: usize, raw: usize) -> bool {
+    lines > trailer_min_lines || printed < raw
+}
+
 /// Run `args` via `$SHELL -lc`, archive stdout+stderr, print, return the exit code.
 pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     if args.is_empty() {
@@ -59,7 +66,9 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
             return Ok(code);
         }
     };
-    let id = match cx.put_archive(before.as_bytes()) {
+    // The archive keeps the command's bytes, not the lossy `String` used to filter and
+    // print them: `expand` must return what the command wrote, including invalid UTF-8.
+    let id = match cx.put_archive(&body) {
         Ok(id) => id,
         Err(_) => {
             print!("{before}");
@@ -80,13 +89,20 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     } else {
         before.lines().count() as u32
     };
-    if lines > cfg.plugins.cmd.trailer_min_lines {
+    // Any shortening prints the pointer, not only a long one: a formatter that trims a
+    // 29-line `git log` to 20 leaves the other 9 reachable only through this id.
+    if needs_pointer(
+        lines,
+        cfg.plugins.cmd.trailer_min_lines,
+        filtered.len(),
+        before.len(),
+    ) {
         println!("[rtok {id} · {lines} lines · expand: rtok expand {id}]");
     }
     let _ = cx.record(&Measurement {
         plugin: "cmd",
         kind,
-        before_bytes: before.len() as u64,
+        before_bytes: body.len() as u64,
         after_bytes: filtered.len() as u64,
         est_before: cx.estimate(&before, Class::Code),
         est_after: cx.estimate(&filtered, Class::Code),
@@ -165,5 +181,33 @@ mod tests {
         let raw = fs::read(&files[0]).unwrap();
         assert_eq!(raw, b"ab");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// D4 at the byte level: a command that emits invalid UTF-8 must come back whole from
+    /// `expand`. The archive used to store the lossy string, so every such byte was U+FFFD.
+    #[test]
+    fn archive_keeps_bytes_that_are_not_utf8() {
+        let (c, dir) = cfg("bytes");
+        let code = run(&c, &["printf '\\xff\\xfeok\\n'".into()]).unwrap();
+        assert_eq!(code, 0);
+        let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        let raw = fs::read(&files[0]).unwrap();
+        assert_eq!(raw, b"\xff\xfeok\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A formatter that trims a short output still has to name the archive: `git log` keeps
+    /// 20 of 29 lines, and the line threshold alone would leave the other 9 unreachable.
+    #[test]
+    fn a_shortened_output_needs_a_pointer_whatever_its_length() {
+        assert!(!needs_pointer(29, 40, 400, 400), "nothing was dropped");
+        assert!(
+            needs_pointer(29, 40, 300, 400),
+            "trimmed under the threshold"
+        );
+        assert!(needs_pointer(400, 40, 400, 400), "long enough on its own");
     }
 }
