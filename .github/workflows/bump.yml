@@ -35,13 +35,13 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Tags decide whether the current version was already released; the changelog reads history.
           fetch-depth: 0
           persist-credentials: true
       # The toolchain pinned in mise.toml — same cargo and git-cliff as local.
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
       - name: Release
         env:
