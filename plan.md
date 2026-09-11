@@ -516,13 +516,6 @@ Complexity: 3/5
 Status: open
 Model: -
 
-**T36.4 rules trailer counts every line it dropped** · T36.3 · `src/plugins/cmd/rules.rs`
-Do: the omitted counter only increments for lines the pick loop skipped, not for `take` lines dropped by `max` (nor for lines after the mid-loop `break`), so the trailer under-reports and the promised tail can disappear.
-Check: a fixture whose `max_lines` cap drops `take` lines reports the true omitted count.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
 Do: `outline::supported()` is never called and `plugins.read.languages` is never read. Either restrict `mode = map|signatures` to the configured languages, or delete the key and the helper (a config key that changes nothing is worse than none — the D26 argument).
 Check: whichever way, `just check` green and no documented key is unread (`docs/config.md` and the schema agree).

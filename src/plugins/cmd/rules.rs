@@ -167,23 +167,38 @@ pub fn apply(
     for i in keep_idx {
         take[i] = true;
     }
+    let total = lines.len();
     let mut picked: Vec<String> = Vec::new();
     let mut omitted = 0usize;
     for (i, line) in lines.into_iter().enumerate() {
-        if take[i] && picked.len() < max {
-            if omitted > 0 {
-                picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
-                omitted = 0;
-                if picked.len() >= max {
-                    break;
+        if take[i] {
+            if picked.len() < max {
+                if omitted > 0 {
+                    let extra = if picked.len() + 1 >= max {
+                        total - i
+                    } else {
+                        0
+                    };
+                    let count = omitted + extra;
+                    picked.push(format!("… {count} lines omitted (expand {archive_id})"));
+                    omitted = 0;
+                    if picked.len() >= max {
+                        break;
+                    }
                 }
+                picked.push(line);
+            } else {
+                omitted += 1;
             }
-            picked.push(line);
-        } else if !take[i] {
+        } else {
             omitted += 1;
         }
     }
-    if omitted > 0 && picked.len() < max {
+    if omitted > 0 {
+        if picked.len() >= max {
+            picked.pop();
+            omitted += 1;
+        }
         picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
     }
     picked.truncate(max);
@@ -283,6 +298,36 @@ mod tests {
         #[case] expect_end: &str,
     ) {
         exit_nonzero_tail(fail_tail_lines, expect_count, expect_start, expect_end);
+    }
+
+    #[rstest]
+    #[case(10, 3, 3, 4, 7)]
+    fn max_cap_reports_true_omitted_count(
+        #[case] n_lines: usize,
+        #[case] head: u32,
+        #[case] tail: u32,
+        #[case] max_lines: u32,
+        #[case] expect_omitted: usize,
+    ) {
+        let body = (0..n_lines)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let rule = Rule {
+            max_lines,
+            head,
+            tail,
+            dedupe: false,
+            ..Rule::default()
+        };
+        let s = settings(80);
+        let out = apply(&s, &body, 0, &rule, "arc");
+        assert!(
+            out.contains(&format!("{expect_omitted} lines omitted")),
+            "{out}"
+        );
+        let content = out.lines().filter(|l| !l.contains("lines omitted")).count();
+        assert_eq!(n_lines - content, expect_omitted, "{out}");
     }
 
     #[test]

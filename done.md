@@ -42,6 +42,12 @@ Check: a rules file with a `match_cmd` rule changes the output for that command;
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
+**T36.4 rules trailer counts every line it dropped** · T36.3 · `src/plugins/cmd/rules.rs`
+Do: the omitted counter only increments for lines the pick loop skipped, not for `take` lines dropped by `max` (nor for lines after the mid-loop `break`), so the trailer under-reports and the promised tail can disappear.
+Check: a fixture whose `max_lines` cap drops `take` lines reports the true omitted count. `cargo test --lib cmd`, 22/22 pass, including `max_cap_reports_true_omitted_count` (10 lines / head3 / tail3 / max4 → 7 omitted).
+Complexity: 2/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
 
 **T36.12 the OTel exporter cannot lose or block a stream** · — · `src/otel/export.rs`, `src/store/otel.rs`, `tests/otel.rs`
 Do: (a) the `only_ties` shortcut skips the whole traces block when the only new session ended in the second the watermark already covers, so that session's `invoke_agent` span is never posted (make the sessions watermark identity-based, or drop the shortcut and let the backend dedupe by `span_id`); (b) a 404 on `/v1/traces` returns `Err`, so logs and metrics are never attempted and every flush re-posts a doomed traces batch — the module header promises the stream is skipped and its mark kept.
