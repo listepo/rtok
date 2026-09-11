@@ -45,20 +45,18 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     Ok(report)
 }
 
-fn event_array<'a>(root: &'a mut Value, event: &str) -> &'a mut Vec<Value> {
-    let key = event.to_string();
-    let hooks = root
-        .as_object_mut()
-        .unwrap()
-        .entry("hooks")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .unwrap();
-    let arr = hooks.entry(key).or_insert_with(|| json!([]));
+/// `hooks.<event>` as an array, created when absent. A `hooks` key (or an event key) of the
+/// wrong JSON shape is replaced rather than trusted: a settings file is user data, and setup
+/// must not panic on it. The caller has already normalised `root` to an object.
+fn event_array<'a>(
+    hooks: &'a mut serde_json::Map<String, Value>,
+    event: &str,
+) -> &'a mut Vec<Value> {
+    let arr = hooks.entry(event).or_insert_with(|| json!([]));
     if !arr.is_array() {
         *arr = json!([]);
     }
-    arr.as_array_mut().unwrap()
+    arr.as_array_mut().expect("just replaced with an array")
 }
 
 fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
@@ -77,9 +75,18 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
     if !root.is_object() {
         *root = json!({});
     }
+    let hooks = root
+        .as_object_mut()
+        .expect("just replaced with an object")
+        .entry("hooks")
+        .or_insert_with(|| json!({}));
+    if !hooks.is_object() {
+        *hooks = json!({});
+    }
+    let hooks = hooks.as_object_mut().expect("just replaced with an object");
     let mut added = Vec::new();
     for &(event, matcher) in ENTRIES {
-        if event_array(root, event)
+        if event_array(hooks, event)
             .iter()
             .any(|e| has_ours(e, event, matcher))
         {
@@ -93,7 +100,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
             "hooks".into(),
             json!([{"type":"command","command":command(event),"timeout":timeout}]),
         );
-        event_array(root, event).push(Value::Object(obj));
+        event_array(hooks, event).push(Value::Object(obj));
         let m = if matcher.is_empty() {
             String::new()
         } else {
@@ -219,5 +226,23 @@ mod tests {
         assert!(rm.contains("removed"), "{rm}");
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("echo other") && !raw.contains("rtok hook"));
+    }
+
+    /// A settings file whose `hooks` is not an object is user data, not a reason to panic
+    /// (`hooks: []` used to hit `as_object_mut().unwrap()`).
+    #[test]
+    fn wrong_shaped_hooks_key_is_replaced_not_panicked_on() {
+        for body in [
+            r#"{"hooks":[]}"#,
+            r#"{"hooks":"nope"}"#,
+            r#"{"hooks":{"PreToolUse":"nope"}}"#,
+        ] {
+            let path = tmp(&format!("setup-shape-{}", body.len()));
+            fs::write(&path, body).unwrap();
+            let report = run(&cfg(path.clone(), false), false).unwrap();
+            assert!(report.contains("7 additions"), "{body} → {report}");
+            let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
+        }
     }
 }
