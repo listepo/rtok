@@ -10,3 +10,6 @@
 /site/.hugo_build.lock
 report/jscpd-report.json
 /~
+
+# Agent worktrees must not be indexed by graph walk
+.worktrees/
