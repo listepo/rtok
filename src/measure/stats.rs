@@ -190,11 +190,16 @@ pub fn parse_since(s: &str) -> Result<Duration> {
     let s = s.trim();
     let (n, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
     let n: u64 = n.parse().map_err(|_| anyhow::anyhow!("bad --since {s}"))?;
-    Ok(match unit {
-        "" | "d" => Duration::from_secs(n * 86400),
-        "h" => Duration::from_secs(n * 3600),
+    let per_unit = match unit {
+        "" | "d" => 86_400u64,
+        "h" => 3_600,
         _ => bail!("bad --since unit in {s}"),
-    })
+    };
+    // `--since 99999999999999999d` used to panic in a debug build and wrap in a release one.
+    let secs = n
+        .checked_mul(per_unit)
+        .ok_or_else(|| anyhow::anyhow!("--since {s} is out of range"))?;
+    Ok(Duration::from_secs(secs))
 }
 
 pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
@@ -449,6 +454,14 @@ mod tests {
     #[test]
     fn since_60d_parses() {
         assert_eq!(parse_since("60d").unwrap(), Duration::from_secs(60 * 86400));
+    }
+
+    /// A window wider than the calendar is a typo, not a wrapped duration: the multiply
+    /// used to panic in a debug build and overflow silently in a release one.
+    #[test]
+    fn an_absurd_since_is_refused_not_wrapped() {
+        let err = parse_since("99999999999999999d").unwrap_err();
+        assert!(err.to_string().contains("out of range"), "{err}");
     }
 
     #[test]

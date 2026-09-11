@@ -49,7 +49,21 @@ pub fn parse_jsonl(text: &str) -> Parsed {
 
 pub fn parse_path(path: &Path) -> std::io::Result<Parsed> {
     let f = std::fs::File::open(path)?;
-    Ok(parse_lines(BufReader::new(f).lines().map_while(Result::ok)))
+    // A line that is not valid UTF-8 is a malformed line, not the end of the file:
+    // `map_while(Result::ok)` stopped the iteration there, so `rtok stats` silently
+    // under-reported every session whose transcript holds one such byte.
+    let mut out = Parsed::default();
+    for line in BufReader::new(f).lines() {
+        match line {
+            Ok(line) => count_line(&line, &mut out),
+            // An undecodable line is still a line: count it and carry on with the next one.
+            Err(_) => {
+                out.lines += 1;
+                out.malformed += 1;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Walk `dir` recursively for `*.jsonl`. Used to assert 0 parse failures on real logs.
@@ -87,21 +101,23 @@ where
 {
     let mut out = Parsed::default();
     for line in lines {
-        let line = line.as_ref().trim();
-        if line.is_empty() {
-            continue;
-        }
-        out.lines += 1;
-        let v: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => {
-                out.malformed += 1;
-                continue;
-            }
-        };
-        ingest(&v, &mut out);
+        count_line(line.as_ref(), &mut out);
     }
     out
+}
+
+/// Fold one transcript line into `out`: blank lines are skipped, unparsable ones are
+/// counted so `rtok stats` can say how much of a file it understood.
+fn count_line(line: &str, out: &mut Parsed) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    out.lines += 1;
+    match serde_json::from_str::<Value>(line) {
+        Ok(v) => ingest(&v, out),
+        Err(_) => out.malformed += 1,
+    }
 }
 
 fn ingest(v: &Value, out: &mut Parsed) {
@@ -185,8 +201,10 @@ fn usage_of(v: &Value) -> Option<Usage> {
     })
 }
 
+/// One provider counter as `u32`. A value the column cannot hold saturates instead of
+/// wrapping to a small, plausible-looking number (4 294 967 296 used to become 0).
 fn num(v: &Option<&Value>) -> u32 {
-    v.and_then(Value::as_u64).unwrap_or(0) as u32
+    u32::try_from(v.and_then(Value::as_u64).unwrap_or(0)).unwrap_or(u32::MAX)
 }
 
 fn flatten_content(v: Option<&Value>) -> String {
@@ -317,6 +335,31 @@ mod tests {
         let p = parse_jsonl("{\n{}\n");
         assert_eq!(p.lines, 2);
         assert_eq!(p.malformed, 1);
+    }
+
+    /// A line that is not valid UTF-8 is one malformed line, not the end of the transcript:
+    /// the reader stopped there and `rtok stats` silently under-reported the session.
+    #[test]
+    fn a_non_utf8_line_does_not_truncate_the_file() {
+        let dir = std::env::temp_dir().join(format!("rtok-jsonl-bytes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let mut body = Vec::new();
+        body.extend_from_slice(br#"{"type":"user","message":{"content":"hi"}}"#);
+        body.push(b'\n');
+        body.extend_from_slice(b"{\"type\":\"user\",\"message\":\"\xff\xfe\"}\n");
+        body.extend_from_slice(br#"{"type":"assistant","message":{"content":"there"}}"#);
+        body.push(b'\n');
+        std::fs::write(&path, &body).unwrap();
+        let p = parse_path(&path).unwrap();
+        assert_eq!(p.lines, 3, "every line counted");
+        assert_eq!(
+            p.malformed, 1,
+            "the invalid line is reported, not swallowed"
+        );
+        assert_eq!(p.turns, 2, "the line after it is still parsed");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
