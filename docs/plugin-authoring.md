@@ -76,7 +76,9 @@ rtok-plugin-sdk = "0.0.1"
 Implement `Plugin` against the crate — three dependencies, no SQLite, no tree-sitter, no web
 server. To run it, build a binary that depends on `rtok` and hands your plugin to the
 registry: `Registry::from_plugins(vec![Box::new(Mine)], &Config::load()?)`. This repository
-ships no third-party plugins and no adapters.
+ships no third-party plugins and no adapters. v0.2 (P32) adds an optional path for the same
+contract as `.wasm` in `~/.rtok/plugins/` on `rtok mcp` / `rtok proxy` only — never on
+`rtok hook`; see `crates/rtok-plugin-sdk/PLAN.md` § v0.2 survey — WASM plugin host.
 
 ## 4. Documentation next to the code
 
