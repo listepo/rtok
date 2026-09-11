@@ -313,17 +313,26 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
 /// Bump when [`scoped`] changes (T35.5).
 const INDEX_VERSION: u32 = 1;
 
-/// Hex sha256 of `INDEX_VERSION` and every tags query string used by [`outline::tags`].
+/// Hex sha256 of `INDEX_VERSION` and every query string [`outline::config`] compiles —
+/// tags **and** locals, because a language whose locals query changed produces different
+/// rows. The TypeScript pair was hashed twice, which hid a `LOCALS_QUERY` bump for
+/// ts/tsx/js/dart behind an unchanged fingerprint.
 fn extractor_fingerprint() -> String {
     let mut bytes = INDEX_VERSION.to_le_bytes().to_vec();
     #[cfg(feature = "lang-c")]
     bytes.extend_from_slice(tree_sitter_c::TAGS_QUERY.as_bytes());
     #[cfg(feature = "lang-dart")]
-    bytes.extend_from_slice(tree_sitter_dart::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_dart::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_dart::LOCALS_QUERY.as_bytes());
+    }
     #[cfg(feature = "lang-go")]
     bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
     #[cfg(feature = "lang-js")]
-    bytes.extend_from_slice(tree_sitter_javascript::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_javascript::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_javascript::LOCALS_QUERY.as_bytes());
+    }
     #[cfg(feature = "lang-python")]
     bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
     #[cfg(feature = "lang-rust")]
@@ -334,7 +343,7 @@ fn extractor_fingerprint() -> String {
     #[cfg(feature = "lang-ts")]
     {
         bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
-        bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_typescript::LOCALS_QUERY.as_bytes());
     }
     store::hex_sha256(&bytes)
 }

@@ -426,13 +426,23 @@ impl Store {
         Ok(())
     }
 
-    /// T5.3: the persisted decision for a `tool_use_id`, if the archive plugin made one.
-    pub fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
+    /// T5.3: the persisted decision for this `tool_use_id`, scoped to `session`.
+    ///
+    /// Scoping is what keeps one session's pointer out of another's context: a decision is
+    /// an `(archive id, pointer)` pair cut from the payload it replaced, so replaying a
+    /// foreign one overwrites a live tool result with unrelated head/tail lines — and the
+    /// payload it overwrote was never archived, so D4 has nothing to expand.
+    pub fn archive_decision(
+        &self,
+        session: &str,
+        tool_use_id: &str,
+    ) -> Result<Option<ArchiveDecision>> {
         let mut conn = self.lock()?;
         let rows: Vec<ArchiveDecisionRow> = sql_query(
             "SELECT archive_id, pointer, expanded_ts IS NOT NULL AS expanded
-             FROM archive_decisions WHERE tool_use_id = ?",
+             FROM archive_decisions WHERE session = ? AND tool_use_id = ?",
         )
+        .bind::<Text, _>(session)
         .bind::<Text, _>(tool_use_id)
         .load(&mut *conn)?;
         Ok(rows.into_iter().next().map(|r| ArchiveDecision {

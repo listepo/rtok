@@ -233,7 +233,7 @@ impl Archive for Runtime {
     }
 
     fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
-        self.store.archive_decision(tool_use_id)
+        self.store.archive_decision(&self.session, tool_use_id)
     }
 
     fn put_archive_decision(

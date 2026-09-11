@@ -572,17 +572,25 @@ async fn proxy_openai_responses_compress_is_byte_exact_and_ignores_archive_decis
     assert_eq!(
         state
             .store
-            .archive_decision(T113_COLLIDING_CALL)
+            .archive_decision("other-session", T113_COLLIDING_CALL)
             .expect("colliding decision")
             .expect("seeded decision")
             .pointer,
         collision_pointer,
-        "a decision from another API/session must not be reused"
+        "the seeded decision still belongs to its own session"
     );
     assert!(
         state
             .store
-            .archive_decision(T113_NEW_CALL)
+            .archive_decision(T113_SESSION, T113_COLLIDING_CALL)
+            .expect("lookup")
+            .is_none(),
+        "a decision from another API/session must not be visible here"
+    );
+    assert!(
+        state
+            .store
+            .archive_decision(T113_SESSION, T113_NEW_CALL)
             .expect("new decision")
             .is_none(),
         "T11.3 must not create Responses archive decisions"

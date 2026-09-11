@@ -266,6 +266,27 @@ mod tests {
         assert_eq!(third[0], Value::String(big("one")));
     }
 
+    /// A pointer is cut from the payload it replaced, so it belongs to the session that made
+    /// it. Replaying another session's decision overwrote a live tool result with unrelated
+    /// lines — and never archived the payload it replaced, so `expand` could not recover it.
+    #[test]
+    fn another_sessions_decision_is_not_replayed() {
+        use rtok_plugin_sdk::Archive;
+        let cx = cx("session-scope");
+        let foreign = cx.put_archive(b"another session's payload").unwrap();
+        cx.store
+            .put_archive_decision("tu-1", &foreign, "other-session", "[archived foreign]")
+            .unwrap();
+        let mut values: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        let ms = rewrite(refs(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 2, "both candidates are archived afresh");
+        let first = values[0].as_str().unwrap();
+        assert!(first.contains("t1 line 400"), "{first}");
+        assert!(!first.contains("archived foreign"), "{first}");
+    }
+
     #[test]
     fn text_blocks_join_and_images_are_skipped() {
         assert_eq!(
