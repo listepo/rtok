@@ -10,6 +10,8 @@ description = "The rtok plugin contract: the trait, its events, and the values a
 # Apache-2.0, chosen by the repository owner for this crate (T23.6). The full text ships in
 # the package: `cargo publish` takes what is inside this directory and nothing above it.
 license = "Apache-2.0"
+# crates.io publish paused for now; flip to true (and release-plz) when ready again.
+publish = false
 categories = ["development-tools"]
 keywords = ["rtok", "plugin", "tokens", "llm", "agents"]
 

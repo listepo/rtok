@@ -43,10 +43,10 @@ example:
     {{cargo}} run -q --example mcp_tool
     {{cargo}} run -q -p rtok-plugin-sdk --example shrink
 
-# T23.6: the one crate this repository publishes, packaged exactly as the release will do it.
-# A manifest that cannot be published fails on the pull request, not at the tag.
+# T23.6: crates.io publish for rtok-plugin-sdk is paused; dry-run is a no-op until re-enabled.
+# When publishing again: restore `publish = true` in the crate + release-plz, and this target.
 publish-dry:
-    {{cargo}} publish -p rtok-plugin-sdk --dry-run --locked
+    @echo "rtok-plugin-sdk crates.io publish paused; skipping dry-run"
 
 # T9.5: execute every README bash fence marked `# check`.
 readme-check:
