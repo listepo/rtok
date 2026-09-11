@@ -635,6 +635,8 @@ impl Config {
             &mut self.log.path,
             &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
+            &mut self.report.out,
+            &mut self.bench.tasks,
             &mut self.doctor.settings_path,
             &mut self.doctor.claude_json,
             &mut self.setup.claude.settings_path,
@@ -645,6 +647,12 @@ impl Config {
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
         ] {
+            *path = expand(path, home);
+        }
+        for path in self.bench.configs.values_mut() {
+            *path = expand(path, home);
+        }
+        for path in &mut self.plugins.read.allow_paths {
             *path = expand(path, home);
         }
     }
@@ -717,6 +725,7 @@ mod tests {
     use super::*;
     use figment::Figment;
     use figment::providers::{Format, Toml};
+    use rstest::rstest;
 
     /// Parse a TOML string into a `Config` the same way the layered loader does (T12.2: figment's
     /// Toml provider, not the toml crate).
@@ -728,6 +737,45 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-cfg-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    /// Every `PathBuf` leaf in a finished config — catches a new path key without `expand`.
+    fn path_leaves(cfg: &Config) -> Vec<&PathBuf> {
+        let mut out = vec![
+            &cfg.core.db_path,
+            &cfg.core.archive_dir,
+            &cfg.log.path,
+            &cfg.demon.state_dir,
+            &cfg.stats.transcripts_dir,
+            &cfg.report.out,
+            &cfg.bench.tasks,
+            &cfg.doctor.settings_path,
+            &cfg.doctor.claude_json,
+            &cfg.doctor.mcp_json,
+            &cfg.setup.claude.settings_path,
+            &cfg.setup.cursor.hooks_path,
+            &cfg.setup.codex.config_path,
+            &cfg.setup.opencode.config_path,
+            &cfg.setup.pi.extensions_path,
+            &cfg.plugins.cmd.rules,
+            &cfg.plugins.inject.modes_dir,
+        ];
+        out.extend(cfg.bench.configs.values());
+        out.extend(&cfg.plugins.read.allow_paths);
+        if let Some(path) = &cfg.core.log_file {
+            out.push(path);
+        }
+        out
+    }
+
+    fn assert_paths_expanded(cfg: &Config) {
+        for path in path_leaves(cfg) {
+            assert!(
+                !path.to_string_lossy().starts_with('~'),
+                "unexpanded path {}",
+                path.display()
+            );
+        }
     }
 
     /// The Check for T12.1: the reference file is the defaults, exactly.
@@ -836,6 +884,26 @@ mod tests {
         let err = parse("[proxy]\nprot = 1\n").unwrap_err();
         assert!(err.to_string().contains("prot"), "{err}");
         assert!(parse("[nope]\nx = 1\n").is_err());
+    }
+
+    #[test]
+    fn default_expands_every_pathbuf() {
+        let home = Path::new("/tmp/rtok-tilde-default");
+        let mut cfg = Config::default();
+        cfg.finish(home);
+        assert_paths_expanded(&cfg);
+    }
+
+    #[rstest]
+    #[case::report_out("[report]\nout = \"~/rtok-report.md\"\n")]
+    #[case::bench_tasks("[bench]\ntasks = \"~/bench/tasks.toml\"\n")]
+    #[case::bench_configs("[bench.configs]\ncustom = \"~/bench/rtok.json\"\n")]
+    #[case::allow_paths("[plugins.read]\nallow_paths = [\"~/src\"]\n")]
+    fn tilde_expands_for_every_path_key(#[case] toml: &str) {
+        let home = Path::new("/tmp/rtok-tilde-keys");
+        let mut cfg: Config = parse(toml).unwrap();
+        cfg.finish(home);
+        assert_paths_expanded(&cfg);
     }
 
     #[test]

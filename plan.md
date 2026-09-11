@@ -523,13 +523,6 @@ Complexity: 4/5
 Status: open
 Model: -
 
-**T36.9 `~` expands for every path key** · — · `src/config/mod.rs`
-Do: `report.out`, `bench.tasks`, `bench.configs.*` and `plugins.read.allow_paths` are missing from the expansion list, so `[report] out = "~/rtok-report.md"` fails with `No such file or directory` although `docs/config.md` says paths accept `~`.
-Check: a test walks every `PathBuf` leaf of `Config::default()` and fails if one is not expanded.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T36.10 the two documented output caps exist** · — · `src/expand.rs`, `src/mcp.rs`, `src/config/mod.rs`
 Do: `expand.max_lines` and `mcp.max_result_chars` are declared, documented and read by nothing. Apply both in one shared line-slicing helper used by `expand::run` and the MCP `expand` tool (they already duplicate `take(b).skip(a-1)`).
 Check: `[expand] max_lines = 100` truncates a larger payload and the output says so; the MCP result honours `max_result_chars`.
