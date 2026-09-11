@@ -69,10 +69,7 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
             return Ok(code);
         }
     };
-    let family = args
-        .first()
-        .map(|a| a.rsplit('/').next().unwrap_or(a).to_string())
-        .unwrap_or_else(|| "other".into());
+    let family = formatters::family(args);
     let (filtered, kind) = formatters::compress(args, &before, code, &id);
     print!("{filtered}");
     if !filtered.is_empty() && !filtered.ends_with('\n') {

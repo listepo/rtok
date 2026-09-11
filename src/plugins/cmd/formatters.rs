@@ -9,10 +9,11 @@ pub fn compress(
     exit: i32,
     archive_id: &str,
 ) -> (String, &'static str) {
-    if let Some(s) = format(argv, output) {
+    let argv = family_argv(argv);
+    if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
-    let rule = pick(argv);
+    let rule = pick(&argv);
     let s = rules::apply(output, exit, &rule, archive_id);
     let kind = if s.len() < output.len() {
         "rule"
@@ -20,6 +21,27 @@ pub fn compress(
         "raw"
     };
     (s, kind)
+}
+
+/// The argv a family is matched against. The hook quotes the whole command into one argv
+/// (`rtok run -- 'git status'`, `cmd/hook.rs`), while a hand-typed `rtok run -- git status`
+/// arrives split; both must read as `["git", "status"]`, or no formatter and no `[rule]`
+/// matches the path that actually runs. Only the first word of a snippet is considered —
+/// `cmd/AGENTS.md` forbids parsing shell syntax beyond it.
+pub fn family_argv(argv: &[String]) -> Vec<String> {
+    match argv {
+        [one] => one.split_whitespace().map(str::to_string).collect(),
+        many => many.to_vec(),
+    }
+}
+
+/// `argv[0]`'s basename — the family a `Measurement` names. `other` when there is none.
+pub fn family(argv: &[String]) -> String {
+    let argv = family_argv(argv);
+    match bin(&argv) {
+        "" => "other".to_string(),
+        found => found.to_string(),
+    }
 }
 
 fn bin(argv: &[String]) -> &str {
@@ -177,13 +199,52 @@ mod tests {
     fn rule_is_picked_by_the_command_not_an_argument() {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            pick(&argv(&["/usr/bin/grep", "-rn", "x"])).match_cmd,
+            pick(&family_argv(&argv(&["/usr/bin/grep", "-rn", "x"]))).match_cmd,
             "grep"
         );
         assert_eq!(
-            pick(&argv(&["git", "commit", "-m", "fix grep"])).match_cmd,
+            pick(&family_argv(&argv(&["git", "commit", "-m", "fix grep"]))).match_cmd,
             ""
         );
-        assert_eq!(pick(&argv(&["docker", "run", "node"])).match_cmd, "");
+        assert_eq!(
+            pick(&family_argv(&argv(&["docker", "run", "node"]))).match_cmd,
+            ""
+        );
+    }
+
+    /// The hook wraps Bash as `rtok run -- '<cmd>'`, so the command reaches `compress` as
+    /// one argv. Every golden must filter identically in that shape — this is the shape that
+    /// runs in production, and the split-argv one only in this test file.
+    #[test]
+    fn one_quoted_argv_filters_like_a_split_argv() {
+        let mut checked = 0;
+        for p in fs::read_dir(goldens())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("in"))
+        {
+            let raw = fs::read_to_string(&p).unwrap();
+            let (argv, exit, output) = parse_in(&raw);
+            if argv.is_empty() {
+                continue;
+            }
+            checked += 1;
+            let joined = vec![argv.join(" ")];
+            assert_eq!(
+                compress(&joined, &output, exit, "id"),
+                compress(&argv, &output, exit, "id"),
+                "{}: one quoted argv filtered differently",
+                p.display()
+            );
+        }
+        assert!(checked >= 10, "expected the golden families, saw {checked}");
+    }
+
+    #[test]
+    fn family_names_the_command_not_the_whole_snippet() {
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert_eq!(family(&argv(&["git status | head"])), "git");
+        assert_eq!(family(&argv(&["/usr/bin/git", "status"])), "git");
+        assert_eq!(family(&argv(&[])), "other");
     }
 }
