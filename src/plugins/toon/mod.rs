@@ -130,9 +130,18 @@ fn encode_cell(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),
         Value::String(s)
-            if s.contains([',', '{', '}', '\n']) || s.starts_with(' ') || s.ends_with(' ') =>
+            if s.contains([',', '{', '}', '\n', '\r', '\t'])
+                || s.starts_with(' ')
+                || s.ends_with(' ') =>
         {
-            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+            format!(
+                "\"{}\"",
+                s.replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t")
+            )
         }
         Value::String(s) => s.clone(),
         _ => String::new(),
@@ -166,13 +175,37 @@ fn decode(toon: &str) -> Option<Value> {
     Some(Value::Array(rows))
 }
 
+fn unescape_quoted_cell(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[allow(dead_code)]
 fn decode_cell(s: &str) -> Value {
     if s.is_empty() {
         return Value::Null;
     }
     if let Some(inner) = s.strip_prefix('"').and_then(|t| t.strip_suffix('"')) {
-        return Value::String(inner.replace("\\\"", "\"").replace("\\\\", "\\"));
+        return Value::String(unescape_quoted_cell(inner));
     }
     match serde_json::from_str(s) {
         Ok(v @ (Value::Number(_) | Value::Bool(_))) => v,
@@ -262,11 +295,23 @@ mod tests {
         assert_eq!(keys, ["a", "b", "c", "d"]);
     }
 
-    #[test]
-    fn round_trip_values() {
-        let table = rows_3x4();
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("\n", "beta\nline-two")]
+    #[case("\r", "gamma\rvalue")]
+    #[case("\t", "delta\tvalue")]
+    fn round_trip_values(#[case] _control: &str, #[case] cell: &str) {
+        let table = json!([
+            {"a": 11, "b": "alpha-value-one", "c": 33, "d": "delta-value-one"},
+            {"a": 44, "b": cell, "c": 66, "d": "delta-value-two"},
+            {"a": 77, "b": "gamma-value-thr", "c": 99, "d": "delta-value-tre"},
+        ]);
+        let rows = table.as_array().unwrap();
         let keys = tabular_keys(&table, 3).unwrap();
-        let encoded = encode(table.as_array().unwrap(), &keys);
+        let encoded = encode(rows, &keys);
+        let body_lines = encoded.split_once('\n').unwrap().1.lines().count();
+        assert_eq!(body_lines, rows.len(), "each row must be one physical line");
         assert_eq!(decode(&encoded).unwrap(), table);
     }
 
