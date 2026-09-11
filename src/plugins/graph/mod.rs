@@ -28,7 +28,7 @@ pub mod watch;
 
 #[cfg(test)]
 thread_local! {
-    pub(crate) static SYMBOL_SRC_READS: AtomicUsize = AtomicUsize::new(0);
+    pub(crate) static SYMBOL_SRC_READS: AtomicUsize = const { AtomicUsize::new(0) };
 }
 
 pub struct Graph;
