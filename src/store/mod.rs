@@ -49,6 +49,17 @@ pub struct Store {
     graph: symbols_lbug::Graph,
 }
 
+/// Turn arbitrary user text into an FTS5 MATCH phrase query: every blank-separated token is
+/// quoted, so `*`, `(`, `-`, `AND` and `"` are searched for as characters instead of being
+/// read as FTS5 syntax. `None` when there is no token left to search for.
+fn fts_phrase_query(query: &str) -> Option<String> {
+    let quoted: Vec<String> = query
+        .split_whitespace()
+        .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
+        .collect();
+    (!quoted.is_empty()).then(|| quoted.join(" "))
+}
+
 impl Store {
     /// Open (creating directories and the file as needed) and migrate.
     pub fn open(path: &Path) -> Result<Self> {
@@ -92,6 +103,11 @@ impl Store {
     }
 
     /// Apply pending migrations; returns how many ran. Idempotent.
+    ///
+    /// Each migration's SQL and its `schema_migrations` row commit together: several are
+    /// `ALTER TABLE … ADD COLUMN`, so a run interrupted between the two used to leave a
+    /// column added with no version row, and every later `Store::open` failed on
+    /// `duplicate column name` — a store nothing could repair but deletion.
     pub fn migrate(&self) -> Result<usize> {
         let mut conn = self.lock()?;
         conn.batch_execute(
@@ -108,11 +124,15 @@ impl Store {
             if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
                 continue;
             }
-            conn.batch_execute(sql)
-                .with_context(|| format!("migration {name}"))?;
-            sql_query("INSERT INTO schema_migrations (name) VALUES (?)")
-                .bind::<Text, _>(*name)
-                .execute(&mut *conn)?;
+            conn.transaction::<_, anyhow::Error, _>(|conn| {
+                conn.batch_execute(sql)
+                    .with_context(|| format!("migration {name}"))?;
+                sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
+                    .bind::<Text, _>(*name)
+                    .execute(conn)?;
+                Ok(())
+            })
+            .with_context(|| format!("migration {name}"))?;
             applied += 1;
         }
         Ok(applied)
@@ -590,12 +610,16 @@ impl Store {
     }
 
     /// FTS5 search, BM25 order, 120-char snippets.
+    ///
+    /// The query is user text (MCP `mem_search`), and FTS5 reads bare `*`, `(`, `-`, `AND`
+    /// and friends as query syntax: `read(` was a syntax error, not an empty result. Every
+    /// token is quoted into a phrase, so the words are searched for literally; a query with
+    /// nothing quotable left returns no hits instead of an error.
     pub fn search_notes(&self, query: &str, limit: u32) -> Result<Vec<NoteHit>> {
-        if query.trim().is_empty() {
+        let Some(q) = fts_phrase_query(query) else {
             return Ok(Vec::new());
-        }
+        };
         let mut conn = self.lock()?;
-        let q = query.replace('"', " ");
         let hits = sql_query(
             "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
              FROM notes_fts f JOIN notes n ON n.id = f.rowid
@@ -1253,6 +1277,26 @@ mod tests {
         journal_mode: String,
     }
 
+    /// FTS5 reads `*`, `(`, `-` and bare operators as syntax, so `mem_search "read("` used to
+    /// raise a SQL error instead of returning no hits. User text is quoted now.
+    #[test]
+    fn note_search_treats_query_text_literally() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_note(None, "note", "parser", "call read( on the file")
+            .unwrap();
+        for query in ["read(", "*", "-", "AND", "\"quoted\"", "read()"] {
+            let hits = store.search_notes(query, 5).unwrap();
+            assert!(hits.len() <= 1, "{query:?} → {hits:?}");
+        }
+        assert_eq!(
+            store.search_notes("read(", 5).unwrap().len(),
+            1,
+            "literal hit"
+        );
+        assert!(store.search_notes("   ", 5).unwrap().is_empty());
+    }
+
     #[test]
     fn migration_is_idempotent() {
         let store = Store::open_in_memory().unwrap();
@@ -1851,7 +1895,7 @@ mod tests {
             call_id: Some(old),
         };
         store.insert_measurement("s", &m).unwrap();
-        store.insert_provider_tokens(old, 1, 0, 0, 1).unwrap();
+        store.insert_provider_tokens(old, 2, 1, 0, 0, 1).unwrap();
         store
             .insert_call_io(old, Some(b"{}"), None, 1024, None)
             .unwrap();
