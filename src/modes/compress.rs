@@ -211,23 +211,43 @@ fn strip_leading_pleasantries(text: &str) -> String {
     rest.to_string()
 }
 
-/// Replace non-overlapping ASCII-case-insensitive substrings without requiring word boundaries.
-///
-/// `needle` must be nonempty and ASCII.
+/// Replace standalone occurrences of the ASCII phrase `needle` (case-insensitively) with
+/// `with`. A match that runs into a longer word is left alone: `and then` must not turn
+/// `command then` into `comm`. An empty `needle` is returned unchanged — `find("")` always
+/// succeeds, so an unguarded loop would never terminate.
 fn replace_ci(hay: &str, needle: &str, with: &str) -> String {
+    if needle.is_empty() {
+        return hay.to_string();
+    }
     let lower = hay.to_ascii_lowercase();
     let n = needle.to_ascii_lowercase();
+    let bytes = hay.as_bytes();
     let mut out = String::with_capacity(hay.len());
     let mut i = 0;
     while let Some(rel) = lower[i..].find(&n) {
         let at = i + rel;
+        let end = at + needle.len();
+        // A word byte is ASCII alphanumeric or any non-ASCII byte: the latter may be the
+        // lead of a letter we cannot classify at byte level, so it counts as part of a word.
+        let joined_left = bytes[..at].last().is_some_and(|b| is_word_byte(*b));
+        let joined_right = bytes[end..].first().is_some_and(|b| is_word_byte(*b));
+        if joined_left || joined_right {
+            // Inside a longer word: keep the byte and keep scanning past this match.
+            out.push_str(&hay[i..at + 1]);
+            i = at + 1;
+            continue;
+        }
         out.push_str(&hay[i..at]);
         out.push_str(with);
-        i = at + needle.len();
-        // Advance by needle byte length on original (ASCII phrases only).
+        i = end;
     }
     out.push_str(&hay[i..]);
     out
+}
+
+/// True when `b` continues a word rather than bounding one.
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b >= 0x80
 }
 
 /// Drop whole words from `words` when they appear as standalone tokens (ASCII word chars).
@@ -359,6 +379,29 @@ mod tests {
             compress_prose(in_, CaveIntensity::Full),
             "Use ``the really `simple` value`` and helper."
         );
+    }
+
+    /// Ultra strips `and then` as a phrase; the same letters inside a word must survive —
+    /// `command then` used to come back as `comm check`.
+    #[test]
+    fn ultra_phrase_strip_never_cuts_a_word() {
+        let out = compress_prose(
+            "Run the command then check the output.",
+            CaveIntensity::Ultra,
+        );
+        assert!(out.contains("command then"), "{out}");
+    }
+
+    #[test]
+    fn ultra_phrase_strip_still_drops_the_standalone_phrase() {
+        let out = compress_prose("Build it and then run it.", CaveIntensity::Ultra);
+        assert!(!out.contains("and then"), "{out}");
+        assert!(out.contains("Build it") && out.contains("run it"), "{out}");
+    }
+
+    #[test]
+    fn empty_needle_is_identity() {
+        assert_eq!(replace_ci("command then", "", " "), "command then");
     }
 
     #[test]
