@@ -1,21 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 42" width="120" height="42" role="img" aria-label="rtok">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 44" width="250" height="44" role="img" aria-label="rtok">
   <title>rtok</title>
-  <!-- Mark: the 24-grid logo.svg, scaled. Wordmark: monoline paths, so it renders
-       identically everywhere (no font to resolve inside an <img>). -->
-  <g transform="translate(6 4) scale(1.5)">
-    <rect x="3" y="4.4" width="18" height="2.6" rx="1.3" fill="#0f172a"/>
-    <rect x="3" y="10.7" width="11" height="2.6" rx="1.3" fill="#d54f0b"/>
-    <path d="M18.9 10 15.6 12 18.9 14" fill="none" stroke="#d54f0b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="3" y="17" width="6.5" height="2.6" rx="1.3" fill="#d54f0b"/>
+  <rect width="250" height="44" fill="#06101A"/>
+  <g transform="translate(6 6) scale(1)">
+    <g fill="#5CE1FF">
+      <circle cx="9" cy="9" r="1.6"/><circle cx="14" cy="9" r="1.6"/><circle cx="19" cy="9" r="1.6"/><circle cx="24" cy="9" r="1.6"/>
+      <circle cx="9" cy="14" r="1.6"/><circle cx="14" cy="14" r="1.6"/><circle cx="19" cy="14" r="1.6"/>
+    </g>
+    <g fill="#5CE1FF" opacity="0.35">
+      <circle cx="9" cy="19" r="1.6"/><circle cx="14" cy="19" r="1.6"/>
+    </g>
+    <g fill="#FF6B4A">
+      <circle cx="19" cy="19" r="1.6"/><circle cx="24" cy="19" r="1.6"/>
+      <circle cx="9" cy="24" r="1.6"/>
+    </g>
   </g>
-  <g transform="translate(49 0)" fill="none" stroke="#0f172a" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M1.7 16v16"/>
-    <path d="M1.7 21c0-5 3.5-5 6.1-5"/>
-    <path d="M17.5 10.5V32"/>
-    <path d="M13.5 16h8"/>
-    <circle cx="35.2" cy="24" r="6.3"/>
-    <path d="M48.7 10.5V32"/>
-    <path d="M57.6 16.8 49.2 24.9"/>
-    <path d="M51.6 22.6 58.2 32"/>
-  </g>
+  <text x="48" y="28" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="20" font-weight="700" fill="#E8F7FF" letter-spacing="0.06em">RTOK</text>
+  <text x="128" y="28" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="13" font-weight="600" fill="#FF6B4A">Δtok</text>
+  <text x="175" y="28" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" fill="#5CE1FF" opacity="0.75">bitset</text>
 </svg>

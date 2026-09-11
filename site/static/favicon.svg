@@ -1,8 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="rtok">
   <title>rtok</title>
-  <!-- The mark without the chevron: at 16 px the arrow is mush, the three bars are not. -->
-  <rect width="32" height="32" rx="7" fill="#0f172a"/>
-  <rect x="6.5" y="8.2" width="19" height="3.4" rx="1.7" fill="#f8fafc"/>
-  <rect x="6.5" y="14.3" width="12.7" height="3.4" rx="1.7" fill="#f47433"/>
-  <rect x="6.5" y="20.4" width="8.4" height="3.4" rx="1.7" fill="#f47433"/>
+  <rect width="32" height="32" rx="6" fill="#06101A"/>
+  <g fill="#5CE1FF">
+    <circle cx="9" cy="9" r="1.7"/><circle cx="14" cy="9" r="1.7"/><circle cx="19" cy="9" r="1.7"/><circle cx="24" cy="9" r="1.7"/>
+    <circle cx="9" cy="14" r="1.7"/><circle cx="14" cy="14" r="1.7"/><circle cx="19" cy="14" r="1.7"/>
+  </g>
+  <g fill="#5CE1FF" opacity="0.35">
+    <circle cx="9" cy="19" r="1.7"/><circle cx="14" cy="19" r="1.7"/>
+  </g>
+  <g fill="#FF6B4A">
+    <circle cx="19" cy="19" r="1.7"/><circle cx="24" cy="19" r="1.7"/>
+    <circle cx="9" cy="24" r="1.7"/>
+  </g>
 </svg>

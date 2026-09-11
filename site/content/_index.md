@@ -5,7 +5,7 @@ layout: hextra-home
 
 {{< hextra/hero-badge link="https://github.com/listepo/rtok/releases" >}}
   <div class="hx:w-2 hx:h-2 hx:rounded-full hx:bg-primary-400"></div>
-  <span>v0.0.1 — measurement first</span>
+  <span>measured token reduction</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
 
@@ -15,28 +15,33 @@ layout: hextra-home
 {{< /hextra/hero-headline >}}
 </div>
 
-<div class="hx:mb-12">
+<div class="hx:mb-8">
 {{< hextra/hero-subtitle >}}
   One Rust binary. Every method is a plugin, every saving is a measured row,&nbsp;<br class="hx:sm:block hx:hidden" />and everything shortened can be expanded back.
 {{< /hextra/hero-subtitle >}}
 </div>
 
-<div class="hx:mb-6">
+<div class="hx:mb-10 hx:flex hx:flex-wrap hx:gap-3">
 {{< hextra/hero-button text="Get started" link="docs/getting-started" >}}
 </div>
 
-<div class="hx:mt-6"></div>
+<div class="rtok-hero-shot hx:mb-16">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="images/hero-overview-light.png">
+    <img src="images/hero-overview-dark.png" alt="rtok webui Overview — measured token ledger" width="1280" height="720">
+  </picture>
+</div>
 
 {{< hextra/feature-grid >}}
+  {{< hextra/feature-card
+    title="Measured, not claimed"
+    subtitle="A saving that is not a Measurement row does not exist. `rtok stats` reports what actually changed — with Δ you can trust."
+    link="docs/plugins/measure"
+  >}}
   {{< hextra/feature-card
     title="One binary, three surfaces"
     subtitle="Claude Code hooks, an MCP server, and an `ANTHROPIC_BASE_URL` proxy hop — instead of a stack of overlapping tools."
     link="docs/reference/architecture"
-  >}}
-  {{< hextra/feature-card
-    title="Measured, not claimed"
-    subtitle="A saving that is not a `Measurement` row does not exist. `rtok stats` reports what actually changed."
-    link="docs/plugins/measure"
   >}}
   {{< hextra/feature-card
     title="Lossless by default"
@@ -48,18 +53,13 @@ layout: hextra-home
     subtitle="A hook exits 0 in under 10 ms even on error, with unmodified input. A half-installed rtok never blocks the host."
   >}}
   {{< hextra/feature-card
-    title="One config file"
-    subtitle="Every CLI flag is a config key. `rtok config show --sources` says where each value came from."
-    link="docs/reference/configuration"
-  >}}
-  {{< hextra/feature-card
-    title="Write your own plugin"
+    title="Plugin toolkit"
     subtitle="Public `Plugin` trait, in-tree modules behind Cargo features. No daemon, no subprocesses, no WASM."
     link="docs/reference/plugin-authoring"
   >}}
   {{< hextra/feature-card
-    title="Honest about the field"
-    subtitle="Eleven MCP tools for ~143 description tokens, against ~8 600 for the stack it replaces — plus what rtok is still behind on."
-    link="docs/reference/comparison"
+    title="Signal-scope UI"
+    subtitle="Dark/light webui with bitset mark and scope icons — overview, plugins, calls, sessions, doctor, logs."
+    link="docs/getting-started"
   >}}
 {{< /hextra/feature-grid >}}
