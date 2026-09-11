@@ -509,13 +509,6 @@ Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) call
 
 Written after a read-only audit of every module (`src/store`, `src/measure`, `src/proxy`, `src/plugins/*`, `src/config`, `src/cli`, `src/log`, `src/otel`, `src/report`, `src/tui`, `src/web`, `src/setup`, `crates/*`) whose fixes landed as `1afd465..3180376`. Each task below is a verified defect with a concrete reproduction, not a preference; the commit range is the evidence that the rest of that audit is done. One task = one commit, as always.
 
-**T36.2 toon persists a live-zone decision and archives the original string** · T36.1 · `src/plugins/toon/mod.rs`
-Do: `rewrite_block` never calls `archive_decision`/`put_archive_decision`, so `expand <toon-id>` does not stick (the next request re-encodes) and `expand::fetch` never records the expand Measurement; it also archives `serde_json::to_vec(&table)` — a re-serialised copy — while toon/README.md promises the original.
-Check: `rtok expand <toon-id>` freezes the id for the next request and increments the toon expand row; the archived bytes equal the original text.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
 Do: `outline::supported()` is never called and `plugins.read.languages` is never read. Either restrict `mode = map|signatures` to the configured languages, or delete the key and the helper (a config key that changes nothing is worse than none — the D26 argument).
 Check: whichever way, `just check` green and no documented key is unread (`docs/config.md` and the schema agree).

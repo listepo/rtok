@@ -473,6 +473,17 @@ impl Store {
         Ok(())
     }
 
+    /// Live-zone pointer text for one archive id (T36.2: attribute expand rows to toon vs archive).
+    pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        let rows: Vec<PointerRow> = sql_query(
+            "SELECT pointer FROM archive_decisions WHERE archive_id = ? LIMIT 1",
+        )
+        .bind::<Text, _>(archive_id)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().next().map(|r| r.pointer))
+    }
+
     /// T5.4: an `expand <id>` freezes every decision pointing at that archive id. Returns
     /// how many decisions changed (0 = the id was not a live-zone pointer).
     pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
@@ -1152,6 +1163,13 @@ pub struct MeasRow {
     pub est_after: i32,
     pub ref_id: Option<String>,
 }
+
+#[derive(Debug, QueryableByName)]
+struct PointerRow {
+    #[diesel(sql_type = Text)]
+    pointer: String,
+}
+
 
 /// T5.3 archive decision: the frozen pointer text for one `tool_use_id`. Same story as
 /// [`NoteHitRow`] — the type plugins see is the contract's.

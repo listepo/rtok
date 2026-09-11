@@ -42,29 +42,70 @@ fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let min_rows = cx.plugin_config::<crate::config::Toon>("toon").min_rows as usize;
     // Same live-zone rule as `archive`: never touch the last `keep_turns` turns.
     crate::plugins::archive::outside_live_zone(results, cx)
-        .filter_map(|r| rewrite_block(r.content, cx, min_rows))
+        .filter_map(|r| rewrite_block(&r.id, r.content, cx, min_rows))
         .collect()
 }
 
-fn rewrite_block(content: &mut Value, cx: &Ctx, min_rows: usize) -> Option<Measurement> {
-    let table = match content {
-        Value::Array(_) => content.clone(),
-        Value::String(s) => serde_json::from_str(s).ok().filter(Value::is_array)?,
-        _ => return None,
-    };
+/// The original tool-result text before TOON encoding — what `expand` must recover.
+fn original_text(content: &Value) -> Option<String> {
+    match content {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(_) => serde_json::to_string(content).ok(),
+        _ => None,
+    }
+}
+
+fn parse_table(content: &Value) -> Option<Value> {
+    match content {
+        Value::Array(_) => Some(content.clone()),
+        Value::String(s) => serde_json::from_str(s).ok().filter(Value::is_array),
+        _ => None,
+    }
+}
+
+fn rewrite_block(
+    tool_use_id: &str,
+    content: &mut Value,
+    cx: &Ctx,
+    min_rows: usize,
+) -> Option<Measurement> {
+    let orig = original_text(content)?;
+
+    match cx.archive_decision(tool_use_id) {
+        Ok(Some(d)) if d.expanded => return None,
+        Ok(Some(d)) => {
+            let m = Measurement {
+                plugin: "toon",
+                kind: "encode",
+                before_bytes: orig.len() as u64,
+                after_bytes: d.pointer.len() as u64,
+                est_before: cx.estimate(&orig, Class::Code),
+                est_after: cx.estimate(&d.pointer, Class::Code),
+                ref_id: Some(d.archive_id.clone()),
+                call_id: None,
+            };
+            *content = Value::String(d.pointer);
+            return Some(m);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            cx.log("error", "plugin", "toon", &format!("decision: {e}"));
+            return None;
+        }
+    }
+
+    let table = parse_table(content)?;
     let keys = tabular_keys(&table, min_rows)?;
     let rows = table.as_array()?;
-    let bytes = serde_json::to_vec(&table).ok()?;
     let archive_id = cx
-        .put_archive(&bytes)
+        .put_archive(orig.as_bytes())
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("put: {e}")))
         .ok()?;
     let encoded = encode(rows, &keys);
     let replacement = format!("[toon {archive_id}]\n{encoded}");
-    let orig = match content {
-        Value::String(s) => s.clone(),
-        _ => String::from_utf8_lossy(&bytes).into_owned(),
-    };
+    cx.put_archive_decision(tool_use_id, &archive_id, &replacement)
+        .map_err(|e| cx.log("error", "plugin", "toon", &format!("decision: {e}")))
+        .ok()?;
     let m = Measurement {
         plugin: "toon",
         kind: "encode",
@@ -216,6 +257,7 @@ fn decode_cell(s: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expand;
     use crate::proxy::anthropic::ANTHROPIC;
     use rtok_plugin_sdk::WireRequest;
     use serde_json::json;
@@ -352,5 +394,66 @@ mod tests {
         let mut again = original.clone();
         filter(&mut again, &Ctx::new(&cx));
         assert_eq!(body, again);
+    }
+
+    #[test]
+    fn archived_bytes_match_original_text() {
+        let cx = cx("archive-bytes", true, 3);
+        let table = rows_3x4();
+        let original = serde_json::to_string_pretty(&table).unwrap();
+        let mut body = tool_req(table);
+        let ms = filter(&mut body, &Ctx::new(&cx));
+        let archive_id = ms[0].ref_id.clone().unwrap();
+        let archived = cx
+            .store
+            .get_archive(&archive_id, Some(&cx.config.core.archive_dir))
+            .unwrap()
+            .unwrap();
+        assert_eq!(archived, original.as_bytes());
+    }
+
+    #[test]
+    fn expand_freezes_id_and_records_toon_expand_row() {
+        let cx = cx("expand", true, 3);
+        let table = rows_3x4();
+        let original = serde_json::to_string_pretty(&table).unwrap();
+        let mut first = tool_req(table.clone());
+        let ms = filter(&mut first, &Ctx::new(&cx));
+        let archive_id = ms[0].ref_id.clone().unwrap();
+        let encoded = first["messages"][0]["content"][0]["content"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let mut second = tool_req(table.clone());
+        filter(&mut second, &Ctx::new(&cx));
+        assert_eq!(
+            second["messages"][0]["content"][0]["content"]
+                .as_str()
+                .unwrap(),
+            encoded,
+            "decision must be deterministic"
+        );
+
+        expand::fetch(&cx, &archive_id).unwrap();
+        let expand_rows: Vec<_> = cx
+            .store
+            .list_measurements("toon")
+            .unwrap()
+            .into_iter()
+            .filter(|m| m.kind == "expand")
+            .collect();
+        assert_eq!(expand_rows.len(), 1);
+        assert_eq!(expand_rows[0].ref_id.as_deref(), Some(archive_id.as_str()));
+
+        let mut third = tool_req(table);
+        assert_eq!(filter(&mut third, &Ctx::new(&cx)).len(), 0);
+        assert_eq!(
+            third["messages"][0]["content"][0]["content"]
+                .as_str()
+                .unwrap(),
+            original,
+            "expanded id must not re-encode"
+        );
     }
 }

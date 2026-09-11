@@ -6,8 +6,8 @@ use crate::tokens::Class;
 use anyhow::{Result, bail};
 
 /// Read an archived payload. When the id is a live-zone pointer (T5.3) this freezes it:
-/// the archive plugin sends the original from the next request on, and one `expand`
-/// measurement records the cost — `rtok stats --plugin archive` derives the expand rate.
+/// the owning plugin sends the original from the next request on, and one `expand`
+/// measurement records the cost — `rtok stats --plugin <id>` derives the expand rate.
 pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     let Some(bytes) = cx
         .store
@@ -17,8 +17,13 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     };
     if cx.store.mark_expanded(id)? > 0 {
         let n = bytes.len() as u64;
+        let plugin = match cx.store.live_zone_pointer(id)? {
+            Some(p) if p.starts_with("[toon ") => "toon",
+            Some(_) => "archive",
+            None => "archive",
+        };
         cx.record(&Measurement {
-            plugin: "archive",
+            plugin,
             kind: "expand",
             before_bytes: 0,
             after_bytes: n,
