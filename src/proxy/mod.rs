@@ -31,7 +31,7 @@ use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{ACCEPT_ENCODING, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, Request, Response, StatusCode};
 use axum::response::Response as AxumResponse;
 use axum::routing::get;
@@ -112,11 +112,15 @@ impl ProxyState {
         }
     }
 
-    /// Config kill-switches: `proxy.enabled` or `core.enabled` false → byte-forward only.
-    /// The listener stays up; only process exit stops HTTP. Flags are read from the Config
-    /// loaded at start (restart picks up file changes).
+    /// Config kill-switches: any of `proxy.enabled`, `core.enabled` or `plugins.proxy.enabled`
+    /// false → byte-forward only. The listener stays up; only process exit stops HTTP. Flags
+    /// are read from the Config loaded at start (restart picks up file changes).
+    ///
+    /// `plugins.proxy.enabled` is the plugin's own switch, and the plugin *is* usage capture:
+    /// leaving it out of this check made it inert, so an operator who turned it off to stop
+    /// prompt bodies being written kept every `calls`, `call_io` and `usage` row.
     pub fn plain(&self) -> bool {
-        !self.cfg.proxy.enabled || !self.cfg.core.enabled
+        !self.cfg.proxy.enabled || !self.cfg.core.enabled || !self.cfg.plugins.proxy.enabled
     }
 }
 
@@ -213,6 +217,11 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
             rb = rb.header(name, value);
         }
     }
+    // The client's `accept-encoding` is not honoured by this build: reqwest is linked
+    // without its decompression features, so a compressed body would reach the client
+    // intact but decode to no `usage` row, no `tokens` row and lossy text in `call_io`.
+    // Asking upstream for `identity` is what keeps the tee readable.
+    rb = rb.header(ACCEPT_ENCODING, "identity");
     let upstream = match rb.body(request_body.clone()).send().await {
         Ok(r) => r,
         Err(e) => {
@@ -525,6 +534,16 @@ async fn finish(
     }
     match wire.and_then(|wire| wire::usage_from_response(wire, content_type, response_body)) {
         Some(usage) => {
+            let provider_total = wire.map_or_else(
+                || {
+                    usage
+                        .input
+                        .saturating_add(usage.cache_create)
+                        .saturating_add(usage.cache_read)
+                        .saturating_add(usage.output)
+                },
+                |wire| wire.provider_total(usage),
+            );
             if let Err(e) = state.store.insert_usage(
                 &r.session,
                 r.model.as_deref(),
@@ -539,6 +558,7 @@ async fn finish(
             }
             if let Err(e) = state.store.insert_provider_tokens(
                 r.call_id,
+                provider_total,
                 usage.input,
                 usage.cache_create,
                 usage.cache_read,

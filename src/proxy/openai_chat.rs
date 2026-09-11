@@ -137,6 +137,9 @@ mod tests {
         assert_eq!(OPENAI_CHAT.usage_from_sse(&usage), Some(expected));
         // Every non-final chunk carries `usage: null`.
         assert_eq!(OPENAI_CHAT.usage_from_sse(&json!({"usage":null})), None);
+        // `prompt_tokens` already contains the cached slice, so the ledger total is
+        // input + output (12) and not the sum of all four counters (19).
+        assert_eq!(OPENAI_CHAT.provider_total(expected), 12);
     }
 
     #[test]

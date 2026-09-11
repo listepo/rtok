@@ -50,6 +50,25 @@ pub trait Wire: ToolResults {
             "anthropic"
         }
     }
+
+    /// The billable total the `tokens` ledger records. Anthropic's four counters are
+    /// disjoint, so they add up; OpenAI's `prompt_tokens` **already contains** the cached
+    /// slice (`openai_chat::parse_usage`), so adding `cache_read` again would charge the
+    /// same tokens twice — a 30 000-prompt/27 000-cached turn would record 57 200.
+    fn provider_total(&self, usage: Usage) -> i64 {
+        let sum = || {
+            usage
+                .input
+                .saturating_add(usage.cache_create)
+                .saturating_add(usage.cache_read)
+                .saturating_add(usage.output)
+        };
+        if self.provider() == "openai" {
+            usage.input.saturating_add(usage.output)
+        } else {
+            sum()
+        }
+    }
 }
 
 /// Provider usage counters, with absent provider fields represented as zero.

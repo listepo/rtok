@@ -244,6 +244,49 @@ async fn proxy_passthrough_body_records_usage_rows() {
     task.abort();
 }
 
+/// A client that negotiates gzip must not cost us the usage row: this build links reqwest
+/// without its decompression features, so the upstream request has to ask for `identity`.
+#[tokio::test]
+async fn upstream_request_asks_for_identity_encoding() {
+    let server = httpmock::MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/messages")
+            .header("accept-encoding", "identity");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(MockUpstream::anthropic_messages_body().fixture);
+    });
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-identity-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = server.base_url();
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+
+    let resp = reqwest::Client::new()
+        .post(format!("http://{addr}/v1/messages"))
+        .header("content-type", "application/json")
+        .header("accept-encoding", "gzip, deflate, br")
+        .body(t51_request())
+        .send()
+        .await
+        .expect("request through the proxy");
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    mock.assert();
+    let rows = t51_usage_n(&state.store, T51_SESSION, 1).await;
+    assert_eq!(
+        rows.len(),
+        1,
+        "usage recorded despite the client's gzip offer"
+    );
+    task.abort();
+}
+
 #[tokio::test]
 async fn proxy_passthrough_stream_is_byte_identical_and_records_usage() {
     let up = MockUpstream::anthropic_messages_stream();
@@ -935,6 +978,19 @@ async fn proxy_disabled_is_plain_forward_with_no_bookkeeping() {
 #[tokio::test]
 async fn core_disabled_is_plain_forward_with_no_bookkeeping() {
     assert_plain_forward("core-off", true, false).await;
+}
+
+/// `[plugins.proxy] enabled = false` is documented as the usage-capture switch. Leaving it
+/// out of `plain()` made it inert: bodies kept being written with the plugin shown as off.
+#[tokio::test]
+async fn plugin_switch_off_is_plain_forward() {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-plugin-off-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.plugins.proxy.enabled = false;
+    let state = ProxyState::new(&cfg).expect("proxy state");
+    assert!(state.plain(), "the plugin switch must stop recording");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]

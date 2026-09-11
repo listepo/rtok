@@ -810,20 +810,18 @@ impl Store {
     }
 
     /// Provider counters for an api_request (plan T5.1): one `tokens` row,
-    /// `phase = 'after'`, `source = 'provider'`, carrying the four Anthropic counters
-    /// (the `tokens` total is their sum).
+    /// `phase = 'after'`, `source = 'provider'`, carrying the four counters. `total` comes
+    /// from the wire ([`rtok_plugin_sdk`-side `Wire::provider_total`]): Anthropic's counters
+    /// are disjoint and sum, OpenAI's `input` already contains the cached slice.
     pub fn insert_provider_tokens(
         &self,
         call_id: i32,
+        total: i64,
         input: i64,
         cache_create: i64,
         cache_read: i64,
         output: i64,
     ) -> Result<()> {
-        let total = input
-            .saturating_add(cache_create)
-            .saturating_add(cache_read)
-            .saturating_add(output);
         let mut conn = self.lock()?;
         sql_query(
             "INSERT INTO tokens (call_id, phase, source, tokens, input, output, cache_create, cache_read)
