@@ -165,6 +165,10 @@ impl Host for Runtime {
         &self.session
     }
 
+    fn cwd(&self) -> Option<&str> {
+        self.cwd.as_deref()
+    }
+
     fn estimate(&self, text: &str, class: Class) -> u32 {
         Runtime::estimate(self, text, class)
     }
@@ -224,7 +228,8 @@ impl Archive for Runtime {
     }
 
     fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>> {
-        self.store.get_archive(id)
+        self.store
+            .get_archive(id, Some(&self.config.core.archive_dir))
     }
 
     fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {

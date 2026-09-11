@@ -70,6 +70,12 @@ pub trait Host: Send + Sync {
     /// to it; a plugin rarely needs it directly.
     fn session(&self) -> &str;
 
+    /// Working directory of this dispatch, when the surface knows it.
+    /// Hook events carry one; MCP and the CLI typically do not.
+    fn cwd(&self) -> Option<&str> {
+        None
+    }
+
     /// Estimated token count for `text`. No tokenizer, no network — safe on the hot path.
     fn estimate(&self, text: &str, class: Class) -> u32;
 

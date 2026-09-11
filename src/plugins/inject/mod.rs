@@ -119,7 +119,13 @@ pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
         used += t;
         parts.push(i.text.as_str());
     }
-    let text = parts.join("\n");
+    let mut text = parts.join("\n");
+    if !dropped.is_empty() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&dropped.join("\n"));
+    }
     let after = cx.estimate(&text, Class::Prose);
     let _ = cx.record(&Measurement {
         plugin: "inject",
@@ -177,8 +183,14 @@ mod tests {
         let once = apply(&Ctx::new(&cx), offered.clone());
         let twice = apply(&Ctx::new(&cx), offered);
         assert_eq!(once, twice);
-        assert_eq!(once.matches('\n').count(), 1, "two emitted → one separator");
-        assert_eq!(once, format!("{text}\n{text}"));
+        assert!(once.starts_with(&format!("{text}\n{text}\n")), "{once}");
+        let drop = format!("dropped:c:{}", cx.estimate(&text, Class::Prose));
+        assert!(once.lines().any(|l| l == drop), "{once}");
+        assert_eq!(
+            once.matches('\n').count(),
+            2,
+            "two emitted + one dropped line"
+        );
         assert_eq!(cx.store.measurement_count("inject").unwrap(), 2);
     }
 

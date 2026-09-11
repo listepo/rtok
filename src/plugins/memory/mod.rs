@@ -68,7 +68,11 @@ fn recall(cx: &Ctx) -> Option<Injection> {
     let cfg = cx.plugin_config::<crate::config::Memory>("memory");
     let n = cfg.recall_titles.max(1);
     let cap = cfg.recall_tokens.max(1);
-    let project = std::env::current_dir().ok().and_then(|d| project_name(&d));
+    let project = cx
+        .cwd()
+        .map(std::path::Path::new)
+        .and_then(project_name)
+        .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
     let rows = cx.list_note_titles(project.as_deref(), n).ok()?;
     if rows.is_empty() {
         return None;
@@ -171,5 +175,37 @@ mod tests {
         assert_eq!(a.text.lines().count(), 6, "{}", a.text);
         assert!(cx.estimate(&a.text, Class::Prose) <= 200);
         assert_eq!(a.priority, 10);
+    }
+
+    #[test]
+    fn recall_filters_by_hook_cwd_not_process_cwd() {
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("rtok-mem-cwd-{pid}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        let mut cx = crate::plugin::Runtime::in_memory("mem-cwd").unwrap();
+        cx.cwd = Some(dir.to_string_lossy().into_owned());
+        mem_save(
+            &Ctx::new(&cx),
+            "note",
+            "other-note",
+            "body from elsewhere",
+            Some("elsewhere"),
+        )
+        .unwrap();
+        // project_name uses the directory's basename (the last component).
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        mem_save(
+            &Ctx::new(&cx),
+            "note",
+            "cwd-note",
+            "visible under hook cwd",
+            Some(&name),
+        )
+        .unwrap();
+        let inj = recall(&Ctx::new(&cx)).unwrap();
+        assert!(inj.text.contains("cwd-note"), "{}", inj.text);
+        assert!(!inj.text.contains("other-note"), "{}", inj.text);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

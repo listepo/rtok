@@ -9,7 +9,8 @@ mod symbols;
 #[cfg(feature = "graph-lbug")]
 mod symbols_lbug;
 
-use std::path::Path;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
@@ -477,23 +478,41 @@ impl Store {
         };
         match row {
             Some((Some(json), _)) => Ok(Some(json.into_bytes())),
-            Some((None, Some(id))) => self.get_archive(&id),
+            Some((None, Some(id))) => self.get_archive(&id, None),
             _ => Ok(None),
         }
     }
 
-    /// Path and bytes for `rtok expand <id>`. `None` if the id is unknown.
-    pub fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>> {
+    /// Path and bytes for `rtok expand <id>`. `None` if the id is unknown
+    /// or the payload file is gone. `dir` is the live `[core] archive_dir`;
+    /// the stored path is only a fallback for rows written under an old dir.
+    pub fn get_archive(&self, id: &str, dir: Option<&Path>) -> Result<Option<Vec<u8>>> {
         let mut conn = self.lock()?;
-        let path: Option<String> = archive::table
+        let stored: Option<String> = archive::table
             .find(id)
             .select(archive::path)
             .first(&mut *conn)
             .optional()?;
-        let Some(path) = path else {
+        drop(conn);
+        let Some(stored) = stored else {
             return Ok(None);
         };
-        Ok(Some(std::fs::read(&path).with_context(|| path)?))
+        let mut paths = Vec::new();
+        if let Some(d) = dir {
+            paths.push(d.join(id));
+        }
+        let stored = PathBuf::from(stored);
+        if !paths.iter().any(|p| p == &stored) {
+            paths.push(stored);
+        }
+        for p in paths {
+            match std::fs::read(&p) {
+                Ok(b) => return Ok(Some(b)),
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(e).with_context(|| p.display().to_string()),
+            }
+        }
+        Ok(None)
     }
 
     /// Insert a note (T2.5 checkpoints, later memory).

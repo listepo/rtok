@@ -38,13 +38,13 @@ impl Plugin for Guard {
         }
         let reason = format!("duplicate; rtok expand {id}");
         // AGENTS: denial Measurement carries the avoided result size (archive bytes).
-        let body = cx.get_archive(&id).ok().flatten().unwrap_or_default();
+        // Never deny without a retrievable original (lossless + fail open).
+        let body = cx.get_archive(&id).ok().flatten()?;
+        if body.is_empty() {
+            return None;
+        }
         let avoided = body.len() as u64;
-        let est = if body.is_empty() {
-            0
-        } else {
-            cx.estimate(&String::from_utf8_lossy(&body), Class::Code)
-        };
+        let est = cx.estimate(&String::from_utf8_lossy(&body), Class::Code);
         let _ = cx.record(&Measurement {
             plugin: "guard",
             kind: "guard",
@@ -83,10 +83,21 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
 
 fn norm_cmd(s: &str) -> String {
     let mut t = collapse(s);
+    t = strip_wrap(&t);
     while let Some(rest) = strip_cd_and(&t) {
-        t = rest;
+        t = strip_wrap(&rest);
     }
     t
+}
+
+/// PreToolUse sees the user's command; PostToolUse often sees `rtok run -- '…'`.
+fn strip_wrap(s: &str) -> String {
+    let s = s.strip_prefix("rtok run -- ").unwrap_or(s);
+    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
+        s[1..s.len() - 1].replace("'\"'\"'", "'")
+    } else {
+        s.to_string()
+    }
 }
 
 fn collapse(s: &str) -> String {
@@ -182,5 +193,99 @@ mod tests {
         assert!(cx.store.measurement_count("guard").unwrap() >= 1);
         let rows = cx.store.list_measurements("guard").unwrap();
         assert!(rows.iter().any(|r| r.before_bytes > 0), "{rows:?}");
+    }
+
+    #[test]
+    fn edit_clears_guard_read_so_the_next_read_is_allowed() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/src/main.rs"});
+        let resp = json!({"content": "fn main() {}"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Read",
+                    tool_input: &path,
+                    tool_response: &resp,
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
+        );
+        crate::plugins::read::cache::invalidate(
+            &PostToolUse {
+                tool_name: "Edit",
+                tool_input: &path,
+                tool_response: &json!({}),
+            },
+            &Ctx::new(&cx),
+        );
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+    }
+
+    #[test]
+    fn missing_archive_fails_open() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/gone.rs"});
+        let resp = json!({"content": "old"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Read",
+                    tool_input: &path,
+                    tool_response: &resp,
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
+        );
+        let key = cache_key("Read", &path).unwrap();
+        let (id, _) = cx.store.get_read_cache(&cx.session, &key).unwrap().unwrap();
+        let id = id.unwrap();
+        std::fs::remove_file(cx.config.core.archive_dir.join(&id)).unwrap();
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+    }
+
+    #[test]
+    fn wrapped_bash_post_matches_unwrapped_pre() {
+        let cx = setup();
+        let g = Guard;
+        let quoted = format!(
+            "rtok run -- {}",
+            crate::plugins::cmd::run::sh_quote("git status")
+        );
+        let wrapped = json!({"command": quoted});
+        let resp = json!({"stdout": "ok"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &wrapped,
+                    tool_response: &resp,
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
+        );
+        let pre = json!({"command": "git status"});
+        assert!(matches!(
+            g.pre_tool(
+                &PreToolUse {
+                    tool_name: "Bash",
+                    tool_input: &pre,
+                },
+                &Ctx::new(&cx),
+            ),
+            Some(PreToolDecision::Deny { .. })
+        ));
     }
 }

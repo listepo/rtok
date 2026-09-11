@@ -193,11 +193,11 @@ fn expand_text(cx: &Runtime, args: &Value) -> String {
 
 fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> String {
     let mut out: Vec<&str> = text.lines().collect();
-    if let Some(spec) = lines
-        && let Some((a, b)) = spec.split_once('-')
-        && let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>())
-    {
-        out = out.into_iter().take(b).skip(a.saturating_sub(1)).collect();
+    if let Some(spec) = lines {
+        let n = out.len();
+        if let Ok((a, b)) = crate::expand::parse_range(spec, n) {
+            out = out.into_iter().take(b).skip(a.saturating_sub(1)).collect();
+        }
     }
     if let Some(g) = grep {
         out.retain(|l| l.contains(g));
@@ -315,6 +315,16 @@ mod tests {
     use crate::testutil::config as tmp;
     use crate::tokens::Class;
     use std::fs;
+
+    #[test]
+    fn slice_bare_lines_matches_cli_parse_range() {
+        let text = (1..=12)
+            .map(|n| format!("L{n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(slice(&text, Some("10"), None), "L10\nL11\nL12");
+        assert_eq!(slice(&text, Some("10-10"), None), "L10");
+    }
 
     #[test]
     fn descriptions_at_most_60_tokens() {

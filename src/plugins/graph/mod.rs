@@ -303,7 +303,7 @@ mod tests {
         let trailer = out.lines().last().unwrap();
         assert!(trailer.contains(" more, expand "), "{trailer}");
         let id = trailer.rsplit(' ').next().unwrap();
-        let full = String::from_utf8(cx.store.get_archive(id).unwrap().unwrap()).unwrap();
+        let full = String::from_utf8(cx.store.get_archive(id, None).unwrap().unwrap()).unwrap();
         assert_eq!(
             full.lines().filter(|l| l.starts_with("fn dup()")).count(),
             500,
@@ -355,7 +355,7 @@ mod tests {
         let id = trailer.rsplit(' ').next().unwrap();
         let full = cx
             .store
-            .get_archive(id)
+            .get_archive(id, None)
             .unwrap()
             .expect("archived full text");
         assert_eq!(String::from_utf8(full).unwrap().lines().count(), 500);

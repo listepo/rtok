@@ -7,17 +7,24 @@ use std::process::Command;
 
 use super::formatters;
 
-fn sh_quote(s: &str) -> String {
+pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
-fn script(args: &[String]) -> String {
-    let inner = args
-        .iter()
-        .map(|a| sh_quote(a))
-        .collect::<Vec<_>>()
-        .join(" ");
-    format!("{inner} 2>&1")
+/// Join argv into a `-lc` body. A single argument is already a shell snippet
+/// (the PreToolUse wrap quotes the original command as one argv); several
+/// arguments are a CLI argv list and must be quoted so spaces stay inside
+/// one word. `{ … } 2>&1` so a trailing `&&`/`|` still merges stderr.
+pub(crate) fn script(args: &[String]) -> String {
+    let inner = match args {
+        [one] => one.clone(),
+        many => many
+            .iter()
+            .map(|a| sh_quote(a))
+            .collect::<Vec<_>>()
+            .join(" "),
+    };
+    format!("{{ {inner}\n}} 2>&1")
 }
 
 fn shell(cfg: &Config) -> String {
@@ -136,6 +143,30 @@ mod tests {
                 "{r}"
             );
         }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn script_keeps_one_arg_as_a_shell_snippet() {
+        assert_eq!(script(&["true && false".into()]), "{ true && false\n} 2>&1");
+        assert_eq!(
+            script(&["git".into(), "status".into()]),
+            "{ 'git' 'status'\n} 2>&1"
+        );
+    }
+
+    #[test]
+    fn one_arg_compound_command_runs_as_one_script() {
+        let (c, dir) = cfg("compound");
+        let code = run(&c, &["printf a; printf b".into()]).unwrap();
+        assert_eq!(code, 0);
+        let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1);
+        let raw = fs::read(&files[0]).unwrap();
+        assert_eq!(raw, b"ab");
         let _ = fs::remove_dir_all(&dir);
     }
 }

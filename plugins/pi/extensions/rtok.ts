@@ -47,15 +47,14 @@ export default function (pi) {
     if (event.toolName !== "bash") return;
     const command = event.input?.command;
     if (typeof command !== "string" || command.startsWith("rtok run -- ")) return;
-    const r = await rtok(["run", "--", command]);
+    // Probe install only: `rtok run` would execute the command before bash does.
+    const r = await rtok(["--version"]);
     if (r.missing) {
       pi.appendEntry?.("system", KETCH_HINT);
       return;
     }
-    // `rtok run` already executed, archived and filtered the command: run it
-    // through the filter path by replacing the command, so the result below
-    // still compresses oversized output the same way.
-    event.input.command = `rtok run -- ${command}`;
+    const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
+    event.input.command = `rtok run -- ${quoted}`;
   });
 
   // Bash results: `rtok filter` compresses oversized output; the trailer

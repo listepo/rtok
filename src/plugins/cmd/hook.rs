@@ -43,7 +43,8 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
         return None;
     }
     let mut input = ev.tool_input.clone();
-    input["command"] = json!(format!("rtok run -- {cmd}"));
+    // One argv so the outer shell cannot split on `&&`, `|`, `;`, or redirects.
+    input["command"] = json!(format!("rtok run -- {}", super::run::sh_quote(cmd)));
     Some(PreToolDecision::Rewrite {
         input,
         reason: "wrapped by rtok".into(),
@@ -77,13 +78,29 @@ mod tests {
     #[test]
     fn git_status_is_wrapped() {
         let d = decide("git status").unwrap();
-        assert_eq!(wrapped(&d), "rtok run -- git status");
+        assert_eq!(wrapped(&d), "rtok run -- 'git status'");
     }
 
     #[test]
     fn heredoc_and_sudo_untouched() {
         assert!(decide("cat <<EOF").is_none());
         assert!(decide("sudo ls").is_none());
+    }
+
+    #[test]
+    fn metacharacters_stay_inside_one_quoted_argument() {
+        for cmd in [
+            "true && false",
+            "git status | head",
+            "foo; bar",
+            "echo x >/tmp/x",
+        ] {
+            let d = decide(cmd).unwrap();
+            assert_eq!(
+                wrapped(&d),
+                format!("rtok run -- {}", super::super::run::sh_quote(cmd))
+            );
+        }
     }
 
     #[test]

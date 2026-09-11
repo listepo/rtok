@@ -54,6 +54,7 @@ pub fn invalidate(ev: &PostToolUse<'_>, cx: &Ctx) {
         return;
     };
     let _ = cx.clear_read_cache(path);
+    let _ = cx.clear_read_cache(&format!("read:{path}"));
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {

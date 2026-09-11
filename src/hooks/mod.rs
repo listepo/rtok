@@ -207,14 +207,40 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
         return text.to_string();
     }
     let mut out = String::new();
-    for line in text.lines() {
+    let mut rest = text.lines();
+    while let Some(line) = rest.next() {
         let cand = if out.is_empty() {
             line.to_string()
         } else {
             format!("{out}\n{line}")
         };
         if cx.estimate(&cand, Class::Prose) > budget {
-            break;
+            let dropped = std::iter::once(line)
+                .chain(rest)
+                .collect::<Vec<_>>()
+                .join("\n");
+            let marker = format!("dropped:post_tool:{}", cx.estimate(&dropped, Class::Prose));
+            if out.is_empty() {
+                let mut prefix = line.to_string();
+                while !prefix.is_empty() {
+                    let cand = format!("{prefix}\n{marker}");
+                    if cx.estimate(&cand, Class::Prose) <= budget {
+                        return cand;
+                    }
+                    prefix.pop();
+                }
+                return if cx.estimate(&marker, Class::Prose) <= budget {
+                    marker
+                } else {
+                    String::new()
+                };
+            }
+            let with = format!("{out}\n{marker}");
+            return if cx.estimate(&with, Class::Prose) <= budget {
+                with
+            } else {
+                out
+            };
         }
         out = cand;
     }
@@ -305,5 +331,35 @@ mod tests {
         let (slug, ..) = cx.store.session_row(&cx.session).unwrap().unwrap();
         assert_eq!(slug.as_deref(), Some("pi"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cap_budget_marks_drop_when_first_line_exceeds() {
+        let mut cx = Runtime::in_memory("cap-first").unwrap();
+        cx.config.plugins.inject.budget_tokens = 20;
+        let huge = "word ".repeat(400);
+        let out = cap_budget(&cx, huge.trim_end());
+        assert!(!out.is_empty(), "must not swallow the whole payload");
+        assert!(
+            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
+            "{out}"
+        );
+        assert!(cx.estimate(&out, Class::Prose) <= 20, "{out}");
+    }
+
+    #[test]
+    fn cap_budget_keeps_fitting_lines_and_names_the_rest() {
+        let mut cx = Runtime::in_memory("cap-rest").unwrap();
+        cx.config.plugins.inject.budget_tokens = 30;
+        let small = "ok";
+        let huge = "word ".repeat(400);
+        let text = format!("{small}\n{}", huge.trim_end());
+        let out = cap_budget(&cx, &text);
+        assert!(out.starts_with("ok\n"), "{out}");
+        assert!(
+            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
+            "{out}"
+        );
+        assert!(cx.estimate(&out, Class::Prose) <= 30, "{out}");
     }
 }

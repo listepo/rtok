@@ -9,7 +9,10 @@ use anyhow::{Result, bail};
 /// the archive plugin sends the original from the next request on, and one `expand`
 /// measurement records the cost — `rtok stats --plugin archive` derives the expand rate.
 pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
-    let Some(bytes) = cx.store.get_archive(id)? else {
+    let Some(bytes) = cx
+        .store
+        .get_archive(id, Some(&cx.config.core.archive_dir))?
+    else {
         return Ok(None);
     };
     if cx.store.mark_expanded(id)? > 0 {
@@ -53,7 +56,7 @@ pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> R
     Ok(())
 }
 
-fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
+pub(crate) fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
     let mut parts = spec.splitn(2, '-');
     let a: usize = parts.next().unwrap_or("1").parse().unwrap_or(1);
     let b: usize = parts.next().map(|s| s.parse().unwrap_or(n)).unwrap_or(n);
@@ -83,9 +86,50 @@ mod tests {
             .store
             .put_archive("expand", b"hello\nworld\n", &c.core.archive_dir)
             .unwrap();
-        let got = cx.store.get_archive(&id).unwrap().unwrap();
+        let got = cx
+            .store
+            .get_archive(&id, Some(&c.core.archive_dir))
+            .unwrap()
+            .unwrap();
         assert_eq!(got, b"hello\nworld\n");
         drop(cx);
         run(&c, &id, None, None).unwrap();
+    }
+
+    #[test]
+    fn moved_archive_dir_still_reads() {
+        let c = cfg("moved");
+        let cx = crate::plugin::Runtime::open(c.clone(), "expand").unwrap();
+        let id = cx
+            .store
+            .put_archive("expand", b"relocated\n", &c.core.archive_dir)
+            .unwrap();
+        drop(cx);
+        let dest = c.core.archive_dir.parent().unwrap().join("archive-moved");
+        std::fs::rename(&c.core.archive_dir, &dest).unwrap();
+        let mut c2 = c.clone();
+        c2.core.archive_dir = dest;
+        let cx = crate::plugin::Runtime::open(c2.clone(), "expand").unwrap();
+        assert_eq!(fetch(&cx, &id).unwrap().unwrap(), b"relocated\n");
+    }
+
+    #[test]
+    fn missing_file_is_unknown_id() {
+        let c = cfg("gone");
+        let cx = crate::plugin::Runtime::open(c.clone(), "expand").unwrap();
+        let id = cx
+            .store
+            .put_archive("expand", b"bye\n", &c.core.archive_dir)
+            .unwrap();
+        std::fs::remove_file(c.core.archive_dir.join(&id)).unwrap();
+        drop(cx);
+        let err = run(&c, &id, None, None).unwrap_err();
+        assert!(err.to_string().contains("unknown archive id"), "{err}");
+    }
+
+    #[test]
+    fn parse_range_bare_start_runs_to_end() {
+        assert_eq!(parse_range("10", 20).unwrap(), (10, 20));
+        assert_eq!(parse_range("5-5", 20).unwrap(), (5, 5));
     }
 }
