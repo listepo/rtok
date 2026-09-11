@@ -12,7 +12,9 @@ use clap::{Command, CommandFactory};
 use rtok::cli::Cli;
 use rtok::config::Config;
 use rtok::web::frame;
+use rtok::doctor;
 use rtok::web::model;
+use rstest::rstest;
 
 fn config() -> Config {
     let dir = std::env::temp_dir().join(format!("rtok-parity-{}", std::process::id()));
@@ -258,3 +260,85 @@ fn every_command_is_exempt_or_renders_a_page_of_the_model() {
         );
     }
 }
+
+/// Emission order inside the instructions tail — `doctor::Report::to_text` and
+/// `snapshot::doctor_of` must share it (T36.15).
+const INSTRUCTION_TAIL: &[&str] = &["instructions", "tokens", "duplicate"];
+
+fn tail_after<'a>(src: &'a str, marker: &str) -> &'a str {
+    src.split(marker).nth(1).expect(marker)
+}
+
+fn markers_in_order(haystack: &str, markers: &[&str]) -> bool {
+    let mut pos = 0;
+    for m in markers {
+        let Some(i) = haystack[pos..].find(m) else {
+            return false;
+        };
+        pos += i + m.len();
+    }
+    true
+}
+
+/// T36.15: the WASM Doctor tab mirrors `doctor::Report::to_text` for the instruction
+/// audit — source-pinned here because `rtok-webui` is outside the workspace.
+#[rstest]
+fn web_doctor_instruction_audit_matches_cli_order() {
+    let lib = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let doctor_rs = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/doctor.rs"
+    ));
+    let wasm_tail = tail_after(
+        lib.split("fn doctor_of").nth(1).expect("doctor_of"),
+        "autoCompactWindow",
+    );
+    let cli_tail = tail_after(
+        doctor_rs.split("pub fn to_text").nth(1).expect("to_text"),
+        "autoCompactWindow",
+    );
+    for (name, tail) in [("doctor_of", wasm_tail), ("Report::to_text", cli_tail)] {
+        assert!(
+            markers_in_order(tail, INSTRUCTION_TAIL),
+            "{name} instructions tail markers drifted"
+        );
+    }
+    assert!(
+        wasm_tail.contains(r"  {} {} tokens {}{}\n"),
+        "doctor_of row format matches Report::to_text"
+    );
+    assert!(
+        wasm_tail.contains("duplicate `{sent}` in {}"),
+        "doctor_of duplicate format matches Report::to_text"
+    );
+
+    let dir = std::env::temp_dir().join(format!("rtok-parity-doctor-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("CLAUDE.md"),
+        "user claude md padding for a long enough line xx\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("claude.json"),
+        r#"{"mcpServers":{"lean-ctx":{"command":"/bin/true"},"engram":{"command":"/bin/true"},"ponytail":{"command":"/bin/true"},"claude-mem":{"command":"/bin/true"}}}"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("settings.json"), "{}").unwrap();
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.doctor.settings_path = dir.join("settings.json");
+    cfg.doctor.claude_json = dir.join("claude.json");
+    cfg.doctor.instructions = true;
+
+    let cli = doctor::page(&cfg).expect("doctor").to_text();
+    assert!(cli.contains("instructions\n"));
+    let compact = cli.find("autoCompactWindow").expect("compact line");
+    let instr = cli.find("instructions\n").expect("instructions section");
+    assert!(instr > compact, "`rtok doctor` prints instructions after autoCompactWindow");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+

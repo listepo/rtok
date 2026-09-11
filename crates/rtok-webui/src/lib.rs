@@ -275,6 +275,32 @@ pub mod snapshot {
             "autoCompactWindow {}\n",
             opt_str(&v["auto_compact_window"]).unwrap_or_else(|| "(unset)".into())
         ));
+        if let Some(audit) = v.get("instructions").filter(|a| !a.is_null()) {
+            out.push_str("instructions\n");
+            if let Some(rows) = audit["rows"].as_array() {
+                for r in rows {
+                    let warn = r["warn"].as_bool().unwrap_or(false);
+                    out.push_str(&format!(
+                        "  {} {} tokens {}{}\n",
+                        str_of(&r["name"]),
+                        r["tokens"].as_u64().unwrap_or(0),
+                        str_of(&r["path"]),
+                        if warn { " WARN" } else { "" }
+                    ));
+                }
+            }
+            if let Some(dups) = audit["duplicates"].as_array() {
+                for d in dups {
+                    let sent = d.get(0).map(str_of).unwrap_or_default();
+                    let names: Vec<String> = d
+                        .get(1)
+                        .and_then(|n| n.as_array())
+                        .map(|a| a.iter().map(str_of).collect())
+                        .unwrap_or_default();
+                    out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
+                }
+            }
+        }
         out
     }
 
@@ -552,6 +578,42 @@ mod tests {
         assert!(view.doctor_text.contains("hooks 3"));
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
+    }
+
+    #[test]
+    fn doctor_of_renders_instruction_audit() {
+        let v = json!({
+            "type": "snapshot",
+            "usage": {},
+            "plugins": [],
+            "calls": [],
+            "sessions": [],
+            "logs": [],
+            "doctor": {
+                "hooks_total": 0,
+                "hooks_by_event": {},
+                "mcp": [],
+                "proxy": "direct",
+                "proxy_openai": "direct",
+                "mcp_tool_search_disabled": false,
+                "bash_max_output_length": null,
+                "auto_compact_window": null,
+                "instructions": {
+                    "rows": [
+                        {"name": "CLAUDE.md", "tokens": 42, "path": "/p/CLAUDE.md", "warn": true},
+                        {"name": "AGENTS.md", "tokens": 10, "path": "/p/AGENTS.md", "warn": false}
+                    ],
+                    "duplicates": [["same line", ["a.md", "b.md"]]]
+                }
+            }
+        });
+        let view = snapshot::parse(&v);
+        let marker = "autoCompactWindow (unset)\n";
+        let start = view.doctor_text.find(marker).expect("compact line") + marker.len();
+        assert_eq!(
+            &view.doctor_text[start..],
+            "instructions\n  CLAUDE.md 42 tokens /p/CLAUDE.md WARN\n  AGENTS.md 10 tokens /p/AGENTS.md\n  duplicate `same line` in a.md, b.md\n"
+        );
     }
 
     #[test]

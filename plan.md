@@ -551,13 +551,6 @@ Complexity: 2/5
 Status: open
 Model: -
 
-**T36.15 the web Doctor page carries the instruction audit** · — · `crates/rtok-webui/src/lib.rs`
-Do: `doctor_of` stops after `autoCompactWindow`; `doctor::Report::to_text` appends the `instructions` section (per-file rows and duplicates) that the snapshot already carries, so the D23 parity claim is false for that page.
-Check: the page renders the same instruction rows in the same order as `rtok doctor`; `tests/surface_parity.rs` covers it.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
 Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
 Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).
