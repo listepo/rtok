@@ -28,3 +28,12 @@ The property that beats the table: a hard budget plus byte-stability, so cache a
 Target: Setup is additive; sessions still work.
 
 Falsified by: two consecutive turns with identical plugin inputs produce different injection bytes, or 800-token injections raise output tokens / fail tasks vs 0-token.
+## P33 pointer — tiered load stays out of inject (2026-09-11)
+
+Full survey: `src/plugins/archive/PLAN.md` § P33 survey (2026-09-11).
+
+**Inject's role if P33 ships:** SessionStart/UserPromptSubmit remain **L0-only** — fail-open status, memory **titles**, graph **one-liners**, coaching — inside the existing 800-token byte-stable cap (D5). **L1/L2 session context** (archived tool bodies, memory bodies, graph symbol bodies) load only via `expand`, `read`, `memory`, or `graph` MCP, not through injected `additionalContext`.
+
+**Why:** Injections are re-read every turn and sit in the cached prefix; stuffing L1 overviews would duplicate `archive` live-zone work and break both budget and byte-stability. OpenViking loads L1 "then L2 when needed" at retrieval time; rtok maps that to **archive proxy depth + MCP**, not inject.
+
+**Gate P33:** inject bytes on the tier fixture must match v0.1 when `archive.tiers = false`; when tiers are on, inject prefix still ≤ 800 tokens and byte-stable across replays (see archive PLAN Gate table).
