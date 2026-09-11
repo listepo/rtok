@@ -709,33 +709,37 @@ impl Config {
 /// [`Config::default()`]. Env, flags, and an explicit new key win (T36.8).
 pub(crate) fn apply_legacy_fold(cfg: &mut Config) {
     let defaults = Config::default();
-    if let Some(budget) = cfg.core.inject_budget_tokens {
-        if cfg.plugins.inject.budget_tokens == defaults.plugins.inject.budget_tokens {
-            cfg.plugins.inject.budget_tokens = budget;
-        }
+    if let Some(budget) = cfg.core.inject_budget_tokens
+        && cfg.plugins.inject.budget_tokens == defaults.plugins.inject.budget_tokens
+    {
+        cfg.plugins.inject.budget_tokens = budget;
     }
-    if let Some(dash) = cfg.dashboard.as_ref() {
-        if cfg.web.host == defaults.web.host && dash.host != defaults.web.host {
-            cfg.web.host = dash.host.clone();
-        }
-        if cfg.web.port == defaults.web.port && dash.port != defaults.web.port {
-            cfg.web.port = dash.port;
-        }
+    if let Some(dash) = cfg.dashboard.as_ref()
+        && cfg.web.host == defaults.web.host
+        && dash.host != defaults.web.host
+    {
+        cfg.web.host = dash.host.clone();
     }
-    if let Some(path) = cfg.core.log_file.as_ref() {
-        if cfg.log.path == defaults.log.path {
-            cfg.log.path = path.clone();
-        }
+    if let Some(dash) = cfg.dashboard.as_ref()
+        && cfg.web.port == defaults.web.port
+        && dash.port != defaults.web.port
+    {
+        cfg.web.port = dash.port;
     }
-    if let Some(level) = cfg.core.log_level.as_ref() {
-        if cfg.log.level == defaults.log.level {
-            cfg.log.level = level.clone();
-        }
+    if let Some(path) = cfg.core.log_file.as_ref()
+        && cfg.log.path == defaults.log.path
+    {
+        cfg.log.path = path.clone();
     }
-    if let Some(to_db) = cfg.core.log_to_db {
-        if cfg.log.to_db == defaults.log.to_db {
-            cfg.log.to_db = to_db;
-        }
+    if let Some(level) = cfg.core.log_level.as_ref()
+        && cfg.log.level == defaults.log.level
+    {
+        cfg.log.level = level.clone();
+    }
+    if let Some(to_db) = cfg.core.log_to_db
+        && cfg.log.to_db == defaults.log.to_db
+    {
+        cfg.log.to_db = to_db;
     }
 }
 

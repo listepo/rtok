@@ -75,10 +75,10 @@ impl Provider for LegacyFold {
         for (dotted, _) in env_leaf_table().values() {
             let before_v = leaf_value(&before_root, dotted);
             let after_v = leaf_value(&after_root, dotted);
-            if before_v != after_v {
-                if let Some(v) = after_v {
-                    insert_dotted(&mut out, dotted, v);
-                }
+            if before_v != after_v
+                && let Some(v) = after_v
+            {
+                insert_dotted(&mut out, dotted, v);
             }
         }
         Ok(Profile::Default.collect(out))

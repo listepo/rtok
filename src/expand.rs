@@ -48,10 +48,10 @@ pub fn slice_lines(lines: Vec<&str>, a: usize, b: usize) -> Vec<&str> {
 /// Optional `--lines` / `--grep` filtering shared with the MCP `expand` tool.
 pub fn filter_lines<'a>(text: &'a str, lines: Option<&str>, grep: Option<&str>) -> Vec<&'a str> {
     let mut out: Vec<&str> = text.lines().collect();
-    if let Some(spec) = lines {
-        if let Ok((a, b)) = parse_range(spec, out.len()) {
-            out = slice_lines(out, a, b);
-        }
+    if let Some(spec) = lines
+        && let Ok((a, b)) = parse_range(spec, out.len())
+    {
+        out = slice_lines(out, a, b);
     }
     if let Some(g) = grep {
         out.retain(|l| l.contains(g));
