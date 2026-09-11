@@ -256,7 +256,12 @@ mod tests {
         }
     }
 
-    fn exit_nonzero_tail(fail_tail_lines: u32, expect_count: usize, expect_start: &str, expect_end: &str) {
+    fn exit_nonzero_tail(
+        fail_tail_lines: u32,
+        expect_count: usize,
+        expect_start: &str,
+        expect_end: &str,
+    ) {
         let body = (0..100)
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
@@ -341,7 +346,10 @@ mod tests {
         )
         .unwrap();
         let s = Settings::load(&path, 80);
-        let body = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let body = (0..10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let rule = s.pick("echo");
         let out = apply(&s, &body, 0, &rule, "id");
         assert_eq!(out.lines().count(), 2, "{out}");
@@ -353,8 +361,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-rules-ovr-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("rules.toml");
-        fs::write(&path, "[grep]\nmax_lines = 5\nhead = 2\ntail = 2\ndedupe = false\n")
-            .unwrap();
+        fs::write(
+            &path,
+            "[grep]\nmax_lines = 5\nhead = 2\ntail = 2\ndedupe = false\n",
+        )
+        .unwrap();
         let s = Settings::load(&path, 80);
         assert_eq!(s.pick("grep").max_lines, 5);
         let _ = fs::remove_dir_all(&dir);

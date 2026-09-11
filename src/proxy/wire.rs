@@ -296,8 +296,12 @@ mod tests {
             "http://127.0.0.1/prefix/v1/messages"
         );
         assert_eq!(
-            join_upstream("http://127.0.0.1/prefix?keep=1", "/v1/messages", Some("q=1"))
-                .expect("join"),
+            join_upstream(
+                "http://127.0.0.1/prefix?keep=1",
+                "/v1/messages",
+                Some("q=1")
+            )
+            .expect("join"),
             "http://127.0.0.1/prefix/v1/messages?q=1"
         );
     }

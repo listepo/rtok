@@ -437,7 +437,6 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-
     #[test]
     fn write_leaves_no_temp_file_behind() {
         let dir = tmp("atomic");

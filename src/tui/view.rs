@@ -419,9 +419,9 @@ mod tests {
     use crate::config::Config;
     use crate::plugin::{Measurement, Runtime};
     use crate::tui::app::tests::config;
-    use rstest::rstest;
     use crossterm::event::{KeyCode, KeyModifiers};
     use ratatui::backend::TestBackend;
+    use rstest::rstest;
 
     /// What the loop would put on a real terminal, rendered into a buffer instead.
     fn screen(app: &App) -> String {
@@ -730,8 +730,14 @@ mod tests {
         let mut app = App::new(&cfg);
         app.key(KeyCode::Char('3'), KeyModifiers::NONE);
         let screen = screen(&app);
-        assert!(screen.contains("150 B"), "live passthrough sums request+response bytes");
-        assert!(screen.contains("16 tok"), "linked api_request still shows tokens");
+        assert!(
+            screen.contains("150 B"),
+            "live passthrough sums request+response bytes"
+        );
+        assert!(
+            screen.contains("16 tok"),
+            "linked api_request still shows tokens"
+        );
         crate::proxy::live::clear();
     }
     #[test]

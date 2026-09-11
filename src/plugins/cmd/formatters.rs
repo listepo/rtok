@@ -247,15 +247,23 @@ mod tests {
         let settings = rules::Settings::builtin();
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(
-            settings.pick(bin(&family_argv(&argv(&["/usr/bin/grep", "-rn", "x"])))).match_cmd,
+            settings
+                .pick(bin(&family_argv(&argv(&["/usr/bin/grep", "-rn", "x"]))))
+                .match_cmd,
             "grep"
         );
         assert_eq!(
-            settings.pick(bin(&family_argv(&argv(&["git", "commit", "-m", "fix grep"])))).match_cmd,
+            settings
+                .pick(bin(&family_argv(&argv(&[
+                    "git", "commit", "-m", "fix grep"
+                ]))))
+                .match_cmd,
             ""
         );
         assert_eq!(
-            settings.pick(bin(&family_argv(&argv(&["docker", "run", "node"])))).match_cmd,
+            settings
+                .pick(bin(&family_argv(&argv(&["docker", "run", "node"]))))
+                .match_cmd,
             ""
         );
     }

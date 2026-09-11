@@ -842,8 +842,8 @@ fn kv(k: &str, v: impl ToString) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
     use crate::plugin::{Measurement, Runtime};
+    use rstest::rstest;
 
     fn fixture() -> Runtime {
         let cx = Runtime::in_memory("dash").unwrap();
@@ -1130,11 +1130,18 @@ mod tests {
         assert_eq!(wire[1]["api"], serde_json::json!(null));
     }
 
-
     #[rstest]
     #[case("live_passthrough", None, None, None, None, None, "-")]
     #[case("live_passthrough", Some(100), None, None, Some(50), None, "150 B")]
-    #[case("api_request", Some(10), Some(1), Some(2), Some(3), Some("anthropic"), "16 tok")]
+    #[case(
+        "api_request",
+        Some(10),
+        Some(1),
+        Some(2),
+        Some(3),
+        Some("anthropic"),
+        "16 tok"
+    )]
     #[case("hook", None, None, None, None, None, "-")]
     fn call_size_label_distinguishes_bytes_from_tokens(
         #[case] kind: &str,

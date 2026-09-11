@@ -199,7 +199,12 @@ pub(crate) mod tests {
         fs::write(&p, &blob).unwrap();
         let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
         assert!(out.contains("archived"), "{out}");
-        assert!(out.chars().count() <= max, "cap includes marker: {}/{}", out.chars().count(), max);
+        assert!(
+            out.chars().count() <= max,
+            "cap includes marker: {}/{}",
+            out.chars().count(),
+            max
+        );
         assert!(out.chars().count() < blob.len(), "capped");
         let _ = fs::remove_dir_all(dir);
     }

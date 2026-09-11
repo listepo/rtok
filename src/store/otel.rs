@@ -95,7 +95,6 @@ struct Ts {
     ts: i64,
 }
 
-
 #[derive(QueryableByName)]
 struct PendingSession {
     #[diesel(sql_type = Text)]

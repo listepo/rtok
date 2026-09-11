@@ -430,7 +430,8 @@ pub fn run() -> Result<()> {
             let user = Config::user_path(&home, config_file.as_deref());
             match action {
                 ConfigCmd::Init { force, dry_run } => {
-                    let (path, diff) = Config::init_maybe(&home, config_file.as_deref(), force, dry_run)?;
+                    let (path, diff) =
+                        Config::init_maybe(&home, config_file.as_deref(), force, dry_run)?;
                     println!("{}", path.display());
                     print_diff(&diff);
                 }
@@ -463,7 +464,8 @@ pub fn run() -> Result<()> {
                     value,
                     dry_run,
                 } => {
-                    let (_, diff) = validate::set_with(&home, config_file.as_deref(), &key, &value, dry_run)?;
+                    let (_, diff) =
+                        validate::set_with(&home, config_file.as_deref(), &key, &value, dry_run)?;
                     if dry_run {
                         // Nothing was written, so the loader would still report the old value.
                         print_diff(&diff);

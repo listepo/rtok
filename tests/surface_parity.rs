@@ -9,12 +9,12 @@
 //! without its page and no new command can land unclassified.
 
 use clap::{Command, CommandFactory};
+use rstest::rstest;
 use rtok::cli::Cli;
 use rtok::config::Config;
-use rtok::web::frame;
 use rtok::doctor;
+use rtok::web::frame;
 use rtok::web::model;
-use rstest::rstest;
 
 fn config() -> Config {
     let dir = std::env::temp_dir().join(format!("rtok-parity-{}", std::process::id()));
@@ -288,10 +288,7 @@ fn web_doctor_instruction_audit_matches_cli_order() {
         env!("CARGO_MANIFEST_DIR"),
         "/crates/rtok-webui/src/lib.rs"
     ));
-    let doctor_rs = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/doctor.rs"
-    ));
+    let doctor_rs = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/doctor.rs"));
     let wasm_tail = tail_after(
         lib.split("fn doctor_of").nth(1).expect("doctor_of"),
         "autoCompactWindow",
@@ -338,7 +335,9 @@ fn web_doctor_instruction_audit_matches_cli_order() {
     assert!(cli.contains("instructions\n"));
     let compact = cli.find("autoCompactWindow").expect("compact line");
     let instr = cli.find("instructions\n").expect("instructions section");
-    assert!(instr > compact, "`rtok doctor` prints instructions after autoCompactWindow");
+    assert!(
+        instr > compact,
+        "`rtok doctor` prints instructions after autoCompactWindow"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
-

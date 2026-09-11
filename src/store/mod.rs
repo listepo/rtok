@@ -505,15 +505,13 @@ impl Store {
         Ok(())
     }
 
-
     /// Live-zone pointer text for one archive id (T36.2: attribute expand rows to toon vs archive).
     pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;
-        let rows: Vec<PointerRow> = sql_query(
-            "SELECT pointer FROM archive_decisions WHERE archive_id = ? LIMIT 1",
-        )
-        .bind::<Text, _>(archive_id)
-        .load(&mut *conn)?;
+        let rows: Vec<PointerRow> =
+            sql_query("SELECT pointer FROM archive_decisions WHERE archive_id = ? LIMIT 1")
+                .bind::<Text, _>(archive_id)
+                .load(&mut *conn)?;
         Ok(rows.into_iter().next().map(|r| r.pointer))
     }
 
@@ -1131,49 +1129,56 @@ impl Store {
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
         let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
-        let paths = conn.transaction::<_, diesel::result::Error, _>(|c| {
-            for sql in [
-                format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
-                format!("DELETE FROM call_io WHERE call_id IN {old}"),
-                format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
-                format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
-            ] {
-                sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
-            }
-            #[derive(QueryableByName)]
-            struct ArchPath {
-                #[diesel(sql_type = Text)]
-                id: String,
-                #[diesel(sql_type = Text)]
-                path: String,
-            }
-            let orphans: Vec<ArchPath> = sql_query(
-                "SELECT a.id, a.path FROM archive a
+        let paths = conn
+            .transaction::<_, diesel::result::Error, _>(|c| {
+                for sql in [
+                    format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
+                    format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
+                    format!("DELETE FROM call_io WHERE call_id IN {old}"),
+                    format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
+                    format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
+                    format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
+                ] {
+                    sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
+                }
+                #[derive(QueryableByName)]
+                struct ArchPath {
+                    #[diesel(sql_type = Text)]
+                    id: String,
+                    #[diesel(sql_type = Text)]
+                    path: String,
+                }
+                let orphans: Vec<ArchPath> = sql_query(
+                    "SELECT a.id, a.path FROM archive a
                  WHERE NOT EXISTS (
                    SELECT 1 FROM call_io c
                    WHERE c.request_archive = a.id OR c.response_archive = a.id
                  )",
-            )
-            .load(c)?;
-            for arch in &orphans {
-                sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
+                )
+                .load(c)?;
+                for arch in &orphans {
+                    sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
+                        .bind::<Text, _>(&arch.id)
+                        .execute(c)?;
+                    sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
+                        .bind::<Text, _>(&arch.id)
+                        .execute(c)?;
+                    sql_query("DELETE FROM archive WHERE id = ?1")
+                        .bind::<Text, _>(&arch.id)
+                        .execute(c)?;
+                }
+                let n = sql_query("DELETE FROM calls WHERE ts < ?1")
+                    .bind::<BigInt, _>(cutoff)
                     .execute(c)?;
-                sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-                sql_query("DELETE FROM archive WHERE id = ?1")
-                    .bind::<Text, _>(&arch.id)
-                    .execute(c)?;
-            }
-            let n = sql_query("DELETE FROM calls WHERE ts < ?1")
-                .bind::<BigInt, _>(cutoff)
-                .execute(c)?;
-            Ok((n, orphans.into_iter().map(|a| PathBuf::from(a.path)).collect::<Vec<_>>()))
-        })
-        .map_err(anyhow::Error::from)?;
+                Ok((
+                    n,
+                    orphans
+                        .into_iter()
+                        .map(|a| PathBuf::from(a.path))
+                        .collect::<Vec<_>>(),
+                ))
+            })
+            .map_err(anyhow::Error::from)?;
         for path in paths.1 {
             let _ = std::fs::remove_file(path);
         }
@@ -1241,13 +1246,11 @@ pub struct MeasRow {
     pub ref_id: Option<String>,
 }
 
-
 #[derive(Debug, QueryableByName)]
 struct PointerRow {
     #[diesel(sql_type = Text)]
     pointer: String,
 }
-
 
 /// T5.3 archive decision: the frozen pointer text for one `tool_use_id`. Same story as
 /// [`NoteHitRow`] — the type plugins see is the contract's.
@@ -2050,7 +2053,6 @@ mod tests {
         );
     }
 
-
     #[rstest]
     fn run_retention_purges_old_call_and_archive() {
         let dir = std::env::temp_dir().join(format!("rtok-retain-{}", std::process::id()));
@@ -2061,13 +2063,30 @@ mod tests {
         cfg.core.archive_dir = dir.join("archive");
         cfg.core.retain_calls_days = 1;
         let store = Store::open(&cfg.core.db_path).unwrap();
-        store.upsert_session("sess", Some(1), None, None, Some("proxy")).unwrap();
+        store
+            .upsert_session("sess", Some(1), None, None, Some("proxy"))
+            .unwrap();
         let call = store
-            .insert_call("sess", "proxy", "api_request", Some(1), None, None, None, None)
+            .insert_call(
+                "sess",
+                "proxy",
+                "api_request",
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         let body = vec![b'x'; 70 * 1024];
         store
-            .insert_call_io(call, Some(&body), None, 64 * 1024, Some(&cfg.core.archive_dir))
+            .insert_call_io(
+                call,
+                Some(&body),
+                None,
+                64 * 1024,
+                Some(&cfg.core.archive_dir),
+            )
             .unwrap();
         store.set_call_ts(call, 0).unwrap();
         let arch_path = cfg.core.archive_dir.join(hex_sha256(&body));
@@ -2086,9 +2105,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open_in_memory().unwrap();
-        store.upsert_session("sess-a", Some(1), None, None, None).unwrap();
+        store
+            .upsert_session("sess-a", Some(1), None, None, None)
+            .unwrap();
         let call_id = store
-            .insert_call("sess-a", "proxy", "api_request", Some(1), None, None, None, None)
+            .insert_call(
+                "sess-a",
+                "proxy",
+                "api_request",
+                Some(1),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         let body = vec![b'x'; 70 * 1024];
         store
@@ -2110,7 +2140,9 @@ mod tests {
     #[rstest]
     fn inline_sha256_matches_stored_text() {
         let store = Store::open_in_memory().unwrap();
-        store.upsert_session("s", Some(1), None, None, None).unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, None)
+            .unwrap();
         let call_id = store
             .insert_call("s", "mcp", "mcp_call", Some(1), None, None, None, None)
             .unwrap();
@@ -2126,10 +2158,11 @@ mod tests {
         }
         {
             let mut conn = store.lock().unwrap();
-            let row: Io = sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
-                .bind::<Integer, _>(call_id)
-                .get_result(&mut *conn)
-                .unwrap();
+            let row: Io =
+                sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
+                    .bind::<Integer, _>(call_id)
+                    .get_result(&mut *conn)
+                    .unwrap();
             let text = row.request_json.unwrap();
             assert_eq!(text, "plain");
             assert_eq!(row.request_sha256.unwrap(), hex_sha256(text.as_bytes()));
@@ -2143,10 +2176,11 @@ mod tests {
             .insert_call_io(call_id2, Some(&bad), None, 1 << 20, None)
             .unwrap();
         let mut conn = store.lock().unwrap();
-        let row2: Io = sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
-            .bind::<Integer, _>(call_id2)
-            .get_result(&mut *conn)
-            .unwrap();
+        let row2: Io =
+            sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
+                .bind::<Integer, _>(call_id2)
+                .get_result(&mut *conn)
+                .unwrap();
         let text2 = row2.request_json.unwrap();
         assert_eq!(text2, String::from_utf8_lossy(&bad));
         assert_eq!(row2.request_sha256.unwrap(), hex_sha256(text2.as_bytes()));
@@ -2171,5 +2205,4 @@ mod tests {
             "expected est_before error, got {err}"
         );
     }
-
 }

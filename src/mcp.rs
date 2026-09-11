@@ -339,8 +339,8 @@ mod tests {
     use super::*;
     use crate::store::Store;
     use crate::testutil::config as tmp;
-    use rstest::rstest;
     use crate::tokens::Class;
+    use rstest::rstest;
     use std::fs;
 
     #[test]
@@ -368,7 +368,12 @@ mod tests {
         let args = serde_json::json!({"id": id});
         let out = expand_text(&cx, &args);
         assert!(out.contains("expand("), "{out}");
-        assert!(out.chars().count() <= max_chars as usize, "{}/{}", out.chars().count(), max_chars);
+        assert!(
+            out.chars().count() <= max_chars as usize,
+            "{}/{}",
+            out.chars().count(),
+            max_chars
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -411,18 +416,30 @@ mod tests {
         cfg.core.retain_calls_days = 1;
         {
             let store = Store::open(&cfg.core.db_path).unwrap();
-            store.upsert_session("sess", Some(1), None, None, Some("mcp")).unwrap();
+            store
+                .upsert_session("sess", Some(1), None, None, Some("mcp"))
+                .unwrap();
             let call = store
                 .insert_call("sess", "mcp", "mcp_call", Some(1), None, None, None, None)
                 .unwrap();
             let body = vec![b'z'; 70 * 1024];
             store
-                .insert_call_io(call, Some(&body), None, 64 * 1024, Some(&cfg.core.archive_dir))
+                .insert_call_io(
+                    call,
+                    Some(&body),
+                    None,
+                    64 * 1024,
+                    Some(&cfg.core.archive_dir),
+                )
                 .unwrap();
             store.set_call_ts(call, 0).unwrap();
         }
         let server = Server::new(&cfg).unwrap();
-        server.cx.store.run_retention(cfg.core.retain_calls_days).unwrap();
+        server
+            .cx
+            .store
+            .run_retention(cfg.core.retain_calls_days)
+            .unwrap();
         assert_eq!(server.cx.store.count_calls().unwrap(), 0);
         let _ = fs::remove_dir_all(dir);
     }

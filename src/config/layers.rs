@@ -457,9 +457,7 @@ const SECRET_KEYS: &[&str] = &["otel.headers"];
 fn legacy_source_for(fig: &Figment, key: &str) -> Option<String> {
     if key.starts_with("web.") {
         let legacy = key.replacen("web.", "dashboard.", 1);
-        return fig
-            .find_metadata(&legacy)
-            .map(|m| m.name.to_string());
+        return fig.find_metadata(&legacy).map(|m| m.name.to_string());
     }
     let legacy = match key {
         "log.path" => "core.log_file",
@@ -819,11 +817,7 @@ mod tests {
         #[case] want_source: &str,
     ) {
         let home = tmp("t36.8-log-level");
-        std::fs::write(
-            Config::path_for(&home),
-            "[core]\nlog_level = \"debug\"\n",
-        )
-        .unwrap();
+        std::fs::write(Config::path_for(&home), "[core]\nlog_level = \"debug\"\n").unwrap();
         let figment = fig(&home, env, None);
         let mut cfg: Config = figment.extract().unwrap();
         cfg.finish(&home);
@@ -834,5 +828,4 @@ mod tests {
         assert_eq!(level.2, want_source);
         let _ = std::fs::remove_dir_all(&home);
     }
-
 }

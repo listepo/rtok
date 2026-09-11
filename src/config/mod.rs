@@ -611,20 +611,28 @@ impl Config {
                 "rtok: core.inject_budget_tokens is now plugins.inject.budget_tokens (using {budget})"
             );
         }
-        if let Some(web) = self.dashboard.take() && self.web == web {
+        if let Some(web) = self.dashboard.take()
+            && self.web == web
+        {
             eprintln!("rtok: [dashboard] is now [web] (using it)");
         }
         // T24.5 / D26: `[core] log_*` → `[log]`. Taken once so they are not re-read.
-        if let Some(path) = self.core.log_file.take() && self.log.path == path {
+        if let Some(path) = self.core.log_file.take()
+            && self.log.path == path
+        {
             eprintln!(
                 "rtok: core.log_file is now log.path (using {})",
                 path.display()
             );
         }
-        if let Some(level) = self.core.log_level.take() && self.log.level == level {
+        if let Some(level) = self.core.log_level.take()
+            && self.log.level == level
+        {
             eprintln!("rtok: core.log_level is now log.level (using {level})");
         }
-        if let Some(to_db) = self.core.log_to_db.take() && self.log.to_db == to_db {
+        if let Some(to_db) = self.core.log_to_db.take()
+            && self.log.to_db == to_db
+        {
             eprintln!("rtok: core.log_to_db is now log.to_db (using {to_db})");
         }
         self.home = home.to_path_buf();

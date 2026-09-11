@@ -38,7 +38,11 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
 
 /// 1-based inclusive line range over already-split lines.
 pub fn slice_lines(lines: Vec<&str>, a: usize, b: usize) -> Vec<&str> {
-    lines.into_iter().take(b).skip(a.saturating_sub(1)).collect()
+    lines
+        .into_iter()
+        .take(b)
+        .skip(a.saturating_sub(1))
+        .collect()
 }
 
 /// Optional `--lines` / `--grep` filtering shared with the MCP `expand` tool.
@@ -192,7 +196,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let out = render_lines(&text, "arc123", None, None, 100);
-        assert_eq!(out.lines().filter(|l| !l.contains("lines omitted")).count(), 100);
+        assert_eq!(
+            out.lines().filter(|l| !l.contains("lines omitted")).count(),
+            100
+        );
         assert!(out.contains("50 lines omitted (expand arc123)"), "{out}");
     }
 }

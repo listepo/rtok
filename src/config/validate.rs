@@ -370,8 +370,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    use rstest::rstest;
     use super::super::layers;
+    use rstest::rstest;
 
     /// T36.7: `config path` / `set` / `get` / `validate` all resolve `--config`.
     #[rstest]

@@ -648,11 +648,7 @@ mod tests {
             while start > 0 && slice.as_bytes()[start - 1].is_ascii_digit() {
                 start -= 1;
             }
-            ids.push(
-                slice[start..end]
-                    .parse::<u32>()
-                    .expect("page tree kid id"),
-            );
+            ids.push(slice[start..end].parse::<u32>().expect("page tree kid id"));
             at = end + 4;
         }
         ids
@@ -763,7 +759,7 @@ mod tests {
     #[rstest]
     fn section_page_numbers_match_heading_pages() {
         let pdf = render(&fat_doc(40, 120));
-                let pages = positions(&pdf, "/Type/Page").len() - positions(&pdf, "/Type/Pages").len();
+        let pages = positions(&pdf, "/Type/Page").len() - positions(&pdf, "/Type/Pages").len();
         assert!(pages >= 3, "need a multi-page report, got {pages}");
         for title in [
             "Window",
