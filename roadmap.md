@@ -405,3 +405,8 @@ Not v0.1 work. Same plugins, extra backends. Promoted 2026-09-10 from `ideas.md`
 | ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |
 | core | WASM host for out-of-tree plugins (`from_plugins` + `.wasm` example). | I-26 → **P32** |
 
+Design notes: `src/plugins/compress/PLAN.md` (P28, T28.0). Each one carries the `Target:` its gate
+must beat, and that line is the gate text below.
+
+**Gate P28 (LLM compression).** `rtok bench` cost per passed task against the v0.1 lossless path must not rise, and `expand` still recovers a non-regenerable original.
+

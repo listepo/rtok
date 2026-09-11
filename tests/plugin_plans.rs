@@ -35,6 +35,10 @@ fn sdk_plan() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-plugin-sdk/PLAN.md")
 }
 
+/// Directories under `src/plugins/` that carry a design note without being catalogue
+/// plugins yet: the v0.2+ phases (D15) survey them here before `plan.md` promotes them.
+const SURVEYS: &[&str] = &["compress"];
+
 fn is_separator(line: &str) -> bool {
     let t = line.trim();
     t.starts_with('|') && t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
@@ -151,11 +155,26 @@ fn plugin_plans_missing_falsified_fails() {
 }
 
 #[test]
+fn every_plugin_has_a_plan() {
+    // Derived from the catalogue rather than a fixed number, so a new plugin (or a v0.2
+    // survey) fails this by name instead of by an off-by-one in a literal.
+    let mut want: Vec<String> = rtok::config::CATALOGUE
+        .iter()
+        .map(|(id, _)| (*id).to_string())
+        .chain(SURVEYS.iter().map(|s| (*s).to_string()))
+        .collect();
+    want.sort();
+    let have: Vec<String> = plan_files()
+        .iter()
+        .filter_map(|p| p.parent()?.file_name()?.to_str().map(str::to_string))
+        .collect();
+    assert_eq!(have, want, "src/plugins/*/PLAN.md set drifted");
+}
+
+#[test]
 fn every_target_matches_a_roadmap_gate() {
     let roadmap = include_str!("../roadmap.md");
-    let files = plan_files();
-    assert_eq!(files.len(), 10, "want 10 PLAN.md files");
-    for p in &files {
+    for p in &plan_files() {
         let body = fs::read_to_string(p).unwrap();
         let target = body
             .lines()

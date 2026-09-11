@@ -304,5 +304,6 @@ unchanged**.
 
 **T32.2 Check:** steps 3–4 automated in integration test; step 5 is the existing suite.
 
-Falsified by: if bridging `Host::record` requires exposing `Store` methods to the guest linker, the
-ABI has leaked the pre-SDK habit — stop and narrow imports, or admit option A from T23 was right.
+Falsified by (T32 WASM host): if bridging `Host::record` requires exposing `Store` methods to the
+guest linker, the ABI has leaked the pre-SDK habit — stop and narrow imports, or admit option A from
+T23 was right.

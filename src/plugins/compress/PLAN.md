@@ -35,6 +35,8 @@ This beats the table because it combines claude-mem’s **semantic** density wit
 - **OpenViking L0/L1/L2 session compression** — AGPL stack + LLM tiers; deferred (`memory/PLAN.md`).
 - **In-context LLM rewrite of the cached prefix** (system/tools/early messages) — breaks prompt cache (D, T14.5).
 
-**Gate P28 (number to beat):** **`rtok bench` cost per passed task on the v0.1 lossless configuration** (P9 task set, 6 tasks × 3 runs, proxy `usage` rows required — same honest metric as `measure/PLAN.md`). The LLM lane may ship only if cost per passed task **≤ that baseline** and pass rate does not fall. Diagnostic reference (not the gate): v0.1 lossless archive replay **−28.7 % CTT** (`research.md` §2); LLM mode must beat **net bill**, not CTT alone.
+Target: `rtok bench` cost per passed task against the v0.1 lossless path must not rise, and `expand` still recovers a non-regenerable original.
 
-**Falsified by:** (1) **cost per passed task rises** vs the v0.1 lossless bench baseline after compressor tokens are included, or pass rate drops; (2) **`expand` cannot recover a non-regenerable original** (archived tool/read output, diff, or file slice) when the LLM lane rewrote its in-context form; (3) any claimed saving lacks a **`Measurement` row** (D1 — that saving does not exist).
+The number to beat is that same configuration on the **P9 task set** (6 tasks × 3 runs, proxy `usage` rows required — same honest metric as `measure/PLAN.md`). The LLM lane may ship only if cost per passed task **≤ that baseline** and pass rate does not fall. Diagnostic reference (not the gate): v0.1 lossless archive replay **−28.7 % CTT** (`research.md` §2); LLM mode must beat **net bill**, not CTT alone.
+
+Falsified by: (1) **cost per passed task rises** vs the v0.1 lossless bench baseline after compressor tokens are included, or pass rate drops; (2) **`expand` cannot recover a non-regenerable original** (archived tool/read output, diff, or file slice) when the LLM lane rewrote its in-context form; (3) any claimed saving lacks a **`Measurement` row** (D1 — that saving does not exist).
