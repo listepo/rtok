@@ -1131,6 +1131,36 @@ impl Store {
         let mut conn = self.lock()?;
         let paths = conn
             .transaction::<_, diesel::result::Error, _>(|c| {
+                #[derive(QueryableByName)]
+                struct ArchPath {
+                    #[diesel(sql_type = Text)]
+                    id: String,
+                    #[diesel(sql_type = Text)]
+                    path: String,
+                }
+                let doomed: Vec<ArchPath> = sql_query(format!(
+                    "SELECT DISTINCT a.id, a.path FROM archive a
+                     WHERE a.id IN (
+                       SELECT request_archive FROM call_io
+                       WHERE call_id IN {old} AND request_archive IS NOT NULL
+                       UNION
+                       SELECT response_archive FROM call_io
+                       WHERE call_id IN {old} AND response_archive IS NOT NULL
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM call_io c
+                       WHERE c.call_id NOT IN {old}
+                       AND (c.request_archive = a.id OR c.response_archive = a.id)
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM archive_decisions d WHERE d.archive_id = a.id
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
+                     )"
+                ))
+                .bind::<BigInt, _>(cutoff)
+                .load(c)?;
                 for sql in [
                     format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
                     format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
@@ -1141,22 +1171,7 @@ impl Store {
                 ] {
                     sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
                 }
-                #[derive(QueryableByName)]
-                struct ArchPath {
-                    #[diesel(sql_type = Text)]
-                    id: String,
-                    #[diesel(sql_type = Text)]
-                    path: String,
-                }
-                let orphans: Vec<ArchPath> = sql_query(
-                    "SELECT a.id, a.path FROM archive a
-                 WHERE NOT EXISTS (
-                   SELECT 1 FROM call_io c
-                   WHERE c.request_archive = a.id OR c.response_archive = a.id
-                 )",
-                )
-                .load(c)?;
-                for arch in &orphans {
+                for arch in &doomed {
                     sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
                         .bind::<Text, _>(&arch.id)
                         .execute(c)?;
@@ -1172,7 +1187,7 @@ impl Store {
                     .execute(c)?;
                 Ok((
                     n,
-                    orphans
+                    doomed
                         .into_iter()
                         .map(|a| PathBuf::from(a.path))
                         .collect::<Vec<_>>(),
@@ -2096,6 +2111,49 @@ mod tests {
         assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 1);
         assert_eq!(store.count_calls().unwrap(), 0);
         assert!(!arch_path.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[rstest]
+    fn retention_keeps_plugin_archives_without_call_io() {
+        let dir = std::env::temp_dir().join(format!("rtok-retain-plugin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg.core.retain_calls_days = 1;
+        let store = Store::open(&cfg.core.db_path).unwrap();
+        store
+            .upsert_session("sess", Some(1), None, None, Some("mcp"))
+            .unwrap();
+        let body_decision = b"archive with decision";
+        let arch_id = store
+            .put_archive("sess", body_decision, &cfg.core.archive_dir)
+            .unwrap();
+        store
+            .put_archive_decision("tu-1", &arch_id, "sess", "pointer")
+            .unwrap();
+        store.mark_expanded(&arch_id).unwrap();
+        let body_read = b"read/cmd style archive";
+        let read_arch_id = store
+            .put_archive("sess", body_read, &cfg.core.archive_dir)
+            .unwrap();
+
+        assert_eq!(store.run_retention(cfg.core.retain_calls_days).unwrap(), 0);
+        assert_eq!(store.archive_decision_counts().unwrap(), (1, 1));
+        assert_eq!(
+            store
+                .get_archive(&arch_id, Some(&cfg.core.archive_dir))
+                .unwrap(),
+            Some(body_decision.to_vec())
+        );
+        assert_eq!(
+            store
+                .get_archive(&read_arch_id, Some(&cfg.core.archive_dir))
+                .unwrap(),
+            Some(body_read.to_vec())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
