@@ -2,11 +2,13 @@
 #![allow(unexpected_cfgs)]
 use notify::{RecursiveMode, Watcher, event::Event};
 use rtok_plugin_sdk::Ctx;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 const QUIET: Duration = Duration::from_millis(250);
+const PENDING_CAP: usize = 1024;
 
 pub fn run(cx: &Ctx, root: &Path, stop: &AtomicBool) {
     run_with(cx, root, stop, &AtomicUsize::new(0), paths);
@@ -91,7 +93,8 @@ async fn watchman_loop(
         .await
         .map_err(|e| e.to_string())?;
     let mut last = Instant::now();
-    let mut dirty = false;
+    let mut pending = HashSet::new();
+    let mut rescan = false;
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
@@ -103,10 +106,15 @@ async fn watchman_loop(
                     Ok(SubscriptionData::Canceled) => break,
                     Ok(SubscriptionData::FilesChanged(payload)) => {
                         for f in payload.files.unwrap_or_default() {
-                            if relevant(&root.join(f.name.as_path())) {
-                                dirty = true;
+                            let p = root.join(f.name.as_path());
+                            if relevant(&p) {
+                                pending.insert(p);
                                 last = Instant::now();
                             }
+                        }
+                        if pending.len() > PENDING_CAP {
+                            rescan = true;
+                            pending.clear();
                         }
                     }
                     Ok(_) => {}
@@ -114,7 +122,7 @@ async fn watchman_loop(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {}
         }
-        settle(cx, root, runs, &mut last, &mut dirty);
+        settle(cx, root, runs, &mut last, &mut pending, &mut rescan);
     }
     Ok(())
 }
@@ -181,22 +189,37 @@ fn pump<F>(
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
     let mut last = Instant::now();
-    let mut dirty = false;
+    let mut pending = HashSet::new();
+    let mut rescan = false;
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
         }
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(ev) => {
-                if events(ev).into_iter().any(|p| relevant(&p)) {
-                    dirty = true;
+                if ev.as_ref().ok().is_some_and(|e| e.need_rescan()) {
+                    rescan = true;
+                    pending.clear();
+                }
+                let mut touched = false;
+                for p in events(ev) {
+                    if relevant(&p) {
+                        pending.insert(p);
+                        touched = true;
+                    }
+                }
+                if touched {
                     last = Instant::now();
+                }
+                if pending.len() > PENDING_CAP {
+                    rescan = true;
+                    pending.clear();
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(_) => break,
         }
-        settle(cx, root, runs, &mut last, &mut dirty);
+        settle(cx, root, runs, &mut last, &mut pending, &mut rescan);
     }
 }
 
@@ -204,13 +227,26 @@ fn pump<F>(
 // only those; walk everything only on a rescan or overflow event. Why: one changed file
 // re-walks and stats the whole root — 50 ms for this 127-file repo in debug (2026-09-10),
 // growing with the tree, against the P8d promise of an edit visible within 1 s.
-fn settle(cx: &Ctx, root: &Path, runs: &AtomicUsize, last: &mut Instant, dirty: &mut bool) {
-    if *dirty && last.elapsed() >= QUIET {
-        let _ = super::index::run(cx, root, false);
-        runs.fetch_add(1, Ordering::Relaxed);
-        *last = Instant::now();
-        *dirty = false;
+fn settle(
+    cx: &Ctx,
+    root: &Path,
+    runs: &AtomicUsize,
+    last: &mut Instant,
+    pending: &mut HashSet<PathBuf>,
+    rescan: &mut bool,
+) {
+    if last.elapsed() < QUIET || (!*rescan && pending.is_empty()) {
+        return;
     }
+    if *rescan {
+        let _ = super::index::run(cx, root, false);
+    } else {
+        let _ = super::index::run_changed(cx, root, pending);
+    }
+    runs.fetch_add(1, Ordering::Relaxed);
+    *last = Instant::now();
+    pending.clear();
+    *rescan = false;
 }
 
 fn relevant(p: &Path) -> bool {
@@ -394,7 +430,7 @@ mod tests {
         runs.load(Ordering::Relaxed)
     }
 
-    /// `settle` alone: inside QUIET nothing runs, after it exactly one index run clears `dirty`,
+    /// `settle` alone: inside QUIET nothing runs, after it exactly one index run clears `pending`,
     /// a clean state never runs. No thread and no sleep — time passes by moving `last` back —
     /// so the cost is one one-file index.
     #[test]
@@ -404,19 +440,23 @@ mod tests {
         let cx = Ctx::new(&rt);
         let key = super::super::index::canon(&dir);
         let runs = AtomicUsize::new(0);
-        let (mut last, mut dirty) = (Instant::now(), true);
-        settle(&cx, &dir, &runs, &mut last, &mut dirty);
+        let (mut last, mut pending, mut rescan) =
+            (Instant::now(), HashSet::from([dir.join("a.rs")]), false);
+        settle(&cx, &dir, &runs, &mut last, &mut pending, &mut rescan);
         assert_eq!(
-            (runs.load(Ordering::Relaxed), dirty),
-            (0, true),
+            (runs.load(Ordering::Relaxed), pending.is_empty(), rescan),
+            (0, false, false),
             "ran inside QUIET"
         );
         last = Instant::now() - QUIET;
-        settle(&cx, &dir, &runs, &mut last, &mut dirty);
-        assert_eq!((runs.load(Ordering::Relaxed), dirty), (1, false));
+        settle(&cx, &dir, &runs, &mut last, &mut pending, &mut rescan);
+        assert_eq!(
+            (runs.load(Ordering::Relaxed), pending.is_empty(), rescan),
+            (1, true, false)
+        );
         assert_eq!(cx.symbol_defs(&key, "settled").unwrap().len(), 1);
         last = Instant::now() - QUIET;
-        settle(&cx, &dir, &runs, &mut last, &mut dirty);
+        settle(&cx, &dir, &runs, &mut last, &mut pending, &mut rescan);
         assert_eq!(runs.load(Ordering::Relaxed), 1, "a clean state ran again");
         let _ = fs::remove_dir_all(dir);
     }
@@ -436,7 +476,7 @@ mod tests {
     }
 
     /// An edit and a rename each re-index once; the rename drops the old path's rows (the
-    /// walk's `delete_symbols_missing`). Two quiet windows, well under a second.
+    /// `mark_symbols_stale` on the old path). Two quiet windows, well under a second.
     #[test]
     fn edit_and_rename_events_reindex_once_each() {
         let (rt, dir) = mk("watch-pump");

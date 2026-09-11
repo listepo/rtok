@@ -1,7 +1,7 @@
 # rtok — completed tasks
 
 
-## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.2
+## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.4
 
 **T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`
 Do: `outline::config` compiled the language's tags query on every `tags` call. That was 19 ms of a 26.5 ms call on `graph/index.rs`, paid by each file of an index run and by each outline.
@@ -16,6 +16,36 @@ Deviation: the release bench is 2.0× faster, short of the Check's "≥ 3×". Th
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Opus 5
 Found on push, 2026-09-11: ubuntu CI failed `map_src_main_lists_fn_main` with ENOENT, and macOS passed. `symlink_escape_is_err` moved the process cwd with `set_current_dir`, and the map test's relative `src/main.rs` resolved against the moved cwd. The race predates this task; the new timings exposed it. The test now calls `resolve` with the `cwd` it builds, which is the guard `read` runs against the process cwd, and no test moves the cwd any more.
+
+**T35.4 the watcher indexes what changed** · T8.16 · `src/plugins/graph/watch.rs`, `src/plugins/graph/index.rs`
+Do: `pump` keeps the relevant event paths; `settle` indexes only those (the stat and sha gates per path; rows dropped for a vanished path). A full walk only on a rescan or overflow event.
+Check: `pump` and FSEvents watch tests green (`graph::watch` 9/9). New `run_changed_indexes_only_touched_file` (20 files, `read == 1`). Vanished paths use `mark_symbols_stale`, never `delete_symbols_missing` on a partial keep set. Overflow (>1024) and `need_rescan` still full-walk. One edit on the 3 000-file fixture via `run_changed` was `read=1` in 1.66 ms (2026-09-11, `p8c_one_edit_reads_one_file_under_10ms`; `tests/graph_bench.rs`).
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+## P28 — LLM compression (design; open) — T28.0
+
+**T28.0 design note: LLM compression vs lossless** · — · `src/plugins/compress/PLAN.md` or `src/plugins/memory/PLAN.md` (extend), `docs/` as needed
+Do: D15-style survey of LLMLingua-2, claude-mem extraction, and at least one other compressor. Name the mechanism rtok will use, what stays lossless, what is default-off, and the falsifier (cost per passed task rises, or expand cannot recover a non-regenerable original). No implementation.
+Check: PLAN (`src/plugins/compress/PLAN.md`) names LLMLingua-2, claude-mem, Selective Context (and headroom); mechanism archive-first semantic shrink; Gate P28 = cost per passed task ≤ v0.1 lossless bench; falsifier cost-up or expand fails.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+## P31 — Semantic response cache (design; open) — T31.0
+
+**T31.0 design/survey: semantic cache** · — · `src/plugins/proxy/PLAN.md` or `src/proxy/` design note
+Do: survey bifrost and at least two other semantic-cache approaches. Define similarity threshold, opt-in shape, and how false hits are measured on the P9 task set. No implementation.
+Check: PLAN (`src/plugins/proxy/PLAN.md`) names ≥ 3 alternatives (bifrost, GPTCache, RedisVL); rejected wrapping; false-hit protocol = 0 false-hit pairs on frozen P9 `call_io` at cosine ≥ 0.99.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+## P33 — Tiered session context (design; open) — T33.0
+
+**T33.0 design/survey: L0/L1/L2 tiers + AGPL** · — · `src/plugins/archive/PLAN.md` and/or `inject` PLAN
+Do: survey OpenViking L0/L1/L2 and at least two other tiered-context schemes. Call out AGPL (or other) license implications in the PLAN before any code. Define how tiers compose with v0.1 `archive`+`inject` and what "measured against" means for Gate P33. No implementation.
+Check: OpenViking, MemGPT/Letta, Claude Code compaction; AGPL-3.0 call-out (do not vendor); Gate P33 measurement vs v0.1 archive+inject CTT.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
 
 ## P34 — Hardening pass (2026-09-10) — T34.1–T34.9
 

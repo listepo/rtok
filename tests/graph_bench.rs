@@ -102,6 +102,47 @@ fn p8c_numbers() {
     let _ = std::fs::remove_dir_all(&fan);
 }
 
+/// T35.4 Check: one edited file in a 3 000-file tree reads one file in < 10 ms (release).
+#[ignore]
+#[test]
+fn p8c_one_edit_reads_one_file_under_10ms() {
+    if cfg!(debug_assertions) {
+        eprintln!("skip: run `cargo test --release --test graph_bench -- --ignored`");
+        return;
+    }
+    use std::time::Duration;
+    let (cx, repo) = home("p8c-changed");
+    for i in 0..3000u32 {
+        std::fs::write(
+            repo.join(format!("f{i}.rs")),
+            format!(
+                "fn f{i}() {{}}
+"
+            ),
+        )
+        .unwrap();
+    }
+    index::run(&Ctx::new(&cx), &repo, false).unwrap();
+    std::fs::write(
+        repo.join("f0.rs"),
+        "fn f0() {}
+fn touched() {}
+",
+    )
+    .unwrap();
+    let changed = HashSet::from([repo.join("f0.rs")]);
+    let t = Instant::now();
+    let r = index::run_changed(&Ctx::new(&cx), &repo, &changed).unwrap();
+    let elapsed = t.elapsed();
+    eprintln!("run_changed read={} elapsed={elapsed:?}", r.read);
+    assert_eq!(r.read, 1, "one edited file");
+    assert!(
+        elapsed < Duration::from_millis(10),
+        "run_changed took {elapsed:?}, want < 10 ms"
+    );
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
 fn write_fanout(dir: &Path) {
     let mut src = String::from("fn sink() {}\n");
     for i in 0..10 {

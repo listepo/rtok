@@ -1,6 +1,6 @@
 # rtok — implementation plan for a unified, plugin-based token-reduction CLI
 
-Status: plan v1, 2026-09-01. **Progress: 173 ✅, 18 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
+Status: plan v1, 2026-09-01. **Progress: 177 ✅, 14 open (v0.2+ P28–P33); entries in `done.md`.** Companion evidence: `research.md` (comparison, measurements, fact-check). Shape of the code: `architecture.md`. Per-plugin plan: `roadmap.md`. Propositions (not yet tasks): `ideas.md`. Every implemented task must be marked done and moved from here to `done.md` verbatim (Do/Check + `Status: done <date>` and Check result); a task that still lives here is not done.
 Crate and binary: `rtok`, this repo (`~/GitHub/rtok`). Rust 1.97.1 is pinned in `mise.toml`; run cargo as `mise exec -- cargo …` (or `mise activate`). The legacy Docker chain stays in `~/GitHub/reduce-token`. Agent instructions: `AGENTS.md` (`CLAUDE.md` is a symlink to it).
 
 ## 0. Decisions (read before any task)
@@ -367,13 +367,6 @@ v0.1 §5 is done. Rows below are promoted (Daemon/TUI already elsewhere). Detail
 
 Optional LLM-based compression and/or observation extraction (LLMLingua-2, claude-mem-style). Default off. Ship only if a bench beats v0.1 lossless; `expand` still recovers originals where the source is not regenerable.
 
-**T28.0 design note: LLM compression vs lossless** · — · `src/plugins/compress/PLAN.md` or `src/plugins/memory/PLAN.md` (extend), `docs/` as needed
-Do: D15-style survey of LLMLingua-2, claude-mem extraction, and at least one other compressor. Name the mechanism rtok will use, what stays lossless, what is default-off, and the falsifier (cost per passed task rises, or expand cannot recover a non-regenerable original). No implementation.
-Check: the PLAN names ≥ 3 alternatives with version/date, the chosen mechanism, rejected options, and the Gate P28 number it must beat.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T28.1 config / feature flag (default off)** · T28.0 · `config/default.toml`, `docs/config.md`, config schema
 Do: add a config flag (and matching CLI override if needed) that enables the compressor / extractor; default off. Document the key. No compression logic yet — reading the flag and refusing unknown keys is enough.
 Check: `rtok config show` lists the new key as off by default; turning it on via config or env is visible in `config show --sources`; `just check` green.
@@ -448,13 +441,6 @@ Gate P30 (review): Same MCP names; LSP off → tags-only bytes; LSP on → at le
 
 Optional semantic response cache (similarity threshold) on the proxy. Opt-in; a hit can be a wrong answer, so false-hit Check is mandatory.
 
-**T31.0 design/survey: semantic cache** · — · `src/plugins/proxy/PLAN.md` or `src/proxy/` design note
-Do: survey bifrost and at least two other semantic-cache approaches. Define similarity threshold, opt-in shape, and how false hits are measured on the P9 task set. No implementation.
-Check: the PLAN names ≥ 3 alternatives, rejected options, and the false-hit Check protocol for Gate P31.
-Complexity: 3/5
-Status: open
-Model: -
-
 **T31.1 config flag (opt-in, default off)** · T31.0 · `config/default.toml`, `docs/config.md`, config schema
 Do: add the opt-in flag and threshold knobs; default off. Document them.
 Check: default proxy behaviour unchanged; enabling the flag is visible in `config show --sources`; `just check` green.
@@ -500,19 +486,15 @@ Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that record
 
 ### P35 — Graph index speed (goal: a cold index bound by cores, a watcher settle bound by the files that changed) — added 2026-09-10 (T34.9 measurements); open.
 
-Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. A warm re-walk — what every watcher settle costs — is 50 ms. Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
+Measured 2026-09-10, debug build, 16 cores: a cold index of this repo is 127 files / 18 093 rows in 3.42 s (`labelled_symbols_are_found` prints it). Compiling the tags query, which `outline::config` redoes per file, is 19 ms of a 26.5 ms `tags` call, so ≈ 2.4 s of the 3.42 s; T35.1 compiles it once, and the cold index is now 1.30–1.38 s (2026-09-11). The release 3 000-file index (research.md P8c) fell from 13.8 s to 341 ms, which already meets the release half of the gate below. T35.2 parses on one worker per core: 281–296 ms debug and 172–174 ms release (2026-09-11), so the gate is met. What remains is the walk, the per-file stat SELECT and the one-transaction-per-file writes (T35.3), not yet measured apart. T35.4 (2026-09-11) indexes only changed paths on watcher settle; overflow and `need_rescan` still full-walk. T35.3 remains last among remaining P35 tasks (user 2026-09-11). Async (tokio) is not a lever here: the work is CPU-bound parsing plus one SQLite writer (D18); threads are. Each task has a `PERF(T35.n)` comment at its code.
 
 **T35.3 batched store I/O for the index** · T35.2 · `src/store/symbols.rs`, `src/plugins/graph/index.rs`
 Do: measure first. Then one query for the root's `(path, sha, mtime, size)` instead of a `symbol_stat` per file; multi-row INSERTs chunked under SQLite's variable limit; one DELETE for vanished paths. `graph-lbug` keeps its own path.
+
+Agents: last among remaining P35. Do T35.5 first; do not claim T35.3 until T35.5 is done (user 2026-09-11). A prior multi-row INSERT + process-wide stats cache made the cold index slower; keep only if the Check holds.
+
 Check: kept only if the cold index falls ≥ 20 % on top of T35.1–T35.2; the store is row-for-row equal.
 Complexity: 2/5
-Status: open
-Model: -
-
-**T35.4 the watcher indexes what changed** · T8.16 · `src/plugins/graph/watch.rs`, `src/plugins/graph/index.rs`
-Do: `pump` keeps the relevant event paths; `settle` indexes only those (the stat and sha gates per path; rows dropped for a vanished path). A full walk only on a rescan or overflow event.
-Check: the `pump` and FSEvents watch tests green; one edit on the 3 000-file fixture settles reading 1 file in < 10 ms (today: a full walk).
-Complexity: 3/5
 Status: open
 Model: -
 
@@ -530,13 +512,6 @@ Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 00
 ### P33 — Tiered session context (goal: optional OpenViking-style L0/L1/L2 loading, measured vs archive+inject) — added 2026-09-10 (I-25); open.
 
 Optional tiered session context (OpenViking L0/L1/L2) for `archive` / `inject`. Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive until Gate P33.
-
-**T33.0 design/survey: L0/L1/L2 tiers + AGPL** · — · `src/plugins/archive/PLAN.md` and/or `inject` PLAN
-Do: survey OpenViking L0/L1/L2 and at least two other tiered-context schemes. Call out AGPL (or other) license implications in the PLAN before any code. Define how tiers compose with v0.1 `archive`+`inject` and what "measured against" means for Gate P33. No implementation.
-Check: the PLAN names ≥ 3 alternatives, an explicit AGPL (or license) call-out, rejected options, and the Gate P33 measurement shape.
-Complexity: 3/5
-Status: open
-Model: -
 
 **T33.1 config flag (default off)** · T33.0 · `config/default.toml`, `docs/config.md`, config schema
 Do: add the opt-in flag for tiered loading; default off (v0.1 archive+inject unchanged). Document license note beside the key.
@@ -582,7 +557,7 @@ the entry is still above in §3 (P28–P33). This table is an index, never the
 authority: when a task moves to `done.md`, flip its row here in the same commit. Complexity is
 1 (trivial) … 5 (hard); tasks written before 2026-09-08 predate the rating and read `—`.
 
-**173 done · 18 open — 191 tasks.**
+**177 done · 14 open — 191 tasks.**
 
 | Task | Phase | What | Status | Complexity |
 |------|-------|------|--------|------------|
@@ -759,7 +734,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T26.0` | P26 duplication | `just dup` | ✅ 2026-09-09 | 2/5 |
 | `T26.1` | P26 duplication | retire what it found | ✅ 2026-09-09 | 3/5 |
 | `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
-| `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | open | 3/5 |
+| `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | ✅ 2026-09-11 | 3/5 |
 | `T28.1` | P28 LLM compression | config / feature flag (default off) | open | 2/5 |
 | `T28.2` | P28 LLM compression | implement optional compress / memory extractor | open | 4/5 |
 | `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | open | 3/5 |
@@ -768,13 +743,13 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T30.0` | P30 LSP graph | design/survey: LSP behind tags MCP | open | 3/5 |
 | `T30.1` | P30 LSP graph | config flag (tags default) | open | 2/5 |
 | `T30.2` | P30 LSP graph | implement optional LSP backend | open | 4/5 |
-| `T31.0` | P31 semantic cache | design/survey: semantic cache | open | 3/5 |
+| `T31.0` | P31 semantic cache | design/survey: semantic cache | ✅ 2026-09-11 | 3/5 |
 | `T31.1` | P31 semantic cache | config flag (opt-in, default off) | open | 2/5 |
 | `T31.2` | P31 semantic cache | implement opt-in semantic cache | open | 4/5 |
 | `T32.0` | P32 WASM host | design/survey: WASM host | open | 3/5 |
 | `T32.1` | P32 WASM host | config / feature flag for WASM host | open | 2/5 |
 | `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
-| `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | open | 3/5 |
+| `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | ✅ 2026-09-11 | 3/5 |
 | `T33.1` | P33 tiered context | config flag (default off) | open | 2/5 |
 | `T33.2` | P33 tiered context | implement optional L0/L1/L2 loading | open | 4/5 |
 

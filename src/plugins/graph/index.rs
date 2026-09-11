@@ -25,6 +25,23 @@ type Row = (String, String, i32, bool, i32, String);
 
 /// `(mtime_nanos, size)` — the freshness key. Nanos keep two edits in the same second apart;
 /// an unreadable timestamp reads as 0, which never matches a stored stat, so the file is read.
+
+fn changed_abs(root: &Path, event_path: &Path) -> PathBuf {
+    let raw = if event_path.is_absolute() {
+        event_path.to_path_buf()
+    } else {
+        root.join(event_path)
+    };
+    raw.canonicalize().unwrap_or_else(|_| {
+        let name = event_path.file_name();
+        event_path
+            .parent()
+            .and_then(|p| p.canonicalize().ok())
+            .and_then(|p| name.map(|n| p.join(n)))
+            .unwrap_or(raw)
+    })
+}
+
 fn stat_key(md: &std::fs::Metadata) -> (i64, i64) {
     let mtime = md
         .modified()
@@ -49,6 +66,12 @@ pub fn canon(p: &Path) -> String {
 /// says what the index would gain without touching the store.
 pub fn run(cx: &Ctx, root: &Path, dry_run: bool) -> Result<Report> {
     run_with(cx, root, dry_run, &indicatif::ProgressBar::hidden())
+}
+
+/// Index only `changed` event paths (T35.4). Vanished or unsupported paths drop their rows;
+/// never calls `delete_symbols_missing`.
+pub fn run_changed(cx: &Ctx, root: &Path, changed: &HashSet<PathBuf>) -> Result<Report> {
+    run_changed_with(cx, root, changed, false, &indicatif::ProgressBar::hidden())
 }
 
 /// [`run`] reporting each source file it reaches to `pb`. Only `rtok graph index` passes a real
@@ -134,6 +157,76 @@ pub fn run_with(
     if !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &keep);
     }
+    pb.finish_and_clear();
+    Ok(report)
+}
+
+fn run_changed_with(
+    cx: &Ctx,
+    root: &Path,
+    changed: &HashSet<PathBuf>,
+    dry_run: bool,
+    pb: &indicatif::ProgressBar,
+) -> Result<Report> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let rk = canon(&root);
+    let mut report = Report::default();
+    let mut jobs = Vec::new();
+    for event_path in changed {
+        let abs = changed_abs(&root, event_path);
+        let rel = abs
+            .strip_prefix(&root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"));
+        let Ok(rel) = rel else {
+            continue;
+        };
+        if !abs.exists() || !outline::supported(&abs) {
+            if !dry_run {
+                let _ = cx.mark_symbols_stale(&canon(&abs));
+            }
+            continue;
+        }
+        let stat = std::fs::metadata(&abs)
+            .as_ref()
+            .map(stat_key)
+            .unwrap_or((0, 0));
+        let known = cx.symbol_stat(&rk, &rel)?;
+        if known.as_ref().is_some_and(|(_, m, s)| (*m, *s) == stat) && stat != (0, 0) {
+            report.skipped += 1;
+            pb.inc(1);
+            continue;
+        }
+        jobs.push(Job {
+            path: abs,
+            rel,
+            stat,
+            known: known.map(|(sha, _, _)| sha),
+        });
+    }
+    each_parsed(&jobs, |job, parsed| {
+        pb.inc(1);
+        match parsed {
+            Parsed::Unreadable => {}
+            Parsed::Unparsed => report.read += 1,
+            Parsed::Same => {
+                report.read += 1;
+                report.skipped += 1;
+                if !dry_run {
+                    cx.touch_symbols(&rk, &job.rel, job.stat.0, job.stat.1)?;
+                }
+            }
+            Parsed::Rows(sha, rows) => {
+                report.read += 1;
+                report.indexed += 1;
+                report.inserted += if dry_run {
+                    rows.len()
+                } else {
+                    cx.replace_symbols(&rk, &job.rel, &sha, job.stat, &rows)?
+                };
+            }
+        }
+        Ok(())
+    })?;
     pb.finish_and_clear();
     Ok(report)
 }
@@ -431,6 +524,44 @@ pub(crate) mod tests {
         let r = run(&Ctx::new(&cx), &root, false).unwrap();
         assert_eq!(r.inserted, 0, "second run must insert 0 rows");
         assert_eq!(r.indexed, 0);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn run_changed_indexes_only_touched_file() {
+        const FILES: usize = 20;
+        let (cx, dir) = cx("changed");
+        for i in 0..FILES {
+            fs::write(
+                dir.join(format!("f{i}.rs")),
+                format!(
+                    "fn f{i}() {{}}
+"
+                ),
+            )
+            .unwrap();
+        }
+        run(&Ctx::new(&cx), &dir, false).unwrap();
+        let k = canon(&dir);
+        let before = cx.store.symbol_count(&k).unwrap();
+        fs::write(
+            dir.join("f0.rs"),
+            "fn f0() {}
+fn touched() {}
+",
+        )
+        .unwrap();
+        let changed = HashSet::from([dir.join("f0.rs")]);
+        let r = run_changed(&Ctx::new(&cx), &dir, &changed).unwrap();
+        assert_eq!(r.read, 1, "only the edited path is read");
+        assert_eq!(cx.store.symbol_count(&k).unwrap(), before + 1);
+        for i in 1..FILES {
+            assert!(
+                cx.store.has_symbol_def(&k, &format!("f{i}")).unwrap(),
+                "f{i} untouched"
+            );
+        }
+        assert!(cx.store.has_symbol_def(&k, "touched").unwrap());
         let _ = fs::remove_dir_all(dir);
     }
 
