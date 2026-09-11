@@ -54,7 +54,28 @@ export struct SessionRow {
     summary: string,
 }
 
+component MetricCell inherits VerticalBox {
+    in property <string> label;
+    in property <string> value;
+    in property <color> value-color: RtokTheme.ink;
+    in property <length> value-size: 18px;
+    Text {
+        text: label;
+        color: RtokTheme.ink-muted;
+        font-size: 11px;
+        font-family: "IBM Plex Mono";
+    }
+    Text {
+        text: value;
+        color: value-color;
+        font-size: value-size;
+        font-weight: 600;
+        font-family: "IBM Plex Mono";
+    }
+}
+
 /// Shared stats strip for plugins that record Measurement / usage rows.
+/// Wraps to 2×3 when the strip itself is narrow (< 520px).
 export component TokenStatsWidget inherits Rectangle {
     in property <int> input-tokens;
     in property <int> output-tokens;
@@ -63,105 +84,55 @@ export component TokenStatsWidget inherits Rectangle {
     in property <int> est-before;
     in property <int> est-after;
     in property <int> rows;
+    property <length> strip-w: 800px;
+    changed width => { strip-w = root.width; }
+    init => { strip-w = root.width; }
+    property <bool> narrow: strip-w < 520px;
+    property <length> value-size: narrow ? 16px : 18px;
     border-radius: RtokTheme.radius-md;
     background: RtokTheme.surface-1;
     border-width: 1px;
     border-color: RtokTheme.hairline;
 
-    HorizontalBox {
+    if narrow: VerticalBox {
+        padding: RtokTheme.space-3;
+        spacing: RtokTheme.space-3;
+        HorizontalBox {
+            spacing: RtokTheme.space-3;
+            alignment: space-around;
+            MetricCell { label: "input"; value: "\{input-tokens}"; value-size: value-size; }
+            MetricCell { label: "output"; value: "\{output-tokens}"; value-size: value-size; }
+            MetricCell { label: "cache read"; value: "\{root.cache-read}"; value-size: value-size; }
+        }
+        HorizontalBox {
+            spacing: RtokTheme.space-3;
+            alignment: space-around;
+            MetricCell { label: "cache create"; value: "\{root.cache-create}"; value-size: value-size; }
+            MetricCell {
+                label: "est before → after";
+                value: "\{est-before} → \{est-after}";
+                value-color: RtokTheme.accent;
+                value-size: value-size;
+            }
+            MetricCell { label: "rows"; value: "\{rows}"; value-size: value-size; }
+        }
+    }
+
+    if !narrow: HorizontalBox {
         padding: RtokTheme.space-3;
         spacing: RtokTheme.space-4;
         alignment: space-around;
-        VerticalBox {
-            Text {
-                text: "input";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{input-tokens}";
-                color: RtokTheme.ink;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
+        MetricCell { label: "input"; value: "\{input-tokens}"; value-size: value-size; }
+        MetricCell { label: "output"; value: "\{output-tokens}"; value-size: value-size; }
+        MetricCell { label: "cache read"; value: "\{root.cache-read}"; value-size: value-size; }
+        MetricCell { label: "cache create"; value: "\{root.cache-create}"; value-size: value-size; }
+        MetricCell {
+            label: "est before → after";
+            value: "\{est-before} → \{est-after}";
+            value-color: RtokTheme.accent;
+            value-size: value-size;
         }
-        VerticalBox {
-            Text {
-                text: "output";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{output-tokens}";
-                color: RtokTheme.ink;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
-        }
-        VerticalBox {
-            Text {
-                text: "cache read";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{root.cache-read}";
-                color: RtokTheme.ink;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
-        }
-        VerticalBox {
-            Text {
-                text: "cache create";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{root.cache-create}";
-                color: RtokTheme.ink;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
-        }
-        VerticalBox {
-            Text {
-                text: "est before → after";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{est-before} → \{est-after}";
-                color: RtokTheme.accent;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
-        }
-        VerticalBox {
-            Text {
-                text: "rows";
-                color: RtokTheme.ink-muted;
-                font-size: 11px;
-                font-family: "IBM Plex Mono";
-            }
-            Text {
-                text: "\{rows}";
-                color: RtokTheme.ink;
-                font-size: 18px;
-                font-weight: 600;
-                font-family: "IBM Plex Mono";
-            }
-        }
+        MetricCell { label: "rows"; value: "\{rows}"; value-size: value-size; }
     }
 }
 
@@ -181,8 +152,41 @@ component PageIcon inherits Image {
         @image-url("icons/overview.svg");
 }
 
+/// Nav row used in full sidebar, rail, and mobile icon bar.
+component NavItem inherits Rectangle {
+    in property <string> page-id;
+    in property <string> title;
+    in property <bool> selected;
+    in property <bool> show-label: true;
+    in property <bool> icon-only: false;
+    callback activated;
+    height: icon-only ? 44px : 36px;
+    border-radius: RtokTheme.radius-md;
+    background: selected ? RtokTheme.accent-muted : transparent;
+    TouchArea {
+        clicked => { root.activated(); }
+    }
+    HorizontalBox {
+        padding-left: show-label ? RtokTheme.space-2 : 0;
+        spacing: RtokTheme.space-2;
+        alignment: show-label ? start : center;
+        PageIcon {
+            page-id: root.page-id;
+            tint: selected ? RtokTheme.accent : RtokTheme.ink-muted;
+        }
+        if show-label: Text {
+            text: title;
+            color: selected ? RtokTheme.accent : RtokTheme.ink-muted;
+            font-family: "IBM Plex Mono";
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "rtok";
+    min-width: 320px;
+    min-height: 480px;
     preferred-width: 960px;
     preferred-height: 640px;
     background: RtokTheme.canvas;
@@ -214,405 +218,648 @@ export component MainWindow inherits Window {
     in-out property <[string]> logs;
     in property <string> status: "connecting";
 
-    HorizontalBox {
-        padding: 12px;
-        spacing: 12px;
+    // --- Responsive shell derived from tracked window width ---
+    // Use `changed width` (not a live binding to root.width) to avoid
+    // layoutinfo ↔ breakpoint binding loops (Slint energy-monitor pattern).
+    // sm <640 mobile | md 640–1023 rail | lg ≥1024 full sidebar
+    // xl ≥1440 roomier panes | 2xl ≥1920 ultrawide padding/type
+    property <length> win-w: 960px;
+    property <length> win-h: 640px;
+    changed width => { win-w = root.width; }
+    changed height => { win-h = root.height; }
+    init => {
+        win-w = root.width;
+        win-h = root.height;
+    }
 
-        Rectangle {
-            width: RtokTheme.sidebar-w;
+    property <bool> compact: win-w < RtokTheme.bp-sm;
+    property <bool> rail: win-w >= RtokTheme.bp-sm && win-w < RtokTheme.bp-md;
+    property <bool> full-nav: win-w >= RtokTheme.bp-md;
+    property <bool> wide: win-w >= RtokTheme.bp-lg;
+    property <bool> ultrawide: win-w >= RtokTheme.bp-xl;
+
+    property <length> shell-pad: ultrawide ? RtokTheme.space-5 : (wide ? RtokTheme.space-4 : (compact ? RtokTheme.space-2 : RtokTheme.space-3));
+    property <length> shell-gap: ultrawide ? RtokTheme.space-4 : RtokTheme.space-3;
+    property <length> title-size: ultrawide ? 26px : 22px;
+    property <length> body-size: ultrawide ? 14px : 13px;
+    property <length> nav-width: rail ? RtokTheme.sidebar-w-rail : RtokTheme.sidebar-w-full;
+    property <length> plugin-list-w: wide ? min(280px, win-w * 0.22) : min(240px, win-w * 0.28);
+    property <length> calls-list-w: min(480px, win-w * 0.42);
+    property <length> content-max: ultrawide ? 1600px : 10000px;
+
+    VerticalBox {
+        padding: shell-pad;
+        spacing: shell-gap;
+        alignment: stretch;
+
+        // Mobile: horizontal icon bar (icons only, ≥44px hits)
+        if compact: Rectangle {
+            height: 52px;
             border-radius: RtokTheme.radius-lg;
             background: RtokTheme.surface-1;
             border-width: 1px;
             border-color: RtokTheme.hairline;
-            VerticalBox {
-                padding: RtokTheme.space-2;
-                spacing: RtokTheme.space-2;
-
-                HorizontalBox {
-                    spacing: RtokTheme.space-2;
-                    alignment: start;
-                    Image {
-                        source: @image-url("assets/logo.svg");
-                        width: 24px;
-                        height: 24px;
+            HorizontalBox {
+                padding: RtokTheme.space-1;
+                spacing: RtokTheme.space-1;
+                alignment: stretch;
+                Image {
+                    source: @image-url("assets/logo.svg");
+                    width: 22px;
+                    height: 22px;
+                    vertical-alignment: center;
+                }
+                for p[i] in pages: NavItem {
+                    page-id: p.id;
+                    title: p.title;
+                    selected: i == page-index;
+                    show-label: false;
+                    icon-only: true;
+                    activated => { page-index = i; }
+                }
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: RtokTheme.radius-md;
+                    TouchArea {
+                        clicked => { RtokTheme.dark = !RtokTheme.dark; }
                     }
-                    Text {
-                        text: "RTOK";
-                        color: RtokTheme.ink;
-                        font-size: 16px;
-                        font-weight: 700;
-                        font-family: "IBM Plex Mono";
-                        vertical-alignment: center;
+                    Image {
+                        source: @image-url("icons/theme.svg");
+                        width: 16px;
+                        height: 16px;
+                        colorize: RtokTheme.ink-muted;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
                     }
                 }
+            }
+        }
 
-                Rectangle {
-                    height: 28px;
-                    border-radius: RtokTheme.radius-md;
-                    background: RtokTheme.surface-2;
+        HorizontalBox {
+            spacing: shell-gap;
+            alignment: stretch;
+
+            // Tablet rail / desktop full sidebar
+            if !compact: Rectangle {
+                width: nav-width;
+                border-radius: RtokTheme.radius-lg;
+                background: RtokTheme.surface-1;
+                border-width: 1px;
+                border-color: RtokTheme.hairline;
+                VerticalBox {
+                    padding: RtokTheme.space-2;
+                    spacing: RtokTheme.space-2;
+
                     HorizontalBox {
-                        padding-left: RtokTheme.space-2;
                         spacing: RtokTheme.space-2;
-                        alignment: start;
-                        Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: RtokTheme.accent;
-                            y: parent.height / 2 - self.height / 2;
+                        alignment: full-nav ? start : center;
+                        Image {
+                            source: @image-url("assets/logo.svg");
+                            width: 24px;
+                            height: 24px;
                         }
-                        Text {
-                            text: status;
-                            color: RtokTheme.ink-muted;
-                            font-size: 11px;
+                        if full-nav: Text {
+                            text: "RTOK";
+                            color: RtokTheme.ink;
+                            font-size: 16px;
+                            font-weight: 700;
                             font-family: "IBM Plex Mono";
                             vertical-alignment: center;
                         }
                     }
-                }
 
-                ListView {
-                    for p[i] in pages: Rectangle {
-                        height: 36px;
+                    if full-nav: Rectangle {
+                        height: 28px;
                         border-radius: RtokTheme.radius-md;
-                        background: i == page-index ? RtokTheme.accent-muted : transparent;
-                        TouchArea {
-                            clicked => { page-index = i; }
-                        }
+                        background: RtokTheme.surface-2;
                         HorizontalBox {
                             padding-left: RtokTheme.space-2;
                             spacing: RtokTheme.space-2;
                             alignment: start;
-                            PageIcon {
-                                page-id: p.id;
-                                tint: i == page-index ? RtokTheme.accent : RtokTheme.ink-muted;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: RtokTheme.accent;
+                                y: parent.height / 2 - self.height / 2;
                             }
                             Text {
-                                text: p.title;
-                                color: i == page-index ? RtokTheme.accent : RtokTheme.ink-muted;
+                                text: status;
+                                color: RtokTheme.ink-muted;
+                                font-size: 11px;
                                 font-family: "IBM Plex Mono";
                                 vertical-alignment: center;
                             }
                         }
                     }
-                }
 
-                Rectangle {
-                    height: 36px;
-                    border-radius: RtokTheme.radius-md;
-                    background: transparent;
-                    TouchArea {
-                        clicked => { RtokTheme.dark = !RtokTheme.dark; }
-                    }
-                    HorizontalBox {
-                        padding-left: RtokTheme.space-2;
-                        spacing: RtokTheme.space-2;
-                        alignment: start;
-                        Image {
-                            source: @image-url("icons/theme.svg");
-                            width: 16px;
-                            height: 16px;
-                            colorize: RtokTheme.ink-muted;
-                        }
-                        Text {
-                            text: RtokTheme.dark ? "Light mode" : "Dark mode";
-                            color: RtokTheme.ink-muted;
-                            font-family: "IBM Plex Mono";
-                            font-size: 12px;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-            }
-        }
-
-        if page-id == "overview": ScrollView {
-            VerticalBox {
-                spacing: 12px;
-                Text {
-                    text: "overview";
-                    color: RtokTheme.ink;
-                    font-size: 22px;
-                    font-weight: 700;
-                    font-family: "IBM Plex Mono";
-                }
-                Text {
-                    text: "usage totals (usage rows, all apis)";
-                    color: RtokTheme.ink-muted;
-                    font-size: 11px;
-                    font-family: "IBM Plex Mono";
-                }
-                TokenStatsWidget {
-                    input-tokens: usage-input;
-                    output-tokens: usage-output;
-                    cache-read: usage-cache-read;
-                    cache-create: usage-cache-create;
-                    est-before: 0;
-                    est-after: 0;
-                    rows: 0;
-                }
-                Text {
-                    text: "ctt  \{usage-ctt} (input-side tok × turns after)";
-                    color: RtokTheme.ink;
-                    font-family: "IBM Plex Mono";
-                }
-                Text {
-                    text: "saved by plugin (Measurement rows)";
-                    color: RtokTheme.ink-muted;
-                    font-size: 11px;
-                    font-family: "IBM Plex Mono";
-                }
-                Text {
-                    text: overview-savings;
-                    color: RtokTheme.ink-muted;
-                    wrap: word-wrap;
-                    font-family: "IBM Plex Mono";
-                }
-                Text {
-                    text: overview-turns;
-                    color: RtokTheme.ink-subtle;
-                    wrap: word-wrap;
-                    font-family: "IBM Plex Mono";
-                }
-            }
-        }
-
-        if page-id == "plugins": HorizontalBox {
-            spacing: 12px;
-            Rectangle {
-                width: 220px;
-                border-radius: RtokTheme.radius-lg;
-                background: RtokTheme.surface-1;
-                border-width: 1px;
-                border-color: RtokTheme.hairline;
-                VerticalBox {
-                    padding: RtokTheme.space-2;
-                    Text {
-                        text: "plugins";
-                        color: RtokTheme.ink;
-                        font-size: 16px;
-                        font-weight: 600;
-                        font-family: "IBM Plex Mono";
-                    }
                     ListView {
-                        for p[i] in plugins: Rectangle {
-                            height: 36px;
-                            border-radius: RtokTheme.radius-md;
-                            background: i == plugin-cursor ? RtokTheme.accent-muted : transparent;
-                            TouchArea {
-                                clicked => { plugin-cursor = i; }
+                        for p[i] in pages: NavItem {
+                            page-id: p.id;
+                            title: p.title;
+                            selected: i == page-index;
+                            show-label: full-nav;
+                            icon-only: rail;
+                            activated => { page-index = i; }
+                        }
+                    }
+
+                    Rectangle {
+                        height: rail ? 44px : 36px;
+                        border-radius: RtokTheme.radius-md;
+                        background: transparent;
+                        TouchArea {
+                            clicked => { RtokTheme.dark = !RtokTheme.dark; }
+                        }
+                        HorizontalBox {
+                            padding-left: full-nav ? RtokTheme.space-2 : 0;
+                            spacing: RtokTheme.space-2;
+                            alignment: full-nav ? start : center;
+                            Image {
+                                source: @image-url("icons/theme.svg");
+                                width: 16px;
+                                height: 16px;
+                                colorize: RtokTheme.ink-muted;
                             }
-                            HorizontalBox {
-                                padding-left: RtokTheme.space-2;
-                                alignment: start;
-                                Text {
-                                    text: p.title;
-                                    color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
-                                    font-family: "IBM Plex Mono";
-                                    vertical-alignment: center;
-                                }
+                            if full-nav: Text {
+                                text: RtokTheme.dark ? "Light mode" : "Dark mode";
+                                color: RtokTheme.ink-muted;
+                                font-family: "IBM Plex Mono";
+                                font-size: 12px;
+                                vertical-alignment: center;
                             }
                         }
                     }
                 }
             }
-            ScrollView {
-                VerticalBox {
-                    spacing: 12px;
-                    Text {
-                        text: selected-plugin.title;
-                        color: RtokTheme.ink;
-                        font-size: 22px;
-                        font-weight: 700;
-                        font-family: "IBM Plex Mono";
-                    }
-                    Text {
-                        text: selected-plugin.enabled ? "enabled" : "disabled";
-                        color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
-                        font-family: "IBM Plex Mono";
-                    }
-                    Text {
-                        text: selected-plugin.summary;
-                        color: RtokTheme.ink-muted;
-                        wrap: word-wrap;
-                        font-family: "IBM Plex Mono";
-                    }
-                    Text {
-                        text: selected-plugin.fields;
-                        color: RtokTheme.ink-subtle;
-                        wrap: word-wrap;
-                        font-family: "IBM Plex Mono";
-                    }
-                    if selected-plugin.saves-tokens: TokenStatsWidget {
-                        input-tokens: selected-plugin.input-tokens;
-                        output-tokens: selected-plugin.output-tokens;
-                        cache-read: selected-plugin.cache-read;
-                        cache-create: selected-plugin.cache-create;
-                        est-before: selected-plugin.est-before;
-                        est-after: selected-plugin.est-after;
-                        rows: selected-plugin.rows;
-                    }
-                }
-            }
-        }
 
-        if page-id == "calls": HorizontalBox {
-            spacing: 12px;
+            // Content pane — stretch; cap readable width on ultrawide via max on metric strips / prose
             Rectangle {
-                width: 420px;
-                border-radius: RtokTheme.radius-lg;
-                background: RtokTheme.surface-1;
-                border-width: 1px;
-                border-color: RtokTheme.hairline;
-                VerticalBox {
-                    padding: RtokTheme.space-2;
-                    Text {
-                        text: "calls (newest first)";
-                        color: RtokTheme.ink;
-                        font-size: 16px;
-                        font-weight: 600;
-                        font-family: "IBM Plex Mono";
-                    }
-                    if calls.length == 0: Text {
-                        text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
-                        color: RtokTheme.ink-muted;
-                        wrap: word-wrap;
-                        font-family: "IBM Plex Mono";
-                    }
-                    ListView {
-                        for c[i] in calls: Rectangle {
-                            height: 40px;
-                            border-radius: RtokTheme.radius-md;
-                            background: i == call-cursor ? RtokTheme.accent-muted : transparent;
-                            TouchArea {
-                                clicked => { call-cursor = i; }
-                            }
-                            VerticalBox {
-                                padding-left: RtokTheme.space-2;
-                                spacing: 0;
-                                Text {
-                                    text: "\{c.when}  \{c.surface}  \{c.kind}";
-                                    color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
-                                    font-size: 12px;
-                                    font-family: "IBM Plex Mono";
-                                }
-                                Text {
-                                    text: c.subtitle;
-                                    color: RtokTheme.ink-muted;
-                                    font-size: 11px;
-                                    font-family: "IBM Plex Mono";
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            ScrollView {
-                VerticalBox {
-                    spacing: 8px;
-                    Text {
-                        text: "detail";
-                        color: RtokTheme.ink-muted;
-                        font-size: 11px;
-                        font-family: "IBM Plex Mono";
-                    }
-                    if calls.length == 0: Text { text: ""; }
-                    if calls.length > 0: Text {
-                        text: selected-call.detail;
-                        color: RtokTheme.ink-muted;
-                        wrap: word-wrap;
-                        font-family: "IBM Plex Mono";
-                    }
-                }
-            }
-        }
+                horizontal-stretch: 1;
+                background: transparent;
 
-        if page-id == "sessions": ScrollView {
-            VerticalBox {
-                spacing: 8px;
-                Text {
-                    text: "sessions";
-                    color: RtokTheme.ink;
-                    font-size: 22px;
-                    font-weight: 700;
-                    font-family: "IBM Plex Mono";
-                }
-                if sessions.length == 0: Text {
-                    text: "no sessions yet";
-                    color: RtokTheme.ink-muted;
-                    font-family: "IBM Plex Mono";
-                }
-                for s in sessions: Rectangle {
-                    border-radius: RtokTheme.radius-md;
-                    background: RtokTheme.surface-1;
-                    border-width: 1px;
-                    border-color: RtokTheme.hairline;
+                if page-id == "overview": ScrollView {
                     VerticalBox {
-                        padding: 10px;
-                        spacing: 2px;
+                        padding: wide ? RtokTheme.space-2 : 0;
+                        spacing: shell-gap;
+                        max-width: content-max;
                         Text {
-                            text: s.summary;
+                            text: "overview";
                             color: RtokTheme.ink;
-                            font-weight: 600;
+                            font-size: title-size;
+                            font-weight: 700;
                             font-family: "IBM Plex Mono";
                         }
                         Text {
-                            text: s.activity;
+                            text: "usage totals (usage rows, all apis)";
+                            color: RtokTheme.ink-muted;
+                            font-size: 11px;
+                            font-family: "IBM Plex Mono";
+                        }
+                        TokenStatsWidget {
+                            input-tokens: usage-input;
+                            output-tokens: usage-output;
+                            cache-read: usage-cache-read;
+                            cache-create: usage-cache-create;
+                            est-before: 0;
+                            est-after: 0;
+                            rows: 0;
+                        }
+                        Text {
+                            text: "ctt  \{usage-ctt} (input-side tok × turns after)";
+                            color: RtokTheme.ink;
+                            font-size: body-size;
+                            font-family: "IBM Plex Mono";
+                        }
+                        Text {
+                            text: "saved by plugin (Measurement rows)";
                             color: RtokTheme.ink-muted;
                             font-size: 11px;
                             font-family: "IBM Plex Mono";
                         }
                         Text {
-                            text: s.status;
+                            text: overview-savings;
                             color: RtokTheme.ink-muted;
-                            font-size: 12px;
+                            wrap: word-wrap;
+                            font-size: body-size;
+                            font-family: "IBM Plex Mono";
+                        }
+                        Text {
+                            text: overview-turns;
+                            color: RtokTheme.ink-subtle;
+                            wrap: word-wrap;
+                            font-size: body-size;
                             font-family: "IBM Plex Mono";
                         }
                     }
                 }
-            }
-        }
 
-        if page-id == "doctor": ScrollView {
-            VerticalBox {
-                spacing: 8px;
-                Text {
-                    text: "doctor";
-                    color: RtokTheme.ink;
-                    font-size: 22px;
-                    font-weight: 700;
-                    font-family: "IBM Plex Mono";
+                // Plugins: stacked on compact, side-by-side otherwise
+                if page-id == "plugins" && compact: VerticalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        height: min(200px, win-h * 0.35);
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "plugins";
+                                color: RtokTheme.ink;
+                                font-size: 16px;
+                                font-weight: 600;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for p[i] in plugins: Rectangle {
+                                    height: 36px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == plugin-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        clicked => { plugin-cursor = i; }
+                                    }
+                                    HorizontalBox {
+                                        padding-left: RtokTheme.space-2;
+                                        alignment: start;
+                                        Text {
+                                            text: p.title;
+                                            color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
+                                            font-family: "IBM Plex Mono";
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        VerticalBox {
+                            spacing: shell-gap;
+                            Text {
+                                text: selected-plugin.title;
+                                color: RtokTheme.ink;
+                                font-size: title-size;
+                                font-weight: 700;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.enabled ? "enabled" : "disabled";
+                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.summary;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.fields;
+                                color: RtokTheme.ink-subtle;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if selected-plugin.saves-tokens: TokenStatsWidget {
+                                input-tokens: selected-plugin.input-tokens;
+                                output-tokens: selected-plugin.output-tokens;
+                                cache-read: selected-plugin.cache-read;
+                                cache-create: selected-plugin.cache-create;
+                                est-before: selected-plugin.est-before;
+                                est-after: selected-plugin.est-after;
+                                rows: selected-plugin.rows;
+                            }
+                        }
+                    }
                 }
-                Text {
-                    text: doctor-text;
-                    color: RtokTheme.ink-muted;
-                    wrap: word-wrap;
-                    font-family: "IBM Plex Mono";
-                }
-            }
-        }
 
-        if page-id == "logs": ScrollView {
-            VerticalBox {
-                spacing: 4px;
-                Text {
-                    text: "logs";
-                    color: RtokTheme.ink;
-                    font-size: 22px;
-                    font-weight: 700;
-                    font-family: "IBM Plex Mono";
+                if page-id == "plugins" && !compact: HorizontalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        width: plugin-list-w;
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "plugins";
+                                color: RtokTheme.ink;
+                                font-size: 16px;
+                                font-weight: 600;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for p[i] in plugins: Rectangle {
+                                    height: 36px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == plugin-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        clicked => { plugin-cursor = i; }
+                                    }
+                                    HorizontalBox {
+                                        padding-left: RtokTheme.space-2;
+                                        alignment: start;
+                                        Text {
+                                            text: p.title;
+                                            color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
+                                            font-family: "IBM Plex Mono";
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        horizontal-stretch: 1;
+                        VerticalBox {
+                            spacing: shell-gap;
+                            max-width: content-max;
+                            Text {
+                                text: selected-plugin.title;
+                                color: RtokTheme.ink;
+                                font-size: title-size;
+                                font-weight: 700;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.enabled ? "enabled" : "disabled";
+                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.summary;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                            Text {
+                                text: selected-plugin.fields;
+                                color: RtokTheme.ink-subtle;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if selected-plugin.saves-tokens: TokenStatsWidget {
+                                input-tokens: selected-plugin.input-tokens;
+                                output-tokens: selected-plugin.output-tokens;
+                                cache-read: selected-plugin.cache-read;
+                                cache-create: selected-plugin.cache-create;
+                                est-before: selected-plugin.est-before;
+                                est-after: selected-plugin.est-after;
+                                rows: selected-plugin.rows;
+                            }
+                        }
+                    }
                 }
-                if logs.length == 0: Text {
-                    text: "no logs yet";
-                    color: RtokTheme.ink-muted;
-                    font-family: "IBM Plex Mono";
+
+                // Calls: stacked on compact, side-by-side otherwise
+                if page-id == "calls" && compact: VerticalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        height: min(220px, win-h * 0.4);
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "calls (newest first)";
+                                color: RtokTheme.ink;
+                                font-size: 16px;
+                                font-weight: 600;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if calls.length == 0: Text {
+                                text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for c[i] in calls: Rectangle {
+                                    height: 40px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == call-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        clicked => { call-cursor = i; }
+                                    }
+                                    VerticalBox {
+                                        padding-left: RtokTheme.space-2;
+                                        spacing: 0;
+                                        Text {
+                                            text: "\{c.when}  \{c.surface}  \{c.kind}";
+                                            color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
+                                            font-size: 12px;
+                                            font-family: "IBM Plex Mono";
+                                        }
+                                        Text {
+                                            text: c.subtitle;
+                                            color: RtokTheme.ink-muted;
+                                            font-size: 11px;
+                                            font-family: "IBM Plex Mono";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        VerticalBox {
+                            spacing: RtokTheme.space-2;
+                            Text {
+                                text: "detail";
+                                color: RtokTheme.ink-muted;
+                                font-size: 11px;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if calls.length == 0: Text { text: ""; }
+                            if calls.length > 0: Text {
+                                text: selected-call.detail;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                        }
+                    }
                 }
-                for line in logs: Text {
-                    text: line;
-                    color: RtokTheme.ink-muted;
-                    wrap: word-wrap;
-                    font-size: 12px;
-                    font-family: "IBM Plex Mono";
+
+                if page-id == "calls" && !compact: HorizontalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        width: calls-list-w;
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "calls (newest first)";
+                                color: RtokTheme.ink;
+                                font-size: 16px;
+                                font-weight: 600;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if calls.length == 0: Text {
+                                text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for c[i] in calls: Rectangle {
+                                    height: 40px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == call-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        clicked => { call-cursor = i; }
+                                    }
+                                    VerticalBox {
+                                        padding-left: RtokTheme.space-2;
+                                        spacing: 0;
+                                        Text {
+                                            text: "\{c.when}  \{c.surface}  \{c.kind}";
+                                            color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
+                                            font-size: 12px;
+                                            font-family: "IBM Plex Mono";
+                                        }
+                                        Text {
+                                            text: c.subtitle;
+                                            color: RtokTheme.ink-muted;
+                                            font-size: 11px;
+                                            font-family: "IBM Plex Mono";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        horizontal-stretch: 1;
+                        VerticalBox {
+                            spacing: RtokTheme.space-2;
+                            max-width: content-max;
+                            Text {
+                                text: "detail";
+                                color: RtokTheme.ink-muted;
+                                font-size: 11px;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if calls.length == 0: Text { text: ""; }
+                            if calls.length > 0: Text {
+                                text: selected-call.detail;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
+                            }
+                        }
+                    }
+                }
+
+                if page-id == "sessions": ScrollView {
+                    VerticalBox {
+                        spacing: RtokTheme.space-2;
+                        max-width: content-max;
+                        Text {
+                            text: "sessions";
+                            color: RtokTheme.ink;
+                            font-size: title-size;
+                            font-weight: 700;
+                            font-family: "IBM Plex Mono";
+                        }
+                        if sessions.length == 0: Text {
+                            text: "no sessions yet";
+                            color: RtokTheme.ink-muted;
+                            font-family: "IBM Plex Mono";
+                        }
+                        for s in sessions: Rectangle {
+                            border-radius: RtokTheme.radius-md;
+                            background: RtokTheme.surface-1;
+                            border-width: 1px;
+                            border-color: RtokTheme.hairline;
+                            VerticalBox {
+                                padding: wide ? RtokTheme.space-3 : 10px;
+                                spacing: 2px;
+                                Text {
+                                    text: s.summary;
+                                    color: RtokTheme.ink;
+                                    font-weight: 600;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                Text {
+                                    text: s.activity;
+                                    color: RtokTheme.ink-muted;
+                                    font-size: 11px;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                Text {
+                                    text: s.status;
+                                    color: RtokTheme.ink-muted;
+                                    font-size: 12px;
+                                    font-family: "IBM Plex Mono";
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if page-id == "doctor": ScrollView {
+                    VerticalBox {
+                        spacing: RtokTheme.space-2;
+                        max-width: content-max;
+                        Text {
+                            text: "doctor";
+                            color: RtokTheme.ink;
+                            font-size: title-size;
+                            font-weight: 700;
+                            font-family: "IBM Plex Mono";
+                        }
+                        Text {
+                            text: doctor-text;
+                            color: RtokTheme.ink-muted;
+                            wrap: word-wrap;
+                            font-size: body-size;
+                            font-family: "IBM Plex Mono";
+                        }
+                    }
+                }
+
+                if page-id == "logs": ScrollView {
+                    VerticalBox {
+                        spacing: RtokTheme.space-1;
+                        max-width: content-max;
+                        Text {
+                            text: "logs";
+                            color: RtokTheme.ink;
+                            font-size: title-size;
+                            font-weight: 700;
+                            font-family: "IBM Plex Mono";
+                        }
+                        if logs.length == 0: Text {
+                            text: "no logs yet";
+                            color: RtokTheme.ink-muted;
+                            font-family: "IBM Plex Mono";
+                        }
+                        for line in logs: Text {
+                            text: line;
+                            color: RtokTheme.ink-muted;
+                            wrap: word-wrap;
+                            font-size: ultrawide ? 13px : 12px;
+                            font-family: "IBM Plex Mono";
+                        }
+                    }
                 }
             }
         }

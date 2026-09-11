@@ -1,4 +1,5 @@
 // Dual theme — Bitset B. Default dark. Toggle: RtokTheme.dark = false;
+// Breakpoints (layout only): sm <640 | md 640–1023 | lg 1024–1439 | xl 1440–1919 | 2xl ≥1920
 export global RtokTheme {
     in-out property <bool> dark: true;
 
@@ -25,5 +26,20 @@ export global RtokTheme {
     in-out property <length> space-2: 8px;
     in-out property <length> space-3: 12px;
     in-out property <length> space-4: 16px;
+    in-out property <length> space-5: 24px;
+
+    // Shared breakpoint vocabulary (match site/assets/css/custom.css)
+    in-out property <length> bp-sm: 640px;
+    in-out property <length> bp-md: 1024px;
+    in-out property <length> bp-lg: 1440px;
+    in-out property <length> bp-xl: 1920px;
+
+    in-out property <length> sidebar-w-full: 200px;
+    in-out property <length> sidebar-w-rail: 56px;
+    // Legacy alias — full labeled sidebar
     in-out property <length> sidebar-w: 200px;
+
+    // Optional density scale: denser on mobile, roomier on 2xl (applied in MainWindow)
+    in-out property <float> density-compact: 0.85;
+    in-out property <float> density-roomy: 1.15;
 }

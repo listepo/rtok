@@ -7,6 +7,11 @@
   --rtok-accent: #5CE1FF;
   --rtok-delta: #FF6B4A;
   --rtok-ink: #E8F7FF;
+  /* Shared breakpoint vocabulary (layout only — do not change brand colors) */
+  --rtok-bp-sm: 640px;   /* mobile ends / tablet starts */
+  --rtok-bp-md: 1024px;  /* tablet ends / desktop starts */
+  --rtok-bp-lg: 1440px;  /* wide */
+  --rtok-bp-xl: 1920px;  /* ultrawide + TV OLED */
 }
 
 .dark {
@@ -74,4 +79,116 @@
 }
 .dark .hextra-feature-card h3 svg {
   color: #5CE1FF;
+}
+
+/* =============================================================================
+   Responsive — Bitset B layout / density only
+   Breakpoints (shared with Slint RtokTheme):
+     sm  / mobile:        < 640px
+     md  / tablet:        640–1023px
+     lg  / desktop:       1024–1439px
+     xl  / wide:          1440–1919px
+     2xl / ultrawide+TV:  ≥ 1920px (comfort through ~3840px)
+   ============================================================================= */
+
+/* Home hero: notch / home-indicator safe areas */
+.rtok-home-hero {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Readable line length on ultrawide — avoid 200+ char lines */
+.rtok-hero-copy,
+.rtok-home-hero .hextra-hero-subtitle,
+.rtok-readable {
+  max-width: 42rem;
+}
+
+/* Fluid hero shot: full-bleed mobile → capped on lg/2xl */
+.rtok-hero-shot {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+@media (max-width: 639.98px) {
+  .rtok-hero-shot {
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+    /* full bleed within content column */
+  }
+
+  .content table td,
+  .content table th {
+    min-width: 6.5rem;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .rtok-hero-shot {
+    max-width: min(100%, 960px);
+    border-radius: 10px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .rtok-hero-shot {
+    max-width: min(100%, 1280px);
+  }
+}
+
+@media (min-width: 1920px) {
+  .rtok-hero-shot {
+    max-width: min(100%, 1440px);
+  }
+}
+
+/* Feature grid: do not stretch absurdly on ultrawide */
+.hextra-feature-grid {
+  max-width: min(100%, 1320px);
+  margin-inline: auto;
+}
+
+@media (min-width: 1920px) {
+  .hextra-feature-grid {
+    max-width: min(100%, 1400px);
+  }
+}
+
+/* Touch: icon hit area ≥ 44px on coarse pointers */
+@media (pointer: coarse) {
+  .rtok-feature-icon {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .hextra-feature-card h3 svg {
+    /* keep icon glyph size; enlarge hit via padding on parent when present */
+  }
+
+  .hextra-feature-card a,
+  .hextra-feature-card h3 {
+    min-height: 44px;
+  }
+}
+
+/* Docs tables: keep horizontal scroll; already width:max-content above */
+.content {
+  overflow-x: auto;
+}
+
+/* OLED: keep near-black canvas; avoid pure-white blooms on large screens */
+@media (min-width: 1920px) {
+  .dark body,
+  html.dark body {
+    background-color: var(--rtok-canvas, #06101A);
+  }
+}
+
+/* High dynamic range: leave alone (optional hook for future) */
+@media (dynamic-range: high) {
+  /* intentional no-op — keep Bitset B near-black / cyan as designed */
 }

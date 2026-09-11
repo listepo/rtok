@@ -3,19 +3,21 @@ title: rtok
 layout: hextra-home
 ---
 
+<div class="rtok-home-hero">
+
 {{< hextra/hero-badge link="https://github.com/listepo/rtok/releases" >}}
   <div class="hx:w-2 hx:h-2 hx:rounded-full hx:bg-primary-400"></div>
   <span>Δtok · measured, not claimed</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
 
-<div class="hx:mt-6 hx:mb-6">
+<div class="hx:mt-6 hx:mb-6 rtok-hero-copy">
 {{< hextra/hero-headline >}}
   Token reduction for&nbsp;<br class="hx:sm:block hx:hidden" />AI coding agents
 {{< /hextra/hero-headline >}}
 </div>
 
-<div class="hx:mb-8">
+<div class="hx:mb-8 rtok-hero-copy rtok-readable">
 {{< hextra/hero-subtitle >}}
   One Rust binary. Hooks, MCP, and a proxy hop — every saving is a ledger row,&nbsp;<br class="hx:sm:block hx:hidden" />and everything shortened expands back by id.
 {{< /hextra/hero-subtitle >}}
@@ -30,6 +32,8 @@ layout: hextra-home
     <source media="(prefers-color-scheme: light)" srcset="images/hero-overview-light.png">
     <img src="images/hero-overview-dark.png" alt="rtok webui Overview — measured token ledger" width="1280" height="720">
   </picture>
+</div>
+
 </div>
 
 {{< hextra/feature-grid >}}
