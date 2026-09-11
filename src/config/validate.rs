@@ -19,8 +19,12 @@ pub fn issues(path: &Path) -> Result<Vec<String>> {
 }
 
 /// [`issues`] over text already in hand (`set` checks before it writes).
+///
+/// Parsed as a [`toml_edit::ImDocument`], not a `DocumentMut`: only the immutable document
+/// keeps item spans, and the spans are what make `file:line` name the offending line rather
+/// than the first line that happens to start with the same key.
 fn issues_in(path: &Path, text: &str) -> Vec<String> {
-    let doc: DocumentMut = match text.parse() {
+    let doc: toml_edit::ImDocument<String> = match text.to_owned().parse() {
         Ok(d) => d,
         Err(e) => return vec![format!("{}:{e}", path.display())],
     };
@@ -70,17 +74,26 @@ fn parse_value(raw: &str) -> TomlValue {
         .unwrap_or_else(|_| TomlValue::from(raw.to_string()))
 }
 
+/// `rtok config set <key> <value>`: walk the dotted key, creating intermediate tables.
+/// `toml_edit`'s index operators panic on a path that runs through a scalar
+/// (`set proxy.port.foo 1`), so the walk is explicit and reports the clash instead.
 fn assign(doc: &mut DocumentMut, key: &str, value: TomlValue) -> Result<()> {
-    let parts: Vec<&str> = key.split('.').collect();
-    let item = toml_edit::value(value);
-    match parts.as_slice() {
-        [a] => doc[a] = item,
-        [a, b] => doc[a][b] = item,
-        [a, b, c] => doc[a][b][c] = item,
-        [a, b, c, d] => doc[a][b][c][d] = item,
-        _ => bail!("key too nested: {key}"),
+    let mut parts = key.split('.').peekable();
+    let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            table.insert(part, toml_edit::value(value));
+            return Ok(());
+        }
+        if !table.contains_key(part) {
+            table.insert(part, toml_edit::table());
+        }
+        table = table
+            .get_mut(part)
+            .and_then(Item::as_table_like_mut)
+            .ok_or_else(|| anyhow::anyhow!("{key}: {part} is not a table"))?;
     }
-    Ok(())
+    bail!("empty key");
 }
 
 fn is_open(dotted: &str) -> bool {
@@ -92,19 +105,12 @@ fn line_of(src: &str, span: Option<std::ops::Range<usize>>) -> usize {
     src[..off].bytes().filter(|&b| b == b'\n').count() + 1
 }
 
-fn loc(path: &Path, src: &str, item: &Item, dotted: &str) -> String {
-    let leaf = dotted.rsplit('.').next().unwrap_or(dotted);
-    let mut line = line_of(src, item.span());
-    for (i, raw) in src.lines().enumerate() {
-        let t = raw.trim_start();
-        if t.strip_prefix(leaf)
-            .is_some_and(|rest| rest.trim_start().starts_with('='))
-        {
-            line = i + 1;
-            break;
-        }
-    }
-    format!("{}:{}", path.display(), line)
+/// `path:line` for an item. `toml_edit` records the span of every parsed item, so this is
+/// the offending line — a hand-rolled "first line whose text starts with the leaf name"
+/// scan reported the wrong one whenever two tables share a key
+/// (`[plugins.measure] enabled` / `[plugins.cmd] enabled`).
+fn loc(path: &Path, src: &str, item: &Item) -> String {
+    format!("{}:{}", path.display(), line_of(src, item.span()))
 }
 
 fn check_table(
@@ -128,15 +134,12 @@ fn check_table(
             continue;
         }
         match schema.get(k) {
-            None => errors.push(format!(
-                "{}: unknown key: {dotted}",
-                loc(path, src, item, &dotted)
-            )),
+            None => errors.push(format!("{}: unknown key: {dotted}", loc(path, src, item))),
             Some(FigValue::Dict(_, nested)) => match item.as_table() {
                 Some(t) => check_table(path, src, &dotted, t, nested, errors),
                 None => errors.push(format!(
                     "{}: {dotted}: expected table",
-                    loc(path, src, item, &dotted)
+                    loc(path, src, item)
                 )),
             },
             Some(expected) => check_leaf(path, src, dotted.as_str(), item, expected, errors),
@@ -152,7 +155,7 @@ fn check_leaf(
     expected: &FigValue,
     errors: &mut Vec<String>,
 ) {
-    let at = loc(path, src, item, dotted);
+    let at = loc(path, src, item);
     match expected {
         FigValue::String(..) => {
             if item.as_str().is_none() {
@@ -166,8 +169,18 @@ fn check_leaf(
                 return;
             }
         }
-        FigValue::Num(..) => {
-            if item.as_integer().is_none() && item.as_float().is_none() {
+        FigValue::Num(_, num) => {
+            // A float default accepts a float; an integer default does not. Accepting both
+            // let `port = 8790.5` pass `validate` and then fail `Config::load`.
+            let ok = if matches!(
+                num,
+                figment::value::Num::F32(_) | figment::value::Num::F64(_)
+            ) {
+                item.as_integer().is_some() || item.as_float().is_some()
+            } else {
+                item.as_integer().is_some()
+            };
+            if !ok {
                 errors.push(format!("{at}: {dotted}: expected number"));
                 return;
             }
@@ -261,6 +274,58 @@ mod tests {
             "{errs:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The reported line is the offending one, not the first line whose leaf name matches:
+    /// two tables both holding `enabled` used to point at the wrong one.
+    #[test]
+    fn the_reported_line_is_the_offending_one() {
+        let dir = tmp("line");
+        let path = dir.join("bad.toml");
+        std::fs::write(
+            &path,
+            "[plugins.measure]\nenabled = true\n[plugins.cmd]\nenabled = \"yes\"\n",
+        )
+        .unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains(":4:") && e.contains("plugins.cmd.enabled")),
+            "{errs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `validate` has to refuse what the loader refuses: a float in an integer key passed
+    /// validation and then failed `Config::load`.
+    #[test]
+    fn a_float_is_not_a_number_for_an_integer_key() {
+        let dir = tmp("float");
+        let path = dir.join("bad.toml");
+        std::fs::write(&path, "[proxy]\nport = 8790.5\n").unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter().any(|e| e.contains("proxy.port")),
+            "float accepted: {errs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `config set` used to panic through `toml_edit`'s indexing when the key path walked
+    /// into a scalar (`set proxy.port.foo 1`).
+    #[test]
+    fn set_through_a_scalar_reports_instead_of_panicking() {
+        let home = tmp("scalar");
+        Config::init(&home, false).unwrap();
+        let before = std::fs::read_to_string(Config::path_for(&home)).unwrap();
+        let err = set(&home, "proxy.port.foo", "1", false).unwrap_err();
+        assert!(err.to_string().contains("not a table"), "{err}");
+        assert_eq!(
+            before,
+            std::fs::read_to_string(Config::path_for(&home)).unwrap(),
+            "nothing written"
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
