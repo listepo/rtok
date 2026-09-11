@@ -23,6 +23,10 @@ pub struct Report {
 /// One symbol row: name, kind, line, is-definition, end line, enclosing definition.
 type Row = (String, String, i32, bool, i32, String);
 
+/// `file_sha` for a file that cannot be decoded or parsed (T36.16). The stat gate can skip it
+/// on the next run without opening the file again.
+const EMPTY_SHA: &str = "";
+
 /// `(mtime_nanos, size)` — the freshness key. Nanos keep two edits in the same second apart;
 /// an unreadable timestamp reads as 0, which never matches a stored stat, so the file is read.
 fn changed_abs(root: &Path, event_path: &Path) -> PathBuf {
@@ -136,28 +140,7 @@ pub fn run_with(
     }
     each_parsed(&jobs, |job, parsed| {
         pb.inc(1);
-        match parsed {
-            Parsed::Unreadable => {}
-            Parsed::Unparsed => report.read += 1,
-            Parsed::Same => {
-                // Touched but not changed: move the freshness key so the next run skips on stat.
-                report.read += 1;
-                report.skipped += 1;
-                if !dry_run {
-                    cx.touch_symbols(&rk, &job.rel, job.stat.0, job.stat.1)?;
-                }
-            }
-            Parsed::Rows(sha, rows) => {
-                report.read += 1;
-                report.indexed += 1;
-                report.inserted += if dry_run {
-                    rows.len()
-                } else {
-                    cx.replace_symbols(&rk, &job.rel, &sha, job.stat, &rows)?
-                };
-            }
-        }
-        Ok(())
+        write_parsed(cx, &rk, job, parsed, dry_run, &mut report)
     })?;
     if !dry_run {
         let _ = cx.delete_symbols_missing(&rk, &keep);
@@ -255,6 +238,46 @@ enum Parsed {
     /// Same bytes as the stored sha.
     Same,
     Rows(String, Vec<Row>),
+}
+
+fn write_parsed(
+    cx: &Ctx,
+    rk: &str,
+    job: &Job,
+    parsed: Parsed,
+    dry_run: bool,
+    report: &mut Report,
+) -> Result<()> {
+    match parsed {
+        Parsed::Unreadable => {
+            if !dry_run {
+                cx.replace_symbols(rk, &job.rel, EMPTY_SHA, job.stat, &[])?;
+            }
+        }
+        Parsed::Unparsed => {
+            report.read += 1;
+            if !dry_run {
+                cx.replace_symbols(rk, &job.rel, EMPTY_SHA, job.stat, &[])?;
+            }
+        }
+        Parsed::Same => {
+            report.read += 1;
+            report.skipped += 1;
+            if !dry_run {
+                cx.touch_symbols(rk, &job.rel, job.stat.0, job.stat.1)?;
+            }
+        }
+        Parsed::Rows(sha, rows) => {
+            report.read += 1;
+            report.indexed += 1;
+            report.inserted += if dry_run {
+                rows.len()
+            } else {
+                cx.replace_symbols(rk, &job.rel, &sha, job.stat, &rows)?
+            };
+        }
+    }
+    Ok(())
 }
 
 fn parse(job: &Job) -> Parsed {
@@ -390,6 +413,7 @@ pub fn ensure(cx: &Ctx, root: &Path) -> Result<Report> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use rstest::rstest;
     use std::fs;
     use std::path::PathBuf;
 
@@ -512,6 +536,24 @@ pub(crate) mod tests {
             run(&Ctx::new(&cx), &dir, false).unwrap().read,
             0,
             "new stat was recorded"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T36.16: a latin-1 file records an empty-sha sentinel so a warm run opens nothing.
+    #[rstest]
+    fn latin1_file_is_not_reread_on_warm_index() {
+        let (cx, dir) = cx("latin1");
+        let mut bytes = b"fn latin() {}\n".to_vec();
+        bytes.push(0xE9);
+        fs::write(dir.join("bad.rs"), &bytes).unwrap();
+        run(&Ctx::new(&cx), &dir, false).unwrap();
+        let warm = run(&Ctx::new(&cx), &dir, false).unwrap();
+        assert_eq!(warm.read, 0, "second warm call must not open the file");
+        let k = canon(&dir);
+        assert_eq!(
+            cx.store.symbol_stat(&k, "bad.rs").unwrap().map(|s| s.0),
+            Some(EMPTY_SHA.to_string())
         );
         let _ = fs::remove_dir_all(dir);
     }

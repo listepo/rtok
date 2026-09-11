@@ -3,6 +3,13 @@
 
 ## P36 — second bug-hunt residue (open) — T36.19
 
+**T36.16 `graph` reads each file once** · — · `src/plugins/graph/mod.rs`, `src/plugins/graph/index.rs`
+Do: (a) `symbol` re-reads the whole file for every definition row (500 one-line definitions = 500 reads before the cap truncates); cache the last `(path, contents)`; (b) the cap budget scales `text.len()` (bytes) against a char-based estimate, so a CJK-heavy file's head can exceed `plugins.graph.max_tokens` by ~3× — scale and compare in chars; (c) a file that cannot be decoded or parsed is never recorded, so it is re-read and re-parsed on every call forever — record the stat with an empty-sha sentinel.
+Check: `symbol` on the 500-definition fixture reads the file once (counting fixture or a stat counter); a CJK fixture's capped output estimates ≤ `max_tokens`; a latin-1 fixture is not re-read on a second warm call. `cargo test --lib graph`, all pass, including `symbol_reads_each_source_file_once`, `cjk_capped_output_respects_max_tokens`, and `latin1_file_is_not_reread_on_warm_index` (rstest).
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+
 **T36.19 a setup backup is never overwritten** · — · `crates/rtok-agent-sdk/src/lib.rs`
 Do: the `.bak` collision loop gives up after 99 iterations and then `fs::copy` overwrites an existing backup.
 Check: with 100 pre-existing `.bak-*` names the install still refuses to clobber one (unique name or an error). `cargo test -p rtok-agent-sdk`, all 9 tests pass, including `backup_skips_a_hundred_preexisting_names_without_clobbering`.

@@ -13,6 +13,8 @@
 #[cfg(test)]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -23,6 +25,11 @@ use rtok_plugin_sdk::{
 
 pub mod index;
 pub mod watch;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static SYMBOL_SRC_READS: AtomicUsize = AtomicUsize::new(0);
+}
 
 pub struct Graph;
 
@@ -124,9 +131,17 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
     }
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
     let mut out = String::new();
+    let mut cached: Option<(String, String)> = None;
     for (path, kind, line, end_line) in &rows {
         out.push_str(&format!("{path}:{line} {kind}\n"));
-        let src = std::fs::read_to_string(root.join(path)).unwrap_or_default();
+        if !cached.as_ref().is_some_and(|(p, _)| p == path) {
+            symbol_src_reads_add(1);
+            cached = Some((
+                path.clone(),
+                std::fs::read_to_string(root.join(path)).unwrap_or_default(),
+            ));
+        }
+        let src = &cached.as_ref().unwrap().1;
         let first = (*line).max(1) as usize - 1;
         let last = (*end_line).max(*line) as usize;
         let body: Vec<&str> = src.lines().skip(first).take(last - first).collect();
@@ -213,6 +228,14 @@ pub(crate) fn impact_bfs(
     Ok(out)
 }
 
+#[cfg(test)]
+fn symbol_src_reads_add(n: usize) {
+    SYMBOL_SRC_READS.with(|c| c.fetch_add(n, Ordering::Relaxed));
+}
+
+#[cfg(not(test))]
+fn symbol_src_reads_add(_n: usize) {}
+
 /// `outline(path)`: the `read` plugin's `map` mode, capped like the other two.
 pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
     let text = crate::plugins::read::read(cx, path, "map", None)?;
@@ -231,12 +254,13 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
         let id = cx.put_archive(text.as_bytes())?;
         // The estimator is linear in chars, so the char budget scales the same way;
         // leave room for the trailer line (count + a 64-hex archive id).
-        let budget = (text.len() * max as usize / est as usize).saturating_sub(120);
+        let text_chars = text.chars().count();
+        let budget_chars = (text_chars * max as usize / est as usize).saturating_sub(120);
         let total = text.lines().count();
         let mut head = String::new();
         let mut shown = 0;
         for line in text.lines() {
-            if shown > 0 && head.len() + line.len() + 1 > budget {
+            if shown > 0 && head.chars().count() + line.chars().count() + 1 > budget_chars {
                 break;
             }
             head.push_str(line);
@@ -265,6 +289,7 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
 mod tests {
     use super::index::tests::cx;
     use super::*;
+    use rstest::rstest;
     use std::fs;
 
     fn crate_root() -> PathBuf {
@@ -311,6 +336,30 @@ mod tests {
         );
         assert!(cx.estimate(&out, Class::Code) <= cx.config.plugins.graph.max_tokens);
         assert_eq!(cx.store.measurement_count("graph").unwrap(), 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T36.16: one source file, many definitions — read it once, not once per row.
+    #[rstest]
+    fn symbol_reads_each_source_file_once() {
+        SYMBOL_SRC_READS.with(|c| c.store(0, Ordering::Relaxed));
+        let (cx, dir) = cx("symread");
+        let src = "fn dup() {\n    ();\n}\n".repeat(500);
+        fs::write(dir.join("d.rs"), &src).unwrap();
+        symbol(&Ctx::new(&cx), &dir, "dup").unwrap();
+        let reads = SYMBOL_SRC_READS.with(|c| c.load(Ordering::Relaxed));
+        assert_eq!(reads, 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T36.16: cap scales in chars so CJK-heavy output cannot overshoot `max_tokens`.
+    #[rstest]
+    fn cjk_capped_output_respects_max_tokens() {
+        let (cx, dir) = cx("cjkcap");
+        let body = "// 漢字漢字漢字漢字漢字漢字漢字漢字漢字漢字\n".repeat(3000);
+        fs::write(dir.join("cjk.rs"), format!("fn cjk() {{\n{body}}}")).unwrap();
+        let out = symbol(&Ctx::new(&cx), &dir, "cjk").unwrap();
+        assert!(cx.estimate(&out, Class::Code) <= cx.config.plugins.graph.max_tokens);
         let _ = fs::remove_dir_all(dir);
     }
 
