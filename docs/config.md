@@ -240,6 +240,13 @@ recall_tokens  = 200
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
 
+[plugins.memory.embed]
+enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
+provider   = "local"                  # "local" | "openai"
+model      = "all-MiniLM-L6-v2"
+dimensions = 384
+hybrid     = true                     # when enabled: RRF(fts5, knn); false = knn only
+
 [plugins.graph]
 enabled    = true
 max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"

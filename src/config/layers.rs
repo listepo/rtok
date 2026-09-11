@@ -637,6 +637,18 @@ mod tests {
         assert_eq!(key.1, "https://legacy");
         assert_eq!(key.2, "env");
 
+        let rows = entries(&fig(
+            &home,
+            &[("PLUGINS_MEMORY_EMBED_ENABLED", "true")],
+            None,
+        ));
+        let embed = rows
+            .iter()
+            .find(|(k, ..)| k == "plugins.memory.embed.enabled")
+            .unwrap();
+        assert_eq!(embed.1, "true");
+        assert_eq!(embed.2, "env");
+
         let figment = assemble(
             &home,
             Some(&Config::path_for(&home)),

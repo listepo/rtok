@@ -436,6 +436,17 @@ section! {
 }
 
 section! {
+    /// `[plugins.memory.embed]` — optional vector search beside FTS5 (P29; off by default).
+    MemoryEmbed {
+        enabled: bool = false,
+        provider: String = s("local"),
+        model: String = s("all-MiniLM-L6-v2"),
+        dimensions: u32 = 384,
+        hybrid: bool = true,
+    }
+}
+
+section! {
     /// `[plugins.memory]`
     Memory {
         enabled: bool = true,
@@ -443,6 +454,7 @@ section! {
         recall_tokens: u32 = 200,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
+        embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }
 
@@ -938,6 +950,8 @@ mod tests {
         assert!(err.to_string().contains("prot"), "{err}");
         assert!(parse("[nope]\nx = 1\n").is_err());
         assert!(parse("[plugins.compress]\nunknown = true\n").is_err());
+        let err = parse("[plugins.memory.embed]\nprot = 1\n").unwrap_err();
+        assert!(err.to_string().contains("prot"), "{err}");
     }
 
     #[test]
@@ -961,6 +975,22 @@ mod tests {
         assert_eq!(row.1, "true");
         assert_eq!(row.2, "dotenv");
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn memory_embed_defaults_off() {
+        let cfg = Config::default();
+        assert!(!cfg.plugins.memory.embed.enabled);
+        assert_eq!(cfg.plugins.memory.embed.provider, "local");
+        assert_eq!(cfg.plugins.memory.embed.model, "all-MiniLM-L6-v2");
+        assert_eq!(cfg.plugins.memory.embed.dimensions, 384);
+        assert!(cfg.plugins.memory.embed.hybrid);
+    }
+
+    #[test]
+    fn memory_embed_enabled_from_file() {
+        let cfg: Config = parse("[plugins.memory.embed]\nenabled = true\n").unwrap();
+        assert!(cfg.plugins.memory.embed.enabled);
     }
 
     #[test]
