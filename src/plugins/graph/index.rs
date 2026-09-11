@@ -25,7 +25,6 @@ type Row = (String, String, i32, bool, i32, String);
 
 /// `(mtime_nanos, size)` — the freshness key. Nanos keep two edits in the same second apart;
 /// an unreadable timestamp reads as 0, which never matches a stored stat, so the file is read.
-
 fn changed_abs(root: &Path, event_path: &Path) -> PathBuf {
     let raw = if event_path.is_absolute() {
         event_path.to_path_buf()

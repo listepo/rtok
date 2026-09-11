@@ -269,7 +269,13 @@ fn strip_words(text: &str, words: &[&str]) -> String {
                 }
             }
             let lower = word.to_ascii_lowercase();
-            if keep.contains(lower.as_str()) || !drop.contains(lower.as_str()) {
+            // A word glued to a dot, dash, slash or digit is part of an identifier or a path
+            // (`a.txt`, `a-b`, `a/b`, `item1`), not an article: dropping it turned
+            // `Edit a.txt` into `Edit .txt`.
+            let glued = chars
+                .peek()
+                .is_some_and(|c| matches!(c, '.' | '-' | '_' | '/' | '\\') || c.is_ascii_digit());
+            if glued || keep.contains(lower.as_str()) || !drop.contains(lower.as_str()) {
                 out.push_str(&word);
             }
             // else: drop the word
@@ -397,6 +403,25 @@ mod tests {
         let out = compress_prose("Build it and then run it.", CaveIntensity::Ultra);
         assert!(!out.contains("and then"), "{out}");
         assert!(out.contains("Build it") && out.contains("run it"), "{out}");
+    }
+
+    /// An article glued to a dot, dash, slash or digit belongs to a name, not to the prose:
+    /// `Edit a.txt` came back as `Edit .txt`.
+    #[test]
+    fn an_article_inside_a_name_is_kept() {
+        for (input, want) in [
+            ("Edit a.txt now", "a.txt"),
+            ("Open a-b next", "a-b"),
+            ("Check a/b here", "a/b"),
+            ("Keep a1 there", "a1"),
+        ] {
+            let out = compress_prose(input, CaveIntensity::Full);
+            assert!(out.contains(want), "{input} → {out}");
+        }
+        assert_eq!(
+            compress_prose("Edit the file", CaveIntensity::Full),
+            "Edit file"
+        );
     }
 
     #[test]

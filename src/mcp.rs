@@ -107,15 +107,20 @@ impl Server {
         let id = req["id"].clone();
         let result = match method {
             "initialize" => {
-                let mut info = ServerInfo::default();
                 // `ServerInfo::default()` fills `server_info` from rmcp's own build env, so
                 // the handshake used to introduce this server as `{"name":"rmcp"}`.
-                info.server_info = rmcp::model::Implementation {
-                    name: "rtok".into(),
-                    version: env!("CARGO_PKG_VERSION").into(),
+                let info = ServerInfo {
+                    server_info: rmcp::model::Implementation {
+                        name: "rtok".into(),
+                        version: env!("CARGO_PKG_VERSION").into(),
+                        ..Default::default()
+                    },
+                    capabilities: rmcp::model::ServerCapabilities {
+                        tools: Some(rmcp::model::ToolsCapability::default()),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 };
-                info.capabilities.tools = Some(rmcp::model::ToolsCapability::default());
                 serde_json::to_value(&info).unwrap_or(json!({}))
             }
             "ping" => json!({}),

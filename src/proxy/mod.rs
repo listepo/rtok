@@ -82,8 +82,14 @@ pub struct ProxyState {
 impl ProxyState {
     pub fn new(cfg: &Config) -> Result<Self> {
         let store = Store::open(&cfg.core.db_path)?;
+        // A *read* timeout, not `Client::timeout`: the latter is a deadline on the whole
+        // exchange, body stream included, so a turn that streams for longer than
+        // `proxy.timeout_s` (extended thinking, many tool calls) was cut mid-SSE with the
+        // client left without a `message_stop`. `proxy.timeout_s` bounds one read instead.
+        let budget = Duration::from_secs(cfg.proxy.timeout_s.max(1));
         let client = Client::builder()
-            .timeout(Duration::from_secs(cfg.proxy.timeout_s.max(1)))
+            .connect_timeout(budget)
+            .read_timeout(budget)
             .build()
             .context("reqwest client")?;
         // Host agent: the `[hook] host` setting (T5.1 says `core.host`, which T12 removed —

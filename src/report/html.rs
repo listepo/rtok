@@ -31,7 +31,7 @@ pub fn render(doc: &Document) -> String {
             vec![
                 "calls".into(),
                 format!("{} of {}", w.calls_in_window, w.calls_total),
-                format!("window ({})", w.since),
+                format!("window ({})", esc(&w.since)),
             ],
             vec![
                 "measurements".into(),
