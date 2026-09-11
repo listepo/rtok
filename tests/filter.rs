@@ -1,13 +1,20 @@
 //! T10.2: `rtok filter --cmd` reads stdin; OpenCode plugin mock.
 
+use rstest::rstest;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-#[test]
+#[rstest]
 fn printf_git_status_returns_filtered_text() {
+    let home = std::env::temp_dir().join(format!("rtok-filter-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+
     let bin = env!("CARGO_BIN_EXE_rtok");
     let mut child = Command::new(bin)
         .args(["filter", "--cmd", "git status"])
+        .env("RTOK_HOME", &home)
+        .env("HOME", &home)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -31,6 +38,7 @@ fn printf_git_status_returns_filtered_text() {
     assert!(s.contains("On branch main"), "{s}");
     assert!(s.contains("modified:   src/lib.rs"), "{s}");
     assert!(!s.contains("Changes not staged"), "{s}");
+    let _ = std::fs::remove_dir_all(&home);
 }
 
 #[test]
