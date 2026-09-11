@@ -505,20 +505,6 @@ Model: -
 
 Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task/PLAN. Feature stays off until the measurement is recorded.
 
-### P36 — second bug-hunt residue (goal: the defects a module audit found and one session did not fix) — added 2026-09-11; open.
-
-Written after a read-only audit of every module (`src/store`, `src/measure`, `src/proxy`, `src/plugins/*`, `src/config`, `src/cli`, `src/log`, `src/otel`, `src/report`, `src/tui`, `src/web`, `src/setup`, `crates/*`) whose fixes landed as `1afd465..3180376`. Each task below is a verified defect with a concrete reproduction, not a preference; the commit range is the evidence that the rest of that audit is done. One task = one commit, as always.
-
-**T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
-Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
-Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).
-Complexity: 3/5
-Status: open
-Model: -
-
-Gate P36 (review): every task above is either fixed with a test that fails on the old code, or moved to `done.md` with the Check that closed it; `just check` green; no new config key is added by this phase.
-
-
 ## 4. Definition of done for v0.1 (code-closable only; traffic/user-gated rows removed 2026-09-09, see §6)
 
 1. `rtok doctor` shows ≤ 8 token-related hooks, one MCP server for reads/memory/graph, one proxy hop (serving both Anthropic and OpenAI wire formats, D11).

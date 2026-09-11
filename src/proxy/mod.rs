@@ -47,7 +47,7 @@ use crate::config::Config;
 use crate::plugin::{Ctx, Runtime};
 use crate::plugins::Registry;
 use crate::store::Store;
-use wire::{Wire, WireRequest};
+use wire::{Wire, WireRequest, api_of, join_upstream};
 
 pub mod anthropic;
 pub mod cli;
@@ -213,7 +213,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         (request_body, recorded)
     };
 
-    let target = match upstream_url(state.upstream_for(wire), &path, query.as_deref()) {
+    let target = match join_upstream(state.upstream_for(wire), &path, query.as_deref()) {
         Ok(u) => u,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, &e.to_string()),
     };
@@ -554,7 +554,7 @@ async fn finish(
             if let Err(e) = state.store.insert_usage(
                 &r.session,
                 r.model.as_deref(),
-                wire.map(Wire::api).unwrap_or("anthropic"),
+                wire.map(api_of).unwrap_or("anthropic"),
                 usage.input,
                 usage.cache_create,
                 usage.cache_read,
@@ -651,18 +651,6 @@ fn session_for(
     let mut h = Sha256::new();
     h.update(raw);
     format!("{:x}", h.finalize())
-}
-
-fn upstream_url(base: &str, path: &str, query: Option<&str>) -> Result<String> {
-    if base.is_empty() {
-        anyhow::bail!("proxy.upstream is empty");
-    }
-    let mut url = format!("{base}{path}");
-    if let Some(q) = query {
-        url.push('?');
-        url.push_str(q);
-    }
-    Ok(url)
 }
 
 /// Headers that must not be forwarded (HTTP/1.1 hop-by-hop + framing). `content-length`
@@ -768,5 +756,40 @@ mod tests {
         state.store.run_retention(cfg.core.retain_calls_days).unwrap();
         assert_eq!(state.store.count_calls().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn upstream_base_with_trailing_path_forwards_to_target() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/prefix/v1/messages");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"type":"message","usage":{"input_tokens":1,"output_tokens":2}}"#);
+        });
+        let dir = std::env::temp_dir().join(format!("rtok-proxy-prefix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.proxy.upstream = format!("{}/prefix", server.base_url());
+        cfg.proxy.mode = "passthrough".to_string();
+        let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+
+        let resp = reqwest::Client::new()
+            .post(format!("http://{addr}/v1/messages"))
+            .header("content-type", "application/json")
+            .body(r#"{"model":"test"}"#)
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        mock.assert();
+        task.abort();
     }
 }

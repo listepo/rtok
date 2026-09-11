@@ -1,5 +1,7 @@
 //! API-wire abstraction for proxy request rewriting and usage extraction (plan T11.1).
 
+use anyhow::{Context, Result};
+use reqwest::Url;
 use serde_json::Value;
 
 // The plugin-visible half of the wire is the published contract (D25); the provider
@@ -9,6 +11,30 @@ pub use rtok_plugin_sdk::{ToolResultRef, ToolResults, WireRequest};
 use super::anthropic::ANTHROPIC;
 use super::openai_chat::OPENAI_CHAT;
 use super::openai_responses::OPENAI_RESPONSES;
+
+/// Provider slug for the Anthropic Messages wire.
+pub const ANTHROPIC_PROVIDER: &str = "anthropic";
+/// Provider slug shared by both OpenAI wires.
+pub const OPENAI_PROVIDER: &str = "openai";
+
+/// `usage.api` value for Anthropic Messages.
+pub const API_ANTHROPIC: &str = "anthropic";
+/// `usage.api` value for Chat Completions.
+pub const API_OPENAI_CHAT: &str = "openai_chat";
+/// `usage.api` value for the Responses API.
+pub const API_OPENAI_RESPONSES: &str = "openai_responses";
+
+fn wire_ids(wire: &dyn Wire) -> (&'static str, &'static str) {
+    if std::ptr::eq(wire, &ANTHROPIC as &dyn Wire) {
+        (ANTHROPIC_PROVIDER, API_ANTHROPIC)
+    } else if std::ptr::eq(wire, &OPENAI_CHAT as &dyn Wire) {
+        (OPENAI_PROVIDER, API_OPENAI_CHAT)
+    } else if std::ptr::eq(wire, &OPENAI_RESPONSES as &dyn Wire) {
+        (OPENAI_PROVIDER, API_OPENAI_RESPONSES)
+    } else {
+        unreachable!("unknown wire")
+    }
+}
 
 /// A provider request/response shape supported by the proxy.
 pub trait Wire: ToolResults {
@@ -38,17 +64,6 @@ pub trait Wire: ToolResults {
     /// Returns whether `body` changed — only then is the request re-serialised.
     fn prepare_request(&self, _body: &mut Value, _include_usage: bool) -> bool {
         false
-    }
-
-    /// `usage.api` discriminator (T11.6). Distinct from `provider` (openai_chat vs openai_responses).
-    fn api(&self) -> &'static str {
-        if self.matches("/v1/responses") {
-            "openai_responses"
-        } else if self.matches("/v1/chat/completions") {
-            "openai_chat"
-        } else {
-            "anthropic"
-        }
     }
 
     /// The billable total the `tokens` ledger records. Anthropic's four counters are
@@ -98,10 +113,36 @@ impl Usage {
     }
 }
 
+/// Join `proxy.upstream` / `proxy.openai_upstream` with the request path and query.
+pub fn join_upstream(base: &str, path: &str, query: Option<&str>) -> Result<String> {
+    if base.is_empty() {
+        anyhow::bail!("proxy.upstream is empty");
+    }
+    let mut url = Url::parse(base).context("proxy upstream URL")?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| anyhow::anyhow!("proxy upstream URL cannot be a base"))?;
+        segments.pop_if_empty();
+        for segment in path.split('/').filter(|s| !s.is_empty()) {
+            segments.push(segment);
+        }
+    }
+    if let Some(q) = query {
+        url.set_query(Some(q));
+    }
+    Ok(url.into())
+}
+
 /// The wire matching `path`, if this build understands it.
 pub fn for_path(path: &str) -> Option<&'static dyn Wire> {
     const WIRES: [&(dyn Wire + 'static); 3] = [&ANTHROPIC, &OPENAI_CHAT, &OPENAI_RESPONSES];
     WIRES.into_iter().find(|wire| wire.matches(path))
+}
+
+/// `usage.api` discriminator for `wire` (T11.6).
+pub fn api_of(wire: &dyn Wire) -> &'static str {
+    wire_ids(wire).1
 }
 
 /// Read a non-empty string field, which is how both OpenAI wires carry the session id.
@@ -219,7 +260,7 @@ pub fn usage_from_response(
 
 #[cfg(test)]
 mod tests {
-    use super::int_field;
+    use super::*;
     use serde_json::json;
 
     #[test]
@@ -228,5 +269,36 @@ mod tests {
         assert_eq!(int_field(&usage, "input_tokens"), 10);
         assert_eq!(int_field(&usage, "output_tokens"), 2);
         assert_eq!(int_field(&usage, "missing"), 0);
+    }
+
+    #[test]
+    fn wire_reports_own_provider_and_api() {
+        let cases = [
+            ("/v1/messages", ANTHROPIC_PROVIDER, API_ANTHROPIC),
+            ("/v1/chat/completions", OPENAI_PROVIDER, API_OPENAI_CHAT),
+            ("/v1/responses", OPENAI_PROVIDER, API_OPENAI_RESPONSES),
+        ];
+        for (path, provider, api) in cases {
+            let wire = for_path(path).expect("wire");
+            assert_eq!(wire.provider(), provider, "{path}");
+            assert_eq!(api_of(wire), api, "{path}");
+        }
+    }
+
+    #[test]
+    fn join_upstream_avoids_doubled_slashes_and_queries() {
+        assert_eq!(
+            join_upstream("http://127.0.0.1", "/v1/messages", None).expect("join"),
+            "http://127.0.0.1/v1/messages"
+        );
+        assert_eq!(
+            join_upstream("http://127.0.0.1/prefix", "/v1/messages", None).expect("join"),
+            "http://127.0.0.1/prefix/v1/messages"
+        );
+        assert_eq!(
+            join_upstream("http://127.0.0.1/prefix?keep=1", "/v1/messages", Some("q=1"))
+                .expect("join"),
+            "http://127.0.0.1/prefix/v1/messages?q=1"
+        );
     }
 }
