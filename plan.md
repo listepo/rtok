@@ -411,13 +411,6 @@ Gate P30 (review): Same MCP names; LSP off → tags-only bytes; LSP on → at le
 
 Optional semantic response cache (similarity threshold) on the proxy. Opt-in; a hit can be a wrong answer, so false-hit Check is mandatory.
 
-**T31.1 config flag (opt-in, default off)** · T31.0 · `config/default.toml`, `docs/config.md`, config schema
-Do: add the opt-in flag and threshold knobs; default off. Document them.
-Check: default proxy behaviour unchanged; enabling the flag is visible in `config show --sources`; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T31.2 implement opt-in semantic cache** · T31.1 · `src/proxy/` / proxy plugin
 Do: implement the cache behind the flag. Off → identical proxy bytes to today. On → cache hits only under the documented threshold; record measurements.
 Check: off → identical proxy bytes; on → documented false-hit rate runnable on the P9 set.
@@ -716,7 +709,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T30.1` | P30 LSP graph | config flag (tags default) | ✅ 2026-09-12 | 2/5 |
 | `T30.2` | P30 LSP graph | implement optional LSP backend | open | 4/5 |
 | `T31.0` | P31 semantic cache | design/survey: semantic cache | ✅ 2026-09-11 | 3/5 |
-| `T31.1` | P31 semantic cache | config flag (opt-in, default off) | open | 2/5 |
+| `T31.1` | P31 semantic cache | config flag (opt-in, default off) | ✅ 2026-09-12 | 2/5 |
 | `T31.2` | P31 semantic cache | implement opt-in semantic cache | open | 4/5 |
 | `T32.0` | P32 WASM host | design/survey: WASM host | ✅ 2026-09-11 | 3/5 |
 | `T32.1` | P32 WASM host | config / feature flag for WASM host | open | 2/5 |

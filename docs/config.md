@@ -223,6 +223,35 @@ tail_lines = 4
 [plugins.proxy]
 enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]
 
+#### `[plugins.proxy.semantic_cache]` — opt-in response cache (P31)
+
+Off by default until Gate P31 (zero false hits on the P9 set). When enabled (T31.2), the proxy may
+serve a prior response when a normalized prompt is similar enough; a false hit is a wrong answer, so
+this stays opt-in. Env: `RTOK_PLUGINS_PROXY_SEMANTIC_CACHE_ENABLED=true`.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | Master switch; proxy bytes stay identical when off |
+| `threshold` | `0.99` | Cosine similarity floor for the semantic tier |
+| `ttl_s` | `300` | Entry TTL in seconds |
+| `max_messages` | `1` | Skip cache when `messages` length exceeds this |
+| `require_empty_tools` | `true` | Do not cache turns with non-empty `tools[]` |
+| `embed_backend` | `"hash"` | `"hash"` = direct tier only until P29 embeddings |
+| `cache_by_model` | `true` | Partition cache entries by model |
+| `cache_by_provider` | `true` | Partition cache entries by provider |
+
+```toml
+[plugins.proxy.semantic_cache]
+enabled = false
+threshold = 0.99
+ttl_s = 300
+max_messages = 1
+require_empty_tools = true
+embed_backend = "hash"
+cache_by_model = true
+cache_by_provider = true
+```
+
 [plugins.inject]
 enabled       = true
 budget_tokens = 800                   # per turn, all injections together (decision D5)

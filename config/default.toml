@@ -164,6 +164,16 @@ tail_lines = 4
 [plugins.proxy]
 enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]
 
+[plugins.proxy.semantic_cache]
+enabled = false                       # Gate P31: must stay false until audit passes
+threshold = 0.99                      # cosine similarity; semantic tier only
+ttl_s = 300
+max_messages = 1                      # bifrost uses 3; start stricter for agents
+require_empty_tools = true
+embed_backend = "hash"                # "hash" = direct tier only until P29 embeddings
+cache_by_model = true
+cache_by_provider = true
+
 [plugins.inject]
 enabled       = true
 budget_tokens = 800                   # per turn, all injections together (decision D5)

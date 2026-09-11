@@ -413,8 +413,25 @@ section! {
 }
 
 section! {
+    /// `[plugins.proxy.semantic_cache]` — opt-in response cache (P31). Off until Gate P31.
+    SemanticCache {
+        enabled: bool = false,
+        threshold: f32 = 0.99,
+        ttl_s: u64 = 300,
+        max_messages: u32 = 1,
+        require_empty_tools: bool = true,
+        embed_backend: String = s("hash"),
+        cache_by_model: bool = true,
+        cache_by_provider: bool = true,
+    }
+}
+
+section! {
     /// `[plugins.proxy]` — the usage-capture plugin, not the `[proxy]` server.
-    ProxyPlugin { enabled: bool = true }
+    ProxyPlugin {
+        enabled: bool = true,
+        semantic_cache: SemanticCache = SemanticCache::default(),
+    }
 }
 
 section! {
@@ -943,6 +960,37 @@ mod tests {
         assert_eq!(cfg.estimator.prose, 4.2);
         assert!(!cfg.plugins.cmd.rewrite);
         assert!(cfg.plugins.cmd.enabled);
+    }
+
+    #[test]
+    fn semantic_cache_defaults_overlay_and_unknown_key() {
+        let d = SemanticCache::default();
+        assert!(!d.enabled);
+        assert_eq!(d.threshold, 0.99);
+        assert_eq!(d.ttl_s, 300);
+        assert_eq!(d.max_messages, 1);
+        assert!(d.require_empty_tools);
+        assert_eq!(d.embed_backend, "hash");
+        assert!(d.cache_by_model);
+        assert!(d.cache_by_provider);
+
+        let cfg: Config = parse(
+            "[plugins.proxy.semantic_cache]
+enabled = true
+threshold = 0.95
+",
+        )
+        .unwrap();
+        assert!(cfg.plugins.proxy.semantic_cache.enabled);
+        assert_eq!(cfg.plugins.proxy.semantic_cache.threshold, 0.95);
+
+        let err = parse(
+            "[plugins.proxy.semantic_cache]
+bogus = true
+",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("bogus"), "{err}");
     }
 
     #[test]

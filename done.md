@@ -70,6 +70,13 @@ Check: a live row shows bytes (or `-`), and a linked api_request row still shows
 Complexity: 1/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
+**T31.1 config flag (opt-in, default off)** · T31.0 · `config/default.toml`, `docs/config.md`, config schema (`src/config/mod.rs`)
+Do: add the opt-in flag and threshold knobs; default off. Document them. NO cache implementation, no embeddings, no new deps. Proxy behaviour must stay unchanged.
+Check: default proxy behaviour unchanged; enabling the flag is visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: done 2026-09-12 · Check: `cargo fmt --check`, `cargo clippy --lib -D warnings`, `cargo test --lib config::` (40 passed incl. `semantic_cache_defaults_overlay_and_unknown_key`, `default_toml_is_the_defaults`), `cargo test config_coverage` green; no `src/proxy/` diff; `RTOK_PLUGINS_PROXY_SEMANTIC_CACHE_ENABLED=true rtok config show --sources` → `plugins.proxy.semantic_cache.enabled = true (env)`.
+Model: Composer 2.5
+
 
 **T36.16 `graph` reads each file once** · — · `src/plugins/graph/mod.rs`, `src/plugins/graph/index.rs`
 Do: (a) `symbol` re-reads the whole file for every definition row (500 one-line definitions = 500 reads before the cap truncates); cache the last `(path, contents)`; (b) the cap budget scales `text.len()` (bytes) against a char-based estimate, so a CJK-heavy file's head can exceed `plugins.graph.max_tokens` by ~3× — scale and compare in chars; (c) a file that cannot be decoded or parsed is never recorded, so it is re-read and re-parsed on every call forever — record the stat with an empty-sha sentinel.
@@ -216,7 +223,7 @@ Check: default keeps tags-only; enabling the flag is visible in `config show --s
 Complexity: 2/5
 Status: done 2026-09-12 · Model: Composer 2.5
 
-## P31 — Semantic response cache (design; open) — T31.0
+## P31 — Semantic response cache (open) — T31.2
 
 **T31.0 design/survey: semantic cache** · — · `src/plugins/proxy/PLAN.md` or `src/proxy/` design note
 Do: survey bifrost and at least two other semantic-cache approaches. Define similarity threshold, opt-in shape, and how false hits are measured on the P9 task set. No implementation.
