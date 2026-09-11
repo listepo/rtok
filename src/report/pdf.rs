@@ -65,8 +65,8 @@ pub fn render(doc: &Document) -> Vec<u8> {
                 }),
             }
         }
-        starts.push(pages.len());
         let mut iter = items.into_iter().peekable();
+        let mut recorded = false;
         while iter.peek().is_some() {
             let rest = LINES - pages.last().expect("page").len();
             // A heading never stands alone at the bottom of a page.
@@ -74,6 +74,10 @@ pub fn render(doc: &Document) -> Vec<u8> {
             if take.is_empty() {
                 pages.push(Vec::new());
             } else {
+                if !recorded {
+                    starts.push(pages.len() - 1);
+                    recorded = true;
+                }
                 pages.last_mut().expect("page").extend(take);
             }
         }
@@ -81,7 +85,7 @@ pub fn render(doc: &Document) -> Vec<u8> {
     let mut doc_pdf = PdfDocument::new("rtok report");
     doc_pdf.add_bookmark("rtok report", 0);
     for (sec, start) in secs.iter().zip(&starts) {
-        doc_pdf.add_bookmark(sec.title, start + 1);
+        doc_pdf.add_bookmark(sec.title, start + 2);
     }
     let toc = toc_page(doc, &secs, &starts);
     let mut out = vec![toc];
@@ -513,11 +517,17 @@ fn ansi(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use rstest::rstest;
+
     use super::*;
+    use crate::report::Document;
+    use crate::web::model::*;
 
     /// A label longer than 26 chars, all multi-byte, must not panic when
     /// `bars` truncates it (regression: byte slicing used to land mid-char).
-    #[test]
+    #[rstest]
     fn bars_truncates_long_multibyte_label_without_panicking() {
         let mut ops = Vec::new();
         let label = "é".repeat(30);
@@ -525,13 +535,251 @@ mod tests {
         bars(&mut ops, TOP, &pairs);
     }
 
-    #[test]
+    #[rstest]
     fn split_word_splits_on_chars_not_bytes() {
         assert_eq!(split_word("ééééé", 2), vec!["éé", "éé", "é"]);
     }
 
-    #[test]
+    #[rstest]
     fn split_word_leaves_short_word_unchanged() {
         assert_eq!(split_word("short", 26), vec!["short"]);
+    }
+
+    fn positions(hay: &[u8], needle: &str) -> Vec<usize> {
+        let n = needle.as_bytes();
+        hay.windows(n.len())
+            .enumerate()
+            .filter(|(_, w)| *w == n)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn object_offset(pdf: &[u8], id: u32) -> usize {
+        let needle = format!("{id} 0 obj");
+        positions(pdf, &needle)
+            .into_iter()
+            .find(|&pos| pos == 0 || !pdf[pos - 1].is_ascii_digit())
+            .unwrap_or_else(|| panic!("object {id}"))
+    }
+
+    fn page_content_starts(pdf: &[u8]) -> Vec<usize> {
+        page_object_ids(pdf)
+            .iter()
+            .map(|page_id| {
+                let page_off = object_offset(pdf, *page_id);
+                let page_end = page_off
+                    + pdf[page_off..]
+                        .windows(6)
+                        .position(|w| w == b"endobj")
+                        .expect("page endobj");
+                let page_body = String::from_utf8_lossy(&pdf[page_off..page_end]);
+                let contents_id = page_body
+                    .split("/Contents")
+                    .nth(1)
+                    .and_then(|tail| {
+                        tail.chars()
+                            .skip_while(|c| !c.is_ascii_digit())
+                            .take_while(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse::<u32>()
+                            .ok()
+                    })
+                    .expect("page contents ref");
+                object_offset(pdf, contents_id)
+            })
+            .collect()
+    }
+
+    fn pdf_page_index(pdf: &[u8], byte_offset: usize) -> usize {
+        let starts = page_content_starts(pdf);
+        starts
+            .iter()
+            .rposition(|&start| start <= byte_offset)
+            .unwrap_or(0)
+    }
+
+    fn toc_page_num(pdf: &[u8], title: &str) -> usize {
+        let needle = format!("({title}  ");
+        let pos = positions(pdf, &needle)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("toc entry for {title}"));
+        let tail = String::from_utf8_lossy(&pdf[pos..pos + 32]);
+        tail.chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or_else(|_| panic!("toc page digits for {title}: {tail:?}"))
+    }
+
+    fn body_heading_page(pdf: &[u8], title: &str) -> usize {
+        let needle = format!("({title})");
+        let pos = positions(pdf, &needle)
+            .into_iter()
+            .last()
+            .unwrap_or_else(|| panic!("body heading for {title}"));
+        pdf_page_index(pdf, pos)
+    }
+
+    fn utf16be_title_hex(title: &str) -> String {
+        let mut hex = String::from("FEFF");
+        for unit in title.encode_utf16() {
+            hex.push_str(&format!("{:04X}", unit));
+        }
+        hex
+    }
+
+    fn page_object_ids(pdf: &[u8]) -> Vec<u32> {
+        let text = String::from_utf8_lossy(pdf);
+        let kids = text
+            .find("/Kids[")
+            .or_else(|| text.find("/Kids ["))
+            .expect("page tree Kids");
+        let bracket = text[kids..]
+            .find(']')
+            .expect("page tree Kids closing bracket");
+        let slice = &text[kids..kids + bracket];
+        let mut ids = Vec::new();
+        let mut at = 0usize;
+        while let Some(rel) = slice[at..].find(" 0 R") {
+            let end = at + rel;
+            let mut start = end;
+            while start > 0 && slice.as_bytes()[start - 1].is_ascii_digit() {
+                start -= 1;
+            }
+            ids.push(
+                slice[start..end]
+                    .parse::<u32>()
+                    .expect("page tree kid id"),
+            );
+            at = end + 4;
+        }
+        ids
+    }
+
+    fn bookmark_page(pdf: &[u8], title: &str) -> usize {
+        let page_ids = page_object_ids(pdf);
+        let text = String::from_utf8_lossy(pdf);
+        let needle = format!("/Title<{}>/Dest[", utf16be_title_hex(title));
+        let pos = text
+            .find(&needle)
+            .unwrap_or_else(|| panic!("bookmark for {title}"));
+        let slice = &text[pos + needle.len()..pos + needle.len() + 16];
+        let obj_id = slice
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse::<u32>()
+            .unwrap_or_else(|_| panic!("bookmark dest id for {title}: {slice:?}"));
+        page_ids
+            .iter()
+            .position(|&id| id == obj_id)
+            .unwrap_or_else(|| panic!("bookmark {title} dest {obj_id} not a page"))
+    }
+
+    fn fat_doc(savings_rows: usize, config_rows: usize) -> Document {
+        let rows: Vec<ReportSavings> = (0..savings_rows)
+            .map(|i| ReportSavings {
+                plugin: format!("plugin-{i:03}"),
+                rows: 1u64,
+                est_before: 10,
+                est_after: 5,
+                saved: 5,
+            })
+            .collect();
+        Document {
+            ledgers: ReportLedgers {
+                window: ReportWindow {
+                    since: "30d".into(),
+                    from_unix: 1,
+                    to_unix: 2,
+                    from_date: "2026-08-10".into(),
+                    to_date: "2026-09-09".into(),
+                    db_path: "/tmp/rtok.db".into(),
+                    calls_in_window: 7,
+                    calls_total: 7,
+                    measurements: 3,
+                    usage: 3,
+                },
+                savings: ReportSavingsSection {
+                    rows,
+                    total_rows: savings_rows as u64,
+                    total_saved: savings_rows as i64 * 5,
+                    kinds: vec!["filter".into()],
+                },
+                calls: ReportCallsSection {
+                    rows: vec![ReportCalls {
+                        surface: "hook".into(),
+                        calls: 2,
+                        timed: 2,
+                        p50_ms: Some(2.0),
+                        p95_ms: Some(4.0),
+                    }],
+                    in_window: 2,
+                    total: 2,
+                    hooks: vec![],
+                },
+                cache: ReportCache {
+                    sessions: 0,
+                    turns: 0,
+                    busts: 0,
+                    by_cause: vec![],
+                    detail: vec![],
+                },
+                expand: ReportExpand {
+                    decisions: 0,
+                    expanded: 0,
+                    rate: 0.0,
+                    expanded_ids: vec![],
+                    cost: 0,
+                    cost_rows: 0,
+                },
+            },
+            config: (0..config_rows)
+                .map(|i| ConfigEntry {
+                    key: format!("section.test.key-{i:03}"),
+                    value: "value".into(),
+                    source: "user".into(),
+                })
+                .collect(),
+            doctor: crate::doctor::Report {
+                hooks_total: 0,
+                hooks_by_event: BTreeMap::new(),
+                mcp: vec![],
+                proxy: String::new(),
+                proxy_openai: String::new(),
+                mcp_tool_search_disabled: false,
+                bash_max_output_length: None,
+                auto_compact_window: None,
+                instructions: None,
+            },
+            recommendations: vec![],
+        }
+    }
+
+    /// T36.13: contents page numbers and outline destinations land on the page
+    /// that actually carries the section heading, including after a page break.
+    #[rstest]
+    fn section_page_numbers_match_heading_pages() {
+        let pdf = render(&fat_doc(40, 120));
+                let pages = positions(&pdf, "/Type/Page").len() - positions(&pdf, "/Type/Pages").len();
+        assert!(pages >= 3, "need a multi-page report, got {pages}");
+        for title in [
+            "Window",
+            "Savings",
+            "Calls",
+            "Cache",
+            "Expand",
+            "Config",
+            "Doctor",
+            "Recommendations",
+        ] {
+            let toc = toc_page_num(&pdf, title);
+            let body = body_heading_page(&pdf, title);
+            let bookmark = bookmark_page(&pdf, title);
+            assert_eq!(toc, body, "{title}: toc {toc} != body {body}");
+            assert_eq!(bookmark, toc, "{title}: outline {bookmark} != toc {toc}");
+        }
     }
 }

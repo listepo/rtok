@@ -537,13 +537,6 @@ Complexity: 3/5
 Status: open
 Model: -
 
-**T36.13 PDF page numbers match the pages** · — · `src/report/pdf.rs`
-Do: `starts.push(pages.len())` is recorded before the pagination loop may push a fresh page, so the ToC and every bookmark name the previous page for sections that start one.
-Check: in a multi-page report the ToC entry and the outline destination agree with the heading's real page.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T36.18 one path→provider/api mapping and a real URL join** · — · `src/proxy/wire.rs`, `src/proxy/mod.rs`
 Do: `Wire::api()` re-derives the name from `matches()` while each wire already knows its own provider, the `provider` fallback arm for `/v1/chat/completions` is unreachable, and the upstream URL is built by `format!("{base}{path}")` plus a hand-appended `?`. Give each wire constants for provider/api and join the URL with `Url`, so a base with a path or query cannot produce `//` or a doubled `?`.
 Check: every wire reports its own provider and api; a base URL with a trailing path still forwards to the right target (test with a mock).
