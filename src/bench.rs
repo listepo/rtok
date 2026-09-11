@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use figment::Figment;
@@ -71,7 +72,7 @@ fn table(tasks: &[Task], cfg: &Config) -> String {
         for (name, settings) in &cfg.bench.configs {
             let acc = by.entry(name.clone()).or_default();
             for _ in 0..cfg.bench.runs {
-                let usage = one(&t.prompt, settings);
+                let usage = one(&t.prompt, settings, cfg.bench.timeout_s);
                 acc.input += usage.0;
                 acc.cache += usage.1;
                 acc.output += usage.2;
@@ -142,26 +143,51 @@ fn write_results(by: &BTreeMap<String, Acc>, tasks: usize, cfg: &Config) {
     }
 }
 
-/// `(input, cache, output, cost)` from `claude -p` JSON, or zeros if it cannot run.
-fn one(prompt: &str, settings: &Path) -> (u64, u64, u64, f64) {
+/// `(input, cache, output, cost)` from `claude -p` JSON, or zeros if it cannot run or runs
+/// past `timeout_s` — a host that hangs is one zero row, not a bench that never returns.
+fn one(prompt: &str, settings: &Path, timeout_s: u64) -> (u64, u64, u64, f64) {
     if !settings.exists() || std::env::var("RTOK_BENCH_LIVE").is_err() {
         return (0, 0, 0, 0.0);
     }
-    let out = Command::new("claude")
-        .args([
-            "-p",
-            prompt,
-            "--output-format",
-            "json",
-            "--settings",
-            &settings.display().to_string(),
-        ])
-        .output()
-        .ok();
-    let Some(out) = out.filter(|o| o.status.success()) else {
+    let mut cmd = Command::new("claude");
+    cmd.args([
+        "-p",
+        prompt,
+        "--output-format",
+        "json",
+        "--settings",
+        &settings.display().to_string(),
+    ]);
+    let Some(out) = run_bounded(&mut cmd, Duration::from_secs(timeout_s.max(1))) else {
         return (0, 0, 0, 0.0);
     };
     parse_usage(&out.stdout)
+}
+
+/// How often [`run_bounded`] checks whether the child has exited.
+const POLL: Duration = Duration::from_millis(20);
+
+/// Run `cmd` and collect its output, killing it once `timeout` has passed. `None` when it
+/// could not be spawned, exited badly, or was killed.
+fn run_bounded(cmd: &mut Command, timeout: Duration) -> Option<std::process::Output> {
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => std::thread::sleep(POLL),
+            Err(_) => return None,
+        }
+    }
 }
 
 fn parse_usage(bytes: &[u8]) -> (u64, u64, u64, f64) {
@@ -211,5 +237,27 @@ mod tests {
         assert!(s.contains("input") && s.contains("pass"), "{s}");
         assert!(s.lines().any(|l| l.starts_with('a')), "{s}");
         assert!(s.lines().any(|l| l.starts_with('b')), "{s}");
+    }
+
+    /// `[bench] timeout_s` was read by nothing, so a hung host held `rtok bench` forever.
+    #[test]
+    fn a_hung_run_is_killed_instead_of_hanging_the_bench() {
+        let mut slow = Command::new("sh");
+        slow.arg("-c").arg("sleep 30");
+        let start = Instant::now();
+        assert!(run_bounded(&mut slow, Duration::from_millis(150)).is_none());
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "killed, not waited out"
+        );
+    }
+
+    #[test]
+    fn a_finished_run_hands_back_its_output() {
+        let mut quick = Command::new("sh");
+        quick.arg("-c").arg("printf hello");
+        let out = run_bounded(&mut quick, Duration::from_secs(30)).expect("runs");
+        assert_eq!(out.stdout, b"hello");
+        assert!(out.status.success());
     }
 }
