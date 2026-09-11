@@ -50,6 +50,58 @@ impl Provider for FlagsProvider {
     }
 }
 
+/// Between `project` and `dotenv`: fold legacy file keys into their replacements only
+/// while each target is still at its default after user+project merge (T36.8).
+struct LegacyFold {
+    base: Figment,
+}
+
+impl Provider for LegacyFold {
+    fn metadata(&self) -> Metadata {
+        Metadata::named("legacy")
+    }
+
+    fn data(&self) -> Result<FMap<Profile, Dict>, figment::Error> {
+        let mut cfg: Config = self.base.extract()?;
+        let before = cfg.clone();
+        super::apply_legacy_fold(&mut cfg);
+        let before_root = Value::serialize(before)?
+            .into_dict()
+            .expect("Config serializes");
+        let after_root = Value::serialize(cfg)?
+            .into_dict()
+            .expect("Config serializes");
+        let mut out = Dict::new();
+        for (dotted, _) in env_leaf_table().values() {
+            let before_v = leaf_value(&before_root, dotted);
+            let after_v = leaf_value(&after_root, dotted);
+            if before_v != after_v {
+                if let Some(v) = after_v {
+                    insert_dotted(&mut out, dotted, v);
+                }
+            }
+        }
+        Ok(Profile::Default.collect(out))
+    }
+}
+
+fn leaf_value(root: &Dict, dotted: &str) -> Option<Value> {
+    let parts = dotted.split('.').collect::<Vec<_>>();
+    let mut current = root;
+    for (i, part) in parts.iter().enumerate() {
+        let v = current.get(*part)?;
+        if i == parts.len() - 1 {
+            return Some(v.clone());
+        }
+        if let Value::Dict(_, d) = v {
+            current = d;
+        } else {
+            return None;
+        }
+    }
+    None
+}
+
 /// Walk up from `start` looking for a `.git` entry (no subprocess). `None` outside a repo.
 pub(crate) fn git_root(start: &Path) -> Option<PathBuf> {
     find_up(start, ".git")
@@ -300,7 +352,11 @@ fn assemble(
         fig = fig.merge(Named(Toml::file(root.join(".rtok.toml")), "project"));
     }
 
-    fig = fig.merge(dotenv).merge(env);
+    let legacy_base = fig.clone();
+    fig = fig
+        .merge(LegacyFold { base: legacy_base })
+        .merge(dotenv)
+        .merge(env);
 
     if let Some(flags) = flags {
         fig = fig.merge(FlagsProvider(flags));
@@ -398,6 +454,23 @@ pub fn leaf_keys() -> Vec<String> {
 /// show/get/set` and `report` say that one is set and where from, never what it is.
 const SECRET_KEYS: &[&str] = &["otel.headers"];
 
+fn legacy_source_for(fig: &Figment, key: &str) -> Option<String> {
+    if key.starts_with("web.") {
+        let legacy = key.replacen("web.", "dashboard.", 1);
+        return fig
+            .find_metadata(&legacy)
+            .map(|m| m.name.to_string());
+    }
+    let legacy = match key {
+        "log.path" => "core.log_file",
+        "log.level" => "core.log_level",
+        "log.to_db" => "core.log_to_db",
+        "plugins.inject.budget_tokens" => "core.inject_budget_tokens",
+        _ => return None,
+    };
+    fig.find_metadata(legacy).map(|m| m.name.to_string())
+}
+
 pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
     let table = env_leaf_table();
     let mut keys: Vec<&String> = table.values().map(|(dotted, _)| dotted).collect();
@@ -411,6 +484,11 @@ pub fn entries(fig: &Figment) -> Vec<(String, String, String)> {
                 .find_metadata(key)
                 .map(|m| m.name.to_string())
                 .unwrap_or_else(|| "default".to_string());
+            let source = if source == "legacy" {
+                legacy_source_for(fig, key).unwrap_or(source)
+            } else {
+                source
+            };
             let mut shown = display(&value);
             if SECRET_KEYS.contains(&key.as_str()) && !shown.is_empty() {
                 shown = "<redacted>".into();
@@ -461,6 +539,7 @@ fn display(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn tmp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("rtok-layers-{name}-{}", std::process::id()));
@@ -683,4 +762,77 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&repo);
     }
+
+    #[rstest]
+    #[case::env("env", &[("WEB_PORT", "5555")], None, "5555", "env")]
+    #[case::flag("flag", &[], Some(5555), "5555", "flag")]
+    fn legacy_dashboard_port_loses_to_higher_layers(
+        #[case] _name: &str,
+        #[case] env: &[(&str, &str)],
+        #[case] flag_port: Option<u16>,
+        #[case] want_port: &str,
+        #[case] want_source: &str,
+    ) {
+        let home = tmp("t36.8-dashboard");
+        std::fs::write(Config::path_for(&home), "[dashboard]\nport = 4444\n").unwrap();
+        let flags = flag_port.and_then(|port| web_flags(None, Some(port)));
+        let figment = assemble(
+            &home,
+            Some(&Config::path_for(&home)),
+            flags,
+            RtokEnv::from_pairs(env),
+            None,
+            RtokEnv::from_dotenv_pairs(&[]),
+        );
+        let mut cfg: Config = figment.extract().unwrap();
+        cfg.finish(&home);
+        assert_eq!(cfg.web.port, want_port.parse::<u16>().unwrap());
+        let rows = entries(&figment);
+        let port = rows.iter().find(|(k, ..)| k == "web.port").unwrap();
+        assert_eq!(port.1, want_port);
+        assert_eq!(port.2, want_source);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn legacy_dashboard_port_folds_when_unset() {
+        let home = tmp("t36.8-dashboard-only");
+        std::fs::write(Config::path_for(&home), "[dashboard]\nport = 4444\n").unwrap();
+        let figment = fig(&home, &[], None);
+        let mut cfg: Config = figment.extract().unwrap();
+        cfg.finish(&home);
+        assert_eq!(cfg.web.port, 4444);
+        let rows = entries(&figment);
+        let port = rows.iter().find(|(k, ..)| k == "web.port").unwrap();
+        assert_eq!(port.1, "4444");
+        assert_eq!(port.2, "user");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[rstest]
+    #[case::env("env", &[("LOG_LEVEL", "warn")], "warn", "env")]
+    #[case::file_only("user", &[], "debug", "user")]
+    fn legacy_core_log_level_loses_to_env(
+        #[case] _name: &str,
+        #[case] env: &[(&str, &str)],
+        #[case] want_level: &str,
+        #[case] want_source: &str,
+    ) {
+        let home = tmp("t36.8-log-level");
+        std::fs::write(
+            Config::path_for(&home),
+            "[core]\nlog_level = \"debug\"\n",
+        )
+        .unwrap();
+        let figment = fig(&home, env, None);
+        let mut cfg: Config = figment.extract().unwrap();
+        cfg.finish(&home);
+        assert_eq!(cfg.log.level, want_level);
+        let rows = entries(&figment);
+        let level = rows.iter().find(|(k, ..)| k == "log.level").unwrap();
+        assert_eq!(level.1, want_level);
+        assert_eq!(level.2, want_source);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
 }

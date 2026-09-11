@@ -604,31 +604,29 @@ impl Config {
 
     /// Migrate legacy keys and expand `~` in paths. Called after every parse.
     fn finish(&mut self, home: &Path) {
-        if let Some(budget) = self.core.inject_budget_tokens.take() {
+        apply_legacy_fold(self);
+        if let Some(budget) = self.core.inject_budget_tokens.take()
+            && self.plugins.inject.budget_tokens == budget
+        {
             eprintln!(
                 "rtok: core.inject_budget_tokens is now plugins.inject.budget_tokens (using {budget})"
             );
-            self.plugins.inject.budget_tokens = budget;
         }
-        if let Some(web) = self.dashboard.take() {
+        if let Some(web) = self.dashboard.take() && self.web == web {
             eprintln!("rtok: [dashboard] is now [web] (using it)");
-            self.web = web;
         }
         // T24.5 / D26: `[core] log_*` → `[log]`. Taken once so they are not re-read.
-        if let Some(path) = self.core.log_file.take() {
+        if let Some(path) = self.core.log_file.take() && self.log.path == path {
             eprintln!(
                 "rtok: core.log_file is now log.path (using {})",
                 path.display()
             );
-            self.log.path = path;
         }
-        if let Some(level) = self.core.log_level.take() {
+        if let Some(level) = self.core.log_level.take() && self.log.level == level {
             eprintln!("rtok: core.log_level is now log.level (using {level})");
-            self.log.level = level;
         }
-        if let Some(to_db) = self.core.log_to_db.take() {
+        if let Some(to_db) = self.core.log_to_db.take() && self.log.to_db == to_db {
             eprintln!("rtok: core.log_to_db is now log.to_db (using {to_db})");
-            self.log.to_db = to_db;
         }
         self.home = home.to_path_buf();
         for path in [
@@ -696,6 +694,40 @@ impl Config {
             "graph" => p.graph.enabled = on,
             "toon" => p.toon.enabled = on,
             _ => {}
+        }
+    }
+}
+
+/// Fold legacy file keys into their replacements only while each target is still at
+/// [`Config::default()`]. Env, flags, and an explicit new key win (T36.8).
+pub(crate) fn apply_legacy_fold(cfg: &mut Config) {
+    let defaults = Config::default();
+    if let Some(budget) = cfg.core.inject_budget_tokens {
+        if cfg.plugins.inject.budget_tokens == defaults.plugins.inject.budget_tokens {
+            cfg.plugins.inject.budget_tokens = budget;
+        }
+    }
+    if let Some(dash) = cfg.dashboard.as_ref() {
+        if cfg.web.host == defaults.web.host && dash.host != defaults.web.host {
+            cfg.web.host = dash.host.clone();
+        }
+        if cfg.web.port == defaults.web.port && dash.port != defaults.web.port {
+            cfg.web.port = dash.port;
+        }
+    }
+    if let Some(path) = cfg.core.log_file.as_ref() {
+        if cfg.log.path == defaults.log.path {
+            cfg.log.path = path.clone();
+        }
+    }
+    if let Some(level) = cfg.core.log_level.as_ref() {
+        if cfg.log.level == defaults.log.level {
+            cfg.log.level = level.clone();
+        }
+    }
+    if let Some(to_db) = cfg.core.log_to_db {
+        if cfg.log.to_db == defaults.log.to_db {
+            cfg.log.to_db = to_db;
         }
     }
 }
