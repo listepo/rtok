@@ -410,6 +410,10 @@ section! {
         min_tokens: u32 = 1500,
         head_lines: u32 = 8,
         tail_lines: u32 = 4,
+        /// Opt-in L0/L1/L2 tiered loading (P33). Default off — v0.1 archive+inject unchanged.
+        /// Behaviour spec: OpenViking (AGPL-3.0); rtok does not vendor, link, or subprocess it
+        /// (D6). Gates native implementation in T33.2.
+        tiers: bool = false,
     }
 }
 
@@ -1013,6 +1017,7 @@ bogus = true
         assert!(parse("[plugins.compress]\nunknown = true\n").is_err());
         let err = parse("[plugins.memory.embed]\nprot = 1\n").unwrap_err();
         assert!(err.to_string().contains("prot"), "{err}");
+        assert!(parse("[plugins.archive]\nno_such = 1\n").is_err());
     }
 
     #[test]
@@ -1068,6 +1073,15 @@ bogus = true
     #[test]
     fn graph_backend_unknown_key_is_an_error() {
         assert!(parse("[plugins.graph]\nback_end = \"lsp\"\n").is_err());
+    }
+
+    /// T33.1: `plugins.archive.tiers` defaults off, overlays, and maps to `RTOK_PLUGINS_ARCHIVE_TIERS`.
+    #[test]
+    fn archive_tiers_defaults_and_overlays() {
+        assert!(!Config::default().plugins.archive.tiers);
+        let cfg: Config = parse("[plugins.archive]\ntiers = true\n").unwrap();
+        assert!(cfg.plugins.archive.tiers);
+        assert!(layers::leaf_keys().contains(&"plugins.archive.tiers".to_string()));
     }
 
     #[test]

@@ -256,6 +256,13 @@ Check: OpenViking, MemGPT/Letta, Claude Code compaction; AGPL-3.0 call-out (do n
 Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
+**T33.1 config flag (default off)** · T33.0 · `config/default.toml`, `docs/config.md`, config schema
+Do: add the opt-in flag for tiered loading; default off (v0.1 archive+inject unchanged). Document license note beside the key.
+Check: default behaviour unchanged; flag visible in `config show --sources`; `just check` green.
+Complexity: 2/5
+Status: done 2026-09-12 · Model: Composer 2.5
+Check: `plugins.archive.tiers` default false; TOML/env overlay; `RTOK_PLUGINS_ARCHIVE_TIERS=true` → `(env)` in `config show --sources`; unknown archive keys denied; `cargo test --lib config::` 41 passed; clippy clean; fmt ok.
+
 ## P34 — Hardening pass (2026-09-10) — T34.1–T34.9
 
 Goal: a bug hunt over the store, proxy, hooks and report, the tests those bugs lacked, and one
