@@ -168,6 +168,74 @@ fn every_row_posts_once_and_the_marks_advance() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A second session ending in the watermark second still ships its root span once.
+#[test]
+fn session_in_watermark_second_posts_once() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}");
+    });
+    let logs = server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}");
+    });
+    let _metrics = server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}");
+    });
+    let dir = home("tie");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    cx.store.end_session("s1", 1_700_000_000).unwrap();
+    assert_eq!(flush_blocking(&cx).spans, 1);
+    cx.store
+        .upsert_session("s2", None, Some("p"), Some("/w"), Some("startup"))
+        .unwrap();
+    cx.store.end_session("s2", 1_700_000_000).unwrap();
+    assert_eq!(flush_blocking(&cx).spans, 1);
+    assert_eq!(flush_blocking(&cx).spans, 0);
+    traces.assert_calls(3);
+    logs.assert_calls(1);
+    assert_eq!(cx.store.otel_mark("sessions").unwrap(), 1_700_000_000);
+    assert_eq!(cx.store.otel_mark("sessions_tail").unwrap(), 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Traces 404 must not block logs and metrics or log an error every flush.
+#[test]
+fn a_traces_404_still_posts_logs_and_metrics() {
+    let server = MockServer::start();
+    // No /v1/traces mock: httpmock answers 404.
+    let logs = server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}");
+    });
+    let metrics = server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}");
+    });
+    let dir = home("t404");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    assert_eq!((r.spans, r.logs, r.points, r.posted), (0, 1, 8, 2));
+    assert_eq!(r.skipped, ["traces"]);
+    assert!(r.to_string().ends_with("not served: traces"), "{r}");
+    logs.assert_calls(1);
+    metrics.assert_calls(1);
+    assert_eq!(cx.store.otel_mark("calls").unwrap(), 0);
+    assert_eq!(cx.store.otel_mark("logs").unwrap(), 1);
+    assert!(cx.store.last_log("otel").unwrap().is_none(), "no error row");
+    flush_blocking(&cx);
+    logs.assert_calls(1);
+    metrics.assert_calls(2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_failure_keeps_the_marks_and_is_logged() {
     let server = MockServer::start();

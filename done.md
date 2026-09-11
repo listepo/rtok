@@ -29,6 +29,13 @@ Complexity: 3/5
 Status: done 2026-09-11 · Model: Composer 2.5
 
 
+**T36.12 the OTel exporter cannot lose or block a stream** · — · `src/otel/export.rs`, `src/store/otel.rs`, `tests/otel.rs`
+Do: (a) the `only_ties` shortcut skips the whole traces block when the only new session ended in the second the watermark already covers, so that session's `invoke_agent` span is never posted (make the sessions watermark identity-based, or drop the shortcut and let the backend dedupe by `span_id`); (b) a 404 on `/v1/traces` returns `Err`, so logs and metrics are never attempted and every flush re-posts a doomed traces batch — the module header promises the stream is skipped and its mark kept.
+Check: a session that ends in a watermark second is posted exactly once; a traces-404 collector still receives logs and metrics, with one `skipped` line. `cargo test --test otel`, 10/10 pass; `cargo test --lib store::otel`, 5/5 pass, including `session_in_watermark_second_posts_once` and `a_traces_404_still_posts_logs_and_metrics`.
+Complexity: 4/5
+Status: done 2026-09-11 · Model: Composer 2.5
+
+
 ## P35 — Graph index speed (open; Gate P35 met 2026-09-11) — T35.1–T35.5
 
 **T35.1 compile each tags query once** · T8.1 · `src/plugins/read/outline.rs`

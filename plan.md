@@ -565,13 +565,6 @@ Complexity: 3/5
 Status: open
 Model: -
 
-**T36.12 the OTel exporter cannot lose or block a stream** · — · `src/otel/export.rs`
-Do: (a) the `only_ties` shortcut skips the whole traces block when the only new session ended in the second the watermark already covers, so that session's `invoke_agent` span is never posted (make the sessions watermark identity-based, or drop the shortcut and let the backend dedupe by `span_id`); (b) a 404 on `/v1/traces` returns `Err`, so logs and metrics are never attempted and every flush re-posts a doomed traces batch — the module header promises the stream is skipped and its mark kept.
-Check: a session that ends in a watermark second is posted exactly once; a traces-404 collector still receives logs and metrics, with one `skipped` line.
-Complexity: 4/5
-Status: open
-Model: -
-
 **T36.13 PDF page numbers match the pages** · — · `src/report/pdf.rs`
 Do: `starts.push(pages.len())` is recorded before the pagination loop may push a fresh page, so the ToC and every bookmark name the previous page for sections that start one.
 Check: in a multi-page report the ToC entry and the outline destination agree with the heading's real page.

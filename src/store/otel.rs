@@ -95,6 +95,25 @@ struct Ts {
     ts: i64,
 }
 
+
+#[derive(QueryableByName)]
+struct PendingSession {
+    #[diesel(sql_type = Text)]
+    id: String,
+    #[diesel(sql_type = Nullable<Integer>)]
+    host_id: Option<i32>,
+    #[diesel(sql_type = Nullable<Text>)]
+    project: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    cwd: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    source: Option<String>,
+    #[diesel(sql_type = BigInt)]
+    started_at: i64,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    ended_at: Option<i64>,
+}
+
 fn clamp(id: i64) -> i32 {
     i32::try_from(id).unwrap_or(i32::MAX)
 }
@@ -231,6 +250,38 @@ impl Store {
             .load(&mut *conn)?)
     }
 
+    /// Ended sessions not yet posted: `mark` is the last `ended_at` fully covered, `tail` is how
+    /// many at that second were posted (ordered by `id`). A new session in the same second is
+    /// not skipped when the watermark already covers that timestamp.
+    pub fn sessions_pending_export(&self, mark: i64, tail: i64) -> Result<Vec<Session>> {
+        let mut conn = self.lock()?;
+        Ok(sql_query(
+            "SELECT id, host_id, project, cwd, source, started_at, ended_at FROM (
+                SELECT id, host_id, project, cwd, source, started_at, ended_at,
+                       ROW_NUMBER() OVER (PARTITION BY ended_at ORDER BY id) AS rn
+                FROM sessions
+                WHERE ended_at IS NOT NULL
+             )
+             WHERE ended_at > ?1 OR (ended_at = ?2 AND rn > ?3)
+             ORDER BY ended_at ASC, id ASC",
+        )
+        .bind::<BigInt, _>(mark)
+        .bind::<BigInt, _>(mark)
+        .bind::<BigInt, _>(tail)
+        .load::<PendingSession>(&mut *conn)?
+        .into_iter()
+        .map(|r| Session {
+            id: r.id,
+            host_id: r.host_id,
+            project: r.project,
+            cwd: r.cwd,
+            source: r.source,
+            started_at: r.started_at,
+            ended_at: r.ended_at,
+        })
+        .collect())
+    }
+
     pub fn end_session(&self, id: &str, ended_at: i64) -> Result<()> {
         let mut conn = self.lock()?;
         diesel::update(sessions::table.find(id))
@@ -362,6 +413,23 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].ended_at, Some(1_700_000_000));
         assert!(s.sessions_ended_after(1_700_000_001).unwrap().is_empty());
+    }
+
+    #[test]
+    fn sessions_pending_export_skips_posted_ids_at_the_same_second() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert_session("s1", None, Some("p"), Some("/w"), Some("startup"))
+            .unwrap();
+        s.upsert_session("s2", None, Some("p"), Some("/w"), Some("startup"))
+            .unwrap();
+        s.end_session("s1", 1_700_000_000).unwrap();
+        s.end_session("s2", 1_700_000_000).unwrap();
+        assert_eq!(s.sessions_pending_export(0, 0).unwrap().len(), 2);
+        s.otel_advance("sessions", 1_700_000_000).unwrap();
+        s.otel_advance("sessions_tail", 1).unwrap();
+        let rows = s.sessions_pending_export(1_700_000_000, 1).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "s2");
     }
 
     #[test]

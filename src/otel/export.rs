@@ -1,9 +1,10 @@
 //! T16.5 (D19): read past each watermark, encode, POST, advance on 2xx. Never panics: a
 //! failure is one `logs` row (`source = otel`), the marks stay, and the report says so.
 //! T16.9: an exclusive file lock serialises concurrent flushers across processes.
-//! A 404 on `/v1/logs` or `/v1/metrics` is a backend without that pipeline (Jaeger): the
-//! stream is skipped, its mark stays, nothing is logged — else every flush would add the
-//! `logs` row that the next flush fails on.
+//! A 404 on `/v1/traces`, `/v1/logs`, or `/v1/metrics` is a backend without that pipeline
+//! (Jaeger serves traces only; a logs-only collector may 404 traces): the stream is skipped,
+//! its mark stays, nothing is logged — else every flush would add the `logs` row that the next
+//! flush fails on.
 
 use std::fmt;
 use std::fmt::Write as _;
@@ -28,7 +29,7 @@ pub struct Report {
     pub logs: usize,
     pub points: usize,
     pub posted: usize,
-    /// Streams the backend answered 404 to (`logs`, `metrics`).
+    /// Streams the backend answered 404 to (`traces`, `logs`, `metrics`).
     pub skipped: Vec<&'static str>,
     pub error: Option<String>,
 }
@@ -131,12 +132,11 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
     let res = resource(cx);
 
     let smark = store.otel_mark("sessions")?;
+    let stail = store.otel_mark("sessions_tail")?;
     let cmark = store.otel_mark("calls")?;
-    let sessions = store.sessions_ended_after(smark)?;
+    let sessions = store.sessions_pending_export(smark, stail)?;
     let calls = store.calls_after(cmark, BATCH)?;
-    // A tie on `ended_at` is re-read for safety; alone, it is not worth a request.
-    let only_ties = calls.is_empty() && sessions.iter().all(|s| s.ended_at == Some(smark));
-    if !(sessions.is_empty() && calls.is_empty()) && !only_ties {
+    if !(sessions.is_empty() && calls.is_empty()) {
         let mut spans = Vec::with_capacity(sessions.len() + calls.len());
         for se in &sessions {
             let host = match se.host_id {
@@ -149,21 +149,15 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
             let d = store.call_detail(c)?;
             spans.push(map::call_span(c, &d, &cx.config.otel));
         }
-        if !post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await? {
-            return Err(anyhow!("/v1/traces: HTTP 404 (not an OTLP/HTTP endpoint)"));
-        }
-        rep.spans = spans.len();
-        rep.posted += 1;
-        if let Some(c) = calls.last() {
-            store.otel_advance("calls", i64::from(c.id))?;
-        }
-        if let Some(e) = sessions
-            .iter()
-            .filter_map(|s| s.ended_at)
-            .max()
-            .filter(|e| *e > smark)
-        {
-            store.otel_advance("sessions", e)?;
+        if post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await? {
+            rep.spans = spans.len();
+            rep.posted += 1;
+            if let Some(c) = calls.last() {
+                store.otel_advance("calls", i64::from(c.id))?;
+            }
+            advance_sessions(store, smark, stail, &sessions)?;
+        } else {
+            rep.skipped.push("traces");
         }
     }
 
@@ -193,6 +187,33 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
     } else {
         rep.skipped.push("metrics");
     }
+    Ok(())
+}
+
+fn advance_sessions(
+    store: &crate::store::Store,
+    smark: i64,
+    stail: i64,
+    exported: &[crate::store::models::Session],
+) -> Result<()> {
+    let Some(last) = exported
+        .iter()
+        .max_by(|a, b| a.ended_at.cmp(&b.ended_at).then_with(|| a.id.cmp(&b.id)))
+    else {
+        return Ok(());
+    };
+    let last_e = last.ended_at.unwrap();
+    let n_at_last = exported
+        .iter()
+        .filter(|s| s.ended_at == Some(last_e))
+        .count();
+    store.otel_advance("sessions", last_e)?;
+    let new_tail = if last_e > smark {
+        i64::try_from(n_at_last)?
+    } else {
+        stail + i64::try_from(n_at_last)?
+    };
+    store.otel_advance("sessions_tail", new_tail)?;
     Ok(())
 }
 
