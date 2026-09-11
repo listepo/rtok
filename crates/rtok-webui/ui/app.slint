@@ -1,4 +1,5 @@
 import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+import { RtokTheme } from "theme.slint";
 
 export struct PageTab {
     id: string,
@@ -57,45 +58,130 @@ export component TokenStatsWidget inherits Rectangle {
     in property <int> est-before;
     in property <int> est-after;
     in property <int> rows;
-    border-radius: 8px;
-    background: #1e1e24;
+    border-radius: RtokTheme.radius-md;
+    background: RtokTheme.surface-1;
+    border-width: 1px;
+    border-color: RtokTheme.hairline;
 
     HorizontalBox {
-        padding: 12px;
-        spacing: 16px;
+        padding: RtokTheme.space-3;
+        spacing: RtokTheme.space-4;
         alignment: space-around;
         VerticalBox {
-            Text { text: "input"; color: #888; font-size: 11px; }
-            Text { text: "\{input-tokens}"; color: #eee; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "input";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{input-tokens}";
+                color: RtokTheme.ink;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
         VerticalBox {
-            Text { text: "output"; color: #888; font-size: 11px; }
-            Text { text: "\{output-tokens}"; color: #eee; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "output";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{output-tokens}";
+                color: RtokTheme.ink;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
         VerticalBox {
-            Text { text: "cache read"; color: #888; font-size: 11px; }
-            Text { text: "\{root.cache-read}"; color: #eee; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "cache read";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{root.cache-read}";
+                color: RtokTheme.ink;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
         VerticalBox {
-            Text { text: "cache create"; color: #888; font-size: 11px; }
-            Text { text: "\{root.cache-create}"; color: #eee; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "cache create";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{root.cache-create}";
+                color: RtokTheme.ink;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
         VerticalBox {
-            Text { text: "est before → after"; color: #888; font-size: 11px; }
-            Text { text: "\{est-before} → \{est-after}"; color: #8fd19e; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "est before → after";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{est-before} → \{est-after}";
+                color: RtokTheme.accent;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
         VerticalBox {
-            Text { text: "rows"; color: #888; font-size: 11px; }
-            Text { text: "\{rows}"; color: #eee; font-size: 18px; font-weight: 600; }
+            Text {
+                text: "rows";
+                color: RtokTheme.ink-muted;
+                font-size: 11px;
+                font-family: "IBM Plex Mono";
+            }
+            Text {
+                text: "\{rows}";
+                color: RtokTheme.ink;
+                font-size: 18px;
+                font-weight: 600;
+                font-family: "IBM Plex Mono";
+            }
         }
     }
+}
+
+component PageIcon inherits Image {
+    in property <string> page-id;
+    in property <color> tint: RtokTheme.ink-muted;
+    width: 16px;
+    height: 16px;
+    colorize: tint;
+    source:
+        page-id == "overview" ? @image-url("icons/overview.svg") :
+        page-id == "plugins" ? @image-url("icons/plugins.svg") :
+        page-id == "calls" ? @image-url("icons/calls.svg") :
+        page-id == "sessions" ? @image-url("icons/sessions.svg") :
+        page-id == "doctor" ? @image-url("icons/doctor.svg") :
+        page-id == "logs" ? @image-url("icons/logs.svg") :
+        @image-url("icons/overview.svg");
 }
 
 export component MainWindow inherits Window {
     title: "rtok";
     preferred-width: 960px;
     preferred-height: 640px;
-    background: #121216;
+    background: RtokTheme.canvas;
+    default-font-family: "IBM Plex Mono";
 
     /// Tab bar is `model::pages()` order (D23) — never a second list.
     in-out property <[PageTab]> pages;
@@ -128,29 +214,107 @@ export component MainWindow inherits Window {
         spacing: 12px;
 
         Rectangle {
-            width: 160px;
-            border-radius: 8px;
-            background: #1a1a20;
+            width: RtokTheme.sidebar-w;
+            border-radius: RtokTheme.radius-lg;
+            background: RtokTheme.surface-1;
+            border-width: 1px;
+            border-color: RtokTheme.hairline;
             VerticalBox {
-                padding: 8px;
-                Text { text: "rtok"; color: #fff; font-size: 20px; font-weight: 700; }
-                Text { text: status; color: #888; font-size: 11px; }
+                padding: RtokTheme.space-2;
+                spacing: RtokTheme.space-2;
+
+                HorizontalBox {
+                    spacing: RtokTheme.space-2;
+                    alignment: start;
+                    Image {
+                        source: @image-url("assets/logo.svg");
+                        width: 24px;
+                        height: 24px;
+                    }
+                    Text {
+                        text: "RTOK";
+                        color: RtokTheme.ink;
+                        font-size: 16px;
+                        font-weight: 700;
+                        font-family: "IBM Plex Mono";
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    height: 28px;
+                    border-radius: RtokTheme.radius-md;
+                    background: RtokTheme.surface-2;
+                    HorizontalBox {
+                        padding-left: RtokTheme.space-2;
+                        spacing: RtokTheme.space-2;
+                        alignment: start;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: RtokTheme.accent;
+                            y: parent.height / 2 - self.height / 2;
+                        }
+                        Text {
+                            text: status;
+                            color: RtokTheme.ink-muted;
+                            font-size: 11px;
+                            font-family: "IBM Plex Mono";
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
                 ListView {
                     for p[i] in pages: Rectangle {
                         height: 36px;
-                        border-radius: 6px;
-                        background: i == page-index ? #2a3a4a : transparent;
+                        border-radius: RtokTheme.radius-md;
+                        background: i == page-index ? RtokTheme.accent-muted : transparent;
                         TouchArea {
                             clicked => { page-index = i; }
                         }
                         HorizontalBox {
-                            padding-left: 8px;
+                            padding-left: RtokTheme.space-2;
+                            spacing: RtokTheme.space-2;
                             alignment: start;
+                            PageIcon {
+                                page-id: p.id;
+                                tint: i == page-index ? RtokTheme.accent : RtokTheme.ink-muted;
+                            }
                             Text {
                                 text: p.title;
-                                color: #eee;
+                                color: i == page-index ? RtokTheme.accent : RtokTheme.ink-muted;
+                                font-family: "IBM Plex Mono";
                                 vertical-alignment: center;
                             }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 36px;
+                    border-radius: RtokTheme.radius-md;
+                    background: transparent;
+                    TouchArea {
+                        clicked => { RtokTheme.dark = !RtokTheme.dark; }
+                    }
+                    HorizontalBox {
+                        padding-left: RtokTheme.space-2;
+                        spacing: RtokTheme.space-2;
+                        alignment: start;
+                        Image {
+                            source: @image-url("icons/theme.svg");
+                            width: 16px;
+                            height: 16px;
+                            colorize: RtokTheme.ink-muted;
+                        }
+                        Text {
+                            text: RtokTheme.dark ? "Light mode" : "Dark mode";
+                            color: RtokTheme.ink-muted;
+                            font-family: "IBM Plex Mono";
+                            font-size: 12px;
+                            vertical-alignment: center;
                         }
                     }
                 }
@@ -160,8 +324,19 @@ export component MainWindow inherits Window {
         if page-id == "overview": ScrollView {
             VerticalBox {
                 spacing: 12px;
-                Text { text: "overview"; color: #fff; font-size: 22px; font-weight: 700; }
-                Text { text: "usage totals (usage rows, all apis)"; color: #888; font-size: 11px; }
+                Text {
+                    text: "overview";
+                    color: RtokTheme.ink;
+                    font-size: 22px;
+                    font-weight: 700;
+                    font-family: "IBM Plex Mono";
+                }
+                Text {
+                    text: "usage totals (usage rows, all apis)";
+                    color: RtokTheme.ink-muted;
+                    font-size: 11px;
+                    font-family: "IBM Plex Mono";
+                }
                 TokenStatsWidget {
                     input-tokens: usage-input;
                     output-tokens: usage-output;
@@ -171,10 +346,29 @@ export component MainWindow inherits Window {
                     est-after: 0;
                     rows: 0;
                 }
-                Text { text: "ctt  \{usage-ctt} (input-side tok × turns after)"; color: #eee; }
-                Text { text: "saved by plugin (Measurement rows)"; color: #888; font-size: 11px; }
-                Text { text: overview-savings; color: #ccc; wrap: word-wrap; }
-                Text { text: overview-turns; color: #aaa; wrap: word-wrap; }
+                Text {
+                    text: "ctt  \{usage-ctt} (input-side tok × turns after)";
+                    color: RtokTheme.ink;
+                    font-family: "IBM Plex Mono";
+                }
+                Text {
+                    text: "saved by plugin (Measurement rows)";
+                    color: RtokTheme.ink-muted;
+                    font-size: 11px;
+                    font-family: "IBM Plex Mono";
+                }
+                Text {
+                    text: overview-savings;
+                    color: RtokTheme.ink-muted;
+                    wrap: word-wrap;
+                    font-family: "IBM Plex Mono";
+                }
+                Text {
+                    text: overview-turns;
+                    color: RtokTheme.ink-subtle;
+                    wrap: word-wrap;
+                    font-family: "IBM Plex Mono";
+                }
             }
         }
 
@@ -182,25 +376,34 @@ export component MainWindow inherits Window {
             spacing: 12px;
             Rectangle {
                 width: 220px;
-                border-radius: 8px;
-                background: #1a1a20;
+                border-radius: RtokTheme.radius-lg;
+                background: RtokTheme.surface-1;
+                border-width: 1px;
+                border-color: RtokTheme.hairline;
                 VerticalBox {
-                    padding: 8px;
-                    Text { text: "plugins"; color: #fff; font-size: 16px; font-weight: 600; }
+                    padding: RtokTheme.space-2;
+                    Text {
+                        text: "plugins";
+                        color: RtokTheme.ink;
+                        font-size: 16px;
+                        font-weight: 600;
+                        font-family: "IBM Plex Mono";
+                    }
                     ListView {
                         for p[i] in plugins: Rectangle {
                             height: 36px;
-                            border-radius: 6px;
-                            background: i == plugin-cursor ? #2a3a4a : transparent;
+                            border-radius: RtokTheme.radius-md;
+                            background: i == plugin-cursor ? RtokTheme.accent-muted : transparent;
                             TouchArea {
                                 clicked => { plugin-cursor = i; }
                             }
                             HorizontalBox {
-                                padding-left: 8px;
+                                padding-left: RtokTheme.space-2;
                                 alignment: start;
                                 Text {
                                     text: p.title;
-                                    color: p.enabled ? #eee : #888;
+                                    color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
+                                    font-family: "IBM Plex Mono";
                                     vertical-alignment: center;
                                 }
                             }
@@ -211,13 +414,30 @@ export component MainWindow inherits Window {
             ScrollView {
                 VerticalBox {
                     spacing: 12px;
-                    Text { text: selected-plugin.title; color: #fff; font-size: 22px; font-weight: 700; }
+                    Text {
+                        text: selected-plugin.title;
+                        color: RtokTheme.ink;
+                        font-size: 22px;
+                        font-weight: 700;
+                        font-family: "IBM Plex Mono";
+                    }
                     Text {
                         text: selected-plugin.enabled ? "enabled" : "disabled";
-                        color: selected-plugin.enabled ? #8fd19e : #c97;
+                        color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
+                        font-family: "IBM Plex Mono";
                     }
-                    Text { text: selected-plugin.summary; color: #ccc; wrap: word-wrap; }
-                    Text { text: selected-plugin.fields; color: #aaa; wrap: word-wrap; }
+                    Text {
+                        text: selected-plugin.summary;
+                        color: RtokTheme.ink-muted;
+                        wrap: word-wrap;
+                        font-family: "IBM Plex Mono";
+                    }
+                    Text {
+                        text: selected-plugin.fields;
+                        color: RtokTheme.ink-subtle;
+                        wrap: word-wrap;
+                        font-family: "IBM Plex Mono";
+                    }
                     if selected-plugin.saves-tokens: TokenStatsWidget {
                         input-tokens: selected-plugin.input-tokens;
                         output-tokens: selected-plugin.output-tokens;
@@ -235,36 +455,47 @@ export component MainWindow inherits Window {
             spacing: 12px;
             Rectangle {
                 width: 420px;
-                border-radius: 8px;
-                background: #1a1a20;
+                border-radius: RtokTheme.radius-lg;
+                background: RtokTheme.surface-1;
+                border-width: 1px;
+                border-color: RtokTheme.hairline;
                 VerticalBox {
-                    padding: 8px;
-                    Text { text: "calls (newest first)"; color: #fff; font-size: 16px; font-weight: 600; }
+                    padding: RtokTheme.space-2;
+                    Text {
+                        text: "calls (newest first)";
+                        color: RtokTheme.ink;
+                        font-size: 16px;
+                        font-weight: 600;
+                        font-family: "IBM Plex Mono";
+                    }
                     if calls.length == 0: Text {
                         text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
-                        color: #888;
+                        color: RtokTheme.ink-muted;
                         wrap: word-wrap;
+                        font-family: "IBM Plex Mono";
                     }
                     ListView {
                         for c[i] in calls: Rectangle {
                             height: 40px;
-                            border-radius: 6px;
-                            background: i == call-cursor ? #2a3a4a : transparent;
+                            border-radius: RtokTheme.radius-md;
+                            background: i == call-cursor ? RtokTheme.accent-muted : transparent;
                             TouchArea {
                                 clicked => { call-cursor = i; }
                             }
                             VerticalBox {
-                                padding-left: 8px;
+                                padding-left: RtokTheme.space-2;
                                 spacing: 0;
                                 Text {
                                     text: "\{c.when}  \{c.surface}  \{c.kind}";
-                                    color: #eee;
+                                    color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
                                     font-size: 12px;
+                                    font-family: "IBM Plex Mono";
                                 }
                                 Text {
                                     text: c.subtitle;
-                                    color: #888;
+                                    color: RtokTheme.ink-muted;
                                     font-size: 11px;
+                                    font-family: "IBM Plex Mono";
                                 }
                             }
                         }
@@ -274,12 +505,18 @@ export component MainWindow inherits Window {
             ScrollView {
                 VerticalBox {
                     spacing: 8px;
-                    Text { text: "detail"; color: #888; font-size: 11px; }
+                    Text {
+                        text: "detail";
+                        color: RtokTheme.ink-muted;
+                        font-size: 11px;
+                        font-family: "IBM Plex Mono";
+                    }
                     if calls.length == 0: Text { text: ""; }
                     if calls.length > 0: Text {
                         text: selected-call.detail;
-                        color: #ccc;
+                        color: RtokTheme.ink-muted;
                         wrap: word-wrap;
+                        font-family: "IBM Plex Mono";
                     }
                 }
             }
@@ -288,31 +525,43 @@ export component MainWindow inherits Window {
         if page-id == "sessions": ScrollView {
             VerticalBox {
                 spacing: 8px;
-                Text { text: "sessions"; color: #fff; font-size: 22px; font-weight: 700; }
+                Text {
+                    text: "sessions";
+                    color: RtokTheme.ink;
+                    font-size: 22px;
+                    font-weight: 700;
+                    font-family: "IBM Plex Mono";
+                }
                 if sessions.length == 0: Text {
                     text: "no sessions yet";
-                    color: #888;
+                    color: RtokTheme.ink-muted;
+                    font-family: "IBM Plex Mono";
                 }
                 for s in sessions: Rectangle {
-                    border-radius: 6px;
-                    background: #1e1e24;
+                    border-radius: RtokTheme.radius-md;
+                    background: RtokTheme.surface-1;
+                    border-width: 1px;
+                    border-color: RtokTheme.hairline;
                     VerticalBox {
                         padding: 10px;
                         spacing: 2px;
                         Text {
                             text: s.summary;
-                            color: #eee;
+                            color: RtokTheme.ink;
                             font-weight: 600;
+                            font-family: "IBM Plex Mono";
                         }
                         Text {
                             text: s.activity;
-                            color: #888;
+                            color: RtokTheme.ink-muted;
                             font-size: 11px;
+                            font-family: "IBM Plex Mono";
                         }
                         Text {
                             text: s.status;
-                            color: #ccc;
+                            color: RtokTheme.ink-muted;
                             font-size: 12px;
+                            font-family: "IBM Plex Mono";
                         }
                     }
                 }
@@ -322,24 +571,43 @@ export component MainWindow inherits Window {
         if page-id == "doctor": ScrollView {
             VerticalBox {
                 spacing: 8px;
-                Text { text: "doctor"; color: #fff; font-size: 22px; font-weight: 700; }
-                Text { text: doctor-text; color: #ccc; wrap: word-wrap; }
+                Text {
+                    text: "doctor";
+                    color: RtokTheme.ink;
+                    font-size: 22px;
+                    font-weight: 700;
+                    font-family: "IBM Plex Mono";
+                }
+                Text {
+                    text: doctor-text;
+                    color: RtokTheme.ink-muted;
+                    wrap: word-wrap;
+                    font-family: "IBM Plex Mono";
+                }
             }
         }
 
         if page-id == "logs": ScrollView {
             VerticalBox {
                 spacing: 4px;
-                Text { text: "logs"; color: #fff; font-size: 22px; font-weight: 700; }
+                Text {
+                    text: "logs";
+                    color: RtokTheme.ink;
+                    font-size: 22px;
+                    font-weight: 700;
+                    font-family: "IBM Plex Mono";
+                }
                 if logs.length == 0: Text {
                     text: "no logs yet";
-                    color: #888;
+                    color: RtokTheme.ink-muted;
+                    font-family: "IBM Plex Mono";
                 }
                 for line in logs: Text {
                     text: line;
-                    color: #ccc;
+                    color: RtokTheme.ink-muted;
                     wrap: word-wrap;
                     font-size: 12px;
+                    font-family: "IBM Plex Mono";
                 }
             }
         }
