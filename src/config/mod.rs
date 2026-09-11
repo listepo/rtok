@@ -137,6 +137,7 @@ section! {
     Mcp {
         tools: Vec<String> = Vec::new(),
         max_description_tokens: u32 = 60,
+        /// Above this, MCP tool results use head/tail + archive id.
         max_result_chars: u32 = 20000,
     }
 }
@@ -287,6 +288,7 @@ section! {
 section! {
     /// `[expand]` — `rtok expand <id>`.
     Expand {
+        /// 0 = unlimited; caps stdout line count from `rtok expand`.
         max_lines: u32 = 0,
         /// Ceiling on the live-zone re-read rate (T22.5): above it, `rtok report`
         /// finds the compression lossier in practice than it looks.

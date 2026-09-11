@@ -523,12 +523,6 @@ Complexity: 4/5
 Status: open
 Model: -
 
-**T36.10 the two documented output caps exist** · — · `src/expand.rs`, `src/mcp.rs`, `src/config/mod.rs`
-Do: `expand.max_lines` and `mcp.max_result_chars` are declared, documented and read by nothing. Apply both in one shared line-slicing helper used by `expand::run` and the MCP `expand` tool (they already duplicate `take(b).skip(a-1)`).
-Check: `[expand] max_lines = 100` truncates a larger payload and the output says so; the MCP result honours `max_result_chars`.
-Complexity: 3/5
-Status: open
-Model: -
 
 **T36.11 retention actually runs** · — · `src/store/mod.rs`, `src/proxy/mod.rs`, `src/mcp.rs`
 Do: `purge_calls_older_than` has no caller and `core.retain_calls_days` is read nowhere, so `calls`/`call_io`/`tokens`/`logs`/`usage` and `~/.rtok/archive/` grow without bound on exactly the long-running surfaces `demon` keeps alive.

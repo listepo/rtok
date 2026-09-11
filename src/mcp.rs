@@ -196,7 +196,8 @@ fn expand_text(cx: &Runtime, args: &Value) -> String {
     match crate::expand::fetch(cx, id) {
         Ok(Some(bytes)) => {
             let text = String::from_utf8_lossy(&bytes);
-            slice(&text, args["lines"].as_str(), args["grep"].as_str())
+            let body = slice(&text, args["lines"].as_str(), args["grep"].as_str());
+            cap_result(&body, id, cx.config.mcp.max_result_chars as usize)
         }
         Ok(None) => format!("unknown archive id: {id}"),
         Err(e) => e.to_string(),
@@ -204,17 +205,28 @@ fn expand_text(cx: &Runtime, args: &Value) -> String {
 }
 
 fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> String {
-    let mut out: Vec<&str> = text.lines().collect();
-    if let Some(spec) = lines {
-        let n = out.len();
-        if let Ok((a, b)) = crate::expand::parse_range(spec, n) {
-            out = out.into_iter().take(b).skip(a.saturating_sub(1)).collect();
-        }
+    crate::expand::filter_lines(text, lines, grep).join("\n")
+}
+
+fn cap_result(text: &str, id: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
     }
-    if let Some(g) = grep {
-        out.retain(|l| l.contains(g));
-    }
-    out.join("\n")
+    let marker = format!("\n… expand({id}) …\n");
+    let body_budget = max.saturating_sub(marker.chars().count());
+    let keep = body_budget / 2;
+    let chars: Vec<char> = text.chars().collect();
+    let head: String = chars.iter().take(keep).collect();
+    let tail: String = chars
+        .iter()
+        .rev()
+        .take(keep)
+        .copied()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    format!("{head}{marker}{tail}")
 }
 
 #[cfg(feature = "memory")]
@@ -324,6 +336,7 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use crate::testutil::config as tmp;
     use crate::tokens::Class;
     use std::fs;
@@ -336,6 +349,25 @@ mod tests {
             .join("\n");
         assert_eq!(slice(&text, Some("10"), None), "L10\nL11\nL12");
         assert_eq!(slice(&text, Some("10-10"), None), "L10");
+    }
+
+    #[rstest]
+    #[case(500)]
+    #[case(200)]
+    fn expand_honours_max_result_chars(#[case] max_chars: u32) {
+        let (mut cfg, dir) = tmp("mcp-cap");
+        cfg.mcp.max_result_chars = max_chars;
+        let cx = crate::plugin::Runtime::open(cfg, "mcp-cap").unwrap();
+        let blob = "x".repeat(100 * 1024);
+        let id = cx
+            .store
+            .put_archive("mcp", blob.as_bytes(), &cx.config.core.archive_dir)
+            .unwrap();
+        let args = serde_json::json!({"id": id});
+        let out = expand_text(&cx, &args);
+        assert!(out.contains("expand("), "{out}");
+        assert!(out.chars().count() <= max_chars as usize, "{}/{}", out.chars().count(), max_chars);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

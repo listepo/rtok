@@ -22,6 +22,12 @@ Check: a test walks every `PathBuf` leaf of `Config::default()` and fails if one
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test -p rtok --lib default_expands_every_pathbuf tilde_expands` — 6 passed (`default_expands_every_pathbuf`, four `tilde_expands_for_every_path_key` cases, `expand_covers_bare_tilde_and_rtok_home_dir`).
+**T36.10 the two documented output caps exist** · — · `src/expand.rs`, `src/mcp.rs`, `src/config/mod.rs`
+Do: `expand.max_lines` and `mcp.max_result_chars` are declared, documented and read by nothing. Apply both in one shared line-slicing helper used by `expand::run` and the MCP `expand` tool (they already duplicate `take(b).skip(a-1)`).
+Check: `[expand] max_lines = 100` truncates a larger payload and the output says so; the MCP result honours `max_result_chars`.
+Complexity: 3/5
+Status: done 2026-09-11 · Model: Composer 2.5
+Evidence: `mise exec -- cargo test --lib max_lines` — 1 passed (`max_lines_truncates_and_reports`); `mise exec -- cargo test --lib max_result_chars` — 2 passed (`expand_honours_max_result_chars`); T36.2 `live_zone_pointer` and T36.9 `finish()` retained.
 **T36.13 PDF page numbers match the pages** · — · `src/report/pdf.rs`
 Do: `starts.push(pages.len())` is recorded before the pagination loop may push a fresh page, so the ToC and every bookmark name the previous page for sections that start one.
 Check: in a multi-page report the ToC entry and the outline destination agree with the heading's real page.
