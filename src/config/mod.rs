@@ -366,6 +366,7 @@ section! {
         graph: Graph = Graph::default(),
         toon: Toon = Toon::default(),
         compress: Compress = Compress::default(),
+        wasm: Wasm = Wasm::default(),
     }
 }
 
@@ -499,6 +500,15 @@ section! {
     /// `[plugins.compress]`
     Compress {
         enabled: bool = false,
+    }
+}
+
+section! {
+    /// `[plugins.wasm]` — out-of-tree `.wasm` plugin host (P32). Not a catalogue id;
+    /// loading is implemented in T32.2 behind Cargo feature `wasm-host`.
+    Wasm {
+        enabled: bool = false,
+        dir: PathBuf = p("~/.rtok/plugins"),
     }
 }
 
@@ -691,6 +701,7 @@ impl Config {
             &mut self.setup.pi.extensions_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
+            &mut self.plugins.wasm.dir,
         ] {
             *path = expand(path, home);
         }
@@ -842,6 +853,7 @@ mod tests {
             &cfg.setup.pi.extensions_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
+            &cfg.plugins.wasm.dir,
         ];
         out.extend(cfg.bench.configs.values());
         out.extend(&cfg.plugins.read.allow_paths);
@@ -1071,6 +1083,7 @@ bogus = true
     #[case::bench_tasks("[bench]\ntasks = \"~/bench/tasks.toml\"\n")]
     #[case::bench_configs("[bench.configs]\ncustom = \"~/bench/rtok.json\"\n")]
     #[case::allow_paths("[plugins.read]\nallow_paths = [\"~/src\"]\n")]
+    #[case::wasm_dir("[plugins.wasm]\ndir = \"~/plugins\"\n")]
     fn tilde_expands_for_every_path_key(#[case] toml: &str) {
         let home = Path::new("/tmp/rtok-tilde-keys");
         let mut cfg: Config = parse(toml).unwrap();
@@ -1138,5 +1151,21 @@ bogus = true
             "expected unknown-key errors, got {errs:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn wasm_disabled_by_default() {
+        assert!(!Config::default().plugins.wasm.enabled);
+    }
+
+    #[test]
+    fn wasm_overlay_enables() {
+        let cfg: Config = parse("[plugins.wasm]\nenabled = true\n").unwrap();
+        assert!(cfg.plugins.wasm.enabled);
+    }
+
+    #[test]
+    fn wasm_unknown_key_is_denied() {
+        let err = parse("[plugins.wasm]\nfuel_per_call = 1\n").unwrap_err();
+        assert!(err.to_string().contains("fuel_per_call"), "{err}");
     }
 }

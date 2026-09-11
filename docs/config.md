@@ -290,7 +290,20 @@ min_rows = 5
 
 [plugins.compress]
 enabled = false                       # optional LLM compression / memory extractor (P28); off until Gate P28
+
+[plugins.wasm]
+enabled = false                      # off by default; no .wasm loaded until T32.2 host + `wasm-host` feature
+dir     = "~/.rtok/plugins"          # scan one level for *.wasm; D6 — this repo never vendors third-party plugins
 ```
+
+
+### WASM plugin host (`[plugins.wasm]`)
+
+Out-of-tree `.wasm` plugins (P32, decision D6). This repo writes every catalogue plugin from
+scratch and **never vendors third-party `.wasm` blobs** — operators install them under
+`plugins.wasm.dir` on their machine. Default `enabled = false`: in-tree builds and the default
+config do not load WASM. The Wasmi host and Cargo feature `wasm-host` land in T32.2; until then
+the flag is visible in `rtok config show --sources` but has no loader.
 
 ## OpenTelemetry
 
@@ -325,6 +338,7 @@ appears without a key in `config/default.toml`, so this table cannot silently dr
 ```bash
 RTOK_PROXY_MODE=compress rtok proxy
 RTOK_PLUGINS_READ_ALLOW_PATHS=/opt/src,/srv/lib rtok mcp
+RTOK_PLUGINS_WASM_ENABLED=true rtok config show --sources
 RTOK_STATS_SINCE=7d rtok stats
 RTOK_CONFIG=./ci-config.toml rtok bench --dry-run
 ```

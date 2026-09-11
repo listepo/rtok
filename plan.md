@@ -425,13 +425,6 @@ Gate P31 (review): Off → identical proxy bytes; on → documented false-hit ra
 WASM plugin host for third-party plugins that do not link into this repo. D6 holds: this repo does not vendor those plugins. In-tree plugins unchanged.
 
 
-**T32.1 config / feature flag for WASM host** · T32.0 · `config/default.toml`, `docs/config.md`, Cargo features as needed
-Do: add the flag / Cargo feature that enables loading `.wasm` plugins; default off so in-tree builds stay unchanged.
-Check: default build and config do not load WASM; enabling the flag is documented and visible; `just check` green.
-Complexity: 2/5
-Status: open
-Model: -
-
 **T32.2 implement WASM host + example Measurement** · T32.1 · host loader, example `.wasm`, `Registry::from_plugins`
 Do: `Registry::from_plugins` loads one example `.wasm` that records a `Measurement`. In-tree plugins unchanged. D6: example may live as a build artefact / docs sample, not a vendored third-party plugin.
 Check: `Registry::from_plugins` plus the example `.wasm` records a `Measurement`; in-tree plugin tests unchanged.
@@ -712,7 +705,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T31.1` | P31 semantic cache | config flag (opt-in, default off) | ✅ 2026-09-12 | 2/5 |
 | `T31.2` | P31 semantic cache | implement opt-in semantic cache | open | 4/5 |
 | `T32.0` | P32 WASM host | design/survey: WASM host | ✅ 2026-09-11 | 3/5 |
-| `T32.1` | P32 WASM host | config / feature flag for WASM host | open | 2/5 |
+| `T32.1` | P32 WASM host | config / feature flag for WASM host | ✅ 2026-09-12 | 2/5 |
 | `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
 | `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | ✅ 2026-09-11 | 3/5 |
 | `T33.1` | P33 tiered context | config flag (default off) | open | 2/5 |
