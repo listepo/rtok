@@ -140,13 +140,12 @@ impl Host for MemoryHost {
 
 impl Archive for MemoryHost {
     fn put_archive(&self, body: &[u8]) -> Result<String> {
-        // Content-addressed like the real one, but by length and prefix — an example does not
-        // need a hash, it needs the same id for the same bytes.
-        let id = format!(
-            "mem{:x}{:x}",
-            body.len(),
-            body.first().copied().unwrap_or(0)
-        );
+        // Content-addressed: keying on length + first byte gave two different bodies the
+        // same id, so a plugin test asserting on the round trip read the other one's bytes.
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        body.hash(&mut hasher);
+        let id = format!("mem{:016x}", hasher.finish());
         self.blobs.lock().unwrap().insert(id.clone(), body.to_vec());
         Ok(id)
     }
@@ -328,6 +327,19 @@ mod tests {
             Some(&b"the original output"[..])
         );
         assert_eq!(host.get_archive("mem0").unwrap(), None);
+    }
+
+    /// Two bodies with the same length and first byte are still two bodies: the old key
+    /// (`mem{:x}{:x}`, length + first byte) gave `b"ab"` and `b"ac"` one id, so the first
+    /// id read back the second one's bytes.
+    #[test]
+    fn distinct_bodies_never_share_an_id() {
+        let host = MemoryHost::new();
+        let ab = host.put_archive(b"ab").unwrap();
+        let ac = host.put_archive(b"ac").unwrap();
+        assert_ne!(ab, ac);
+        assert_eq!(host.get_archive(&ab).unwrap().as_deref(), Some(&b"ab"[..]));
+        assert_eq!(host.get_archive(&ac).unwrap().as_deref(), Some(&b"ac"[..]));
     }
 
     /// First writer wins: the pointer text is frozen so every later turn replays the same

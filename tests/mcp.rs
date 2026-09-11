@@ -35,6 +35,43 @@ fn tools_list_includes_expand() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// The handshake must introduce this server as rtok: `ServerInfo::default()` filled
+/// `serverInfo` from rmcp's own build env, so clients saw `{"name":"rmcp"}`.
+#[test]
+fn initialize_names_the_server_rtok() {
+    let tmp = std::env::temp_dir().join(format!("rtok-mcp-init-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .arg("mcp")
+        .env("RTOK_HOME", &tmp)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rtok mcp");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#,
+        )
+        .expect("write");
+    let out = child.wait_with_output().expect("wait");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let line = stdout.lines().next().unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(line).expect("initialize response");
+    assert_eq!(v["result"]["serverInfo"]["name"], "rtok", "{stdout}");
+    assert!(
+        v["result"]["serverInfo"]["version"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+        "{stdout}"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// T8.16: with the watcher on, `rtok mcp` exits promptly at stdin EOF.
 #[test]
 fn mcp_with_watcher_exits_on_stdin_eof() {

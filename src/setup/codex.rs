@@ -45,10 +45,18 @@ pub fn register_proxy(cfg: &Config, remove: bool) -> Result<String> {
     Ok(report)
 }
 
+/// Read Codex's config, or start from an empty document when the file is simply absent.
+///
+/// An unreadable file (non-UTF-8 byte, wrong permissions) is an error, not an empty
+/// document: swallowing it made the installer overwrite a config it never read, leaving only
+/// the `.bak-<ts>` as a way back.
 fn load(path: &Path) -> Result<DocumentMut> {
-    fs::read_to_string(path)
-        .unwrap_or_default()
-        .parse::<DocumentMut>()
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| path.display().to_string()),
+    };
+    raw.parse::<DocumentMut>()
         .with_context(|| path.display().to_string())
 }
 
@@ -188,6 +196,19 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             "model = \"o3\" # keep me\n"
         );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// An unreadable config is not an empty one: the installer must fail rather than
+    /// overwrite a file it could not read.
+    #[test]
+    fn an_unreadable_config_is_refused_not_overwritten() {
+        let (c, path) = cfg("unreadable", false);
+        let original = b"model = \"o3\"\n# \xff\xfe not utf-8\n";
+        fs::write(&path, original).unwrap();
+        let err = run(&c, false).unwrap_err();
+        assert!(err.to_string().contains("config.toml"), "{err}");
+        assert_eq!(fs::read(&path).unwrap(), original, "file untouched");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
