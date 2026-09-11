@@ -5,7 +5,7 @@ layout: hextra-home
 
 {{< hextra/hero-badge link="https://github.com/listepo/rtok/releases" >}}
   <div class="hx:w-2 hx:h-2 hx:rounded-full hx:bg-primary-400"></div>
-  <span>measured token reduction</span>
+  <span>Δtok · measured, not claimed</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
 
@@ -17,7 +17,7 @@ layout: hextra-home
 
 <div class="hx:mb-8">
 {{< hextra/hero-subtitle >}}
-  One Rust binary. Every method is a plugin, every saving is a measured row,&nbsp;<br class="hx:sm:block hx:hidden" />and everything shortened can be expanded back.
+  One Rust binary. Hooks, MCP, and a proxy hop — every saving is a ledger row,&nbsp;<br class="hx:sm:block hx:hidden" />and everything shortened expands back by id.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -35,31 +35,37 @@ layout: hextra-home
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="Measured, not claimed"
-    subtitle="A saving that is not a Measurement row does not exist. `rtok stats` reports what actually changed — with Δ you can trust."
+    subtitle="If it is not a `Measurement` row, it did not happen. `rtok stats` shows the Δ — tokens before, after, and why."
+    icon="rtok-measure"
     link="docs/plugins/measure"
   >}}
   {{< hextra/feature-card
     title="One binary, three surfaces"
-    subtitle="Claude Code hooks, an MCP server, and an `ANTHROPIC_BASE_URL` proxy hop — instead of a stack of overlapping tools."
+    subtitle="Claude Code hooks, an MCP server, and an `ANTHROPIC_BASE_URL` proxy — one process, one ledger, no tool sprawl."
+    icon="rtok-calls"
     link="docs/reference/architecture"
   >}}
   {{< hextra/feature-card
     title="Lossless by default"
-    subtitle="Anything shortened is archived on disk and retrievable with `rtok expand <id>`."
+    subtitle="Shortened context is archived on disk. Bring it back with `rtok expand <id>` when the agent needs the full payload."
+    icon="rtok-sessions"
     link="docs/plugins/archive"
   >}}
   {{< hextra/feature-card
     title="Fails open"
-    subtitle="A hook exits 0 in under 10 ms even on error, with unmodified input. A half-installed rtok never blocks the host."
+    subtitle="Hooks exit 0 in under 10 ms even on error, with input unchanged. A half-installed rtok never blocks the host."
+    icon="rtok-doctor"
   >}}
   {{< hextra/feature-card
     title="Plugin toolkit"
-    subtitle="Public `Plugin` trait, in-tree modules behind Cargo features. No daemon, no subprocesses, no WASM."
+    subtitle="Public `Plugin` trait and in-tree modules behind Cargo features. No daemon, no subprocesses, no WASM."
+    icon="rtok-plugins"
     link="docs/reference/plugin-authoring"
   >}}
   {{< hextra/feature-card
     title="Signal-scope UI"
-    subtitle="Dark/light webui with bitset mark and scope icons — overview, plugins, calls, sessions, doctor, logs."
+    subtitle="Dark/light webui: bitset mark, scope icons, Overview → Logs. See savings as a ledger, not a marketing claim."
+    icon="rtok-savings"
     link="docs/getting-started"
   >}}
 {{< /hextra/feature-grid >}}

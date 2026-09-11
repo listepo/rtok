@@ -67,3 +67,11 @@
   font-size: 1.05em;
   line-height: 1.75;
 }
+
+/* Feature-card icons (Signal/scope) inherit cyan */
+.hextra-feature-card h3 svg {
+  color: #5CE1FF;
+}
+.dark .hextra-feature-card h3 svg {
+  color: #5CE1FF;
+}
