@@ -1,5 +1,4 @@
-//! T8.10 (P8c): the `graph` plugin's symbol index over SQLite. A second `impl Store`, so
-//! T8.11's `lbug` backend is a sibling file selected by `cfg` and no signature moves.
+//! T8.10: the `graph` plugin's symbol index over SQLite (the only backend after P39).
 
 use std::collections::{HashMap, HashSet};
 

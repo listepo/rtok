@@ -150,7 +150,10 @@ pub fn run_with(
         }
         Ok(())
     })?;
-    if !dry_run {
+    if dry_run {
+        // T35.3 batched writes; dry-run still owes the would-be row count (T12.6).
+        report.inserted = pending.iter().map(|(_, _, _, rows)| rows.len()).sum();
+    } else {
         if !pending.is_empty() {
             report.inserted += cx.replace_symbol_files(&rk, &pending)?;
         }

@@ -39,8 +39,6 @@ inject = []
 guard = []
 memory = []
 graph = ["read"]
-# Opt-in only (P8c): the symbol index moves to LadybugDB. Never in `default` until Gate P8c says so.
-graph-lbug = ["graph", "dep:lbug"]
 # Opt-in only (P8d T8.17): the graph watcher reads Meta's watchman daemon instead of
 # notify's FSEvents/kqueue/inotify. Joins `default` only if Gate P8d (3) and (5) pass.
 graph-watchman = ["graph", "dep:watchman_client"]
@@ -75,7 +73,6 @@ clap = { version = "4.5", features = ["derive", "wrap_help"] }
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
 libsqlite3-sys = { version = "0.30", features = ["bundled"] } # FTS5 in the SQLite bundle
-lbug = { version = "0.20", optional = true } # LadybugDB, the P8c graph backend (D18); off unless `graph-lbug`
 rustix = { version = "1", features = ["process", "fs"] } # demon kill/setsid (T20.1) + otel flush flock (T16.9); `unsafe_code = forbid` rules out libc
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -117,12 +114,6 @@ rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.
 [profile.dev]
 # Backtraces keep `file:line`; the full DWARF that dominated every artifact goes.
 debug = "line-tables-only"
-
-# lbug builds a C++ library through cmake, which reads OPT_LEVEL/DEBUG. Unoptimised with `-g`
-# it is a 2.0 GB `liblbug.a` kept once per feature set. Nothing here is ours to debug.
-[profile.dev.package.lbug]
-opt-level = 2
-debug = false
 
 [profile.release]
 strip = "symbols"

@@ -199,9 +199,10 @@ Stated plainly, because §4 is only worth reading if this section exists.
   formatters, against rtk's ~80 filters.
 - **Younger, and a single maintainer.** Several tools in §2 have five-figure star counts and
   years of edge cases baked in. rtok is at v0.0.1.
-- **`toon`, `graph-lbug` and `graph-watchman` are opt-in** because they lost their gates on
-  this machine. LadybugDB won depth-4 impact queries by 77× but cost 96 ms on the hook path
-  against a 10 ms bar, so it is a feature flag, not a default.
+- **`toon` and `graph-watchman` are opt-in** because they lost their gates on this machine.
+  LadybugDB and Grafeo were measured then **removed** (P39, 2026-09-12): Ladybug won depth-4
+  impact by 77× but missed the hook ≤10 ms bar; Grafeo abandoned after warm `impact(2)` ~22 000×
+  slower than SQLite. The symbol index is SQLite only.
 
 ## 6. Check any of it yourself
 

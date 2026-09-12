@@ -85,8 +85,32 @@ Numbers from `cargo test --release --test graph_bench -- --ignored --nocapture`.
 Clause (4) won. Clauses (2) and (3) fail on the `graph-lbug` binary (spawn/link cost, and every
 warm tool call opens LadybugDB). Default SQLite meets (2) and (3). Incremental `just check` is
 not 2× a default `cargo test` (18.9 s); the C++ cmake cost is paid once (T8.11: 3 min 21 s
-debug from source, pinned). Decision: `graph-lbug` stays **opt-in, never default**. Code is
-not deleted.
+debug from source, pinned). **Archive (P39, 2026-09-12):** after the freeze and the Grafeo
+negative spike below, **LadybugDB was deleted** (`graph-lbug` / `lbug` / `symbols_lbug.rs`).
+Numbers above are historical only — no live feature flag.
+
+### `graph` Grafeo vs SQLite (P8e spike, T8.20, 2026-09-12) — abandoned / removed
+
+Release build, this machine (macOS arm64). Same `tests/graph_bench.rs` harness as T8.14 plus
+focused `p8e_impact4_*` tests. `grafeo` 0.5.42 (`edge`+`wal`+`grafeo-file`, no ONNX/AI).
+Spike lived on `feat/graph-grafeo` (PR #21 draft / PR #22 abandon); **not merged**; code removed
+with P39.
+
+| Measurement | default (SQLite) | `--features graph-grafeo` | Bar |
+|-------------|------------------|---------------------------|-----|
+| (1) `tests/graph_contract.rs` | 3 passed | 3 passed (debug) | unchanged, both |
+| (2) `rtok hook PostToolUse` p95, n=100 | 11.7 ms | 76.9 ms | ≤ 10 ms |
+| (3) warm `symbol` / `callers` / `impact(2)` | 15.4 / 15.6 / 22.8 ms | 39.3 / 42.1 / **498.6 s** | < 100 ms |
+| (3) cold index, 3 000 files | 127 ms | 19.0 s | not gated |
+| (4) `impact(4)` on fan-out fixture | CTE 30.5 s | path query **DNF >14 min** | grafeo ≥ 2× CTE |
+| (4) same fixture, Rust BFS | 2.65 s | 59.4 s | baseline |
+| (5) build | default features | pure Rust, no cmake C++ | not catastrophic |
+| (6) release `rtok` bytes | 23 733 888 (22.6 MiB) | 27 626 000 (26.3 MiB) | published |
+| (6) store after 3 000-file index | `rtok.db` 4.08 MB | `rtok.db` 213 KB + `graph.grafeo` 3.72 MB | published |
+
+Clause (1) and the cmake-free build were the only wins. Warm `impact(2)` ~22 000× slower than
+SQLite (CALLS re-materialized per call); fan-out path query never finished in 14 min.
+**Decision: abandon** — then **delete** under P39 (SQLite only).
 
 ### `graph` watcher idle cost (Gate P8d (2), T8.16, 2026-09-08)
 
@@ -271,7 +295,7 @@ for `proxy` and `otel` — an `ideas.md` entry (I-32), not a P17 task. Config lo
 store are already small; `WAL` costs 0.3 ms per short-lived process over `TRUNCATE`, kept
 because `mcp` and `proxy` write concurrently with hooks.
 
-**Dev, `--features graph-lbug`.** The whole debug footprint was one C++ library. `lbug` builds
+**Dev, `--features graph-lbug` (archived; feature removed P39).** The whole debug footprint was one C++ library. `lbug` builds
 `liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev
 defaults that is `CMAKE_BUILD_TYPE=Debug`, `-O0 -g`. `[profile.dev.package.lbug] opt-level = 2,
 debug = false` flips it to Release, `-O3 -DNDEBUG`.

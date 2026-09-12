@@ -3,11 +3,8 @@
 pub mod models;
 pub mod otel;
 pub mod schema;
-// T8.11 (P8c): one `impl Store` per backend, selected here and nowhere else.
-#[cfg(not(feature = "graph-lbug"))]
+// Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
-#[cfg(feature = "graph-lbug")]
-mod symbols_lbug;
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -45,8 +42,6 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
-    #[cfg(feature = "graph-lbug")]
-    graph: symbols_lbug::Graph,
 }
 
 /// Turn arbitrary user text into an FTS5 MATCH phrase query: every blank-separated token is
@@ -76,23 +71,18 @@ impl Store {
         conn.batch_execute(
             "PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
         )?;
-        Self::init(conn, path.parent())
+        Self::init(conn)
     }
 
     /// Fresh in-memory store for tests and examples.
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(SqliteConnection::establish(":memory:")?, None)
+        Self::init(SqliteConnection::establish(":memory:")?)
     }
 
-    /// `dir` is where a second store may live beside `rtok.db`; `None` means in-memory (T8.11).
-    fn init(mut conn: SqliteConnection, dir: Option<&Path>) -> Result<Self> {
+    fn init(mut conn: SqliteConnection) -> Result<Self> {
         conn.batch_execute("PRAGMA foreign_keys = ON;")?;
-        #[cfg(not(feature = "graph-lbug"))]
-        let _ = dir;
         let store = Self {
             conn: Mutex::new(conn),
-            #[cfg(feature = "graph-lbug")]
-            graph: symbols_lbug::Graph::open(dir)?,
         };
         store.migrate()?;
         Ok(store)

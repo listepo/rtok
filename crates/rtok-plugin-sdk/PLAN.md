@@ -8,7 +8,7 @@ D6 says third parties extend rtok from outside, through `rtok::plugin` and
 `Registry::from_plugins`. Today that costs them the whole binary crate. Measured on this tree 2026-09-09
 (`awk '/^\[dependencies\]/{f=1;next} /^\[/{f=0} f && /^[a-z]/' Cargo.toml | wc -l` → 35 entries, 24
 of them not optional): **24 direct dependencies always, 33 in a default build** — the default
-feature set pulls 9 of the 11 optional ones, and only `lbug` and `watchman_client` stay out. diesel with a bundled SQLite C library, axum,
+feature set pulls 9 of the 11 optional ones, and only `watchman_client` stays out (`lbug` removed, P39). diesel with a bundled SQLite C library, axum,
 tokio, reqwest, rmcp, clap, figment, seven tree-sitter grammars. A crate that wants to implement
 one trait with two methods compiles all of it, and takes rtok's MSRV, its feature flags and its
 release cadence with it.
@@ -22,7 +22,7 @@ inject, read, graph), archive 3, read cache 3, notes 4 (memory). Nothing says wh
 habit, and it cannot be versioned.
 
 Sizes that price the options below, `wc -l` on 2026-09-09: `src/store/` 2 219 (+ 387 for the
-optional lbug backend), `src/config/` 1 631, `src/tokens.rs` 112, `src/proxy/wire.rs` 150.
+`src/config/` 1 631, `src/tokens.rs` 112, `src/proxy/wire.rs` 150.
 
 ## Alternatives
 
