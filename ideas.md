@@ -88,7 +88,7 @@ that v0.1 does not schedule.
 
 ## Later (v0.2+)
 
-Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26, I-30 promoted (P39 LadybugDB replacement survey)
+Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 done/promoted; I-30 closed via P39 (SQLite only; Ladybug/Grafeo removed)
 2026-09-10 to `plan.md` P28–P33 (see Later versions table / phase sections).
 `roadmap.md` Later points at those phase ids. v0.1 `graph` stays tags-only; v0.1 hooks stay process-per-event.
 
@@ -100,7 +100,7 @@ Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26, 
 | I-24 | serena | `graph` | **promoted P30** — LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
 | I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | **promoted P33** — Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
 | I-26 | (architecture) | core | **promoted P32** — WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
-| I-30 | LadybugDB / P8c cost | `graph` | **promoted P39** — survey a replacement for `lbug` (or keep SQLite and delete it). No new LadybugDB tasks until T39.0 names a winner. | C++/cmake build, `sccache` shim, and P8c clauses (2)(3)(5) make `graph-lbug` expensive to keep improving. |
+| I-30 | LadybugDB / P8c cost | `graph` | **done via P39 (2026-09-12)** — keep SQLite; delete `lbug` / `graph-lbug` / `symbols_lbug.rs`; Grafeo spike abandoned (PR #22). | C++/cmake cost + P8c (2)(3)(5); Grafeo measured worse on warm impact. |
 
 ---
 

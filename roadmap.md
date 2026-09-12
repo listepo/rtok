@@ -244,7 +244,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Gate P8d.** An edit is visible in `symbol` within 1 s with `auto_index = false` and the call reading 0 files; idle `rtok mcp` with the watcher on costs ≤ 50 ms CPU / 60 s and ≤ 2 MB RSS; `watchman` passes the same test and falls back to `notify` without one; hook p95 unchanged; binary bytes published. Watcher stays opt-in if idle cost is lost; `watchman_client` removed if it does not beat `notify`.
 
-**Status.** Lane done — T14.9, T8.1–T8.19 done (P8 / P8b / P8c / P8d); Gate P8 passed 2026-09-03; Gate P8b closed 2026-09-09 on the three code clauses; Gate P8c: `graph-lbug` stays opt-in (2026-09-08); Gate P8d passed 2026-09-09. See `done.md` P8*. P39 (2026-09-12): find a LadybugDB replacement; do not take new `lbug` tasks. `graph-lbug` stays frozen opt-in.
+**Status.** Lane done — T14.9, T8.1–T8.19 done (P8 / P8b / P8c / P8d); Gate P8 passed 2026-09-03; Gate P8b closed 2026-09-09 on the three code clauses; Gate P8c (2026-09-08) left `graph-lbug` opt-in; Gate P8d passed 2026-09-09. See `done.md` P8*. **P39 (2026-09-12): SQLite only** — LadybugDB (`graph-lbug`, `symbols_lbug.rs`, `lbug` dep) and Grafeo spike (`graph-grafeo`) removed after measurement (Grafeo abandon; Ladybug frozen cost). No live alternate graph backends.
 
 ---
 
@@ -399,7 +399,7 @@ Not v0.1 work. Same plugins, extra backends. Promoted 2026-09-10 from `ideas.md`
 |---------------|-----------|---------------|
 | ~~TUI~~ | Promoted to P15 (D17/D23) — `rtok tui` shipped. | I-01 → P15 |
 | `memory` | Optional LLM extractor (claude-mem style) and embeddings beside FTS5. Default off. Progressive disclosure stays. | I-21 → **P28**; I-22 → **P29**; I-13 |
-| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. LadybugDB replacement survey (no new `lbug` work). | I-24 → **P30**; I-22 → **P29**; I-30 → **P39**; I-14, I-15 |
+| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. Symbol store is SQLite only (P39 closed). | I-24 → **P30**; I-22 → **P29**; I-30 → **P39** (done); I-14, I-15 |
 | `archive` / `inject` | Optional LLM compression of old context; optional L0/L1/L2 tiers. Lossless `expand` still required where the source is not regenerable. | I-21 → **P28**; I-25 → **P33** |
 | `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 → **P31** |
 | ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |

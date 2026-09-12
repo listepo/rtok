@@ -158,8 +158,8 @@ and a `WITH RECURSIVE` can contest it with no dependency at all, so the gate mea
 
 Same four tools, byte for byte: `tests/graph_contract.rs` (T8.9) pins them through `rtok mcp`,
 so the acceptance test never names a store. The seam is one file: the eleven `symbol_*` methods
-move to `src/store/symbols.rs` (T8.10) and `src/store/symbols_lbug.rs` is the `cfg`-selected
-sibling under feature `graph-lbug` (T8.11–T8.12). No trait — one `impl Store` per file. Cypher
+move to `src/store/symbols.rs` (T8.10). A `cfg`-selected `symbols_lbug.rs` sibling existed under
+`graph-lbug` (T8.11–T8.12) and was **removed in P39**. Cypher
 lives in `src/store/` only; the plugin calls the same methods (D13). Ledgers stay in `rtok.db`;
 `graph.lbdb` is a derived cache beside it (D8 as narrowed by D18). `impact` becomes one query on
 both sides (T8.13); T8.14 measures and Gate P8c decides.
@@ -176,7 +176,7 @@ second file for nothing the CTE does not do, and its code is deleted.
 Release, this machine. Clause (4) won: `impact(4)` on 11 110 edges is 371 ms (`lbug` path) vs
 28.5 s (SQLite CTE), 77×. The CTE also lost to the Rust BFS (2.6 s) on that fixture. Clauses
 (2) and (3) fail on the `graph-lbug` binary (hook p95 97 ms, warm calls 0.78–0.87 s). Default
-SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stays opt-in. Full table: `research.md` §2.
+SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stayed opt-in until **P39 deleted it** (2026-09-12). Full table: `research.md` §2 (archive).
 
 ### Rejected in this round
 
@@ -185,6 +185,23 @@ SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stays opt-in. Full table:
 - Exposing Cypher as a fifth tool (I-14 stays rejected) — the surface is four tools and 62 description tokens; the store is not the model's business.
 - Linking the prebuilt `liblbug.a` by default — an unpinned download in `build.rs` is not a reproducible build: from source, or pinned with a checksum, or the gate fails.
 
+
+## v0.4 / P39 — backends removed (2026-09-12)
+
+**Decision: SQLite only.** LadybugDB (`graph-lbug`) and Grafeo (`graph-grafeo`) are gone from
+the tree. No `cfg` backends; `src/store/symbols.rs` is the only symbol store.
+
+### Archive — LadybugDB (Gate P8c, 2026-09-08)
+
+See earlier "v0.3 backend survey" and `research.md` §2. Clause (4) won 77×; hook/warm/build
+cost kept it opt-in then frozen; P39 deletes it.
+
+### Archive — Grafeo (P8e / T8.20, 2026-09-12)
+
+Spike on `feat/graph-grafeo` (PR #21 / #22): `grafeo` 0.5.42 (`edge`+`wal`+`grafeo-file`).
+Release (macOS arm64): warm `impact(2)` **498.6 s** vs SQLite **22.8 ms**; fan-out `impact(4)`
+**DNF >14 min** vs CTE **30.5 s**; hook p95 **76.9 ms** vs **11.7 ms**. Contract green; cmake-free.
+**Abandon**, then remove with Ladybug under P39. Full table: `research.md`.
 
 ## P30 survey — LSP behind tags MCP (2026-09-11)
 

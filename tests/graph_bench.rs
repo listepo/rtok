@@ -1,6 +1,6 @@
-//! T8.14: Gate P8c numbers. Ignored; run in release under both backends:
+//! T8.14: Gate P8c numbers (historical). Ignored; run in release:
 //! `mise exec -- cargo test --release --test graph_bench -- --ignored --nocapture --test-threads=1`
-//! and the same with `--features graph-lbug`.
+//! Ladybug (`graph-lbug`) and Grafeo (`graph-grafeo`) backends were removed (P39); SQLite only.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -22,11 +22,7 @@ fn p8c_numbers() {
         eprintln!("skip: T8.14 is `cargo test --release --test graph_bench -- --ignored`");
         return;
     }
-    let backend = if cfg!(feature = "graph-lbug") {
-        "lbug"
-    } else {
-        "sqlite"
-    };
+    let backend = "sqlite";
     eprintln!("P8c backend={backend}");
 
     let (cx, repo) = home("p8c-3k");

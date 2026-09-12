@@ -100,19 +100,17 @@ refs = ["src/proxy/mod.rs"]
 [[symbol]]
 name = "mark_symbols_stale"
 kind = "fn"
-# T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs; T23.3 added the
-# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl; T23.5's
-# `MemoryHost` implements the same trait for tests (T8.19 repair).
-defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
+# T23.3: `Symbols` capability on the host; T23.5 `MemoryHost` for tests (T8.19 repair).
+# P39: `symbols_lbug.rs` removed — SQLite-only symbol store.
+defs = ["src/store/symbols.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]
 name = "symbol_defs"
 kind = "fn"
-# T8.11: one definition per backend, selected by `cfg` in src/store/mod.rs; T23.3 added the
-# `Symbols` capability, so `src/plugin.rs` defines it once more as the host's impl; T23.5's
-# `MemoryHost` implements the same trait for tests (T8.19 repair).
-defs = ["src/store/symbols.rs", "src/store/symbols_lbug.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
+# T23.3: `Symbols` capability on the host; T23.5 `MemoryHost` for tests (T8.19 repair).
+# P39: `symbols_lbug.rs` removed — SQLite-only symbol store.
+defs = ["src/store/symbols.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/graph/index.rs", "src/plugins/graph/mod.rs"]
 
 [[symbol]]

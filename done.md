@@ -2358,3 +2358,11 @@ Complexity: 1/5 — one help string, two doc lines.
 Status: done 2026-09-09
 Model: GLM-5.3 (ZCode)
 Check result: `just check` green (fmt, clippy `--workspace --all-targets --all-features -D warnings`, workspace tests, `build-min`, jscpd 38 clones / 1.37 % under the threshold). `grep -rn "Delete rtok hook entries"` matches nothing outside `src/cli.rs`'s replacement and the `plan.md`/`done.md` lines that quote it; no trycmd snapshot carried the old help text, so none needed updating. The same commit resets T10.7's stale `Model: Muse Spark` claim to `-` and trims its Status to the supersession fact — the bookkeeping the review of that supersession asked for; the design (supersede, don't reimplement) is unchanged. Deviation: the built site (`site/public`) is gitignored, so refreshing the stale pages is a local `just site`, not a commit; the site mounts repo markdown read-only, and the stale string's source (`docs/comparison.md`) is what this task fixed instead.
+
+### P39 — Replace LadybugDB — closed 2026-09-12 (SQLite only)
+
+**T39.0 survey: LadybugDB replacement** · — · `src/plugins/graph/PLAN.md`, `research.md`, `Cargo.toml`, `src/store/`
+Do: survey keep-SQLite / Grafeo / frozen-lbug; name winner; delete losers.
+Check: SQLite only; `graph-lbug` and `graph-grafeo` gone; `just check` green; numbers archived.
+Status: done 2026-09-12 · Check: Winner = SQLite. Removed feature `graph-lbug`, optional dep `lbug`, `src/store/symbols_lbug.rs`, `.cargo` `LBUG_BUILD_FROM_SOURCE`, mise `cmake` pin for liblbug. Grafeo never merged (PR #21/#22 closed). `src/store/mod.rs` is SQLite-only `symbols`. Docs: D18 amended, P39 closed, `research.md` keeps P8c + P8e tables as archive. Supersedes further lbug/grafeo work.
+
