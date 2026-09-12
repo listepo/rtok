@@ -16,10 +16,10 @@
 - Every response is capped at `plugins.graph.max_tokens` and carries an archive id when truncated.
 - Indexing never runs on the hook path; PostToolUse(Edit|Write) only marks a file stale.
 - One writer per store: a watcher (P8d) is a thread inside `rtok mcp`, never a second process —
-  `graph-lbug` allows one read-write `Database` per process.
+  `graph-lbug` / `graph-grafeo` allow one read-write graph store per process.
 - Schema changes are a new `migrations/NNNN.sql`, never an edit to an applied one.
-- The plugin never writes SQL or Cypher (D13). Storage is `src/store/symbols.rs`, or
-  `src/store/symbols_lbug.rs` under `graph-lbug`; both expose the same `symbol_*` methods.
+- The plugin never writes SQL or Cypher/GQL (D13). Storage is `src/store/symbols.rs`,
+  `symbols_lbug.rs` under `graph-lbug`, or `symbols_grafeo.rs` under `graph-grafeo`.
 - `tests/graph_contract.rs` pins the four tools through `rtok mcp`. Output changes are a
   task whose commit updates the expected strings; a backend must pass the file untouched.
 - A tool listed by `mcp_tools()` is routed in `src/mcp.rs` `invoke` — `tools/list` and

@@ -186,6 +186,26 @@ SQLite meets them (8.07 ms / 18–27 ms). `graph-lbug` stays opt-in. Full table:
 - Linking the prebuilt `liblbug.a` by default — an unpinned download in `build.rs` is not a reproducible build: from source, or pinned with a checksum, or the gate fails.
 
 
+## v0.4 backend spike — Grafeo (2026-09-12, T8.20)
+
+User asked to try Grafeo (`grafeo` 0.5.42, Apache-2.0, pure Rust LPG) as an opt-in stand-in for frozen `graph-lbug`. Default stays SQLite. Ledgers stay in `rtok.db`. Feature `graph-grafeo` is **off** by default; `--all-features` prefers it over `graph-lbug`.
+
+### What shipped
+
+`src/store/symbols_grafeo.rs` is the `cfg` sibling of `symbols.rs`: same `symbol_*` methods (including T35.3 `symbol_stats` / `replace_symbol_files`), GQL/native writes only in `src/store/` (D13). Derived file `graph.grafeo` beside `rtok.db`. Crate features: `edge` + `wal` + `grafeo-file` (LPG+GQL+persist; no ONNX/AI). `Session` has no begin/commit on that feature set, so statements auto-commit. Writes use the native `create_node_with_props` / `create_edge` API — a 3-way GQL `INSERT` of `CALLS` was ~70 s on 80 nodes in debug. Path query is `MATCH p = (anc)-[:CALLS*1..n]->(start)` (`ACYCLIC` prefix is a syntax error on 0.5.42). Multi-statement GQL executes only the first statement.
+
+### Measured / recommendation
+
+See `research.md` §2 "Grafeo vs SQLite (P8e, T8.20)". Release numbers on this machine (macOS
+arm64, 2026-09-12): warm `impact(2)` **498.6 s** vs SQLite **22.8 ms**; fan-out `impact(4)`
+path query **DNF >14 min** vs SQLite CTE **30.5 s**; BFS **59.4 s** vs **2.65 s**; hook p95
+**76.9 ms** vs **11.7 ms**. Contract tests pass; build is cmake-free.
+
+**Recommendation: abandon.** Do not adopt as default or as a serious `graph-lbug` stand-in.
+Leave `graph-grafeo` opt-in only so the negative measurement stays reproducible; no further
+investment.
+
+
 ## P30 survey — LSP behind tags MCP (2026-09-11)
 
 Survey for **T30.0** (`plan.md` P30). No implementation; feature stays **off** until Gate P30 passes with a recorded `Measurement` row. Sources: `research.md` §4 (serena, codebase-memory-mcp), `docs/comparison.md` §5, serena `solidlsp` (`rust_analyzer.py`, PR #1173 PATH detection, 2026), rust-analyzer book + `lsp/ext.rs` (`workspace/symbol` scope/kind filters), clangd 20 release notes (outgoing call hierarchy, 2026), typescript-language-server `lsp-server.ts` (NavTree + References, `didOpen` / `projectLoadingFinish`, 2026). Complexity: 3/5. Claimed: Composer 2.5.

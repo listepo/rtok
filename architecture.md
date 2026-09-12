@@ -63,7 +63,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/config.rs` | `Config::load()`, defaults, `[plugins.<id>]`, `CATALOGUE` | T0.2 |
 | `src/config/layers.rs`, `validate.rs`, `config/default.toml` | figment providers (D14); `rtok config show/validate/set` (see `docs/config.md`) | P12 |
 | `src/store/` + `migrations/` | Diesel models; `Store::open`; `insert_call`/`tokens`/`log`; `insert_measurement` | T0.3, P13 |
-| `src/store/symbols.rs` / `symbols_lbug.rs` | The `graph` symbol index, one `impl Store` per backend; `cfg` picks SQLite or LadybugDB (`graph-lbug`) | T8.10, T8.11, T8.12 |
+| `src/store/symbols.rs` / `symbols_lbug.rs` / `symbols_grafeo.rs` | The `graph` symbol index, one `impl Store` per backend; `cfg` picks SQLite, LadybugDB (`graph-lbug`), or Grafeo (`graph-grafeo`) | T8.10, T8.11, T8.12, T8.20 |
 | `src/testutil.rs`, `tests/common/` | test-only: a fresh temp dir and a `Config`/`Runtime` confined to it; the nearest-rank p95 the latency gates share | T34.2, T34.3 |
 | `src/plugin.rs` | the contract (§4) | T0.4 |
 | `src/plugins/mod.rs` | feature-gated module list, `all()`, `Registry` | T0.4 |

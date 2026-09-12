@@ -88,6 +88,30 @@ not 2× a default `cargo test` (18.9 s); the C++ cmake cost is paid once (T8.11:
 debug from source, pinned). Decision: `graph-lbug` stays **opt-in, never default**. Code is
 not deleted.
 
+### `graph` Grafeo vs SQLite (P8e spike, T8.20, 2026-09-12)
+
+Release build, this machine (macOS arm64). Same `tests/graph_bench.rs` harness as T8.14
+(`cargo test --release --test graph_bench -- --ignored --nocapture`), plus focused
+`p8e_impact4_*` tests. `grafeo` 0.5.42, features `edge, wal, grafeo-file` (no ONNX/AI).
+
+| Measurement | default (SQLite) | `--features graph-grafeo` | Bar |
+|-------------|------------------|---------------------------|-----|
+| (1) `tests/graph_contract.rs` | 3 passed | 3 passed (debug) | unchanged, both |
+| (2) `rtok hook PostToolUse` p95, n=100 | 11.7 ms | 76.9 ms | ≤ 10 ms |
+| (3) warm `symbol` / `callers` / `impact(2)` | 15.4 / 15.6 / 22.8 ms | 39.3 / 42.1 / **498.6 s** | < 100 ms |
+| (3) cold index, 3 000 files | 127 ms | 19.0 s | not gated |
+| (4) `impact(4)` on fan-out fixture | CTE 30.5 s | path query **DNF >14 min** (killed; CALLS materialize dominates) | grafeo ≥ 2× CTE |
+| (4) same fixture, Rust BFS | 2.65 s | 59.4 s | baseline |
+| (5) build | default features | pure Rust, no cmake C++ | not catastrophic |
+| (6) release `rtok` bytes | 23 733 888 (22.6 MiB) | 27 626 000 (26.3 MiB) | published |
+| (6) store after 3 000-file index | `rtok.db` 4.08 MB | `rtok.db` 213 KB + `graph.grafeo` 3.72 MB | published |
+
+Clause (1) and the cmake-free build are the only wins. Clauses (2)–(4) fail hard: warm
+`impact(2)` is ~22 000× slower than SQLite because every impact call re-materializes
+`CALLS` edges via per-edge native writes; the fan-out path query never finished in 14 min.
+BFS over `symbol_ref_groups` is still ~22× slower than SQLite. Decision: **abandon** —
+keep the opt-in feature only as a recorded negative spike; never default; do not invest more.
+
 ### `graph` watcher idle cost (Gate P8d (2), T8.16, 2026-09-08)
 
 Release binary, macOS arm64, this machine. `rtok mcp` idle for 60 s (stdin held open, no

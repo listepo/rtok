@@ -1,6 +1,6 @@
-//! T8.14: Gate P8c numbers. Ignored; run in release under both backends:
+//! T8.14 / T8.20: Gate P8c numbers. Ignored; run in release per backend:
 //! `mise exec -- cargo test --release --test graph_bench -- --ignored --nocapture --test-threads=1`
-//! and the same with `--features graph-lbug`.
+//! and the same with `--features graph-lbug` or `--features graph-grafeo`.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -22,7 +22,9 @@ fn p8c_numbers() {
         eprintln!("skip: T8.14 is `cargo test --release --test graph_bench -- --ignored`");
         return;
     }
-    let backend = if cfg!(feature = "graph-lbug") {
+    let backend = if cfg!(feature = "graph-grafeo") {
+        "grafeo"
+    } else if cfg!(feature = "graph-lbug") {
         "lbug"
     } else {
         "sqlite"
@@ -66,6 +68,10 @@ fn p8c_numbers() {
     drop(cx);
     eprintln!("rtok_db_bytes {}", bytes(&db));
     eprintln!("graph_lbdb_bytes {}", bytes(&store_dir.join("graph.lbdb")));
+    eprintln!(
+        "graph_grafeo_bytes {}",
+        bytes(&store_dir.join("graph.grafeo"))
+    );
     if let Ok(rd) = std::fs::read_dir(&store_dir) {
         for e in rd.flatten() {
             let path = e.path();
@@ -99,6 +105,70 @@ fn p8c_numbers() {
         "P8c summary backend={backend} cold={cold_ms:?} symbol={ws:?} callers={wc:?} impact2={wi:?} impact4_query={q:?} impact4_bfs={b:?}"
     );
     let _ = std::fs::remove_dir_all(&repo);
+    let _ = std::fs::remove_dir_all(&fan);
+}
+
+
+
+/// T8.20: fan-out index + BFS only (skips Grafeo CALLS materialize / path query).
+#[ignore]
+#[test]
+fn p8e_impact4_bfs_only() {
+    if cfg!(debug_assertions) {
+        eprintln!("skip: release only");
+        return;
+    }
+    let backend = if cfg!(feature = "graph-grafeo") {
+        "grafeo"
+    } else if cfg!(feature = "graph-lbug") {
+        "lbug"
+    } else {
+        "sqlite"
+    };
+    let (cx, fan) = home("p8e-fan-bfs");
+    write_fanout(&fan);
+    let t = Instant::now();
+    index::run(&Ctx::new(&cx), &fan, false).unwrap();
+    let index_ms = t.elapsed();
+    let key = index::canon(&fan);
+    let t = Instant::now();
+    let bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
+    let b = t.elapsed();
+    eprintln!("impact4_bfs_only backend={backend} rows={} index={index_ms:?} bfs={b:?}", bfs.len());
+    assert_eq!(bfs.len(), 11110);
+    let _ = std::fs::remove_dir_all(&fan);
+}
+
+/// T8.20: impact(4) fan-out only (Grafeo vs SQLite CTE / BFS).
+#[ignore]
+#[test]
+fn p8e_impact4_fanout() {
+    if cfg!(debug_assertions) {
+        eprintln!("skip: release only");
+        return;
+    }
+    let backend = if cfg!(feature = "graph-grafeo") {
+        "grafeo"
+    } else if cfg!(feature = "graph-lbug") {
+        "lbug"
+    } else {
+        "sqlite"
+    };
+    let (cx, fan) = home("p8e-fan");
+    write_fanout(&fan);
+    let t = Instant::now();
+    index::run(&Ctx::new(&cx), &fan, false).unwrap();
+    let index_ms = t.elapsed();
+    let key = index::canon(&fan);
+    let t = Instant::now();
+    let rows = cx.store.symbol_impact(&key, "sink", 4).unwrap();
+    let q = t.elapsed();
+    eprintln!("impact4_query backend={backend} rows={} index={index_ms:?} query={q:?}", rows.len());
+    let t = Instant::now();
+    let bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
+    let b = t.elapsed();
+    eprintln!("impact4_bfs backend={backend} rows={} {b:?}", bfs.len());
+    assert_eq!(rows.len(), bfs.len(), "query vs BFS size");
     let _ = std::fs::remove_dir_all(&fan);
 }
 

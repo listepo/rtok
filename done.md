@@ -1,6 +1,17 @@
 # rtok — completed tasks
 
 
+## P8e — Grafeo spike · done 2026-09-12 (T8.20, abandon)
+
+**T8.20 spike Grafeo backend** · T8.14 · `Cargo.toml`, `src/store/symbols_grafeo.rs`, `src/store/mod.rs`, `tests/graph_bench.rs`, `research.md`, `src/plugins/graph/PLAN.md`
+Do: optional `grafeo` behind `graph-grafeo` (GQL + persist features only); `cfg`-selected `symbols_grafeo.rs` implementing the same `symbol_*` Store methods (including T35.3 `symbol_stats` / `replace_symbol_files`); derived store `graph.grafeo` beside `rtok.db`. Measure with `tests/graph_bench.rs` / `graph_contract.rs`. Record numbers in `research.md` and a keep/drop recommendation in `src/plugins/graph/PLAN.md`. Do not flip default.
+Check: `cargo test --features graph-grafeo --test graph_contract` — 3 passed; release SQLite `impact(4)` CTE 30.5 s / BFS 2.65 s; Grafeo warm `impact(2)` 498.6 s, fan-out path query DNF >14 min, BFS 59.4 s; hook p95 76.9 ms. Verdict **abandon** (opt-in fossil only).
+Complexity: 4/5
+Status: done 2026-09-12 · Model: Composer
+Evidence: `research.md` §2 Grafeo table; `src/plugins/graph/PLAN.md` v0.4 recommendation.
+
+
+
 ## P36 — second bug-hunt residue — T36.1–T36.20 done (Gate P36 still needs `just check`)
 
 **T36.6 dead read/graph surface: wire or delete** · — · `src/plugins/read/outline.rs`, `src/config/mod.rs`, `docs/config.md`
