@@ -1,6 +1,6 @@
-//! T8.14: Gate P8c numbers. Ignored; run in release under both backends:
+//! T8.14 / T8.20: Gate P8c numbers. Ignored; run in release per backend:
 //! `mise exec -- cargo test --release --test graph_bench -- --ignored --nocapture --test-threads=1`
-//! and the same with `--features graph-lbug`.
+//! and the same with `--features graph-lbug` or `--features graph-grafeo`.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -22,7 +22,9 @@ fn p8c_numbers() {
         eprintln!("skip: T8.14 is `cargo test --release --test graph_bench -- --ignored`");
         return;
     }
-    let backend = if cfg!(feature = "graph-lbug") {
+    let backend = if cfg!(feature = "graph-grafeo") {
+        "grafeo"
+    } else if cfg!(feature = "graph-lbug") {
         "lbug"
     } else {
         "sqlite"
@@ -66,6 +68,10 @@ fn p8c_numbers() {
     drop(cx);
     eprintln!("rtok_db_bytes {}", bytes(&db));
     eprintln!("graph_lbdb_bytes {}", bytes(&store_dir.join("graph.lbdb")));
+    eprintln!(
+        "graph_grafeo_bytes {}",
+        bytes(&store_dir.join("graph.grafeo"))
+    );
     if let Ok(rd) = std::fs::read_dir(&store_dir) {
         for e in rd.flatten() {
             let path = e.path();

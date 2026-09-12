@@ -87,7 +87,7 @@ Plugin catalogue (v0.1 scope). Every plugin is native Rust written from scratch 
 - One task = one commit on `main` only. Do not create or switch to a feature branch (`rtok/<task-id>` or otherwise). Never skip the Check. Same commit: mark the task done and move it from this file to `done.md` (verbatim Do/Check, `Status: done <date>`, Check result). Implemented work left in `plan.md` is unfinished.
 - Read `research.md` §3 (hook contract) before any hook task. Hook input is JSON on stdin; output is JSON on stdout; exit 0. Exit 2 blocks (PreToolUse only). PostToolUse can only add context.
 - Fail open: any plugin error → log to DB and return the unmodified input/empty output. A hook that crashes must still exit 0 in ≤ 10 ms.
-- No new dependency without a one-line justification in the commit message. Allowed baseline: clap (derive, wrap_help), figment (toml, env), toml_edit, serde, serde_json, diesel (sqlite, bundled libsqlite3-sys with FTS5), regex, anyhow, tokio, hyper/axum, reqwest, rmcp, tree-sitter + tree-sitter-tags, sha2, time; `lbug` only behind feature `graph-lbug` (D18, P8c). Reason diesel replaces rusqlite: typed models for D13 `calls`/`tokens`/`logs`; sync, so hooks stay ≤ 10 ms. Reason figment + toml_edit replace a direct `toml` dep and a hand-rolled merger: D14.
+- No new dependency without a one-line justification in the commit message. Allowed baseline: clap (derive, wrap_help), figment (toml, env), toml_edit, serde, serde_json, diesel (sqlite, bundled libsqlite3-sys with FTS5), regex, anyhow, tokio, hyper/axum, reqwest, rmcp, tree-sitter + tree-sitter-tags, sha2, time; `lbug` only behind feature `graph-lbug` (D18, P8c); `grafeo` only behind feature `graph-grafeo` (P8e spike). Reason diesel replaces rusqlite: typed models for D13 `calls`/`tokens`/`logs`; sync, so hooks stay ≤ 10 ms. Reason figment + toml_edit replace a direct `toml` dep and a hand-rolled merger: D14.
 - Don't duplicate code or logic: find the existing helper and reuse it, or extract one shared helper at the responsible layer (the module that owns the behaviour, not a junk drawer).
 - Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` green before every Check.
 - CLI testing: unit tests for internal business logic; integration tests for end-to-end binary execution, argument parsing, and output formatting. Dev-deps (one-line reason in the first commit that adds each): **`assert_cmd`** — spawn the compiled binary; assert exit code, stdout, stderr; **`predicates`** — compose output matchers (contains, regex, …); **`assert_fs`** — temp files/dirs setup, teardown, and verification; **`trycmd`** — snapshot tests from plain text or Markdown command files under `tests/<name>/` (prefer over line-by-line assertions when CLI output is long or complex; files double as docs). Unit tests live next to the code; integration and snapshot tests under `tests/`. Allowed dev-deps baseline also includes `httpmock` (T5.0).
@@ -137,6 +137,17 @@ Gate P7: removed 2026-09-09 — A/B `terse` on/off on 6 tasks with pass/fail jud
 ### P8c — `graph` on LadybugDB — tasks done; Gate P8c: clause (4) won 2026-09-08, `graph-lbug` stays opt-in (see `done.md` P8c).
 
 ### P8d — `graph` freshness · done 2026-09-09 (T8.15–T8.19), Gate P8d passed — see `done.md` P8d.
+
+### P8e — Grafeo spike (opt-in `graph-grafeo`) — added 2026-09-12; in progress.
+
+D18/P8c left LadybugDB frozen opt-in. This spike asks whether Grafeo (pure-Rust LPG, GQL, Apache-2.0) can beat default SQLite on Gate P8c bars without C++/cmake — especially `impact` — while keeping warm tool calls and hook p95 acceptable. Default stays SQLite. Ledgers stay in `rtok.db`.
+
+**T8.20 spike Grafeo backend** · T8.14 · `Cargo.toml`, `src/store/symbols_grafeo.rs`, `src/store/mod.rs`
+Do: optional `grafeo` behind `graph-grafeo` (GQL + persist features only); `cfg`-selected `symbols_grafeo.rs` implementing the same `symbol_*` Store methods; derived store `graph.grafeo` beside `rtok.db`. Measure with `tests/graph_bench.rs` / `graph_contract.rs`. Record numbers in `research.md` and a keep/drop recommendation in `src/plugins/graph/PLAN.md`. Do not flip default.
+Check: `cargo test --features graph-grafeo --test graph_contract`; release `graph_bench --ignored` under default and `graph-grafeo`; `just check` still green on the default feature set.
+Complexity: 4/5
+Status: in progress
+Model: Composer
 
 ### P16 — OpenTelemetry export — Gate P16 passed 2026-09-07 (see `done.md` P16; backend clause moved to P18); T16.9 done 2026-09-10.
 
@@ -598,6 +609,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T8.17` | P8d graph freshness | `watchman` backend | ✅ 2026-09-09 | 4/5 |
 | `T8.18` | P8d graph freshness | the watcher tests stop racing the filesystem | ✅ 2026-09-09 | 2/5 |
 | `T8.19` | P8d graph freshness | `graph_truth` is red and nobody noticed | ✅ 2026-09-09 | 3/5 |
+| `T8.20` | P8e Grafeo spike | opt-in `graph-grafeo` + P8c numbers | in progress | 4/5 |
 | `T9.1` | P9 bench + migration | `rtok bench` | ✅ 2026-09-02 | — |
 | `T9.2` | P9 bench + migration | baseline vs rtok | ✅ 2026-09-02 | — |
 | `T9.3` | P9 bench + migration | `rtok setup claude --replace` | ✅ 2026-09-02 | — |

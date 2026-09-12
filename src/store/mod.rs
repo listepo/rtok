@@ -3,10 +3,13 @@
 pub mod models;
 pub mod otel;
 pub mod schema;
-// T8.11 (P8c): one `impl Store` per backend, selected here and nowhere else.
-#[cfg(not(feature = "graph-lbug"))]
+// T8.11 / T8.20: one `impl Store` per backend, selected here and nowhere else.
+// `graph-grafeo` wins when both graph features are on (`just check --all-features`).
+#[cfg(not(any(feature = "graph-lbug", feature = "graph-grafeo")))]
 mod symbols;
-#[cfg(feature = "graph-lbug")]
+#[cfg(feature = "graph-grafeo")]
+mod symbols_grafeo;
+#[cfg(all(feature = "graph-lbug", not(feature = "graph-grafeo")))]
 mod symbols_lbug;
 
 use std::io::ErrorKind;
@@ -45,8 +48,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
-    #[cfg(feature = "graph-lbug")]
+    #[cfg(all(feature = "graph-lbug", not(feature = "graph-grafeo")))]
     graph: symbols_lbug::Graph,
+    #[cfg(feature = "graph-grafeo")]
+    graph: symbols_grafeo::Graph,
 }
 
 /// Turn arbitrary user text into an FTS5 MATCH phrase query: every blank-separated token is
@@ -87,12 +92,14 @@ impl Store {
     /// `dir` is where a second store may live beside `rtok.db`; `None` means in-memory (T8.11).
     fn init(mut conn: SqliteConnection, dir: Option<&Path>) -> Result<Self> {
         conn.batch_execute("PRAGMA foreign_keys = ON;")?;
-        #[cfg(not(feature = "graph-lbug"))]
+        #[cfg(not(any(feature = "graph-lbug", feature = "graph-grafeo")))]
         let _ = dir;
         let store = Self {
             conn: Mutex::new(conn),
-            #[cfg(feature = "graph-lbug")]
+            #[cfg(all(feature = "graph-lbug", not(feature = "graph-grafeo")))]
             graph: symbols_lbug::Graph::open(dir)?,
+            #[cfg(feature = "graph-grafeo")]
+            graph: symbols_grafeo::Graph::open(dir)?,
         };
         store.migrate()?;
         Ok(store)

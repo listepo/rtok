@@ -88,6 +88,23 @@ not 2× a default `cargo test` (18.9 s); the C++ cmake cost is paid once (T8.11:
 debug from source, pinned). Decision: `graph-lbug` stays **opt-in, never default**. Code is
 not deleted.
 
+### `graph` Grafeo vs SQLite (P8e spike, T8.20, 2026-09-12)
+
+Release build, this machine (Linux x86_64). Same `tests/graph_bench.rs` `p8c_numbers` harness
+as T8.14 (`cargo test --release --test graph_bench -- --ignored --nocapture`).
+`grafeo` 0.5.42, features `edge, wal, grafeo-file`. Numbers filled after the release run.
+
+| Measurement | default (SQLite) | `--features graph-grafeo` | Bar |
+|-------------|------------------|---------------------------|-----|
+| (1) `tests/graph_contract.rs` | 3 passed | 3 passed (debug) | unchanged, both |
+| (2) `rtok hook PostToolUse` p95, n=100 | *pending release bench* | *pending* | ≤ 10 ms |
+| (3) warm `symbol` / `callers` / `impact(2)` | *pending* | *pending* | < 100 ms |
+| (4) `impact(4)` on fan-out fixture | *pending* | *pending* | grafeo ≥ 2× CTE |
+| (5) `just check` / build | default features | no cmake C++ | not catastrophic |
+| (6) release `rtok` bytes | *pending* | *pending* | published |
+
+Decision pending the release table. Feature stays **opt-in, never default**.
+
 ### `graph` watcher idle cost (Gate P8d (2), T8.16, 2026-09-08)
 
 Release binary, macOS arm64, this machine. `rtok mcp` idle for 60 s (stdin held open, no
