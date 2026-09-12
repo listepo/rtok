@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "id": "add-fn",
+      "request": "requests/add-fn.json",
+      "response": "responses/add-fn.json",
+      "embedding": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "fix-bug",
+      "request": "requests/fix-bug.json",
+      "response": "responses/fix-bug.json",
+      "embedding": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "write-test",
+      "request": "requests/write-test.json",
+      "response": "responses/write-test.json",
+      "embedding": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "rename",
+      "request": "requests/rename.json",
+      "response": "responses/rename.json",
+      "embedding": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "explain",
+      "request": "requests/explain.json",
+      "response": "responses/explain.json",
+      "embedding": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "run-tests",
+      "request": "requests/run-tests.json",
+      "response": "responses/run-tests.json",
+      "embedding": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    }
+  ]
+}

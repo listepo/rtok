@@ -1,0 +1,1 @@
+{"model":"claude-test","max_tokens":256,"messages":[{"role":"user","content":"Add a function foo that returns 1."}]}

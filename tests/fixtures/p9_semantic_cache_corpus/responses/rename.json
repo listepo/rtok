@@ -1,0 +1,1 @@
+{"type":"message","role":"assistant","content":[{"type":"text","text":"Renamed foo to bar in lib.rs and tests"}],"usage":{"input_tokens":13,"output_tokens":9}}

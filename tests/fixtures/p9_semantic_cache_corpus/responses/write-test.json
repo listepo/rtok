@@ -1,0 +1,1 @@
+{"type":"message","role":"assistant","content":[{"type":"text","text":"#[test] fn foo_returns_one() { assert_eq!(foo(), 1); }"}],"usage":{"input_tokens":11,"output_tokens":15}}

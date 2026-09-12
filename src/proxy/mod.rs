@@ -24,7 +24,7 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -55,6 +55,7 @@ pub mod live;
 pub use live::LiveCall;
 pub mod openai_chat;
 pub mod openai_responses;
+pub mod semantic_cache;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
@@ -77,6 +78,7 @@ pub struct ProxyState {
     /// `compress` mode (T5.3): every enabled plugin's `proxy_filter` runs on `/v1/messages`.
     registry: Registry,
     cfg: Config,
+    cache: Mutex<semantic_cache::Cache>,
 }
 
 impl ProxyState {
@@ -106,6 +108,7 @@ impl ProxyState {
             mode: cfg.proxy.mode.clone(),
             registry: Registry::new(cfg),
             cfg: cfg.clone(),
+            cache: Mutex::new(semantic_cache::Cache::new()),
         })
     }
 
@@ -212,6 +215,24 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         };
         (request_body, recorded)
     };
+
+    let sc = &state.cfg.plugins.proxy.semantic_cache;
+    if sc.enabled && !plain {
+        if let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(&request_body)) {
+            if semantic_cache::eligible(&body, sc) {
+                if let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc) {
+                    let cache_hit = state
+                        .cache
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.lookup(&prompt, sc));
+                    if let Some(hit) = cache_hit {
+                        return cache_response(state, recorded, start, &hit);
+                    }
+                }
+            }
+        }
+    }
 
     let target = match join_upstream(state.upstream_for(wire), &path, query.as_deref()) {
         Ok(u) => u,
@@ -332,6 +353,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                 &recorded,
                 start,
                 wire,
+                status_code,
                 content_type.as_deref(),
                 &request_body,
                 &buf,
@@ -492,6 +514,7 @@ async fn finish(
     recorded: &Option<Recorded>,
     start: Instant,
     wire: Option<&'static dyn Wire>,
+    status_code: u16,
     content_type: Option<&str>,
     request_body: &[u8],
     response_body: &[u8],
@@ -585,6 +608,60 @@ async fn finish(
         ),
         None => {}
     }
+    let sc = &state.cfg.plugins.proxy.semantic_cache;
+    if sc.enabled {
+        if let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body)) {
+            if semantic_cache::eligible(&body, sc) {
+                if let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc) {
+                    if let Ok(mut guard) = state.cache.lock() {
+                        guard.store(&prompt, sc, response_body, content_type, status_code);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn cache_response(
+    state: Arc<ProxyState>,
+    recorded: Option<Recorded>,
+    start: Instant,
+    hit: &semantic_cache::CacheHit,
+) -> AxumResponse {
+    let nbytes = hit.response.len();
+    if let Some(r) = &recorded {
+        let m = semantic_cache::measurement(hit, Some(r.call_id), nbytes);
+        let session = r.session.clone();
+        let call_id = r.call_id;
+        let inline_cap = state.inline_cap;
+        let archive_dir = state.archive_dir.clone();
+        if let Err(e) = state.store.insert_measurement(&session, &m) {
+            log(
+                state.as_ref(),
+                &session,
+                Some(call_id),
+                "error",
+                &format!("cache hit: {e}"),
+            );
+        }
+        let _ = state
+            .store
+            .set_call_ms(call_id, start.elapsed().as_secs_f64() * 1000.0);
+        let _ = state.store.insert_call_io(
+            call_id,
+            None,
+            Some(hit.response.as_ref()),
+            inline_cap,
+            archive_dir.as_deref(),
+        );
+    }
+    let mut response = Response::builder().status(hit.status);
+    if let Some(ct) = &hit.content_type {
+        response = response.header(CONTENT_TYPE, ct);
+    }
+    response
+        .body(Body::from(hit.response.clone()))
+        .unwrap_or_else(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
 }
 
 fn log_err(state: &ProxyState, recorded: &Option<Recorded>, start: Instant, msg: &str) {
@@ -776,6 +853,97 @@ mod tests {
             .unwrap();
         assert_eq!(state.store.count_calls().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn semantic_cache_disabled_proxy_bytes_identical() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let body = r#"{"type":"message","usage":{"input_tokens":1,"output_tokens":2}}"#;
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/messages");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(body);
+        });
+        let dir = std::env::temp_dir().join(format!("rtok-proxy-sc-off-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.proxy.upstream = server.base_url();
+        cfg.plugins.proxy.semantic_cache.enabled = false;
+        let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let task = tokio::spawn(axum::serve(listener, app(state)).into_future());
+        let req = r#"{"model":"claude-test","messages":[{"role":"user","content":"hi"}]}"#;
+        let client = reqwest::Client::new();
+        for _ in 0..2 {
+            let resp = client
+                .post(format!("http://{addr}/v1/messages"))
+                .header("content-type", "application/json")
+                .body(req)
+                .send()
+                .await
+                .expect("request");
+            assert_eq!(resp.bytes().await.expect("body"), body.as_bytes());
+        }
+        mock.assert_calls(2);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn semantic_cache_enabled_direct_hit_skips_upstream() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let body = r#"{"type":"message","usage":{"input_tokens":1,"output_tokens":2}}"#;
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/messages");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(body);
+        });
+        let dir = std::env::temp_dir().join(format!("rtok-proxy-sc-on-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.proxy.upstream = server.base_url();
+        cfg.plugins.proxy.semantic_cache.enabled = true;
+        let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr").to_string();
+        let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+        let req = r#"{"model":"claude-test","messages":[{"role":"user","content":"hi"}]}"#;
+        let client = reqwest::Client::new();
+        let url = format!("http://{addr}/v1/messages");
+        let first = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(req)
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(first.bytes().await.expect("body"), body.as_bytes());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let second = client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(req)
+            .send()
+            .await
+            .expect("request");
+        assert_eq!(second.bytes().await.expect("body"), body.as_bytes());
+        mock.assert_calls(1);
+        let n = state
+            .store
+            .measurement_count("proxy")
+            .expect("measurements");
+        assert_eq!(n, 1);
+        task.abort();
     }
 
     #[tokio::test]
