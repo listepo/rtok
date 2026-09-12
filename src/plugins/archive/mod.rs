@@ -64,7 +64,7 @@ pub(crate) fn outside_live_zone<'a>(
 /// under one `plugin_run` child call. The wire owns the provider-specific request shape.
 pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let mut out: Vec<Measurement> = outside_live_zone(results, cx)
-        .filter_map(|r| rewrite_block(&r.id, r.content, cx))
+        .filter_map(|r| rewrite_block(&r.id, r.content, r.turn, cx))
         .collect();
     if out.is_empty() {
         return out;
@@ -87,12 +87,24 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
 
 /// Decide for one block: reuse the persisted pointer, skip an expanded or small block, or
 /// archive it now. Any store error leaves the block alone (fail open).
-fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Measurement> {
+fn rewrite_block(
+    tool_use_id: &str,
+    content: &mut Value,
+    turn: usize,
+    cx: &Ctx,
+) -> Option<Measurement> {
     let text = block_text(content)?;
     let a = cx.plugin_config::<crate::config::Archive>("archive");
-    let (archive_id, pointer) = match cx.archive_decision(tool_use_id) {
+    let (archive_id, live, kind) = match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
-        Ok(Some(d)) => (d.archive_id, d.pointer),
+        Ok(Some(d)) => {
+            let kind = if a.tiers {
+                tier_kind(&d.pointer)
+            } else {
+                "pointer"
+            };
+            (d.archive_id, d.pointer, kind)
+        }
         Ok(None) => {
             let est = cx.estimate(&text, Class::Code);
             if est < a.min_tokens {
@@ -102,17 +114,24 @@ fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Mea
                 .put_archive(text.as_bytes())
                 .map_err(|e| cx.log("error", "plugin", "archive", &format!("put: {e}")))
                 .ok()?;
-            let pointer = pointer(
-                &text,
-                &archive_id,
-                est,
-                a.head_lines as usize,
-                a.tail_lines as usize,
-            );
-            cx.put_archive_decision(tool_use_id, &archive_id, &pointer)
+            let (live, kind) = if a.tiers {
+                tier_live(&text, &archive_id, est, turn, &a)
+            } else {
+                (
+                    pointer(
+                        &text,
+                        &archive_id,
+                        est,
+                        a.head_lines as usize,
+                        a.tail_lines as usize,
+                    ),
+                    "pointer",
+                )
+            };
+            cx.put_archive_decision(tool_use_id, &archive_id, &live)
                 .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
                 .ok()?;
-            (archive_id, pointer)
+            (archive_id, live, kind)
         }
         Err(e) => {
             cx.log("error", "plugin", "archive", &format!("decision: {e}"));
@@ -121,15 +140,15 @@ fn rewrite_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<Mea
     };
     let m = Measurement {
         plugin: "archive",
-        kind: "pointer",
+        kind,
         before_bytes: text.len() as u64,
-        after_bytes: pointer.len() as u64,
+        after_bytes: live.len() as u64,
         est_before: cx.estimate(&text, Class::Code),
-        est_after: cx.estimate(&pointer, Class::Code),
+        est_after: cx.estimate(&live, Class::Code),
         ref_id: Some(archive_id),
         call_id: None,
     };
-    *content = Value::String(pointer);
+    *content = Value::String(live);
     Some(m)
 }
 
@@ -152,11 +171,16 @@ fn block_text(content: &Value) -> Option<String> {
     }
 }
 
+fn pointer_line(text: &str, id: &str, est: u32) -> String {
+    let n = text.lines().count();
+    let short = &id[..id.len().min(12)];
+    format!("[archived {short}: {n} lines · {est} tokens · expand({id})]")
+}
+
 fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let n = lines.len();
-    let short = &id[..id.len().min(12)];
-    let mut s = format!("[archived {short}: {n} lines · {est} tokens · expand({id})]");
+    let mut s = pointer_line(text, id, est);
     if n <= head + tail {
         for l in &lines {
             s.push('\n');
@@ -174,6 +198,50 @@ fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
         s.push_str(l);
     }
     s
+}
+
+/// P33 L1: deterministic lossless extract (structure map + numbered head/tail). No model.
+fn l1_extract(text: &str, head: usize, tail: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let n = lines.len();
+    let mut s = format!("[tier L1: {n} lines · lossless extract]\n");
+    for (i, line) in lines.iter().enumerate().take(head) {
+        s.push_str(&format!("L{}: {line}\n", i + 1));
+    }
+    if n > head + tail {
+        s.push_str(&format!("… {} omitted lines …\n", n - head - tail));
+    }
+    for (i, line) in lines.iter().enumerate().skip(n.saturating_sub(tail)) {
+        s.push_str(&format!("L{}: {line}\n", i + 1));
+    }
+    s.trim_end().to_string()
+}
+
+/// L0 = pointer line only; hot boundary (`turn == keep_turns`) promotes to L1 (v0.1 head/tail + extract).
+fn tier_live(
+    text: &str,
+    id: &str,
+    est: u32,
+    turn: usize,
+    a: &crate::config::Archive,
+) -> (String, &'static str) {
+    let head = a.head_lines as usize;
+    let tail = a.tail_lines as usize;
+    if turn == a.keep_turns as usize {
+        let body = pointer(text, id, est, head, tail);
+        let extract = l1_extract(text, head * 3, tail * 2);
+        (format!("{body}\n{extract}"), "tier_l1")
+    } else {
+        (pointer_line(text, id, est), "tier_l0")
+    }
+}
+
+fn tier_kind(live: &str) -> &'static str {
+    if live.contains("[tier L1:") {
+        "tier_l1"
+    } else {
+        "tier_l0"
+    }
 }
 
 #[cfg(test)]
@@ -285,6 +353,96 @@ mod tests {
         let first = values[0].as_str().unwrap();
         assert!(first.contains("t1 line 400"), "{first}");
         assert!(!first.contains("archived foreign"), "{first}");
+    }
+
+    #[test]
+    fn tiers_off_matches_v0_1_and_tiers_on_promotes_hot_block() {
+        let cx_off = cx("tiers-off");
+        let mut off: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        let ms_off = rewrite(refs(&mut off), &Ctx::new(&cx_off));
+        let mut repeat: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        rewrite(refs(&mut repeat), &Ctx::new(&cx_off));
+        assert_eq!(off, repeat, "tiers off is byte-identical across replays");
+        let mut cx_on = cx("tiers-on");
+        cx_on.config.plugins.archive.tiers = true;
+        let mut on: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        let ms_on = rewrite(refs(&mut on), &Ctx::new(&cx_on));
+        assert!(
+            off[0].as_str().unwrap().contains("t1 line 400"),
+            "v0.1 keeps head/tail inline"
+        );
+        assert!(
+            !on[0].as_str().unwrap().contains("t1 line 400"),
+            "cold block is L0 line-only"
+        );
+        assert!(on[1].as_str().unwrap().contains("[tier L1:"), "hot block promoted");
+        assert!(ms_off.iter().all(|m| m.kind == "pointer"));
+        assert_eq!(ms_on.iter().filter(|m| m.kind == "tier_l1").count(), 1);
+        assert_eq!(ms_on.iter().filter(|m| m.kind == "tier_l0").count(), 1);
+    }
+
+    #[test]
+    fn gate_p33_tier_ctt_on_fixture() {
+        use crate::measure::jsonl;
+        let path = format!(
+            "{}/tests/fixtures/tier_context/session.jsonl",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let parsed = jsonl::parse_path(std::path::Path::new(&path)).expect("fixture");
+        assert!(parsed.tool_results.len() >= 10);
+        let n = parsed.turns;
+        let turns: Vec<u32> = parsed.tool_results.iter().map(|r| r.turn).collect();
+        let values: Vec<Value> = parsed
+            .tool_results
+            .iter()
+            .map(|r| Value::String(r.content.clone()))
+            .collect();
+        let ctt = |vals: &[Value], tiers: bool| -> u64 {
+            let dir = std::env::temp_dir().join(format!(
+                "rtok-p33-{}-{}",
+                if tiers { "on" } else { "off" },
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            let mut cx = crate::plugin::Runtime::in_memory("p33").unwrap();
+            cx.config.core.archive_dir = dir;
+            cx.config.proxy.mode = "compress".into();
+            cx.config.plugins.archive.tiers = tiers;
+            let mut work: Vec<Value> = vals.iter().cloned().collect();
+            let total = work.len();
+            let refs: Vec<ToolResultRef<'_>> = work
+                .iter_mut()
+                .enumerate()
+                .map(|(index, content)| ToolResultRef {
+                    id: format!("tu-{}", index),
+                    content,
+                    turn: total - index - 1,
+                })
+                .collect();
+            let _ = rewrite(refs, &Ctx::new(&cx));
+            work.iter()
+                .enumerate()
+                .map(|(index, v)| {
+                    let text = v.as_str().unwrap();
+                    let tokens = cx.estimate(text, Class::Code) as u64;
+                    let remain = u64::from(n).saturating_sub(u64::from(turns[index]));
+                    tokens * remain
+                })
+                .sum()
+        };
+        let baseline = ctt(&values, false);
+        let treatment = ctt(&values, true);
+        let pct = 100.0 * treatment as f64 / baseline as f64;
+        eprintln!(
+            "Gate P33 CTT: baseline={baseline} treatment={treatment} ratio={pct:.1}%"
+        );
+        assert!(treatment < baseline, "L0 line-only cold blocks beat v0.1 CTT");
     }
 
     #[test]

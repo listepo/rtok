@@ -446,12 +446,6 @@ Gate P35: after T35.1–T35.2, this repo's cold debug index ≤ 1 s and the 3 00
 
 Optional tiered session context (OpenViking L0/L1/L2) for `archive` / `inject`. Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive until Gate P33.
 
-**T33.2 implement optional L0/L1/L2 loading** · T33.1 · `archive` / `inject` plugin sources
-Do: implement tiered loading behind the flag. Lossless `expand` still required where the source is not regenerable. Measure against v0.1 archive+inject on a documented fixture/session window.
-Check: flag off → identical to v0.1 archive+inject; flag on → tiers load and the comparison numbers for Gate P33 are produced.
-Complexity: 4/5
-Status: open
-Model: -
 
 Gate P33 (review): Measured against v0.1 `archive`+`inject`; license (AGPL) called out in the task/PLAN. Feature stays off until the measurement is recorded.
 
@@ -689,7 +683,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T32.1` | P32 WASM host | config / feature flag for WASM host | ✅ 2026-09-12 | 2/5 |
 | `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
 | `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | ✅ 2026-09-11 | 3/5 |
-| `T33.2` | P33 tiered context | implement optional L0/L1/L2 loading | open | 4/5 |
+| `T33.2` | P33 tiered context | implement optional L0/L1/L2 loading | ✅ 2026-09-12 | 4/5 |
 | `T39.0` | P39 replace LadybugDB | survey: LadybugDB replacement | ✅ 2026-09-12 | 3/5 |
 
 ## 6. Plan amendments (recorded while implementing; each is small and evidence-free by nature)
