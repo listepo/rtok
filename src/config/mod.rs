@@ -22,7 +22,7 @@ pub const DEFAULT_TOML: &str = include_str!("../../config/default.toml");
 
 /// Plugin catalogue: `(id, default_on)`. The registry's manifests must match this list
 /// (asserted by a test in `plugins`), and [`Plugins`] has one field per id.
-pub const CATALOGUE: [(&str, bool); 10] = [
+pub const CATALOGUE: [(&str, bool); 11] = [
     ("measure", true),
     ("cmd", true),
     ("read", true),
@@ -33,6 +33,7 @@ pub const CATALOGUE: [(&str, bool); 10] = [
     ("memory", true),
     ("graph", true),
     ("toon", false),
+    ("compress", false),
 ];
 
 /// Shorthand for the section attributes every table repeats.
@@ -732,6 +733,7 @@ impl Config {
             "memory" => p.memory.enabled,
             "graph" => p.graph.enabled,
             "toon" => p.toon.enabled,
+            "compress" => p.compress.enabled,
             _ => default_on,
         }
     }
@@ -753,6 +755,7 @@ impl Config {
             "memory" => p.memory.enabled = on,
             "graph" => p.graph.enabled = on,
             "toon" => p.toon.enabled = on,
+            "compress" => p.compress.enabled = on,
             _ => {}
         }
     }

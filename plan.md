@@ -369,13 +369,6 @@ v0.1 §5 is done. Rows below are promoted (Daemon/TUI already elsewhere). Detail
 
 Optional LLM-based compression and/or observation extraction (LLMLingua-2, claude-mem-style). Default off. Ship only if a bench beats v0.1 lossless; `expand` still recovers originals where the source is not regenerable.
 
-**T28.2 implement optional compress / memory extractor** · T28.1 · plugin sources under `src/plugins/`
-Do: implement the chosen path behind the flag. Record a `Measurement`. When the source is not regenerable, `expand` still recovers the original. Default-off path is byte-identical to today's lossless behaviour.
-Check: with the flag off, proxy/archive/inject bytes match pre-P28; with the flag on, a fixture compresses and `expand` recovers where required.
-Complexity: 4/5
-Status: open
-Model: -
-
 Gate P28 (review): `rtok bench` vs v0.1 lossless path — cost per passed task must not rise; expand still recovers originals where the source is not regenerable. Feature stays off until this Gate holds.
 
 ### P29 — Embeddings / semantic search (goal: optional embed backend beside FTS5, same fixtures found by both) — added 2026-09-10 (I-22); open.
@@ -646,7 +639,6 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T27.0` | P27 agent SDK | the crate exists and the five hosts move onto it | ✅ 2026-09-09 | 3/5 |
 | `T28.0` | P28 LLM compression | design note: LLM compression vs lossless | ✅ 2026-09-11 | 3/5 |
 | `T28.1` | P28 LLM compression | config / feature flag (default off) | ✅ 2026-09-12 | 2/5 |
-| `T28.2` | P28 LLM compression | implement optional compress / memory extractor | open | 4/5 |
 | `T29.0` | P29 embeddings | design/survey: embeddings beside FTS5 | ✅ 2026-09-11 | 3/5 |
 | `T29.1` | P29 embeddings | config flag (FTS5 default) | ✅ 2026-09-12 | 2/5 |
 | `T29.2` | P29 embeddings | implement optional embed search | ✅ 2026-09-12 | 4/5 |

@@ -29,7 +29,7 @@ path = "src/main.rs"
 
 [features]
 # One feature per catalogue plugin (plan T0.4). Default = all.
-default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon"]
+default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon", "compress"]
 measure = []
 cmd = []
 read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go"]
@@ -44,6 +44,7 @@ graph = ["read"]
 graph-watchman = ["graph", "dep:watchman_client"]
 toon = []
 wasm-host = ["dep:wasmi"]
+compress = []
 lang-rust = ["dep:tree-sitter-rust"]
 lang-ts = ["dep:tree-sitter-typescript"]
 lang-js = ["dep:tree-sitter-javascript"]

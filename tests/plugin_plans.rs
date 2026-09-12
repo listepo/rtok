@@ -37,7 +37,7 @@ fn sdk_plan() -> PathBuf {
 
 /// Directories under `src/plugins/` that carry a design note without being catalogue
 /// plugins yet: the v0.2+ phases (D15) survey them here before `plan.md` promotes them.
-const SURVEYS: &[&str] = &["compress"];
+const SURVEYS: &[&str] = &[];
 
 fn is_separator(line: &str) -> bool {
     let t = line.trim();
