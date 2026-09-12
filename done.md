@@ -263,6 +263,13 @@ Complexity: 2/5
 Status: done 2026-09-12 · Model: Composer 2.5
 Check result: `[plugins.wasm]` (`enabled = false`, `dir = "~/.rtok/plugins"`) in schema, `default.toml`, and `docs/config.md`; not in `CATALOGUE`; `RTOK_PLUGINS_WASM_ENABLED` in env leaf table; `mise exec -- cargo test --lib config::` — 43 passed; `cargo fmt --check` + `clippy -p rtok --lib -D warnings` green; `Cargo.lock` unchanged (no wasmi). `just check` lint step blocked here by missing `sccache` shim in cmake (pre-existing env).
 
+**T32.2 implement WASM host + example Measurement** · T32.1 · host loader, example `.wasm`, `Registry::from_plugins`
+Do: `Registry::from_plugins` loads one example `.wasm` that records a `Measurement`. In-tree plugins unchanged. D6: example may live as a build artefact / docs sample, not a vendored third-party plugin.
+Check: `Registry::from_plugins` plus the example `.wasm` records a `Measurement`; in-tree plugin tests unchanged.
+Complexity: 5/5
+Status: done 2026-09-12 · Model: Composer 2.5
+Check result: Cargo feature `wasm-host` (default off) + optional `wasmi` 2.0; `src/plugins/wasm.rs` Wasmi host (`WasmPlugin`, `env` imports `rtok_estimate` / `rtok_record_measurement` / `rtok_log`); `Registry::from_plugins` native map path unchanged when feature off or `[plugins.wasm] enabled = false`, appends `*.wasm` from `plugins.wasm.dir` when both on; rejects manifests listing `hook`. First-party guest `crates/rtok-wasm-demo-guest` (not in `all()`); artefact built at test time. `mise exec -- cargo test --features wasm-host -p rtok --lib from_plugins_loads_demo_and_records_measurement` — 1 passed (`wasm-demo`, `kind=demo`); `mise exec -- cargo test -p rtok --lib plugins::` — 106 passed (no wasm-host). Deviations: 5 files, ~480 LOC (task budget ≤200 / ≤3).
+
 
 ## P33 — Tiered session context (design; open) — T33.0
 

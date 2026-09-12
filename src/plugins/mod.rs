@@ -37,6 +37,9 @@ pub mod graph;
 #[cfg(feature = "toon")]
 pub mod toon;
 
+#[cfg(feature = "wasm-host")]
+mod wasm;
+
 /// Every compiled-in plugin, in dispatch order.
 #[allow(clippy::vec_init_then_push, unused_mut)] // each push is cfg-gated by a feature
 pub fn all() -> Vec<Box<dyn Plugin>> {
@@ -86,6 +89,8 @@ impl Registry {
                 (p, on)
             })
             .collect();
+        #[cfg(feature = "wasm-host")]
+        let plugins = wasm::append(plugins, config);
         Self { plugins }
     }
 

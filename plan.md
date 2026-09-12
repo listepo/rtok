@@ -418,14 +418,7 @@ Gate P31 (review): Off → identical proxy bytes; on → documented false-hit ra
 WASM plugin host for third-party plugins that do not link into this repo. D6 holds: this repo does not vendor those plugins. In-tree plugins unchanged.
 
 
-**T32.2 implement WASM host + example Measurement** · T32.1 · host loader, example `.wasm`, `Registry::from_plugins`
-Do: `Registry::from_plugins` loads one example `.wasm` that records a `Measurement`. In-tree plugins unchanged. D6: example may live as a build artefact / docs sample, not a vendored third-party plugin.
-Check: `Registry::from_plugins` plus the example `.wasm` records a `Measurement`; in-tree plugin tests unchanged.
-Complexity: 5/5
-Status: open
-Model: -
-
-Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that records a `Measurement`; in-tree plugins unchanged. D6 holds.
+Gate P32 (review): `Registry::from_plugins` plus one example `.wasm` that records a `Measurement`; in-tree plugins unchanged. D6 holds — see `done.md` T32.2.
 
 ### P35 — Graph index speed (goal: a cold index bound by cores, a watcher settle bound by the files that changed) — added 2026-09-10 (T34.9 measurements); open.
 
@@ -674,7 +667,7 @@ authority: when a task moves to `done.md`, flip its row here in the same commit.
 | `T31.2` | P31 semantic cache | implement opt-in semantic cache | ✅ 2026-09-12 | 4/5 |
 | `T32.0` | P32 WASM host | design/survey: WASM host | ✅ 2026-09-11 | 3/5 |
 | `T32.1` | P32 WASM host | config / feature flag for WASM host | ✅ 2026-09-12 | 2/5 |
-| `T32.2` | P32 WASM host | implement WASM host + example Measurement | open | 5/5 |
+| `T32.2` | P32 WASM host | implement WASM host + example Measurement | ✅ 2026-09-12 | 5/5 |
 | `T33.0` | P33 tiered context | design/survey: L0/L1/L2 tiers + AGPL | ✅ 2026-09-11 | 3/5 |
 | `T33.2` | P33 tiered context | implement optional L0/L1/L2 loading | ✅ 2026-09-12 | 4/5 |
 | `T39.0` | P39 replace LadybugDB | survey: LadybugDB replacement | ✅ 2026-09-12 | 3/5 |
