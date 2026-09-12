@@ -381,7 +381,10 @@ mod tests {
             !on[0].as_str().unwrap().contains("t1 line 400"),
             "cold block is L0 line-only"
         );
-        assert!(on[1].as_str().unwrap().contains("[tier L1:"), "hot block promoted");
+        assert!(
+            on[1].as_str().unwrap().contains("[tier L1:"),
+            "hot block promoted"
+        );
         assert!(ms_off.iter().all(|m| m.kind == "pointer"));
         assert_eq!(ms_on.iter().filter(|m| m.kind == "tier_l1").count(), 1);
         assert_eq!(ms_on.iter().filter(|m| m.kind == "tier_l0").count(), 1);
@@ -439,10 +442,11 @@ mod tests {
         let baseline = ctt(&values, false);
         let treatment = ctt(&values, true);
         let pct = 100.0 * treatment as f64 / baseline as f64;
-        eprintln!(
-            "Gate P33 CTT: baseline={baseline} treatment={treatment} ratio={pct:.1}%"
+        eprintln!("Gate P33 CTT: baseline={baseline} treatment={treatment} ratio={pct:.1}%");
+        assert!(
+            treatment < baseline,
+            "L0 line-only cold blocks beat v0.1 CTT"
         );
-        assert!(treatment < baseline, "L0 line-only cold blocks beat v0.1 CTT");
     }
 
     #[test]

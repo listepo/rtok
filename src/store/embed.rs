@@ -31,7 +31,10 @@ fn token_hash(token: &str) -> u64 {
 pub fn hash_embed(text: &str, dims: u32) -> Vec<f32> {
     let dims = dims.max(1) as usize;
     let mut v = vec![0f32; dims];
-    for token in text.split(|c: char| !c.is_ascii_alphanumeric()).filter(|t| t.len() >= 2) {
+    for token in text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| t.len() >= 2)
+    {
         let tok = token.to_ascii_lowercase();
         let h = token_hash(&tok);
         for i in 0..4u64 {
@@ -154,11 +157,14 @@ impl Store {
             .into_iter()
             .filter_map(|r| {
                 let v = blob_to_embed(&r.vector, r.dims as u32)?;
-                Some((cosine(&qv, &v), NoteHit {
-                    id: r.id,
-                    title: r.title,
-                    snippet: r.snippet,
-                }))
+                Some((
+                    cosine(&qv, &v),
+                    NoteHit {
+                        id: r.id,
+                        title: r.title,
+                        snippet: r.snippet,
+                    },
+                ))
             })
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));

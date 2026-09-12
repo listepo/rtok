@@ -16,10 +16,7 @@ struct Fixture {
 fn fixture() -> Fixture {
     let raw = include_str!("fixtures/p29_memory.toml");
     let doc: toml_edit::DocumentMut = raw.parse().expect("fixture parses");
-    let planted = doc["expect"]["planted_title"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let planted = doc["expect"]["planted_title"].as_str().unwrap().to_string();
     let notes = doc["note"]
         .as_array_of_tables()
         .expect("[[note]]")

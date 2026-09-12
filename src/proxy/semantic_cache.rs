@@ -264,8 +264,7 @@ fn load_corpus(dir: &Path) -> Result<Vec<CorpusEntry>, String> {
             let cfg = SemanticCache::default();
             let prompt = build_prompt(wire, &body, &cfg).ok_or_else(|| format!("{id} prompt"))?;
             let hash = canonical_hash(&prompt);
-            let response =
-                std::fs::read(&resp).map_err(|e| format!("{id} response: {e}"))?;
+            let response = std::fs::read(&resp).map_err(|e| format!("{id} response: {e}"))?;
             let embedding = row
                 .get("embedding")
                 .and_then(|v| v.as_array())
@@ -315,11 +314,7 @@ fn content_text(v: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(blocks) => blocks
             .iter()
-            .filter_map(|b| {
-                b.get("text")
-                    .and_then(Value::as_str)
-                    .or_else(|| b.as_str())
-            })
+            .filter_map(|b| b.get("text").and_then(Value::as_str).or_else(|| b.as_str()))
             .collect::<Vec<_>>()
             .join("\n"),
         _ => String::new(),
@@ -423,8 +418,7 @@ mod tests {
         };
         let report = audit_corpus(&dir, &cfg).expect("audit");
         assert_eq!(
-            report.false_hit_pairs,
-            0,
+            report.false_hit_pairs, 0,
             "false hits at {:.2} hit_rate",
             report.hit_rate
         );
