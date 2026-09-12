@@ -2,7 +2,7 @@
 
 View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tasks and Checks; this file is the order to build each plugin. When a task moves to `done.md`, tick it here in the same commit.
 
-**Now:** no open §5 tasks — 166 done, 1 superseded (T10.7 → T10.9); see `done.md` / `plan.md` §5. Remaining work is [Later (v0.2+)](#later-v02) only. Every plugin lane below is implemented; design notes (D15) landed with each first task.
+**Now:** no open rows in `plan.md`. Numbered work including T30.2 (optional LSP graph backend) is in `done.md`. Plugin lanes below are implemented; design notes (D15) landed with each first task. Remaining approved-not-in-plan work is [Later (v0.2+)](#later-v02).
 
 **Sequence if time is short** (`plan.md` §5): P12 → P13 → T14.0 → P1 `measure` → P2 hooks + `inject` → P5 `proxy` passthrough → P3 `cmd` → P4 `read` → P5 `archive` compress → P9 bench. `memory` / `graph` / `guard` / `toon` / P10 / P11 after the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. v0.2+ (LLM compression, embeddings, LSP `graph`, WASM) is [Later](#later-v02); daemon was promoted to P20. Do not start Later while treating v0.1 as unfinished bookkeeping — the numbered tasks are done.
 
@@ -392,14 +392,13 @@ P9 bench (`measure` T9.1) is the keep-or-drop gate for every plugin that claims 
 
 ## Later (v0.2+)
 
-Not v0.1 work. Same plugins, extra backends. Promoted 2026-09-10 from `ideas.md` Later into
-`plan.md` phases P28–P33 (Daemon/TUI already P20/P15).
+Not v0.1 work. Same plugins, extra backends. P28–P33 were promoted from `ideas.md` Later (daemon/TUI already P20/P15). Landed P28–P33 including T30.2 are in `done.md`.
 
 | Plugin / area | v0.2 plan | Ideas / phase |
 |---------------|-----------|---------------|
 | ~~TUI~~ | Promoted to P15 (D17/D23) — `rtok tui` shipped. | I-01 → P15 |
 | `memory` | Optional LLM extractor (claude-mem style) and embeddings beside FTS5. Default off. Progressive disclosure stays. | I-21 → **P28**; I-22 → **P29**; I-13 |
-| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline`; optional embeddings; tags index remains default. Symbol store is SQLite only (P39 closed). | I-24 → **P30**; I-22 → **P29**; I-30 → **P39** (done); I-14, I-15 |
+| `graph` | Optional LSP backend (serena-grade) behind `symbol`/`callers`/`outline` — **T30.2 in `done.md`**; optional embeddings (P29 done); tags index remains default. Symbol store is SQLite only (P39 closed). | I-24 → **P30** (T30.2 in plan); I-22 → **P29** (done); I-30 → **P39** (done); I-14, I-15 |
 | `archive` / `inject` | Optional LLM compression of old context; optional L0/L1/L2 tiers. Lossless `expand` still required where the source is not regenerable. | I-21 → **P28**; I-25 → **P33** |
 | `proxy` | Optional semantic response cache (bifrost-like), off until a false-hit Check is 0 on the P9 set. | I-23 → **P31** |
 | ~~core / daemon~~ | Promoted to P20 (D22) — `rtok demon` supervises `proxy`/`mcp`/`dashboard`. | (was mis-tagged I-26; daemon ≠ WASM) → **P20** |
