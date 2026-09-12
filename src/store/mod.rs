@@ -1,5 +1,6 @@
 //! One SQLite file (plan T0.3, T13.1, decision D8): WAL mode, FTS5, migrations keyed by filename.
 
+pub mod embed;
 pub mod models;
 pub mod otel;
 pub mod schema;
@@ -38,6 +39,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0009.sql", include_str!("../../migrations/0009.sql")),
     ("0010.sql", include_str!("../../migrations/0010.sql")),
     ("0011.sql", include_str!("../../migrations/0011.sql")),
+    ("0012.sql", include_str!("../../migrations/0012.sql")),
 ];
 
 pub struct Store {
@@ -47,7 +49,7 @@ pub struct Store {
 /// Turn arbitrary user text into an FTS5 MATCH phrase query: every blank-separated token is
 /// quoted, so `*`, `(`, `-`, `AND` and `"` are searched for as characters instead of being
 /// read as FTS5 syntax. `None` when there is no token left to search for.
-fn fts_phrase_query(query: &str) -> Option<String> {
+pub(crate) fn fts_phrase_query(query: &str) -> Option<String> {
     let quoted: Vec<String> = query
         .split_whitespace()
         .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))

@@ -94,20 +94,37 @@ fn recall(cx: &Ctx) -> Option<Injection> {
 }
 
 pub fn mem_save(
-    cx: &Ctx,
+    rt: &crate::plugin::Runtime,
     kind: &str,
     title: &str,
     body: &str,
     project: Option<&str>,
 ) -> anyhow::Result<i32> {
+    let cx = Ctx::new(rt);
     let proj = project
         .map(str::to_string)
         .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
-    cx.insert_note(proj.as_deref(), kind, title, body)
+    let id = cx.insert_note(proj.as_deref(), kind, title, body)?;
+    rt.store
+        .upsert_note_embedding(id, title, body, &rt.config.plugins.memory.embed)?;
+    Ok(id)
 }
 
-pub fn mem_search(cx: &Ctx, query: &str, limit: u32) -> anyhow::Result<Vec<crate::store::NoteHit>> {
-    cx.search_notes(query, limit.max(1))
+pub fn mem_search(
+    rt: &crate::plugin::Runtime,
+    query: &str,
+    limit: u32,
+) -> anyhow::Result<Vec<crate::store::NoteHit>> {
+    let lim = limit.max(1);
+    let embed = &rt.config.plugins.memory.embed;
+    if !embed.enabled {
+        return rt.store.search_notes(query, lim);
+    }
+    if embed.hybrid {
+        rt.store.search_notes_hybrid(query, lim, embed)
+    } else {
+        rt.store.search_notes_embed(query, lim, embed)
+    }
 }
 
 pub fn mem_get(cx: &Ctx, id: i32) -> anyhow::Result<Option<String>> {
@@ -121,7 +138,7 @@ mod tests {
     fn save_three_search_hits_first_get_full_body() {
         let cx = crate::plugin::Runtime::in_memory("t61").unwrap();
         let a = mem_save(
-            &Ctx::new(&cx),
+            &cx,
             "decision",
             "walrus",
             "the walrus journal lives here",
@@ -129,7 +146,7 @@ mod tests {
         )
         .unwrap();
         let _b = mem_save(
-            &Ctx::new(&cx),
+            &cx,
             "decision",
             "banana",
             "yellow fruit unrelated",
@@ -137,14 +154,14 @@ mod tests {
         )
         .unwrap();
         let _c = mem_save(
-            &Ctx::new(&cx),
+            &cx,
             "decision",
             "other",
             "nothing matching the unique token",
             Some("rtok"),
         )
         .unwrap();
-        let hits = mem_search(&Ctx::new(&cx), "walrus", 5).unwrap();
+        let hits = mem_search(&cx, "walrus", 5).unwrap();
         assert!(!hits.is_empty(), "{hits:?}");
         assert_eq!(hits[0].title, "walrus");
         assert_eq!(hits[0].id, a);
@@ -160,7 +177,7 @@ mod tests {
         // must be saved the same way — a hard-coded name only matched a checkout called `rtok`.
         for i in 0..20 {
             mem_save(
-                &Ctx::new(&cx),
+                &cx,
                 "note",
                 &format!("title-{i}"),
                 &format!("body-{i} secret"),
@@ -186,7 +203,7 @@ mod tests {
         let mut cx = crate::plugin::Runtime::in_memory("mem-cwd").unwrap();
         cx.cwd = Some(dir.to_string_lossy().into_owned());
         mem_save(
-            &Ctx::new(&cx),
+            &cx,
             "note",
             "other-note",
             "body from elsewhere",
@@ -196,7 +213,7 @@ mod tests {
         // project_name uses the directory's basename (the last component).
         let name = dir.file_name().unwrap().to_string_lossy().into_owned();
         mem_save(
-            &Ctx::new(&cx),
+            &cx,
             "note",
             "cwd-note",
             "visible under hook cwd",

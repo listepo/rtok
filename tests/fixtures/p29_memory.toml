@@ -1,0 +1,28 @@
+# Gate P29 — memory embed fixture (T29.2). Offline; no live embed API.
+
+[[note]]
+kind = "decision"
+title = "p29-gate-arctic-tern"
+body = "Hooks must exit in ≤10 ms fail-open; async ORM rejected — Diesel stays sync on the hook path (D13)."
+project = "rtok"
+
+[[note]]
+kind = "decision"
+title = "p29-decoy-etl-batch"
+body = "Storage indexing and schema migration patterns for batch ETL pipelines in data warehouses."
+project = "rtok"
+
+[[note]]
+kind = "decision"
+title = "p29-decoy-banana"
+body = "Yellow fruit warehouse inventory counts for tropical shipments and unrelated prose."
+project = "rtok"
+
+[query]
+fts = "Diesel sync"
+embed = "why not use an async database library for hooks"
+hybrid = "hook database latency budget"
+embed_off = "why not use an async database library for hooks"
+
+[expect]
+planted_title = "p29-gate-arctic-tern"

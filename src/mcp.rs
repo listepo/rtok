@@ -236,8 +236,7 @@ fn mem_save(cx: &Runtime, args: &Value) -> String {
     let title = args["title"].as_str().unwrap_or("");
     let body = args["body"].as_str().unwrap_or("");
     let project = args["project"].as_str();
-    match crate::plugins::memory::mem_save(&crate::plugin::Ctx::new(cx), kind, title, body, project)
-    {
+    match crate::plugins::memory::mem_save(cx, kind, title, body, project) {
         Ok(id) => json!({"id": id}).to_string(),
         Err(e) => e.to_string(),
     }
@@ -247,7 +246,7 @@ fn mem_save(cx: &Runtime, args: &Value) -> String {
 fn mem_search(cx: &Runtime, args: &Value) -> String {
     let query = args["query"].as_str().unwrap_or("");
     let limit = args["limit"].as_u64().unwrap_or(5) as u32;
-    match crate::plugins::memory::mem_search(&crate::plugin::Ctx::new(cx), query, limit) {
+    match crate::plugins::memory::mem_search(cx, query, limit) {
         Ok(hits) => json!(
             hits.iter()
                 .map(|h| json!({"id": h.id, "title": h.title, "snippet": h.snippet}))
