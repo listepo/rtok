@@ -7,7 +7,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
-use rmcp::model::{CallToolResult, Content, JsonObject, ListToolsResult, ServerInfo, Tool};
+use rmcp::model::{
+    CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ServerCapabilities,
+    ServerInfo, Tool,
+};
 use serde_json::{Value, json};
 
 use crate::config::Config;
@@ -108,20 +111,10 @@ impl Server {
         let id = req["id"].clone();
         let result = match method {
             "initialize" => {
-                // `ServerInfo::default()` fills `server_info` from rmcp's own build env, so
-                // the handshake used to introduce this server as `{"name":"rmcp"}`.
-                let info = ServerInfo {
-                    server_info: rmcp::model::Implementation {
-                        name: "rtok".into(),
-                        version: env!("CARGO_PKG_VERSION").into(),
-                        ..Default::default()
-                    },
-                    capabilities: rmcp::model::ServerCapabilities {
-                        tools: Some(rmcp::model::ToolsCapability::default()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
+                // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
+                // 3.x types are non_exhaustive; construct via the public builders.
+                let info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+                    .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")));
                 serde_json::to_value(&info).unwrap_or(json!({}))
             }
             "ping" => json!({}),
@@ -156,7 +149,7 @@ impl Server {
         };
         let text = invoke(&self.cx, name, &args);
         let _ = record(&self.cx, plugin, name, &args, &text);
-        CallToolResult::success(vec![Content::text(text)])
+        CallToolResult::success(vec![ContentBlock::text(text)])
     }
 }
 
