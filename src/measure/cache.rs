@@ -12,7 +12,6 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::render::{self, Col};
 use crate::store::{Store, UsageRow};
@@ -52,11 +51,8 @@ fn shape(body: &[u8]) -> Shape {
         return Shape::default();
     };
     let fp = |key: &str| {
-        v.get(key).map(|part| {
-            let mut h = Sha256::new();
-            h.update(part.to_string());
-            format!("{:x}", h.finalize())
-        })
+        v.get(key)
+            .map(|part| crate::store::hex_sha256(part.to_string().as_bytes()))
     };
     Shape {
         tools: fp("tools"),
