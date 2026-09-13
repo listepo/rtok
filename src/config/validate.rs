@@ -20,11 +20,11 @@ pub fn issues(path: &Path) -> Result<Vec<String>> {
 
 /// [`issues`] over text already in hand (`set` checks before it writes).
 ///
-/// Parsed as a [`toml_edit::ImDocument`], not a `DocumentMut`: only the immutable document
+/// Parsed as a [`toml_edit::Document`], not a `DocumentMut`: only the immutable document
 /// keeps item spans, and the spans are what make `file:line` name the offending line rather
 /// than the first line that happens to start with the same key.
 fn issues_in(path: &Path, text: &str) -> Vec<String> {
-    let doc: toml_edit::ImDocument<String> = match text.to_owned().parse() {
+    let doc: toml_edit::Document<String> = match text.to_owned().parse() {
         Ok(d) => d,
         Err(e) => return vec![format!("{}:{e}", path.display())],
     };

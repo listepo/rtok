@@ -81,7 +81,7 @@ serde_json = "1.0.151"
 sha2 = "0.10" # call_io archive checksums (T13.3)
 similar = "3.2" # unified diff for `--dry-run` output (T12.6); already in the lock via dev-deps
 wasmi = { version = "2.0", optional = true } # pure-Rust WASM interpreter for optional out-of-tree plugin host (P32)
-toml_edit = "0.22" # `config set` (T12.3) edits in place, preserving comments
+toml_edit = "0.25" # `config set` (T12.3) edits in place, preserving comments
 dotenvy = "0.15" # `.env` files as a config layer, parse only (T12.5)
 rmcp = { version = "0.8" } # stdio MCP types + JSON-RPC (T4.1)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
@@ -101,11 +101,11 @@ reqwest = { version = "0.13.4", default-features = false, features = ["stream", 
 tree-sitter = { version = "0.25", optional = true } # parser for map/signatures (T4.3)
 tree-sitter-tags = { version = "0.25", optional = true } # definition tags from grammar queries (T4.3)
 tree-sitter-rust = { version = "0.24.2", optional = true } # lang-rust tags (T4.3)
-tree-sitter-javascript = { version = "0.23", optional = true } # lang-js tags (T4.3)
+tree-sitter-javascript = { version = "0.25", optional = true } # lang-js tags (T4.3)
 tree-sitter-typescript = { version = "0.23", optional = true } # lang-ts tags (T4.3)
-tree-sitter-python = { version = "0.23", optional = true } # lang-python tags (T4.3)
-tree-sitter-c = { version = "0.23", optional = true } # lang-c tags (T4.3)
-tree-sitter-go = { version = "0.23", optional = true } # lang-go tags (T4.3)
+tree-sitter-python = { version = "0.25", optional = true } # lang-python tags (T4.3)
+tree-sitter-c = { version = "0.24", optional = true } # lang-c tags (T4.3)
+tree-sitter-go = { version = "0.25", optional = true } # lang-go tags (T4.3)
 tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
 
 [dev-dependencies]

@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # A newer push/PR commit cancels the previous run for the same ref.
 concurrency:
