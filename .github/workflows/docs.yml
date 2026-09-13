@@ -2,7 +2,6 @@ name: docs
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 # One Pages deploy at a time; never cancel one half-done (same as listepo/ketch).
