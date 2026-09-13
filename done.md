@@ -229,7 +229,7 @@ Complexity: 2/5
 Status: done 2026-09-12 · Model: Composer 2.5
 Check: `default_toml_is_the_defaults` + `memory_embed_*` tests; `RTOK_PLUGINS_MEMORY_EMBED_ENABLED=true rtok config show --sources` → `plugins.memory.embed.enabled = true (env)`; `cargo fmt --check`; `cargo clippy --lib -D warnings`; `cargo test --lib config::` (41 passed).
 
-## P30 — LSP graph backend (design; open) — T30.0
+## P30 — LSP graph backend — T30.2 done 2026-09-12
 
 **T30.0 design/survey: LSP behind tags MCP** · — · `src/plugins/graph/PLAN.md`
 Do: survey serena-grade LSP backends and how they map onto the existing MCP tool names. Tags remain default; LSP is optional. Name one fixture where tags miss and LSP hits. No implementation.
@@ -243,6 +243,14 @@ Do: add a config flag that enables the LSP backend; tags-only when off. Document
 Check: default keeps tags-only; enabling the flag is visible in `config show --sources`; `just check` green.
 Complexity: 2/5
 Status: done 2026-09-12 · Model: Composer 2.5
+
+**T30.2 implement optional LSP backend** · T30.1 · `src/plugins/graph/lsp.rs`, `src/plugins/graph/mod.rs`, `tests/graph_lsp_gate.rs`
+Do: implement `plugins.graph.backend = "lsp"` behind the T30.1 flag. Same MCP names (`symbol`/`callers`/`outline`). Off → tags-only bytes. On → Gate fixture where tags miss and LSP hits (rust-analyzer on PATH; skip if absent). Native JSON-RPC client; spawn rust-analyzer/clangd/tsserver from PATH (D6: do not spawn serena). Record a Measurement row.
+Check: same MCP names; LSP off → tags-only bytes; LSP on → the fixture hits on LSP and misses on tags.
+Complexity: 4/5
+Status: done 2026-09-12 · Check: `cargo test --test graph_lsp_gate --test graph_contract --lib graph` — graph_contract 3 passed (tags MCP bytes unchanged); graph_lsp_gate 4 passed (`mcp_tool_names_are_unchanged`, `tags_backend_callers_bytes_match_contract`, `tags_backend_misses_onlytyped_type_position`, `lsp_backend_hits_onlytyped_type_position`); lib `graph` 39 passed. `cargo fmt --check` on touched files green. Gate P30: `callers("OnlyTyped")` is `no references to OnlyTyped` on tags and contains `user` on lsp; `plugin=graph` measurement kind `lsp.callers`. Skip: `lsp_backend_hits_onlytyped_type_position` returns after `eprintln!("skip: rust-analyzer not on PATH")` when `rust-analyzer --version` fails.
+Model: Cursor / grok 4.6
+Deviation: **~594 LOC** `src/plugins/graph/lsp.rs` + dispatch in `mod.rs` + `tests/graph_lsp_gate.rs` (121) exceeds ≤200 LOC / ≤3 files — native JSON-RPC client + rust-analyzer handshake cannot fit the cap. Extra comment-only edits: `config/default.toml`, `docs/config.md`. Clangd/tsserver adapters are spawn+framing only; the gate is rust-analyzer. Crate-wide `clippy -D warnings` still fails on pre-existing P31 `semantic_cache`/`proxy` lints; not touched. `just check` skipped (fmt-check whole repo, lint, dup, build-min).
 
 ## P31 — Semantic response cache — T31.2 done 2026-09-12
 

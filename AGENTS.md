@@ -10,9 +10,9 @@
 
 **Toolchain.** Rust is pinned in `mise.toml`. Run everything as `mise exec -- cargo <cmd>` (or `mise activate` your shell). Never install or switch a global toolchain.
 
-**CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` §2.
+**CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` → Reference / Working agreement.
 
-**Workflow.** Every `plan.md` task carries `Complexity: n/5` (1 trivial … 5 hard) beside its `Status:`; rate it before claiming. Claim only `open`; set `in progress` + model. `main` only. ≤200 LOC, ≤3 files. Check, `just check`, commit `<task-id>: <title>` on `main` and move the task to `done.md` (`Status: done <date>` + Check) — work still in `plan.md` is unfinished. Stop → `open`, `Model: -`. New plugin: `docs/plugin-authoring.md` and D21.
+**Workflow.** Claim only a `todo` row in `plan.md`: set Статус to `in progress` and Агент to `Provider / model`. Сложность is 1–5 in the table. `main` only. ≤200 LOC, ≤3 files. Check, `just check`, commit `<task-id>: <title>` on `main` and move the task entirely to `done.md` — work still in `plan.md` is unfinished. Stop → `todo`, clear Агент. New plugin: `docs/plugin-authoring.md` and D21.
 
 **Rules that never bend.**
 - Fail open: a hook exits 0 in ≤ 10 ms even on error, with unmodified input.
@@ -25,6 +25,8 @@
 - Don't duplicate code or logic: reuse an existing helper, or extract one shared helper at the responsible layer.
 - New plugins (D21): plugin and MCP as one unit; singleton (one MCP / one writer per store); one call path per capability; host plugins work on desktop and CLI. If `rtok` is missing, fail open and say to install with ketch (`ketch install listepo/rtok`). `rtok agent setup <host>` offers `plugins/<host>/` (Cursor: `rtok agent setup cursor`).
 
-**Models.** Any provider. **Low-cost** for mechanical work, and for any task a cheap model can finish. **Mid-tier** for coding; pick the cheaper mid model when the task is small. **High-performance** for research and investigation only after the user confirms — do not switch up on your own.
+**Models.** Any provider. **Low-cost** for mechanical work, and for any task a cheap model can finish. **Mid-tier** for coding; pick the cheaper mid model when the task is small. **High-performance** for research and investigation only after the user confirms — do not switch up on your own. On Cursor: grok 4.6 (no fast) for planning, refactoring, bugs; composer 2.5 (no fast) for commands, tests, file moves, scans, web. No max effort or fast without permission. ≤5 agents per project unless told otherwise. Ask if unclear; write the execution plan into the `plan.md` card before claiming. Before writing code, decide whether a ready library or framework should be used. A new dependency is allowed only if it is current (not abandoned) and the creator approved it. Packages already in `toolchain.md` may be reused without asking again. Prefer the latest versions of tools and packages, but bump already-installed ones only with the creator’s permission. Rust: reuse crates already used by sibling projects in this workspace (workspace-root `rust.md`). If this repo lacks one it should use, add a `plan.md` task — do not add the dependency silently. Extract duplicated helpers into `packages/` and depend via local `{ path = "..." }`. No version bumps without permission.
+
+**Parent rules.** If a directory above this repository contains an `AGENTS.md` or `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
 
 Keep this file under 350 tokens; it is loaded into every session.

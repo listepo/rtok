@@ -24,6 +24,7 @@ use rtok_plugin_sdk::{
 };
 
 pub mod index;
+pub mod lsp;
 pub mod watch;
 
 #[cfg(test)]
@@ -124,6 +125,9 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
 /// `line` to `end_line`, at most `plugins.graph.body_lines` lines each (T8.6). One call
 /// answers "what is this and what does it do", which took a `symbol` plus a `read` at v0.1.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+    if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
+        return lsp::symbol(cx, root, name);
+    }
     index_for(cx, root)?;
     let rows = cx.symbol_defs(&index::canon(root), name)?;
     if rows.is_empty() {
@@ -160,6 +164,9 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// v0.1 printed every site with its source line; the edge is what the caller needs, and it
 /// costs a fraction of the bytes.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+    if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
+        return lsp::callers(cx, root, name);
+    }
     index_for(cx, root)?;
     let rows = cx.symbol_ref_groups(&index::canon(root), name)?;
     if rows.is_empty() {
@@ -181,6 +188,9 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// `name`, who calls them, and so on (T8.7). One `depth  path  scope` line per definition
 /// reached. A definition is expanded once, so a call cycle terminates.
 pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
+    if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
+        return lsp::impact(cx, root, name, depth);
+    }
     index_for(cx, root)?;
     let rows = cx.symbol_impact(&index::canon(root), name, depth)?;
     if rows.is_empty() {
@@ -238,6 +248,10 @@ fn symbol_src_reads_add(_n: usize) {}
 
 /// `outline(path)`: the `read` plugin's `map` mode, capped like the other two.
 pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
+    if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
+        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        return lsp::outline(cx, &root, path);
+    }
     let text = crate::plugins::read::read(cx, path, "map", None)?;
     cap(cx, text)
 }
