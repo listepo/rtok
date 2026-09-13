@@ -18,14 +18,18 @@ jobs:
   check:
     strategy:
       fail-fast: false
+      # PRs: ubuntu only (faster feedback). main / workflow_dispatch: ubuntu + macos.
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       # Installs the Rust version pinned in mise.toml — same toolchain as local.
       - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Skip slow cache upload on PRs; restore still works from main keys.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just check
       - run: just example
       # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
