@@ -1219,9 +1219,10 @@ fn inline_body(body: &[u8]) -> (String, String) {
 }
 
 pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    format!("{:x}", h.finalize())
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[derive(QueryableByName)]
@@ -2185,6 +2186,15 @@ mod tests {
             .unwrap();
         assert_eq!(arch.session, "sess-a");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hex_sha256_matches_fips_180_2_abc_vector() {
+        // sha2 0.11 no longer impls LowerHex on the digest; encode bytes ourselves.
+        assert_eq!(
+            hex_sha256(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[rstest]
