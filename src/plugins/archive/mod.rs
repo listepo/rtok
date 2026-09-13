@@ -417,7 +417,7 @@ mod tests {
             cx.config.core.archive_dir = dir;
             cx.config.proxy.mode = "compress".into();
             cx.config.plugins.archive.tiers = tiers;
-            let mut work: Vec<Value> = vals.iter().cloned().collect();
+            let mut work: Vec<Value> = vals.to_vec();
             let total = work.len();
             let refs: Vec<ToolResultRef<'_>> = work
                 .iter_mut()
