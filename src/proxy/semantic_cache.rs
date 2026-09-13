@@ -47,6 +47,12 @@ pub struct Cache {
     semantic: Vec<(Vec<f32>, Entry)>,
 }
 
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cache {
     pub fn new() -> Self {
         Self {
@@ -71,10 +77,8 @@ impl Cache {
                 continue;
             }
             let sim = cosine(emb, &query);
-            if sim >= cfg.threshold {
-                if best.map_or(true, |(s, _)| sim > s) {
-                    best = Some((sim, e));
-                }
+            if sim >= cfg.threshold && best.is_none_or(|(s, _)| sim > s) {
+                best = Some((sim, e));
             }
         }
         best.map(|(sim, e)| hit_from(e, sim, false, &e.hash))
@@ -132,11 +136,16 @@ fn hit_from(e: &Entry, similarity: f32, direct: bool, hash: &[u8; 32]) -> CacheH
 pub fn build_prompt(wire: &dyn Wire, body: &Value, cfg: &SemanticCache) -> Option<CachePrompt> {
     let model = body.get("model")?.as_str()?.to_string();
     Some(CachePrompt {
-        provider: cfg
-            .cache_by_provider
-            .then_some(wire.provider().to_string())
-            .unwrap_or_default(),
-        model: cfg.cache_by_model.then_some(model).unwrap_or_default(),
+        provider: if cfg.cache_by_provider {
+            wire.provider().to_string()
+        } else {
+            String::new()
+        },
+        model: if cfg.cache_by_model {
+            model
+        } else {
+            Default::default()
+        },
         system: system_text(body),
         messages: messages_text(body),
         tools_fingerprint: tools_fingerprint(body),
@@ -159,12 +168,11 @@ pub fn eligible(body: &Value, cfg: &SemanticCache) -> bool {
     if users == 0 || users > cfg.max_messages as usize {
         return false;
     }
-    if cfg.require_empty_tools {
-        if let Some(tools) = body.get("tools").and_then(Value::as_array) {
-            if !tools.is_empty() {
-                return false;
-            }
-        }
+    if cfg.require_empty_tools
+        && let Some(tools) = body.get("tools").and_then(Value::as_array)
+        && !tools.is_empty()
+    {
+        return false;
     }
     true
 }

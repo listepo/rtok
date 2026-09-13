@@ -217,20 +217,19 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     };
 
     let sc = &state.cfg.plugins.proxy.semantic_cache;
-    if sc.enabled && !plain {
-        if let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(&request_body)) {
-            if semantic_cache::eligible(&body, sc) {
-                if let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc) {
-                    let cache_hit = state
-                        .cache
-                        .lock()
-                        .ok()
-                        .and_then(|guard| guard.lookup(&prompt, sc));
-                    if let Some(hit) = cache_hit {
-                        return cache_response(state, recorded, start, &hit);
-                    }
-                }
-            }
+    if sc.enabled
+        && !plain
+        && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(&request_body))
+        && semantic_cache::eligible(&body, sc)
+        && let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc)
+    {
+        let cache_hit = state
+            .cache
+            .lock()
+            .ok()
+            .and_then(|guard| guard.lookup(&prompt, sc));
+        if let Some(hit) = cache_hit {
+            return cache_response(state, recorded, start, &hit);
         }
     }
 
@@ -609,16 +608,13 @@ async fn finish(
         None => {}
     }
     let sc = &state.cfg.plugins.proxy.semantic_cache;
-    if sc.enabled {
-        if let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body)) {
-            if semantic_cache::eligible(&body, sc) {
-                if let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc) {
-                    if let Ok(mut guard) = state.cache.lock() {
-                        guard.store(&prompt, sc, response_body, content_type, status_code);
-                    }
-                }
-            }
-        }
+    if sc.enabled
+        && let (Some(wire), Ok(body)) = (wire, serde_json::from_slice::<Value>(request_body))
+        && semantic_cache::eligible(&body, sc)
+        && let Some(prompt) = semantic_cache::build_prompt(wire, &body, sc)
+        && let Ok(mut guard) = state.cache.lock()
+    {
+        guard.store(&prompt, sc, response_body, content_type, status_code);
     }
 }
 
