@@ -108,6 +108,22 @@ fn seed(home: &Path) {
         .unwrap();
 }
 
+/// Last column is live duration (`0s`/`1s`); it can tick between two CLI runs.
+fn without_run_col(s: &str) -> String {
+    s.lines()
+        .map(|line| {
+            let mut parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.last().is_some_and(|p| {
+                p.ends_with('s') && p[..p.len() - 1].bytes().all(|b| b.is_ascii_digit())
+            }) {
+                parts.pop();
+            }
+            parts.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The four token columns of one data row: everything before the `started` column — the
 /// only cell that contains a space — split on whitespace. The index comes from the
 /// header, whose columns line up with the rows' by construction.
@@ -140,8 +156,12 @@ fn two_live_and_one_ended_is_two_rows_three_with_all() {
     assert_eq!(all_lines.len(), 4, "the ended row joins:\n{all}");
     assert!(all.contains("gpt-x"), "{all}");
 
-    // `agents` is the visible alias the request spelled (P25): same command, same bytes.
-    assert_eq!(rtok(&["agents", "sessions", "--all"], &h), all);
+    // `agents` is the visible alias (P25): same rows. Drop the `run` duration so a
+    // second ticking between the two invocations cannot flake `0s` vs `1s`.
+    assert_eq!(
+        without_run_col(&rtok(&["agents", "sessions", "--all"], &h)),
+        without_run_col(&all)
+    );
     let _ = fs::remove_dir_all(&h);
 }
 
