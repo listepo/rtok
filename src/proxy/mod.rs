@@ -39,7 +39,6 @@ use futures_util::StreamExt;
 use futures_util::stream::unfold;
 use reqwest::Client;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
@@ -721,9 +720,7 @@ fn session_for(
             return v.to_string();
         }
     }
-    let mut h = Sha256::new();
-    h.update(raw);
-    format!("{:x}", h.finalize())
+    crate::store::hex_sha256(raw)
 }
 
 /// Headers that must not be forwarded (HTTP/1.1 hop-by-hop + framing). `content-length`

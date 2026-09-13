@@ -3,7 +3,6 @@
 use crate::config::Config;
 use anyhow::Result;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -34,9 +33,7 @@ struct Line {
 }
 
 fn sha(body: &str) -> String {
-    let mut h = Sha256::new();
-    h.update(body.as_bytes());
-    format!("{:x}", h.finalize())
+    crate::store::hex_sha256(body.as_bytes())
 }
 
 /// Import one JSON object per line. Dedupe by sha256 of `body`. Always exit-success.
