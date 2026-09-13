@@ -13,6 +13,8 @@ static MCP_TOOLS: &[u8] =
 static BEFORE: &[u8] = b"012345678901234567";
 static AFTER: &[u8] = b"done";
 
+// Host `--all-targets` builds this crate as `(lib test)` with std's panic_impl.
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {}
@@ -96,4 +98,20 @@ fn write_i32(n: i32, dst: &mut [u8]) -> usize {
     let need = start + len;
     dst[start..need].copy_from_slice(&tmp[..len]);
     need
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_i32_formats_zero_positive_and_negative() {
+        let mut buf = [0u8; 16];
+        let n = write_i32(0, &mut buf);
+        assert_eq!(&buf[..n], b"0");
+        let n = write_i32(42, &mut buf);
+        assert_eq!(&buf[..n], b"42");
+        let n = write_i32(-7, &mut buf);
+        assert_eq!(&buf[..n], b"-7");
+    }
 }

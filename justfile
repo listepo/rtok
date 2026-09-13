@@ -20,8 +20,11 @@ fmt:
 fmt-check:
     {{cargo}} fmt --check
 
+# rtok-wasm-demo-guest is no_std cdylib for wasm32; host `--all-targets` cannot
+# compile its lib (unwind without std). Lint it as `(lib test)` instead.
 lint:
-    {{cargo}} clippy --workspace --all-targets --all-features -- -D warnings
+    {{cargo}} clippy --workspace --all-targets --all-features --exclude rtok-wasm-demo-guest -- -D warnings
+    {{cargo}} clippy -p rtok-wasm-demo-guest --tests -- -D warnings
 
 # T26.0: copy-paste detector. Config, paths and threshold live in `.jscpd.json`; jscpd exits
 # non-zero past the threshold, which is what makes "don't duplicate logic" a gate and not a wish.
