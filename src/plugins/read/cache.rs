@@ -1,7 +1,5 @@
 //! Re-read dedup (plan T4.4): same session/path/mode/range + sha256 → short hit.
 
-use sha2::{Digest, Sha256};
-
 use rtok_plugin_sdk::{Class, Ctx, Measurement, PostToolUse};
 
 pub fn key(path: &str, mode: &str, range: Option<&str>) -> String {
@@ -58,7 +56,7 @@ pub fn invalidate(ev: &PostToolUse<'_>, cx: &Ctx) {
 }
 
 fn hex_sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    crate::store::hex_sha256(bytes)
 }
 
 #[cfg(test)]
