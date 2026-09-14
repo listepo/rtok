@@ -31,6 +31,10 @@ github-build-setup = "../build-setup.yml"
 dispatch-releases = true
 # T18.1: ship `rtok-update` beside `rtok` so an installed binary can update itself.
 install-updater = true
+# Build -p rtok only. Default --workspace also compiles rtok-wasm-demo-guest
+# (no_std cdylib), which fails on host targets: "unwinding panics are not
+# supported without std". Same class of problem as host clippy --all-targets.
+precise-builds = true
 # T18.6: the test gate is NOT a dist `plan-jobs` entry. dist's `host` job runs on
 # `build-local-artifacts.result == 'skipped'`, and a failed custom job skips it — so a red gate
 # would publish a Release with no binaries instead of stopping. The gate lives in the two
