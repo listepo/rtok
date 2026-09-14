@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T37.0 — agent list plus CLI/GUI setup variants
+
+**T37.0 `rtok agent list` + CLI/GUI setup variants** · P1, 3/5 · `src/cli.rs`, `src/setup/mod.rs`, `tests/config_coverage.rs`, `tests/surface_parity.rs`, `docs/config.md`
+Do: `rtok agent setup opencode,cursor` installs into every named host; new `rtok agent list` prints every known host with app type (cli/gui), app version (`<bin> --version`, `-` when unknown), rtok installed state and installed modules (hooks/mcp/proxy/plugin markers the installers write); `rtok agent setup cursor` covers cli+gui (shared `hooks.json`/`mcp.json`, one run), opencode cli+gui keep separate configs (desktop path per OS); `--cli`/`--gui`/`--all` select variants (default all); a missing agent prints `skip <host> (<kind>): not found, not installed` and no files are created; removal always covers all variants. `--cli`/`--gui` are action flags (allow-listed in `config_coverage`, like `--all`); `agent list` is exempt in `surface_parity` (helper, like `config path`).
+Check: `agent list` prints the 7-row table (claude/cursor×2/codex/opencode×2/pi); `setup cursor --dry-run` shows hooks+plugin+MCP lines; `setup opencode,cursor --dry-run` installs both; `--cli` drops the gui skip line, `--gui` drops the cli install lines; a missing variant prints `skip … not found`; `unknown host` still exits 1; `just check` green.
+Complexity: 3/5
+Status: done 2026-09-14 · Model: OpenCode / Muse Spark 1.3
+Evidence: `just check` green — fmt-check PASS, clippy PASS (`-D warnings`, workspace + wasm-guest), 530 passed / 0 failed / 2 ignored (graph_bench ignores), build-min PASS, jscpd 1.26% lines under threshold 2. Runtime probes on isolated HOME: list prints versions for installed CLIs and `-` for opencode-gui; comma + variant flags behave as above. `config_coverage` 1/1, `surface_parity` 4/4.
+Deviation: ~410 new source lines (2 source files) plus required test/docs/workflow surface — over the ≤200 LOC guideline; kept as one task because list, variant filter and skip-if-missing are one behavior. `agent_present` treats an existing host dir as present (needed so seeded temp homes install; means an empty leftover dir defeats the skip). `app_version` spawns `<bin> --version` with no timeout and `cursor` CLI also answers to bare `agent` (fail-open: `-` on any failure).
+
 
 ## P36 — second bug-hunt residue — T36.1–T36.20 done (Gate P36 still needs `just check`)
 

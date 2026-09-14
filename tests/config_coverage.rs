@@ -26,6 +26,8 @@ const ALLOW: &[&str] = &[
     "grep",    // expand filter; not a stored setting (T3.5)
     "stdin",   // action: rtok filter reads stdin (T10.2)
     "all",     // action: agent sessions also lists ended sessions (T25.2); not a setting
+    "cli",     // action: agent setup variant filter (T37.0); not a setting
+    "gui",     // action: agent setup variant filter (T37.0); not a setting
 ];
 
 /// Flags that are actions on one command rather than settings, so they get no config key.

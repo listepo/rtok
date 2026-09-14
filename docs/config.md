@@ -325,8 +325,9 @@ the flag is visible in `rtok config show --sources` but has no loader.
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
-| `agent setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace` | `setup.*` (`--remove`, `--replace` are actions) |
+| `agent setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--gui`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--gui`, `--all` are actions) |
 | `agent remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
+| `agent list` | (no flags) | — (reads the host configs and `<bin> --version`) |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
