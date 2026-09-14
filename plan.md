@@ -6,8 +6,23 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T38.2 | todo | P1 | 3 | 0% | |
-| T38.3 | todo | P2 | 2 | 0% | |
+| T38.2 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark |
+| T38.3 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark |
+
+### T38.4. drop stale `divan`/`lbug` rows from `toolchain.md`
+
+`toolchain.md` lists `divan` and `lbug`, but neither is in any manifest (`lbug` removed by P39; only historical prose in `src/plugins/graph/PLAN.md` mentions it). `rust.md` already carries all five suspected crates (`figment`, `rmcp`, `similar`, `indicatif`, `owo-colors`), so it needs no change.
+
+Plan: delete the two rows in `toolchain.md`, nothing else.
+
+Check: `divan`/`lbug` no longer appear in `toolchain.md`; the diff touches only `toolchain.md`.
+
+### T38.2. e2e plugin matrix
+
+No single place proves each of the 11 catalogue plugins through its surface plus a `Measurement` row. Add `tests/plugins_e2e.rs`: `cmd` via `run`, `read`/`graph`/`memory` via `mcp`, `proxy`/`archive`/`toon` via proxy fixtures, `inject`/`guard` via `hook`, `measure`/`compress` via `stats`. Assert the promised `Measurement` row where one is owed.
+Check: 11 cases green; `just check` green.
+
+Plan: survey each plugin's surface + existing per-plugin tests, reuse the `commands_e2e.rs` binary-through-isolated-HOME harness and `Store::list_measurements`; one case per plugin, fixtures inline in temp dirs, unique `rtok-t382-` prefix.
 
 ### T38.2. e2e plugin matrix
 
@@ -18,6 +33,8 @@ Check: 11 cases green; `just check` green.
 
 The only input/index commands without e2e. Add `tests/import_index_e2e.rs`: `memory import` of a JSONL fixture is found by search, `graph index` of a fixture tree is found by `symbol`.
 Check: both cases green; `just check` green.
+
+Plan: binary harness like `commands_e2e.rs`; JSONL + source tree created at runtime in temp dirs (`rtok-t383-` prefix); search/symbol assertions through `mcp` stdio following `tests/mcp.rs`.
 
 ## Reference
 

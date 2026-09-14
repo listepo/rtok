@@ -28,7 +28,6 @@
 | crossterm | локально | https://crates.io/crates/crossterm | Терминал |
 | dialoguer | локально | https://crates.io/crates/dialoguer | Зависимость Rust |
 | diesel | локально | https://crates.io/crates/diesel | SQLite ORM |
-| divan | локально | https://crates.io/crates/divan | Зависимость Rust |
 | dotenvy | локально | https://crates.io/crates/dotenvy | Зависимость Rust |
 | figment | локально | https://crates.io/crates/figment | Конфиг |
 | futures-util | локально | https://crates.io/crates/futures-util | Зависимость Rust |
@@ -36,7 +35,6 @@
 | i-slint-backend-testing | локально | https://crates.io/crates/i-slint-backend-testing | Headless-бэкенд для e2e-тестов Slint UI |
 | ignore | локально | https://crates.io/crates/ignore | Зависимость Rust |
 | indicatif | локально | https://crates.io/crates/indicatif | Зависимость Rust |
-| lbug | локально | https://crates.io/crates/lbug | Зависимость Rust |
 | libsqlite3-sys | локально | https://crates.io/crates/libsqlite3-sys | Зависимость Rust |
 | notify | локально | https://crates.io/crates/notify | Зависимость Rust |
 | owo-colors | локально | https://crates.io/crates/owo-colors | Зависимость Rust |
