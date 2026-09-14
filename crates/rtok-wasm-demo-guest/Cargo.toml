@@ -6,3 +6,7 @@ publish = false
 
 [lib]
 crate-type = ["cdylib"]
+
+# Demo guest is wasm32-only; never ship via cargo-dist (see precise-builds).
+[package.metadata.dist]
+dist = false
