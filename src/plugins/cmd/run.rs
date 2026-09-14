@@ -186,10 +186,12 @@ mod tests {
 
     /// D4 at the byte level: a command that emits invalid UTF-8 must come back whole from
     /// `expand`. The archive used to store the lossy string, so every such byte was U+FFFD.
+    /// Emit bytes with POSIX octal `printf` escapes (`\\377`), not bash-only `\\xHH`:
+    /// dash `/bin/sh` leaves `\\xHH` literal, which made this test fail when `SHELL` is unset.
     #[test]
     fn archive_keeps_bytes_that_are_not_utf8() {
         let (c, dir) = cfg("bytes");
-        let code = run(&c, &["printf '\\xff\\xfeok\\n'".into()]).unwrap();
+        let code = run(&c, &["printf".into(), r"\377\376ok\n".into()]).unwrap();
         assert_eq!(code, 0);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
