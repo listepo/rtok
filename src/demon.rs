@@ -135,6 +135,11 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
     fs::create_dir_all(&cfg.demon.state_dir)?;
     let exe = std::env::current_exe()?;
     for service in targets(cfg, named, false)? {
+        // The supervisor's own lock is the truth; the state file can lag it or name a reused pid.
+        if claim(cfg, service)?.is_none() {
+            println!("{service} already running");
+            continue;
+        }
         if let Some(st) = read(cfg, service) {
             if alive(st.supervisor) {
                 println!("{service} already running (supervisor {})", st.supervisor);
@@ -315,6 +320,12 @@ fn drain(rx: &Receiver<(&'static str, String)>, log_cfg: &Config, service: Servi
 /// supervisor with rather than whatever the default layers resolve to.
 pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> Result<()> {
     fs::create_dir_all(&cfg.demon.state_dir)?;
+    // One supervisor per service, however it was started: two `demon start` runs could both
+    // pass the state-file check before either supervisor wrote its state, and put two owners
+    // on one port. A second supervisor leaves here without touching the state file.
+    let Some(_lock) = claim(cfg, service)? else {
+        return Ok(());
+    };
     // Its own session, so closing the terminal that ran `start` does not take the tree down.
     let _ = rustix::process::setsid();
     let exe = std::env::current_exe()?;
@@ -379,23 +390,64 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
         let _ = out_handle.join();
         let _ = err_handle.join();
         drain(&rx, &log_cfg, service);
-        // A child that stayed up was healthy; only a fast crash loop earns a longer wait.
-        backoff = if started.elapsed() >= Duration::from_millis(cfg.demon.healthy_ms) {
-            cfg.demon.backoff_ms
-        } else {
-            backoff.saturating_mul(2).min(cfg.demon.max_backoff_ms)
-        };
+        let healthy = started.elapsed() >= Duration::from_millis(cfg.demon.healthy_ms);
+        let wait;
+        (wait, backoff) = next_backoff(backoff, healthy, &cfg.demon);
         st.restarts += 1;
         write(cfg, &st)?;
-        std::thread::sleep(Duration::from_millis(backoff));
+        std::thread::sleep(Duration::from_millis(wait));
     }
     let _ = fs::remove_file(file(cfg, service, "json"));
     Ok(())
 }
 
+/// An exclusive non-blocking `flock` on `<service>.lock`, held until the file drops; `None`
+/// while another supervisor holds it. std opens files close-on-exec, so the child service
+/// never inherits the lock and cannot keep it after its supervisor is gone.
+fn claim(cfg: &Config, service: Service) -> Result<Option<fs::File>> {
+    let path = file(cfg, service, "lock");
+    let f = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .with_context(|| path.display().to_string())?;
+    match rustix::fs::flock(&f, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+        Ok(()) => Ok(Some(f)),
+        Err(rustix::io::Errno::WOULDBLOCK) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// `(wait now, wait after the next fast crash)`. A child that stayed up was healthy and resets
+/// to `backoff_ms`; only a crash loop doubles, capped at `max_backoff_ms`. The doubling used to
+/// run before the first sleep, so the documented 1 s first wait was 2 s.
+fn next_backoff(cur: u64, healthy: bool, d: &crate::config::Demon) -> (u64, u64) {
+    let wait = if healthy { d.backoff_ms } else { cur };
+    (wait, wait.saturating_mul(2).min(d.max_backoff_ms))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_crash_waits_backoff_ms_then_doubles_to_the_cap() {
+        let d = crate::config::Demon {
+            backoff_ms: 1000,
+            max_backoff_ms: 3000,
+            ..Config::default().demon
+        };
+        let mut cur = d.backoff_ms;
+        let mut waits = Vec::new();
+        for _ in 0..4 {
+            let wait;
+            (wait, cur) = next_backoff(cur, false, &d);
+            waits.push(wait);
+        }
+        assert_eq!(waits, [1000, 2000, 3000, 3000]);
+        assert_eq!(next_backoff(cur, true, &d).0, 1000, "a healthy run resets");
+    }
 
     #[test]
     fn a_service_name_is_never_an_argv() {
@@ -434,6 +486,27 @@ mod tests {
         assert!(names.iter().any(|n| n == "mcp.log.1"), "{names:?}");
         let live = fs::metadata(file(&cfg, Service::Mcp, "log")).unwrap().len();
         assert!(live <= 200, "the live file is bounded: {live}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A second supervisor for a service that already has one returns before its first
+    /// spawn and writes no state.
+    #[test]
+    fn a_second_supervisor_for_one_service_leaves_at_once() {
+        let dir = std::env::temp_dir().join(format!("rtok-demon-claim-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut cfg = Config::default();
+        cfg.demon.state_dir = dir.clone();
+        fs::create_dir_all(&dir).unwrap();
+        let held = claim(&cfg, Service::Web).unwrap().expect("first claim");
+        assert!(claim(&cfg, Service::Web).unwrap().is_none());
+        supervise(&cfg, None, Service::Web).unwrap();
+        assert!(read(&cfg, Service::Web).is_none());
+        drop(held);
+        assert!(
+            claim(&cfg, Service::Web).unwrap().is_some(),
+            "released on drop"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

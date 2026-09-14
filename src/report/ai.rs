@@ -411,6 +411,7 @@ mod tests {
                 bash_max_output_length: None,
                 auto_compact_window: None,
                 instructions: None,
+                agents: vec![],
             },
             recommendations: vec![
                 crate::report::Recommendation {

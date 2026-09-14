@@ -333,9 +333,11 @@ pub struct ReportLedgers {
 /// `cache_health`: a report over an unreadable store is not a report.
 pub fn report_ledgers(cfg: &Config) -> Result<ReportLedgers> {
     let store = Store::open(&cfg.core.db_path)?;
-    let window = report_window(cfg, &store)?;
+    // One scan of the whole `calls` table, shared: each section used to run its own.
+    let calls = store.calls_after(0, i64::MAX)?;
+    let window = report_window(cfg, &store, &calls)?;
     Ok(ReportLedgers {
-        calls: report_calls(&store, window.from_unix)?,
+        calls: report_calls(&calls, window.from_unix),
         window,
         savings: report_savings(&store)?,
         cache: report_cache(&store)?,
@@ -343,13 +345,16 @@ pub fn report_ledgers(cfg: &Config) -> Result<ReportLedgers> {
     })
 }
 
-fn report_window(cfg: &Config, store: &Store) -> Result<ReportWindow> {
+fn report_window(
+    cfg: &Config,
+    store: &Store,
+    calls: &[crate::store::models::Call],
+) -> Result<ReportWindow> {
     let since = cfg.report.since.clone();
     let to_unix = crate::log::now() as i64;
     let span = i64::try_from(stats::parse_since(&since)?.as_secs()).unwrap_or(i64::MAX);
     let from_unix = to_unix.saturating_sub(span);
     let date = |secs: i64| crate::log::stamp(secs.max(0) as u64)[..10].to_string();
-    let calls = store.calls_after(0, i64::MAX)?;
     let mut measurements = 0;
     for (id, _) in crate::config::CATALOGUE {
         measurements += store.list_measurements(id)?.len() as u64;
@@ -405,8 +410,7 @@ fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
     })
 }
 
-fn report_calls(store: &Store, from: i64) -> Result<ReportCallsSection> {
-    let all = store.calls_after(0, i64::MAX)?;
+fn report_calls(all: &[crate::store::models::Call], from: i64) -> ReportCallsSection {
     let mut rows = Vec::new();
     for surface in ["hook", "mcp", "proxy"] {
         let group: Vec<_> = all
@@ -423,12 +427,12 @@ fn report_calls(store: &Store, from: i64) -> Result<ReportCallsSection> {
             p95_ms: pct(&ms, 0.95),
         });
     }
-    Ok(ReportCallsSection {
+    ReportCallsSection {
         in_window: all.iter().filter(|c| c.ts >= from).count() as u64,
         total: all.len() as u64,
         rows,
-        hooks: report_hooks(&all, from),
-    })
+        hooks: report_hooks(all, from),
+    }
 }
 
 /// Hook-surface `calls` rows in window grouped by event name, busiest first.
@@ -652,8 +656,7 @@ impl<'a> Model<'a> {
     }
 
     /// Overview: provider usage totals across every API, plus the CTT and per-turn
-    /// series the tab draws (T15.3). The reads are the ones `stats --cache` already
-    /// uses (`usage_sessions` + `usage_rows`), so this adds no `Store` method (D27).
+    /// series the tab draws (T15.3), from `usage_by_api` and `usage_ctt`.
     /// No store, or one that will not read: zeros, like before.
     pub fn overview(&self) -> Overview {
         let mut out = Overview {
@@ -671,22 +674,9 @@ impl<'a> Model<'a> {
                 out.totals.cache_read += r.cache_read;
             }
         }
-        if let Ok(sessions) = store.usage_sessions() {
-            let mut turns = Vec::new();
-            for session in &sessions {
-                let Ok(mut rows) = store.usage_rows(session) else {
-                    continue;
-                };
-                rows.reverse(); // newest-first → request order
-                let after = |j: usize| rows.len().saturating_sub(j + 1) as i64;
-                for (j, r) in rows.iter().enumerate() {
-                    let ctx = r.input + r.cache_create + r.cache_read;
-                    out.ctt = out.ctt.saturating_add(ctx.saturating_mul(after(j)));
-                    turns.push(ctx);
-                }
-            }
-            let skip = turns.len().saturating_sub(OVERVIEW_TURNS);
-            out.turns = turns.into_iter().skip(skip).collect();
+        if let Ok((ctt, turns)) = store.usage_ctt(OVERVIEW_TURNS as i64) {
+            out.ctt = ctt;
+            out.turns = turns;
         }
         out
     }
@@ -916,6 +906,31 @@ mod tests {
         assert_eq!(v["usage"]["input"], 114);
         assert_eq!(v["usage"]["ctt"], 10);
         assert_eq!(v["usage"]["turns"], serde_json::json!([10, 16, 120]));
+    }
+
+    /// `usage_ctt` against the per-session loop it replaced, past the sparkline cap and with
+    /// sessions interleaved.
+    #[test]
+    fn overview_matches_the_per_session_loop() {
+        let cx = Runtime::in_memory("dash-ref").unwrap();
+        for i in 0..150i64 {
+            let s = ["a", "b", "c"][(i % 3) as usize];
+            cx.store.insert_proxy_turn(s, i, i % 7, i % 5, 1).unwrap();
+        }
+        let (mut ctt, mut turns) = (0i64, Vec::new());
+        for s in cx.store.usage_sessions().unwrap() {
+            let mut rows = cx.store.usage_rows(&s).unwrap();
+            rows.reverse();
+            let n = rows.len() as i64;
+            for (j, r) in rows.iter().enumerate() {
+                let c = r.input + r.cache_create + r.cache_read;
+                ctt += c * (n - j as i64 - 1);
+                turns.push(c);
+            }
+        }
+        let over = Model::new(&cx.config, Some(&cx.store)).overview();
+        assert_eq!(over.ctt, ctt);
+        assert_eq!(over.turns, turns[turns.len() - OVERVIEW_TURNS..]);
     }
 
     /// The wire the P19 UI reads: keys and values as `json!` produced them.

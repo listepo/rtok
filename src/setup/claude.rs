@@ -5,12 +5,13 @@
 
 use crate::config::Config;
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
+use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::apply;
 
-/// `(event, matcher)` — empty matcher omits the field.
+/// `(event, matcher)` — empty matcher omits the field. `SessionEnd` was missing, so no session
+/// row got `ended_at` and no OTel session root ever shipped (`hooks::dispatch` handles it).
 const ENTRIES: &[(&str, &str)] = &[
     ("PreToolUse", "Bash"),
     ("PreToolUse", "Read"),
@@ -19,44 +20,29 @@ const ENTRIES: &[(&str, &str)] = &[
     ("SessionStart", ""),
     ("PreCompact", ""),
     ("PostCompact", ""),
+    ("SessionEnd", ""),
 ];
 
 fn command(event: &str) -> String {
     format!("rtok hook {event}")
 }
 
+/// Exactly `rtok hook <event>`, whitespace aside. Matching the three tokens anywhere in the
+/// command also claimed a user's own chain (`notify-send hi && rtok hook Stop`), and `remove`
+/// deleted it with ours.
 fn is_ours(cmd: &str, event: &str) -> bool {
-    cmd.split_whitespace()
-        .collect::<Vec<_>>()
-        .windows(3)
-        .any(|w| w == ["rtok", "hook", event])
+    cmd.split_whitespace().eq(["rtok", "hook", event])
 }
 
 /// Apply, dry-run, or remove rtok hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    let path = &cfg.setup.claude.settings_path;
-    let mut root = read_json(path)?;
-    let report = if remove {
-        strip_ours(&mut root)
-    } else {
-        insert_ours(&mut root, cfg.setup.hook_timeout_s)
-    };
-    write_json(&apply(cfg), path, &root, &report)?;
-    Ok(report)
-}
-
-/// `hooks.<event>` as an array, created when absent. A `hooks` key (or an event key) of the
-/// wrong JSON shape is replaced rather than trusted: a settings file is user data, and setup
-/// must not panic on it. The caller has already normalised `root` to an object.
-fn event_array<'a>(
-    hooks: &'a mut serde_json::Map<String, Value>,
-    event: &str,
-) -> &'a mut Vec<Value> {
-    let arr = hooks.entry(event).or_insert_with(|| json!([]));
-    if !arr.is_array() {
-        *arr = json!([]);
-    }
-    arr.as_array_mut().expect("just replaced with an array")
+    edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
+        if remove {
+            strip_ours(root)
+        } else {
+            insert_ours(root, cfg.setup.hook_timeout_s)
+        }
+    })
 }
 
 fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
@@ -72,21 +58,10 @@ fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
 }
 
 fn insert_ours(root: &mut Value, timeout: u64) -> String {
-    if !root.is_object() {
-        *root = json!({});
-    }
-    let hooks = root
-        .as_object_mut()
-        .expect("just replaced with an object")
-        .entry("hooks")
-        .or_insert_with(|| json!({}));
-    if !hooks.is_object() {
-        *hooks = json!({});
-    }
-    let hooks = hooks.as_object_mut().expect("just replaced with an object");
+    let hooks = object_at(root, "hooks");
     let mut added = Vec::new();
     for &(event, matcher) in ENTRIES {
-        if event_array(hooks, event)
+        if array_at(hooks, event)
             .iter()
             .any(|e| has_ours(e, event, matcher))
         {
@@ -100,7 +75,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
             "hooks".into(),
             json!([{"type":"command","command":command(event),"timeout":timeout}]),
         );
-        event_array(hooks, event).push(Value::Object(obj));
+        array_at(hooks, event).push(Value::Object(obj));
         let m = if matcher.is_empty() {
             String::new()
         } else {
@@ -187,10 +162,14 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_empty_is_seven_additions() {
+    fn dry_run_empty_is_eight_additions() {
         let path = tmp("setup-dry");
         let report = run(&cfg(path.clone(), true), false).unwrap();
-        assert!(report.contains("7 additions"), "{report}");
+        assert!(report.contains("8 additions"), "{report}");
+        assert!(
+            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            "{report}"
+        );
         assert!(!path.exists());
     }
 
@@ -220,12 +199,30 @@ mod tests {
         let path = tmp("setup-apply");
         fs::write(&path, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#).unwrap();
         let first = run(&cfg(path.clone(), false), false).unwrap();
-        assert!(first.contains("7 additions"), "{first}");
+        assert!(first.contains("8 additions"), "{first}");
         assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), NO_CHANGES);
         let rm = run(&cfg(path.clone(), false), true).unwrap();
         assert!(rm.contains("removed"), "{rm}");
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("echo other") && !raw.contains("rtok hook"));
+    }
+
+    /// A user command that merely contains `rtok hook <event>` is theirs: remove keeps it.
+    #[test]
+    fn remove_keeps_a_user_command_that_chains_rtok() {
+        let path = tmp("setup-chain");
+        let chain = "notify-send hi && rtok hook PreToolUse";
+        fs::write(
+            &path,
+            json!({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":chain}]}]}})
+                .to_string(),
+        )
+        .unwrap();
+        run(&cfg(path.clone(), false), false).unwrap();
+        run(&cfg(path.clone(), false), true).unwrap();
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains(chain), "{raw}");
+        assert!(!raw.contains("\"rtok hook PreToolUse\""), "{raw}");
     }
 
     /// A settings file whose `hooks` is not an object is user data, not a reason to panic
@@ -240,7 +237,7 @@ mod tests {
             let path = tmp(&format!("setup-shape-{}", body.len()));
             fs::write(&path, body).unwrap();
             let report = run(&cfg(path.clone(), false), false).unwrap();
-            assert!(report.contains("7 additions"), "{body} → {report}");
+            assert!(report.contains("8 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }

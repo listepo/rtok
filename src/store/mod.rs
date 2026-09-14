@@ -940,6 +940,36 @@ impl Store {
         .map_err(Into::into)
     }
 
+    /// The dashboard Overview's CTT and its last `turns` per-turn contexts, in the order of
+    /// [`Self::usage_sessions`] then [`Self::usage_rows`] reversed (T15.3). Two reads: the
+    /// Overview used to load every usage row, one query per session, on each 2 s tick.
+    pub fn usage_ctt(&self, turns: i64) -> Result<(i64, Vec<i64>)> {
+        let mut conn = self.lock()?;
+        let ctt: Vec<Count> = sql_query(
+            "SELECT COALESCE(SUM(ctx * (total - rn)), 0) AS n FROM (
+                SELECT input + cache_create + cache_read AS ctx,
+                       COUNT(*) OVER (PARTITION BY session) AS total,
+                       ROW_NUMBER() OVER (PARTITION BY session ORDER BY ts, id) AS rn
+                FROM usage)",
+        )
+        .load(&mut *conn)?;
+        let mut tail: Vec<i64> = sql_query(
+            "SELECT u.input + u.cache_create + u.cache_read AS n
+             FROM usage u
+             JOIN (SELECT session, MIN(ts) AS first_ts, MIN(id) AS first_id
+                   FROM usage GROUP BY session) f ON f.session = u.session
+             ORDER BY f.first_ts DESC, f.first_id DESC, u.ts DESC, u.id DESC
+             LIMIT ?",
+        )
+        .bind::<BigInt, _>(turns)
+        .load::<Count>(&mut *conn)?
+        .into_iter()
+        .map(|c| c.n)
+        .collect();
+        tail.reverse();
+        Ok((ctt.first().map_or(0, |c| c.n), tail))
+    }
+
     pub fn usage_by_api(&self) -> Result<Vec<ApiUsage>> {
         #[derive(QueryableByName)]
         struct Row {

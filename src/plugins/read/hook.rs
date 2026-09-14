@@ -23,30 +23,45 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     })
 }
 
-/// How many recent hook calls form the "last 5 turns" window: every tool call
-/// emits PreToolUse + PostToolUse, so 5 turns ≈ 10 hook rows.
-const WINDOW_CALLS: i64 = 10;
+/// The edit window: the last 5 finished tool calls (PostToolUse rows).
+const WINDOW_TOOL_CALLS: usize = 5;
+/// Hook rows read to find them. The window used to be the last 10 rows of any event, but
+/// prompts, session starts, compactions and every PreToolUse write rows too, so an edit two
+/// tool calls back could already be out of it.
+const SCAN_ROWS: i64 = 50;
 
 /// True when a PostToolUse(Edit|Write) for `path` sits in the window.
 /// Fail open: a store error allows the Read (unmodified input, D1), and so does a hook
 /// body the store could not keep (empty string) — the window cannot rule out an edit of
 /// this file, and denying a Read of a file the agent just wrote is the worse error.
 fn recently_edited(cx: &Ctx, path: &str) -> bool {
-    let bodies = match cx.recent_hook_inputs(WINDOW_CALLS) {
+    let bodies = match cx.recent_hook_inputs(SCAN_ROWS) {
         Ok(b) => b,
         Err(_) => return true,
     };
-    bodies.iter().any(|b| b.is_empty() || edits_path(b, path))
+    let mut tool_calls = 0;
+    for b in &bodies {
+        if b.is_empty() {
+            return true;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(b) else {
+            continue;
+        };
+        if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("PostToolUse") {
+            continue;
+        }
+        if edits_path(&v, path) {
+            return true;
+        }
+        tool_calls += 1;
+        if tool_calls == WINDOW_TOOL_CALLS {
+            break;
+        }
+    }
+    false
 }
 
-fn edits_path(stdin: &str, path: &str) -> bool {
-    let v: serde_json::Value = match serde_json::from_str(stdin) {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("PostToolUse") {
-        return false;
-    }
+fn edits_path(v: &serde_json::Value, path: &str) -> bool {
     let tool = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
     if tool != "Edit" && tool != "Write" {
         return false;
@@ -116,6 +131,47 @@ mod tests {
             .unwrap();
         let input = json!({"file_path": path});
         assert!(pre_tool(&ev(&input), &Ctx::new(&cx)).is_none());
+    }
+
+    fn hook_row(cx: &crate::plugin::Runtime, body: serde_json::Value) {
+        let id = cx.record_call("hook", "hook", None).unwrap();
+        let bytes = serde_json::to_vec(&body).unwrap();
+        cx.store
+            .insert_call_io(id, Some(&bytes), None, 65536, None)
+            .unwrap();
+    }
+
+    /// Non-tool rows (prompts, PreToolUse) do not push an edit out of the window; the
+    /// sixth finished tool call after it does.
+    #[test]
+    fn the_window_counts_tool_calls_not_hook_rows() {
+        let cx = cx("window");
+        let p = cx.config.core.archive_dir.parent().unwrap().join("w.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let path = p.to_str().unwrap();
+        hook_row(
+            &cx,
+            json!({"hook_event_name": "PostToolUse", "tool_name": "Write", "tool_input": {"file_path": path}}),
+        );
+        for _ in 0..12 {
+            hook_row(&cx, json!({"hook_event_name": "UserPromptSubmit"}));
+        }
+        let input = json!({"file_path": path});
+        assert!(
+            pre_tool(&ev(&input), &Ctx::new(&cx)).is_none(),
+            "still in window"
+        );
+        for _ in 0..WINDOW_TOOL_CALLS {
+            hook_row(
+                &cx,
+                json!({"hook_event_name": "PreToolUse", "tool_name": "Bash"}),
+            );
+            hook_row(
+                &cx,
+                json!({"hook_event_name": "PostToolUse", "tool_name": "Bash"}),
+            );
+        }
+        assert!(pre_tool(&ev(&input), &Ctx::new(&cx)).is_some(), "aged out");
     }
 
     #[test]

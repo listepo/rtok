@@ -252,7 +252,16 @@ impl Store {
     /// Ended sessions not yet posted: `mark` is the last `ended_at` fully covered, `tail` is how
     /// many at that second were posted (ordered by `id`). A new session in the same second is
     /// not skipped when the watermark already covers that timestamp.
-    pub fn sessions_pending_export(&self, mark: i64, tail: i64) -> Result<Vec<Session>> {
+    ///
+    /// At most `limit` rows, like `calls_after` / `logs_after`: unbounded, an endpoint that was
+    /// down for a while got every pending session in one `/v1/traces` body. A cut inside one
+    /// second is safe — the rows come in `rn` order, so `(mark, tail)` resumes right after it.
+    pub fn sessions_pending_export(
+        &self,
+        mark: i64,
+        tail: i64,
+        limit: i64,
+    ) -> Result<Vec<Session>> {
         let mut conn = self.lock()?;
         Ok(sql_query(
             "SELECT id, host_id, project, cwd, source, started_at, ended_at FROM (
@@ -262,11 +271,13 @@ impl Store {
                 WHERE ended_at IS NOT NULL
              )
              WHERE ended_at > ?1 OR (ended_at = ?2 AND rn > ?3)
-             ORDER BY ended_at ASC, id ASC",
+             ORDER BY ended_at ASC, id ASC
+             LIMIT ?4",
         )
         .bind::<BigInt, _>(mark)
         .bind::<BigInt, _>(mark)
         .bind::<BigInt, _>(tail)
+        .bind::<BigInt, _>(limit)
         .load::<PendingSession>(&mut *conn)?
         .into_iter()
         .map(|r| Session {
@@ -423,12 +434,32 @@ mod tests {
             .unwrap();
         s.end_session("s1", 1_700_000_000).unwrap();
         s.end_session("s2", 1_700_000_000).unwrap();
-        assert_eq!(s.sessions_pending_export(0, 0).unwrap().len(), 2);
+        assert_eq!(s.sessions_pending_export(0, 0, 1000).unwrap().len(), 2);
         s.otel_advance("sessions", 1_700_000_000).unwrap();
         s.otel_advance("sessions_tail", 1).unwrap();
-        let rows = s.sessions_pending_export(1_700_000_000, 1).unwrap();
+        let rows = s.sessions_pending_export(1_700_000_000, 1, 1000).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "s2");
+    }
+
+    /// A batch cut inside one second resumes at the next id, never repeats or skips one.
+    #[test]
+    fn sessions_pending_export_is_batched_and_resumes_mid_second() {
+        let s = Store::open_in_memory().unwrap();
+        for id in ["s1", "s2", "s3"] {
+            s.upsert_session(id, None, None, None, None).unwrap();
+            s.end_session(id, 1_700_000_000).unwrap();
+        }
+        let first = s.sessions_pending_export(0, 0, 2).unwrap();
+        assert_eq!(
+            first.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["s1", "s2"]
+        );
+        let rest = s.sessions_pending_export(1_700_000_000, 2, 2).unwrap();
+        assert_eq!(
+            rest.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["s3"]
+        );
     }
 
     #[test]

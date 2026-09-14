@@ -134,7 +134,7 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
     let smark = store.otel_mark("sessions")?;
     let stail = store.otel_mark("sessions_tail")?;
     let cmark = store.otel_mark("calls")?;
-    let sessions = store.sessions_pending_export(smark, stail)?;
+    let sessions = store.sessions_pending_export(smark, stail, BATCH)?;
     let calls = store.calls_after(cmark, BATCH)?;
     if !(sessions.is_empty() && calls.is_empty()) {
         let mut spans = Vec::with_capacity(sessions.len() + calls.len());
@@ -290,27 +290,8 @@ pub fn status(cx: &Runtime) -> Result<String> {
 
 // ── triggers (T16.6 wires them in; none of them runs on the hook path) ──────
 
-/// `proxy`: flush every `flush_secs` on the server's runtime. No-op without an endpoint.
-pub fn spawn_tick(cfg: &Config) {
-    if cfg.otel.resolve().is_none() {
-        return;
-    }
-    let cfg = cfg.clone();
-    tokio::spawn(async move {
-        let Ok(cx) = Runtime::open(cfg.clone(), "otel") else {
-            return;
-        };
-        let period = Duration::from_secs(u64::from(cfg.otel.flush_secs.max(1)));
-        let mut iv = tokio::time::interval(period);
-        iv.tick().await; // the first tick completes at once
-        loop {
-            iv.tick().await;
-            flush(&cx).await;
-        }
-    });
-}
-
-/// `mcp`: the same tick on a plain thread, since the stdio loop is synchronous.
+/// `proxy` and `mcp`: flush every `flush_secs` on a plain thread. No-op without an endpoint.
+/// The flush is blocking (diesel, `flock`), so it never runs as a task on a server's runtime.
 pub fn spawn_ticker(cfg: &Config) {
     if cfg.otel.resolve().is_none() {
         return;

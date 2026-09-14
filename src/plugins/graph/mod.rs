@@ -250,7 +250,11 @@ fn symbol_src_reads_add(_n: usize) {}
 pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
         let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        return lsp::outline(cx, &root, path);
+        // The same root guard as `read`: the LSP branch used to open any path it was given
+        // (`/etc/passwd`, `../../x`) and hand its symbols back to the MCP caller.
+        let allow = &cx.plugin_config::<crate::config::Read>("read").allow_paths;
+        let abs = crate::plugins::read::resolve(&root, Path::new(path), allow)?;
+        return lsp::outline(cx, &root, &abs.to_string_lossy());
     }
     let text = crate::plugins::read::read(cx, path, "map", None)?;
     cap(cx, text)
@@ -548,6 +552,19 @@ mod tests {
         let (cx, dir) = cx("outline");
         let out = outline(&Ctx::new(&cx), "src/main.rs").unwrap();
         assert!(out.contains("main"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// The guard fails before any language server is spawned, so no LSP binary is needed.
+    #[test]
+    fn lsp_outline_refuses_paths_outside_the_root() {
+        let (mut c, dir) = crate::testutil::config("lsp-outside");
+        c.plugins.graph.backend = "lsp".into();
+        let cx = crate::plugin::Runtime::open(c, "lsp-outside").unwrap();
+        for path in ["/etc/passwd", "../../../../../../etc/passwd"] {
+            let err = outline(&Ctx::new(&cx), path).unwrap_err().to_string();
+            assert!(err.contains("outside cwd"), "{path}: {err}");
+        }
         let _ = fs::remove_dir_all(dir);
     }
 }

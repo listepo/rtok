@@ -83,21 +83,20 @@ impl Default for Rule {
     }
 }
 
-fn matches_pat(pats: &[String], line: &str) -> bool {
-    let low = line.to_ascii_lowercase();
+/// `low` is the line already lowercased: the caller does it once per line, not once per check.
+fn matches_pat(pats: &[String], low: &str) -> bool {
     pats.iter().any(|p| {
         p.split('|')
             .any(|bit| !bit.is_empty() && low.contains(&bit.to_ascii_lowercase()))
     })
 }
 
-fn is_keep(line: &str, rule: &Rule) -> bool {
-    let low = line.to_ascii_lowercase();
-    BUILTIN_KEEP.iter().any(|k| low.contains(k)) || matches_pat(&rule.keep, line)
+fn is_keep(low: &str, rule: &Rule) -> bool {
+    BUILTIN_KEEP.iter().any(|k| low.contains(k)) || matches_pat(&rule.keep, low)
 }
 
-fn is_drop(line: &str, rule: &Rule) -> bool {
-    matches_pat(&rule.drop, line)
+fn is_drop(low: &str, rule: &Rule) -> bool {
+    matches_pat(&rule.drop, low)
 }
 
 fn dedupe(lines: Vec<String>) -> Vec<String> {
@@ -140,7 +139,10 @@ pub fn apply(
         let n = lines.len().saturating_sub(settings.fail_tail_lines);
         return lines[n..].join("\n");
     }
-    lines.retain(|l| is_keep(l, rule) || !is_drop(l, rule));
+    lines.retain(|l| {
+        let low = l.to_ascii_lowercase();
+        is_keep(&low, rule) || !is_drop(&low, rule)
+    });
     if rule.dedupe {
         lines = dedupe(lines);
     }
@@ -153,7 +155,7 @@ pub fn apply(
     let keep_idx: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, l)| is_keep(l, rule))
+        .filter(|(_, l)| is_keep(&l.to_ascii_lowercase(), rule))
         .map(|(i, _)| i)
         .collect();
     let mut take = vec![false; lines.len()];

@@ -170,11 +170,7 @@ fn encode_cell(v: &Value) -> String {
         Value::Null => String::new(),
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => n.to_string(),
-        Value::String(s)
-            if s.contains([',', '{', '}', '\n', '\r', '\t'])
-                || s.starts_with(' ')
-                || s.ends_with(' ') =>
-        {
+        Value::String(s) if needs_quotes(s) => {
             format!(
                 "\"{}\"",
                 s.replace('\\', "\\\\")
@@ -187,6 +183,20 @@ fn encode_cell(v: &Value) -> String {
         Value::String(s) => s.clone(),
         _ => String::new(),
     }
+}
+
+/// A bare cell must read back as the same string. Unquoted, `""` was the `null` cell, `"x"`
+/// lost its own quotes, and `123` / `true` / `null` read as a number, bool or null — the
+/// model saw a different type than the tool returned.
+fn needs_quotes(s: &str) -> bool {
+    s.is_empty()
+        || s.contains([',', '{', '}', '"', '\n', '\r', '\t'])
+        || s.starts_with(' ')
+        || s.ends_with(' ')
+        || matches!(
+            serde_json::from_str::<Value>(s),
+            Ok(Value::Number(_) | Value::Bool(_) | Value::Null)
+        )
 }
 
 #[allow(dead_code)]
@@ -343,6 +353,11 @@ mod tests {
     #[case("\n", "beta\nline-two")]
     #[case("\r", "gamma\rvalue")]
     #[case("\t", "delta\tvalue")]
+    #[case("empty", "")]
+    #[case("quotes", "\"quoted\"")]
+    #[case("number", "123")]
+    #[case("bool", "true")]
+    #[case("null", "null")]
     fn round_trip_values(#[case] _control: &str, #[case] cell: &str) {
         let table = json!([
             {"a": 11, "b": "alpha-value-one", "c": 33, "d": "delta-value-one"},

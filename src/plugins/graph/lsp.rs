@@ -167,7 +167,9 @@ impl Session {
         if let Err(e) = s.request(
             "initialize",
             json!({
-                "processId": null,
+                // Ours, not null: the server watches it and exits when rtok dies, even by
+                // SIGKILL, instead of outliving the `mcp` that spawned it.
+                "processId": std::process::id(),
                 "rootUri": uri,
                 "rootPath": s.root,
                 "capabilities": {
@@ -283,21 +285,33 @@ impl Drop for Session {
         let _ = write_msg(&mut self.stdin, &json!({"jsonrpc":"2.0","method":"exit"}));
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let _ = std::fs::remove_file(&self.err_path);
     }
 }
 
+/// The one cached server, keyed by workspace root. A `static` is never dropped, so
+/// [`shutdown`] is what runs `Session::drop` when `rtok mcp` ends.
+static SESSION: Mutex<Option<(String, Session)>> = Mutex::new(None);
+
 fn with_session<T>(root: &Path, f: impl FnOnce(&mut Session) -> Result<T>) -> Result<T> {
-    static SESSIONS: Mutex<Option<(String, Session)>> = Mutex::new(None);
     let key = super::index::canon(root);
-    let mut g = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut g = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     let restart = match g.as_mut() {
         Some((k, s)) if *k == key => s.child.try_wait().ok().flatten().is_some(),
         _ => true,
     };
     if restart {
+        // Reap the old server first: both share one stderr path, and dropping it after the
+        // spawn deleted the file its successor had just opened.
+        *g = None;
         *g = Some((key, Session::spawn(root)?));
     }
     f(&mut g.as_mut().expect("session").1)
+}
+
+/// Stop the cached language server (`exit`, kill, reap) and remove its stderr file.
+pub(crate) fn shutdown() {
+    drop(SESSION.lock().unwrap_or_else(|e| e.into_inner()).take());
 }
 
 struct Def {
@@ -591,4 +605,36 @@ pub(crate) fn outline(cx: &Ctx, root: &Path, path: &str) -> Result<String> {
             std::thread::sleep(Duration::from_millis(250));
         }
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// The cached server outlived `rtok mcp`: it sat in a `static`, and statics never drop.
+    #[test]
+    fn shutdown_reaps_the_cached_server_and_its_stderr_file() {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = child.id().to_string();
+        let err_path = std::env::temp_dir().join(format!("rtok-lsp-test-{pid}.stderr"));
+        std::fs::write(&err_path, "").unwrap();
+        let s = Session {
+            stdin: child.stdin.take().unwrap(),
+            stdout: BufReader::new(child.stdout.take().unwrap()),
+            child,
+            next_id: 1,
+            root: PathBuf::new(),
+            opened: HashSet::new(),
+            err_path: err_path.clone(),
+        };
+        *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = Some(("test".into(), s));
+        shutdown();
+        let alive = Command::new("kill").args(["-0", &pid]).status().unwrap();
+        assert!(!alive.success(), "server {pid} still running");
+        assert!(!err_path.exists());
+    }
 }

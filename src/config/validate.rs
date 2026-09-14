@@ -75,7 +75,7 @@ pub fn set_with(
     }
     let diff = crate::render::file_diff(&path, &before, &after);
     if !dry_run {
-        std::fs::write(&path, after)?;
+        super::write_file(&path, &after)?;
     }
     Ok((path, diff))
 }
@@ -217,6 +217,11 @@ fn check_leaf(
             "plugins.inject.budget_tokens" if n < 0 => {
                 errors.push(format!("{at}: {dotted} must be ≥ 0"));
             }
+            // `read` never trims the `… archived <id> …` marker (79 chars): the id is what keeps
+            // a cut lossless. A smaller cap passed validation and was then silently exceeded.
+            "plugins.read.max_chars" if n < 100 => {
+                errors.push(format!("{at}: {dotted} must be ≥ 100"));
+            }
             _ => {}
         }
     }
@@ -249,6 +254,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// `set` swaps in a new file (new inode) instead of truncating the old one in place, so a
+    /// crash mid-write cannot leave a half-written `config.toml`.
+    #[cfg(unix)]
+    #[test]
+    fn set_replaces_the_file_atomically() {
+        use std::os::unix::fs::MetadataExt;
+        let home = tmp("atomic");
+        let (path, _) = Config::init_maybe(&home, None, false, false).unwrap();
+        let ino = std::fs::metadata(&path).unwrap().ino();
+        set(&home, "proxy.port", "9999", false).unwrap();
+        assert_ne!(std::fs::metadata(&path).unwrap().ino(), ino);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("9999"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_read_cap_below_the_archive_marker_is_rejected() {
+        let dir = tmp("readcap");
+        let path = dir.join("c.toml");
+        std::fs::write(&path, "[plugins.read]\nmax_chars = 50\n").unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter().any(|e| e.contains("plugins.read.max_chars")),
+            "{errs:?}"
+        );
+        std::fs::write(&path, "[plugins.read]\nmax_chars = 100\n").unwrap();
+        assert!(issues(&path).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

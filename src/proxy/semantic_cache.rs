@@ -44,7 +44,8 @@ struct Entry {
 
 pub struct Cache {
     direct: HashMap<[u8; 32], Entry>,
-    semantic: Vec<(Vec<f32>, Entry)>,
+    /// Vector of the last user message, [`scope_hash`] of the rest, entry.
+    semantic: Vec<(Vec<f32>, [u8; 32], Entry)>,
 }
 
 impl Default for Cache {
@@ -71,9 +72,10 @@ impl Cache {
             return None;
         }
         let query = embed_vector(prompt);
+        let scope = scope_hash(prompt);
         let mut best: Option<(f32, &Entry)> = None;
-        for (emb, e) in &self.semantic {
-            if e.at.elapsed() >= ttl {
+        for (emb, s, e) in &self.semantic {
+            if e.at.elapsed() >= ttl || *s != scope {
                 continue;
             }
             let sim = cosine(emb, &query);
@@ -93,6 +95,13 @@ impl Cache {
         status: u16,
     ) {
         let hash = canonical_hash(prompt);
+        // `lookup` only skips expired entries, so without this a long-running proxy kept every
+        // missed prompt's full response forever (and scanned all of them per request). The
+        // same prompt stored again replaces its semantic row instead of stacking a second one.
+        let ttl = Duration::from_secs(cfg.ttl_s.max(1));
+        self.direct.retain(|_, e| e.at.elapsed() < ttl);
+        self.semantic
+            .retain(|(_, _, e)| e.hash != hash && e.at.elapsed() < ttl);
         let at = Instant::now();
         let response = Bytes::copy_from_slice(response);
         let content_type = content_type.map(str::to_string);
@@ -100,6 +109,7 @@ impl Cache {
         if let Some(emb) = embedding {
             self.semantic.push((
                 emb,
+                scope_hash(prompt),
                 Entry {
                     hash,
                     response: response.clone(),
@@ -208,7 +218,7 @@ pub fn audit_corpus(dir: &Path, cfg: &SemanticCache) -> Result<AuditReport, Stri
             if i == j {
                 continue;
             }
-            if entries[i].hash == entries[j].hash {
+            if entries[i].hash == entries[j].hash || entries[i].scope != entries[j].scope {
                 continue;
             }
             if cfg.embed_backend == "hash" {
@@ -223,7 +233,8 @@ pub fn audit_corpus(dir: &Path, cfg: &SemanticCache) -> Result<AuditReport, Stri
             }
         }
     }
-    let pairs = n * (n - 1);
+    // `n - 1` underflowed (a debug-build panic) on an empty corpus.
+    let pairs = n * n.saturating_sub(1);
     Ok(AuditReport {
         false_hit_pairs: false_hits,
         semantic_pairs: semantic,
@@ -237,6 +248,7 @@ pub fn audit_corpus(dir: &Path, cfg: &SemanticCache) -> Result<AuditReport, Stri
 
 struct CorpusEntry {
     hash: [u8; 32],
+    scope: [u8; 32],
     embedding: Vec<f32>,
     response: Vec<u8>,
 }
@@ -284,6 +296,7 @@ fn load_corpus(dir: &Path) -> Result<Vec<CorpusEntry>, String> {
                 .unwrap_or_else(|| embed_vector(&prompt));
             Ok(CorpusEntry {
                 hash,
+                scope: scope_hash(&prompt),
                 embedding,
                 response,
             })
@@ -344,30 +357,45 @@ fn tools_fingerprint(body: &Value) -> Option<String> {
     Some(hex8(&h.finalize().into()))
 }
 
+/// Everything but the last user message, hashed. The semantic tier compares only prompts
+/// that share it: the vector covers the last user message alone, so the same question under
+/// another system prompt, tool set or earlier turn used to get that other prompt's answer.
+fn scope_hash(prompt: &CachePrompt) -> [u8; 32] {
+    let mut rest = prompt.clone();
+    if let Some((_, text)) = rest.messages.iter_mut().rev().find(|(r, _)| r == "user") {
+        text.clear();
+    }
+    canonical_hash(&rest)
+}
+
+/// Words, symbols and adjacent pairs of the last user message, feature-hashed. The old vector
+/// summed raw 4-byte chunks into 8 all-positive slots, so unrelated prompts scored far above
+/// zero; pairs keep "rename a to b" apart from "rename b to a", symbols keep `<` apart from `>`.
+/// Case and spacing still match.
 fn embed_vector(prompt: &CachePrompt) -> Vec<f32> {
     let last_user = prompt
         .messages
         .iter()
         .rev()
         .find(|(r, _)| r == "user")
-        .map(|(_, t)| t.as_str())
-        .unwrap_or("");
-    let text = format!("{}:{}:{}", prompt.provider, prompt.model, last_user);
-    let mut out = vec![0.0f32; 8];
-    for (i, chunk) in text.as_bytes().chunks(4).enumerate() {
-        let mut acc = 0u32;
-        for b in chunk {
-            acc = (acc << 8) | u32::from(*b);
+        .map_or("", |(_, t)| t.as_str());
+    let mut words = Vec::new();
+    let mut word = String::new();
+    for c in last_user.chars().chain([' ']) {
+        if c.is_alphanumeric() {
+            word.extend(c.to_lowercase());
+            continue;
         }
-        out[i % 8] += (acc as f32) / 1_000_000_000.0;
-    }
-    let norm = out.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for x in &mut out {
-            *x /= norm;
+        if !word.is_empty() {
+            words.push(std::mem::take(&mut word));
+        }
+        if !c.is_whitespace() {
+            words.push(format!("u{:x}", u32::from(c)));
         }
     }
-    out
+    let pairs = words.windows(2).map(|w| format!("{}{}", w[0], w[1]));
+    let text: Vec<String> = words.iter().cloned().chain(pairs).collect();
+    crate::store::embed::hash_embed(&text.join(" "), 256)
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
@@ -449,5 +477,90 @@ mod tests {
         let mut cache = Cache::new();
         cache.store(&pa, &cfg, b"ra", None, 200);
         assert!(cache.lookup(&pb, &cfg).is_none());
+    }
+
+    #[test]
+    fn store_drops_expired_entries_and_replaces_its_own() {
+        let body = |t: &str| serde_json::json!({"model": "m", "messages": [{"role": "user", "content": t}]});
+        let cfg = SemanticCache {
+            embed_backend: "fixture".into(),
+            ..SemanticCache::default()
+        };
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let (pa, pb) = (
+            build_prompt(wire, &body("a"), &cfg).unwrap(),
+            build_prompt(wire, &body("b"), &cfg).unwrap(),
+        );
+        let mut cache = Cache::new();
+        cache.store(&pa, &cfg, b"ra", None, 200);
+        cache.store(&pa, &cfg, b"ra", None, 200);
+        assert_eq!(
+            cache.semantic.len(),
+            1,
+            "a replay replaces, it does not stack"
+        );
+        let old = Instant::now()
+            .checked_sub(Duration::from_secs(cfg.ttl_s + 1))
+            .unwrap();
+        cache.direct.values_mut().for_each(|e| e.at = old);
+        cache.semantic.iter_mut().for_each(|(_, _, e)| e.at = old);
+        cache.store(&pb, &cfg, b"rb", None, 200);
+        assert_eq!((cache.direct.len(), cache.semantic.len()), (1, 1));
+    }
+
+    fn fixture_prompt(body: Value) -> CachePrompt {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        build_prompt(wire, &body, &SemanticCache::default()).unwrap()
+    }
+
+    /// The vector covered only the last user message, so "hello" under a German system
+    /// prompt got the cached French answer (similarity 1.0).
+    #[test]
+    fn the_same_question_under_another_system_prompt_misses() {
+        let cfg = SemanticCache {
+            embed_backend: "fixture".into(),
+            ..SemanticCache::default()
+        };
+        let ask = |system: &str| {
+            fixture_prompt(serde_json::json!({"model": "m", "system": system,
+                "messages": [{"role": "user", "content": "hello"}]}))
+        };
+        let mut cache = Cache::new();
+        cache.store(&ask("Answer in French"), &cfg, b"bonjour", None, 200);
+        assert!(cache.lookup(&ask("Answer in German"), &cfg).is_none());
+        assert!(cache.lookup(&ask("Answer in French"), &cfg).is_some());
+    }
+
+    /// Raw byte chunks in 8 positive slots scored unrelated prompts close to 1.
+    #[rstest::rstest]
+    #[case("add a test for the parser", "delete the build directory", false)]
+    #[case("rename foo to bar", "rename bar to foo", false)]
+    #[case("is x > 5", "is x < 5", false)]
+    #[case("исправь баг в foo.rs", "удали foo.rs", false)]
+    #[case("Fix the  bug", "fix the bug", true)]
+    fn only_near_identical_prompts_clear_the_threshold(
+        #[case] a: &str,
+        #[case] b: &str,
+        #[case] hit: bool,
+    ) {
+        let ask = |t: &str| {
+            fixture_prompt(
+                serde_json::json!({"model": "m", "messages": [{"role": "user", "content": t}]}),
+            )
+        };
+        let sim = cosine(&embed_vector(&ask(a)), &embed_vector(&ask(b)));
+        assert_eq!(sim >= SemanticCache::default().threshold, hit, "{sim}");
+        assert!(hit || sim < 0.9, "{sim}");
+    }
+
+    #[test]
+    fn empty_corpus_audits_to_zero() {
+        let dir = std::env::temp_dir().join(format!("rtok-empty-corpus-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("corpus.json"), r#"{"entries": []}"#).unwrap();
+        let report = audit_corpus(&dir, &SemanticCache::default());
+        let _ = std::fs::remove_dir_all(&dir);
+        let report = report.unwrap();
+        assert_eq!((report.semantic_pairs, report.hit_rate), (0, 0.0));
     }
 }

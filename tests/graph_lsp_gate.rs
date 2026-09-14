@@ -35,6 +35,8 @@ fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     cfg.core.db_path = dir.join("rtok.db");
     cfg.core.archive_dir = dir.join("archive");
     cfg.plugins.graph.backend = backend.into();
+    // The fixture crate lives outside cwd; `outline` checks paths against `read`'s roots.
+    cfg.plugins.read.allow_paths = vec![dir.clone()];
     (Runtime::open(cfg, tag).unwrap(), dir)
 }
 

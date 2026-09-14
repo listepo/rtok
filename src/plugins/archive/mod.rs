@@ -177,6 +177,19 @@ fn pointer_line(text: &str, id: &str, est: u32) -> String {
     format!("[archived {short}: {n} lines · {est} tokens · expand({id})]")
 }
 
+/// Widest line a pointer or L1 extract shows, in chars. Head/tail are counted in lines, so a
+/// block of a few huge lines (minified JSON, one long log line) came back whole under the
+/// pointer line: longer than the original, with a negative saving measured. The full line is
+/// in the archive, so the cut stays lossless.
+const LINE_CHARS: usize = 200;
+
+fn clip(line: &str) -> std::borrow::Cow<'_, str> {
+    match line.char_indices().nth(LINE_CHARS) {
+        Some((at, _)) => format!("{}…", &line[..at]).into(),
+        None => line.into(),
+    }
+}
+
 fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let n = lines.len();
@@ -184,18 +197,18 @@ fn pointer(text: &str, id: &str, est: u32, head: usize, tail: usize) -> String {
     if n <= head + tail {
         for l in &lines {
             s.push('\n');
-            s.push_str(l);
+            s.push_str(&clip(l));
         }
         return s;
     }
     for l in &lines[..head] {
         s.push('\n');
-        s.push_str(l);
+        s.push_str(&clip(l));
     }
     s.push_str(&format!("\n… {} lines …", n - head - tail));
     for l in &lines[n - tail..] {
         s.push('\n');
-        s.push_str(l);
+        s.push_str(&clip(l));
     }
     s
 }
@@ -206,13 +219,19 @@ fn l1_extract(text: &str, head: usize, tail: usize) -> String {
     let n = lines.len();
     let mut s = format!("[tier L1: {n} lines · lossless extract]\n");
     for (i, line) in lines.iter().enumerate().take(head) {
-        s.push_str(&format!("L{}: {line}\n", i + 1));
+        s.push_str(&format!("L{}: {}\n", i + 1, clip(line)));
     }
     if n > head + tail {
         s.push_str(&format!("… {} omitted lines …\n", n - head - tail));
     }
-    for (i, line) in lines.iter().enumerate().skip(n.saturating_sub(tail)) {
-        s.push_str(&format!("L{}: {line}\n", i + 1));
+    // `.max(head)`: with fewer than `head + tail` lines the tail used to repeat lines the
+    // head had already printed.
+    for (i, line) in lines
+        .iter()
+        .enumerate()
+        .skip(n.saturating_sub(tail).max(head))
+    {
+        s.push_str(&format!("L{}: {}\n", i + 1, clip(line)));
     }
     s.trim_end().to_string()
 }
@@ -527,5 +546,26 @@ mod tests {
             assert!(live[0].starts_with("t1 line 1:"), "{name} expand");
             assert!(live[1].starts_with("[archived "), "{name} turn 2 stays");
         }
+    }
+
+    /// One 20k-char line came back whole under the pointer line: a longer "saving".
+    #[test]
+    fn a_pointer_over_one_huge_line_is_shorter_than_the_line() {
+        let text = "é".repeat(20_000);
+        let p = pointer(&text, "abc123", 5000, 8, 4);
+        assert!(p.len() < text.len() / 10, "{}", p.len());
+        assert!(p.contains("expand(abc123)"), "{p}");
+        let l1 = l1_extract(&text, 8, 4);
+        assert!(l1.len() < text.len() / 10, "{}", l1.len());
+    }
+
+    /// Three lines with head 2 + tail 2 printed L2 twice.
+    #[test]
+    fn a_short_l1_extract_prints_each_line_once() {
+        let l1 = l1_extract("a\nb\nc", 2, 2);
+        assert_eq!(
+            l1,
+            "[tier L1: 3 lines · lossless extract]\nL1: a\nL2: b\nL3: c"
+        );
     }
 }

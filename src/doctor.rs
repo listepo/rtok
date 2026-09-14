@@ -35,6 +35,15 @@ pub struct Report {
     /// The instruction audit (T7.2): `Some` only when `[doctor] instructions` ran — an audit
     /// that found nothing still prints its section header, as it always did.
     pub instructions: Option<Instructions>,
+    /// Every host variant and the state of each rtok module in it, as `agent setup` prints.
+    pub agents: Vec<AgentModules>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentModules {
+    pub host: &'static str,
+    pub kind: &'static str,
+    pub modules: Vec<(&'static str, crate::setup::ModuleState)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,8 +69,17 @@ pub struct InstructionRow {
 }
 
 impl Report {
-    /// The `rtok doctor` text, line for line what the command printed before the page split.
+    /// The doctor text the reports and the TUI embed: plain, no marks or colour.
     pub fn to_text(&self) -> String {
+        self.render(false)
+    }
+
+    /// `rtok doctor` on a console: [`Self::to_text`] with the module marks and colours.
+    pub fn to_console(&self) -> String {
+        self.render(true)
+    }
+
+    fn render(&self, console: bool) -> String {
         let mut out = format!("hooks {}\n", self.hooks_total);
         for (ev, n) in &self.hooks_by_event {
             out.push_str(&format!("  {ev} {n}\n"));
@@ -86,6 +104,11 @@ impl Report {
             "autoCompactWindow {}\n",
             self.auto_compact_window.as_deref().unwrap_or("(unset)")
         ));
+        out.push_str("agents\n");
+        for a in &self.agents {
+            out.push_str(&format!("  {} ({})\n", a.host, a.kind));
+            out.push_str(&crate::setup::module_lines(&a.modules, "    ", console));
+        }
         if let Some(audit) = &self.instructions {
             out.push_str("instructions\n");
             for r in &audit.rows {
@@ -138,26 +161,14 @@ pub fn page(cfg: &Config) -> Result<Report> {
         })
         .collect();
     let timeout = Duration::from_millis(cfg.doctor.probe_timeout_ms.max(300));
-    let anthropic = settings
-        .as_ref()
-        .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| std::env::var("ANTHROPIC_BASE_URL").ok());
-    let base_owned = std::env::var("ANTHROPIC_BASE_URL").ok().or_else(|| {
-        settings
-            .as_ref()
-            .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    });
+    let anthropic = anthropic_base(settings.as_ref(), std::env::var("ANTHROPIC_BASE_URL").ok());
     Ok(Report {
         hooks_total: hooks.total,
         hooks_by_event: hooks.by_event,
         mcp,
+        mcp_tool_search_disabled: anthropic.is_some(),
         proxy: proxy_chain(anthropic, timeout),
         proxy_openai: proxy_chain(openai_seed(cfg, settings.as_ref()), timeout),
-        mcp_tool_search_disabled: base_owned.as_deref().is_some_and(|b| !b.is_empty()),
         bash_max_output_length: std::env::var("BASH_MAX_OUTPUT_LENGTH").ok(),
         auto_compact_window: settings
             .as_ref()
@@ -167,6 +178,19 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .doctor
             .instructions
             .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
+        // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
+        agents: crate::setup::HOSTS
+            .iter()
+            .flat_map(|&host| {
+                crate::setup::variants(host)
+                    .into_iter()
+                    .map(move |kind| AgentModules {
+                        host,
+                        kind,
+                        modules: crate::setup::module_states(host, kind, cfg),
+                    })
+            })
+            .collect(),
     })
 }
 
@@ -237,10 +261,14 @@ fn push_file(srcs: &mut Vec<Source>, name: &str, path: &Path) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return;
     };
-    let disp = path.display().to_string();
-    if srcs.iter().any(|s| s.path == disp) {
+    // By the file itself, not its name: with `CLAUDE.md -> AGENTS.md` one file was read twice,
+    // every line came back as a duplicate of itself, and its tokens were counted twice.
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let me = real(path);
+    if srcs.iter().any(|s| real(Path::new(&s.path)) == me) {
         return;
     }
+    let disp = path.display().to_string();
     srcs.push(Source {
         name: name.into(),
         path: disp,
@@ -444,6 +472,19 @@ fn nonempty(s: Option<String>) -> Option<String> {
     s.filter(|v| !v.is_empty())
 }
 
+/// The `ANTHROPIC_BASE_URL` a Claude Code session sees: `settings.json` `env` wins over the
+/// shell, and empty means unset. The proxy chain and the tool-search warning read it in
+/// opposite orders, so `env` `""` plus a settings URL showed a chain and no warning.
+fn anthropic_base(settings: Option<&Value>, env: Option<String>) -> Option<String> {
+    nonempty(
+        settings
+            .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    )
+    .or_else(|| nonempty(env))
+}
+
 fn openai_seed(cfg: &Config, settings: Option<&Value>) -> Option<String> {
     nonempty(std::env::var("OPENAI_BASE_URL").ok())
         .or_else(|| {
@@ -485,9 +526,15 @@ fn proxy_chain(seed: Option<String>, timeout: Duration) -> String {
         }
         seen += 1;
         hops.push(hostport(&u));
-        url = next_upstream(&u, timeout).filter(|n| !hops.iter().any(|h| n.contains(h)));
+        url = next_upstream(&u, timeout).filter(|n| !is_loop(&hops, n));
     }
     hops.join("→")
+}
+
+/// Whether `next` is a hop already walked. By `hostport`, not substring: hop `8788` is inside
+/// `http://127.0.0.1:18788`, and `contains` cut a real chain short as a loop.
+fn is_loop(hops: &[String], next: &str) -> bool {
+    hops.contains(&hostport(next))
 }
 
 fn hostport(url: &str) -> String {
@@ -554,6 +601,41 @@ mod tests {
     fn hostport_strips_loopback() {
         assert_eq!(hostport("http://127.0.0.1:8788"), "8788");
         assert_eq!(hostport("http://127.0.0.1:8787/w/claude"), "8787");
+    }
+
+    /// One resolution for both readers: settings over shell, empty is unset.
+    #[test]
+    fn anthropic_base_prefers_settings_and_ignores_empty() {
+        let s = serde_json::json!({"env": {"ANTHROPIC_BASE_URL": "http://a"}});
+        let empty = serde_json::json!({"env": {"ANTHROPIC_BASE_URL": ""}});
+        let b = |v: Option<&Value>, e: &str| anthropic_base(v, Some(e.to_string()));
+        assert_eq!(b(Some(&s), "").as_deref(), Some("http://a"));
+        assert_eq!(b(Some(&s), "http://b").as_deref(), Some("http://a"));
+        assert_eq!(b(Some(&empty), "http://b").as_deref(), Some("http://b"));
+        assert_eq!(b(None, ""), None);
+    }
+
+    #[test]
+    fn a_port_that_contains_a_seen_port_is_not_a_loop() {
+        let hops = vec!["8788".to_string()];
+        assert!(!is_loop(&hops, "http://127.0.0.1:18788"));
+        assert!(is_loop(&hops, "http://127.0.0.1:8788/v1"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_instruction_file_is_one_source() {
+        let dir = std::env::temp_dir().join(format!("rtok-doctor-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("AGENTS.md"), "one rule\n").unwrap();
+        std::os::unix::fs::symlink("AGENTS.md", dir.join("CLAUDE.md")).unwrap();
+        let mut srcs = Vec::new();
+        push_file(&mut srcs, "claude-project", &dir.join("CLAUDE.md"));
+        push_file(&mut srcs, "agents-project", &dir.join("AGENTS.md"));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(srcs.len(), 1);
+        assert!(duplicates(&srcs).is_empty());
     }
 
     #[test]

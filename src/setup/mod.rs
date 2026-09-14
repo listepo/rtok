@@ -161,7 +161,12 @@ pub fn installed_modules(host: &str, kind: &str, cfg: &crate::config::Config) ->
             if m.contains("\"rtok\"") {
                 out.push("mcp".to_string());
             }
-            if s.contains("8790") && s.contains("BASE_URL") {
+            // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the
+            // file missed a proxy on another `[proxy] port`.
+            let base = serde_json::from_str::<serde_json::Value>(&s)
+                .ok()
+                .and_then(|v| v["env"]["ANTHROPIC_BASE_URL"].as_str().map(str::to_string));
+            if base.as_deref() == Some(anthropic_proxy_url(cfg).as_str()) {
                 out.push("proxy".to_string());
             }
             out
@@ -170,13 +175,15 @@ pub fn installed_modules(host: &str, kind: &str, cfg: &crate::config::Config) ->
             let h = read(&cfg.setup.cursor.hooks_path);
             let m = read(&cfg.setup.cursor.hooks_path.with_file_name("mcp.json"));
             let mut out = Vec::new();
+            let plugin = cursor::plugin_dest(cfg).symlink_metadata().is_ok();
             if h.contains("rtok hook") {
                 out.push("hooks".to_string());
             }
-            if m.contains("\"rtok\"") {
+            // The linked plugin serves the MCP itself (D21), and setup then skips `mcp.json`.
+            if m.contains("\"rtok\"") || plugin {
                 out.push("mcp".to_string());
             }
-            if cursor::plugin_dest(cfg).symlink_metadata().is_ok() {
+            if plugin {
                 out.push("plugin".to_string());
             }
             out
@@ -212,6 +219,88 @@ pub fn installed_modules(host: &str, kind: &str, cfg: &crate::config::Config) ->
         }
         _ => Vec::new(),
     }
+}
+
+/// Every module an rtok install can carry, in print order.
+pub const MODULES: &[&str] = &["hooks", "mcp", "proxy", "plugin"];
+
+/// The [`MODULES`] `rtok agent setup <host>` can write.
+pub fn supported_modules(host: &str) -> &'static [&'static str] {
+    match host {
+        "claude" => &["hooks", "mcp", "proxy"],
+        "cursor" => &["hooks", "mcp", "plugin"],
+        "codex" => &["mcp", "proxy"],
+        "opencode" => &["proxy"],
+        "pi" => &["plugin"],
+        _ => &[],
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleState {
+    Installed,
+    NotInstalled,
+    NotSupported,
+}
+
+/// One host variant's [`MODULES`] with their state. A module found in the host's files counts
+/// as installed even where setup cannot write it (a hand-added MCP entry).
+pub fn module_states(
+    host: &str,
+    kind: &str,
+    cfg: &crate::config::Config,
+) -> Vec<(&'static str, ModuleState)> {
+    let found = installed_modules(host, kind, cfg);
+    MODULES
+        .iter()
+        .map(|&m| {
+            let state = if found.iter().any(|f| f == m) {
+                ModuleState::Installed
+            } else if supported_modules(host).contains(&m) {
+                ModuleState::NotInstalled
+            } else {
+                ModuleState::NotSupported
+            };
+            (m, state)
+        })
+        .collect()
+}
+
+/// `✓ hooks   installed` — green, red `✗` for not installed, grey `−` for not supported,
+/// coloured only where stdout takes colour (see `render`). `console = false` drops marks and
+/// colour: the doctor text also lands in the PDF report, whose built-in font has no `✓`.
+pub fn module_lines(states: &[(&str, ModuleState)], indent: &str, console: bool) -> String {
+    use owo_colors::{OwoColorize, Stream};
+    let mut out = String::new();
+    for (name, state) in states {
+        let (mark, word) = match state {
+            ModuleState::Installed => ("✓ ", "installed"),
+            ModuleState::NotInstalled => ("✗ ", "not installed"),
+            ModuleState::NotSupported => ("− ", "not supported"),
+        };
+        let mark = if console { mark } else { "" };
+        let line = format!("{indent}{mark}{name:<7} {word}");
+        if !console {
+            out.push_str(&line);
+            out.push('\n');
+            continue;
+        }
+        let line = match state {
+            ModuleState::Installed => line
+                .if_supports_color(Stream::Stdout, |t| t.green())
+                .to_string(),
+            ModuleState::NotInstalled => line
+                .if_supports_color(Stream::Stdout, |t| t.red())
+                .to_string(),
+            ModuleState::NotSupported => line
+                .if_supports_color(Stream::Stdout, |t| t.bright_black())
+                .to_string(),
+        };
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out
 }
 
 /// `rtok agent list`: every known host × variant with app version, rtok state, modules.
@@ -262,6 +351,11 @@ pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
         backup: cfg.setup.backup,
         yes: cfg.setup.yes,
     }
+}
+
+/// The `ANTHROPIC_BASE_URL` `agent setup claude --proxy` writes, and the one it reads back.
+pub(crate) fn anthropic_proxy_url(cfg: &crate::config::Config) -> String {
+    format!("http://{}:{}", cfg.proxy.bind, cfg.proxy.port)
 }
 
 pub(crate) fn openai_proxy_url(cfg: &crate::config::Config) -> String {
@@ -317,6 +411,42 @@ mod tests {
             assert!(out.contains(host), "{out}");
         }
         assert!(out.contains("cli") && out.contains("gui"), "{out}");
+    }
+
+    /// A proxy on a non-default port read as not installed: the check looked for `8790`.
+    #[test]
+    fn claude_modules_read_back_hooks_and_a_proxy_on_any_port() {
+        let dir = std::env::temp_dir().join(format!("rtok-mods-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.proxy.port = 9123;
+        cfg.setup.claude.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("claude.json");
+        let settings = serde_json::json!({
+            "hooks": {"SessionStart": [{"hooks": [{"command": "rtok hook SessionStart"}]}]},
+            "env": {"ANTHROPIC_BASE_URL": anthropic_proxy_url(&cfg)},
+        });
+        std::fs::write(&cfg.setup.claude.settings_path, settings.to_string()).unwrap();
+        let states = module_states("claude", "cli", &cfg);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            states,
+            [
+                ("hooks", ModuleState::Installed),
+                ("mcp", ModuleState::NotInstalled),
+                ("proxy", ModuleState::Installed),
+                ("plugin", ModuleState::NotSupported),
+            ]
+        );
+        let console = module_lines(&states, "  ", true);
+        assert!(console.contains("✓ hooks   installed"), "{console}");
+        assert!(console.contains("✗ mcp     not installed"), "{console}");
+        assert!(console.contains("− plugin  not supported"), "{console}");
+        let plain = module_lines(&states, "  ", false);
+        assert!(
+            plain.contains("  proxy   installed") && !plain.contains('✓'),
+            "{plain}"
+        );
     }
 
     #[test]

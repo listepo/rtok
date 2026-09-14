@@ -579,7 +579,7 @@ pub fn run() -> Result<()> {
         }
         Cmd::Doctor { instructions } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            print!("{}", model::doctor(&cfg)?.to_text());
+            print!("{}", model::doctor(&cfg)?.to_console());
         }
         Cmd::Proxy {
             port,
@@ -955,7 +955,8 @@ fn setup_one(
 ) -> Result<()> {
     match host {
         "claude" if replace && (remove || want("cli")) => {
-            println!("{}", crate::setup::migrate::run(cfg)?)
+            println!("{}", crate::setup::migrate::run(cfg)?);
+            print_modules(cfg, host, "cli");
         }
         "claude" => {
             if !want("cli") {
@@ -979,6 +980,7 @@ fn setup_one(
                 }
             }
             print_lines(&lines);
+            print_modules(cfg, host, "cli");
         }
         "cursor" => {
             // CLI and GUI share `hooks.json`/`mcp.json`, so one run covers both.
@@ -999,6 +1001,7 @@ fn setup_one(
                 lines.push(crate::setup::cursor::register_mcp(cfg)?);
             }
             print_lines(&lines);
+            print_modules(cfg, host, "cli");
         }
         // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
         "codex" => {
@@ -1016,6 +1019,7 @@ fn setup_one(
                 lines.push(crate::setup::codex::register_proxy(cfg, remove)?);
             }
             print_lines(&lines);
+            print_modules(cfg, host, "cli");
         }
         "opencode" => {
             // CLI and GUI keep separate configs; each selected variant installs alone.
@@ -1036,6 +1040,7 @@ fn setup_one(
                 } else {
                     println!("{}", crate::setup::opencode::run(cfg, remove)?);
                 }
+                print_modules(cfg, host, kind);
             }
             if !ran {
                 println!("skip opencode: not selected");
@@ -1052,10 +1057,23 @@ fn setup_one(
                 return Ok(());
             }
             println!("{}", crate::setup::pi::offer_plugin(cfg, remove)?);
+            print_modules(cfg, host, "cli");
         }
         other => bail!("unknown host: {other}"),
     }
     Ok(())
+}
+
+/// What the host carries once the installer is done, one line per rtok module.
+fn print_modules(cfg: &Config, host: &str, kind: &str) {
+    let note = if cfg.setup.dry_run {
+        " — dry run, nothing written"
+    } else {
+        ""
+    };
+    println!("{host} ({kind}){note}");
+    let states = crate::setup::module_states(host, kind, cfg);
+    print!("{}", crate::setup::module_lines(&states, "  ", true));
 }
 
 /// An installer that changed nothing reports it once, not once per step. The lines it does

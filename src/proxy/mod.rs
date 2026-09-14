@@ -155,7 +155,9 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 pub async fn serve(cfg: &Config) -> Result<()> {
     let state = Arc::new(ProxyState::new(cfg)?);
     state.store.run_retention(cfg.core.retain_calls_days)?;
-    crate::otel::export::spawn_tick(cfg);
+    // A plain thread, not a task: a flush is blocking SQLite plus a blocking `flock`, and on
+    // this runtime it stalled whichever worker also served live requests.
+    crate::otel::export::spawn_ticker(cfg);
     let addr = format!("{}:{}", cfg.proxy.bind, cfg.proxy.port);
     let listener = TcpListener::bind(&addr)
         .await

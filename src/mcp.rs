@@ -2,7 +2,7 @@
 //!
 //! A one-shot `tools/list` (the Check) is accepted without `initialize`.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -49,10 +49,10 @@ pub fn run(cfg: &Config) -> Result<()> {
             });
         }
         let res: Result<()> = (|| {
-            let stdin = std::io::stdin();
+            let mut stdin = std::io::stdin().lock();
             let mut stdout = std::io::stdout();
-            for line in stdin.lock().lines() {
-                let line = line?;
+            let mut buf = Vec::new();
+            while let Some(line) = next_line(&mut stdin, &mut buf, MAX_LINE)? {
                 if line.trim().is_empty() {
                     continue;
                 }
@@ -65,8 +65,31 @@ pub fn run(cfg: &Config) -> Result<()> {
         })();
         stop.store(true, Ordering::Relaxed);
         crate::otel::export::flush_blocking(&server.cx);
+        #[cfg(feature = "graph")]
+        crate::plugins::graph::lsp::shutdown();
         res
     })
+}
+
+/// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
+const MAX_LINE: u64 = 8 << 20;
+
+/// The next request line, `None` at EOF. `lines()` ended the server on one non-UTF-8 byte (its
+/// `Err` went up through `?`) and buffered a line of any length first. Now bad bytes become
+/// U+FFFD and fail JSON parsing like any junk line, and a line over `max` comes back empty
+/// (skipped by the loop) after the rest of it is drained unbuffered.
+fn next_line(r: &mut impl BufRead, buf: &mut Vec<u8>, max: u64) -> std::io::Result<Option<String>> {
+    buf.clear();
+    if (&mut *r).take(max + 1).read_until(b'\n', buf)? == 0 {
+        return Ok(None);
+    }
+    if buf.len() as u64 > max {
+        if buf.last() != Some(&b'\n') {
+            r.skip_until(b'\n')?;
+        }
+        return Ok(Some(String::new()));
+    }
+    Ok(Some(String::from_utf8_lossy(buf).into_owned()))
 }
 
 struct Listed {
@@ -334,6 +357,25 @@ mod tests {
     use crate::tokens::Class;
     use rstest::rstest;
     use std::fs;
+
+    /// A long line is dropped whole (the next request still parses) and a non-UTF-8 byte no
+    /// longer ends the read loop.
+    #[test]
+    fn next_line_skips_long_lines_and_survives_bad_utf8() {
+        let mut r: &[u8] = b"0123456789\n{\"id\":1}\n\xff\n1234\n";
+        let mut buf = Vec::new();
+        let mut got = Vec::new();
+        while let Some(l) = next_line(&mut r, &mut buf, 5).unwrap() {
+            got.push(l);
+        }
+        assert_eq!(got, ["", "", "\u{FFFD}\n", "1234\n"]);
+        let mut r: &[u8] = b"0123456789\n{\"id\":1}\n";
+        assert_eq!(next_line(&mut r, &mut buf, 5).unwrap().unwrap(), "");
+        assert_eq!(
+            next_line(&mut r, &mut buf, 64).unwrap().unwrap(),
+            "{\"id\":1}\n"
+        );
+    }
 
     #[test]
     fn slice_bare_lines_matches_cli_parse_range() {
