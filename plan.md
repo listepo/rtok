@@ -4,7 +4,8 @@ https://github.com/listepo/rtok
 
 Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured reductions, pluggable methods.
 
-No active tasks. See `done.md`.
+| # | Status | Priority | Complexity | Readiness | Agent |
+| --- | --- | --- | --- | --- | --- |
 
 ## Reference
 

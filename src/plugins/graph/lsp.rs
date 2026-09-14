@@ -52,8 +52,11 @@ fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
     if root.join("tsconfig.json").is_file() {
         return Ok(("typescript-language-server", &["--stdio"]));
     }
+    if root.join("pubspec.yaml").is_file() {
+        return Ok(("dart", &["language-server"]));
+    }
     bail!(
-        "lsp: no Cargo.toml / compile_commands.json / tsconfig.json in {}",
+        "lsp: no Cargo.toml / compile_commands.json / tsconfig.json / pubspec.yaml in {}",
         root.display()
     )
 }
@@ -266,10 +269,10 @@ impl Session {
         }
         let path = PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri));
         let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let language_id = if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            "rust"
-        } else {
-            "plaintext"
+        let language_id = match path.extension().and_then(|e| e.to_str()) {
+            Some("rs") => "rust",
+            Some("dart") => "dart",
+            _ => "plaintext",
         };
         self.notify(
             "textDocument/didOpen",
@@ -571,6 +574,7 @@ fn workspace_of(file: &Path) -> PathBuf {
         if d.join("Cargo.toml").is_file()
             || d.join("compile_commands.json").is_file()
             || d.join("tsconfig.json").is_file()
+            || d.join("pubspec.yaml").is_file()
         {
             return d.to_path_buf();
         }
@@ -610,6 +614,23 @@ pub(crate) fn outline(cx: &Ctx, root: &Path, path: &str) -> Result<String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    /// T41.1: a `pubspec.yaml` root picks `dart language-server`, and a `.dart`
+    /// file resolves its workspace to that root.
+    #[test]
+    fn dart_pubspec_root_picks_dart_language_server() {
+        let dir = std::env::temp_dir().join(format!("rtok-lsp-dart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        std::fs::write(dir.join("pubspec.yaml"), "name: dart_gate\n").unwrap();
+        let main = dir.join("lib/main.dart");
+        std::fs::write(&main, "void main() {}\n").unwrap();
+        let (bin, args) = pick(&dir).unwrap();
+        assert_eq!(bin, "dart");
+        assert_eq!(args, &["language-server"]);
+        assert_eq!(workspace_of(&main), dir);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The cached server outlived `rtok mcp`: it sat in a `static`, and statics never drop.
     #[test]

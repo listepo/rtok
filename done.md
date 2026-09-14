@@ -2501,3 +2501,19 @@ Do: survey keep-SQLite / Grafeo / frozen-lbug; name winner; delete losers.
 Check: SQLite only; `graph-lbug` and `graph-grafeo` gone; `just check` green; numbers archived.
 Status: done 2026-09-12 · Check: Winner = SQLite. Removed feature `graph-lbug`, optional dep `lbug`, `src/store/symbols_lbug.rs`, `.cargo` `LBUG_BUILD_FROM_SOURCE`, mise `cmake` pin for liblbug. Grafeo never merged (PR #21/#22 closed). `src/store/mod.rs` is SQLite-only `symbols`. Docs: D18 amended, P39 closed, `research.md` keeps P8c + P8e tables as archive. Supersedes further lbug/grafeo work.
 
+**T41.1 Dart in the LSP `graph` backend** · T30.2 · `src/plugins/graph/lsp.rs`, `tests/graph_lsp_gate.rs`
+Do: a `pubspec.yaml` root picks `dart language-server` (Dart SDK on PATH); `workspace_of` stops at `pubspec.yaml`; `.dart` files open as `languageId = "dart"`.
+Check: unit test for `pick`/`workspace_of` on a `pubspec.yaml` root; `graph_lsp_gate`-style test skipping when `dart` is not on PATH, else `outline` of a two-symbol `lib/main.dart`; `just check`.
+Complexity: 2/5 — one backend match arm, one languageId, one root probe; no new dep, no schema, contract untouched.
+Status: done 2026-09-15
+Check result: `cargo test --lib plugins::graph::lsp` 2 passed (incl `dart_pubspec_root_picks_dart_language_server`); `cargo test --test graph_lsp_gate` 5 passed incl `lsp_backend_outlines_dart_main`, live on Dart 3.13.1 (not skipped); `cargo test --test graph_contract` 3 passed untouched; `cargo clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; full `just check` exit 0 (`test --workspace`: 41 suites ok, lib 429 passed; build-min; jscpd under threshold). 2 files, no new dependency.
+Model: OpenCode / Muse Spark 1.3 Contributor
+
+**T41.2 LSP setup page with Rust and Dart examples** · T41.1 · `docs/lsp.md`, `docs/config.md`, `site/content/docs/reference/_content.gotmpl`
+Do: new `docs/lsp.md` walking through Rust (rust-analyzer via `rustup component add rust-analyzer`) and Dart (Dart SDK): install the server, set `backend = "lsp"` in `.rtok.toml` or `RTOK_PLUGINS_GRAPH_BACKEND=lsp`, which file marks the workspace root (`Cargo.toml` / `pubspec.yaml`), confirm via MCP `outline` / `callers` plus the `lsp*` measurement rows, and fallback without the server (error, set `backend = "tags"` back). Linked from the `backend` line in `docs/config.md` (that line is verbatim `config/default.toml`, left intact); gotmpl row added after `configuration`.
+Check: `just site` builds; every command on the page run once and dated.
+Complexity: 2/5 — one docs page plus link plus gotmpl row; `src/` and `tests/` untouched.
+Status: done 2026-09-15
+Check result: `mise exec -- just site` builds, `reference/lsp/index.html` rendered. Commands run 2026-09-15: `rustup component add rust-analyzer` (already installed), `rust-analyzer --version` 1.97.1, `dart --version` 3.13.1, `config get plugins.graph.backend` → `tags` bare / `lsp` with env, `config show --sources` confirms `lsp (env)`, `cargo test --test graph_lsp_gate` 5 passed. Note: this machine's `~/.rtok/config.toml` carries stale keys, so bare `config show/get` reads empty here — pre-existing, page verified with a clean `RTOK_CONFIG`. No numbers claimed (D3).
+Model: OpenCode / Muse Spark 1.3 Contributor
+

@@ -27,6 +27,16 @@ fn rust_analyzer_on_path() -> bool {
         .unwrap_or(false)
 }
 
+fn dart_on_path() -> bool {
+    Command::new("dart")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     let dir = std::env::temp_dir().join(format!("rtok-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -119,5 +129,29 @@ fn lsp_backend_hits_onlytyped_type_position() {
     assert!(sym.contains("OnlyTyped"), "{sym}");
     let map = outline(&ctx, &root.join("src/lib.rs").to_string_lossy()).unwrap();
     assert!(map.contains("OnlyTyped") || map.contains("user"), "{map}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// T41.1: a `pubspec.yaml` root outlines a two-symbol `lib/main.dart` through
+/// `dart language-server`. Skips when `dart` is not on PATH.
+#[test]
+fn lsp_backend_outlines_dart_main() {
+    if !dart_on_path() {
+        eprintln!("skip: dart not on PATH");
+        return;
+    }
+    let (cx, dir) = open("p41-dart", "lsp");
+    let root = dir.join("pkg");
+    fs::create_dir_all(root.join("lib")).unwrap();
+    fs::write(root.join("pubspec.yaml"), "name: dart_gate\n").unwrap();
+    fs::write(
+        root.join("lib/main.dart"),
+        "void helper() {}\nvoid main() {\n  helper();\n}\n",
+    )
+    .unwrap();
+    let ctx = Ctx::new(&cx);
+    let map = outline(&ctx, &root.join("lib/main.dart").to_string_lossy()).unwrap();
+    assert!(map.contains("helper"), "{map}");
+    assert!(map.contains("main"), "{map}");
     let _ = fs::remove_dir_all(&dir);
 }
