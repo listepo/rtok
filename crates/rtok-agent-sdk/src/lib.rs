@@ -70,6 +70,11 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    backup_at(path, ts).map(Some)
+}
+
+/// `backup` with the clock passed in, so a test can pin the second instead of racing it.
+fn backup_at(path: &Path, ts: u64) -> Result<PathBuf> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     // Two commands inside one second would otherwise share a name and the first copy would go.
     let mut n = 0u32;
@@ -79,7 +84,7 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
-    Ok(Some(bak))
+    Ok(bak)
 }
 
 /// A host's JSON config as a value to edit. A missing or empty file is an empty object, not an
@@ -397,12 +402,14 @@ mod tests {
     fn backup_skips_a_hundred_preexisting_names_without_clobbering() {
         let dir = tmp("backup-collision");
         let path = dir.join("settings.json");
+        // A pinned second: with the real clock, a rollover mid-test lands a fresh `bak-{ts+1}`.
+        let ts = 1_700_000_000;
         fs::write(&path, "v0").unwrap();
-
-        let first = backup(&path).unwrap().unwrap();
-        let first_name = first.file_name().unwrap().to_string_lossy();
-        let stem = first_name.strip_prefix("settings.json.bak-").unwrap();
-        let ts = stem.split('-').next().unwrap();
+        let first = backup_at(&path, ts).unwrap();
+        assert_eq!(
+            first.file_name().unwrap().to_string_lossy(),
+            format!("settings.json.bak-{ts}")
+        );
 
         fs::write(&path, "v1").unwrap();
         for n in 1..100 {
@@ -419,7 +426,7 @@ mod tests {
         assert_eq!(contents_before.len(), 100, "base plus slots 1..=99");
 
         fs::write(&path, "v2").unwrap();
-        let second = backup(&path).unwrap().unwrap();
+        let second = backup_at(&path, ts).unwrap();
         assert_eq!(
             second.file_name().unwrap().to_string_lossy(),
             format!("settings.json.bak-{ts}-100")
