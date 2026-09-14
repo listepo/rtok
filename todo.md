@@ -1,2 +1,0 @@
-- T38.2. e2e plugin matrix
-- T38.3. e2e `memory import` + `graph index`

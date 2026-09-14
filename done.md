@@ -1,5 +1,24 @@
 # rtok — completed tasks
 
+## T38.5 — `commands_e2e.rs` on `assert_cmd`
+
+**T38.5 `commands_e2e.rs` on `assert_cmd`** · P2, 2/5 · `Cargo.toml`, `Cargo.lock`, `toolchain.md`, `tests/commands_e2e.rs`
+Do: add `assert_cmd = "2"` to dev-deps (already in `rust.md`, same line as ketch/cox — reuse, no new approval), record it in `toolchain.md`, rewrite `tests/commands_e2e.rs` on `Command::cargo_bin` with `cmd`/`ok`/`hook` helpers (`.assert().success()/.failure()`, `write_stdin` for `hook`) — same 9 cases, same asserts, no `std::process::Command` left.
+Check: `cargo test --test commands_e2e` 9/9 green; fmt + clippy clean.
+Complexity: 2/5
+Status: done 2026-09-14 · Model: OpenCode / Muse Spark 1.3
+Evidence: `cargo test --test commands_e2e` — 9 passed / 0 failed; `cargo fmt --check` clean; `cargo clippy --test commands_e2e -- -D warnings` clean; test file 173 LOC; `Cargo.lock` gains the resolved `assert_cmd` subtree only.
+Deviation: none. (Also removed the leftover T38.4 card and a duplicated T38.2 card from `plan.md` while claiming — dead text only.)
+
+## T38.2 — e2e plugin matrix
+
+**T38.2 e2e plugin matrix** · P1, 3/5 · `tests/plugins_e2e.rs` (new, 199 LOC)
+Do: one e2e case per catalogue plugin through its surface — `cmd` via `run`, `read`/`graph`/`memory` via `mcp` stdio, `proxy`/`archive`/`toon` via in-process proxy (`httpmock` upstream), `inject`/`guard` via `hook` stdin, `measure`/`compress` via `stats --json`. `Measurement` rows asserted where owed (cmd, read `dedup`, graph `cap`, inject `inject`, guard `guard`, archive/toon counts, compress `summary` in stats JSON); surface behavior asserted where no row is owed (measure reports, memory round-trip, proxy `usage` row). Hermetic temp homes (`rtok-t382-`, `Drop` cleanup), binary harness copied from `commands_e2e.rs`.
+Check: 11 cases green; `just check` green.
+Complexity: 3/5
+Status: done 2026-09-14 · Model: OpenCode / Muse Spark 1.3
+Evidence: `cargo test --test plugins_e2e` 11 passed / 0 failed; full `just check` green (fmt-check, workspace clippy `-D warnings`, 39 test binaries ok incl. `plugins_e2e` 11 + `import_index_e2e` 2, build-min, jscpd 1.26% under threshold 2).
+
 ## T38.4 — drop stale `divan`/`lbug` rows from `toolchain.md`
 
 **T38.4 drop stale `divan`/`lbug` rows from `toolchain.md`** · P3, 1/5 · `toolchain.md`

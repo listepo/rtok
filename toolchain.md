@@ -23,6 +23,7 @@
 | Пакет | Где | Источник | Зачем здесь |
 | --- | --- | --- | --- |
 | anyhow | локально | https://crates.io/crates/anyhow | Ошибки CLI |
+| assert_cmd | локально | https://crates.io/crates/assert_cmd | CLI e2e-тесты |
 | axum | локально | https://crates.io/crates/axum | Зависимость Rust |
 | clap | локально | https://crates.io/crates/clap | CLI |
 | crossterm | локально | https://crates.io/crates/crossterm | Терминал |

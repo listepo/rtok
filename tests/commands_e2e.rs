@@ -1,15 +1,17 @@
-//! T38.1: e2e for the commands without direct coverage — `hook`, `run`, `expand`,
-//! `plugins`, `config`, `bench --dry-run`, `doctor`, `stats`.
+//! T38.1/T38.5: e2e for the commands without direct coverage — `hook`, `run`,
+//! `expand`, `plugins`, `config`, `bench --dry-run`, `doctor`, `stats` — driven
+//! through `assert_cmd` (plan Working agreement).
 //!
 //! Check: one case per command through the binary with an isolated HOME.
 
+use assert_cmd::Command as AssertCmd;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
-fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_rtok")
+fn cmd(args: &[&str], home: &Path) -> AssertCmd {
+    let mut c = AssertCmd::cargo_bin("rtok").unwrap();
+    c.args(args).env("RTOK_HOME", home).env("HOME", home);
+    c
 }
 
 fn tmp(name: &str) -> PathBuf {
@@ -26,39 +28,19 @@ fn tmp(name: &str) -> PathBuf {
     dir
 }
 
-fn rtok(args: &[&str], home: &Path) -> (String, String, i32) {
-    let out = Command::new(bin())
-        .args(args)
-        .env("RTOK_HOME", home)
-        .env("HOME", home)
-        .output()
-        .unwrap();
-    (
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
-        out.status.code().unwrap_or(-1),
-    )
-}
-
+/// Run to success, return stdout.
 fn ok(args: &[&str], home: &Path) -> String {
-    let (stdout, stderr, code) = rtok(args, home);
-    assert_eq!(code, 0, "rtok {args:?} exit {code}: {stderr}");
-    stdout
+    let out = cmd(args, home).assert().success().get_output().clone();
+    String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
 fn hook(event: &str, fixture: &[u8], home: &Path) -> String {
-    let mut child = Command::new(bin())
-        .args(["hook", event])
-        .env("RTOK_HOME", home)
-        .env("HOME", home)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.take().unwrap().write_all(fixture).unwrap();
-    let out = child.wait_with_output().unwrap();
-    assert_eq!(out.status.code(), Some(0), "hook {event} must exit 0");
+    let out = cmd(&["hook", event], home)
+        .write_stdin(fixture)
+        .assert()
+        .success()
+        .get_output()
+        .clone();
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -119,8 +101,12 @@ fn run_long_output_then_expand_round_trips() {
     );
     let head = ok(&["expand", id, "--lines", "1-2"], &home);
     assert_eq!(head.lines().count(), 2, "{head}");
-    let (_, err, code) = rtok(&["expand", "no-such-id"], &home);
-    assert_ne!(code, 0, "unknown id must fail");
+    let out = cmd(&["expand", "no-such-id"], &home)
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    let err = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(err.contains("unknown archive id"), "{err}");
     let _ = fs::remove_dir_all(&home);
 }
