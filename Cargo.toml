@@ -27,6 +27,10 @@ dist = true
 name = "rtok"
 path = "src/main.rs"
 
+[[bench]]
+name = "graph"
+harness = false
+
 [features]
 # One feature per catalogue plugin (plan T0.4). Default = all.
 default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon", "compress"]
@@ -110,8 +114,11 @@ tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)
+divan = "0.1" # divan benches in benches/ (default harness for new benches)
 httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
+insta = "1" # snapshot tests for stable text output
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
+trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
 
 # T17.1. No profile may set `panic = "abort"`: `hooks::dispatch` fails open through five
 # `catch_unwind` sites, and aborting would break the rule that a hook exits 0 on error.

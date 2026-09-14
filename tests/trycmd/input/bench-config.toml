@@ -1,0 +1,5 @@
+# Pinned bench inputs for the dry-run case: the default `bench/tasks.toml`
+# (relative to the package root, the `cargo test` cwd) with the default run count.
+[bench]
+tasks = "bench/tasks.toml"
+runs = 3

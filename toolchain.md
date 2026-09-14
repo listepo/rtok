@@ -29,6 +29,7 @@ Project programs and direct packages from the manifests.
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | dialoguer | local | https://crates.io/crates/dialoguer | Rust dependency |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
+| divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
@@ -36,6 +37,7 @@ Project programs and direct packages from the manifests.
 | i-slint-backend-testing | local | https://crates.io/crates/i-slint-backend-testing | Headless backend for Slint UI e2e tests |
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
+| insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
@@ -64,5 +66,6 @@ Project programs and direct packages from the manifests.
 | tree-sitter-rust | local | https://crates.io/crates/tree-sitter-rust | Rust dependency |
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
+| trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
 | watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
