@@ -58,8 +58,6 @@ impl std::fmt::Display for Service {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct State {
     service: Service,
-    /// The binary this supervisor runs; `update` compares it with the one on disk now.
-    exe: PathBuf,
     supervisor: i32,
     child: i32,
     /// Unix seconds the current child started.
@@ -222,12 +220,18 @@ pub struct Row {
     pub log: PathBuf,
 }
 
-/// The query behind `rtok demon status` / `list`: one row per service the verb targets,
-/// liveness from `kill(2)` so a state file left behind by a killed supervisor reads as
-/// stopped instead of as whatever it said.
+/// The query behind `rtok demon status`: one row per named service, or every service when none
+/// is named, so a stopped one reads as stopped rather than going missing. Liveness comes
+/// from `kill(2)`, so a state file left behind by a killed supervisor reads as stopped instead
+/// of as whatever it said.
 pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
+    let services = if named.is_empty() {
+        Service::value_variants()
+    } else {
+        named
+    };
     let mut out = Vec::new();
-    for service in targets(cfg, named, true)? {
+    for &service in services {
         let st = read(cfg, service);
         let up = st.as_ref().is_some_and(|s| alive(s.supervisor));
         let live = |s: &State| {
@@ -279,21 +283,6 @@ pub fn table(rows: &[Row]) -> String {
     out
 }
 
-/// Restart under the binary that is on disk now — what to run after `ketch install listepo/rtok`
-/// replaced it, since a running supervisor keeps holding the old inode.
-pub fn update(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Result<()> {
-    let exe = std::env::current_exe()?;
-    let services = targets(cfg, named, true)?;
-    for service in &services {
-        match read(cfg, *service) {
-            Some(st) if st.exe == exe => println!("{service} already runs {}", exe.display()),
-            Some(st) => println!("{service} {} -> {}", st.exe.display(), exe.display()),
-            None => println!("{service} not running"),
-        }
-    }
-    restart(cfg, config_file, &services)
-}
-
 /// Read `stream` line by line, forwarding each as `(level, line)`. Runs on its own thread so
 /// the supervisor's poll loop never blocks on a child's pipe; a send failure only means the
 /// receiving end already went away, which happens once the drain loop is done.
@@ -321,7 +310,6 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
     let stop = file(cfg, service, "stop");
     let mut st = State {
         service,
-        exe: exe.clone(),
         supervisor: std::process::id() as i32,
         child: 0,
         since: now(),

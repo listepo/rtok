@@ -55,7 +55,7 @@ port = 3333                           # --port
 tab       = ""                        # "" = first tab          (--tab <page>)
 tick_secs = 2                         # model re-read cadence, same as the web 2 s tick (--tick-secs)
 
-[demon]                               # rtok demon start | stop | restart | status | list | kill | update
+[demon]                               # rtok demon start | stop | restart | status | kill
 services       = ["proxy"]            # what `rtok demon start` starts when given no name
 state_dir      = "~/.rtok/demon"      # <name>.json, <name>.log and the <name>.stop marker
 backoff_ms     = 1000                 # wait before the first restart after a crash

@@ -125,7 +125,7 @@ fn status_asks_the_kernel_rather_than_believing_the_state_file() {
 }
 
 #[test]
-fn a_second_start_is_refused_and_list_names_every_service() {
+fn a_second_start_is_refused_and_status_names_every_service() {
     let h = home("once");
     rtok(&["demon", "start", "mcp"], &h);
     let first = wait_restarts(&h, 1)["supervisor"].as_i64().unwrap();
@@ -137,12 +137,12 @@ fn a_second_start_is_refused_and_list_names_every_service() {
         "a second supervisor took the service over"
     );
 
-    let list = rtok(&["demon", "list"], &h);
+    let status = rtok(&["demon", "status"], &h);
     for s in ["proxy", "mcp", "web"] {
-        assert!(list.contains(s), "list is missing {s}:\n{list}");
+        assert!(status.contains(s), "status is missing {s}:\n{status}");
     }
-    // `proxy` and `dashboard` were never started, so they must read as stopped, not as absent.
-    assert_eq!(list.matches("stopped").count(), 2, "{list}");
+    // `proxy` and `web` were never started, so they must read as stopped, not as absent.
+    assert_eq!(status.matches("stopped").count(), 2, "{status}");
 
     let bad = Command::new(bin())
         .args(["demon", "start", "rm -rf /"])

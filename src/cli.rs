@@ -210,8 +210,8 @@ enum Cmd {
 }
 
 /// Every verb takes optional services; with none they act on what is already up, falling back
-/// to `[demon] services`. `Service` is a `ValueEnum`, so clap validates the name, lists the
-/// choices in `--help` and completes them in a shell (D14).
+/// to `[demon] services`; `status` alone shows every service. `Service` is a `ValueEnum`, so
+/// clap validates the name, lists the choices in `--help` and completes them in a shell (D14).
 #[derive(Subcommand)]
 enum DemonCmd {
     /// Detach a supervisor that restarts the service whenever it dies
@@ -220,14 +220,10 @@ enum DemonCmd {
     Stop { service: Vec<Service> },
     /// Stop, then start
     Restart { service: Vec<Service> },
-    /// State, pids, uptime, restarts and log path
+    /// State, pids, uptime, restarts and log path; every service when none is named
     Status { service: Vec<Service> },
-    /// `status` for every service, running or not
-    List,
     /// SIGKILL instead of SIGTERM, and drop the state file
     Kill { service: Vec<Service> },
-    /// Restart under the binary on disk now (after an upgrade replaced it)
-    Update { service: Vec<Service> },
     /// The detached half; `demon start` runs this, you do not
     #[command(hide = true)]
     Supervise { service: Service },
@@ -733,7 +729,7 @@ pub fn run() -> Result<()> {
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let c = config_file.as_deref();
-            // `status` and `list` render the model's Demon page (T15.11); the other verbs
+            // `status` renders the model's Demon page (T15.11); the other verbs
             // write state and stay CLI-only (D27).
             match action {
                 DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
@@ -743,12 +739,7 @@ pub fn run() -> Result<()> {
                     let rows = model::Model::new(&cfg, None).demon(&service)?;
                     print!("{}", crate::demon::table(&rows));
                 }
-                DemonCmd::List => {
-                    let rows = model::Model::new(&cfg, None).demon(Service::value_variants())?;
-                    print!("{}", crate::demon::table(&rows));
-                }
                 DemonCmd::Kill { service } => crate::demon::stop(&cfg, &service, true)?,
-                DemonCmd::Update { service } => crate::demon::update(&cfg, c, &service)?,
                 DemonCmd::Supervise { service } => crate::demon::supervise(&cfg, c, service)?,
             }
         }

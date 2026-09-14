@@ -169,7 +169,6 @@ const EXEMPT: &[(&str, &str)] = &[
     ("demon stop", "asks the supervisor and its child to exit"),
     ("demon restart", "stop, then start"),
     ("demon kill", "SIGKILL and drop the state file"),
-    ("demon update", "restarts under the binary on disk now"),
     ("demon supervise", "the detached half of `demon start`"),
     ("otel flush", "posts rows past the watermarks"),
     // helpers: a location or a verdict, not model data
@@ -201,7 +200,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "the same Logs selection, unnumbered and uncoloured",
     ),
     ("demon status", "renders Model::demon; no snapshot page yet"),
-    ("demon list", "the same Demon page for every service"),
 ];
 
 /// Every runnable command path, space-joined — the walk `config_coverage` already
