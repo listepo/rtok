@@ -164,6 +164,9 @@ component NavItem inherits Rectangle {
     border-radius: RtokTheme.radius-md;
     background: selected ? RtokTheme.accent-muted : transparent;
     TouchArea {
+        // Labelled for assistive tech and for the e2e tab queries (tests/e2e.rs).
+        accessible-role: button;
+        accessible-label: root.title;
         clicked => { root.activated(); }
     }
     HorizontalBox {
@@ -195,11 +198,11 @@ export component MainWindow inherits Window {
     /// Tab bar is `model::pages()` order (D23) — never a second list.
     in-out property <[PageTab]> pages;
     in-out property <int> page-index: 0;
-    property <string> page-id: pages[page-index].id;
+    out property <string> page-id: pages[page-index].id;
 
     in-out property <[PluginRow]> plugins;
     in-out property <int> plugin-cursor: 0;
-    property <PluginRow> selected-plugin: plugins[plugin-cursor];
+    out property <PluginRow> selected-plugin: plugins[plugin-cursor];
 
     in property <int> usage-input;
     in property <int> usage-output;
@@ -211,7 +214,7 @@ export component MainWindow inherits Window {
 
     in-out property <[CallRow]> calls;
     in-out property <int> call-cursor: 0;
-    property <CallRow> selected-call: calls[call-cursor];
+    out property <CallRow> selected-call: calls[call-cursor];
 
     in-out property <[SessionRow]> sessions;
     in property <string> doctor-text;

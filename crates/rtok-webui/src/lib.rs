@@ -6,6 +6,9 @@
 
 slint::include_modules!();
 
+use slint::{ModelRc, SharedString, VecModel};
+use std::rc::Rc;
+
 /// Page ids the WASM UI renders, in `model::pages()` order (D23 / T19.4).
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &["overview", "plugins", "calls", "sessions", "doctor", "logs"];
@@ -385,11 +388,86 @@ pub mod snapshot {
     }
 }
 
+/// Apply one `/ws` snapshot onto the window: the one call path the WASM
+/// client and the e2e tests share. Fail-open like [`snapshot::parse`]:
+/// missing keys become empty pages, never a panic.
+pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
+    let view = snapshot::parse(v);
+    ui.set_usage_input(view.usage_input);
+    ui.set_usage_output(view.usage_output);
+    ui.set_usage_cache_read(view.usage_cache_read);
+    ui.set_usage_cache_create(view.usage_cache_create);
+    ui.set_usage_ctt(view.usage_ctt);
+    ui.set_overview_savings(SharedString::from(view.overview_savings));
+    ui.set_overview_turns(SharedString::from(view.overview_turns));
+    ui.set_doctor_text(SharedString::from(view.doctor_text));
+
+    let plugins: Vec<PluginRow> = view
+        .plugins
+        .into_iter()
+        .map(|p| PluginRow {
+            id: SharedString::from(p.id),
+            title: SharedString::from(p.title),
+            summary: SharedString::from(p.summary),
+            fields: SharedString::from(p.fields),
+            enabled: p.enabled,
+            saves_tokens: p.saves_tokens,
+            input_tokens: p.input_tokens,
+            output_tokens: p.output_tokens,
+            cache_read: p.cache_read,
+            cache_create: p.cache_create,
+            est_before: p.est_before,
+            est_after: p.est_after,
+            rows: p.rows,
+        })
+        .collect();
+    ui.set_plugins(ModelRc::from(Rc::new(VecModel::from(plugins))));
+
+    let calls: Vec<CallRow> = view
+        .calls
+        .into_iter()
+        .map(|c| CallRow {
+            when: SharedString::from(c.when),
+            surface: SharedString::from(c.surface),
+            kind: SharedString::from(c.kind),
+            name: SharedString::from(c.name),
+            session: SharedString::from(c.session),
+            ms: SharedString::from(c.ms),
+            tokens: SharedString::from(c.tokens),
+            subtitle: SharedString::from(c.subtitle),
+            detail: SharedString::from(c.detail),
+        })
+        .collect();
+    ui.set_calls(ModelRc::from(Rc::new(VecModel::from(calls))));
+
+    let sessions: Vec<SessionRow> = view
+        .sessions
+        .into_iter()
+        .map(|s| SessionRow {
+            id: SharedString::from(s.id),
+            host: SharedString::from(s.host),
+            provider: SharedString::from(s.provider),
+            model: SharedString::from(s.model),
+            input: s.input,
+            output: s.output,
+            cache_create: s.cache_create,
+            cache_read: s.cache_read,
+            live: s.live,
+            status: SharedString::from(s.status),
+            activity: SharedString::from(s.activity),
+            summary: SharedString::from(s.summary),
+        })
+        .collect();
+    ui.set_sessions(ModelRc::from(Rc::new(VecModel::from(sessions))));
+
+    let logs: Vec<SharedString> = view.logs.into_iter().map(SharedString::from).collect();
+    ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
+    ui.set_status(SharedString::from("live"));
+}
+
 #[cfg(target_family = "wasm")]
 mod wasm {
     use super::*;
-    use slint::{ModelRc, SharedString, VecModel};
-    use std::rc::Rc;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::prelude::*;
     use web_sys::{MessageEvent, WebSocket};
@@ -426,84 +504,10 @@ mod wasm {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-            load_snapshot(&ui, &v);
+            super::apply_snapshot(&ui, &v);
         });
         ws.set_onmessage(Some(on_msg.as_ref().unchecked_ref()));
         on_msg.forget();
-    }
-
-    fn load_snapshot(ui: &MainWindow, v: &serde_json::Value) {
-        let view = snapshot::parse(v);
-        ui.set_usage_input(view.usage_input);
-        ui.set_usage_output(view.usage_output);
-        ui.set_usage_cache_read(view.usage_cache_read);
-        ui.set_usage_cache_create(view.usage_cache_create);
-        ui.set_usage_ctt(view.usage_ctt);
-        ui.set_overview_savings(SharedString::from(view.overview_savings));
-        ui.set_overview_turns(SharedString::from(view.overview_turns));
-        ui.set_doctor_text(SharedString::from(view.doctor_text));
-
-        let plugins: Vec<PluginRow> = view
-            .plugins
-            .into_iter()
-            .map(|p| PluginRow {
-                id: SharedString::from(p.id),
-                title: SharedString::from(p.title),
-                summary: SharedString::from(p.summary),
-                fields: SharedString::from(p.fields),
-                enabled: p.enabled,
-                saves_tokens: p.saves_tokens,
-                input_tokens: p.input_tokens,
-                output_tokens: p.output_tokens,
-                cache_read: p.cache_read,
-                cache_create: p.cache_create,
-                est_before: p.est_before,
-                est_after: p.est_after,
-                rows: p.rows,
-            })
-            .collect();
-        ui.set_plugins(ModelRc::from(Rc::new(VecModel::from(plugins))));
-
-        let calls: Vec<CallRow> = view
-            .calls
-            .into_iter()
-            .map(|c| CallRow {
-                when: SharedString::from(c.when),
-                surface: SharedString::from(c.surface),
-                kind: SharedString::from(c.kind),
-                name: SharedString::from(c.name),
-                session: SharedString::from(c.session),
-                ms: SharedString::from(c.ms),
-                tokens: SharedString::from(c.tokens),
-                subtitle: SharedString::from(c.subtitle),
-                detail: SharedString::from(c.detail),
-            })
-            .collect();
-        ui.set_calls(ModelRc::from(Rc::new(VecModel::from(calls))));
-
-        let sessions: Vec<SessionRow> = view
-            .sessions
-            .into_iter()
-            .map(|s| SessionRow {
-                id: SharedString::from(s.id),
-                host: SharedString::from(s.host),
-                provider: SharedString::from(s.provider),
-                model: SharedString::from(s.model),
-                input: s.input,
-                output: s.output,
-                cache_create: s.cache_create,
-                cache_read: s.cache_read,
-                live: s.live,
-                status: SharedString::from(s.status),
-                activity: SharedString::from(s.activity),
-                summary: SharedString::from(s.summary),
-            })
-            .collect();
-        ui.set_sessions(ModelRc::from(Rc::new(VecModel::from(sessions))));
-
-        let logs: Vec<SharedString> = view.logs.into_iter().map(SharedString::from).collect();
-        ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
-        ui.set_status(SharedString::from("live"));
     }
 }
 

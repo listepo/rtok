@@ -33,6 +33,7 @@
 | figment | локально | https://crates.io/crates/figment | Конфиг |
 | futures-util | локально | https://crates.io/crates/futures-util | Зависимость Rust |
 | httpmock | локально | https://crates.io/crates/httpmock | Зависимость Rust |
+| i-slint-backend-testing | локально | https://crates.io/crates/i-slint-backend-testing | Headless-бэкенд для e2e-тестов Slint UI |
 | ignore | локально | https://crates.io/crates/ignore | Зависимость Rust |
 | indicatif | локально | https://crates.io/crates/indicatif | Зависимость Rust |
 | lbug | локально | https://crates.io/crates/lbug | Зависимость Rust |

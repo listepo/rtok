@@ -30,3 +30,8 @@ web-sys = { version = "0.3", features = [
 
 [build-dependencies]
 slint-build = "1.14"
+
+# Slint's recommended headless backend for integration tests (tests/e2e.rs):
+# `=` pin is mandatory — the crate ignores semver and must match `slint` exactly.
+[dev-dependencies]
+i-slint-backend-testing = "=1.17.1"

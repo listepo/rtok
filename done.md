@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T37.1 — e2e tests for the Slint web UI
+
+**T37.1 e2e tests for the Slint web UI** · P2, 3/5 · `crates/rtok-webui/{Cargo.toml,src/lib.rs,ui/app.slint,tests/e2e.rs}`, `toolchain.md`
+Do: drive the real compiled `MainWindow` through Slint's recommended headless backend (`i-slint-backend-testing`, `=`-pinned to `slint` 1.17.1 — run tests with `SLINT_EMIT_DEBUG_INFO=1`, which `slint-build` already honours and re-runs on). Extract shared `pub fn apply_snapshot` (one call path for the WASM client and tests); label `NavItem` touch areas (`accessible-role: button` + label, a11y + queryable); mark derived `page-id`/`selected-plugin`/`selected-call` as `out property` so external tests can read them. Five e2e tests: fresh-window defaults, full snapshot → every bound property/model, real tab clicks → `page-id` binding, cursors → selected rows, fail-open empty snapshot.
+Check: `SLINT_EMIT_DEBUG_INFO=1 cargo test --manifest-path crates/rtok-webui/Cargo.toml` green (4 unit + 5 e2e); webui clippy `-D warnings` green; root `just check` green.
+Complexity: 3/5
+Status: done 2026-09-14 · Model: OpenCode / Muse Spark 1.3
+Evidence: webui 9 passed / 0 failed; root gate green — fmt-check, workspace clippy, 390+ unit/integration tests, build-min, jscpd 1.26% under threshold 2. `tab_click_switches_page` clicks every tab by accessible label via `mock_single_click` (the sync no-event-loop path); plain `invoke_accessible_default_action` did not deliver the click, and `ElementHandle` queries need the debug-info build var (documented in `tests/e2e.rs` header).
+Deviation: 5 product files + toolchain row + workflow surface — over the ≤200 LOC / ≤3 files guideline; kept as one task because backend, shared apply path, labels and tests are one behavior. New dev-dependency `i-slint-backend-testing`: Slint's official test backend, same repo/version as `slint`, test-only (one-line reason per the dependency rule).
+
 ## T37.0 — agent list plus CLI/GUI setup variants
 
 **T37.0 `rtok agent list` + CLI/GUI setup variants** · P1, 3/5 · `src/cli.rs`, `src/setup/mod.rs`, `tests/config_coverage.rs`, `tests/surface_parity.rs`, `docs/config.md`
