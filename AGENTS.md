@@ -12,7 +12,7 @@
 
 **CLI tests.** Unit tests for logic; integration tests (`assert_cmd`, `predicates`, `assert_fs`, `trycmd`) for the binary, args, and output — see `plan.md` → Reference / Working agreement.
 
-**Workflow.** Claim only a `todo` row in `plan.md`: set Статус to `in progress` and Агент to `Provider / model`. Сложность is 1–5 in the table. `main` only. ≤200 LOC, ≤3 files. Check, `just check`, commit `<task-id>: <title>` on `main` and move the task entirely to `done.md` — work still in `plan.md` is unfinished. Stop → `todo`, clear Агент. New plugin: `docs/plugin-authoring.md` and D21.
+**Workflow.** Claim only a `todo` row in `plan.md`: set Status to `in progress` and Agent to `Provider / model`. Complexity is 1–5 in the table. `main` only. ≤200 LOC, ≤3 files. Check, `just check`, commit `<task-id>: <title>` on `main` and move the task entirely to `done.md` — work still in `plan.md` is unfinished. Stop → `todo`, clear Agent. New plugin: `docs/plugin-authoring.md` and D21.
 
 **Rules that never bend.**
 - Fail open: a hook exits 0 in ≤ 10 ms even on error, with unmodified input.

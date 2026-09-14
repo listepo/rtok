@@ -8,13 +8,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T38.3 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark |
 
-### T38.2. e2e plugin matrix
-
 ## Reference
 
 Historical phase notes (P0–P39) live in `done.md`. Companion evidence: `research.md`, `architecture.md`. Per-plugin plan: `roadmap.md`. Unapproved propositions: `ideas.md`.
 
-Claim a `todo` row before work: set Статус to `in progress` and Агент to `Provider / model`. Before stopping unfinished work, set Статус to `todo` and clear Агент. When the Check passes, move the task entirely to `done.md` (Do/Check + Check result) and drop it from this table, its card, and `todo.md`.
+Claim a `todo` row before work: set Status to `in progress` and Agent to `Provider / model`. Before stopping unfinished work, set Status to `todo` and clear Agent. When the Check passes, move the task entirely to `done.md` (Do/Check + Check result) and drop it from this table, its card, and `todo.md`.
 
 ### Decisions (read before any task)
 
