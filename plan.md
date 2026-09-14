@@ -4,7 +4,20 @@ https://github.com/listepo/rtok
 
 Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured reductions, pluggable methods.
 
-No active tasks. See `done.md`.
+| # | Status | Priority | Complexity | Readiness | Agent |
+| --- | --- | --- | --- | --- | --- |
+| T38.2 | todo | P1 | 3 | 0% | |
+| T38.3 | todo | P2 | 2 | 0% | |
+
+### T38.2. e2e plugin matrix
+
+No single place proves each of the 11 catalogue plugins through its surface plus a `Measurement` row. Add `tests/plugins_e2e.rs`: `cmd` via `run`, `read`/`graph`/`memory` via `mcp`, `proxy`/`archive`/`toon` via proxy fixtures, `inject`/`guard` via `hook`, `measure`/`compress` via `stats`. Assert the promised `Measurement` row where one is owed.
+Check: 11 cases green; `just check` green.
+
+### T38.3. e2e `memory import` + `graph index`
+
+The only input/index commands without e2e. Add `tests/import_index_e2e.rs`: `memory import` of a JSONL fixture is found by search, `graph index` of a fixture tree is found by `symbol`.
+Check: both cases green; `just check` green.
 
 ## Reference
 
