@@ -15,7 +15,9 @@ ci = "github"
 installers = ["shell", "homebrew"]
 tap = "listepo/homebrew-tap"
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+# Apple Silicon + Linux only. Intel macOS (`x86_64-apple-darwin`) was dropped:
+# `macos-15-intel` runners are scarce/slow and usually set release wall-clock.
+targets = ["aarch64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
 # Sign macOS binaries with the Developer ID in MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD.
