@@ -13,7 +13,6 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use rustix::fs::{FlockOperation, flock};
 
 use super::{map, metrics, otlp};
 use crate::config::{Config, Endpoint};
@@ -108,7 +107,7 @@ fn flush_lock(cx: &Runtime) -> std::io::Result<FlushLock> {
         .write(true)
         .truncate(false)
         .open(&path)?;
-    flock(&file, FlockOperation::LockExclusive)?;
+    rtok_sys::lock_exclusive(&file)?;
     Ok(FlushLock { file })
 }
 
@@ -118,7 +117,7 @@ struct FlushLock {
 
 impl Drop for FlushLock {
     fn drop(&mut self) {
-        let _ = flock(&self.file, FlockOperation::Unlock);
+        let _ = rtok_sys::unlock(&self.file);
     }
 }
 

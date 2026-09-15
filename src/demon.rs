@@ -14,7 +14,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::ValueEnum;
-use rustix::process::{Pid, Signal};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
@@ -85,23 +84,10 @@ fn write(cfg: &Config, st: &State) -> Result<()> {
     fs::write(&path, serde_json::to_vec_pretty(st)?).with_context(|| path.display().to_string())
 }
 
-/// One process, never a group. `kill(2)` reads 0 as "my whole process group" and a negative
-/// number as "that group", so a state file with either — corrupt, hand-edited, half-written —
-/// must address nothing rather than signal every process rtok happens to share a group with.
-fn one(pid: i32) -> Option<Pid> {
-    (pid > 0).then(|| Pid::from_raw(pid)).flatten()
-}
-
-/// True while `pid` is a live process. Signal 0 asks the kernel, so a state file left behind by
-/// a supervisor that was killed from outside reads as stopped instead of as whatever it said.
+/// True while `pid` is a live process. A state file left behind by a supervisor that was
+/// killed from outside reads as stopped instead of as whatever it said.
 fn alive(pid: i32) -> bool {
-    one(pid).is_some_and(|p| rustix::process::test_kill_process(p).is_ok())
-}
-
-fn signal(pid: i32, sig: Signal) {
-    if let Some(p) = one(pid) {
-        let _ = rustix::process::kill_process(p, sig);
-    }
+    rtok_sys::process_alive(pid)
 }
 
 /// The services a verb acts on: the ones named, else — for the verbs that act on what is
@@ -146,7 +132,7 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
             // A supervisor that died from outside can leave its child up. Starting another
             // supervisor would put two owners on the same port — retire the orphan first.
             if alive(st.child) {
-                signal(st.child, Signal::TERM);
+                rtok_sys::process_term(st.child);
                 for _ in 0..40 {
                     if !alive(st.child) {
                         break;
@@ -154,7 +140,7 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
                     std::thread::sleep(Duration::from_millis(50));
                 }
                 if alive(st.child) {
-                    signal(st.child, Signal::KILL);
+                    rtok_sys::process_kill(st.child);
                 }
             }
             let _ = fs::remove_file(file(cfg, service, "json"));
@@ -179,15 +165,19 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
 /// Ask each supervisor to go away, then make sure it did. The marker is written *before* the
 /// signals: a supervisor that wakes up between them must not start one more child.
 pub fn stop(cfg: &Config, named: &[Service], force: bool) -> Result<()> {
-    let sig = if force { Signal::KILL } else { Signal::TERM };
     for service in targets(cfg, named, true)? {
         let Some(st) = read(cfg, service) else {
             println!("{service} not running");
             continue;
         };
         fs::write(file(cfg, service, "stop"), b"")?;
-        signal(st.supervisor, sig);
-        signal(st.child, sig);
+        if force {
+            rtok_sys::process_kill(st.supervisor);
+            rtok_sys::process_kill(st.child);
+        } else {
+            rtok_sys::process_term(st.supervisor);
+            rtok_sys::process_term(st.child);
+        }
         for _ in 0..40 {
             if !alive(st.supervisor) && !alive(st.child) {
                 break;
@@ -196,8 +186,8 @@ pub fn stop(cfg: &Config, named: &[Service], force: bool) -> Result<()> {
         }
         // Last resort: a supervisor that ignored SIGTERM would otherwise outlive its own state.
         if alive(st.supervisor) || alive(st.child) {
-            signal(st.supervisor, Signal::KILL);
-            signal(st.child, Signal::KILL);
+            rtok_sys::process_kill(st.supervisor);
+            rtok_sys::process_kill(st.child);
         }
         let _ = fs::remove_file(file(cfg, service, "json"));
         println!("{service} stopped");
@@ -356,7 +346,7 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
         return Ok(());
     };
     // Its own session, so closing the terminal that ran `start` does not take the tree down.
-    let _ = rustix::process::setsid();
+    rtok_sys::setsid();
     let exe = std::env::current_exe()?;
     let stop = file(cfg, service, "stop");
     let mut st = State {
@@ -440,10 +430,9 @@ fn claim(cfg: &Config, service: Service) -> Result<Option<fs::File>> {
         .write(true)
         .open(&path)
         .with_context(|| path.display().to_string())?;
-    match rustix::fs::flock(&f, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
-        Ok(()) => Ok(Some(f)),
-        Err(rustix::io::Errno::WOULDBLOCK) => Ok(None),
-        Err(e) => Err(e.into()),
+    match rtok_sys::try_lock_exclusive(&f)? {
+        true => Ok(Some(f)),
+        false => Ok(None),
     }
 }
 
@@ -586,8 +575,6 @@ mod tests {
     fn a_group_pid_is_never_signalled() {
         assert!(alive(std::process::id() as i32));
         // Both of these mean "a process group" to kill(2), and `stop` must never reach one.
-        assert!(one(0).is_none());
-        assert!(one(-1).is_none());
         assert!(!alive(0) && !alive(-1));
     }
 }

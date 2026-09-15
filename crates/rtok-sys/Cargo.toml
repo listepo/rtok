@@ -1,0 +1,25 @@
+[package]
+name = "rtok-sys"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "OS shims that need unsafe on Windows (process + flock)"
+license = "MIT"
+
+[dependencies]
+fs4 = "0.13"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process", "fs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Threading",
+] }
+
+[lints.rust]
+# Windows process and LockFileEx APIs have no safe std equivalent.
+unsafe_code = "allow"
