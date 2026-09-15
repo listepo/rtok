@@ -407,6 +407,8 @@ section! {
         allow_paths: Vec<PathBuf> = Vec::new(),
         search_max: u32 = 50,
         tree_depth: u32 = 2,
+        /// Deprecated compatibility key; grammars are Cargo features now, so this is ignored.
+        languages: Vec<String> = Vec::new(),
     }
 }
 
@@ -1014,6 +1016,16 @@ bogus = true
         )
         .unwrap_err();
         assert!(err.to_string().contains("bogus"), "{err}");
+    }
+
+    #[test]
+    fn read_languages_is_accepted_only_for_compatibility() {
+        let cfg = parse("[plugins.read]\nlanguages = [\"rust\", \"ts\"]\n")
+            .expect("legacy languages key should still parse");
+        assert_eq!(cfg.plugins.read.languages, ["rust", "ts"]);
+
+        let err = parse("[plugins.read]\nlangauges = [\"rust\"]\n").unwrap_err();
+        assert!(err.to_string().contains("langauges"), "{err}");
     }
 
     #[test]
