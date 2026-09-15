@@ -175,6 +175,10 @@ const EXEMPT: &[(&str, &str)] = &[
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (
+        "info",
+        "prints version, paths, disk usage, error count and proxy status",
+    ),
+    (
         "config validate",
         "checks a file and exits nonzero on issues",
     ),

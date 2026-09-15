@@ -12,7 +12,8 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 
 /// `0.1.0 (1a2b3c4d5)` — the sha comes from `build.rs` (T10.4).
-const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("RTOK_GIT_SHA"), ")");
+pub(crate) const VERSION: &str =
+    concat!(env!("CARGO_PKG_VERSION"), " (", env!("RTOK_GIT_SHA"), ")");
 
 /// Token-reduction CLI for AI coding agents. See plan.md for the task list.
 #[derive(Parser)]
@@ -113,6 +114,12 @@ enum Cmd {
         /// Also run the instruction-file audit (T7.2)
         #[arg(long)]
         instructions: bool,
+    },
+    /// Version, effective paths, disk usage, error count and proxy status
+    Info {
+        /// JSON instead of the text lines
+        #[arg(long)]
+        json: bool,
     },
     /// Agent hosts (`rtok agent setup|remove|list …`)
     #[command(visible_alias = "agents")]
@@ -580,6 +587,15 @@ pub fn run() -> Result<()> {
         Cmd::Doctor { instructions } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
             print!("{}", model::doctor(&cfg)?.to_console());
+        }
+        Cmd::Info { json } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let info = crate::info::collect(&cfg, config_file.as_deref());
+            if json {
+                println!("{}", serde_json::to_string_pretty(&info)?);
+            } else {
+                print!("{}", info.to_text());
+            }
         }
         Cmd::Proxy {
             port,

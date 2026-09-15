@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T43 — `rtok info`: version, config, store and proxy in one place
+
+**T43 `rtok info`: version, config, store and proxy in one place** · P2, 2/5 · `src/info.rs` (new), `src/cli.rs`, `src/lib.rs`, `tests/commands_e2e.rs`, `tests/surface_parity.rs`, `tests/trycmd/help.stdout`
+Do: `rtok doctor` reports the host chain and `rtok config show` reports every key, but no command answered "what does rtok use and how much disk does it take". New `src/info.rs` (`collect` + `to_text`, unit tests inside), `Cmd::Info` in `src/cli.rs` with `--json` only (already in the `config_coverage` allow-list, so no new config key), `pub mod info` in `src/lib.rs`, one `EXEMPT` row in `tests/surface_parity.rs` (helper: version, paths, disk usage, proxy status), e2e cases in `tests/commands_e2e.rs`.
+Check: `rtok info` on a fresh home prints version, binary path + bytes, home, config path + bytes, db path + bytes, archive files + bytes, log lines + error count, proxy `host:port` + status, `otel off`; `rtok info --json` parses as JSON with the same fields in bytes; a missing DB prints `-` and still exits 0; unit tests in `src/info.rs` plus e2e cases in `tests/commands_e2e.rs` are green. `just check` green.
+Complexity: 2/5
+Status: done 2026-09-15 · Model: OpenCode / Muse Spark 1.3
+Evidence: `cargo test -p rtok --lib info` 4 passed; `cargo test --test commands_e2e info` 2 passed; fresh-`RTOK_HOME` probe prints every Check line and `--json` parses with `db.bytes: null`; `just check` green (fmt-check, workspace + guest clippy `-D warnings`, `cargo test --workspace` with lib 433 passed, build-min, jscpd 1.10% lines under threshold 2).
+Deviation: two clippy lints in the new file (`collapsible-if`, `obfuscated-if-else`) plus a stale trycmd `help.stdout` snapshot missing the `info` line — all fixed inside the task scope so the Check's `just check` passes.
+
 ## T42 — module status in `agent setup` and `doctor`
 
 **T42 Module status in `agent setup` and `doctor`** · P2, 2/5 · `src/setup/mod.rs`, `src/cli.rs`, `src/doctor.rs`
