@@ -264,24 +264,64 @@ pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
     Ok(out)
 }
 
-/// The rendering: header plus one coloured row per service. The word is padded before it
-/// is coloured: ANSI bytes would otherwise count as width.
+/// The rendering: header plus one coloured row per service.
+///
+/// Colour the bare state word first, then pad with plain spaces. Colouring a
+/// pre-padded string strips the trailing pad (owo-colors), so `proxy` and
+/// `stopped` used to glue into `proxystopped`. Pad width is the visible word
+/// length, never the ANSI byte length.
 pub fn table(rows: &[Row]) -> String {
-    let mut out = format!(
-        "{:<11}{:<10}{:<12}{:<8}{:<9}{:<10}log\n",
-        "service", "state", "supervisor", "child", "uptime", "restarts"
-    );
+    // Fixed floors keep the header readable; content can grow (pids, paths).
+    const SERVICE: usize = 9;
+    const STATE: usize = 9;
+    const SUPERVISOR: usize = 10;
+    const CHILD: usize = 8;
+    const UPTIME: usize = 8;
+    const RESTARTS: usize = 8;
+
+    fn pad_left(cell: &str, width: usize) -> String {
+        format!("{cell:<width$}")
+    }
+
+    /// Colour, then pad with plain spaces so trailing pad survives ANSI.
+    fn state_cell(running: bool, width: usize) -> String {
+        let word = if running { "running" } else { "stopped" };
+        let colored = crate::render::state(word, running);
+        let pad = " ".repeat(width.saturating_sub(word.len()));
+        format!("{colored}{pad}")
+    }
+
     let dash = || "-".to_string();
+    let sep = "  ";
+    let mut out = format!(
+        "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}log\n",
+        sep,
+        pad_left("service", SERVICE),
+        pad_left("state", STATE),
+        pad_left("supervisor", SUPERVISOR),
+        pad_left("child", CHILD),
+        pad_left("uptime", UPTIME),
+        pad_left("restarts", RESTARTS),
+    );
     for r in rows {
-        let word = format!("{:<10}", if r.running { "running" } else { "stopped" });
         out.push_str(&format!(
-            "{:<11}{}{:<12}{:<8}{:<9}{:<10}{}\n",
-            r.service,
-            crate::render::state(&word, r.running),
-            r.supervisor.map(|v| v.to_string()).unwrap_or_else(dash),
-            r.child.map(|v| v.to_string()).unwrap_or_else(dash),
-            r.uptime_secs.map(|s| format!("{s}s")).unwrap_or_else(dash),
-            r.restarts.map(|v| v.to_string()).unwrap_or_else(dash),
+            "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}\n",
+            sep,
+            pad_left(&r.service.to_string(), SERVICE),
+            state_cell(r.running, STATE),
+            pad_left(
+                &r.supervisor.map(|v| v.to_string()).unwrap_or_else(dash),
+                SUPERVISOR
+            ),
+            pad_left(&r.child.map(|v| v.to_string()).unwrap_or_else(dash), CHILD),
+            pad_left(
+                &r.uptime_secs.map(|s| format!("{s}s")).unwrap_or_else(dash),
+                UPTIME
+            ),
+            pad_left(
+                &r.restarts.map(|v| v.to_string()).unwrap_or_else(dash),
+                RESTARTS
+            ),
             r.log.display()
         ));
     }
@@ -442,6 +482,50 @@ mod tests {
         assert_eq!(Service::parse("PROXY").unwrap(), Service::Proxy);
         let e = Service::parse("rm -rf ~").unwrap_err().to_string();
         assert!(e.contains("[demon] services"), "{e}");
+    }
+
+    /// Colouring must not eat the state column's trailing pad — that was how
+    /// `proxy` and `stopped` glued into `proxystopped` on a colouring terminal.
+    #[test]
+    fn status_table_keeps_a_gap_between_service_and_state() {
+        let rows = [Row {
+            service: Service::Proxy,
+            running: false,
+            supervisor: None,
+            child: None,
+            uptime_secs: None,
+            restarts: None,
+            log: PathBuf::from("/tmp/proxy.log"),
+        }];
+        let text = table(&rows);
+        let body = text.lines().nth(1).expect("row");
+        // Strip ANSI so the assertion is about visible columns, not escape bytes.
+        let mut visible = String::new();
+        let mut chars = body.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                if chars.peek() == Some(&'[') {
+                    chars.next();
+                    for x in chars.by_ref() {
+                        if x.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            visible.push(c);
+        }
+        assert!(
+            !visible.contains("proxystopped"),
+            "service and state must not glue: {visible:?}"
+        );
+        let after_proxy = &visible[visible.find("proxy").expect("proxy") + "proxy".len()..];
+        let stopped_at = after_proxy.find("stopped").expect("stopped");
+        assert!(
+            after_proxy[..stopped_at].chars().all(|c| c.is_whitespace()),
+            "gap between proxy and stopped must be whitespace: {visible:?}"
+        );
     }
 
     /// The plumbing `supervise` wires up: a child's output, pumped through the channel and
