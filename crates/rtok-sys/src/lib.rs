@@ -1,27 +1,27 @@
 //! Cross-platform process and file-lock helpers for rtok.
 //!
-//! Unix paths use rustix. Windows paths use `windows-sys` (hence `unsafe_code = allow`
-//! in this crate only — the main `rtok` package keeps `forbid`).
+//! File locks go through [`fs4`] (safe API). Process helpers use rustix on Unix
+//! and `windows-sys` on Windows (`unsafe_code = allow` lives only in this crate —
+//! the main `rtok` package keeps `forbid`).
 
 use std::fs::File;
 use std::io;
 
+use fs4::fs_std::FileExt;
+
 /// Block until an exclusive lock is held on `file`.
 pub fn lock_exclusive(file: &File) -> io::Result<()> {
-    use fs4::fs_std::FileExt;
-    file.lock_exclusive()
+    FileExt::lock_exclusive(file)
 }
 
 /// Non-blocking exclusive lock. `Ok(true)` acquired; `Ok(false)` held elsewhere.
 pub fn try_lock_exclusive(file: &File) -> io::Result<bool> {
-    use fs4::fs_std::FileExt;
-    file.try_lock_exclusive()
+    FileExt::try_lock_exclusive(file)
 }
 
 /// Release a previously acquired exclusive lock.
 pub fn unlock(file: &File) -> io::Result<()> {
-    use fs4::fs_std::FileExt;
-    file.unlock()
+    FileExt::unlock(file)
 }
 
 /// True while `pid` names a live process.
