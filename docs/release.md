@@ -19,7 +19,7 @@ just release
 ```
 
 It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` — pushes it,
-and dispatches the dist **Release** workflow, which builds two targets, creates the tag and the
+and dispatches the dist **Release** workflow, which builds three targets, creates the tag and the
 GitHub Release with the shell installer.
 
 **Or merge the release PR** (T18.5). On every push to `main`, `.github/workflows/release-plz.yml`
@@ -67,6 +67,7 @@ installer and `rtok-update` both read.
 |---|---|---|
 | `aarch64-apple-darwin` | `macos-14` | `rtok-aarch64-apple-darwin.tar.xz` |
 | `x86_64-unknown-linux-gnu` | `ubuntu-22.04` | `rtok-x86_64-unknown-linux-gnu.tar.xz` |
+| `x86_64-pc-windows-msvc` | `windows-latest` | `rtok-x86_64-pc-windows-msvc.zip` |
 
 Intel macOS (`x86_64-apple-darwin`) is intentionally omitted: GitHub's
 `macos-15-intel` runners queue and usually dominate release wall-clock. Release
