@@ -100,6 +100,53 @@ pub fn read_json(path: &Path) -> Result<Value> {
     serde_json::from_str(&raw).with_context(|| path.display().to_string())
 }
 
+/// Every JSON host installer: [`read_json`], let `edit` change the document and report what it
+/// did, then [`write_json`] under `apply`. Each host spelled this out on its own.
+pub fn edit_json(
+    apply: &Apply,
+    path: &Path,
+    edit: impl FnOnce(&mut Value) -> String,
+) -> Result<String> {
+    let mut root = read_json(path)?;
+    let report = edit(&mut root);
+    write_json(apply, path, &root, &report)?;
+    Ok(report)
+}
+
+/// `parent[key]` as an object, created when absent. A `parent` that is not an object becomes
+/// `{}`, and so does a `key` of another shape: a host config is user data, and setup must not
+/// panic on it. Each host installer used to repeat this dance (and its `unwrap`s) per key.
+pub fn object_at<'a>(parent: &'a mut Value, key: &str) -> &'a mut Value {
+    slot(parent, key, Value::is_object, || json!({}))
+}
+
+/// [`object_at`] for an array.
+pub fn array_at<'a>(parent: &'a mut Value, key: &str) -> &'a mut Vec<Value> {
+    slot(parent, key, Value::is_array, || json!([]))
+        .as_array_mut()
+        .expect("slot keeps an array")
+}
+
+fn slot<'a>(
+    parent: &'a mut Value,
+    key: &str,
+    fits: fn(&Value) -> bool,
+    empty: fn() -> Value,
+) -> &'a mut Value {
+    if !parent.is_object() {
+        *parent = json!({});
+    }
+    let v = parent
+        .as_object_mut()
+        .expect("just made an object")
+        .entry(key)
+        .or_insert_with(empty);
+    if !fits(v) {
+        *v = empty();
+    }
+    v
+}
+
 /// Write `body` at `path`, gated by `apply` and `report`: a dry run and a [`NO_CHANGES`] report
 /// write nothing, and the previous file is backed up first when asked.
 ///
@@ -119,8 +166,27 @@ pub fn write(apply: &Apply, path: &Path, body: &str, report: &str) -> Result<()>
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).ok();
     }
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = link_target(path);
     write_atomic(&target, body).with_context(|| target.display().to_string())
+}
+
+/// The file `path` resolves to. `canonicalize` fails on a dangling link (a dotfile manager's
+/// link whose target is not there yet), and the rename then replaced the link with a plain
+/// file; following the links by hand writes the target and keeps the link. A target whose
+/// directory is gone fails the write instead of being created.
+fn link_target(path: &Path) -> PathBuf {
+    let mut p = path.to_path_buf();
+    // 40: the kernel's own ELOOP limit, so a cycle ends.
+    for _ in 0..40 {
+        if let Ok(real) = fs::canonicalize(&p) {
+            return real;
+        }
+        match fs::read_link(&p) {
+            Ok(next) => p = p.parent().unwrap_or(Path::new("")).join(next),
+            Err(_) => break,
+        }
+    }
+    p
 }
 
 /// [`write`]'s atomic swap: write `body` to `.<name>.rtok-tmp-<pid>` beside `target`, copy
@@ -163,47 +229,32 @@ pub fn register_mcp(
     command: &str,
     args: &[&str],
 ) -> Result<String> {
-    let mut root = read_json(path)?;
-    if !root.is_object() {
-        root = json!({});
-    }
-    let entry = json!({"type": "stdio", "command": command, "args": args});
-    let servers = root
-        .as_object_mut()
-        .unwrap()
-        .entry("mcpServers")
-        .or_insert_with(|| json!({}));
-    if !servers.is_object() {
-        *servers = json!({});
-    }
-    if servers.get(name) == Some(&entry) {
-        return Ok(NO_CHANGES.into());
-    }
-    servers[name] = entry;
-    let report = format!("mcpServers.{name}: {command} {}", args.join(" "));
-    write_json(apply, path, &root, &report)?;
-    Ok(report)
+    edit_json(apply, path, |root| {
+        let entry = json!({"type": "stdio", "command": command, "args": args});
+        let servers = object_at(root, "mcpServers");
+        if servers.get(name) == Some(&entry) {
+            return NO_CHANGES.into();
+        }
+        servers[name] = entry;
+        format!("mcpServers.{name}: {command} {}", args.join(" "))
+    })
 }
 
 /// Drop the `<name>` entry from a host's `mcpServers` map. Foreign servers are left alone, and a
 /// map that ends up empty goes with it so the file reads as it did before rtok arrived.
 pub fn unregister_mcp(apply: &Apply, path: &Path, name: &str) -> Result<String> {
-    if !path.exists() {
-        return Ok(NO_CHANGES.into());
-    }
-    let mut root = read_json(path)?;
-    let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
-        return Ok(NO_CHANGES.into());
-    };
-    if servers.remove(name).is_none() {
-        return Ok(NO_CHANGES.into());
-    }
-    if servers.is_empty() {
-        root.as_object_mut().unwrap().remove("mcpServers");
-    }
-    let report = format!("- mcpServers.{name}");
-    write_json(apply, path, &root, &report)?;
-    Ok(report)
+    edit_json(apply, path, |root| {
+        let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
+            return NO_CHANGES.into();
+        };
+        if servers.remove(name).is_none() {
+            return NO_CHANGES.into();
+        }
+        if servers.is_empty() {
+            root.as_object_mut().unwrap().remove("mcpServers");
+        }
+        format!("- mcpServers.{name}")
+    })
 }
 
 /// Ask, unless the answer is already known. `--yes` accepts without asking; on a terminal
@@ -501,6 +552,41 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&real).unwrap(), "{\"a\":1}\n");
         assert_eq!(fs::read_to_string(&link).unwrap(), "{\"a\":1}\n");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn slots_replace_wrong_shapes_and_keep_right_ones() {
+        let mut root = json!([1]);
+        object_at(&mut root, "hooks");
+        assert_eq!(root, json!({"hooks": {}}));
+        let mut root = json!({"hooks": "nope", "keep": {"a": 1}});
+        array_at(object_at(&mut root, "hooks"), "Stop").push(json!(1));
+        assert_eq!(object_at(&mut root, "keep"), &json!({"a": 1}));
+        assert_eq!(root["hooks"], json!({"Stop": [1]}));
+    }
+
+    /// A relative link to a file not created yet was replaced by a plain file.
+    #[cfg(unix)]
+    #[test]
+    fn write_through_a_dangling_symlink_creates_the_target_and_keeps_the_link() {
+        let dir = tmp("dangling");
+        fs::create_dir_all(dir.join("dots")).unwrap();
+        let link = dir.join("linked.json");
+        symlink(Path::new("dots/real.json"), &link).unwrap();
+
+        write(&apply(), &link, "{}\n", "+ something").unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("dots/real.json")).unwrap(),
+            "{}\n"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

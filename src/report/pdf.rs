@@ -47,41 +47,7 @@ enum Block {
 /// ship, which is why the T22.0 survey picked this renderer).
 pub fn render(doc: &Document) -> Vec<u8> {
     let secs = sections(doc);
-    // Paginate first so the contents page knows every section's page number.
-    let mut starts = Vec::with_capacity(secs.len());
-    let mut pages: Vec<Vec<PageItem>> = vec![Vec::new()];
-    for sec in &secs {
-        let mut items = vec![PageItem::Heading(sec.title)];
-        for b in &sec.blocks {
-            match b {
-                Block::Para(p) => {
-                    for line in wrap(p, WIDTH) {
-                        items.push(PageItem::Line(line));
-                    }
-                }
-                Block::Chart { title, pairs } => items.push(PageItem::Chart {
-                    title: title.clone(),
-                    pairs: pairs.clone(),
-                }),
-            }
-        }
-        let mut iter = items.into_iter().peekable();
-        let mut recorded = false;
-        while iter.peek().is_some() {
-            let rest = LINES - pages.last().expect("page").len();
-            // A heading never stands alone at the bottom of a page.
-            let take = chunk(&mut iter, rest);
-            if take.is_empty() {
-                pages.push(Vec::new());
-            } else {
-                if !recorded {
-                    starts.push(pages.len() - 1);
-                    recorded = true;
-                }
-                pages.last_mut().expect("page").extend(take);
-            }
-        }
-    }
+    let (starts, pages) = paginate(&secs);
     let mut doc_pdf = PdfDocument::new("rtok report");
     doc_pdf.add_bookmark("rtok report", 0);
     for (sec, start) in secs.iter().zip(&starts) {
@@ -102,7 +68,60 @@ pub fn render(doc: &Document) -> Vec<u8> {
     )
 }
 
-/// Take up to `rest` line-costs of blocks; a chart is atomic (never split).
+/// Paginate first so the contents page knows every section's page number: each section's
+/// first page index, and the items on every content page.
+fn paginate(secs: &[Sec]) -> (Vec<usize>, Vec<Vec<PageItem>>) {
+    let mut starts = Vec::with_capacity(secs.len());
+    let mut pages: Vec<Vec<PageItem>> = vec![Vec::new()];
+    for sec in secs {
+        let mut items = vec![PageItem::Heading(sec.title)];
+        for b in &sec.blocks {
+            match b {
+                Block::Para(p) => {
+                    for line in wrap(p, WIDTH) {
+                        items.push(PageItem::Line(line));
+                    }
+                }
+                // A chart taller than a page fitted nowhere: `chunk` returned nothing for it
+                // on every fresh page and this loop added pages forever. Past one page it
+                // continues as a second chart under the same title.
+                Block::Chart { title, pairs } => {
+                    let mut parts: Vec<_> = pairs.chunks(LINES - 2).map(<[_]>::to_vec).collect();
+                    if parts.is_empty() {
+                        parts.push(Vec::new()); // an empty chart still shows its title
+                    }
+                    items.extend(parts.into_iter().map(|pairs| PageItem::Chart {
+                        title: title.clone(),
+                        pairs,
+                    }));
+                }
+            }
+        }
+        let mut iter = items.into_iter().peekable();
+        let mut recorded = false;
+        while iter.peek().is_some() {
+            // Cost, not item count: a 58-line chart counted as one line, and the next chart
+            // was drawn past the bottom margin of the same page.
+            let used: usize = pages.last().expect("page").iter().map(PageItem::cost).sum();
+            let rest = LINES.saturating_sub(used);
+            let take = chunk(&mut iter, rest);
+            if take.is_empty() {
+                pages.push(Vec::new());
+            } else {
+                if !recorded {
+                    starts.push(pages.len() - 1);
+                    recorded = true;
+                }
+                pages.last_mut().expect("page").extend(take);
+            }
+        }
+    }
+    (starts, pages)
+}
+
+/// Take up to `rest` line-costs of blocks; a chart is atomic (never split). Every item fits
+/// an empty page (`rest == LINES`), so an empty result always means "next page" and the
+/// next call makes progress.
 fn chunk<I: Iterator<Item = PageItem>>(
     iter: &mut std::iter::Peekable<I>,
     rest: usize,
@@ -112,8 +131,10 @@ fn chunk<I: Iterator<Item = PageItem>>(
     while let Some(next) = iter.peek() {
         let c = next.cost();
         if cost + c > rest {
-            // An orphan heading moves with the block it introduces.
-            if take.len() == 1 && matches!(take[0], PageItem::Heading(_)) {
+            // An orphan heading moves with the block it introduces, unless the page is
+            // empty: a heading plus a full-page chart fit no page, and moving them on
+            // forever was the other endless loop.
+            if take.len() == 1 && matches!(take[0], PageItem::Heading(_)) && rest < LINES {
                 return Vec::new();
             }
             break;
@@ -535,6 +556,38 @@ mod tests {
         bars(&mut ops, TOP, &pairs);
     }
 
+    /// Pagination used to loop forever on a chart taller than a page, and on a heading
+    /// followed by a chart that fills a page by itself.
+    #[rstest]
+    #[case(LINES - 2)]
+    #[case(150)]
+    fn a_chart_of_any_height_paginates(#[case] n: usize) {
+        let pairs: Vec<(String, i64)> = (0..n).map(|i| (format!("p{i}"), i as i64)).collect();
+        let secs = [Sec {
+            title: "Savings",
+            blocks: vec![Block::Chart {
+                title: "t".into(),
+                pairs,
+            }],
+        }];
+        let (starts, pages) = paginate(&secs);
+        assert_eq!(starts, [0]);
+        let drawn: usize = pages
+            .iter()
+            .flatten()
+            .map(|it| match it {
+                PageItem::Chart { pairs, .. } => pairs.len(),
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(drawn, n, "every pair drawn once");
+        assert!(
+            pages
+                .iter()
+                .all(|p| p.iter().map(PageItem::cost).sum::<usize>() <= LINES)
+        );
+    }
+
     #[rstest]
     fn split_word_splits_on_chars_not_bytes() {
         assert_eq!(split_word("ééééé", 2), vec!["éé", "éé", "é"]);
@@ -749,6 +802,7 @@ mod tests {
                 bash_max_output_length: None,
                 auto_compact_window: None,
                 instructions: None,
+                agents: vec![],
             },
             recommendations: vec![],
         }

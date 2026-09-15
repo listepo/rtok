@@ -306,6 +306,12 @@ scratch and **never vendors third-party `.wasm` blobs** — operators install th
 config do not load WASM. The Wasmi host and Cargo feature `wasm-host` land in T32.2; until then
 the flag is visible in `rtok config show --sources` but has no loader.
 
+### Graph backends (`[plugins.graph]`)
+
+`backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` through a
+language server from `PATH` instead of the tags index. Setup walkthrough for
+Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
+
 ## OpenTelemetry
 
 `[otel]` turns on the exporter (`docs/otel.md`). Off until `endpoint` or

@@ -171,3 +171,48 @@ fn stats_json_parses() {
     );
     let _ = fs::remove_dir_all(&home);
 }
+
+#[test]
+fn info_prints_paths_sizes_and_proxy() {
+    let home = tmp("info");
+    let out = ok(&["info"], &home);
+    for want in [
+        "rtok ",
+        "binary ",
+        &format!("home {}", home.display()),
+        "config.toml",
+        "rtok.db (-)",
+        "archive",
+        "errors",
+        "proxy ",
+        "8790",
+        "otel off",
+        "store calls",
+        "disk ",
+    ] {
+        assert!(out.contains(want), "{want} missing:\n{out}");
+    }
+    let _ = fs::remove_dir_all(&home);
+}
+
+#[test]
+fn info_counts_error_lines_and_json_parses() {
+    let home = tmp("info-err");
+    ok(&["info"], &home);
+    let log = home.join("logs").join("rtok.log");
+    fs::create_dir_all(log.parent().unwrap()).unwrap();
+    fs::write(
+        &log,
+        "2026-09-09 15:04:05 error t/n: boom\n2026-09-09 15:04:06 info t/n: ok\n",
+    )
+    .unwrap();
+    let out = ok(&["info"], &home);
+    assert!(out.contains("2 lines, 1 errors"), "{out}");
+    let json = ok(&["info", "--json"], &home);
+    let v: serde_json::Value = serde_json::from_str(&json).expect("info --json is JSON");
+    assert_eq!(v["log"]["errors"], 1);
+    assert_eq!(v["proxy"]["port"], 8790);
+    assert_eq!(v["otel"]["enabled"], false);
+    assert!(v["db"]["bytes"].is_number(), "{v}");
+    let _ = fs::remove_dir_all(&home);
+}

@@ -5,6 +5,7 @@
 
 use crate::config::{Config, Log};
 use crate::store::Store;
+use rustix::fs::{FlockOperation, flock};
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -98,15 +99,34 @@ fn write_line(log: &Log, text: &str) -> std::io::Result<()> {
     if let Some(dir) = log.path.parent() {
         fs::create_dir_all(dir)?;
     }
+    let incoming = text.len() as u64 + 1;
+    if over(log, incoming) {
+        rotate_if_over(log, incoming)?;
+    }
+    writeln!(open_append(&log.path)?, "{text}")
+}
+
+fn open_append(path: &Path) -> std::io::Result<fs::File> {
+    OpenOptions::new().create(true).append(true).open(path)
+}
+
+fn over(log: &Log, incoming: u64) -> bool {
     let len = fs::metadata(&log.path).map(|m| m.len()).unwrap_or(0);
-    if len > 0 && len + text.len() as u64 + 1 > log.max_bytes {
+    len > 0 && len + incoming > log.max_bytes
+}
+
+/// Hooks, `mcp`, `proxy` and `otel flush` append from separate processes. Two past the cap at
+/// once both rotated: the second shifted the first's fresh `.1` to `.2` and then failed to
+/// rename the live file the first had already moved, dropping its own line. The decision is
+/// made again under an exclusive `flock` on the live file, so the loser sees the new small
+/// file and leaves it alone. The lock sits on the inode that gets renamed, so no lock file.
+fn rotate_if_over(log: &Log, incoming: u64) -> std::io::Result<()> {
+    let live = open_append(&log.path)?;
+    flock(&live, FlockOperation::LockExclusive)?;
+    if over(log, incoming) {
         rotate(&log.path, log.files)?;
     }
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log.path)?;
-    writeln!(f, "{text}")
+    Ok(()) // closing `live` releases the lock
 }
 
 /// `rtok.log` → `.1`, `.1` → `.2`, and whatever falls past `[log] files` is deleted. Keeping
@@ -413,6 +433,30 @@ mod tests {
         assert!(enabled(&cfg, "error") && enabled(&cfg, "warn"));
         assert!(!enabled(&cfg, "info") && !enabled(&cfg, "debug"));
         assert!(enabled(&cfg, "PANIC"), "an unreadable level is not dropped");
+    }
+
+    /// The race's loser: its unlocked check saw a full file, but by the time it holds the lock
+    /// another process has rotated. It must not rotate again and push that `.1` to `.2`.
+    #[test]
+    fn a_rotation_decided_on_a_stale_size_is_dropped_under_the_lock() {
+        let dir = tmp("rotate-race");
+        let cfg = cfg_at(&dir, 100, 3);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("rtok.log.1"), "history\n").unwrap();
+        fs::write(&cfg.log.path, "fresh\n").unwrap();
+        rotate_if_over(&cfg.log, 10).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("rtok.log.1")).unwrap(),
+            "history\n"
+        );
+        assert!(!dir.join("rtok.log.2").exists());
+        fs::write(&cfg.log.path, "x".repeat(99)).unwrap();
+        rotate_if_over(&cfg.log, 10).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.join("rtok.log.2")).unwrap(),
+            "history\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

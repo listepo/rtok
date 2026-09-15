@@ -140,8 +140,10 @@ fn normalize(root: &Path, path: &Path) -> PathBuf {
     out
 }
 
+/// `Path::starts_with("")` is true for every path, so an empty root (`allow_paths = [""]`)
+/// would open the whole filesystem; it grants nothing instead.
 fn under(path: &Path, root: &Path) -> bool {
-    path.starts_with(root)
+    !root.as_os_str().is_empty() && path.starts_with(root)
 }
 
 fn cap(cx: &Ctx, text: String) -> Result<String> {
@@ -151,20 +153,21 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
     }
     let id = cx.put_archive(text.as_bytes())?;
     let marker = format!("\n… archived {id} …\n");
+    // The marker is the floor: below its length only the marker comes back, because the id
+    // is what makes the cut lossless. `config validate` rejects `max_chars` < 100 for that.
     let body_budget = max.saturating_sub(marker.chars().count());
     let keep = body_budget / 2;
-    let chars: Vec<char> = text.chars().collect();
-    let head: String = chars.iter().take(keep).collect();
-    let tail: String = chars
-        .iter()
-        .rev()
-        .take(keep)
-        .copied()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    Ok(format!("{head}{marker}{tail}"))
+    // Byte offsets of the first and last `keep` chars; no `Vec<char>` copy of the whole file.
+    let head_end = text.char_indices().nth(keep).map_or(text.len(), |(i, _)| i);
+    let tail_start = match keep {
+        0 => text.len(),
+        k => text.char_indices().rev().nth(k - 1).map_or(0, |(i, _)| i),
+    };
+    Ok(format!(
+        "{}{marker}{}",
+        &text[..head_end],
+        &text[tail_start..]
+    ))
 }
 
 #[cfg(test)]
@@ -281,6 +284,17 @@ pub(crate) mod tests {
         let deep = "../".repeat(32) + "etc/passwd";
         assert!(read(&Ctx::new(&cx), &deep, "full", None).is_err());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `RTOK_PLUGINS_READ_ALLOW_PATHS=` once became `[""]`, and `starts_with("")` is always true.
+    #[test]
+    fn empty_allow_root_grants_nothing() {
+        let err = resolve(
+            Path::new("/nonexistent-cwd"),
+            Path::new("/etc/passwd"),
+            &[PathBuf::new()],
+        );
+        assert!(err.is_err(), "{err:?}");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! OpenCode installer (`rtok agent setup opencode --proxy`, plan T11.5).
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
+use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::apply;
@@ -9,31 +9,19 @@ use crate::config::Config;
 
 /// Set, dry-run, or remove `env.OPENAI_BASE_URL` in OpenCode's JSON config.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    let path = &cfg.setup.opencode.config_path;
-    let mut root = read_json(path)?;
-    if !root.is_object() {
-        root = json!({});
-    }
     let url = super::openai_proxy_url(cfg);
-    let report = if remove {
-        strip(&mut root)
-    } else {
-        insert(&mut root, &url)
-    };
-    write_json(&apply(cfg), path, &root, &report)?;
-    Ok(report)
+    edit_json(&apply(cfg), &cfg.setup.opencode.config_path, |root| {
+        if remove {
+            strip(root)
+        } else {
+            insert(root, &url)
+        }
+    })
 }
 
 fn insert(root: &mut Value, url: &str) -> String {
     let want = json!(url);
-    let env = root
-        .as_object_mut()
-        .unwrap()
-        .entry("env")
-        .or_insert_with(|| json!({}));
-    if !env.is_object() {
-        *env = json!({});
-    }
+    let env = object_at(root, "env");
     let prev = env.get("OPENAI_BASE_URL").cloned();
     if prev.as_ref() == Some(&want) {
         return NO_CHANGES.into();

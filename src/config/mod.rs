@@ -14,11 +14,18 @@ pub mod validate;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// The annotated reference file, written verbatim by `rtok config init`.
 pub const DEFAULT_TOML: &str = include_str!("../../config/default.toml");
+
+/// Write a config file with the installers' atomic swap: temp file, then rename. With a plain
+/// `fs::write`, a kill or a full disk halfway through left `config.toml` truncated, and every
+/// later rtok command, hooks included, failed to parse it.
+pub(crate) fn write_file(path: &Path, body: &str) -> Result<()> {
+    rtok_agent_sdk::write(&rtok_agent_sdk::Apply::default(), path, body, "config")
+}
 
 /// Plugin catalogue: `(id, default_on)`. The registry's manifests must match this list
 /// (asserted by a test in `plugins`), and [`Plugins`] has one field per id.
@@ -646,10 +653,7 @@ impl Config {
         let before = std::fs::read_to_string(&path).unwrap_or_default();
         let diff = crate::render::file_diff(&path, &before, DEFAULT_TOML);
         if !dry_run {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&path, DEFAULT_TOML).with_context(|| path.display().to_string())?;
+            write_file(&path, DEFAULT_TOML)?;
         }
         Ok((path, diff))
     }

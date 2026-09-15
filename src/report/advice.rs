@@ -24,9 +24,10 @@ fn kinds_for_hook(event: &str) -> &'static [&'static str] {
 
 /// Hooks that are idle by design: they should not fire often and never record a
 /// `Measurement`. `PostToolUse` is deliberately excluded — a busy healthy session
-/// fires it constantly without a Measurement kind on that path (T22.6).
+/// fires it constantly without a Measurement kind on that path (T22.6). So is `SessionEnd`:
+/// `agent setup claude` installs it to close the session row, once per session.
 fn idle_by_design(event: &str) -> bool {
-    matches!(event, "PreCompact" | "Stop" | "SessionEnd")
+    matches!(event, "PreCompact" | "Stop")
 }
 
 /// "1 row" / "N rows" — evidence strings name counts, so they decline them.
@@ -203,5 +204,15 @@ fn archive_window(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
                 count(e.cost_rows, "expand Measurement row")
             ),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Once setup installed `SessionEnd`, a busy week would have told the user to remove it.
+    #[test]
+    fn the_session_end_rtok_installs_is_not_idle() {
+        assert!(!super::idle_by_design("SessionEnd"));
+        assert!(super::idle_by_design("Stop"));
     }
 }

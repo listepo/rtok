@@ -267,8 +267,11 @@ impl RtokEnv {
 
         let value = if is_array {
             Value::from(
+                // `VAR=` is an empty list, not `[""]`: an empty path root matches every path.
                 raw.split(',')
-                    .map(|s| Value::from(s.trim()))
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(Value::from)
                     .collect::<Vec<_>>(),
             )
         } else {
@@ -659,6 +662,20 @@ mod tests {
         );
         let cfg: Config = figment.extract().unwrap();
         assert_eq!(cfg.plugins.read.allow_paths.len(), 2);
+
+        let figment = assemble(
+            &home,
+            Some(&Config::path_for(&home)),
+            None,
+            RtokEnv::from_pairs(&[("PLUGINS_READ_ALLOW_PATHS", "")]),
+            None,
+            RtokEnv::from_dotenv_pairs(&[]),
+        );
+        let cfg: Config = figment.extract().unwrap();
+        assert!(
+            cfg.plugins.read.allow_paths.is_empty(),
+            "empty var is no roots"
+        );
 
         let figment = assemble(
             &home,

@@ -71,8 +71,11 @@ rtok doctor
 + SessionStart rtok hook SessionStart
 + PreCompact rtok hook PreCompact
 + PostCompact rtok hook PostCompact
-7 additions
++ SessionEnd rtok hook SessionEnd
+8 additions
 ```
+
+Each host ends with the state of every rtok module in it — `✓ installed`, `✗ not installed`, `− not supported` for `hooks`, `mcp`, `proxy` and `plugin`; `rtok doctor` lists the same for every host under `agents`.
 
 `rtok agent remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
 

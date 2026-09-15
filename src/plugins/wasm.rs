@@ -51,7 +51,12 @@ struct WasmHost {
 struct WasmInner {
     store: Store<WasmHost>,
     instance: Instance,
+    fuel: u64,
 }
+
+/// Fuel per guest call (≈ wasm instructions). Without a budget a guest `loop` never returns and
+/// wedges the synchronous `rtok mcp` loop for every tool, not just the plugin's own.
+const FUEL: u64 = 100_000_000;
 
 /// One loaded `.wasm` plugin instance.
 pub struct WasmPlugin {
@@ -82,8 +87,18 @@ struct WasmToolDef {
 
 impl WasmPlugin {
     pub fn load(path: &Path, estimator: &crate::config::Estimator) -> Result<Self, Error> {
+        Self::load_with_fuel(path, estimator, FUEL)
+    }
+
+    fn load_with_fuel(
+        path: &Path,
+        estimator: &crate::config::Estimator,
+        fuel: u64,
+    ) -> Result<Self, Error> {
         let wasm = std::fs::read(path).map_err(|e| Error::new(e.to_string()))?;
-        let engine = Engine::default();
+        let mut config = wasmi::Config::default();
+        config.consume_fuel(true);
+        let engine = Engine::new(&config);
         let module = Module::new(&engine, &wasm)?;
         let mut store = Store::new(
             &engine,
@@ -142,7 +157,10 @@ impl WasmPlugin {
                 Ok(())
             },
         )?;
+        // A `start` function runs guest code too, so it gets a budget like every call.
+        store.set_fuel(fuel)?;
         let instance = linker.instantiate_and_start(&mut store, &module)?;
+        store.set_fuel(fuel)?;
         let packed = instance
             .get_typed_func::<(), i64>(&store, "rtok_manifest")?
             .call(&mut store, ())?;
@@ -173,7 +191,11 @@ impl WasmPlugin {
             surfaces: leak_slice(surfaces),
             default_on: parsed.default_on,
             page: DashboardPage::new(parsed.title, parsed.summary, parsed.saves_tokens),
-            inner: Mutex::new(WasmInner { store, instance }),
+            inner: Mutex::new(WasmInner {
+                store,
+                instance,
+                fuel,
+            }),
         })
     }
 
@@ -181,6 +203,8 @@ impl WasmPlugin {
     #[allow(dead_code)] // `rtok mcp` dispatch wiring follows; tests call this directly.
     pub fn invoke_mcp(&self, _name: &str, _args: &Value, cx: &Ctx) -> Result<String, Error> {
         let mut inner = self.inner.lock().unwrap();
+        let fuel = inner.fuel;
+        inner.store.set_fuel(fuel)?;
         let packed = inner
             .instance
             .get_typed_func::<(i32, i32, i32, i32, i32, i32), i64>(
@@ -202,6 +226,10 @@ impl WasmPlugin {
 
     fn guest_bytes(&self, export: &str) -> Vec<u8> {
         let mut inner = self.inner.lock().unwrap();
+        let fuel = inner.fuel;
+        if inner.store.set_fuel(fuel).is_err() {
+            return Vec::new();
+        }
         let packed = inner
             .instance
             .get_typed_func::<(), i64>(&inner.store, export)
@@ -257,13 +285,7 @@ fn mem_read(caller: &Caller<WasmHost>, ptr: i32, len: i32) -> Result<Vec<u8>, Er
         .get_export("memory")
         .and_then(|e| e.into_memory())
         .ok_or_else(|| Error::new("guest memory export missing"))?;
-    let data = memory.data(caller);
-    let start = ptr as usize;
-    let end = start + len as usize;
-    if end > data.len() {
-        return Err(Error::new("guest memory read out of bounds"));
-    }
-    Ok(data[start..end].to_vec())
+    guest_slice(memory.data(caller), ptr, len)
 }
 
 fn mem_read_store(
@@ -275,13 +297,19 @@ fn mem_read_store(
     let memory = instance
         .get_memory(store, "memory")
         .ok_or_else(|| Error::new("guest memory export missing"))?;
-    let data = memory.data(store);
-    let start = ptr as usize;
-    let end = start + len as usize;
-    if end > data.len() {
-        return Err(Error::new("guest memory read out of bounds"));
-    }
-    Ok(data[start..end].to_vec())
+    guest_slice(memory.data(store), ptr, len)
+}
+
+/// Copy the guest's `(ptr, len)` out of `data`. Both halves come from an untrusted `.wasm`:
+/// `ptr as usize` sign-extended a negative `ptr` and `start + len` overflowed, so the old
+/// `data[start..end]` panicked the host (and `rtok mcp` with it) instead of failing the call.
+fn guest_slice(data: &[u8], ptr: i32, len: i32) -> Result<Vec<u8>, Error> {
+    usize::try_from(ptr)
+        .ok()
+        .zip(usize::try_from(len).ok())
+        .and_then(|(p, l)| data.get(p..p.checked_add(l)?))
+        .map(<[u8]>::to_vec)
+        .ok_or_else(|| Error::new("guest memory read out of bounds"))
 }
 
 fn unpack_i64(packed: i64) -> (i32, i32) {
@@ -358,5 +386,40 @@ mod tests {
         assert!(rows[0].est_before >= rows[0].est_after);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn guest_slice_rejects_what_used_to_panic() {
+        let data = [7u8; 16];
+        assert!(guest_slice(&data, -1, 2).is_err(), "negative ptr");
+        assert!(guest_slice(&data, 0, -1).is_err(), "negative len");
+        assert!(
+            guest_slice(&data, i32::MAX, i32::MAX).is_err(),
+            "past the end"
+        );
+        assert!(guest_slice(&data, 8, 9).is_err(), "one byte past the end");
+        assert_eq!(guest_slice(&data, 8, 8).unwrap(), vec![7u8; 8]);
+        assert!(guest_slice(&data, 16, 0).unwrap().is_empty());
+    }
+
+    /// A guest that never returns fails `load` once its fuel is gone instead of hanging.
+    #[test]
+    fn endless_guest_runs_out_of_fuel() {
+        let dir = std::env::temp_dir().join(format!("rtok-wasm-fuel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("spin.wasm");
+        std::fs::write(
+            &path,
+            r#"(module
+                 (memory (export "memory") 1)
+                 (func (export "rtok_manifest") (result i64)
+                   (loop $l (br $l))
+                   (i64.const 0)))"#,
+        )
+        .unwrap();
+        let cfg = crate::config::Config::default();
+        let err = WasmPlugin::load_with_fuel(&path, &cfg.estimator, 10_000).err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.is_some(), "an endless guest must not load");
     }
 }

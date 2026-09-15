@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, PluginLink, read_json, write_json};
+use rtok_agent_sdk::{NO_CHANGES, PluginLink, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{apply, plugin_src};
@@ -21,15 +21,13 @@ const POST_CMD: &str = "rtok hook PostToolUse --host cursor";
 
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
-    let path = &cfg.setup.cursor.hooks_path;
-    let mut root = read_json(path)?;
-    let report = if remove {
-        strip_ours(&mut root)
-    } else {
-        insert_ours(&mut root)
-    };
-    write_json(&apply(cfg), path, &root, &report)?;
-    Ok(report)
+    edit_json(&apply(cfg), &cfg.setup.cursor.hooks_path, |root| {
+        if remove {
+            strip_ours(root)
+        } else {
+            insert_ours(root)
+        }
+    })
 }
 
 /// `~/.cursor/mcp.json` — the sibling of `hooks.json`.
@@ -91,52 +89,27 @@ pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
 }
 
 fn insert_ours(root: &mut Value) -> String {
-    if !root.is_object() {
-        *root = json!({});
-    }
-    root.as_object_mut()
-        .unwrap()
-        .entry("version")
-        .or_insert_with(|| json!(1));
-    let hooks = root
-        .as_object_mut()
-        .unwrap()
-        .entry("hooks")
-        .or_insert_with(|| json!({}));
-    if !hooks.is_object() {
-        *hooks = json!({});
-    }
+    let hooks = object_at(root, "hooks");
     let mut added = Vec::new();
     for (event, cmd) in [
         ("beforeShellExecution", PRE_CMD),
         ("afterShellExecution", POST_CMD),
     ] {
-        if insert_hook(hooks, event, cmd) {
+        let arr = array_at(hooks, event);
+        if !arr.iter().any(|e| is_cmd(e, cmd)) {
+            arr.push(json!({"command": cmd}));
             added.push(format!("+ {event} {cmd}"));
         }
     }
+    root.as_object_mut()
+        .expect("object_at made it an object")
+        .entry("version")
+        .or_insert(json!(1));
     if added.is_empty() {
         NO_CHANGES.into()
     } else {
         added.join("\n")
     }
-}
-
-fn insert_hook(hooks: &mut Value, event: &str, cmd: &str) -> bool {
-    let arr = hooks
-        .as_object_mut()
-        .unwrap()
-        .entry(event)
-        .or_insert_with(|| json!([]));
-    if !arr.is_array() {
-        *arr = json!([]);
-    }
-    let arr = arr.as_array_mut().unwrap();
-    if arr.iter().any(|e| is_cmd(e, cmd)) {
-        return false;
-    }
-    arr.push(json!({"command": cmd}));
-    true
 }
 
 fn strip_ours(root: &mut Value) -> String {
