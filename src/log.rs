@@ -5,7 +5,6 @@
 
 use crate::config::{Config, Log};
 use crate::store::Store;
-use rustix::fs::{FlockOperation, flock};
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -122,7 +121,7 @@ fn over(log: &Log, incoming: u64) -> bool {
 /// file and leaves it alone. The lock sits on the inode that gets renamed, so no lock file.
 fn rotate_if_over(log: &Log, incoming: u64) -> std::io::Result<()> {
     let live = open_append(&log.path)?;
-    flock(&live, FlockOperation::LockExclusive)?;
+    rtok_sys::lock_exclusive(&live)?;
     if over(log, incoming) {
         rotate(&log.path, log.files)?;
     }
