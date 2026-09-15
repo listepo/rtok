@@ -39,6 +39,7 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
@@ -133,6 +134,11 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - name: "Cache Cargo build"
+        uses: "Swatinem/rust-cache@v2"
+        with:
+          "cache-on-failure": true
+          "shared-key": "release-dist"
       - name: "Discover macOS codesign identity"
         if: "runner.os == 'macOS'"
         run: |
@@ -203,6 +209,33 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Report artifact sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="target/distrib"
+          if [ ! -d "$root" ]; then
+            echo "no $root yet; skipping size report"
+            exit 0
+          fi
+          {
+            echo "### Release artifact sizes"
+            echo
+            echo "| File | Size |"
+            echo "|---|---:|"
+            find "$root" -maxdepth 1 -type f \( \
+              -name '*.tar.xz' -o -name '*-update' -o -name 'rtok-installer.sh' -o -name 'rtok.rb' -o -name 'sha256.sum' -o -name 'source.tar.gz' \
+            \) -print0 | sort -z | while IFS= read -r -d '' f; do
+              bytes=$(wc -c <"$f" | tr -d ' ')
+              human=$(awk -v b="$bytes" 'BEGIN {
+                if (b < 1024) { printf "%d B", b; exit }
+                if (b < 1048576) { printf "%.1f KiB", b/1024; exit }
+                printf "%.2f MiB", b/1048576
+              }')
+              echo "| $(basename "$f") | ${human} (${bytes} bytes) |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v7
         with:
@@ -250,6 +283,33 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: Report artifact sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="target/distrib"
+          if [ ! -d "$root" ]; then
+            echo "no $root yet; skipping size report"
+            exit 0
+          fi
+          {
+            echo "### Release artifact sizes"
+            echo
+            echo "| File | Size |"
+            echo "|---|---:|"
+            find "$root" -maxdepth 1 -type f \( \
+              -name '*.tar.xz' -o -name '*-update' -o -name 'rtok-installer.sh' -o -name 'rtok.rb' -o -name 'sha256.sum' -o -name 'source.tar.gz' \
+            \) -print0 | sort -z | while IFS= read -r -d '' f; do
+              bytes=$(wc -c <"$f" | tr -d ' ')
+              human=$(awk -v b="$bytes" 'BEGIN {
+                if (b < 1024) { printf "%d B", b; exit }
+                if (b < 1048576) { printf "%.1f KiB", b/1024; exit }
+                printf "%.2f MiB", b/1048576
+              }')
+              echo "| $(basename "$f") | ${human} (${bytes} bytes) |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: "Upload artifacts"
         uses: actions/upload-artifact@v7
         with:
@@ -321,6 +381,27 @@ jobs:
         run: |
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+
+          # Append archive sizes so the Release page shows MiB without opening Assets.
+          {
+            echo
+            echo "## Download sizes"
+            echo
+            echo "| File | Size |"
+            echo "|---|---:|"
+            find artifacts -maxdepth 1 -type f \( \
+              -name '*.tar.xz' -o -name '*-update' -o -name 'rtok-installer.sh' -o -name 'rtok.rb' -o -name 'source.tar.gz' \
+            \) -print0 | sort -z | while IFS= read -r -d '' f; do
+              bytes=$(wc -c <"$f" | tr -d ' ')
+              human=$(awk -v b="$bytes" 'BEGIN {
+                if (b < 1024) { printf "%d B", b; exit }
+                if (b < 1048576) { printf "%.1f KiB", b/1024; exit }
+                printf "%.2f MiB", b/1048576
+              }')
+              echo "| $(basename "$f") | ${human} |"
+            done
+          } >> "$RUNNER_TEMP/notes.txt"
+          sed -n '/^## Download sizes$/,$p' "$RUNNER_TEMP/notes.txt" | tee -a "$GITHUB_STEP_SUMMARY"
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 

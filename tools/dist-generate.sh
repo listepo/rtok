@@ -90,10 +90,101 @@ if identity_line in text:
         "      # CODESIGN_IDENTITY: set on macOS by .github/build-setup.yml (not a secret)\n",
     )
 
-if text == original and "secrets.MACOS_CERTIFICATE" not in text and "macos-sign" in pathlib.Path("dist-workspace.toml").read_text():
-    print("dist-generate patch: macos-sign is on but CODESIGN/MACOS mapping not applied", file=sys.stderr)
+REPORT = """      - name: Report artifact sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="target/distrib"
+          if [ ! -d "$root" ]; then
+            echo "no $root yet; skipping size report"
+            exit 0
+          fi
+          {
+            echo "### Release artifact sizes"
+            echo
+            echo "| File | Size |"
+            echo "|---|---:|"
+            find "$root" -maxdepth 1 -type f \\( \\
+              -name '*.tar.xz' -o -name '*-update' -o -name 'rtok-installer.sh' -o -name 'rtok.rb' -o -name 'sha256.sum' -o -name 'source.tar.gz' \\
+            \\) -print0 | sort -z | while IFS= read -r -d '' f; do
+              bytes=$(wc -c <"$f" | tr -d ' ')
+              human=$(awk -v b="$bytes" 'BEGIN {
+                if (b < 1024) { printf "%d B", b; exit }
+                if (b < 1048576) { printf "%.1f KiB", b/1024; exit }
+                printf "%.2f MiB", b/1048576
+              }')
+              echo "| $(basename "$f") | ${human} (${bytes} bytes) |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+"""
+
+if "Report artifact sizes" not in text:
+    for anchor in (
+        "          name: artifacts-build-local-${{ join(matrix.targets, '_') }}",
+        "          name: artifacts-build-global",
+    ):
+        idx = text.find(anchor)
+        if idx < 0:
+            print(f"dist-generate patch: missing upload anchor {anchor}", file=sys.stderr)
+            sys.exit(1)
+        step_start = text.rfind('      - name: "Upload artifacts"', 0, idx)
+        if step_start < 0:
+            print("dist-generate patch: Upload step missing", file=sys.stderr)
+            sys.exit(1)
+        text = text[:step_start] + REPORT + "\n" + text[step_start:]
+
+create_old = """          # Write and read notes from a file to avoid quoting breaking things
+          echo \"$ANNOUNCEMENT_BODY\" > $RUNNER_TEMP/notes.txt
+
+          gh release create \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --title \"$ANNOUNCEMENT_TITLE\" --notes-file \"$RUNNER_TEMP/notes.txt\" artifacts/*
+"""
+
+create_new = """          # Write and read notes from a file to avoid quoting breaking things
+          echo \"$ANNOUNCEMENT_BODY\" > $RUNNER_TEMP/notes.txt
+
+          # Append archive sizes so the Release page shows MiB without opening Assets.
+          {
+            echo
+            echo \"## Download sizes\"
+            echo
+            echo \"| File | Size |\"
+            echo \"|---|---:|\"
+            find artifacts -maxdepth 1 -type f \\( \\
+              -name '*.tar.xz' -o -name '*-update' -o -name 'rtok-installer.sh' -o -name 'rtok.rb' -o -name 'source.tar.gz' \\
+            \\) -print0 | sort -z | while IFS= read -r -d '' f; do
+              bytes=$(wc -c <\"$f\" | tr -d ' ')
+              human=$(awk -v b=\"$bytes\" 'BEGIN {
+                if (b < 1024) { printf \"%d B\", b; exit }
+                if (b < 1048576) { printf \"%.1f KiB\", b/1024; exit }
+                printf \"%.2f MiB\", b/1048576
+              }')
+              echo \"| $(basename \"$f\") | ${human} |\"
+            done
+          } >> \"$RUNNER_TEMP/notes.txt\"
+          sed -n '/^## Download sizes$/,$p' \"$RUNNER_TEMP/notes.txt\" | tee -a \"$GITHUB_STEP_SUMMARY\"
+
+          gh release create \"${{ needs.plan.outputs.tag }}\" --target \"$RELEASE_COMMIT\" $PRERELEASE_FLAG --title \"$ANNOUNCEMENT_TITLE\" --notes-file \"$RUNNER_TEMP/notes.txt\" artifacts/*
+"""
+
+if "## Download sizes" not in text:
+    if create_old not in text:
+        print("dist-generate patch: Create GitHub Release block missing/changed", file=sys.stderr)
+        sys.exit(1)
+    text = text.replace(create_old, create_new, 1)
+
+if (
+    text == original
+    and "secrets.MACOS_CERTIFICATE" not in text
+    and "macos-sign" in pathlib.Path("dist-workspace.toml").read_text()
+):
+    print(
+        "dist-generate patch: macos-sign is on but CODESIGN/MACOS mapping not applied",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 path.write_text(text)
-print(f"patched {path}: MACOS_* secrets mapped; CODESIGN_IDENTITY left to build-setup")
+print(
+    f"patched {path}: MACOS_* secrets, artifact size reports, release notes sizes"
+)
 PY

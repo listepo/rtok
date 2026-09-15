@@ -2,11 +2,22 @@
 # github-build-setup). Kept one level above .github/workflows so GitHub does not
 # treat it as a standalone workflow.
 #
+# Restore Cargo registry/git/target between releases. Upload always — release
+# runners are few, and a warm cache cuts the multi-minute `dist build` on each
+# target. Keyed per runner OS + job name so macOS and Linux do not collide.
+#
 # dist signs with CODESIGN_IDENTITY + CODESIGN_CERTIFICATE(+_PASSWORD). This
 # repo stores the cert as MACOS_CERTIFICATE / MACOS_CERTIFICATE_PWD (same as
 # ketch); just dist-generate maps those names into release.yml. Identity is not
 # a secret here — we import the cert into a throwaway keychain and read the
 # Developer ID Application identity out of it, matching ketch's release.yml.
+
+- name: Cache Cargo build
+  uses: Swatinem/rust-cache@v2
+  with:
+    shared-key: release-dist
+    # Release builds are rare; always save so the next cut is warm.
+    cache-on-failure: true
 
 - name: Discover macOS codesign identity
   if: runner.os == 'macOS'
