@@ -50,6 +50,10 @@ impl Agent for Pi {
         }
     }
 
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[rtok_plugin_sdk::Surface::Cli]
+    }
+
     fn files(&self, _cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
         Vec::new()
     }

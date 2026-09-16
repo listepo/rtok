@@ -1,9 +1,15 @@
-# Claude Code
+# Claude
 
-`rtok agents setup claude` — the Claude Code CLI (`claude`).
+`rtok agents setup claude` — the Claude Code CLI (`claude`) and the Claude Desktop app. They
+keep separate files, so each selected app installs on its own (`--cli` / `--desktop`).
 
-Files: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP). Both are copied to
-`<name>.bak-<ts>` before the first write; an unchanged file is not copied twice.
+- CLI: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP).
+- Desktop: `claude_desktop_config.json` under `~/Library/Application Support/Claude` on
+  macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` elsewhere. The app starts without a
+  shell PATH, so the MCP entry carries the absolute `rtok` binary.
+
+Every file is copied to `<name>.bak-<ts>` before the first write; an unchanged file is not
+copied twice.
 
 ## Modules
 
@@ -13,15 +19,22 @@ Files: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP). Both
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`) |
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
 | plugin | no | Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link |
+| hooks (desktop) | no | Claude Desktop has no hook events |
+| mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json` |
+| proxy (desktop) | no | Claude Desktop has no base-URL setting; its requests do not pass through the proxy |
+| plugin (desktop) | no | Claude Desktop loads MCP from claude_desktop_config.json; there is no plugin directory to link |
 
 `--replace` (with `--yes`) drops legacy token hooks (rtk, lean-ctx, caveman) and retargets the
-proxy; see `migrate.rs`.
+proxy; see `migrate.rs`. On the desktop it is a plain install.
 
 ## rtok plugins this host reaches
 
-- Through hooks: cmd, read, inject, guard, memory (hook half).
-- Through MCP: read, archive, memory, graph, toon.
-- Through the proxy: measure, archive, proxy, toon, compress.
+Each plugin declares its surfaces (hook, mcp, proxy, cli); hooks carry `hook` and `cli`, MCP
+carries `mcp`, the proxy carries `proxy`. `rtok agents setup claude` prints the split as
+installed / not installed / not supported.
 
-`rtok agents setup claude` prints the split as installed / not installed / not supported from
-each plugin's surfaces.
+Reachable (cli): measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon, compress
+Not reachable (cli): -
+
+Reachable (desktop): read, archive, memory, graph, toon
+Not reachable (desktop): measure, cmd, proxy, inject, guard, compress

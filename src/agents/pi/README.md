@@ -17,7 +17,8 @@ No config file is edited: the install is one linked extension, `<extensions_path
 
 ## rtok plugins this host reaches
 
-- Through the extension: cmd (`tool_call` bash → `rtok run -- …`, `tool_result` → `rtok filter`)
-  and measure (the `rtok run` rows).
-- Not reachable: read, inject, guard, memory, graph, archive, toon, proxy, compress — hook, MCP
-  and proxy surfaces.
+The extension owns the bash call path (`tool_call` bash → `rtok run -- …`, `tool_result` →
+`rtok filter`), which is the `cli` surface. Hook, MCP and proxy surfaces have no path in.
+
+Reachable: measure, cmd
+Not reachable: read, archive, proxy, inject, guard, memory, graph, toon, compress

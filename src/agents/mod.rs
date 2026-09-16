@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use rtok_agent_sdk::NO_CHANGES;
+use rtok_plugin_sdk::Surface;
 
 use crate::config::Config;
 
@@ -116,6 +117,11 @@ pub trait Agent: Sync {
     }
     /// Modules found in the host's files: the same markers the installer writes.
     fn installed(&self, cfg: &Config, kind: Kind) -> Vec<&'static str>;
+    /// The plugin surfaces the linked `plugin` module serves on this host (Cursor: hook and
+    /// MCP as one unit; pi: the bash call path). Empty where there is no plugin module.
+    fn plugin_surfaces(&self) -> &'static [Surface] {
+        &[]
+    }
     /// Run the installer. One report per step; a step that touched nothing reports
     /// [`NO_CHANGES`].
     fn apply(&self, cfg: &Config, kind: Kind, mode: Mode) -> Result<Vec<String>>;
@@ -244,26 +250,34 @@ pub fn module_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<ModuleRow
         .collect()
 }
 
-/// `✓ hooks   installed` — green, red `✗` for not installed, grey `−` for not supported,
-/// coloured only where stdout takes colour (see `render`). `console = false` drops marks and
-/// colour: the doctor text also lands in the PDF report, whose built-in font has no `✓`.
-pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
-    use owo_colors::{OwoColorize, Stream};
-    let mut out = String::new();
-    for row in rows {
-        let (mark, word) = match row.state {
-            ModuleState::Installed => ("✓ ", "installed"),
-            ModuleState::NotInstalled => ("✗ ", "not installed"),
-            ModuleState::NotSupported => ("− ", "not supported"),
-        };
-        let mark = if console { mark } else { "" };
-        let line = format!("{indent}{mark}{:<7} {word}{}", row.name, row.note);
-        if !console {
-            out.push_str(&line);
-            out.push('\n');
-            continue;
+impl ModuleState {
+    fn mark(self) -> &'static str {
+        match self {
+            ModuleState::Installed => "✓ ",
+            ModuleState::NotInstalled => "✗ ",
+            ModuleState::NotSupported => "− ",
         }
-        let line = match row.state {
+    }
+
+    fn word(self) -> &'static str {
+        match self {
+            ModuleState::Installed => "installed",
+            ModuleState::NotInstalled => "not installed",
+            ModuleState::NotSupported => "not supported",
+        }
+    }
+
+    /// `{indent}{mark}{text}` — green, red `✗` for not installed, grey `−` for not supported,
+    /// coloured only where stdout takes colour (see `render`). `console = false` drops marks
+    /// and colour: the doctor text also lands in the PDF report, whose built-in font has no
+    /// `✓`.
+    fn line(self, indent: &str, text: &str, console: bool) -> String {
+        use owo_colors::{OwoColorize, Stream};
+        if !console {
+            return format!("{indent}{text}\n");
+        }
+        let line = format!("{indent}{}{text}", self.mark());
+        let line = match self {
             ModuleState::Installed => line
                 .if_supports_color(Stream::Stdout, |t| t.green())
                 .to_string(),
@@ -274,8 +288,115 @@ pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
                 .if_supports_color(Stream::Stdout, |t| t.bright_black())
                 .to_string(),
         };
-        out.push_str(&line);
-        out.push('\n');
+        format!("{line}\n")
+    }
+}
+
+/// `✓ hooks   installed`, one line per module row.
+pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
+    rows.iter()
+        .map(|row| {
+            let text = format!("{:<7} {}{}", row.name, row.state.word(), row.note);
+            row.state.line(indent, &text, console)
+        })
+        .collect()
+}
+
+/// One of rtok's own plugins as a host variant reaches it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PluginRow {
+    pub id: &'static str,
+    /// `[plugins.<id>] enabled`; printed as `(off)` when false.
+    pub on: bool,
+    pub state: ModuleState,
+}
+
+/// The modules that carry a plugin surface into a host: hooks carry `hook` and the bash
+/// call path (`cli`), MCP carries `mcp`, the proxy carries `proxy`, and the linked plugin
+/// carries whatever [`Agent::plugin_surfaces`] says it serves.
+fn modules_for(agent: &dyn Agent, surface: Surface) -> Vec<&'static str> {
+    let mut out = match surface {
+        Surface::Hook | Surface::Cli => vec!["hooks"],
+        Surface::Mcp => vec!["mcp"],
+        Surface::Proxy => vec!["proxy"],
+    };
+    if agent.plugin_surfaces().contains(&surface) {
+        out.push("plugin");
+    }
+    out
+}
+
+/// True when at least one of the plugin's surfaces has a module setup can write here.
+pub fn reaches(agent: &dyn Agent, kind: Kind, surfaces: &[Surface]) -> bool {
+    surfaces.iter().any(|&s| {
+        modules_for(agent, s)
+            .iter()
+            .any(|m| !matches!(agent.support(kind, m), Support::No(_)))
+    })
+}
+
+/// Every catalogue plugin grouped like the modules: installed when one of its surfaces rides
+/// an installed module, not installed when one could, not supported otherwise.
+pub fn plugin_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<PluginRow> {
+    let modules = module_rows(agent, kind, cfg);
+    let state_of = |name: &str| modules.iter().find(|r| r.name == name).map(|r| r.state);
+    crate::plugins::Registry::new(cfg)
+        .manifests()
+        .into_iter()
+        .map(|(m, on)| {
+            let states: Vec<ModuleState> = m
+                .surfaces
+                .iter()
+                .flat_map(|&s| modules_for(agent, s))
+                .filter_map(state_of)
+                .collect();
+            let state = if states.contains(&ModuleState::Installed) {
+                ModuleState::Installed
+            } else if states.contains(&ModuleState::NotInstalled) {
+                ModuleState::NotInstalled
+            } else {
+                ModuleState::NotSupported
+            };
+            PluginRow {
+                id: m.id,
+                on,
+                state,
+            }
+        })
+        .collect()
+}
+
+/// ```text
+///   plugins
+///     ✓ installed      cmd, read, inject
+///     ✗ not installed  proxy, compress (off)
+///     − not supported  -
+/// ```
+pub fn plugin_lines(rows: &[PluginRow], indent: &str, console: bool) -> String {
+    let mut out = format!("{indent}plugins\n");
+    let inner = format!("{indent}  ");
+    for state in [
+        ModuleState::Installed,
+        ModuleState::NotInstalled,
+        ModuleState::NotSupported,
+    ] {
+        let ids: Vec<String> = rows
+            .iter()
+            .filter(|r| r.state == state)
+            .map(|r| {
+                if r.on {
+                    r.id.to_string()
+                } else {
+                    format!("{} (off)", r.id)
+                }
+            })
+            .collect();
+        let ids = if ids.is_empty() {
+            "-".to_string()
+        } else {
+            ids.join(", ")
+        };
+        out.push_str(&state.line(&inner, &format!("{:<14} {ids}", state.word()), console));
     }
     out
 }
@@ -343,6 +464,7 @@ pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> 
         }
     }
     out.push_str(&module_lines(&module_rows(agent, v.kind, cfg), "  ", true));
+    out.push_str(&plugin_lines(&plugin_rows(agent, v.kind, cfg), "  ", true));
     out
 }
 
@@ -895,7 +1017,8 @@ mod tests {
         };
         assert_eq!(kinds("cursor"), [Kind::Cli, Kind::Desktop]);
         assert_eq!(kinds("opencode"), [Kind::Cli, Kind::Desktop]);
-        assert_eq!(kinds("claude"), [Kind::Cli]);
+        assert_eq!(kinds("claude"), [Kind::Cli, Kind::Desktop]);
+        assert_eq!(kinds("codex"), [Kind::Cli]);
         assert!(host("windsurf").is_none());
         assert!(resolve(&["claude".into(), "nope".into()]).is_err());
     }
@@ -905,6 +1028,7 @@ mod tests {
         let out = list(&Config::default());
         for head in [
             "CLI: Claude Code",
+            "Desktop: Claude Desktop",
             "CLI: Cursor CLI",
             "Desktop: Cursor",
             "CLI: Codex",
@@ -919,6 +1043,46 @@ mod tests {
         }
         assert!(out.contains("  app     "), "{out}");
         assert!(out.contains("  config  "), "{out}");
+        assert!(out.contains("  plugins\n"), "{out}");
+    }
+
+    /// Codex with an MCP block and no provider: MCP plugins ride it, proxy-only plugins wait
+    /// for `--proxy`, hook-only plugins have nowhere to go. A disabled plugin says so.
+    #[test]
+    fn plugins_group_by_the_modules_that_carry_their_surfaces() {
+        let dir = std::env::temp_dir().join(format!("rtok-plugrows-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.setup.codex.config_path = dir.join("config.toml");
+        std::fs::write(
+            &cfg.setup.codex.config_path,
+            "[mcp_servers.rtok]\ncommand = \"rtok\"\n",
+        )
+        .unwrap();
+        let rows = plugin_rows(&codex::Codex, Kind::Cli, &cfg);
+        let _ = std::fs::remove_dir_all(&dir);
+        let state = |id: &str| rows.iter().find(|r| r.id == id).unwrap().state;
+        assert_eq!(state("read"), ModuleState::Installed);
+        assert_eq!(state("graph"), ModuleState::Installed);
+        assert_eq!(state("proxy"), ModuleState::NotInstalled);
+        assert_eq!(state("measure"), ModuleState::NotInstalled);
+        assert_eq!(state("cmd"), ModuleState::NotSupported);
+        assert_eq!(state("guard"), ModuleState::NotSupported);
+        let text = plugin_lines(&rows, "", true);
+        assert!(text.contains("✓ installed      "), "{text}");
+        assert!(text.contains("compress (off)"), "{text}");
+        assert!(
+            text.contains("− not supported  cmd, inject, guard"),
+            "{text}"
+        );
+        // pi reaches the bash call path through its extension, nothing else.
+        assert!(reaches(&pi::Pi, Kind::Cli, &[Surface::Cli]));
+        assert!(!reaches(
+            &pi::Pi,
+            Kind::Cli,
+            &[Surface::Mcp, Surface::Proxy]
+        ));
+        assert!(reaches(&cursor::Cursor, Kind::Desktop, &[Surface::Mcp]));
     }
 
     /// A proxy on a non-default port read as not installed: the check looked for `8790`.
@@ -1008,15 +1172,57 @@ mod tests {
             .collect()
     }
 
+    /// `Reachable: a, b` / `Not reachable: c` lines of a host README, keyed by their label.
+    fn readme_reach(readme: &str) -> std::collections::HashMap<String, Vec<String>> {
+        readme
+            .lines()
+            .filter_map(|l| l.split_once(": "))
+            .filter(|(label, _)| label.ends_with("eachable") || label.contains("eachable ("))
+            .map(|(label, ids)| {
+                let ids = ids
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && s != "-")
+                    .collect();
+                (label.to_string(), ids)
+            })
+            .collect()
+    }
+
     /// Each host README carries one row per module (`module` or `module (desktop)`) whose
     /// support cell is `yes`, the flag in backticks, or `no` — and a `no` row's reason is the
-    /// very string `support()` prints.
+    /// very string `support()` prints. Its `Reachable:` / `Not reachable:` lines (per kind
+    /// where they differ) name exactly the catalogue plugins the modules carry.
     #[test]
     fn readme_tables_match_support() {
+        let manifests = crate::plugins::Registry::new(&Config::default()).manifests();
         for id in HOSTS {
             let agent = host(id).unwrap();
             let rows = readme_rows(agent.readme());
+            let reach = readme_reach(agent.readme());
             for v in agent.variants() {
+                let suffix = format!(" ({})", v.kind.as_str());
+                // Only the plugins this build compiles in: a README names them all.
+                let listed = |label: &str| -> Vec<String> {
+                    reach
+                        .get(&format!("{label}{suffix}"))
+                        .or_else(|| reach.get(label))
+                        .unwrap_or_else(|| panic!("{id} README has no `{label}:` line"))
+                        .iter()
+                        .filter(|p| manifests.iter().any(|(m, _)| m.id == p.as_str()))
+                        .cloned()
+                        .collect()
+                };
+                let (mut yes, mut no) = (Vec::new(), Vec::new());
+                for (m, _) in &manifests {
+                    if reaches(agent, v.kind, m.surfaces) {
+                        yes.push(m.id.to_string());
+                    } else {
+                        no.push(m.id.to_string());
+                    }
+                }
+                assert_eq!(listed("Reachable"), yes, "{id} ({})", v.name);
+                assert_eq!(listed("Not reachable"), no, "{id} ({})", v.name);
                 for module in MODULES {
                     let key = format!("{module} ({})", v.kind.as_str());
                     let (cell, why) = rows

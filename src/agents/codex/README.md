@@ -15,6 +15,7 @@ File: `~/.codex/config.toml`, edited with `toml_edit` so comments and other serv
 
 ## rtok plugins this host reaches
 
-- Through MCP: read, archive, memory, graph, toon.
-- Through the proxy: measure, archive, proxy, toon, compress.
-- Not reachable: cmd, inject, guard — hook-only surfaces.
+MCP carries the `mcp` surface, the proxy carries `proxy`. Hook-only plugins have no path in.
+
+Reachable: measure, read, archive, proxy, memory, graph, toon, compress
+Not reachable: cmd, inject, guard

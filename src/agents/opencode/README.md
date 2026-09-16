@@ -22,6 +22,8 @@ directory (`~/.config/opencode/plugin/`), so an installer can take them in a lat
 
 ## rtok plugins this host reaches
 
-- Through the proxy: measure, archive, proxy, toon, compress.
-- Through `hosts/opencode/rtok.ts` (by hand): cmd, via `rtok filter` on `tool.execute.after`.
-- Not reachable today: read, inject, guard, memory, graph.
+Only the proxy is wired, so only `proxy`-surface plugins get in. `hosts/opencode/rtok.ts`
+(copied by hand) adds cmd via `rtok filter`, outside setup.
+
+Reachable: measure, archive, proxy, toon, compress
+Not reachable: cmd, read, inject, guard, memory, graph

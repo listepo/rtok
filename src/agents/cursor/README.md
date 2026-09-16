@@ -18,6 +18,8 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 
 ## rtok plugins this host reaches
 
-- Through hooks or the plugin: cmd, read, inject, guard, memory (hook half).
-- Through MCP or the plugin: read, archive, memory, graph, toon.
-- Not reachable: measure, proxy, compress — proxy-only surfaces.
+Hooks carry the `hook` and `cli` surfaces, MCP carries `mcp`; the linked plugin serves both.
+Nothing carries `proxy`.
+
+Reachable: measure, cmd, read, archive, inject, guard, memory, graph, toon
+Not reachable: proxy, compress

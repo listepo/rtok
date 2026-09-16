@@ -1,4 +1,3 @@
-- T44.3. Plugins per app and Claude Desktop
 - T44.4. Checks, e2e and platforms
 - T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
 - T45.1. OTel flush survives a traces error

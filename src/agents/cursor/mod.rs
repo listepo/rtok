@@ -52,6 +52,13 @@ impl Agent for Cursor {
         include_str!("README.md")
     }
 
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[
+            rtok_plugin_sdk::Surface::Hook,
+            rtok_plugin_sdk::Surface::Mcp,
+        ]
+    }
+
     fn shared(&self) -> bool {
         true
     }

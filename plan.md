@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T44.3 | in progress | P1 | 3 | 0% | Claude Code / Fable 5.1 |
 | T44.4 | todo | P1 | 3 | 0% | |
 | T44.5 | todo | P1 | 3 | 0% | |
 | T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
@@ -14,10 +13,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T44.3. Plugins per app and Claude Desktop
-
-T44.2 gave every app its block (kind and name, app path and version, config files, modules with flag or reason, `already installed`). Two pieces remain. (1) Under the modules, rtok's own plugins grouped the same way — installed / not installed / not supported — derived from each manifest's surfaces and the host's modules (hook → hooks, mcp → mcp, proxy → proxy; the linked plugin stands in for hooks+mcp on Cursor and for cli on pi), disabled plugins marked `(off)`. (2) Claude Desktop joins as a Desktop variant of `claude`: config `claude_desktop_config.json` under `~/Library/Application Support/Claude` (macOS), `%APPDATA%\Claude` (Windows), `~/.config/Claude` (Linux); MCP only, written with the absolute rtok path because the app has no shell PATH; `--replace` and hooks stay CLI-only. Plan: `Agent::plugin_surfaces()`, `agents::plugin_rows` from `Registry::manifests`, a README section per host the parity test also checks, `claude` variants + `support(kind, module)` per kind, README rows `hooks (desktop)` etc.; unit tests for the grouping and the desktop paths; `just check`.
 
 ### T44.4. Checks, e2e and platforms
 
