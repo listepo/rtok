@@ -734,8 +734,14 @@ fn live_calls(cfg: &Config) -> Vec<crate::proxy::LiveCall> {
     if cfg.proxy.enabled && cfg.core.enabled {
         return Vec::new();
     }
-    // Prefer the running proxy's /live (cross-process); fall back to this process's ring.
-    fetch_live(cfg).unwrap_or_else(crate::proxy::live::snapshot)
+    // Same-process ring first (tests, in-process proxy). Only ask a running
+    // proxy over HTTP when this process has nothing — otherwise an empty or
+    // foreign `/live` on the default port would hide real local rows.
+    let local = crate::proxy::live::snapshot();
+    if !local.is_empty() {
+        return local;
+    }
+    fetch_live(cfg).unwrap_or_default()
 }
 
 fn fetch_live(cfg: &Config) -> Option<Vec<crate::proxy::LiveCall>> {
@@ -1143,6 +1149,32 @@ mod tests {
         assert_eq!(wire[0]["api"], "anthropic");
         assert_eq!(wire[0]["ms"], 12.5);
         assert_eq!(wire[1]["api"], serde_json::json!(null));
+    }
+
+    #[test]
+    fn live_calls_prefer_in_process_ring_over_empty_http() {
+        // Regression: a listener on the default proxy port that answers `/live`
+        // with `[]` used to hide rows pushed into this process's ring.
+        crate::proxy::live::clear();
+        crate::proxy::live::push(crate::proxy::LiveCall {
+            ts: 1,
+            method: "POST".into(),
+            path: "/v1/messages".into(),
+            provider: None,
+            model: None,
+            status: 200,
+            request_bytes: 100,
+            response_bytes: 50,
+            ms: 5.0,
+        });
+        let mut cfg = Config::default();
+        cfg.proxy.enabled = false;
+        cfg.core.enabled = true;
+        let rows = Model::new(&cfg, None).calls();
+        crate::proxy::live::clear();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].kind, "live_passthrough");
+        assert_eq!(call_size_label(&rows[0]), "150 B");
     }
 
     #[rstest]

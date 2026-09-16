@@ -289,12 +289,19 @@ fn git_root() -> Option<std::path::PathBuf> {
 }
 
 fn find_skill(name: &str) -> Option<String> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
-    let p = home.join(".claude/skills").join(name).join("SKILL.md");
+    // Same empty-HOME → USERPROFILE rule as config expand / agent setup.
+    let home = crate::config::env_user_home()?;
+    let p = skill_md_path(&home, name);
     p.is_file().then(|| p.display().to_string())
+}
+
+/// `~/.claude/skills/<name>/SKILL.md`, joined by components so Windows never
+/// sees a single path segment with embedded slashes.
+fn skill_md_path(home: &Path, name: &str) -> std::path::PathBuf {
+    home.join(".claude")
+        .join("skills")
+        .join(name)
+        .join("SKILL.md")
 }
 
 fn duplicates(srcs: &[Source]) -> Vec<(String, Vec<String>)> {
@@ -409,6 +416,45 @@ fn mcp_servers(claude: Option<&Value>, mcp_json: &Path) -> Vec<Server> {
     out
 }
 
+/// Start one MCP server for probing.
+///
+/// On Windows, bare names like `npx` / `uvx` (and explicit `.cmd` / `.bat`
+/// paths) must go through `cmd.exe /D /C`: CreateProcess will not run those
+/// shims, so doctor used to report 0 tools for every npx-launched server.
+fn spawn_mcp(s: &Server) -> std::io::Result<std::process::Child> {
+    let mut cmd = mcp_command(&s.cmd, &s.args);
+    cmd.envs(&s.env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+}
+
+fn mcp_command(command: &str, args: &[String]) -> Command {
+    if cfg!(windows) && windows_needs_cmd_host(command) {
+        let mut c = Command::new("cmd.exe");
+        c.arg("/D").arg("/C").arg(command).args(args);
+        c
+    } else {
+        let mut c = Command::new(command);
+        c.args(args);
+        c
+    }
+}
+
+/// True when `command` is a Windows batch/PATHEXT shim CreateProcess cannot run.
+fn windows_needs_cmd_host(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    if lower.ends_with(".exe") || lower.ends_with(".com") {
+        return false;
+    }
+    if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+        return true;
+    }
+    // Bare name with no path: `npx`, `uvx`, `rtok` — PATHEXT may resolve a .cmd.
+    !command.contains('/') && !command.contains('\\') && !command.contains(':')
+}
+
 fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> (usize, u32) {
     if s.cmd.is_empty() {
         return (0, 0);
@@ -421,14 +467,7 @@ fn list_tools(s: &Server, timeout: Duration, est: &crate::config::Estimator) -> 
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
         "\n"
     );
-    let mut child = match Command::new(&s.cmd)
-        .args(&s.args)
-        .envs(&s.env)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let mut child = match spawn_mcp(s) {
         Ok(c) => c,
         Err(_) => return (0, 0),
     };
@@ -595,6 +634,30 @@ mod tests {
         assert!(s[0].args.is_empty());
         assert_eq!(s[1].args, ["--from", "serena-agent", "serena"]);
         assert_eq!(s[1].env["A"], "1");
+    }
+
+    #[test]
+    fn skill_md_path_joins_components() {
+        let p = skill_md_path(Path::new(r"C:\Users\Example"), "lean-ctx");
+        assert_eq!(
+            p,
+            Path::new(r"C:\Users\Example")
+                .join(".claude")
+                .join("skills")
+                .join("lean-ctx")
+                .join("SKILL.md")
+        );
+    }
+
+    #[test]
+    fn windows_cmd_host_wraps_npx_shims_not_exes() {
+        assert!(windows_needs_cmd_host("npx"));
+        assert!(windows_needs_cmd_host("uvx"));
+        assert!(windows_needs_cmd_host(r"C:\Program Files\nodejs\npx.cmd"));
+        assert!(windows_needs_cmd_host("tool.bat"));
+        assert!(!windows_needs_cmd_host("rtok.exe"));
+        assert!(!windows_needs_cmd_host(r"C:\Users\u\.ketch\bin\rtok.exe"));
+        assert!(!windows_needs_cmd_host("/usr/bin/uvx"));
     }
 
     #[test]
