@@ -9,7 +9,9 @@ fn first_word(cmd: &str) -> &str {
 
 fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
     let first = first_word(cmd);
-    let base = first.rsplit('/').next().unwrap_or(first);
+    // Same stem rules as formatters::cmd_stem / run::shell_kind: Windows argv may
+    // be `C:\…\sudo.exe` while never_wrap lists bare `sudo`.
+    let base = super::formatters::cmd_stem(first);
     if never_wrap.iter().any(|w| w == base) {
         return true;
     }
@@ -108,5 +110,14 @@ mod tests {
         assert!(decide("sleep 10 &").is_none());
         assert!(decide("sleep 10&").is_none());
         assert!(decide("true && false").is_some(), "&& is not background");
+    }
+
+    #[test]
+    fn windows_path_and_exe_honor_never_wrap() {
+        assert!(decide(r"C:\Windows\System32\sudo.exe ls").is_none());
+        assert!(decide(r"C:\tools\rtok.exe run -- true").is_none());
+        assert!(decide("sudo.exe ls").is_none());
+        // Still wrap a normal command with a Windows-looking path.
+        assert!(decide(r"C:\Program Files\Git\cmd\git.exe status").is_some());
     }
 }

@@ -45,10 +45,20 @@ pub fn family(argv: &[String]) -> String {
     }
 }
 
+/// Basename of argv[0], splitting on `/` and `\` and dropping a trailing `.exe`
+/// (case-insensitive). Matches `run::shell_kind` / `setup::is_rtok_bin` so Windows
+/// paths still name the family a Measurement and a `[rule]` expect.
+pub(crate) fn cmd_stem(path: &str) -> &str {
+    let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    }
+}
+
 fn bin(argv: &[String]) -> &str {
-    argv.first()
-        .map(|a| a.rsplit('/').next().unwrap_or(a.as_str()))
-        .unwrap_or("")
+    argv.first().map(|a| cmd_stem(a)).unwrap_or("")
 }
 
 fn sub(argv: &[String]) -> &str {
@@ -303,5 +313,21 @@ mod tests {
         assert_eq!(family(&argv(&["git status | head"])), "git");
         assert_eq!(family(&argv(&["/usr/bin/git", "status"])), "git");
         assert_eq!(family(&argv(&[])), "other");
+    }
+
+    #[test]
+    fn cmd_stem_strips_windows_path_and_exe() {
+        assert_eq!(cmd_stem(r"C:\Program Files\Git\cmd\git.exe"), "git");
+        assert_eq!(cmd_stem(r"C:\Windows\System32\cmd.EXE"), "cmd");
+        assert_eq!(cmd_stem("/usr/bin/git"), "git");
+        assert_eq!(cmd_stem("sudo"), "sudo");
+        assert_eq!(cmd_stem("rtok.exe"), "rtok");
+    }
+
+    #[test]
+    fn family_names_windows_argv() {
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert_eq!(family(&argv(&[r"C:\tools\git.exe", "status"])), "git");
+        assert_eq!(family(&argv(&["cargo.exe", "test"])), "cargo");
     }
 }

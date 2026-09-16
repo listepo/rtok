@@ -396,13 +396,15 @@ pub fn bash_family(cmd: &str) -> String {
             _ => break,
         }
     }
-    s.split_whitespace()
-        .next()
-        .unwrap_or("other")
-        .rsplit('/')
-        .next()
-        .unwrap_or("other")
-        .to_string()
+    let first = s.split_whitespace().next().unwrap_or("other");
+    // Split `/` and `\` + strip `.exe` so Windows session logs still bucket by family.
+    let base = first.rsplit(['/', '\\']).next().unwrap_or(first);
+    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    };
+    stem.to_string()
 }
 
 fn strip_prefix_env(s: &str) -> Option<&str> {
@@ -469,6 +471,8 @@ mod tests {
         assert_eq!(bash_family("cd /tmp && git status"), "git");
         assert_eq!(bash_family("FOO=1 grep x"), "grep");
         assert_eq!(bash_family("sed -n 1p"), "sed");
+        assert_eq!(bash_family(r"C:\Git\cmd\git.exe status"), "git");
+        assert_eq!(bash_family("cargo.exe test"), "cargo");
     }
 
     #[test]

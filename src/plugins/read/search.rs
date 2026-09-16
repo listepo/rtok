@@ -10,6 +10,21 @@ use regex::Regex;
 use super::resolve;
 use rtok_plugin_sdk::Ctx;
 
+/// Walk results are rooted at `resolve`'s path (often `canonicalize(cwd)`), but
+/// display used to strip the raw `current_dir()`. Whenever those disagree —
+/// macOS `/tmp` → `/private/tmp`, or an `allow_paths` root outside cwd — every
+/// hit became an absolute path. Prefer relative-to-canonical-cwd (so a search
+/// of `src` still yields `src/…`), then relative-to-the-walk-root, then raw.
+fn display_rel(path: &Path, root: &Path, cwd: &Path) -> String {
+    let base = dunce::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    path.strip_prefix(&base)
+        .or_else(|_| path.strip_prefix(cwd))
+        .or_else(|_| path.strip_prefix(root))
+        .unwrap_or(path)
+        .display()
+        .to_string()
+}
+
 /// `path:line: snippet` rows, at most `max` (default `plugins.read.search_max`).
 pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<String> {
     let cfg = cx.plugin_config::<crate::config::Read>("read");
@@ -35,12 +50,7 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
         let Ok(text) = fs::read_to_string(entry.path()) else {
             continue;
         };
-        let rel = entry
-            .path()
-            .strip_prefix(&cwd)
-            .unwrap_or(entry.path())
-            .display()
-            .to_string();
+        let rel = display_rel(entry.path(), &root, &cwd);
         for (i, line) in text.lines().enumerate() {
             if hits.len() >= cap {
                 break;
@@ -81,9 +91,9 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         if p == root {
             continue;
         }
-        let rel = p.strip_prefix(&cwd).unwrap_or(p);
+        let rel = display_rel(p, &root, &cwd);
         let size = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-        rows.push(format!("{} {size}", rel.display()));
+        rows.push(format!("{rel} {size}"));
     }
     rows.sort();
     Ok(rows.join("\n"))
@@ -111,5 +121,38 @@ mod tests {
         let cx = cx("max");
         let out = search(&Ctx::new(&cx), "the", ".", Some(3)).unwrap();
         assert!(out.lines().count() <= 3, "{out}");
+    }
+
+    #[test]
+    fn search_paths_stay_relative_for_allow_paths_root() {
+        let (rt, dir) = crate::plugins::read::tests::cx("searchrel");
+        let nested = dir.join("nest");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("hit.rs"), "fn needle() {}\n").unwrap();
+        let out = search(&Ctx::new(&rt), "needle", nested.to_str().unwrap(), None).unwrap();
+        assert!(
+            out.contains("hit.rs:"),
+            "expected path relative to allow_paths root, got {out}"
+        );
+        let abs = nested.to_string_lossy();
+        assert!(
+            !out.contains(abs.as_ref()),
+            "must not echo the absolute search root: {out}"
+        );
+    }
+
+    #[test]
+    fn tree_paths_stay_relative_for_allow_paths_root() {
+        let (rt, dir) = crate::plugins::read::tests::cx("treerel");
+        let nested = dir.join("nest");
+        fs::create_dir_all(nested.join("a")).unwrap();
+        fs::write(nested.join("a").join("f.txt"), "x").unwrap();
+        let out = tree(&Ctx::new(&rt), nested.to_str().unwrap(), Some(3)).unwrap();
+        assert!(out.contains("a"), "{out}");
+        let abs = nested.to_string_lossy();
+        assert!(
+            !out.contains(abs.as_ref()),
+            "must not echo the absolute tree root: {out}"
+        );
     }
 }
