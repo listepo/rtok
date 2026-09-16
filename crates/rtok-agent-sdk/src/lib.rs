@@ -293,7 +293,8 @@ pub fn register_mcp(
 
 /// [`register_mcp`] for a host whose server map or entry has another shape: OpenCode keeps
 /// `mcp.<name> = {type: "local", command: [..]}`, Copilot adds `tools` to `mcpServers`.
-/// `summary` is what the report prints after `<key>.<name>: `.
+/// `summary` is what the report prints after `<key>.<name>: `. A dotted `key` walks nested
+/// objects (ZCode's `mcp.servers`).
 pub fn register_server(
     apply: &Apply,
     path: &Path,
@@ -303,7 +304,7 @@ pub fn register_server(
     summary: &str,
 ) -> Result<String> {
     edit_json(apply, path, |root| {
-        let servers = object_at(root, key);
+        let servers = key.split('.').fold(root, |o, k| object_at(o, k));
         if servers.get(name) == Some(&entry) {
             return NO_CHANGES.into();
         }
@@ -318,17 +319,27 @@ pub fn unregister_mcp(apply: &Apply, path: &Path, name: &str) -> Result<String> 
     unregister_server(apply, path, "mcpServers", name)
 }
 
-/// [`unregister_mcp`] under another map key (OpenCode's `mcp`).
+/// [`unregister_mcp`] under another map key (OpenCode's `mcp`), dotted for a nested one
+/// (ZCode's `mcp.servers`); only the last level is dropped when it ends up empty.
 pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
     edit_json(apply, path, |root| {
-        let Some(servers) = root.get_mut(key).and_then(Value::as_object_mut) else {
+        let mut parts: Vec<&str> = key.split('.').collect();
+        let last = parts.pop().unwrap_or(key);
+        let mut parent = root;
+        for k in parts {
+            let Some(next) = parent.get_mut(k) else {
+                return NO_CHANGES.into();
+            };
+            parent = next;
+        }
+        let Some(servers) = parent.get_mut(last).and_then(Value::as_object_mut) else {
             return NO_CHANGES.into();
         };
         if servers.remove(name).is_none() {
             return NO_CHANGES.into();
         }
         if servers.is_empty() {
-            root.as_object_mut().unwrap().remove(key);
+            parent.as_object_mut().map(|p| p.remove(last));
         }
         format!("- {key}.{name}")
     })

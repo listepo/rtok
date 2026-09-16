@@ -239,7 +239,7 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 |---|---|
 | `rtok agents setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
 | `rtok agents remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
-| `rtok agents setup cursor` / `codex` / `opencode` / `pi` | register the other supported host integrations |
+| `rtok agents setup cursor` / `codex` / `opencode` / `pi` / `zcode` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |

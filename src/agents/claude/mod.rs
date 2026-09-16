@@ -16,7 +16,8 @@ use super::{Agent, Kind, Mode, Support, Variant, apply};
 
 /// `(event, matcher)` — empty matcher omits the field. `SessionEnd` was missing, so no session
 /// row got `ended_at` and no OTel session root ever shipped (`hooks::dispatch` handles it).
-const ENTRIES: &[(&str, &str)] = &[
+/// Hosts with a Claude-compatible hook shape (ZCode) take a prefix of this list.
+pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("PreToolUse", "Bash"),
     ("PreToolUse", "Read"),
     ("PostToolUse", "*"),
@@ -27,8 +28,8 @@ const ENTRIES: &[(&str, &str)] = &[
     ("SessionEnd", ""),
 ];
 
-fn command(event: &str) -> String {
-    format!("{} hook {event}", super::rtok_hook_bin())
+fn command(bin: &str, event: &str) -> String {
+    format!("{bin} hook {event}")
 }
 
 /// Exactly `<rtok-bin> hook <event>`. Matching tokens anywhere claimed a user's
@@ -46,9 +47,16 @@ fn is_ours(cmd: &str, event: &str) -> bool {
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
         if remove {
-            strip_ours(root)
+            strip_ours(root.get_mut("hooks"))
         } else {
-            insert_ours(root, cfg.setup.hook_timeout_s)
+            let bin = super::rtok_hook_bin();
+            insert_ours(
+                object_at(root, "hooks"),
+                ENTRIES,
+                &bin,
+                "timeout",
+                cfg.setup.hook_timeout_s,
+            )
         }
     })
 }
@@ -65,10 +73,17 @@ fn has_ours(entry: &Value, event: &str, matcher: &str) -> bool {
             .any(|c| is_ours(c, event))
 }
 
-fn insert_ours(root: &mut Value, timeout: u64) -> String {
-    let hooks = object_at(root, "hooks");
+/// Add `<bin> hook <event>` under `hooks.<event>[]` for each entry not already ours.
+/// `timeout_key` is the host's spelling (`timeout` seconds in Claude, `timeoutMs` in ZCode).
+pub(super) fn insert_ours(
+    hooks: &mut Value,
+    entries: &[(&str, &str)],
+    bin: &str,
+    timeout_key: &str,
+    timeout: u64,
+) -> String {
     let mut added = Vec::new();
-    for &(event, matcher) in ENTRIES {
+    for &(event, matcher) in entries {
         if array_at(hooks, event)
             .iter()
             .any(|e| has_ours(e, event, matcher))
@@ -81,7 +96,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
         }
         obj.insert(
             "hooks".into(),
-            json!([{"type":"command","command":command(event),"timeout":timeout}]),
+            json!([{"type":"command","command":command(bin, event),timeout_key:timeout}]),
         );
         array_at(hooks, event).push(Value::Object(obj));
         let m = if matcher.is_empty() {
@@ -89,7 +104,7 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
         } else {
             format!(" {matcher}")
         };
-        added.push(format!("+ {event}{m} {}", command(event)));
+        added.push(format!("+ {event}{m} {}", command(bin, event)));
     }
     if added.is_empty() {
         NO_CHANGES.into()
@@ -98,8 +113,9 @@ fn insert_ours(root: &mut Value, timeout: u64) -> String {
     }
 }
 
-fn strip_ours(root: &mut Value) -> String {
-    let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
+/// Remove every `<rtok> hook <event>` entry under the given `hooks` object; empty arrays go.
+pub(super) fn strip_ours(hooks: Option<&mut Value>) -> String {
+    let Some(hooks) = hooks.and_then(Value::as_object_mut) else {
         return NO_CHANGES.into();
     };
     let mut removed = 0usize;
@@ -159,9 +175,9 @@ pub fn desktop_path() -> PathBuf {
     }
 }
 
-/// Claude Desktop starts from the Dock or Start menu without a shell PATH, so a bare `rtok`
-/// does not spawn there: write the absolute binary.
-fn desktop_command() -> String {
+/// A desktop app starts from the Dock or Start menu without a shell PATH, so a bare `rtok`
+/// does not spawn there: write the absolute binary (Claude Desktop, ZCode).
+pub(super) fn desktop_command() -> String {
     std::env::current_exe()
         .map(|exe| dunce::simplified(&exe).to_string_lossy().into_owned())
         .unwrap_or_else(|_| super::rtok_command())

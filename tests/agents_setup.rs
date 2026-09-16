@@ -13,7 +13,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// `(host, extra setup flags, the file whose backups we count)`; pi links a directory and
-/// edits no file, so it has nothing to back up.
+/// edits no file, so it has nothing to back up. Hosts that offer a plugin take `--yes`: an
+/// unanswered offer is a step that changed nothing, so `already installed` needs the link.
 fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)> {
     vec![
         ("claude", vec![], Some(home.join(".claude/settings.json"))),
@@ -25,10 +26,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ("codex", vec![], Some(home.join(".codex/config.toml"))),
         (
             "opencode",
-            vec![],
+            vec!["--yes"],
             Some(home.join(".config/opencode/opencode.json")),
         ),
         ("pi", vec!["--yes"], None),
+        ("zcode", vec![], Some(home.join(".zcode/cli/config.json"))),
     ]
 }
 

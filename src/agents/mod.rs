@@ -12,6 +12,7 @@ pub mod codex;
 pub mod cursor;
 pub mod opencode;
 pub mod pi;
+pub mod zcode;
 
 use std::path::{Path, PathBuf};
 
@@ -22,7 +23,7 @@ use rtok_plugin_sdk::Surface;
 use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
-pub const HOSTS: &[&str] = &["claude", "cursor", "codex", "opencode", "pi"];
+pub const HOSTS: &[&str] = &["claude", "cursor", "codex", "opencode", "pi", "zcode"];
 
 /// Every module an rtok install can carry, in print order.
 pub const MODULES: &[&str] = &["hooks", "mcp", "proxy", "plugin"];
@@ -35,6 +36,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "codex" => Some(&codex::Codex),
         "opencode" => Some(&opencode::OpenCode),
         "pi" => Some(&pi::Pi),
+        "zcode" => Some(&zcode::Zcode),
         _ => None,
     }
 }
@@ -705,8 +707,12 @@ fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
     false
 }
 
-/// True when `bin` names the rtok binary (bare, `.exe`, or an absolute path).
+/// True when `bin` names the rtok binary (bare, `.exe`, an absolute path, or the running
+/// executable itself whatever it is called — `cargo test` names it `rtok-<hash>`).
 pub(crate) fn is_rtok_bin(bin: &str) -> bool {
+    if std::env::current_exe().is_ok_and(|e| dunce::simplified(&e).to_string_lossy() == bin) {
+        return true;
+    }
     let base = bin.rsplit(['/', '\\']).next().unwrap_or(bin);
     // Windows executable suffix casing is arbitrary (`.Exe`, `.eXe`, …).
     let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {

@@ -3,7 +3,6 @@
 - T45.3. Archive decisions scoped per session
 - T45.5. Gates cover tests, webui and examples
 - T45.6. Extra hook/expand/guard/read/toon coverage
-- T46.1. ZCode host
 - T46.2. Kimi Code host
 - T46.3. Copilot hook payload map
 - T46.4. Copilot CLI and GitHub Copilot app host

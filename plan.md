@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T46.1 | todo | P1 | 3 | 0% | |
 | T46.2 | todo | P1 | 3 | 0% | |
 | T46.3 | todo | P1 | 2 | 0% | |
 | T46.4 | todo | P1 | 3 | 0% | |
@@ -40,11 +39,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T46.1. ZCode host
-
-Z.ai's ZCode desktop app (GLM harness) reads a Claude-compatible hook protocol and MCP from `~/.zcode/cli/config.json`: `hooks.enabled`, `hooks.events.<Event>[] = {matcher, hooks: [{type: "command", command, timeoutMs}]}` (events SessionStart, UserPromptSubmit, PreToolUse, PostToolUse; stdin `session_id`/`tool_name`/`tool_input`, stdout `hookSpecificOutput.updatedInput`), and `mcp.servers.<name> = {command, args}`. Done means `rtok agents setup zcode` writes both, `remove` strips both, `list` shows the app, and the README table matches `support()`. Proxy stays `no` (providers are per-id tables with keys); plugin stays `no` (plugins come from the Z.ai marketplace, no documented local link).
-Plan: `src/agents/zcode/{mod.rs,README.md}` (one Desktop variant: `/Applications/ZCode.app`, `$LOCALAPPDATA/Programs/ZCode/ZCode.exe`; `hooks` via the Claude entry helpers made `pub(super)` with the timeout key as a parameter, `mcp` via `edit_json` on `mcp.servers`), `[setup.zcode] config_path` in `src/config/mod.rs` + `config/default.toml` + `docs/config.md`, registration in `src/agents/mod.rs`, host lists in `src/cli.rs`/`README.md`/site. Verify: `mise exec -- cargo test -p rtok --lib agents::` (dry-run touches nothing, apply idempotent, remove keeps foreign entries, parity test).
 
 ### T46.2. Kimi Code host
 

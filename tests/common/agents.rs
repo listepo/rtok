@@ -33,6 +33,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".codex",
         ".config/opencode",
         ".pi/agent",
+        ".zcode/cli",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -46,7 +47,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.cursor]\nhooks_path = \"{h}/.cursor/hooks.json\"\n\
              [setup.codex]\nconfig_path = \"{h}/.codex/config.toml\"\n\
              [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
-             [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n"
+             [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
+             [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n"
         ),
     )
     .unwrap();

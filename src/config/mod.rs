@@ -265,6 +265,7 @@ section! {
         codex: SetupCodex = SetupCodex::default(),
         opencode: SetupOpenCode = SetupOpenCode::default(),
         pi: SetupPi = SetupPi::default(),
+        zcode: SetupZcode = SetupZcode::default(),
     }
 }
 
@@ -291,6 +292,11 @@ section! {
 section! {
     /// `[setup.pi]`
     SetupPi { extensions_path: PathBuf = p("~/.pi/agent/extensions") }
+}
+
+section! {
+    /// `[setup.zcode]`
+    SetupZcode { config_path: PathBuf = p("~/.zcode/cli/config.json") }
 }
 
 section! {
@@ -708,6 +714,7 @@ impl Config {
             &mut self.setup.codex.config_path,
             &mut self.setup.opencode.config_path,
             &mut self.setup.pi.extensions_path,
+            &mut self.setup.zcode.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
@@ -919,6 +926,7 @@ mod tests {
             &cfg.setup.codex.config_path,
             &cfg.setup.opencode.config_path,
             &cfg.setup.pi.extensions_path,
+            &cfg.setup.zcode.config_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
