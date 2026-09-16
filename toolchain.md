@@ -8,6 +8,7 @@ Project programs and direct packages from the manifests.
 | --- | --- | --- | --- |
 | mise | brew / curl, then `mise install` | Pinned tool versions | https://github.com/jdx/mise |
 | cargo-cache | mise | `just cache` / `just cache-autoclean` (T17.2); the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
+| cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
@@ -31,6 +32,7 @@ Project programs and direct packages from the manifests.
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |
+| dunce | local | https://crates.io/crates/dunce | Canonicalize without Windows UNC prefixes |
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
 | httpmock | local | https://crates.io/crates/httpmock | Rust dependency |
@@ -41,6 +43,7 @@ Project programs and direct packages from the manifests.
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
+| pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
 | printpdf | local | https://crates.io/crates/printpdf | Rust dependency |
 | ratatui | local | https://crates.io/crates/ratatui | TUI |
 | regex | local | https://crates.io/crates/regex | Rust dependency |
