@@ -428,6 +428,37 @@ pub(crate) fn is_rtok_bin(bin: &str) -> bool {
     stem.eq_ignore_ascii_case("rtok")
 }
 
+/// Quote `bin` for a host shell hook command when it contains whitespace.
+///
+/// MCP JSON/TOML take an unquoted path string; Claude/Cursor hook `command`
+/// values are shell lines, so an absolute `…\Ivan Tuhai\…\rtok.exe hook …`
+/// would split on the space and fail to start.
+pub(crate) fn shell_quote_bin(bin: &str) -> String {
+    if !bin.chars().any(|c| c.is_whitespace() || c == '"') {
+        return bin.to_string();
+    }
+    format!("\"{}\"", bin.replace('"', "\\\""))
+}
+
+/// Binary token for hook command lines (quoted when needed).
+pub(crate) fn rtok_hook_bin() -> String {
+    shell_quote_bin(&rtok_command())
+}
+
+/// Strip one layer of surrounding quotes from a hook binary token.
+pub(crate) fn unquote_bin(bin: &str) -> &str {
+    let b = bin.trim();
+    if b.len() >= 2 {
+        let bytes = b.as_bytes();
+        if (bytes[0] == b'"' && *bytes.last().unwrap() == b'"')
+            || (bytes[0] == b'\'' && *bytes.last().unwrap() == b'\'')
+        {
+            return &b[1..b.len() - 1];
+        }
+    }
+    b
+}
+
 /// The tree this repo ships a host plugin from (D21 (6)).
 ///
 /// Resolution order:
@@ -562,6 +593,17 @@ mod tests {
         assert!(is_rtok_bin(r"C:\Users\u\.ketch\bin\rtok.exe"));
         assert!(!is_rtok_bin("rtok-extra"));
         assert!(!is_rtok_bin(r"C:\bin\other.exe"));
+    }
+
+    #[test]
+    fn shell_quote_bin_quotes_paths_with_spaces() {
+        assert_eq!(shell_quote_bin("rtok"), "rtok");
+        let spaced = r"C:\Users\Ivan Tuhai\.ketch\bin\rtok.exe";
+        let quoted = shell_quote_bin(spaced);
+        assert!(quoted.starts_with('"') && quoted.ends_with('"'), "{quoted}");
+        assert!(quoted.contains("Ivan Tuhai"), "{quoted}");
+        assert_eq!(unquote_bin(&quoted), spaced);
+        assert!(is_rtok_bin(unquote_bin(&quoted)));
     }
 
     #[test]
