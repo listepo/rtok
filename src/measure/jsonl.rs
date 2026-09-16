@@ -364,10 +364,10 @@ mod tests {
 
     #[test]
     fn real_claude_projects_zero_parse_failures() {
-        let Some(home) = std::env::var_os("HOME") else {
+        let Some(home) = crate::config::env_user_home() else {
             return;
         };
-        let dir = Path::new(&home).join(".claude/projects/-Users-listepo-GitHub-rtok");
+        let dir = home.join(".claude/projects/-Users-listepo-GitHub-rtok");
         if !dir.is_dir() {
             return;
         }

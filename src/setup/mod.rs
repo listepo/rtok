@@ -34,9 +34,7 @@ pub fn wants(kind: &str, cli: bool, gui: bool, all: bool) -> bool {
 }
 
 fn home_dir() -> std::path::PathBuf {
-    std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default()
+    crate::config::env_user_home().unwrap_or_default()
 }
 
 /// Where the OpenCode desktop app keeps its global config. The CLI lives at
@@ -371,6 +369,7 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use std::path::PathBuf;
 
     #[test]
     fn apply_carries_the_setup_flags() {
@@ -460,6 +459,62 @@ mod tests {
                 let mods = installed_modules(host, kind, &cfg);
                 assert!(mods.iter().all(|m| !m.is_empty()));
             }
+        }
+    }
+
+    fn cfg_with_cursor_hooks(hooks: PathBuf) -> Config {
+        let mut cfg = Config::default();
+        cfg.setup.cursor.hooks_path = hooks;
+        cfg
+    }
+
+    fn cfg_with_claude(settings: PathBuf, claude_json: PathBuf) -> Config {
+        let mut cfg = Config::default();
+        cfg.setup.claude.settings_path = settings;
+        cfg.doctor.claude_json = claude_json;
+        cfg
+    }
+
+    #[test]
+    fn agent_present_when_cursor_dir_exists() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-present-cursor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let cursor = root.join(".cursor");
+        fs::create_dir_all(&cursor).unwrap();
+        let cfg = cfg_with_cursor_hooks(cursor.join("hooks.json"));
+        assert!(
+            agent_present("cursor", "cli", &cfg),
+            "parent ~/.cursor must count as installed host"
+        );
+    }
+
+    #[test]
+    fn agent_present_when_claude_dir_exists() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-present-claude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let claude = root.join(".claude");
+        fs::create_dir_all(&claude).unwrap();
+        let cfg = cfg_with_claude(claude.join("settings.json"), root.join(".claude.json"));
+        assert!(
+            agent_present("claude", "cli", &cfg),
+            "parent ~/.claude must count as installed host"
+        );
+    }
+
+    #[test]
+    fn agent_absent_when_config_paths_missing() {
+        let root = std::env::temp_dir().join(format!("rtok-absent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let missing = root.join("no-such-dir");
+        let cfg = cfg_with_cursor_hooks(missing.join("hooks.json"));
+        if app_version("cursor", "cli") == "-" && app_version("cursor", "gui") == "-" {
+            assert!(!agent_present("cursor", "cli", &cfg));
+        }
+        let cfg = cfg_with_claude(missing.join("settings.json"), missing.join(".claude.json"));
+        if app_version("claude", "cli") == "-" {
+            assert!(!agent_present("claude", "cli", &cfg));
         }
     }
 }
