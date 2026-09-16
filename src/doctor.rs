@@ -43,7 +43,7 @@ pub struct Report {
 pub struct AgentModules {
     pub host: &'static str,
     pub kind: &'static str,
-    pub modules: Vec<crate::agents::ModuleRow>,
+    pub modules: Vec<(&'static str, crate::setup::ModuleState)>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,7 +107,7 @@ impl Report {
         out.push_str("agents\n");
         for a in &self.agents {
             out.push_str(&format!("  {} ({})\n", a.host, a.kind));
-            out.push_str(&crate::agents::module_lines(&a.modules, "    ", console));
+            out.push_str(&crate::setup::module_lines(&a.modules, "    ", console));
         }
         if let Some(audit) = &self.instructions {
             out.push_str("instructions\n");
@@ -179,15 +179,16 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .instructions
             .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
         // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
-        agents: crate::agents::HOSTS
+        agents: crate::setup::HOSTS
             .iter()
-            .filter_map(|id| crate::agents::host(id))
-            .flat_map(|agent| {
-                agent.variants().iter().map(move |v| AgentModules {
-                    host: agent.id(),
-                    kind: v.kind.as_str(),
-                    modules: crate::agents::module_rows(agent, v.kind, cfg),
-                })
+            .flat_map(|&host| {
+                crate::setup::variants(host)
+                    .into_iter()
+                    .map(move |kind| AgentModules {
+                        host,
+                        kind,
+                        modules: crate::setup::module_states(host, kind, cfg),
+                    })
             })
             .collect(),
     })

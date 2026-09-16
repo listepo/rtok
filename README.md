@@ -52,12 +52,12 @@ rtok --version
 
 ## Start with Claude Code
 
-Install rtok's eight hooks and MCP entry. The installer backs up the settings file before
+Install rtok's seven hooks and MCP entry. The installer backs up the settings file before
 writing it; inspect its changes first if preferred.
 
 ```bash
-rtok agents setup claude --dry-run
-rtok agents setup claude
+rtok agent setup claude --dry-run
+rtok agent setup claude
 rtok doctor
 ```
 
@@ -75,9 +75,9 @@ rtok doctor
 8 additions
 ```
 
-Each app gets one block: its kind and name (`CLI: Claude Code`, `Desktop: Cursor`), where it is installed and its version, the config files touched, and the state of every rtok module — `✓ installed`, `✗ not installed (--flag)`, `− not supported: why` for `hooks`, `mcp`, `proxy` and `plugin` — then rtok's own plugins split the same way (`installed` / `not installed` / `not supported`) from the surfaces each one declares, `(off)` for a disabled one. `claude` covers both Claude Code and Claude Desktop (MCP only, in `claude_desktop_config.json`). A second run of the same command says `already installed` instead of repeating a diff. `rtok agents list` prints the same blocks without writing anything; `rtok doctor` lists the modules for every host under `agents`.
+Each host ends with the state of every rtok module in it — `✓ installed`, `✗ not installed`, `− not supported` for `hooks`, `mcp`, `proxy` and `plugin`; `rtok doctor` lists the same for every host under `agents`.
 
-`rtok agents remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
+`rtok agent remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
 
 Run the proxy separately when you want provider usage rows and archive compression:
 
@@ -237,13 +237,13 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 
 | Command | Purpose |
 |---|---|
-| `rtok agents setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
-| `rtok agents remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
-| `rtok agents setup cursor` / `codex` / `opencode` / `pi` | register the other supported host integrations |
+| `rtok agent setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
+| `rtok agent remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
+| `rtok agent setup cursor` / `codex` / `opencode` / `pi` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
-| `rtok web` | local Slint/WASM UI + WebSocket API (`--host`, `--port`; `rtok dashboard` is the deprecated spelling) |
+| `rtok dashboard` | local Slint/WASM UI + WebSocket API (`--host`, `--port`) |
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok doctor` | inspect hooks, MCP servers and the proxy chain |
@@ -285,8 +285,8 @@ those tools reported a saving while the bill did not move.
 
 | | The field | rtok |
 |---|---|---|
-| Processes per tool call | up to ~30 subprocesses, several Python | one Rust process, p95 8.25 ms (research.md §2, Gate P17 serialized run 2026-09-09) |
-| Hook entries | 88 across 16 events | 8 across 7 events |
+| Processes per tool call | up to ~30 subprocesses, several Python | one Rust process, p95 8.25 ms |
+| Hook entries | 88 across 16 events | 7 |
 | MCP description tokens/turn | ~8 600 across nine servers | ~143 across 11 tools |
 | Injection per turn | 3.1 K and up, per tool | one 800-token budget, byte-stable |
 | Reversibility | partial | every rewrite has `rtok expand <id>` |
@@ -349,7 +349,7 @@ rtok() {
 rtok --version
 rtok config init
 rtok config validate
-rtok agents setup claude --dry-run
+rtok agent setup claude --dry-run
 rtok stats --since 1h
 rtok plugins
 rtok proxy --dry-run

@@ -1,4 +1,4 @@
-//! Cursor installer (`rtok agents setup cursor`) and field mapping (plan T10.1).
+//! Cursor installer (`rtok agent setup cursor`) and field mapping (plan T10.1).
 //!
 //! Cursor shell stdin uses top-level `command` and `conversation_id`.
 //! `beforeShellExecution` → PreToolUse; `afterShellExecution` → PostToolUse
@@ -13,103 +13,8 @@ use anyhow::Result;
 use rtok_agent_sdk::{NO_CHANGES, PluginLink, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
+use super::{apply, plugin_src};
 use crate::config::Config;
-
-/// Cursor: shell hooks in `hooks.json`, MCP in `mcp.json` or through the linked plugin.
-/// The CLI (`cursor-agent`) and the desktop app read the same `~/.cursor` files.
-pub struct Cursor;
-
-static VARIANTS: [Variant; 2] = [
-    Variant {
-        kind: Kind::Cli,
-        name: "Cursor CLI",
-        bins: &["cursor-agent", "agent"],
-        apps: &[],
-    },
-    Variant {
-        kind: Kind::Desktop,
-        name: "Cursor",
-        bins: &["cursor"],
-        apps: &[
-            "/Applications/Cursor.app",
-            "$LOCALAPPDATA/Programs/cursor/Cursor.exe",
-            "/opt/Cursor",
-        ],
-    },
-];
-
-impl Agent for Cursor {
-    fn id(&self) -> &'static str {
-        "cursor"
-    }
-
-    fn variants(&self) -> &'static [Variant] {
-        &VARIANTS
-    }
-
-    fn readme(&self) -> &'static str {
-        include_str!("README.md")
-    }
-
-    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[
-            rtok_plugin_sdk::Surface::Hook,
-            rtok_plugin_sdk::Surface::Mcp,
-        ]
-    }
-
-    fn shared(&self) -> bool {
-        true
-    }
-
-    fn support(&self, _kind: Kind, module: &str) -> Support {
-        match module {
-            "hooks" | "mcp" => Support::Yes,
-            "plugin" => Support::Flag("--yes"),
-            _ => Support::No("Cursor has no base-URL setting to point at the proxy"),
-        }
-    }
-
-    fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
-        vec![cfg.setup.cursor.hooks_path.clone(), mcp_path(cfg)]
-    }
-
-    fn markers(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
-        let mut paths = self.files(cfg, kind);
-        paths.push(plugin_dest(cfg));
-        paths
-    }
-
-    fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        let h = super::read(&cfg.setup.cursor.hooks_path);
-        let m = super::read(&mcp_path(cfg));
-        let plugin = plugin_dest(cfg).symlink_metadata().is_ok();
-        let mut out = Vec::new();
-        if h.contains("rtok hook") {
-            out.push("hooks");
-        }
-        // The linked plugin serves the MCP itself (D21), and setup then skips `mcp.json`.
-        if m.contains("\"rtok\"") || plugin {
-            out.push("mcp");
-        }
-        if plugin {
-            out.push("plugin");
-        }
-        out
-    }
-
-    fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?, offer_plugin(cfg, remove)?];
-        if remove {
-            lines.push(unregister_mcp(cfg)?);
-        } else if cfg.setup.mcp && !plugin_is_mcp(cfg, remove) {
-            lines.push(register_mcp(cfg)?);
-        }
-        Ok(lines)
-    }
-}
 
 fn pre_cmd() -> String {
     format!("{} hook PreToolUse --host cursor", super::rtok_hook_bin())
@@ -141,7 +46,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), "rtok", &cmd, &["mcp"])
 }
 
-/// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agents remove cursor`).
+/// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agent remove cursor`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_mcp(&apply(cfg), &mcp_path(cfg), "rtok")
 }

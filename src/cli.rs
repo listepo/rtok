@@ -121,13 +121,13 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Agent hosts (`rtok agents setup|remove|list …`)
-    #[command(visible_alias = "agent")]
-    Agents {
+    /// Agent hosts (`rtok agent setup|remove|list …`)
+    #[command(visible_alias = "agents")]
+    Agent {
         #[command(subcommand)]
         action: AgentCmd,
     },
-    /// Deprecated spelling of `rtok agents setup <host>`; still runs, still prints where to go
+    /// Deprecated spelling of `rtok agent setup <host>`; still runs, still prints where to go
     #[command(hide = true)]
     Setup(SetupArgs),
     /// Execute a command, archive its raw output, print the filtered version
@@ -301,7 +301,7 @@ enum AgentCmd {
     Setup(SetupArgs),
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
     Remove(RemoveArgs),
-    /// Every known app: kind and name, path and version, config files, rtok modules
+    /// Every known host: app type (cli/gui), app version, rtok state, modules
     List,
     /// What is running in this project: host, provider, model, tokens, start, run time
     Sessions {
@@ -313,7 +313,7 @@ enum AgentCmd {
     },
 }
 
-/// `rtok agents sessions watch` (T25.3): the same table, live. One screen, no keys:
+/// `rtok agent sessions watch` (T25.3): the same table, live. One screen, no keys:
 ///
 /// the TTY repaints in place through T24.3's `watch_loop`, a pipe gets the whole
 /// table again whenever it changes.
@@ -332,7 +332,7 @@ struct RemoveArgs {
     dry_run: bool,
 }
 
-/// One definition behind `rtok agents setup` and the deprecated `rtok setup`.
+/// One definition behind `rtok agent setup` and the deprecated `rtok setup`.
 #[derive(clap::Args)]
 struct SetupArgs {
     /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`)
@@ -340,7 +340,7 @@ struct SetupArgs {
     /// Print the planned edits and exit
     #[arg(long)]
     dry_run: bool,
-    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`
+    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agent remove <host>`
     #[arg(long)]
     remove: bool,
     /// Enable prompt modes (`terse,yagni`)
@@ -358,19 +358,19 @@ struct SetupArgs {
     /// Set `env.ANTHROPIC_BASE_URL` to this proxy
     #[arg(long)]
     proxy: bool,
-    /// Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)
+    /// Only the CLI variant (`cursor`/`opencode` have cli+gui; default is all)
     #[arg(long)]
     cli: bool,
-    /// Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)
-    #[arg(long, alias = "gui")]
-    desktop: bool,
-    /// All variants (the default when neither `--cli` nor `--desktop` is given)
+    /// Only the GUI variant (`cursor`/`opencode` have cli+gui; default is all)
+    #[arg(long)]
+    gui: bool,
+    /// All variants (the default when neither `--cli` nor `--gui` is given)
     #[arg(long)]
     all: bool,
 }
 
 impl SetupArgs {
-    /// `rtok agents remove <host>` is the install run backwards; nothing else about it differs.
+    /// `rtok agent remove <host>` is the install run backwards; nothing else about it differs.
     fn removing(args: RemoveArgs) -> Self {
         Self {
             host: args.host,
@@ -382,7 +382,7 @@ impl SetupArgs {
             mcp: false,
             proxy: false,
             cli: false,
-            desktop: false,
+            gui: false,
             all: true,
         }
     }
@@ -629,14 +629,14 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
             crate::web::serve_blocking(cfg)?;
         }
-        Cmd::Agents { action } => match action {
+        Cmd::Agent { action } => match action {
             AgentCmd::Setup(args) => setup_host(config_file.as_deref(), args)?,
             AgentCmd::Remove(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
             AgentCmd::List => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
-                print!("{}", crate::agents::list(&cfg));
+                print!("{}", crate::setup::list(&cfg));
             }
             // The command renders the model's Sessions page (T25.2): newest first, live
             // only unless `--all`. `since = 0` because the default view's window is
@@ -685,7 +685,7 @@ pub fn run() -> Result<()> {
         },
         Cmd::Setup(args) => {
             eprintln!(
-                "warning: `rtok setup {0}` is deprecated; use `rtok agents setup {0}`",
+                "warning: `rtok setup {0}` is deprecated; use `rtok agent setup {0}`",
                 args.host
             );
             setup_host(config_file.as_deref(), args)?;
@@ -897,8 +897,7 @@ fn bench_flags(
     Some(flags)
 }
 
-/// The host installers, one call site for `rtok agents setup|remove` and the deprecated
-/// `rtok setup`. Unknown hosts are refused before any backup is taken.
+/// The host installers, one call site for `rtok agent setup` and the deprecated `rtok setup`.
 fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<()> {
     let SetupArgs {
         host,
@@ -910,11 +909,11 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         mcp,
         proxy,
         cli,
-        desktop,
+        gui,
         all,
     } = args;
     let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
-    // Comma-separated hosts: `rtok agents setup opencode,cursor` installs both.
+    // Comma-separated hosts: `rtok agent setup opencode,cursor` installs both.
     let hosts: Vec<String> = host
         .split(',')
         .map(|s| s.trim().to_string())
@@ -923,22 +922,175 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     if hosts.is_empty() {
         bail!("unknown host: {host}");
     }
-    let mode = if remove {
-        crate::agents::Mode::Remove
-    } else if replace {
-        crate::agents::Mode::Replace
-    } else {
-        crate::agents::Mode::Install
-    };
-    let req = crate::agents::Request {
-        hosts,
-        mode,
-        cli,
-        desktop,
-        all,
-    };
-    print!("{}", crate::agents::run(&mut cfg, &req)?);
+    for h in &hosts {
+        if !matches!(
+            h.as_str(),
+            "claude" | "cursor" | "codex" | "opencode" | "pi"
+        ) {
+            bail!("unknown host: {h}");
+        }
+    }
+    // Removal takes back every variant; setup defaults to all variants.
+    let want = |kind: &str| remove || crate::setup::wants(kind, cli, gui, all);
+    // The copy is taken up front, before any installer runs, so one `.bak-<ts>` per file holds
+    // the host exactly as it was — not as it was midway through a multi-file edit. Taking it
+    // here also means the installers must not take a second one of their own.
+    if !cfg.setup.dry_run && cfg.setup.backup {
+        for h in &hosts {
+            for path in crate::setup::host_files(&cfg, h) {
+                if let Some(bak) = rtok_agent_sdk::backup(&path)? {
+                    println!("backup {}", bak.display());
+                }
+            }
+        }
+        cfg.setup.backup = false;
+    }
+    for h in hosts {
+        setup_one(&cfg, &h, remove, replace, &want)?;
+    }
     Ok(())
+}
+
+/// Install into (or remove from) one host, honouring the `--cli/--gui/--all`
+/// variant filter. A host whose agent is not found is skipped, never created.
+fn setup_one(
+    cfg: &Config,
+    host: &str,
+    remove: bool,
+    replace: bool,
+    want: &dyn Fn(&str) -> bool,
+) -> Result<()> {
+    match host {
+        "claude" if replace && (remove || want("cli")) => {
+            println!("{}", crate::setup::migrate::run(cfg)?);
+            print_modules(cfg, host, "cli");
+        }
+        "claude" => {
+            if !want("cli") {
+                println!("skip claude (cli): not selected");
+                return Ok(());
+            }
+            if !remove && !crate::setup::agent_present(host, "cli", cfg) {
+                println!("skip claude (cli): not found, not installed");
+                return Ok(());
+            }
+            let mut lines = vec![crate::setup::claude::run(cfg, remove)?];
+            if remove {
+                lines.push(crate::setup::claude::unregister_mcp(cfg)?);
+                lines.push(crate::proxy::cli::unregister_proxy(cfg)?);
+            } else {
+                if cfg.setup.mcp {
+                    lines.push(crate::setup::claude::register_mcp(cfg)?);
+                }
+                if cfg.setup.proxy {
+                    lines.push(crate::proxy::cli::register_proxy(cfg)?);
+                }
+            }
+            print_lines(&lines);
+            print_modules(cfg, host, "cli");
+        }
+        "cursor" => {
+            // CLI and GUI share `hooks.json`/`mcp.json`, so one run covers both.
+            if !want("cli") && !want("gui") {
+                println!("skip cursor: not selected");
+                return Ok(());
+            }
+            if !remove && !crate::setup::agent_present(host, "cli", cfg) {
+                println!("skip cursor: not found, not installed");
+                return Ok(());
+            }
+            let hooks = crate::setup::cursor::run(cfg, remove)?;
+            let plugin = crate::setup::cursor::offer_plugin(cfg, remove)?;
+            let mut lines = vec![hooks, plugin];
+            if remove {
+                lines.push(crate::setup::cursor::unregister_mcp(cfg)?);
+            } else if cfg.setup.mcp && !crate::setup::cursor::plugin_is_mcp(cfg, remove) {
+                lines.push(crate::setup::cursor::register_mcp(cfg)?);
+            }
+            print_lines(&lines);
+            print_modules(cfg, host, "cli");
+        }
+        // Codex has no hooks; MCP plus optional proxy (T11.5) is the install.
+        "codex" => {
+            if !want("cli") {
+                println!("skip codex (cli): not selected");
+                return Ok(());
+            }
+            if !remove && !crate::setup::agent_present(host, "cli", cfg) {
+                println!("skip codex (cli): not found, not installed");
+                return Ok(());
+            }
+            let mut lines = vec![crate::setup::codex::run(cfg, remove)?];
+            // On the way out the provider block goes whether or not `--proxy` asked for it.
+            if remove || cfg.setup.proxy {
+                lines.push(crate::setup::codex::register_proxy(cfg, remove)?);
+            }
+            print_lines(&lines);
+            print_modules(cfg, host, "cli");
+        }
+        "opencode" => {
+            // CLI and GUI keep separate configs; each selected variant installs alone.
+            let mut ran = false;
+            for kind in ["cli", "gui"] {
+                if !want(kind) {
+                    continue;
+                }
+                ran = true;
+                if !remove && !crate::setup::agent_present(host, kind, cfg) {
+                    println!("skip opencode ({kind}): not found, not installed");
+                    continue;
+                }
+                if kind == "gui" {
+                    let mut gui_cfg = cfg.clone();
+                    gui_cfg.setup.opencode.config_path = crate::setup::opencode_gui_path();
+                    println!("{}", crate::setup::opencode::run(&gui_cfg, remove)?);
+                } else {
+                    println!("{}", crate::setup::opencode::run(cfg, remove)?);
+                }
+                print_modules(cfg, host, kind);
+            }
+            if !ran {
+                println!("skip opencode: not selected");
+            }
+        }
+        // pi has no hooks and no MCP (its philosophy); the extension owns bash (T10.6).
+        "pi" => {
+            if !want("cli") {
+                println!("skip pi (cli): not selected");
+                return Ok(());
+            }
+            if !remove && !crate::setup::agent_present(host, "cli", cfg) {
+                println!("skip pi (cli): not found, not installed");
+                return Ok(());
+            }
+            println!("{}", crate::setup::pi::offer_plugin(cfg, remove)?);
+            print_modules(cfg, host, "cli");
+        }
+        other => bail!("unknown host: {other}"),
+    }
+    Ok(())
+}
+
+/// What the host carries once the installer is done, one line per rtok module.
+fn print_modules(cfg: &Config, host: &str, kind: &str) {
+    let note = if cfg.setup.dry_run {
+        " — dry run, nothing written"
+    } else {
+        ""
+    };
+    println!("{host} ({kind}){note}");
+    let states = crate::setup::module_states(host, kind, cfg);
+    print!("{}", crate::setup::module_lines(&states, "  ", true));
+}
+
+/// An installer that changed nothing reports it once, not once per step. The lines it does
+/// report are already `+`/`-` shaped, so they take the same colours as a diff (T12.6).
+fn print_lines(lines: &[String]) {
+    if lines.iter().all(|s| s == "no changes") {
+        println!("no changes");
+    } else {
+        println!("{}", crate::render::paint(&lines.join("\n")));
+    }
 }
 
 /// A rendered diff, when there is one. An empty diff means the file was already right.

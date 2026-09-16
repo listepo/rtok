@@ -1,7 +1,1 @@
-- T44.4. Checks, e2e and platforms
-- T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
-- T45.1. OTel flush survives a traces error
-- T45.2. Proxy cache hits and errors keep usage rows
-- T45.3. Archive decisions scoped per session
-- T45.5. Gates cover tests, webui and examples
-- T45.6. Extra hook/expand/guard/read/toon coverage
+

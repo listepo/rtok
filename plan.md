@@ -6,47 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T44.4 | todo | P1 | 3 | 0% | |
-| T44.5 | todo | P1 | 3 | 0% | |
-| T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T45.2 | in progress | P0 | 3 | 0% | OpenCode / Muse Spark 1.3 |
-| T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
-| T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T44.4. Checks, e2e and platforms
-
-More checks around setup: warn when `rtok` is not on PATH (hooks would fail to spawn), verify after each write that the requested modules read back as installed, and refuse unknown hosts before any backup. Tests: an e2e matrix in `tests/agents_setup.rs` over every host (setup twice → one backup, `already installed`; remove twice → `no changes`; `--dry-run` writes nothing; `agent` alias equals `agents`; `--cli`/`--desktop` filters; Claude Desktop under a temp home), Windows path cases as unit tests, and a `windows-latest` job in `ci.yml` (advisory until green). `just check`.
-
-### T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
-
-OpenCode stays proxy-only while Cursor installs hooks+MCP+plugin; `hosts/opencode/rtok.ts` is copied by hand and `support(mcp/plugin)` is `No`. Done means `rtok agents setup opencode` writes the `mcp` table and links the plugin for CLI and Desktop independently, singleton as in Cursor (linked plugin serves MCP, `mcpServers.rtok` removed), fail open with the ketch install hint when `rtok` is missing.
-Plan: `src/agents/opencode/mod.rs` (register/unregister `mcpServers.rtok` via `rtok mcp`, `offer_plugin` link of `hosts/opencode/rtok.ts` into CLI + Desktop plugin dirs, singleton clear, `support`/`installed`/`markers` update), `src/agents/opencode/README.md` (parity table), `hosts/opencode/rtok.ts` (keep `tool.execute.after` bash-only fail-open path). Verify: `mise exec -- cargo test -p rtok --lib agents::opencode` + `just check`.
-
-### T45.1. OTel flush survives a traces error
-
-`flush_into` aborts the whole flush on a non-404 traces POST error (`?`), so logs/metrics stall one extra round. Per-stream isolation: stash the error in `rep.error` and continue; the traces mark stays, other streams advance.
-Plan: `src/otel/export.rs` (match per-stream `post` results), `tests/otel.rs` (new `traces_500_still_posts_logs_and_metrics` case). Verify: `mise exec -- cargo test --test otel`.
-
-### T45.2. Proxy cache hits and errors keep usage rows
-
-A semantic-cache hit writes measurement + `call_io` but no `usage`/`tokens` row and drops request bytes; upstream errors and non-2xx/no-usage responses also leave no row. Every request owes one usage row (T5.1).
-Plan: `src/proxy/mod.rs` (insert usage + provider tokens on cache hit with request bytes; minimal row on error), `tests/proxy.rs` (new cases). Verify: `mise exec -- cargo test --test proxy`.
-
-### T45.3. Archive decisions scoped per session
-
-`archive_decisions` PK is bare `tool_use_id` while reads/writes scope `(session, tool_use_id)`: a repeated id in a second session hits `INSERT OR IGNORE` and is never persisted; `mark_expanded` is global so expanding in session A freezes B.
-Plan: new migration `migrations/0014.sql` (composite PK, never edit applied ones), `src/store/mod.rs`, `src/expand.rs`. Verify: `mise exec -- cargo test --lib store::` + expand tests.
-
-### T45.5. Gates cover tests, webui and examples
-
-`.jscpd.json` scans only three src dirs, blind to `tests/`/`crates/rtok-webui` where the known mirrors live; `examples/mcp_tool.rs` teaches zero-`Measurement` plugins against D3.
-Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (record + assert one row like `hello_plugin`), `tests/trycmd/*` (one more surface snapshot). Verify: `mise exec -- jscpd` + scoped cargo tests.
-
-### T45.6. Extra hook/expand/guard/read/toon coverage
-
-Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
-Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
 
 ## Reference
 

@@ -1,4 +1,4 @@
-//! T25.2: `rtok agents sessions` renders the operator model's Sessions page (T25.1) as a
+//! T25.2: `rtok agent sessions` renders the operator model's Sessions page (T25.1) as a
 //! table. Against a fixture store — two live sessions across two hosts and one ended —
 //! this pins the Check: two rows by default, three with `--all`, the token columns sum to
 //! exactly what `rtok stats` prints over the same window, the `agents` alias spells the
@@ -141,7 +141,7 @@ fn two_live_and_one_ended_is_two_rows_three_with_all() {
     let h = home("rows");
     seed(&h);
 
-    let out = rtok(&["agents", "sessions"], &h);
+    let out = rtok(&["agent", "sessions"], &h);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 3, "header plus the two live rows:\n{out}");
     assert!(lines[0].starts_with("agent"), "header first:\n{out}");
@@ -151,7 +151,7 @@ fn two_live_and_one_ended_is_two_rows_three_with_all() {
         "the ended session is hidden without --all:\n{out}"
     );
 
-    let all = rtok(&["agents", "sessions", "--all"], &h);
+    let all = rtok(&["agent", "sessions", "--all"], &h);
     let all_lines: Vec<&str> = all.lines().collect();
     assert_eq!(all_lines.len(), 4, "the ended row joins:\n{all}");
     assert!(all.contains("gpt-x"), "{all}");
@@ -170,7 +170,7 @@ fn the_token_columns_equal_rtok_stats_over_the_same_window() {
     let h = home("parity");
     seed(&h);
 
-    let all = rtok(&["agents", "sessions", "--all"], &h);
+    let all = rtok(&["agent", "sessions", "--all"], &h);
     let mut lines = all.lines();
     let header = lines.next().unwrap().to_string();
     let mut sums = [0i64; 4];
@@ -202,7 +202,7 @@ fn the_token_columns_equal_rtok_stats_over_the_same_window() {
 #[test]
 fn an_empty_store_prints_the_header_and_nothing_is_running() {
     let h = home("empty");
-    let out = rtok(&["agents", "sessions"], &h);
+    let out = rtok(&["agent", "sessions"], &h);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 2, "header plus the line:\n{out}");
     assert!(lines[0].starts_with("agent"), "header first:\n{out}");
@@ -289,7 +289,7 @@ fn watch_shows_a_session_started_mid_run_and_repeats_plain_tables() {
     }
 
     let mut child = Command::new(bin())
-        .args(["agents", "sessions", "watch"])
+        .args(["agent", "sessions", "watch"])
         .env("RTOK_HOME", &h)
         .env("HOME", &h)
         .stdout(Stdio::piped())

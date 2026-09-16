@@ -1,4 +1,4 @@
-//! What every `rtok agents setup <host>` installer does, once.
+//! What every `rtok agent setup <host>` installer does, once.
 //!
 //! An agent host — Claude Code, Cursor, Codex, OpenCode, pi — is a config file rtok edits and,
 //! for some of them, a plugin directory rtok installs. The *shapes* differ (JSON hooks, a TOML
@@ -65,9 +65,7 @@ impl Apply {
     }
 }
 
-/// Copy `path` to `<name>.bak-<unix-seconds>` beside it. `None` when there is no file yet, or
-/// when a `<name>.bak-*` sibling already holds the same bytes — a second `setup` or `remove`
-/// over an unchanged file adds nothing to undo, so it adds no copy either.
+/// Copy `path` to `<name>.bak-<unix-seconds>` beside it. `None` when there is no file yet.
 pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
@@ -76,16 +74,12 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    backup_at(path, ts)
+    backup_at(path, ts).map(Some)
 }
 
 /// `backup` with the clock passed in, so a test can pin the second instead of racing it.
-fn backup_at(path: &Path, ts: u64) -> Result<Option<PathBuf>> {
+fn backup_at(path: &Path, ts: u64) -> Result<PathBuf> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let body = fs::read(path).with_context(|| path.display().to_string())?;
-    if identical_backup_exists(path, &name, &body) {
-        return Ok(None);
-    }
     // Two commands inside one second would otherwise share a name and the first copy would go.
     let mut n = 0u32;
     let mut bak = path.with_file_name(format!("{name}.bak-{ts}"));
@@ -94,27 +88,7 @@ fn backup_at(path: &Path, ts: u64) -> Result<Option<PathBuf>> {
         bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
-    Ok(Some(bak))
-}
-
-/// True when any `<name>.bak-*` beside `path` is byte-equal to `body`. The suffix is not
-/// compared: the copy of the same content is the same undo, whichever second it was taken.
-fn identical_backup_exists(path: &Path, name: &str, body: &[u8]) -> bool {
-    let Some(dir) = path.parent() else {
-        return false;
-    };
-    let prefix = format!("{name}.bak-");
-    let Ok(entries) = fs::read_dir(dir) else {
-        return false;
-    };
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
-        .any(|e| {
-            // Size first: a mismatch skips the read; equal sizes compare bytes.
-            e.metadata().is_ok_and(|m| m.len() == body.len() as u64)
-                && fs::read(e.path()).is_ok_and(|b| b == body)
-        })
+    Ok(bak)
 }
 
 /// A host's JSON config as a value to edit. A missing or empty file is an empty object, not an
@@ -549,7 +523,7 @@ mod tests {
         // A pinned second: with the real clock, a rollover mid-test lands a fresh `bak-{ts+1}`.
         let ts = 1_700_000_000;
         fs::write(&path, "v0").unwrap();
-        let first = backup_at(&path, ts).unwrap().expect("first copy");
+        let first = backup_at(&path, ts).unwrap();
         assert_eq!(
             first.file_name().unwrap().to_string_lossy(),
             format!("settings.json.bak-{ts}")
@@ -570,7 +544,7 @@ mod tests {
         assert_eq!(contents_before.len(), 100, "base plus slots 1..=99");
 
         fs::write(&path, "v2").unwrap();
-        let second = backup_at(&path, ts).unwrap().expect("second copy");
+        let second = backup_at(&path, ts).unwrap();
         assert_eq!(
             second.file_name().unwrap().to_string_lossy(),
             format!("settings.json.bak-{ts}-100")
@@ -585,31 +559,6 @@ mod tests {
                 bak_path.display()
             );
         }
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    /// T44.1: a second `setup`/`remove` over an unchanged file must not add a second copy,
-    /// whatever suffix the existing copy carries; changed content still gets its own.
-    #[test]
-    fn backup_skips_when_an_identical_copy_exists_under_any_name() {
-        let dir = tmp("backup-identical");
-        let path = dir.join("settings.json");
-        fs::write(&path, "same").unwrap();
-        let first = backup_at(&path, 1).unwrap().expect("first copy");
-        assert_eq!(backup_at(&path, 2).unwrap(), None, "same bytes, no copy");
-        // Only a differently suffixed identical copy remains: still no new copy.
-        fs::rename(&first, dir.join("settings.json.bak-9-7")).unwrap();
-        assert_eq!(backup_at(&path, 3).unwrap(), None);
-        // Same size, different bytes: a copy is due.
-        fs::write(&path, "diff").unwrap();
-        let third = backup_at(&path, 4)
-            .unwrap()
-            .expect("changed content is copied");
-        assert_eq!(fs::read_to_string(&third).unwrap(), "diff");
-        // Another file's copies do not count for this one.
-        fs::write(dir.join("other.json.bak-1"), "back").unwrap();
-        fs::write(&path, "back").unwrap();
-        assert!(backup_at(&path, 5).unwrap().is_some(), "prefix is per file");
         let _ = fs::remove_dir_all(dir);
     }
 

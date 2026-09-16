@@ -1,4 +1,4 @@
-//! pi installer (`rtok agents setup pi`, plan T10.6, D21).
+//! pi installer (`rtok agent setup pi`, plan T10.6, D21).
 //!
 //! pi philosophy is no MCP: the plugin owns the bash call path only —
 //! `tool_call` bash rewrites to `rtok run -- …`, `tool_result` bash
@@ -11,69 +11,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use rtok_agent_sdk::PluginLink;
 
-use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
+use super::{apply, plugin_src};
 use crate::config::Config;
-
-/// pi: one linked extension under `~/.pi/agent/extensions`, nothing else.
-pub struct Pi;
-
-static VARIANTS: [Variant; 1] = [Variant {
-    kind: Kind::Cli,
-    name: "pi",
-    bins: &["pi"],
-    apps: &[],
-}];
-
-impl Agent for Pi {
-    fn id(&self) -> &'static str {
-        "pi"
-    }
-
-    fn variants(&self) -> &'static [Variant] {
-        &VARIANTS
-    }
-
-    fn readme(&self) -> &'static str {
-        include_str!("README.md")
-    }
-
-    fn support(&self, _kind: Kind, module: &str) -> Support {
-        match module {
-            "plugin" => Support::Flag("--yes"),
-            "hooks" => Support::No("pi has no hook events; the extension owns the bash call path"),
-            "mcp" => Support::No(
-                "pi philosophy is no MCP; the extension calls rtok run and rtok filter directly",
-            ),
-            _ => Support::No(
-                "pi provider base URLs live in its models config, which setup does not edit",
-            ),
-        }
-    }
-
-    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[rtok_plugin_sdk::Surface::Cli]
-    }
-
-    fn files(&self, _cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
-        Vec::new()
-    }
-
-    fn markers(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
-        vec![plugin_dest(cfg), cfg.setup.pi.extensions_path.clone()]
-    }
-
-    fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        if plugin_dest(cfg).symlink_metadata().is_ok() {
-            vec!["plugin"]
-        } else {
-            Vec::new()
-        }
-    }
-
-    fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        Ok(vec![offer_plugin(cfg, mode == Mode::Remove)?])
-    }
-}
 
 const PLUGIN_SRC_REL: &str = "plugins/pi";
 const PLUGIN_DIR_NAME: &str = "rtok";

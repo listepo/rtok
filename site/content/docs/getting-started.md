@@ -50,9 +50,9 @@ stripped or half-installed rtok never blocks the host agent.
 ## Wire it into Claude Code
 
 ```bash
-rtok agents setup claude --dry-run   # print the eight hook entries it would write
-rtok agents setup claude             # installs hooks / MCP / proxy, with backups
-rtok agents remove claude      # takes hooks, MCP and the proxy variable back out
+rtok agent setup claude --dry-run   # print the eight hook entries it would write
+rtok agent setup claude             # installs hooks / MCP / proxy, with backups
+rtok agent remove claude      # takes hooks, MCP and the proxy variable back out
 ```
 
 This writes the hook entries, the MCP server registration, and the proxy environment into

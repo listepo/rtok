@@ -1,7 +1,7 @@
 # rtok-agent-sdk
 
-The agent-host half of [rtok](https://github.com/listepo/rtok): what `rtok agents setup <host>` and
-`rtok agents remove <host>` do to a host's configuration, factored out of the hosts themselves.
+The agent-host half of [rtok](https://github.com/listepo/rtok): what `rtok agent setup <host>` and
+`rtok agent remove <host>` do to a host's configuration, factored out of the hosts themselves.
 
 Five hosts ship in rtok — Claude Code, Cursor, Codex, OpenCode, pi — and each one edits a different
 file in a different format. What they share is the contract around the edit, and that is this

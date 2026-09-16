@@ -22,7 +22,7 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 | P13 T13.1–T13.4 | Diesel; `calls` / `tokens` / `logs` (D13) | done 2026-09-02 |
 | T2.1 | `rtok hook <event>` dispatcher, fail open ≤ 10 ms | done 2026-09-02 |
 | T2.2 | latency harness | done 2026-09-02 |
-| T2.3 | `rtok agents setup claude` | done 2026-09-02 |
+| T2.3 | `rtok agent setup claude` | done 2026-09-02 |
 | T4.1 | `rtok mcp` stdio server | done 2026-09-02 |
 | T1.4 | `rtok doctor` | done 2026-09-02 |
 | T9.3–T9.5, T10.1–T10.4 | replace hooks, README, Cursor/OpenCode/Codex, release | done 2026-09-02 |
