@@ -406,6 +406,19 @@ mod tests {
         assert!(!fs::read_to_string(&path).unwrap().contains("\"rtok\""));
     }
 
+    /// Windows keeps the desktop file under `%APPDATA%\Claude`, not under the profile root.
+    #[cfg(windows)]
+    #[test]
+    fn desktop_path_lives_under_appdata_on_windows() {
+        let appdata = std::env::var_os("APPDATA").expect("APPDATA");
+        assert!(
+            desktop_path().starts_with(&appdata),
+            "{}",
+            desktop_path().display()
+        );
+        assert!(desktop_command().ends_with(".exe"), "{}", desktop_command());
+    }
+
     /// A settings file whose `hooks` is not an object is user data, not a reason to panic
     /// (`hooks: []` used to hit `as_object_mut().unwrap()`).
     #[test]

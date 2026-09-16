@@ -302,6 +302,36 @@ pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
         .collect()
 }
 
+/// The modules an install should leave behind: every `Yes` module (`mcp` only with
+/// `[setup] mcp`), and a flag module only when its flag was given.
+pub fn expected(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
+    MODULES
+        .iter()
+        .copied()
+        .filter(|m| match agent.support(kind, m) {
+            Support::Yes => *m != "mcp" || cfg.setup.mcp,
+            Support::Flag("--proxy") => cfg.setup.proxy,
+            Support::Flag("--yes") => cfg.setup.yes,
+            Support::Flag(_) | Support::No(_) => false,
+        })
+        .collect()
+}
+
+/// Expected modules that do not read back from the host's files: the installer checking its
+/// own write (a host that rewrote the file, a marker the reader does not recognise).
+pub fn missing(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
+    let have = agent.installed(cfg, kind);
+    expected(agent, kind, cfg)
+        .into_iter()
+        .filter(|m| !have.contains(m))
+        .collect()
+}
+
+/// True when the `rtok` the configs spawn resolves: bare on PATH, or written absolute.
+fn rtok_spawns() -> bool {
+    bare_rtok_on_path(std::env::var_os("PATH").as_deref()) || rtok_command() != "rtok"
+}
+
 /// One of rtok's own plugins as a host variant reaches it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PluginRow {
@@ -492,11 +522,18 @@ pub fn resolve(hosts: &[String]) -> Result<Vec<&'static dyn Agent>> {
 /// [`block`] each. The copy is taken up front, before any installer runs, so one `.bak-<ts>`
 /// per file holds the host exactly as it was — not as it was midway through a multi-file
 /// edit; the installers therefore must not take one of their own (`cfg.setup.backup` is
-/// cleared here).
+/// cleared here). A run that then wrote nothing removes the copies it took: `already
+/// installed` leaves the directory as it found it.
 pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
     let agents = resolve(&req.hosts)?;
     let want = |kind: Kind| req.mode == Mode::Remove || wants(kind, req.cli, req.desktop, req.all);
     let mut out = String::new();
+    if req.mode != Mode::Remove && !rtok_spawns() {
+        out.push_str(
+            "warning: rtok is not on PATH; the hooks and MCP entries spawn `rtok` by name and will fail until it is\n",
+        );
+    }
+    let mut taken: Vec<PathBuf> = Vec::new();
     if !cfg.setup.dry_run && cfg.setup.backup {
         let mut seen: Vec<PathBuf> = Vec::new();
         for a in &agents {
@@ -506,7 +543,7 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
                         continue;
                     }
                     if let Some(bak) = rtok_agent_sdk::backup(&path)? {
-                        out.push_str(&format!("backup {}\n", bak.display()));
+                        taken.push(bak);
                     }
                     seen.push(path);
                 }
@@ -514,7 +551,30 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
         }
         cfg.setup.backup = false;
     }
-    for a in agents {
+    let (blocks, changed) = apply_all(cfg, req, &agents, want)?;
+    if changed {
+        for bak in &taken {
+            out.push_str(&format!("backup {}\n", bak.display()));
+        }
+    } else {
+        for bak in &taken {
+            let _ = std::fs::remove_file(bak);
+        }
+    }
+    out.push_str(&blocks);
+    Ok(out)
+}
+
+/// The blocks of every wanted variant, and whether any step changed a file.
+fn apply_all(
+    cfg: &Config,
+    req: &Request,
+    agents: &[&'static dyn Agent],
+    want: impl Fn(Kind) -> bool,
+) -> Result<(String, bool)> {
+    let mut out = String::new();
+    let mut changed = false;
+    for &a in agents {
         let mut done: Option<&'static str> = None;
         let mut any = false;
         for v in a.variants().iter().filter(|v| want(v.kind)) {
@@ -529,6 +589,7 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
             }
             let reports = a.apply(cfg, v.kind, req.mode)?;
             done = Some(v.name);
+            changed |= reports.iter().any(|r| r != NO_CHANGES);
             out.push_str(&block(
                 a,
                 v,
@@ -538,12 +599,17 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
                     reports: &reports,
                 },
             ));
+            if req.mode == Mode::Install && !cfg.setup.dry_run {
+                for m in missing(a, v.kind, cfg) {
+                    out.push_str(&format!("  warning: {m} did not read back as installed\n"));
+                }
+            }
         }
         if !any {
             out.push_str(&format!("skip {}: not selected\n", a.id()));
         }
     }
-    Ok(out)
+    Ok((out, changed))
 }
 
 /// `rtok agents list`: every known host × variant as a [`block`], nothing written.
@@ -1083,6 +1149,58 @@ mod tests {
             &[Surface::Mcp, Surface::Proxy]
         ));
         assert!(reaches(&cursor::Cursor, Kind::Desktop, &[Surface::Mcp]));
+    }
+
+    /// What an install must leave behind follows `support()` and the flags given; against
+    /// files that do not exist, every expected module is missing.
+    #[test]
+    fn expected_modules_follow_support_and_flags_and_missing_reads_them_back() {
+        let mut cfg = Config::default();
+        cfg.setup.codex.config_path = std::env::temp_dir()
+            .join("rtok-no-such-dir")
+            .join("config.toml");
+        cfg.setup.claude.settings_path = std::env::temp_dir().join("rtok-no-such-dir/s.json");
+        cfg.doctor.claude_json = std::env::temp_dir().join("rtok-no-such-dir/c.json");
+        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["mcp"]);
+        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
+        assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
+        cfg.setup.proxy = true;
+        cfg.setup.yes = true;
+        cfg.setup.mcp = false;
+        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["proxy"]);
+        assert_eq!(
+            expected(&claude::Claude, Kind::Cli, &cfg),
+            ["hooks", "proxy"]
+        );
+        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
+        assert_eq!(
+            missing(&claude::Claude, Kind::Cli, &cfg),
+            ["hooks", "proxy"]
+        );
+        assert_eq!(
+            missing(&claude::Claude, Kind::Desktop, &cfg),
+            Vec::<&str>::new()
+        );
+    }
+
+    /// `~/x` follows the home dir, `$VAR/x` the variable, and an unset variable is left as
+    /// written so the caller's `exists()` says no instead of probing a wrong root.
+    #[test]
+    fn expand_app_resolves_home_and_env_vars() {
+        assert_eq!(expand_app("~/Apps/x"), join_rel(&home_dir(), "Apps/x"));
+        let path = std::env::var_os("PATH").expect("PATH");
+        assert_eq!(
+            expand_app("$PATH/Claude/claude.exe"),
+            join_rel(Path::new(&path), "Claude/claude.exe")
+        );
+        assert_eq!(
+            expand_app("$RTOK_NO_SUCH_VAR/app"),
+            PathBuf::from("$RTOK_NO_SUCH_VAR/app")
+        );
+        assert_eq!(
+            expand_app("/Applications/Claude.app"),
+            PathBuf::from("/Applications/Claude.app")
+        );
     }
 
     /// A proxy on a non-default port read as not installed: the check looked for `8790`.

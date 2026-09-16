@@ -6,22 +6,21 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T44.4 | todo | P1 | 3 | 0% | |
-| T44.5 | todo | P1 | 3 | 0% | |
+| T44.5 | in progress | P1 | 3 | 0% | Claude Code / Fable 5.1 |
 | T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.2 | in progress | P0 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T44.4. Checks, e2e and platforms
-
-More checks around setup: warn when `rtok` is not on PATH (hooks would fail to spawn), verify after each write that the requested modules read back as installed, and refuse unknown hosts before any backup. Tests: an e2e matrix in `tests/agents_setup.rs` over every host (setup twice → one backup, `already installed`; remove twice → `no changes`; `--dry-run` writes nothing; `agent` alias equals `agents`; `--cli`/`--desktop` filters; Claude Desktop under a temp home), Windows path cases as unit tests, and a `windows-latest` job in `ci.yml` (advisory until green). `just check`.
+| T46.1 | todo | P1 | 3 | 0% | |
+| T46.2 | todo | P1 | 3 | 0% | |
+| T46.3 | todo | P1 | 2 | 0% | |
+| T46.4 | todo | P1 | 3 | 0% | |
 
 ### T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
 
 OpenCode stays proxy-only while Cursor installs hooks+MCP+plugin; `hosts/opencode/rtok.ts` is copied by hand and `support(mcp/plugin)` is `No`. Done means `rtok agents setup opencode` writes the `mcp` table and links the plugin for CLI and Desktop independently, singleton as in Cursor (linked plugin serves MCP, `mcpServers.rtok` removed), fail open with the ketch install hint when `rtok` is missing.
-Plan: `src/agents/opencode/mod.rs` (register/unregister `mcpServers.rtok` via `rtok mcp`, `offer_plugin` link of `hosts/opencode/rtok.ts` into CLI + Desktop plugin dirs, singleton clear, `support`/`installed`/`markers` update), `src/agents/opencode/README.md` (parity table), `hosts/opencode/rtok.ts` (keep `tool.execute.after` bash-only fail-open path). Verify: `mise exec -- cargo test -p rtok --lib agents::opencode` + `just check`.
+Plan: `src/agents/opencode/mod.rs` (register/unregister the `mcp.rtok` local entry — OpenCode's shape is `{type: "local", command: ["rtok", "mcp"], enabled: true}`, not `mcpServers` — and `offer_plugin` linking `plugins/opencode/rtok.ts` to `<config dir>/plugins/rtok.ts` for CLI and Desktop each; `support`/`installed`/`markers` updated), `src/agents/opencode/README.md` (parity table), `hosts/opencode/` moves to `plugins/opencode/` so the release archive ships it (`Cargo.toml` includes `plugins/`), `rtok-agent-sdk` copies a single-file plugin on Windows, `resolve_plugin_src` accepts a file. The plugin filters bash output and the MCP entry serves `read`/`search`: two capabilities, one call path each (D21), so no singleton clear. Verify: `mise exec -- cargo test -p rtok --lib agents::opencode` + `just check`.
 
 ### T45.1. OTel flush survives a traces error
 
@@ -47,6 +46,26 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
+
+### T46.1. ZCode host
+
+Z.ai's ZCode desktop app (GLM harness) reads a Claude-compatible hook protocol and MCP from `~/.zcode/cli/config.json`: `hooks.enabled`, `hooks.events.<Event>[] = {matcher, hooks: [{type: "command", command, timeoutMs}]}` (events SessionStart, UserPromptSubmit, PreToolUse, PostToolUse; stdin `session_id`/`tool_name`/`tool_input`, stdout `hookSpecificOutput.updatedInput`), and `mcp.servers.<name> = {command, args}`. Done means `rtok agents setup zcode` writes both, `remove` strips both, `list` shows the app, and the README table matches `support()`. Proxy stays `no` (providers are per-id tables with keys); plugin stays `no` (plugins come from the Z.ai marketplace, no documented local link).
+Plan: `src/agents/zcode/{mod.rs,README.md}` (one Desktop variant: `/Applications/ZCode.app`, `$LOCALAPPDATA/Programs/ZCode/ZCode.exe`; `hooks` via the Claude entry helpers made `pub(super)` with the timeout key as a parameter, `mcp` via `edit_json` on `mcp.servers`), `[setup.zcode] config_path` in `src/config/mod.rs` + `config/default.toml` + `docs/config.md`, registration in `src/agents/mod.rs`, host lists in `src/cli.rs`/`README.md`/site. Verify: `mise exec -- cargo test -p rtok --lib agents::` (dry-run touches nothing, apply idempotent, remove keeps foreign entries, parity test).
+
+### T46.2. Kimi Code host
+
+Moonshot's Kimi Code CLI (`kimi`, `~/.kimi-code/`) reads hooks as `[[hooks]]` tables in `config.toml` (`event`, `matcher`, `command`, `timeout`; Claude-compatible stdin, exit 2 blocks, `hookSpecificOutput.permissionDecision`) and MCP from `mcp.json` (`mcpServers`). Done means `rtok agents setup kimi` writes both, `remove` strips both, `list` shows the app, README matches `support()`. Proxy stays `no` (`[providers.<name>] base_url` is per provider); plugin stays `no` (`plugins/managed/` is owned by `kimi plugin install`). `updatedInput` on PreToolUse is not in the Kimi docs: the README says the rewrite path is unverified and the deny path is the one the docs promise.
+Plan: `src/agents/kimi/{mod.rs,README.md}` (`toml_edit` array-of-tables edit keeping comments, `register_mcp` on the sibling `mcp.json`), `[setup.kimi] config_path` in config + default.toml + docs, registration and host lists as T46.1. Verify: `mise exec -- cargo test -p rtok --lib agents::kimi` + parity.
+
+### T46.3. Copilot hook payload map
+
+GitHub Copilot CLI hooks speak camelCase: stdin `sessionId`, `cwd`, `toolName`, `toolArgs`; events `preToolUse`, `postToolUse`, `sessionStart`, `userPromptSubmitted`; stdout `{permissionDecision, permissionDecisionReason, modifiedArgs}` for preToolUse and `{additionalContext}` for postToolUse — not `hookSpecificOutput`. Done means `rtok hook <Event> --host copilot` reads that stdin as the Claude event and writes that stdout, so `cmd`, `guard`, `read` and `inject` reach Copilot through the existing dispatcher; unknown fields still round-trip, and every path stays fail-open.
+Plan: `HookInput::adapt_copilot` in `src/hooks/types.rs` (field map, shell tool names to `Bash`, read tool names to `Read`), `copilot_output` in `src/hooks/mod.rs` (`HookOutput` → Copilot object, `{}` stays `{}`), host branch beside the Cursor one; unit tests on both. Verify: `mise exec -- cargo test -p rtok --lib hooks::`.
+
+### T46.4. Copilot CLI and GitHub Copilot app host
+
+Copilot CLI (`copilot`) and the GitHub Copilot desktop app share `~/.copilot`: MCP in `mcp-config.json` (`mcpServers.<name> = {type: "local", command, args, tools: ["*"]}`), hooks as any `~/.copilot/hooks/*.json` file (`{version: 1, hooks: {preToolUse: [{type: "command", bash, powershell, timeoutSec}]}}`). Done means `rtok agents setup copilot` writes `mcp-config.json` and its own `hooks/rtok.json` (no merge into a user file), `remove` takes both back, `list` shows CLI and app as one shared host (Cursor pattern), README matches `support()`. Proxy stays `no` (BYOK is env-only: `COPILOT_PROVIDER_BASE_URL`); plugin stays `no` (`installed-plugins/` is owned by the marketplace); the app's hook support is undocumented, so `hooks (desktop)` is `no` while the shared file still applies.
+Plan: `src/agents/copilot/{mod.rs,README.md}` (`shared()`, two variants, `edit_json` for both files), `[setup.copilot] dir` in config + default.toml + docs, registration and host lists as T46.1. Blocked by T46.3. Verify: `mise exec -- cargo test -p rtok --lib agents::copilot` + parity.
 
 ## Reference
 

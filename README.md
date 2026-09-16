@@ -77,7 +77,7 @@ rtok doctor
 
 Each app gets one block: its kind and name (`CLI: Claude Code`, `Desktop: Cursor`), where it is installed and its version, the config files touched, and the state of every rtok module — `✓ installed`, `✗ not installed (--flag)`, `− not supported: why` for `hooks`, `mcp`, `proxy` and `plugin` — then rtok's own plugins split the same way (`installed` / `not installed` / `not supported`) from the surfaces each one declares, `(off)` for a disabled one. `claude` covers both Claude Code and Claude Desktop (MCP only, in `claude_desktop_config.json`). A second run of the same command says `already installed` instead of repeating a diff. `rtok agents list` prints the same blocks without writing anything; `rtok doctor` lists the modules for every host under `agents`.
 
-`rtok agents remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
+`rtok agents remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first; a run that changes nothing leaves no copy, and a copy with the same content is never taken twice. After a write, each requested module is read back and a module that did not land is reported as a warning, as is an `rtok` that is not on PATH.
 
 Run the proxy separately when you want provider usage rows and archive compression:
 

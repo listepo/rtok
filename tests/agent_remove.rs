@@ -5,90 +5,10 @@
 //! foreign entry stays; assert the `.bak-<ts>` copy holds the file as it was before the command;
 //! assert a second remove is `no changes` and that `--dry-run` writes nothing at all.
 
-use serde_json::Value;
+mod common;
+
+use common::agents::{backups, json, rtok, tmp, write_cfg};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
-fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_rtok")
-}
-
-fn tmp(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "rtok-t109-{name}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-/// One config pointing every host at files inside `home`.
-fn write_cfg(home: &Path) -> PathBuf {
-    for sub in [
-        ".claude",
-        ".cursor",
-        ".codex",
-        ".config/opencode",
-        ".pi/agent",
-    ] {
-        fs::create_dir_all(home.join(sub)).unwrap();
-    }
-    let cfg = home.join("config.toml");
-    let h = home.display();
-    fs::write(
-        &cfg,
-        format!(
-            "[doctor]\nclaude_json = \"{h}/.claude.json\"\n\
-             [setup.claude]\nsettings_path = \"{h}/.claude/settings.json\"\n\
-             [setup.cursor]\nhooks_path = \"{h}/.cursor/hooks.json\"\n\
-             [setup.codex]\nconfig_path = \"{h}/.codex/config.toml\"\n\
-             [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
-             [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n"
-        ),
-    )
-    .unwrap();
-    cfg
-}
-
-fn rtok(args: &[&str], cfg: &Path, home: &Path) -> (String, i32) {
-    let out = Command::new(bin())
-        .args(["--config", cfg.to_str().unwrap()])
-        .args(args)
-        .env("HOME", home)
-        .env("USERPROFILE", home)
-        .env("RTOK_HOME", home.join(".rtok"))
-        .output()
-        .expect("rtok");
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "rtok {args:?} failed: {stderr}\n{stdout}"
-    );
-    (stdout, out.status.code().unwrap_or(1))
-}
-
-fn json(path: &Path) -> Value {
-    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
-}
-
-/// The `.bak-*` copies sitting beside `path`, oldest name first.
-fn backups(path: &Path) -> Vec<PathBuf> {
-    let name = format!("{}.bak-", path.file_name().unwrap().to_string_lossy());
-    let mut found: Vec<PathBuf> = fs::read_dir(path.parent().unwrap())
-        .unwrap()
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(&name))
-        .collect();
-    found.sort();
-    found
-}
 
 #[test]
 fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
@@ -120,7 +40,7 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
     assert!(after_setup.contains("ANTHROPIC_BASE_URL"), "{after_setup}");
     assert!(json(&claude_json)["mcpServers"]["rtok"].is_object());
 
-    let (out, _) = rtok(&["agents", "remove", "claude"], &cfg, &home);
+    let out = rtok(&["agents", "remove", "claude"], &cfg, &home);
     assert!(out.contains("backup "), "remove reports its copies: {out}");
 
     let left = fs::read_to_string(&settings).unwrap();
@@ -146,7 +66,7 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
         "backup is the file as the command found it"
     );
 
-    let (again, _) = rtok(&["agents", "remove", "claude"], &cfg, &home);
+    let again = rtok(&["agents", "remove", "claude"], &cfg, &home);
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
@@ -222,7 +142,7 @@ fn pi_remove_unlinks_the_extension() {
 
     rtok(&["agents", "remove", "pi"], &cfg, &home);
     assert!(link.symlink_metadata().is_err(), "extension unlinked");
-    let (again, _) = rtok(&["agents", "remove", "pi"], &cfg, &home);
+    let again = rtok(&["agents", "remove", "pi"], &cfg, &home);
     assert!(again.contains("no changes"), "{again}");
 }
 
@@ -234,7 +154,7 @@ fn setup_copies_the_config_before_it_writes() {
     let before = r#"{"env":{"KEEP":"1"}}"#;
     fs::write(&settings, before).unwrap();
 
-    let (out, _) = rtok(&["agents", "setup", "claude"], &cfg, &home);
+    let out = rtok(&["agents", "setup", "claude"], &cfg, &home);
     assert!(
         out.contains("backup "),
         "setup reports its copies too: {out}"

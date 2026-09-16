@@ -1,4 +1,8 @@
 //! Helpers shared by the integration tests (`mod common;` in each file that uses one).
+// Every test binary that includes this module compiles all of it; none uses every helper.
+#![allow(dead_code)]
+
+pub mod agents;
 
 use std::time::Duration;
 
