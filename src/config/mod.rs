@@ -266,6 +266,7 @@ section! {
         opencode: SetupOpenCode = SetupOpenCode::default(),
         pi: SetupPi = SetupPi::default(),
         zcode: SetupZcode = SetupZcode::default(),
+        kimi: SetupKimi = SetupKimi::default(),
     }
 }
 
@@ -297,6 +298,11 @@ section! {
 section! {
     /// `[setup.zcode]`
     SetupZcode { config_path: PathBuf = p("~/.zcode/cli/config.json") }
+}
+
+section! {
+    /// `[setup.kimi]` — `mcp.json` is read beside `config_path`.
+    SetupKimi { config_path: PathBuf = p("~/.kimi-code/config.toml") }
 }
 
 section! {
@@ -715,6 +721,7 @@ impl Config {
             &mut self.setup.opencode.config_path,
             &mut self.setup.pi.extensions_path,
             &mut self.setup.zcode.config_path,
+            &mut self.setup.kimi.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
@@ -927,6 +934,7 @@ mod tests {
             &cfg.setup.opencode.config_path,
             &cfg.setup.pi.extensions_path,
             &cfg.setup.zcode.config_path,
+            &cfg.setup.kimi.config_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,

@@ -35,7 +35,7 @@ fn command(bin: &str, event: &str) -> String {
 /// Exactly `<rtok-bin> hook <event>`. Matching tokens anywhere claimed a user's
 /// chain (`notify-send hi && rtok hook Stop`). Suffix match keeps absolute paths
 /// with spaces (quoted) as ours on Windows.
-fn is_ours(cmd: &str, event: &str) -> bool {
+pub(super) fn is_ours(cmd: &str, event: &str) -> bool {
     let suffix = format!(" hook {event}");
     let Some(bin) = cmd.strip_suffix(&suffix) else {
         return false;

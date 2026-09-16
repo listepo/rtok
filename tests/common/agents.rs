@@ -34,6 +34,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".config/opencode",
         ".pi/agent",
         ".zcode/cli",
+        ".kimi-code",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -48,7 +49,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.codex]\nconfig_path = \"{h}/.codex/config.toml\"\n\
              [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
-             [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n"
+             [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
+             [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n"
         ),
     )
     .unwrap();

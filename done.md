@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T46.2 — Kimi Code host
+
+**T46.2 Kimi Code host** · P1, 3/5 · `src/agents/kimi/{mod.rs,README.md}` (new), `src/agents/claude/mod.rs`, `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_setup.rs`, `tests/common/agents.rs`
+Do: `rtok agents setup kimi` installs into Moonshot's Kimi Code CLI (`kimi`; `[setup.kimi] config_path`, default `~/.kimi-code/config.toml`, with `mcp.json` read beside it). Hooks are `[[hooks]]` tables — `event`, `matcher`, `command = "rtok hook <event>"`, `timeout` in seconds — for all eight Claude entries (Kimi documents every one of those events), written through `toml_edit` so comments and foreign hooks survive; ours are recognised by Claude's `is_ours` (now `pub(super)`), so a user chain that merely contains `rtok hook` is left alone on remove, and an empty `hooks` array goes with the last entry. MCP is `mcpServers.rtok = {command, args}` in `mcp.json` through the SDK's `register_server`, without the `type` field the Kimi docs do not show. Proxy and plugin are `no` (`[providers.<name>]` tables carry keys; `plugins/managed/` belongs to `kimi plugin install`). The README says `updatedInput` on PreToolUse is not in the Kimi docs, so the `cmd` rewrite path is unverified there and deny is the promised path.
+Check: `agents::kimi::tests::dry_run_names_eight_tables_and_touches_nothing`; `apply_keeps_comments_and_foreign_hooks_and_is_idempotent` (comment and `echo other` kept, nine tables, `timeout = 5`, second apply `no changes`, `8 removed`, nothing named rtok left); `mcp_lands_beside_the_config_without_a_type_field`; `readme_tables_match_support`; `config::tests` path leaves; `tests/agents_setup.rs` over seven hosts.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `cargo test --lib -- agents:: config::` 115 passed; `agents_setup`, `agent_remove`, `host_docs`, `cli_trycmd`, `config_coverage`, `surface_parity` all green; clippy `-D warnings` on rtok + rtok-agent-sdk clean; fmt clean; jscpd exit 0. Not verified on a live Kimi install: `updatedInput` on PreToolUse (docs list `permissionDecision` only).
+Deviation: 12 files (≤3) — a new host touches the registry, the config section, its docs and the e2e matrix by construction. `tests/trycmd/config-show.stdout` (another agent's uncommitted T45.5 file) got the `setup.kimi.config_path` line in the tree but is not in this commit.
+
 ## T46.1 — ZCode host
 
 **T46.1 ZCode host** · P1, 3/5 · `src/agents/zcode/{mod.rs,README.md}` (new), `src/agents/claude/mod.rs`, `src/agents/mod.rs`, `crates/rtok-agent-sdk/src/lib.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_setup.rs`, `tests/common/agents.rs`

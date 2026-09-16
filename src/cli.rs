@@ -325,7 +325,7 @@ enum SessionsCmd {
 
 #[derive(clap::Args)]
 struct RemoveArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`)
     host: String,
     /// Print what would be removed and exit
     #[arg(long)]
@@ -335,7 +335,7 @@ struct RemoveArgs {
 /// One definition behind `rtok agents setup` and the deprecated `rtok setup`.
 #[derive(clap::Args)]
 struct SetupArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`)
     host: String,
     /// Print the planned edits and exit
     #[arg(long)]

@@ -175,6 +175,8 @@ config_path   = "~/.config/opencode/opencode.json"
 extensions_path = "~/.pi/agent/extensions"
 [setup.zcode]
 config_path   = "~/.zcode/cli/config.json"
+[setup.kimi]
+config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

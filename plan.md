@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T46.2 | todo | P1 | 3 | 0% | |
 | T46.3 | todo | P1 | 2 | 0% | |
 | T46.4 | todo | P1 | 3 | 0% | |
 
@@ -39,11 +38,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T46.2. Kimi Code host
-
-Moonshot's Kimi Code CLI (`kimi`, `~/.kimi-code/`) reads hooks as `[[hooks]]` tables in `config.toml` (`event`, `matcher`, `command`, `timeout`; Claude-compatible stdin, exit 2 blocks, `hookSpecificOutput.permissionDecision`) and MCP from `mcp.json` (`mcpServers`). Done means `rtok agents setup kimi` writes both, `remove` strips both, `list` shows the app, README matches `support()`. Proxy stays `no` (`[providers.<name>] base_url` is per provider); plugin stays `no` (`plugins/managed/` is owned by `kimi plugin install`). `updatedInput` on PreToolUse is not in the Kimi docs: the README says the rewrite path is unverified and the deny path is the one the docs promise.
-Plan: `src/agents/kimi/{mod.rs,README.md}` (`toml_edit` array-of-tables edit keeping comments, `register_mcp` on the sibling `mcp.json`), `[setup.kimi] config_path` in config + default.toml + docs, registration and host lists as T46.1. Verify: `mise exec -- cargo test -p rtok --lib agents::kimi` + parity.
 
 ### T46.3. Copilot hook payload map
 
