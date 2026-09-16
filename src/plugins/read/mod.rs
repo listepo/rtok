@@ -103,17 +103,20 @@ pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<Str
 }
 
 pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
-    let abs = if path.is_absolute() {
-        normalize(Path::new("/"), path)
-    } else {
-        normalize(cwd, path)
-    };
-    // Lexical allow, then (when the path exists) reject symlink escapes past the root.
-    let check = dunce::canonicalize(&abs).unwrap_or_else(|_| abs.clone());
+    // Canonicalise roots first. Relative paths are then joined onto the
+    // canonical cwd so a missing file (canonicalize fails) still shares the
+    // same case as the root `under` compares against.
     let roots: Vec<PathBuf> = std::iter::once(cwd.to_path_buf())
         .chain(extra.iter().cloned())
         .map(|r| dunce::canonicalize(&r).unwrap_or(r))
         .collect();
+    let abs = if path.is_absolute() {
+        normalize(Path::new("/"), path)
+    } else {
+        normalize(&roots[0], path)
+    };
+    // Lexical allow, then (when the path exists) reject symlink escapes past the root.
+    let check = dunce::canonicalize(&abs).unwrap_or_else(|_| abs.clone());
     if roots.iter().any(|r| under(&check, r)) {
         return Ok(abs);
     }
@@ -144,8 +147,36 @@ fn normalize(root: &Path, path: &Path) -> PathBuf {
 
 /// `Path::starts_with("")` is true for every path, so an empty root (`allow_paths = [""]`)
 /// would open the whole filesystem; it grants nothing instead.
+///
+/// On Windows, `Path::starts_with` is case-sensitive even though the filesystem
+/// is not. When canonicalize succeeds on the root but fails on a missing path
+/// (or the other way around), the two sides can differ only in ASCII case and
+/// a lexical `starts_with` wrongly rejects an in-tree file.
 fn under(path: &Path, root: &Path) -> bool {
-    !root.as_os_str().is_empty() && path.starts_with(root)
+    if root.as_os_str().is_empty() {
+        return false;
+    }
+    if path.starts_with(root) {
+        return true;
+    }
+    cfg!(windows) && under_ascii_case_insensitive(path, root)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn under_ascii_case_insensitive(path: &Path, root: &Path) -> bool {
+    use std::path::Component;
+    let path_c: Vec<_> = path.components().collect();
+    let root_c: Vec<_> = root.components().collect();
+    if root_c.is_empty() || root_c.len() > path_c.len() {
+        return false;
+    }
+    path_c.iter().zip(root_c.iter()).all(|(p, r)| match (p, r) {
+        (Component::Normal(a), Component::Normal(b)) => a.eq_ignore_ascii_case(b),
+        (Component::Prefix(a), Component::Prefix(b)) => {
+            a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
+        }
+        (a, b) => a == b,
+    })
 }
 
 fn cap(cx: &Ctx, text: String) -> Result<String> {
@@ -310,6 +341,65 @@ pub(crate) mod tests {
             &[PathBuf::new()],
         );
         assert!(err.is_err(), "{err:?}");
+    }
+
+    /// Missing file + canonical root with different ASCII case: `Path::starts_with`
+    /// alone rejects; resolve must still allow (Windows CI path; also covers the
+    /// relative rebase onto a canonical cwd on every host).
+    #[test]
+    fn resolve_allows_missing_path_when_root_case_differs() {
+        let base = std::env::temp_dir().join(format!("rtok-read-case-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let proj = base.join("Proj");
+        fs::create_dir_all(&proj).unwrap();
+        let disk = dunce::canonicalize(&proj).unwrap();
+        let mut alt = disk.clone();
+        if let Some(name) = alt.file_name().map(|n| n.to_string_lossy().into_owned()) {
+            let flipped: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_uppercase() {
+                        c.to_ascii_lowercase()
+                    } else if c.is_ascii_lowercase() {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+            alt.pop();
+            alt.push(flipped);
+        }
+        // Relative path through the alt-cased cwd string (canonicalize of missing fails).
+        let got = resolve(&alt, Path::new("missing.txt"), &[]).expect("under alt cwd");
+        assert!(got.ends_with("missing.txt"), "{got:?}");
+        // Absolute path with alt case against a canonical root via allow_paths.
+        let abs_missing = alt.join("also-missing.txt");
+        let got2 = resolve(
+            Path::new("/nonexistent-cwd-rtok"),
+            &abs_missing,
+            std::slice::from_ref(&disk),
+        );
+        if cfg!(windows) {
+            assert!(got2.is_ok(), "{got2:?}");
+        } else {
+            // On case-sensitive Linux the alt path is a different directory; on
+            // macOS the relative rebase above already covers the asymmetry.
+            let _ = got2;
+        }
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn under_ascii_case_insensitive_matches_windows_prefix() {
+        let path = Path::new(r"C:\Users\Me\proj\file.txt");
+        let root = Path::new(r"c:\users\me\proj");
+        assert_eq!(under_ascii_case_insensitive(path, root), true);
+        assert_eq!(
+            under_ascii_case_insensitive(path, Path::new(r"c:\users\me\project")),
+            false
+        );
     }
 
     #[test]

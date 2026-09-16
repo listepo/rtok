@@ -16,8 +16,6 @@ use super::apply;
 use crate::config::Config;
 
 const NAME: &str = "rtok";
-const BLOCK: &str = "[mcp_servers.rtok]\ncommand = \"rtok\"\nargs = [\"mcp\"]";
-
 /// Apply, dry-run, or remove the `[mcp_servers.rtok]` block.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.codex.config_path;
@@ -80,13 +78,16 @@ fn insert_ours(doc: &mut DocumentMut, path: impl std::fmt::Display) -> Result<St
     {
         return Ok(NO_CHANGES.into());
     }
+    let cmd = super::rtok_command();
     let mut entry = Table::new();
-    entry["command"] = value(NAME);
+    entry["command"] = value(cmd.as_str());
     let mut args = Array::new();
     args.push("mcp");
     entry["args"] = value(args);
     servers.insert(NAME, Item::Table(entry));
-    Ok(format!("+ {BLOCK}"))
+    Ok(format!(
+        "+ [mcp_servers.rtok]\ncommand = \"{cmd}\"\nargs = [\"mcp\"]"
+    ))
 }
 
 fn strip_ours(doc: &mut DocumentMut) -> String {
@@ -110,7 +111,10 @@ fn is_ours(t: &Table) -> bool {
         .flatten()
         .filter_map(|v| v.as_str())
         .collect();
-    t.get("command").and_then(Item::as_str) == Some(NAME) && args == ["mcp"]
+    t.get("command")
+        .and_then(Item::as_str)
+        .is_some_and(super::is_rtok_bin)
+        && args == ["mcp"]
 }
 
 fn insert_proxy(doc: &mut DocumentMut, url: &str) -> Result<String> {
@@ -190,7 +194,8 @@ mod tests {
         let (c, path) = cfg("dry", true);
         fs::write(&path, "model = \"o3\" # keep me\n").unwrap();
         let out = run(&c, false).unwrap();
-        assert_eq!(out, format!("+ {BLOCK}"));
+        assert!(out.starts_with("+ [mcp_servers.rtok]"), "{out}");
+        assert!(out.contains("args = [\"mcp\"]"), "{out}");
         assert_eq!(out.matches("[mcp_servers.rtok]").count(), 1);
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
@@ -228,12 +233,21 @@ mod tests {
             raw.contains("[mcp_servers.other]\ncommand = \"x\"\n"),
             "{raw}"
         );
-        assert!(raw.contains(BLOCK), "{raw}");
+        assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
+        assert!(raw.contains("args = [\"mcp\"]"), "{raw}");
         assert!(!raw.contains("\n[mcp_servers]\n"), "{raw}");
         let parsed: toml_edit::DocumentMut = raw.parse().unwrap();
         assert_eq!(
             parsed["mcp_servers"]["rtok"]["args"][0].as_str(),
             Some("mcp")
+        );
+        assert!(
+            super::super::is_rtok_bin(
+                parsed["mcp_servers"]["rtok"]["command"]
+                    .as_str()
+                    .unwrap_or("")
+            ),
+            "{raw}"
         );
         assert_eq!(run(&c, true).unwrap(), "- [mcp_servers.rtok]");
         assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
@@ -245,7 +259,17 @@ mod tests {
     fn missing_file_is_created_on_apply() {
         let (c, path) = cfg("new", false);
         run(&c, false).unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), format!("{BLOCK}\n"));
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("[mcp_servers.rtok]"), "{raw}");
+        assert!(raw.contains("args = [\"mcp\"]"), "{raw}");
+        assert!(
+            super::super::is_rtok_bin(
+                raw.parse::<toml_edit::DocumentMut>().unwrap()["mcp_servers"]["rtok"]["command"]
+                    .as_str()
+                    .unwrap_or("")
+            ),
+            "{raw}"
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
