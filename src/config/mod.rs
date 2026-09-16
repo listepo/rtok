@@ -251,7 +251,7 @@ section! {
 }
 
 section! {
-    /// `[setup]` — `rtok agent setup <host>`.
+    /// `[setup]` — `rtok agents setup <host>`.
     Setup {
         dry_run: bool = false,
         yes: bool = false,
@@ -702,6 +702,7 @@ impl Config {
             &mut self.bench.tasks,
             &mut self.doctor.settings_path,
             &mut self.doctor.claude_json,
+            &mut self.doctor.mcp_json,
             &mut self.setup.claude.settings_path,
             &mut self.setup.cursor.hooks_path,
             &mut self.setup.codex.config_path,
@@ -805,7 +806,7 @@ pub(crate) fn apply_legacy_fold(cfg: &mut Config) {
 /// User home for `~` expansion and `$HOME/.rtok`.
 ///
 /// Prefer `HOME` (Unix and Git Bash). On native Windows PowerShell `HOME` is
-/// often unset — fall back to `USERPROFILE` so `rtok agent setup` finds
+/// often unset — fall back to `USERPROFILE` so `rtok agents setup` finds
 /// `~/.claude` / `~/.cursor` instead of skipping with "not found".
 pub(crate) fn env_user_home() -> Option<PathBuf> {
     user_home_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
@@ -1171,6 +1172,7 @@ bogus = true
     #[case::bench_configs("[bench.configs]\ncustom = \"~/bench/rtok.json\"\n")]
     #[case::allow_paths("[plugins.read]\nallow_paths = [\"~/src\"]\n")]
     #[case::wasm_dir("[plugins.wasm]\ndir = \"~/plugins\"\n")]
+    #[case::doctor_mcp_json("[doctor]\nmcp_json = \"~/.mcp.json\"\n")]
     fn tilde_expands_for_every_path_key(#[case] toml: &str) {
         let home = Path::new("/tmp/rtok-tilde-keys");
         let mut cfg: Config = parse(toml).unwrap();
@@ -1224,7 +1226,7 @@ bogus = true
 
     #[test]
     fn expand_with_userprofile_resolves_cursor_and_claude_paths() {
-        // Regression: without this, Windows `rtok agent setup cursor|claude`
+        // Regression: without this, Windows `rtok agents setup cursor|claude`
         // printed "not found, not installed" because `~/...` stayed literal.
         let rtok = Path::new("/tmp/rtok-home");
         let profile = Path::new(r"C:\Users\Example");

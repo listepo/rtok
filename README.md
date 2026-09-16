@@ -52,7 +52,7 @@ rtok --version
 
 ## Start with Claude Code
 
-Install rtok's seven hooks and MCP entry. The installer backs up the settings file before
+Install rtok's eight hooks and MCP entry. The installer backs up the settings file before
 writing it; inspect its changes first if preferred.
 
 ```bash
@@ -243,7 +243,7 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
-| `rtok dashboard` | local Slint/WASM UI + WebSocket API (`--host`, `--port`) |
+| `rtok web` | local Slint/WASM UI + WebSocket API (`--host`, `--port`; `rtok dashboard` is the deprecated spelling) |
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok doctor` | inspect hooks, MCP servers and the proxy chain |
@@ -285,8 +285,8 @@ those tools reported a saving while the bill did not move.
 
 | | The field | rtok |
 |---|---|---|
-| Processes per tool call | up to ~30 subprocesses, several Python | one Rust process, p95 8.25 ms |
-| Hook entries | 88 across 16 events | 7 |
+| Processes per tool call | up to ~30 subprocesses, several Python | one Rust process, p95 8.25 ms (research.md §2, Gate P17 serialized run 2026-09-09) |
+| Hook entries | 88 across 16 events | 8 across 7 events |
 | MCP description tokens/turn | ~8 600 across nine servers | ~143 across 11 tools |
 | Injection per turn | 3.1 K and up, per tool | one 800-token budget, byte-stable |
 | Reversibility | partial | every rewrite has `rtok expand <id>` |

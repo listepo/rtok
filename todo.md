@@ -1,3 +1,9 @@
 - T44.2. `rtok agents` with one folder per host
 - T44.3. Setup and list output: app, path, modules, plugins
 - T44.4. Checks, e2e and platforms
+- T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
+- T45.1. OTel flush survives a traces error
+- T45.2. Proxy cache hits and errors keep usage rows
+- T45.3. Archive decisions scoped per session
+- T45.5. Gates cover tests, webui and examples
+- T45.6. Extra hook/expand/guard/read/toon coverage

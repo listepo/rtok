@@ -15,37 +15,84 @@ use std::time::Instant;
 use types::{HookInput, HookOutput, HookSpecificOutput};
 
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
+/// With `[hook] fail_open = false` (debugging only) errors surface as a panic
+/// instead of `{}` — the default `true` keeps the fail-open rule (D1).
 pub fn run(event: &str, mut stdin: impl Read, mut stdout: impl Write, cfg: &Config) {
-    let mut buf = Vec::new();
-    let _ = stdin.read_to_end(&mut buf);
-    let out = panic::catch_unwind(AssertUnwindSafe(|| dispatch_owned(&buf, event, cfg)))
-        .unwrap_or_else(|_| b"{}".to_vec());
-    let _ = stdout.write_all(&out);
+    if cfg.hook.fail_open {
+        let mut buf = Vec::new();
+        let _ = stdin.read_to_end(&mut buf);
+        let out = panic::catch_unwind(AssertUnwindSafe(|| dispatch_owned(&buf, event, cfg)))
+            .unwrap_or_else(|_| b"{}".to_vec());
+        let _ = stdout.write_all(&out);
+    } else {
+        let mut buf = Vec::new();
+        stdin
+            .read_to_end(&mut buf)
+            .expect("rtok hook: stdin unreadable (fail_open = false)");
+        let out = dispatch_owned_strict(&buf, event, cfg).expect("rtok hook");
+        let _ = stdout.write_all(&out);
+    }
+}
+
+/// Session id: stdin first, then `$<core.session_env>`, else `"unknown"`.
+/// An empty `session_env` key disables the env fallback.
+fn resolve_session(
+    stdin_session: &str,
+    session_env_key: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> String {
+    if !stdin_session.is_empty() {
+        return stdin_session.to_string();
+    }
+    if !session_env_key.is_empty()
+        && let Some(v) = env(session_env_key)
+    {
+        let v = v.trim().to_string();
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    "unknown".into()
+}
+
+/// `Some(message)` when `[hook] max_ms` is non-zero and the event ran over budget.
+/// `max_ms = 0` disables the budget. Pure so the slow path stays one `eprintln!`.
+fn slow_note(ms: f64, max_ms: u64, event: &str) -> Option<String> {
+    if max_ms > 0 && ms > max_ms as f64 {
+        Some(format!(
+            "hook {event} slow: {ms:.1} ms over max_ms {max_ms} ms"
+        ))
+    } else {
+        None
+    }
 }
 
 fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
-    let mut input: HookInput = match serde_json::from_slice(stdin) {
-        Ok(v) => v,
-        Err(_) => return b"{}".to_vec(),
-    };
+    match panic::catch_unwind(AssertUnwindSafe(|| {
+        dispatch_owned_strict(stdin, event, cfg)
+    })) {
+        Ok(Ok(out)) => out,
+        _ => b"{}".to_vec(),
+    }
+}
+
+fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<u8>, String> {
+    let mut input: HookInput =
+        serde_json::from_slice(stdin).map_err(|e| format!("hook {event}: bad stdin: {e}"))?;
     if cfg.hook.host == "cursor" {
         input.adapt_cursor(event);
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
-    let session = if input.session_id.is_empty() {
-        "unknown".into()
-    } else {
-        input.session_id.clone()
-    };
-    let mut cx = match Runtime::open(cfg.clone(), session) {
-        Ok(cx) => cx,
-        Err(_) => return b"{}".to_vec(),
-    };
+    let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
+        std::env::var(k).ok()
+    });
+    let mut cx = Runtime::open(cfg.clone(), session)
+        .map_err(|e| format!("hook {event}: store open: {e}"))?;
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
-    dispatch(stdin, &input, &cx)
+    Ok(dispatch(stdin, &input, &cx))
 }
 
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
@@ -78,8 +125,11 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         _ => HookOutput::default(),
     };
     let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    if let Some(note) = slow_note(ms, cx.config.hook.max_ms, &input.hook_event_name) {
+        eprintln!("rtok: {note}");
+    }
     if let Some(id) = parent {
-        let ms = start.elapsed().as_secs_f64() * 1000.0;
         let _ = cx.store.set_call_ms(id, ms);
         let cap = cx.config.core.call_io_inline_bytes as usize;
         let _ = cx
@@ -221,13 +271,12 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
                 .join("\n");
             let marker = format!("dropped:post_tool:{}", cx.estimate(&dropped, Class::Prose));
             if out.is_empty() {
-                let mut prefix = line.to_string();
-                while !prefix.is_empty() {
-                    let cand = format!("{prefix}\n{marker}");
-                    if cx.estimate(&cand, Class::Prose) <= budget {
-                        return cand;
-                    }
-                    prefix.pop();
+                // Estimates round up per part, so a prefix that fits the room left after
+                // `\n{marker}` keeps the whole line under budget.
+                let room = budget.saturating_sub(cx.estimate(&format!("\n{marker}"), Class::Prose));
+                let prefix = crate::plugin::fit_budget(&Ctx::new(cx), line, Class::Prose, room);
+                if !prefix.is_empty() {
+                    return format!("{prefix}\n{marker}");
                 }
                 return if cx.estimate(&marker, Class::Prose) <= budget {
                     marker
@@ -288,6 +337,71 @@ mod tests {
         assert_eq!(out, b"{}");
     }
 
+    /// T45.4: `core.session_env` resolves the session when stdin has none.
+    #[test]
+    fn resolve_session_prefers_stdin_then_env() {
+        let env = |_: &str| Some("env-sess".to_string());
+        assert_eq!(resolve_session("stdin-sess", "ANY_KEY", env), "stdin-sess");
+        assert_eq!(resolve_session("", "ANY_KEY", env), "env-sess");
+        assert_eq!(
+            resolve_session("", "ANY_KEY", |_| Some("  padded  ".to_string())),
+            "padded"
+        );
+        assert_eq!(resolve_session("", "", env), "unknown");
+        assert_eq!(resolve_session("", "ANY_KEY", |_| None), "unknown");
+        assert_eq!(
+            resolve_session("", "ANY_KEY", |_| Some("   ".to_string())),
+            "unknown"
+        );
+    }
+
+    /// T45.4: `[hook] max_ms` fires only when non-zero and exceeded.
+    #[test]
+    fn slow_note_fires_only_over_budget() {
+        assert!(slow_note(12.0, 10, "PreToolUse").is_some());
+        assert_eq!(slow_note(9.9, 10, "PreToolUse"), None);
+        assert_eq!(slow_note(500.0, 0, "PreToolUse"), None);
+    }
+
+    /// T45.4: `fail_open = false` surfaces a bad payload instead of `{}`.
+    #[test]
+    #[should_panic(expected = "bad stdin")]
+    fn strict_path_panics_on_malformed_stdin() {
+        let cfg = Config {
+            hook: crate::config::Hook {
+                fail_open: false,
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        let mut out = Vec::new();
+        run("PreToolUse", b"not-json".as_slice(), &mut out, &cfg);
+    }
+
+    /// T45.4: the strict path runs a valid event (temp store, default env key unset).
+    #[test]
+    fn strict_path_runs_valid_input() {
+        let dir = std::env::temp_dir().join(format!("rtok-hooks-t454-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg.hook.fail_open = false;
+        // Hermetic regardless of ambient env: the fixture carries its own
+        // session id, and the fallback key is a probe nothing else sets.
+        cfg.core.session_env = "RTOK_T454_PROBE_SESSION".into();
+        // The fixture carries its own session id, so the `session_env`
+        // fallback is not exercised here; the probe key only proves the
+        // lookup misses hermetically. No env mutation needed.
+        let raw = include_str!("../../tests/fixtures/hooks/pre_tool_bash.json");
+        let mut out = Vec::new();
+        run("PreToolUse", raw.as_bytes(), &mut out, &cfg);
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert!(v.is_object());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// T25.0 Check: a hook run leaves a `sessions` row with non-NULL `host_id` and
     /// `project` — resolved from `[hook] host` and the event's own `cwd`, not left `None`.
     #[test]
@@ -316,7 +430,7 @@ mod tests {
     }
 
     /// T25.0 Check: `pi` records as `pi`, not `other` — 0010.sql seeds the slug
-    /// `rtok agent setup pi` installs but 0002.sql's original list never had.
+    /// `rtok agents setup pi` installs but 0002.sql's original list never had.
     #[test]
     fn pi_host_resolves_to_pi_not_other() {
         let dir = std::env::temp_dir().join(format!("rtok-hooks-t25-pi-{}", std::process::id()));

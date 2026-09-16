@@ -140,8 +140,8 @@ byte-stable injection and cache-preserving proxy rewrites exist for exactly this
 
 | | The field | rtok |
 |---|---|---|
-| Processes per tool call | up to ~30 subprocesses per event chain, several Python | one Rust process, p95 **8.25 ms** |
-| Hook entries | 88 across 16 events (10 tools) | **7**, one binary |
+| Processes per tool call | up to ~30 subprocesses per event chain, several Python | one Rust process, p95 **8.25 ms** (research.md §2, Gate P17 serialized run 2026-09-09) |
+| Hook entries | 88 across 16 events (10 tools) | **8** across 7 events, one binary |
 | MCP description tokens/turn | ~8 600 across 10 servers | **~143** across 11 tools |
 | Injection per turn | lean-ctx 3.1 K + engram + claude-mem + nudges | one **800-token** budget, byte-stable |
 | Reversibility | partial (headroom retrieve, token-optimizer expand) | every rewrite has `rtok expand <id>` |

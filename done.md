@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T45.4 — Dead config keys and stale public numbers
+
+**T45.4 Dead config keys and stale public numbers** · P2, 2/5 · `src/hooks/mod.rs`, `src/config/mod.rs`, `README.md`, `docs/comparison.md`
+Do: `core.session_env`, `[hook] max_ms`/`fail_open` were declared and read nowhere. The hook now resolves the session as stdin id, then `$<core.session_env>` (empty key disables the fallback), else `unknown` (`resolve_session`); over-budget events print one `rtok: hook <event> slow` line when `[hook] max_ms` is non-zero (`slow_note`); `run` honours `[hook] fail_open` with a strict panic path for debugging behind `false`. README/`docs/comparison.md` factual rows fixed: 7 → 8 hook entries across 7 events, `rtok web` current with `dashboard` as the deprecated spelling, p95 8.25 ms cited to `research.md` §2 (Gate P17 serialized run 2026-09-09).
+Check: every previously-dead key is read on the hook path (`session_env` at `src/hooks/mod.rs:87`, `max_ms` at `:129`, `fail_open` at `:21`); `cargo test -p rtok --lib config::` 60 passed; `cargo test -p rtok --lib hooks::` 16 passed (new `resolve_session_prefers_stdin_then_env`, `slow_note_fires_only_over_budget`, strict-path cases); `cargo test --test extra_cover` 9/9 still green; `cargo clippy -p rtok --lib -- -D warnings` clean.
+Complexity: 2/5
+Status: done 2026-09-16 · Model: OpenCode / Muse Spark 1.3
+Evidence: config 60 passed / 0 failed; hooks 16 passed / 0 failed; extra_cover 9 passed / 0 failed; clippy lib zero warnings; `grep` confirms no documented key left unread.
+Deviation: 4 source files instead of ≤3 (wiring lives in `src/hooks/mod.rs`, docs fixes in `README.md` + `docs/comparison.md`, comment/expansion touch-ups in `src/config/mod.rs`) — kept as one task because wiring and its docs are one behavior. Also collapses the `collapsible_if` at `src/hooks/mod.rs:47` that blocked the gate.
+
 ## T44.1 — backup once per content
 
 **T44.1 Backup once per content** · P1, 1/5 · `crates/rtok-agent-sdk/src/lib.rs`
