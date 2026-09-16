@@ -1,99 +1,180 @@
-//! Host installers (`rtok agent setup <host>`).
+//! Agent hosts (`rtok agents setup|remove|list`).
 //!
-//! Everything the five hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
-//! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28). What stays here is
-//! per-host: which file, which shape, which keys. `rtok agent list` (T37.0) reads the same
-//! files back: app type (cli/gui), app version, rtok state, installed modules.
+//! Everything the hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
+//! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28). Each host is one
+//! folder here: `<host>/mod.rs` implements [`Agent`] (variants, files, installed modules,
+//! apply) and `<host>/README.md` says which rtok modules the host takes, which it could take,
+//! and why the rest cannot be taken; a unit test keeps the README and `support()` in step.
+//! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
 pub mod claude;
 pub mod codex;
 pub mod cursor;
-pub mod migrate;
 pub mod opencode;
 pub mod pi;
 
-/// Every host rtok installs into, in `agent list` order.
+use std::path::{Path, PathBuf};
+
+use anyhow::{Result, bail};
+use rtok_agent_sdk::NO_CHANGES;
+
+use crate::config::Config;
+
+/// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &["claude", "cursor", "codex", "opencode", "pi"];
 
-/// App variants of one host. Cursor and OpenCode ship a CLI and a GUI;
-/// the rest are CLI-only.
-pub fn variants(host: &str) -> Vec<&'static str> {
-    match host {
-        "cursor" | "opencode" => vec!["cli", "gui"],
-        _ => vec!["cli"],
+/// Every module an rtok install can carry, in print order.
+pub const MODULES: &[&str] = &["hooks", "mcp", "proxy", "plugin"];
+
+/// The host behind an id. `None` is refused by the CLI before any backup is taken.
+pub fn host(id: &str) -> Option<&'static dyn Agent> {
+    match id {
+        "claude" => Some(&claude::Claude),
+        "cursor" => Some(&cursor::Cursor),
+        "codex" => Some(&codex::Codex),
+        "opencode" => Some(&opencode::OpenCode),
+        "pi" => Some(&pi::Pi),
+        _ => None,
     }
 }
 
-/// Whether `kind` (`cli`/`gui`) is wanted given `--cli/--gui/--all`.
-/// No flag (or `--all`) means every variant.
-pub fn wants(kind: &str, cli: bool, gui: bool, all: bool) -> bool {
-    if all || (!cli && !gui) {
+/// How the app runs: a terminal binary or a desktop application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    Cli,
+    Desktop,
+}
+
+impl Kind {
+    /// The block header word: `CLI: Codex`, `Desktop: Claude Desktop`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Cli => "CLI",
+            Kind::Desktop => "Desktop",
+        }
+    }
+
+    /// The flag spelling (`--cli`, `--desktop`) and the word `rtok doctor` prints.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Cli => "cli",
+            Kind::Desktop => "desktop",
+        }
+    }
+}
+
+/// One app of a host. `bins` are looked up on PATH and asked `--version`; `apps` are where a
+/// desktop build installs (`~/…`, `$VAR/…` or absolute), probed with `exists()`. Entries for
+/// other platforms simply never exist.
+pub struct Variant {
+    pub kind: Kind,
+    pub name: &'static str,
+    pub bins: &'static [&'static str],
+    pub apps: &'static [&'static str],
+}
+
+/// Whether `setup` can write a module into a host variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Support {
+    /// Written by a plain `setup`.
+    Yes,
+    /// Written only when this flag is given (`--proxy`, `--yes`).
+    Flag(&'static str),
+    /// Cannot be written today; the reason is the README's, in one line.
+    No(&'static str),
+}
+
+/// What `rtok agents setup|remove` does to a host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Install,
+    Remove,
+    /// `setup claude --replace`: drop legacy token hooks and retarget the proxy.
+    Replace,
+}
+
+/// The contract every host folder implements. The generic [`run`] loop, [`list`] and
+/// `rtok doctor` know nothing else about a host.
+pub trait Agent: Sync {
+    fn id(&self) -> &'static str;
+    fn variants(&self) -> &'static [Variant];
+    /// The folder's README, for the parity test.
+    fn readme(&self) -> &'static str;
+    /// True when every variant reads the same files (Cursor): one apply covers them all.
+    fn shared(&self) -> bool {
+        false
+    }
+    fn support(&self, kind: Kind, module: &str) -> Support;
+    /// Config files an install writes; copied before any write. Empty for a host that owns a
+    /// linked directory instead of a file (pi).
+    fn files(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf>;
+    /// Paths whose presence (or whose parent's) means the app is installed. Defaults to
+    /// [`Agent::files`]; a host adds its plugin directory.
+    fn markers(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
+        self.files(cfg, kind)
+    }
+    /// Modules found in the host's files: the same markers the installer writes.
+    fn installed(&self, cfg: &Config, kind: Kind) -> Vec<&'static str>;
+    /// Run the installer. One report per step; a step that touched nothing reports
+    /// [`NO_CHANGES`].
+    fn apply(&self, cfg: &Config, kind: Kind, mode: Mode) -> Result<Vec<String>>;
+}
+
+/// Whether `kind` is wanted given `--cli/--desktop/--all`. No flag (or `--all`) means every
+/// variant.
+pub fn wants(kind: Kind, cli: bool, desktop: bool, all: bool) -> bool {
+    if all || (!cli && !desktop) {
         return true;
     }
-    (kind == "cli" && cli) || (kind == "gui" && gui)
+    (kind == Kind::Cli && cli) || (kind == Kind::Desktop && desktop)
 }
 
-fn home_dir() -> std::path::PathBuf {
+pub(crate) fn home_dir() -> PathBuf {
     crate::config::env_user_home().unwrap_or_default()
 }
 
-/// Where the OpenCode desktop app keeps its global config. The CLI lives at
-/// `[setup.opencode] config_path` (`~/.config/opencode/opencode.json`); the
-/// desktop build resolves a sibling app dir instead.
-pub fn opencode_gui_path() -> std::path::PathBuf {
-    if cfg!(target_os = "macos") {
-        home_dir().join("Library/Application Support/ai.opencode.desktop/opencode.json")
-    } else if cfg!(target_os = "windows") {
-        std::env::var_os("APPDATA")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(home_dir)
-            .join("ai.opencode.desktop/opencode.json")
+/// `~/x` and `$VAR/x` as a path on this machine; anything else unchanged.
+fn expand_app(spec: &str) -> PathBuf {
+    if let Some(rest) = spec.strip_prefix("~/") {
+        return join_rel(&home_dir(), rest);
+    }
+    if let Some(rest) = spec.strip_prefix('$') {
+        let (var, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        let Some(root) = std::env::var_os(var) else {
+            return PathBuf::from(spec);
+        };
+        return join_rel(Path::new(&root), tail);
+    }
+    PathBuf::from(spec)
+}
+
+/// The first `bin` on PATH (`.exe`/`.cmd` on Windows).
+fn find_on_path(bin: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let names: &[String] = if cfg!(windows) {
+        &[bin.to_string(), format!("{bin}.exe"), format!("{bin}.cmd")]
     } else {
-        home_dir().join(".config/ai.opencode.desktop/opencode.json")
-    }
-}
-
-fn opencode_path_for(kind: &str, cfg: &crate::config::Config) -> std::path::PathBuf {
-    if kind == "gui" {
-        opencode_gui_path()
-    } else {
-        cfg.setup.opencode.config_path.clone()
-    }
-}
-
-/// Every config file a host install writes. `rtok agent setup` and `rtok agent remove`
-/// copy these before they touch anything, so one `.bak-<ts>` per file is the whole undo.
-/// pi is absent on purpose: it owns a symlinked extension directory, not a config file.
-pub fn host_files(cfg: &crate::config::Config, host: &str) -> Vec<std::path::PathBuf> {
-    match host {
-        "claude" => vec![
-            cfg.setup.claude.settings_path.clone(),
-            cfg.doctor.claude_json.clone(),
-        ],
-        "cursor" => vec![
-            cfg.setup.cursor.hooks_path.clone(),
-            cfg.setup.cursor.hooks_path.with_file_name("mcp.json"),
-        ],
-        "codex" => vec![cfg.setup.codex.config_path.clone()],
-        "opencode" => vec![cfg.setup.opencode.config_path.clone(), opencode_gui_path()],
-        _ => Vec::new(),
-    }
-}
-
-/// Version of the installed agent app, or `"-"` when unknown.
-/// Probes `<bin> --version` and keeps the first non-empty line (32 chars max).
-pub fn app_version(host: &str, kind: &str) -> String {
-    let bins: &[&str] = match (host, kind) {
-        ("claude", _) => &["claude"],
-        ("cursor", "gui") => &["cursor"],
-        ("cursor", _) => &["cursor-agent", "agent"],
-        ("codex", _) => &["codex"],
-        ("opencode", "gui") => &["opencode-desktop"],
-        ("opencode", _) => &["opencode"],
-        ("pi", _) => &["pi"],
-        _ => &[],
+        &[bin.to_string()]
     };
-    for bin in bins {
+    std::env::split_paths(&path)
+        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
+        .find(|p| p.is_file())
+}
+
+/// Where the app is: a desktop bundle first, else the binary on PATH.
+pub fn app_path(v: &Variant) -> Option<PathBuf> {
+    v.apps
+        .iter()
+        .map(|a| expand_app(a))
+        .find(|p| p.exists())
+        .or_else(|| v.bins.iter().find_map(|b| find_on_path(b)))
+}
+
+/// Version of the installed app, or `"-"` when unknown.
+/// Probes `<bin> --version` and keeps the first non-empty line (32 chars max).
+pub fn app_version(v: &Variant) -> String {
+    for bin in v.bins {
         let out = std::process::Command::new(bin).arg("--version").output();
         let Ok(out) = out else { continue };
         let mut s = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -108,130 +189,20 @@ pub fn app_version(host: &str, kind: &str) -> String {
     "-".into()
 }
 
-fn read(path: &std::path::Path) -> String {
+pub(crate) fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
 
-/// True when the agent itself is found: its binary answers `--version`, or any of
-/// its config files (or the directory that would hold them) exists. Setup skips
-/// a missing agent instead of creating its files; removal still runs so a
-/// half-installed host is cleaned up by the caller passing `remove`.
-pub fn agent_present(host: &str, kind: &str, cfg: &crate::config::Config) -> bool {
-    if app_version(host, kind) != "-" {
-        return true;
-    }
-    let mut paths = Vec::new();
-    match host {
-        "claude" => {
-            paths.push(cfg.setup.claude.settings_path.clone());
-            paths.push(cfg.doctor.claude_json.clone());
-        }
-        "cursor" => {
-            paths.push(cfg.setup.cursor.hooks_path.clone());
-            paths.push(cfg.setup.cursor.hooks_path.with_file_name("mcp.json"));
-            paths.push(cursor::plugin_dest(cfg));
-        }
-        "codex" => paths.push(cfg.setup.codex.config_path.clone()),
-        "opencode" => paths.push(opencode_path_for(kind, cfg)),
-        "pi" => {
-            paths.push(pi::plugin_dest(cfg));
-            paths.push(cfg.setup.pi.extensions_path.clone());
-        }
-        _ => return false,
-    }
-    paths.iter().any(|p| {
-        p.exists()
-            || p.parent()
-                .is_some_and(|d| !d.as_os_str().is_empty() && d.exists())
-    })
-}
-
-/// Which rtok modules a host variant carries: the same markers the installers write.
-pub fn installed_modules(host: &str, kind: &str, cfg: &crate::config::Config) -> Vec<String> {
-    match host {
-        "claude" => {
-            let s = read(&cfg.setup.claude.settings_path);
-            let m = read(&cfg.doctor.claude_json);
-            let mut out = Vec::new();
-            if s.contains("rtok hook") {
-                out.push("hooks".to_string());
-            }
-            if m.contains("\"rtok\"") {
-                out.push("mcp".to_string());
-            }
-            // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the
-            // file missed a proxy on another `[proxy] port`.
-            let base = serde_json::from_str::<serde_json::Value>(&s)
-                .ok()
-                .and_then(|v| v["env"]["ANTHROPIC_BASE_URL"].as_str().map(str::to_string));
-            if base.as_deref() == Some(anthropic_proxy_url(cfg).as_str()) {
-                out.push("proxy".to_string());
-            }
-            out
-        }
-        "cursor" => {
-            let h = read(&cfg.setup.cursor.hooks_path);
-            let m = read(&cfg.setup.cursor.hooks_path.with_file_name("mcp.json"));
-            let mut out = Vec::new();
-            let plugin = cursor::plugin_dest(cfg).symlink_metadata().is_ok();
-            if h.contains("rtok hook") {
-                out.push("hooks".to_string());
-            }
-            // The linked plugin serves the MCP itself (D21), and setup then skips `mcp.json`.
-            if m.contains("\"rtok\"") || plugin {
-                out.push("mcp".to_string());
-            }
-            if plugin {
-                out.push("plugin".to_string());
-            }
-            out
-        }
-        "codex" => {
-            let s = read(&cfg.setup.codex.config_path);
-            let mut out = Vec::new();
-            if s.contains("[mcp_servers.rtok]") {
-                out.push("mcp".to_string());
-            }
-            if s.contains("[model_providers.rtok]") {
-                out.push("proxy".to_string());
-            }
-            out
-        }
-        "opencode" => {
-            let s = read(&opencode_path_for(kind, cfg));
-            let mut out = Vec::new();
-            if s.contains("OPENAI_BASE_URL") {
-                out.push("proxy".to_string());
-            }
-            if s.contains("\"rtok\"") {
-                out.push("mcp".to_string());
-            }
-            out
-        }
-        "pi" => {
-            if pi::plugin_dest(cfg).symlink_metadata().is_ok() {
-                vec!["plugin".to_string()]
-            } else {
-                Vec::new()
-            }
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// Every module an rtok install can carry, in print order.
-pub const MODULES: &[&str] = &["hooks", "mcp", "proxy", "plugin"];
-
-/// The [`MODULES`] `rtok agent setup <host>` can write.
-pub fn supported_modules(host: &str) -> &'static [&'static str] {
-    match host {
-        "claude" => &["hooks", "mcp", "proxy"],
-        "cursor" => &["hooks", "mcp", "plugin"],
-        "codex" => &["mcp", "proxy"],
-        "opencode" => &["proxy"],
-        "pi" => &["plugin"],
-        _ => &[],
-    }
+/// True when the app itself is found: its bundle or binary exists, or one of its marker
+/// paths (or the directory that would hold it) does. Setup skips a missing app instead of
+/// creating its files; removal runs regardless so a half-installed host is cleaned up.
+pub fn present(agent: &dyn Agent, v: &Variant, cfg: &Config) -> bool {
+    app_path(v).is_some()
+        || agent.markers(cfg, v.kind).iter().any(|p| {
+            p.exists()
+                || p.parent()
+                    .is_some_and(|d| !d.as_os_str().is_empty() && d.exists())
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -242,25 +213,33 @@ pub enum ModuleState {
     NotSupported,
 }
 
-/// One host variant's [`MODULES`] with their state. A module found in the host's files counts
-/// as installed even where setup cannot write it (a hand-added MCP entry).
-pub fn module_states(
-    host: &str,
-    kind: &str,
-    cfg: &crate::config::Config,
-) -> Vec<(&'static str, ModuleState)> {
-    let found = installed_modules(host, kind, cfg);
+/// One [`MODULES`] row of a host variant: its state and the note printed after it — the flag
+/// that would install it, or the reason it cannot be installed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ModuleRow {
+    pub name: &'static str,
+    pub state: ModuleState,
+    pub note: String,
+}
+
+/// A module found in the host's files counts as installed even where setup cannot write it
+/// (a hand-added MCP entry).
+pub fn module_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<ModuleRow> {
+    let found = agent.installed(cfg, kind);
     MODULES
         .iter()
-        .map(|&m| {
-            let state = if found.iter().any(|f| f == m) {
-                ModuleState::Installed
-            } else if supported_modules(host).contains(&m) {
-                ModuleState::NotInstalled
+        .map(|&name| {
+            let support = agent.support(kind, name);
+            let (state, note) = if found.contains(&name) {
+                (ModuleState::Installed, String::new())
             } else {
-                ModuleState::NotSupported
+                match support {
+                    Support::Yes => (ModuleState::NotInstalled, String::new()),
+                    Support::Flag(flag) => (ModuleState::NotInstalled, format!(" ({flag})")),
+                    Support::No(why) => (ModuleState::NotSupported, format!(": {why}")),
+                }
             };
-            (m, state)
+            ModuleRow { name, state, note }
         })
         .collect()
 }
@@ -268,23 +247,23 @@ pub fn module_states(
 /// `✓ hooks   installed` — green, red `✗` for not installed, grey `−` for not supported,
 /// coloured only where stdout takes colour (see `render`). `console = false` drops marks and
 /// colour: the doctor text also lands in the PDF report, whose built-in font has no `✓`.
-pub fn module_lines(states: &[(&str, ModuleState)], indent: &str, console: bool) -> String {
+pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
     use owo_colors::{OwoColorize, Stream};
     let mut out = String::new();
-    for (name, state) in states {
-        let (mark, word) = match state {
+    for row in rows {
+        let (mark, word) = match row.state {
             ModuleState::Installed => ("✓ ", "installed"),
             ModuleState::NotInstalled => ("✗ ", "not installed"),
             ModuleState::NotSupported => ("− ", "not supported"),
         };
         let mark = if console { mark } else { "" };
-        let line = format!("{indent}{mark}{name:<7} {word}");
+        let line = format!("{indent}{mark}{:<7} {word}{}", row.name, row.note);
         if !console {
             out.push_str(&line);
             out.push('\n');
             continue;
         }
-        let line = match state {
+        let line = match row.state {
             ModuleState::Installed => line
                 .if_supports_color(Stream::Stdout, |t| t.green())
                 .to_string(),
@@ -301,45 +280,165 @@ pub fn module_lines(states: &[(&str, ModuleState)], indent: &str, console: bool)
     out
 }
 
-/// `rtok agent list`: every known host × variant with app version, rtok state, modules.
-pub fn list(cfg: &crate::config::Config) -> String {
-    use crate::render::{Col, table};
-    let cols = [
-        Col::left(0),
-        Col::left(0),
-        Col::left(0),
-        Col::left(0),
-        Col::left(0),
-    ];
-    let mut rows = vec![vec![
-        "agent".to_string(),
-        "type".to_string(),
-        "version".to_string(),
-        "installed".to_string(),
-        "modules".to_string(),
-    ]];
-    for host in HOSTS {
-        for kind in variants(host) {
-            let mods = installed_modules(host, kind, cfg);
-            rows.push(vec![
-                host.to_string(),
-                kind.to_string(),
-                app_version(host, kind),
-                if mods.is_empty() { "no" } else { "yes" }.to_string(),
-                if mods.is_empty() {
-                    "-".to_string()
-                } else {
-                    mods.join(",")
-                },
-            ]);
+/// What a block reports about its variant.
+pub enum Outcome<'a> {
+    /// The app is not on this machine: header, app and config lines only.
+    NotFound,
+    /// `agents list`: state, no installer ran.
+    Listed,
+    /// The installer ran with these step reports.
+    Applied { mode: Mode, reports: &'a [String] },
+    /// A shared-config host already applied under this sibling variant.
+    Shared(&'static str),
+}
+
+/// The block one host variant prints:
+///
+/// ```text
+/// CLI: Codex — already installed
+///   app     /opt/homebrew/bin/codex (codex-cli 0.40.0)
+///   config  /Users/me/.codex/config.toml
+///   ✓ mcp     installed
+///   ✗ proxy   not installed (--proxy)
+///   − hooks   not supported: Codex has no shell hooks
+/// ```
+pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> String {
+    let note = match &outcome {
+        Outcome::NotFound => " — not found",
+        Outcome::Listed => "",
+        Outcome::Applied { .. } if cfg.setup.dry_run => " — dry run, nothing written",
+        Outcome::Applied { mode, reports } if reports.iter().all(|r| r == NO_CHANGES) => {
+            if *mode == Mode::Remove {
+                " — no changes"
+            } else {
+                " — already installed"
+            }
+        }
+        Outcome::Applied { .. } => "",
+        Outcome::Shared(_) => " — same files as above",
+    };
+    let mut out = format!("{}: {}{note}\n", v.kind.label(), v.name);
+    match app_path(v) {
+        Some(p) => out.push_str(&format!("  app     {} ({})\n", p.display(), app_version(v))),
+        None => out.push_str("  app     -\n"),
+    }
+    let files = agent.files(cfg, v.kind);
+    if !files.is_empty() {
+        let files: Vec<String> = files.iter().map(|p| p.display().to_string()).collect();
+        out.push_str(&format!("  config  {}\n", files.join(", ")));
+    }
+    if matches!(outcome, Outcome::NotFound) {
+        return out;
+    }
+    if let Outcome::Applied { reports, .. } = &outcome {
+        // Steps that changed something print their `+`/`-` lines in diff colours (T12.6).
+        let changed: Vec<&str> = reports
+            .iter()
+            .filter(|r| *r != NO_CHANGES)
+            .map(String::as_str)
+            .collect();
+        if !changed.is_empty() {
+            out.push_str(&crate::render::paint(&changed.join("\n")));
+            out.push('\n');
         }
     }
-    table(&cols, &rows)
-        .lines()
-        .map(|l| l.trim_end().to_string())
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n"
+    out.push_str(&module_lines(&module_rows(agent, v.kind, cfg), "  ", true));
+    out
+}
+
+/// What `rtok agents setup|remove` was asked to do.
+pub struct Request {
+    pub hosts: Vec<String>,
+    pub mode: Mode,
+    pub cli: bool,
+    pub desktop: bool,
+    pub all: bool,
+}
+
+/// Every host named, or the first unknown name — checked before any backup is taken.
+pub fn resolve(hosts: &[String]) -> Result<Vec<&'static dyn Agent>> {
+    if hosts.is_empty() {
+        bail!("no host given");
+    }
+    hosts
+        .iter()
+        .map(|h| host(h).ok_or_else(|| anyhow::anyhow!("unknown host: {h}")))
+        .collect()
+}
+
+/// Back up, then install into (or remove from) every wanted variant of every host, one
+/// [`block`] each. The copy is taken up front, before any installer runs, so one `.bak-<ts>`
+/// per file holds the host exactly as it was — not as it was midway through a multi-file
+/// edit; the installers therefore must not take one of their own (`cfg.setup.backup` is
+/// cleared here).
+pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
+    let agents = resolve(&req.hosts)?;
+    let want = |kind: Kind| req.mode == Mode::Remove || wants(kind, req.cli, req.desktop, req.all);
+    let mut out = String::new();
+    if !cfg.setup.dry_run && cfg.setup.backup {
+        let mut seen: Vec<PathBuf> = Vec::new();
+        for a in &agents {
+            for v in a.variants().iter().filter(|v| want(v.kind)) {
+                for path in a.files(cfg, v.kind) {
+                    if seen.contains(&path) {
+                        continue;
+                    }
+                    if let Some(bak) = rtok_agent_sdk::backup(&path)? {
+                        out.push_str(&format!("backup {}\n", bak.display()));
+                    }
+                    seen.push(path);
+                }
+            }
+        }
+        cfg.setup.backup = false;
+    }
+    for a in agents {
+        let mut done: Option<&'static str> = None;
+        let mut any = false;
+        for v in a.variants().iter().filter(|v| want(v.kind)) {
+            any = true;
+            if req.mode != Mode::Remove && !present(a, v, cfg) {
+                out.push_str(&block(a, v, cfg, Outcome::NotFound));
+                continue;
+            }
+            if let (Some(first), true) = (done, a.shared()) {
+                out.push_str(&block(a, v, cfg, Outcome::Shared(first)));
+                continue;
+            }
+            let reports = a.apply(cfg, v.kind, req.mode)?;
+            done = Some(v.name);
+            out.push_str(&block(
+                a,
+                v,
+                cfg,
+                Outcome::Applied {
+                    mode: req.mode,
+                    reports: &reports,
+                },
+            ));
+        }
+        if !any {
+            out.push_str(&format!("skip {}: not selected\n", a.id()));
+        }
+    }
+    Ok(out)
+}
+
+/// `rtok agents list`: every known host × variant as a [`block`], nothing written.
+pub fn list(cfg: &Config) -> String {
+    let mut out = String::new();
+    for id in HOSTS {
+        let Some(a) = host(id) else { continue };
+        for v in a.variants() {
+            let outcome = if present(a, v, cfg) {
+                Outcome::Listed
+            } else {
+                Outcome::NotFound
+            };
+            out.push_str(&block(a, v, cfg, outcome));
+        }
+    }
+    out
 }
 
 /// The `[setup]` flags an installer acts on, as the SDK spells them.
@@ -778,33 +877,48 @@ mod tests {
 
     #[test]
     fn variant_filter_defaults_to_all() {
-        assert!(wants("cli", false, false, false));
-        assert!(wants("gui", false, false, false));
-        assert!(wants("cli", false, false, true));
-        assert!(wants("gui", false, false, true));
-        assert!(wants("cli", true, false, false));
-        assert!(!wants("gui", true, false, false));
-        assert!(!wants("cli", false, true, false));
-        assert!(wants("gui", false, true, false));
-        assert_eq!(variants("cursor"), vec!["cli", "gui"]);
-        assert_eq!(variants("opencode"), vec!["cli", "gui"]);
-        assert_eq!(variants("claude"), vec!["cli"]);
+        assert!(wants(Kind::Cli, false, false, false));
+        assert!(wants(Kind::Desktop, false, false, false));
+        assert!(wants(Kind::Cli, false, false, true));
+        assert!(wants(Kind::Desktop, false, false, true));
+        assert!(wants(Kind::Cli, true, false, false));
+        assert!(!wants(Kind::Desktop, true, false, false));
+        assert!(!wants(Kind::Cli, false, true, false));
+        assert!(wants(Kind::Desktop, false, true, false));
+        let kinds = |id: &str| -> Vec<Kind> {
+            host(id)
+                .unwrap()
+                .variants()
+                .iter()
+                .map(|v| v.kind)
+                .collect()
+        };
+        assert_eq!(kinds("cursor"), [Kind::Cli, Kind::Desktop]);
+        assert_eq!(kinds("opencode"), [Kind::Cli, Kind::Desktop]);
+        assert_eq!(kinds("claude"), [Kind::Cli]);
+        assert!(host("windsurf").is_none());
+        assert!(resolve(&["claude".into(), "nope".into()]).is_err());
     }
 
     #[test]
-    fn list_shows_every_host_with_type_and_state() {
-        let cfg = Config::default();
-        let out = list(&cfg);
-        let head = out.lines().next().unwrap_or("");
-        assert!(head.contains("agent") && head.contains("type") && head.contains("version"));
-        assert!(
-            head.contains("installed") && head.contains("modules"),
-            "{out}"
-        );
-        for host in ["claude", "cursor", "codex", "opencode", "pi"] {
-            assert!(out.contains(host), "{out}");
+    fn list_prints_one_block_per_app_with_kind_name_app_and_config() {
+        let out = list(&Config::default());
+        for head in [
+            "CLI: Claude Code",
+            "CLI: Cursor CLI",
+            "Desktop: Cursor",
+            "CLI: Codex",
+            "CLI: OpenCode",
+            "Desktop: OpenCode Desktop",
+            "CLI: pi",
+        ] {
+            assert!(
+                out.contains(&format!("{head}\n")) || out.contains(&format!("{head} — ")),
+                "{head} missing:\n{out}"
+            );
         }
-        assert!(out.contains("cli") && out.contains("gui"), "{out}");
+        assert!(out.contains("  app     "), "{out}");
+        assert!(out.contains("  config  "), "{out}");
     }
 
     /// A proxy on a non-default port read as not installed: the check looked for `8790`.
@@ -821,8 +935,9 @@ mod tests {
             "env": {"ANTHROPIC_BASE_URL": anthropic_proxy_url(&cfg)},
         });
         std::fs::write(&cfg.setup.claude.settings_path, settings.to_string()).unwrap();
-        let states = module_states("claude", "cli", &cfg);
+        let rows = module_rows(&claude::Claude, Kind::Cli, &cfg);
         let _ = std::fs::remove_dir_all(&dir);
+        let states: Vec<(&str, ModuleState)> = rows.iter().map(|r| (r.name, r.state)).collect();
         assert_eq!(
             states,
             [
@@ -832,11 +947,14 @@ mod tests {
                 ("plugin", ModuleState::NotSupported),
             ]
         );
-        let console = module_lines(&states, "  ", true);
+        let console = module_lines(&rows, "  ", true);
         assert!(console.contains("✓ hooks   installed"), "{console}");
         assert!(console.contains("✗ mcp     not installed"), "{console}");
-        assert!(console.contains("− plugin  not supported"), "{console}");
-        let plain = module_lines(&states, "  ", false);
+        assert!(
+            console.contains("− plugin  not supported: Claude Code"),
+            "{console}"
+        );
+        let plain = module_lines(&rows, "  ", false);
         assert!(
             plain.contains("  proxy   installed") && !plain.contains('✓'),
             "{plain}"
@@ -844,15 +962,77 @@ mod tests {
     }
 
     #[test]
-    fn unknown_version_is_a_dash_and_empty_modules_means_no() {
-        assert_eq!(app_version("nope", "cli"), "-");
-        let cfg = Config::default();
-        // Default paths point at a real HOME that rarely carries these files;
-        // whatever it finds, the two spellings must agree.
-        for host in HOSTS {
-            for kind in variants(host) {
-                let mods = installed_modules(host, kind, &cfg);
-                assert!(mods.iter().all(|m| !m.is_empty()));
+    fn a_flag_module_names_its_flag_and_an_unknown_bin_has_no_path_or_version() {
+        let mut cfg = Config::default();
+        cfg.setup.codex.config_path = std::env::temp_dir()
+            .join("rtok-no-such-dir")
+            .join("config.toml");
+        let rows = module_rows(&codex::Codex, Kind::Cli, &cfg);
+        let row = |name: &str| rows.iter().find(|r| r.name == name).unwrap().clone();
+        assert_eq!(row("proxy").state, ModuleState::NotInstalled);
+        assert_eq!(row("proxy").note, " (--proxy)");
+        assert_eq!(row("hooks").state, ModuleState::NotSupported);
+        assert!(
+            module_lines(&rows, "", true).contains("✗ proxy   not installed (--proxy)"),
+            "{rows:?}"
+        );
+        let ghost = Variant {
+            kind: Kind::Cli,
+            name: "ghost",
+            bins: &["rtok-no-such-binary"],
+            apps: &["~/rtok-no-such-app", "$RTOK_NO_SUCH_VAR/app"],
+        };
+        assert_eq!(app_version(&ghost), "-");
+        assert!(app_path(&ghost).is_none());
+    }
+
+    /// `| module | support | why |` rows of a host README, keyed by the first cell.
+    fn readme_rows(readme: &str) -> std::collections::HashMap<String, (String, String)> {
+        readme
+            .lines()
+            .filter_map(|l| {
+                let cells: Vec<&str> = l
+                    .trim()
+                    .trim_matches('|')
+                    .split('|')
+                    .map(str::trim)
+                    .collect();
+                let is_row = cells.len() == 3 && MODULES.iter().any(|m| cells[0].starts_with(m));
+                is_row.then(|| {
+                    (
+                        cells[0].to_string(),
+                        (cells[1].to_string(), cells[2].to_string()),
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// Each host README carries one row per module (`module` or `module (desktop)`) whose
+    /// support cell is `yes`, the flag in backticks, or `no` — and a `no` row's reason is the
+    /// very string `support()` prints.
+    #[test]
+    fn readme_tables_match_support() {
+        for id in HOSTS {
+            let agent = host(id).unwrap();
+            let rows = readme_rows(agent.readme());
+            for v in agent.variants() {
+                for module in MODULES {
+                    let key = format!("{module} ({})", v.kind.as_str());
+                    let (cell, why) = rows
+                        .get(&key)
+                        .or_else(|| rows.get(*module))
+                        .unwrap_or_else(|| panic!("{id} README has no row for {module}"));
+                    let want = match agent.support(v.kind, module) {
+                        Support::Yes => "yes".to_string(),
+                        Support::Flag(f) => format!("`{f}`"),
+                        Support::No(reason) => {
+                            assert_eq!(why, reason, "{id}: {key} reason");
+                            "no".to_string()
+                        }
+                    };
+                    assert_eq!(cell, &want, "{id}: {key}");
+                }
             }
         }
     }
@@ -871,45 +1051,52 @@ mod tests {
     }
 
     #[test]
-    fn agent_present_when_cursor_dir_exists() {
+    fn present_when_cursor_dir_exists() {
         use std::fs;
         let root = std::env::temp_dir().join(format!("rtok-present-cursor-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let cursor = root.join(".cursor");
-        fs::create_dir_all(&cursor).unwrap();
-        let cfg = cfg_with_cursor_hooks(cursor.join("hooks.json"));
-        assert!(
-            agent_present("cursor", "cli", &cfg),
-            "parent ~/.cursor must count as installed host"
-        );
+        let cursor_dir = root.join(".cursor");
+        fs::create_dir_all(&cursor_dir).unwrap();
+        let cfg = cfg_with_cursor_hooks(cursor_dir.join("hooks.json"));
+        let a = &cursor::Cursor;
+        for v in a.variants() {
+            assert!(
+                present(a, v, &cfg),
+                "parent ~/.cursor must count as installed host ({})",
+                v.name
+            );
+        }
     }
 
     #[test]
-    fn agent_present_when_claude_dir_exists() {
+    fn present_when_claude_dir_exists() {
         use std::fs;
         let root = std::env::temp_dir().join(format!("rtok-present-claude-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let claude = root.join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        let cfg = cfg_with_claude(claude.join("settings.json"), root.join(".claude.json"));
+        let claude_dir = root.join(".claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        let cfg = cfg_with_claude(claude_dir.join("settings.json"), root.join(".claude.json"));
+        let a = &claude::Claude;
         assert!(
-            agent_present("claude", "cli", &cfg),
+            present(a, &a.variants()[0], &cfg),
             "parent ~/.claude must count as installed host"
         );
     }
 
     #[test]
-    fn agent_absent_when_config_paths_missing() {
+    fn absent_when_config_paths_missing() {
         let root = std::env::temp_dir().join(format!("rtok-absent-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let missing = root.join("no-such-dir");
+        let a = &cursor::Cursor;
         let cfg = cfg_with_cursor_hooks(missing.join("hooks.json"));
-        if app_version("cursor", "cli") == "-" && app_version("cursor", "gui") == "-" {
-            assert!(!agent_present("cursor", "cli", &cfg));
+        for v in a.variants().iter().filter(|v| app_path(v).is_none()) {
+            assert!(!present(a, v, &cfg), "{}", v.name);
         }
+        let a = &claude::Claude;
         let cfg = cfg_with_claude(missing.join("settings.json"), missing.join(".claude.json"));
-        if app_version("claude", "cli") == "-" {
-            assert!(!agent_present("claude", "cli", &cfg));
+        for v in a.variants().iter().filter(|v| app_path(v).is_none()) {
+            assert!(!present(a, v, &cfg), "{}", v.name);
         }
     }
 }

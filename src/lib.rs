@@ -13,6 +13,7 @@
 //! - [`modes`]   — terse compress + YAGNI ladder helpers (D6/D7)
 //! - [`tui`]     — `rtok tui`, the terminal rendering of the operator model (D23)
 
+pub mod agents;
 pub mod bench;
 pub mod cli;
 pub mod config;
@@ -31,10 +32,10 @@ pub mod plugins;
 pub mod proxy;
 pub mod render;
 pub mod report;
-pub mod setup;
 pub mod store;
-#[cfg(test)]
-pub(crate) mod testutil;
+/// Test helpers, also for the integration tests under `tests/`; not part of the public API.
+#[doc(hidden)]
+pub mod testutil;
 pub mod tokens;
 pub mod tui;
 pub mod web;

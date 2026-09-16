@@ -46,7 +46,7 @@ pub fn family(argv: &[String]) -> String {
 }
 
 /// Basename of argv[0], splitting on `/` and `\` and dropping a trailing `.exe`
-/// (case-insensitive). Matches `run::shell_kind` / `setup::is_rtok_bin` so Windows
+/// (case-insensitive). Matches `run::shell_kind` / `agents::is_rtok_bin` so Windows
 /// paths still name the family a Measurement and a `[rule]` expect.
 pub(crate) fn cmd_stem(path: &str) -> &str {
     let base = path.rsplit(['/', '\\']).next().unwrap_or(path);

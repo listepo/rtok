@@ -110,7 +110,7 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("plugins", "plugins"),
     // the Sessions page rides the snapshot since T25.1, so the command renders a
     // real page, not an on-demand call
-    ("agent sessions", "sessions"),
+    ("agents sessions", "sessions"),
     // the Doctor page rides the snapshot since T15.6, so `rtok doctor` renders it
     ("doctor", "doctor"),
     // the Logs page rides the snapshot since T15.7, so `rtok logs` renders it
@@ -146,20 +146,20 @@ const EXEMPT: &[(&str, &str)] = &[
         "streams the log file as lines arrive (D27 exempts streaming)",
     ),
     (
-        "agent sessions watch",
+        "agents sessions watch",
         "repaints the Sessions page as sessions change (D27 exempts streaming)",
     ),
     // writing: a surface that shows numbers is not one that mutates a tree (D27)
     (
-        "agent setup",
+        "agents setup",
         "installs hooks, MCP and the proxy into a host",
     ),
-    ("agent remove", "takes rtok back out of a host"),
+    ("agents remove", "takes rtok back out of a host"),
     (
-        "agent list",
+        "agents list",
         "lists known hosts with app type, version, install state and modules",
     ),
-    ("setup", "deprecated spelling of `rtok agent setup`"),
+    ("setup", "deprecated spelling of `rtok agents setup`"),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),
     ("bench", "runs the A/B schedule and writes Measurement rows"),

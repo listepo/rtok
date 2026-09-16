@@ -1,4 +1,4 @@
-//! Lifecycle helpers for `rtok proxy` and `rtok agent setup claude --proxy` (plan T5.2).
+//! Lifecycle helpers for `rtok proxy` and `rtok agents setup claude --proxy` (plan T5.2).
 
 use std::sync::Arc;
 
@@ -9,8 +9,8 @@ use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::ProxyState;
+use crate::agents::apply;
 use crate::config::Config;
-use crate::setup::apply;
 
 /// `GET /health` → `{"ok":true,"mode":…}`. When config disables proxy/core business
 /// logic: `mode=passthrough`, `enabled=false`, `recording=false` (listener still up).
@@ -35,7 +35,7 @@ pub async fn live_calls() -> Json<Value> {
 
 /// Set `env.ANTHROPIC_BASE_URL` in Claude settings.json to this proxy (backup).
 pub fn register_proxy(cfg: &Config) -> Result<String> {
-    let url = crate::setup::anthropic_proxy_url(cfg);
+    let url = crate::agents::anthropic_proxy_url(cfg);
     edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
         let want = json!(url);
         let env = object_at(root, "env");
@@ -52,10 +52,10 @@ pub fn register_proxy(cfg: &Config) -> Result<String> {
     })
 }
 
-/// Clear `env.ANTHROPIC_BASE_URL` (`rtok agent remove claude`), but only while it still
+/// Clear `env.ANTHROPIC_BASE_URL` (`rtok agents remove claude`), but only while it still
 /// points at this proxy — a URL the user set themselves is not ours to delete.
 pub fn unregister_proxy(cfg: &Config) -> Result<String> {
-    let url = crate::setup::anthropic_proxy_url(cfg);
+    let url = crate::agents::anthropic_proxy_url(cfg);
     edit_json(&apply(cfg), &cfg.setup.claude.settings_path, |root| {
         let Some(env) = root.get_mut("env").and_then(Value::as_object_mut) else {
             return NO_CHANGES.into();

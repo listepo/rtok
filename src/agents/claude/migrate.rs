@@ -1,10 +1,10 @@
-//! `rtok agent setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
+//! `rtok agents setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
 
 use anyhow::{Result, bail};
 use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};
 use serde_json::{Value, json};
 
-use super::apply;
+use crate::agents::apply;
 use crate::config::Config;
 
 const LEGACY: &[&str] = &[

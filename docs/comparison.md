@@ -105,7 +105,7 @@ shrink; JetBrains measured **8.5 %** on agentic work, and issue #112 has corrupt
 code.
 
 rtok ships the same *ideas* as optional prompt modes
-(`rtok agent setup claude --mode terse,yagni`, aliases `cave`/`pony`) plus native helpers in
+(`rtok agents setup claude --mode terse,yagni`, aliases `cave`/`pony`) plus native helpers in
 `src/modes/` — not a wrap of either tool (D6). Modes are markdown data under `modes/`
 injected once per session inside the shared **800-token** budget (D7); measured mode sizes
 2026-09-10: `terse` **162** est. tokens, `yagni` **145** (cap 250 each).
@@ -175,8 +175,8 @@ byte-stable injection and cache-preserving proxy rewrites exist for exactly this
    property of the host, not of their code.
 8. **One config, with provenance.** Every flag is a config key; `rtok config show --sources`
    names the layer each value came from. No tool in the survey can answer that question.
-9. **Reversible install.** `rtok agent setup claude --dry-run` prints the exact edits, the real run
-   backs up the settings file before writing it, and `rtok agent remove claude` takes the hooks,
+9. **Reversible install.** `rtok agents setup claude --dry-run` prints the exact edits, the real run
+   backs up the settings file before writing it, and `rtok agents remove claude` takes the hooks,
    the MCP registration and the proxy variable back out (foreign entries stay).
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and

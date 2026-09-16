@@ -1,5 +1,4 @@
-- T44.2. `rtok agents` with one folder per host
-- T44.3. Setup and list output: app, path, modules, plugins
+- T44.3. Plugins per app and Claude Desktop
 - T44.4. Checks, e2e and platforms
 - T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
 - T45.1. OTel flush survives a traces error

@@ -146,14 +146,14 @@ refs = ["src/mcp.rs", "src/measure/cache.rs", "src/measure/stats.rs", "src/plugi
 [[symbol]]
 name = "openai_proxy_url"
 kind = "fn"
-defs = ["src/setup/mod.rs"]
-refs = ["src/setup/codex.rs", "src/setup/opencode.rs"]
+defs = ["src/agents/mod.rs"]
+refs = ["src/agents/codex/mod.rs", "src/agents/opencode/mod.rs"]
 
 [[symbol]]
 name = "adapt_cursor"
 kind = "fn"
 defs = ["src/hooks/types.rs"]
-refs = ["src/hooks/mod.rs", "src/setup/cursor.rs"]
+refs = ["src/hooks/mod.rs", "src/agents/cursor/mod.rs"]
 
 [[symbol]]
 name = "call_ids_of_kind"

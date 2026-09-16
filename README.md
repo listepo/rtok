@@ -56,8 +56,8 @@ Install rtok's eight hooks and MCP entry. The installer backs up the settings fi
 writing it; inspect its changes first if preferred.
 
 ```bash
-rtok agent setup claude --dry-run
-rtok agent setup claude
+rtok agents setup claude --dry-run
+rtok agents setup claude
 rtok doctor
 ```
 
@@ -75,9 +75,9 @@ rtok doctor
 8 additions
 ```
 
-Each host ends with the state of every rtok module in it — `✓ installed`, `✗ not installed`, `− not supported` for `hooks`, `mcp`, `proxy` and `plugin`; `rtok doctor` lists the same for every host under `agents`.
+Each app gets one block: its kind and name (`CLI: Claude Code`, `Desktop: Cursor`), where it is installed and its version, the config files touched, and the state of every rtok module — `✓ installed`, `✗ not installed (--flag)`, `− not supported: why` for `hooks`, `mcp`, `proxy` and `plugin`. A second run of the same command says `already installed` instead of repeating a diff. `rtok agents list` prints the same blocks without writing anything; `rtok doctor` lists the modules for every host under `agents`.
 
-`rtok agent remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
+`rtok agents remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first.
 
 Run the proxy separately when you want provider usage rows and archive compression:
 
@@ -237,9 +237,9 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 
 | Command | Purpose |
 |---|---|
-| `rtok agent setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
-| `rtok agent remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
-| `rtok agent setup cursor` / `codex` / `opencode` / `pi` | register the other supported host integrations |
+| `rtok agents setup claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
+| `rtok agents remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
+| `rtok agents setup cursor` / `codex` / `opencode` / `pi` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
@@ -349,7 +349,7 @@ rtok() {
 rtok --version
 rtok config init
 rtok config validate
-rtok agent setup claude --dry-run
+rtok agents setup claude --dry-run
 rtok stats --since 1h
 rtok plugins
 rtok proxy --dry-run

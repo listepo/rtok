@@ -1,4 +1,4 @@
-//! Codex installer (`rtok agent setup codex`, plan T10.3).
+//! Codex installer (`rtok agents setup codex`, plan T10.3).
 //!
 //! Codex reads MCP servers from `~/.codex/config.toml` as `[mcp_servers.<name>]`
 //! tables with `command` and `args`. It has no shell hooks, so MCP plus proxy
@@ -12,10 +12,71 @@ use anyhow::{Context, Result, bail};
 use rtok_agent_sdk::NO_CHANGES;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 
-use super::apply;
+use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
 const NAME: &str = "rtok";
+
+/// Codex CLI: `[mcp_servers.rtok]` and, with `--proxy`, `[model_providers.rtok]`.
+pub struct Codex;
+
+static VARIANTS: [Variant; 1] = [Variant {
+    kind: Kind::Cli,
+    name: "Codex",
+    bins: &["codex"],
+    apps: &[],
+}];
+
+impl Agent for Codex {
+    fn id(&self) -> &'static str {
+        "codex"
+    }
+
+    fn variants(&self) -> &'static [Variant] {
+        &VARIANTS
+    }
+
+    fn readme(&self) -> &'static str {
+        include_str!("README.md")
+    }
+
+    fn support(&self, _kind: Kind, module: &str) -> Support {
+        match module {
+            "mcp" => Support::Yes,
+            "proxy" => Support::Flag("--proxy"),
+            "hooks" => Support::No("Codex has no shell hook events"),
+            _ => Support::No(
+                "Codex loads MCP from config.toml; there is no plugin directory to link",
+            ),
+        }
+    }
+
+    fn files(&self, cfg: &Config, _kind: Kind) -> Vec<std::path::PathBuf> {
+        vec![cfg.setup.codex.config_path.clone()]
+    }
+
+    fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
+        let s = super::read(&cfg.setup.codex.config_path);
+        let mut out = Vec::new();
+        if s.contains("[mcp_servers.rtok]") {
+            out.push("mcp");
+        }
+        if s.contains("[model_providers.rtok]") {
+            out.push("proxy");
+        }
+        out
+    }
+
+    fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
+        let remove = mode == Mode::Remove;
+        let mut lines = vec![run(cfg, remove)?];
+        // On the way out the provider block goes whether or not `--proxy` asked for it.
+        if remove || cfg.setup.proxy {
+            lines.push(register_proxy(cfg, remove)?);
+        }
+        Ok(lines)
+    }
+}
 /// Apply, dry-run, or remove the `[mcp_servers.rtok]` block.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     let path = &cfg.setup.codex.config_path;

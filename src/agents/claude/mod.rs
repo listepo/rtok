@@ -3,12 +3,16 @@
 //! What is Claude-specific is the `hooks` shape below; backup, the write gate and the
 //! `mcpServers` entry come from `rtok-agent-sdk` (D28).
 
+pub mod migrate;
+
+use std::path::PathBuf;
+
 use crate::config::Config;
 use anyhow::Result;
 use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::apply;
+use super::{Agent, Kind, Mode, Support, Variant, apply};
 
 /// `(event, matcher)` — empty matcher omits the field. `SessionEnd` was missing, so no session
 /// row got `ended_at` and no OTel session root ever shipped (`hooks::dispatch` handles it).
@@ -135,9 +139,93 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::register_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok", &cmd, &["mcp"])
 }
 
-/// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agent remove claude`).
+/// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agents remove claude`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok")
+}
+
+/// Claude Code: hooks in `settings.json`, MCP in `~/.claude.json`, the proxy as
+/// `env.ANTHROPIC_BASE_URL`.
+pub struct Claude;
+
+static VARIANTS: [Variant; 1] = [Variant {
+    kind: Kind::Cli,
+    name: "Claude Code",
+    bins: &["claude"],
+    apps: &[],
+}];
+
+impl Agent for Claude {
+    fn id(&self) -> &'static str {
+        "claude"
+    }
+
+    fn variants(&self) -> &'static [Variant] {
+        &VARIANTS
+    }
+
+    fn readme(&self) -> &'static str {
+        include_str!("README.md")
+    }
+
+    fn support(&self, _kind: Kind, module: &str) -> Support {
+        match module {
+            "hooks" | "mcp" => Support::Yes,
+            "proxy" => Support::Flag("--proxy"),
+            _ => Support::No(
+                "Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link",
+            ),
+        }
+    }
+
+    fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
+        vec![
+            cfg.setup.claude.settings_path.clone(),
+            cfg.doctor.claude_json.clone(),
+        ]
+    }
+
+    fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
+        let s = super::read(&cfg.setup.claude.settings_path);
+        let m = super::read(&cfg.doctor.claude_json);
+        let mut out = Vec::new();
+        if s.contains("rtok hook") {
+            out.push("hooks");
+        }
+        if m.contains("\"rtok\"") {
+            out.push("mcp");
+        }
+        // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the
+        // file missed a proxy on another `[proxy] port`.
+        let base = serde_json::from_str::<Value>(&s)
+            .ok()
+            .and_then(|v| v["env"]["ANTHROPIC_BASE_URL"].as_str().map(str::to_string));
+        if base.as_deref() == Some(super::anthropic_proxy_url(cfg).as_str()) {
+            out.push("proxy");
+        }
+        out
+    }
+
+    fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
+        match mode {
+            Mode::Replace => Ok(vec![migrate::run(cfg)?]),
+            Mode::Remove => Ok(vec![
+                run(cfg, true)?,
+                unregister_mcp(cfg)?,
+                crate::proxy::cli::unregister_proxy(cfg)?,
+            ]),
+            Mode::Install => {
+                let mut lines = vec![run(cfg, false)?];
+                if cfg.setup.mcp {
+                    lines.push(register_mcp(cfg)?);
+                }
+                if cfg.setup.proxy {
+                    lines.push(crate::proxy::cli::register_proxy(cfg)?);
+                }
+                Ok(lines)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
