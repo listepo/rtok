@@ -836,21 +836,49 @@ fn expand(path: &Path, home: &Path) -> PathBuf {
 /// fallback can be tested without mutating process env.
 fn expand_with(path: &Path, rtok_home: &Path, user_home: Option<&Path>) -> PathBuf {
     let raw = path.to_string_lossy();
-    if raw == "~/.rtok" || raw == "~/.rtok/" {
-        return rtok_home.to_path_buf();
-    }
-    if let Some(rest) = raw.strip_prefix("~/.rtok/") {
-        return rtok_home.join(rest);
+    if let Some(rest) = strip_rtok_home_prefix(&raw) {
+        return match rest {
+            "" => rtok_home.to_path_buf(),
+            rest => join_tilde_rest(rtok_home, rest),
+        };
     }
     if raw == "~" {
         return user_home
             .map(Path::to_path_buf)
             .unwrap_or_else(|| path.to_path_buf());
     }
-    match (raw.strip_prefix("~/"), user_home) {
-        (Some(rest), Some(h)) => h.join(rest),
-        _ => path.to_path_buf(),
+    if let Some(rest) = strip_home_prefix(&raw) {
+        return match user_home {
+            Some(h) => join_tilde_rest(h, rest),
+            None => path.to_path_buf(),
+        };
     }
+    path.to_path_buf()
+}
+
+fn strip_rtok_home_prefix(raw: &str) -> Option<&str> {
+    for prefix in ["~/.rtok/", "~/.rtok\\", "~\\.rtok\\", "~\\.rtok/"] {
+        if let Some(rest) = raw.strip_prefix(prefix) {
+            return Some(rest);
+        }
+    }
+    match raw {
+        "~/.rtok" | "~/.rtok/" | "~/.rtok\\" | "~\\.rtok" | "~\\.rtok\\" | "~\\.rtok/" => Some(""),
+        _ => None,
+    }
+}
+
+fn strip_home_prefix(raw: &str) -> Option<&str> {
+    raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\"))
+}
+
+/// Join a tilde-relative remainder that may use `/` or `\\` separators.
+fn join_tilde_rest(base: &Path, rest: &str) -> PathBuf {
+    let mut out = base.to_path_buf();
+    for part in rest.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        out.push(part);
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1220,6 +1248,19 @@ bogus = true
         assert_eq!(
             expand_with(Path::new("~/.cursor/hooks.json"), rtok, None),
             PathBuf::from("~/.cursor/hooks.json")
+        );
+        // PowerShell-style backslash tilde paths must expand too.
+        assert_eq!(
+            expand_with(Path::new("~\\.cursor\\hooks.json"), rtok, Some(profile)),
+            profile.join(".cursor").join("hooks.json")
+        );
+        assert_eq!(
+            expand_with(Path::new("~\\.rtok\\db"), rtok, Some(profile)),
+            rtok.join("db")
+        );
+        assert_eq!(
+            expand_with(Path::new("~/.rtok\\db"), rtok, Some(profile)),
+            rtok.join("db")
         );
     }
 
