@@ -381,17 +381,17 @@ pub(crate) fn resolve_plugin_src(
     manifest_dir: &std::path::Path,
 ) -> std::path::PathBuf {
     let cargo = manifest_dir.join(rel);
-    if let Some(exe) = exe {
-        if let Some(dir) = exe.parent() {
-            let beside = dir.join(rel);
-            if beside.is_dir() {
-                return beside;
-            }
-            if cargo.is_dir() {
-                return cargo;
-            }
+    if let Some(exe) = exe
+        && let Some(dir) = exe.parent()
+    {
+        let beside = dir.join(rel);
+        if beside.is_dir() {
             return beside;
         }
+        if cargo.is_dir() {
+            return cargo;
+        }
+        return beside;
     }
     cargo
 }
