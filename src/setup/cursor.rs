@@ -83,17 +83,21 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     let report = link(cfg).run(&apply(cfg), remove)?;
     // Singleton (D21): the plugin is the MCP, so a previous `mcpServers.rtok`
     // entry from a plain install must go, else two writers serve one store.
-    if report.starts_with("+ plugin") {
+    // Clear on every run while the plugin is linked — not only on the first
+    // `+ plugin` — so a leftover from a declined earlier offer is not kept.
+    if !remove && link(cfg).linked() {
         let _ = unregister_mcp(cfg);
     }
     Ok(report)
 }
 
-/// True when `--yes` accepted the plugin, so `mcp.json` must not also register rtok.
-/// Also true when the plugin link already exists: the plugin *is* the MCP (D21
-/// singleton), so a later plain `rtok agent setup cursor` must not add a second entry.
+/// True when the Cursor plugin is linked: it *is* the MCP (D21 singleton), so
+/// setup must not also register `mcpServers.rtok` in `mcp.json`.
+///
+/// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked
+/// yet and must still show what `mcp.json` would do if the offer is declined.
 pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
-    !remove && (cfg.setup.yes || link(cfg).linked())
+    !remove && link(cfg).linked()
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -209,6 +213,56 @@ mod tests {
         assert!(first.starts_with("+ plugin"), "{first}");
         assert!(link(&c).linked());
         assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn linked_plugin_clears_leftover_mcp_json_on_later_setup() {
+        let dir = tmp("singleton-clean");
+        let mut c = cfg(dir.join("hooks.json"), false);
+        c.setup.yes = true;
+        c.setup.backup = false;
+        // Simulate: earlier declined plugin left mcp.json; plugin linked later.
+        let mcp = dir.join("mcp.json");
+        fs::write(
+            &mcp,
+            r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]}}}"#,
+        )
+        .unwrap();
+        assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
+        assert!(link(&c).linked());
+        let body = fs::read_to_string(&mcp).unwrap();
+        assert!(
+            !body.contains("\"rtok\""),
+            "fresh link must drop mcpServers.rtok: {body}"
+        );
+        // Re-seed a leftover while the plugin stays linked (manual re-add, or an
+        // older setup that only cleaned on `+ plugin`).
+        fs::write(
+            &mcp,
+            r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        let body = fs::read_to_string(&mcp).unwrap();
+        assert!(
+            !body.contains("\"rtok\""),
+            "already-linked setup must still clear leftover rtok: {body}"
+        );
+        assert!(body.contains("other"), "foreign servers must stay: {body}");
+        assert!(plugin_is_mcp(&c, false));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn plugin_is_mcp_requires_a_real_link_not_just_yes() {
+        let dir = tmp("is-mcp-yes");
+        let mut c = cfg(dir.join("hooks.json"), false);
+        c.setup.yes = true;
+        assert!(
+            !plugin_is_mcp(&c, false),
+            "--yes alone must not suppress mcp.json registration"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
