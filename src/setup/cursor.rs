@@ -55,7 +55,9 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
         .hooks_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
-        .join("plugins/local/rtok")
+        .join("plugins")
+        .join("local")
+        .join("rtok")
 }
 
 fn link(cfg: &Config) -> PluginLink<'static> {

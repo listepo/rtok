@@ -361,8 +361,39 @@ pub(crate) fn openai_proxy_url(cfg: &crate::config::Config) -> String {
 }
 
 /// The tree this repo ships a host plugin from (D21 (6)).
+///
+/// Resolution order: (1) `rel` next to the running binary (release archives ship
+/// `plugins/` beside `rtok`); (2) `CARGO_MANIFEST_DIR/rel` for `cargo test` / dev.
+/// When neither exists, return the best path for the error message (beside the
+/// binary when known, otherwise the cargo path).
 pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel)
+    resolve_plugin_src(
+        rel,
+        std::env::current_exe().ok().as_deref(),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+    )
+}
+
+/// Pure resolution used by [`plugin_src`] and unit tests (fake exe layout).
+pub(crate) fn resolve_plugin_src(
+    rel: &str,
+    exe: Option<&std::path::Path>,
+    manifest_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    let cargo = manifest_dir.join(rel);
+    if let Some(exe) = exe {
+        if let Some(dir) = exe.parent() {
+            let beside = dir.join(rel);
+            if beside.is_dir() {
+                return beside;
+            }
+            if cargo.is_dir() {
+                return cargo;
+            }
+            return beside;
+        }
+    }
+    cargo
 }
 
 #[cfg(test)]
@@ -379,6 +410,39 @@ mod tests {
         cfg.setup.backup = false;
         let a = apply(&cfg);
         assert!(a.dry_run && a.yes && !a.backup);
+    }
+
+    #[test]
+    fn plugin_src_prefers_directory_beside_exe() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-plugin-src-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bin_dir = root.join("bin");
+        let plugins = bin_dir.join("plugins").join("cursor");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join("plugin.json"), "{}").unwrap();
+        let fake_exe = bin_dir.join("rtok");
+        fs::write(&fake_exe, b"").unwrap();
+        let missing_manifest = root.join("no-such-manifest");
+        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest);
+        assert_eq!(got, plugins);
+        // When beside-exe is missing, fall back to an existing cargo tree.
+        let cargo_root = root.join("cargo");
+        let cargo_plugins = cargo_root.join("plugins").join("cursor");
+        fs::create_dir_all(&cargo_plugins).unwrap();
+        let lonely_exe = root.join("lonely").join("rtok");
+        fs::create_dir_all(lonely_exe.parent().unwrap()).unwrap();
+        fs::write(&lonely_exe, b"").unwrap();
+        let got = resolve_plugin_src("plugins/cursor", Some(&lonely_exe), &cargo_root);
+        assert_eq!(got, cargo_plugins);
+        // Neither exists: still return the beside-exe path for a clear error.
+        let empty = root.join("empty");
+        let empty_exe = empty.join("rtok");
+        fs::create_dir_all(&empty).unwrap();
+        fs::write(&empty_exe, b"").unwrap();
+        let got = resolve_plugin_src("plugins/cursor", Some(&empty_exe), &empty);
+        assert_eq!(got, empty.join("plugins").join("cursor"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

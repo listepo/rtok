@@ -51,6 +51,7 @@ fn setup(args: &[&str], cfg: &Path, home: &Path) -> (String, String, i32) {
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
         .env("HOME", home)
+        .env("USERPROFILE", home)
         .env("RTOK_HOME", home.join(".rtok"))
         .output()
         .expect("rtok setup");
@@ -96,14 +97,23 @@ fn d21_no_duplicate_call_paths() {
         !cmd.contains("rtok read") && !cmd.contains("rtok search"),
         "hooks must not duplicate MCP read/search: {cmd}"
     );
-    let mcp = fs::read_to_string(root().join("mcp.json")).unwrap();
-    assert_eq!(
-        mcp.matches("\"rtok\"").count(),
-        1,
-        "one rtok MCP name: {mcp}"
-    );
+    let mcp: Value =
+        serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
+    let rtok = &mcp["mcpServers"]["rtok"];
+    assert_eq!(rtok["command"], "rtok", "{mcp}");
+    assert_eq!(rtok["args"], serde_json::json!(["mcp"]), "{mcp}");
 }
 
+#[test]
+fn d21_mcp_json_invokes_rtok_directly() {
+    let mcp: Value =
+        serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
+    let rtok = &mcp["mcpServers"]["rtok"];
+    assert_eq!(rtok["command"], "rtok", "cross-platform: no sh wrapper");
+    assert_eq!(rtok["args"], serde_json::json!(["mcp"]));
+}
+
+#[cfg(unix)]
 #[test]
 fn d21_missing_rtok_names_ketch() {
     let script = root().join("scripts/mcp.sh");
@@ -123,6 +133,34 @@ fn d21_missing_rtok_names_ketch() {
         "want ketch install, got {err}"
     );
     assert!(err.contains("rtok is not installed"), "{err}");
+}
+
+#[cfg(windows)]
+#[test]
+fn d21_missing_rtok_names_ketch_cmd() {
+    let script = root().join("scripts/mcp.cmd");
+    let out = Command::new("cmd")
+        .args(["/C", script.to_str().unwrap()])
+        .env_clear()
+        .env("PATH", "C:\\Windows\\System32")
+        .output()
+        .expect("mcp.cmd");
+    assert!(
+        !out.status.success(),
+        "missing rtok must fail the MCP start"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("ketch install listepo/rtok"),
+        "want ketch install, got {err}"
+    );
+    assert!(err.contains("rtok is not installed"), "{err}");
+}
+
+#[test]
+fn d21_ketch_helpers_exist_for_both_platforms() {
+    assert!(root().join("scripts/mcp.sh").is_file());
+    assert!(root().join("scripts/mcp.cmd").is_file());
 }
 
 #[test]

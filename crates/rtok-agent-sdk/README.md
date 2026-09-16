@@ -29,7 +29,7 @@ let report = register_mcp(&apply, path, "rtok", "rtok", &["mcp"])?;
 let report = PluginLink {
     src_rel: "plugins/cursor",
     src: repo.join("plugins/cursor"),
-    dest: cursor_dir.join("plugins/local/rtok"),
+    dest: cursor_dir.join("plugins").join("local").join("rtok"),
     label: Some("~/.cursor/plugins/local"),
     host: "Cursor",
 }

@@ -61,6 +61,7 @@ fn rtok(args: &[&str], cfg: &Path, home: &Path) -> (String, i32) {
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
         .env("HOME", home)
+        .env("USERPROFILE", home)
         .env("RTOK_HOME", home.join(".rtok"))
         .output()
         .expect("rtok");

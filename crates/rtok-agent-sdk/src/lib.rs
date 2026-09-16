@@ -1,8 +1,8 @@
 //! What every `rtok agent setup <host>` installer does, once.
 //!
 //! An agent host — Claude Code, Cursor, Codex, OpenCode, pi — is a config file rtok edits and,
-//! for some of them, a plugin directory rtok links. The *shapes* differ (JSON hooks, a TOML
-//! `[mcp_servers]` table, an `env` map, a symlink); the contract around them does not:
+//! for some of them, a plugin directory rtok installs. The *shapes* differ (JSON hooks, a TOML
+//! `[mcp_servers]` table, an `env` map, a symlink or a copy); the contract around them does not:
 //!
 //! - **Reversible.** Every file rtok touches is copied to `<name>.bak-<unix-seconds>` first, so
 //!   one `.bak-*` per file is the whole undo.
@@ -42,6 +42,10 @@ pub const NO_CHANGES: &str = "no changes";
 /// How to install rtok when rtok itself is missing (D21 (5)). Named in every plugin offer,
 /// because the offer is the one place a host's user reads before rtok exists for them.
 pub const KETCH_INSTALL: &str = "ketch install listepo/rtok";
+
+/// Marker file written into a Windows (non-unix) plugin *copy* so remove can
+/// `remove_dir_all` only trees rtok created — never a foreign directory.
+pub const OWNED_MARKER: &str = ".rtok-owned";
 
 /// How much an installer is allowed to do to the disk on this run.
 #[derive(Clone, Copy, Debug, Default)]
@@ -277,8 +281,9 @@ pub fn accepted(apply: &Apply, question: &str) -> bool {
 
 /// A host plugin directory this repo ships, and where that host loads it from (D21 (6)).
 ///
-/// The link is a symlink on purpose: the host and the repo see the same tree, so an rtok update
-/// is an update of the host's plugin with nothing to re-run.
+/// On Unix the install is a symlink so the host and the repo see the same tree. On Windows
+/// Cursor may reject external junctions, so the install is a directory copy marked with
+/// [`OWNED_MARKER`] — remove undoes only what rtok installed.
 pub struct PluginLink<'a> {
     /// Repo-relative source (`plugins/cursor`), named in every report so the user can find it.
     pub src_rel: &'a str,
@@ -335,10 +340,14 @@ impl PluginLink<'_> {
                 return Ok(NO_CHANGES.into());
             }
             // Install refuses to overwrite a foreign directory; remove must not wipe one
-            // either. Only unlink a symlink (or a plain file) that we could have created.
+            // either. Unlink a symlink / plain file, or wipe a copy we marked as ours.
             let meta = self.dest.symlink_metadata()?;
             if meta.file_type().is_symlink() || meta.file_type().is_file() {
                 fs::remove_file(&self.dest)?;
+                return Ok(format!("- plugin {}", self.dest.display()));
+            }
+            if meta.is_dir() && self.dest.join(OWNED_MARKER).is_file() {
+                fs::remove_dir_all(&self.dest)?;
                 return Ok(format!("- plugin {}", self.dest.display()));
             }
             return Ok(format!(
@@ -365,7 +374,7 @@ impl PluginLink<'_> {
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
         }
-        symlink(&self.src, &self.dest)?;
+        install_plugin(&self.src, &self.dest)?;
         let label = self.label.map(|l| format!(" {l}")).unwrap_or_default();
         Ok(format!(
             "+ plugin {} → {}{}",
@@ -376,16 +385,47 @@ impl PluginLink<'_> {
     }
 }
 
-#[cfg(unix)]
-fn symlink(src: &Path, dest: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(src, dest)
-        .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))
+/// Install the plugin tree at `dest`: symlink on Unix, owned copy elsewhere.
+fn install_plugin(src: &Path, dest: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(src, dest)
+            .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))
+    }
+    #[cfg(not(unix))]
+    {
+        copy_owned(src, dest)
+    }
 }
 
-#[cfg(not(unix))]
-fn symlink(src: &Path, dest: &Path) -> Result<()> {
-    let _ = (src, dest);
-    anyhow::bail!("plugin link requires unix")
+/// Recursively copy `src` into `dest` and leave [`OWNED_MARKER`] so remove can undo it.
+/// Compiled on every target so unit tests cover the Windows install path on Unix CI too.
+#[allow(dead_code)] // used on non-unix install and by unit tests
+fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
+    copy_dir(src, dest)
+        .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
+    fs::write(dest.join(OWNED_MARKER), b"")
+        .with_context(|| format!("mark owned {}", dest.display()))?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir(&from, &to)?;
+        } else {
+            // Plain files and symlink targets we can read: plugins ship as a normal tree.
+            fs::copy(&from, &to)
+                .with_context(|| format!("copy {} → {}", from.display(), to.display()))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -539,7 +579,7 @@ mod tests {
         let real = dir.join("real.json");
         fs::write(&real, "{}\n").unwrap();
         let link = dir.join("linked.json");
-        symlink(&real, &link).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
 
         write(&apply(), &link, "{\"a\":1}\n", "+ something").unwrap();
 
@@ -573,7 +613,7 @@ mod tests {
         let dir = tmp("dangling");
         fs::create_dir_all(dir.join("dots")).unwrap();
         let link = dir.join("linked.json");
-        symlink(Path::new("dots/real.json"), &link).unwrap();
+        std::os::unix::fs::symlink(Path::new("dots/real.json"), &link).unwrap();
 
         write(&apply(), &link, "{}\n", "+ something").unwrap();
 
@@ -727,6 +767,63 @@ mod tests {
             "foreign dir must survive: {report}"
         );
         assert!(dest.join("mine.txt").exists(), "contents must stay");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn owned_copy_install_remove_is_idempotent() {
+        let dir = tmp("owned-copy");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("plugin.json"), "{}").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src: src.clone(),
+            dest: dest.clone(),
+            label: Some("~/.demo/plugins"),
+            host: "demo",
+        };
+        let yes = Apply {
+            dry_run: false,
+            backup: false,
+            yes: true,
+        };
+
+        copy_owned(&src, &dest).unwrap();
+        assert!(dest.join(OWNED_MARKER).is_file());
+        assert!(dest.join("plugin.json").is_file());
+        assert_eq!(link.run(&yes, false).unwrap(), NO_CHANGES);
+
+        let report = link.run(&yes, true).unwrap();
+        assert_eq!(report, format!("- plugin {}", dest.display()));
+        assert!(!dest.exists(), "owned copy must be removed");
+        assert_eq!(link.run(&yes, true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn foreign_dir_without_marker_is_left_on_remove() {
+        let dir = tmp("foreign-no-marker");
+        let dest = dir.join("host/plugins/rtok");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("mine.txt"), "keep").unwrap();
+        // No OWNED_MARKER — even though it is a directory, remove must leave it.
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src: dir.join("plugins/demo"),
+            dest: dest.clone(),
+            label: None,
+            host: "demo",
+        };
+        let yes = Apply {
+            dry_run: false,
+            backup: false,
+            yes: true,
+        };
+        let report = link.run(&yes, true).unwrap();
+        assert!(report.starts_with("leave "), "{report}");
+        assert!(dest.join("mine.txt").exists());
         let _ = fs::remove_dir_all(dir);
     }
 }

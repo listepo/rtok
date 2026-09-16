@@ -22,6 +22,9 @@ publish = false
 # `dist generate` / Release (same as cargo-dist's own guidance).
 [package.metadata.dist]
 dist = true
+# Host plugins must ship beside the binary: setup resolves `plugins/<host>` next
+# to `current_exe()` for installed archives (Windows zip / unix tarballs).
+include = ["plugins/"]
 
 [[bin]]
 name = "rtok"
