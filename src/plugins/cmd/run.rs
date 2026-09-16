@@ -11,27 +11,136 @@ pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
-/// Join argv into a `-lc` body. A single argument is already a shell snippet
+/// Quote one argv word for `cmd.exe /C`. Double quotes; escape embedded `"` as `""`.
+pub(crate) fn cmd_quote(s: &str) -> String {
+    if s.is_empty() {
+        return "\"\"".into();
+    }
+    if !s
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '"' | '^' | '&' | '|' | '<' | '>' | '%'))
+    {
+        return s.to_string();
+    }
+    format!("\"{}\"", s.replace('"', "\"\""))
+}
+
+/// Which launcher `rtok run` should use for `shell`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShellKind {
+    Posix,
+    Cmd,
+    PowerShell,
+}
+
+/// Classify by the executable basename so an explicit `[plugins.cmd] shell`
+/// still picks the right flags (`-lc` vs `/C` vs `-Command`).
+pub(crate) fn shell_kind(shell: &str) -> ShellKind {
+    // Split on `/` and `\\` ourselves: `Path` on Unix treats `C:\\…\\cmd.exe` as
+    // one component, so Windows shell names must still classify on macOS/Linux CI.
+    let base = shell.rsplit(['/', '\\']).next().unwrap_or(shell);
+    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    }
+    .to_ascii_lowercase();
+    match stem.as_str() {
+        "cmd" => ShellKind::Cmd,
+        "powershell" | "pwsh" => ShellKind::PowerShell,
+        _ => ShellKind::Posix,
+    }
+}
+
+/// Join argv into a shell body. A single argument is already a shell snippet
 /// (the PreToolUse wrap quotes the original command as one argv); several
 /// arguments are a CLI argv list and must be quoted so spaces stay inside
-/// one word. `{ … } 2>&1` so a trailing `&&`/`|` still merges stderr.
-pub(crate) fn script(args: &[String]) -> String {
-    let inner = match args {
-        [one] => one.clone(),
-        many => many
-            .iter()
-            .map(|a| sh_quote(a))
-            .collect::<Vec<_>>()
-            .join(" "),
-    };
-    format!("{{ {inner}\n}} 2>&1")
+/// one word. Posix wraps with `{ … } 2>&1`; cmd uses `(…) 2>&1`; PowerShell
+/// uses a script block that merges streams.
+pub(crate) fn script_for(kind: ShellKind, args: &[String]) -> String {
+    match kind {
+        ShellKind::Posix => {
+            let inner = match args {
+                [one] => one.clone(),
+                many => many
+                    .iter()
+                    .map(|a| sh_quote(a))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            };
+            format!("{{ {inner}\n}} 2>&1")
+        }
+        ShellKind::Cmd => {
+            let inner = match args {
+                [one] => one.clone(),
+                many => many
+                    .iter()
+                    .map(|a| cmd_quote(a))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            };
+            format!("({inner}) 2>&1")
+        }
+        ShellKind::PowerShell => {
+            let inner = match args {
+                [one] => one.clone(),
+                many => many
+                    .iter()
+                    .map(|a| format!("'{}'", a.replace('\'', "''")))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            };
+            // `& { … }` runs a bare external; `*>&1` merges streams on PS 5+.
+            format!("& {{ {inner} }} *>&1")
+        }
+    }
+}
+
+/// Resolve the shell binary: config override, then `$SHELL`, then a host default.
+/// Native Windows has no `/bin/sh` unless Git Bash/WSL is installed; fall back
+/// to `%ComSpec%` (`cmd.exe`) so `rtok run` can still spawn.
+pub(crate) fn resolve_shell(
+    cfg_shell: &str,
+    env_shell: Option<&str>,
+    windows: bool,
+    comspec: Option<&str>,
+) -> String {
+    if !cfg_shell.is_empty() {
+        return cfg_shell.to_string();
+    }
+    if let Some(s) = env_shell.filter(|s| !s.is_empty()) {
+        return s.to_string();
+    }
+    if windows {
+        comspec
+            .filter(|s| !s.is_empty())
+            .unwrap_or("cmd.exe")
+            .to_string()
+    } else {
+        "/bin/sh".into()
+    }
 }
 
 fn shell(cfg: &Config) -> String {
-    if cfg.plugins.cmd.shell.is_empty() {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())
-    } else {
-        cfg.plugins.cmd.shell.clone()
+    resolve_shell(
+        &cfg.plugins.cmd.shell,
+        std::env::var("SHELL").ok().as_deref(),
+        cfg!(windows),
+        std::env::var("ComSpec").ok().as_deref(),
+    )
+}
+
+/// Flags + script body for `Command::new(shell)`.
+pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
+    match shell_kind(shell) {
+        ShellKind::Cmd => vec!["/D".into(), "/C".into(), body.into()],
+        ShellKind::PowerShell => vec![
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-Command".into(),
+            body.into(),
+        ],
+        ShellKind::Posix => vec!["-lc".into(), body.into()],
     }
 }
 
@@ -42,14 +151,15 @@ fn needs_pointer(lines: u32, trailer_min_lines: u32, printed: usize, raw: usize)
     lines > trailer_min_lines || printed < raw
 }
 
-/// Run `args` via `$SHELL -lc`, archive stdout+stderr, print, return the exit code.
+/// Run `args` via the configured/host shell, archive stdout+stderr, print, return the exit code.
 pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     if args.is_empty() {
         bail!("rtok run: missing command");
     }
-    let out = Command::new(shell(cfg))
-        .arg("-lc")
-        .arg(script(args))
+    let sh = shell(cfg);
+    let sh_kind = shell_kind(&sh);
+    let out = Command::new(&sh)
+        .args(shell_args(&sh, &script_for(sh_kind, args)))
         .output()?;
     let mut body = out.stdout;
     body.extend_from_slice(&out.stderr);
@@ -162,9 +272,12 @@ mod tests {
 
     #[test]
     fn script_keeps_one_arg_as_a_shell_snippet() {
-        assert_eq!(script(&["true && false".into()]), "{ true && false\n} 2>&1");
         assert_eq!(
-            script(&["git".into(), "status".into()]),
+            script_for(ShellKind::Posix, &["true && false".into()]),
+            "{ true && false\n} 2>&1"
+        );
+        assert_eq!(
+            script_for(ShellKind::Posix, &["git".into(), "status".into()]),
             "{ 'git' 'status'\n} 2>&1"
         );
     }
@@ -212,5 +325,89 @@ mod tests {
             "trimmed under the threshold"
         );
         assert!(needs_pointer(400, 40, 400, 400), "long enough on its own");
+    }
+
+    #[test]
+    fn resolve_shell_prefers_config_then_env_then_host_default() {
+        assert_eq!(
+            resolve_shell(
+                r"C:\shell\bash.exe",
+                Some("/bin/zsh"),
+                true,
+                Some("cmd.exe")
+            ),
+            r"C:\shell\bash.exe"
+        );
+        assert_eq!(
+            resolve_shell(
+                "",
+                Some("/bin/zsh"),
+                true,
+                Some(r"C:\Windows\System32\cmd.exe")
+            ),
+            "/bin/zsh"
+        );
+        assert_eq!(
+            resolve_shell("", None, true, Some(r"C:\Windows\System32\cmd.exe")),
+            r"C:\Windows\System32\cmd.exe"
+        );
+        assert_eq!(resolve_shell("", None, true, None), "cmd.exe");
+        assert_eq!(resolve_shell("", None, false, None), "/bin/sh");
+        assert_eq!(resolve_shell("", Some(""), false, None), "/bin/sh");
+    }
+
+    #[test]
+    fn shell_kind_and_args_match_windows_hosts() {
+        assert_eq!(shell_kind("/bin/sh"), ShellKind::Posix);
+        assert_eq!(shell_kind(r"C:\Windows\System32\cmd.exe"), ShellKind::Cmd);
+        assert_eq!(shell_kind("powershell.exe"), ShellKind::PowerShell);
+        assert_eq!(shell_kind("pwsh"), ShellKind::PowerShell);
+        assert_eq!(
+            shell_args("/bin/sh", "true"),
+            vec!["-lc".to_string(), "true".to_string()]
+        );
+        assert_eq!(
+            shell_args(r"C:\Windows\System32\cmd.exe", "echo hi"),
+            vec!["/D".to_string(), "/C".to_string(), "echo hi".to_string()]
+        );
+        assert_eq!(
+            shell_args("pwsh.exe", "Get-Date"),
+            vec![
+                "-NoProfile".to_string(),
+                "-NonInteractive".to_string(),
+                "-Command".to_string(),
+                "Get-Date".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn script_for_cmd_quotes_multi_argv() {
+        assert_eq!(
+            script_for(ShellKind::Cmd, &["echo".into(), "hello world".into()]),
+            "(echo \"hello world\") 2>&1"
+        );
+        assert_eq!(
+            script_for(ShellKind::Cmd, &["echo hi".into()]),
+            "(echo hi) 2>&1"
+        );
+        assert_eq!(cmd_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    /// Configured PowerShell must not get Posix `-lc` (CreateProcess would fail the flag).
+    #[test]
+    fn configured_powershell_uses_command_flag() {
+        let (mut c, dir) = cfg("ps-shell");
+        c.plugins.cmd.shell = "powershell.exe".into();
+        let sh = shell(&c);
+        assert_eq!(sh, "powershell.exe");
+        assert_eq!(shell_kind(&sh), ShellKind::PowerShell);
+        let args = shell_args(
+            &sh,
+            &script_for(ShellKind::PowerShell, &["echo".into(), "x".into()]),
+        );
+        assert_eq!(args[0], "-NoProfile");
+        assert_eq!(args[2], "-Command");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
