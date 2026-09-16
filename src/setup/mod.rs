@@ -370,6 +370,64 @@ fn join_rel(base: &std::path::Path, rel: &str) -> std::path::PathBuf {
     out
 }
 
+/// Command string written into host configs for hooks and MCP.
+///
+/// Prefer bare `rtok` when it resolves on PATH. On Windows, a fresh install
+/// often updates the user PATH while the host still has the old one — bare
+/// `rtok` then fails to spawn. Fall back to the absolute `current_exe`
+/// (typically `…\rtok.exe`) so Claude/Cursor/Codex can still start it.
+pub(crate) fn rtok_command() -> String {
+    resolve_rtok_command(
+        std::env::current_exe().ok().as_deref(),
+        std::env::var_os("PATH").as_deref(),
+    )
+}
+
+/// Pure resolution used by [`rtok_command`] and unit tests.
+pub(crate) fn resolve_rtok_command(
+    exe: Option<&std::path::Path>,
+    path_os: Option<&std::ffi::OsStr>,
+) -> String {
+    if bare_rtok_on_path(path_os) {
+        return "rtok".to_string();
+    }
+    // Non-Windows hosts keep the bare name even when PATH lookup fails: shell
+    // hooks expect `rtok` and absolute paths are a Windows spawn edge.
+    if !cfg!(windows) {
+        return "rtok".to_string();
+    }
+    if let Some(exe) = exe {
+        return dunce::simplified(exe).to_string_lossy().into_owned();
+    }
+    "rtok".to_string()
+}
+
+fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
+    let Some(path) = path else {
+        return false;
+    };
+    for dir in std::env::split_paths(path) {
+        if cfg!(windows) {
+            if dir.join("rtok.exe").is_file() || dir.join("rtok").is_file() {
+                return true;
+            }
+        } else if dir.join("rtok").is_file() {
+            return true;
+        }
+    }
+    false
+}
+
+/// True when `bin` names the rtok binary (bare, `.exe`, or an absolute path).
+pub(crate) fn is_rtok_bin(bin: &str) -> bool {
+    let base = bin.rsplit(['/', '\\']).next().unwrap_or(bin);
+    let stem = base
+        .strip_suffix(".exe")
+        .or_else(|| base.strip_suffix(".EXE"))
+        .unwrap_or(base);
+    stem.eq_ignore_ascii_case("rtok")
+}
+
 /// The tree this repo ships a host plugin from (D21 (6)).
 ///
 /// Resolution order:
@@ -460,7 +518,51 @@ fn ketch_store_plugin(
 mod tests {
     use super::*;
     use crate::config::Config;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn resolve_rtok_command_keeps_bare_name_when_on_path() {
+        let dir = std::env::temp_dir().join(format!("rtok-setup-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join(if cfg!(windows) { "rtok.exe" } else { "rtok" });
+        std::fs::write(&bin, b"x").unwrap();
+        let path = std::env::join_paths([dir.as_os_str()]).unwrap();
+        assert_eq!(
+            resolve_rtok_command(
+                Some(Path::new(r"C:\nowhere\rtok.exe")),
+                Some(path.as_os_str())
+            ),
+            "rtok"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_rtok_command_uses_absolute_exe_when_path_misses_on_windows() {
+        let exe = PathBuf::from(if cfg!(windows) {
+            r"C:\Users\u\.ketch\bin\rtok.exe"
+        } else {
+            "/opt/rtok"
+        });
+        let empty = std::ffi::OsString::new();
+        let got = resolve_rtok_command(Some(&exe), Some(empty.as_os_str()));
+        if cfg!(windows) {
+            assert!(got.ends_with("rtok.exe"), "{got}");
+            assert!(got.contains("ketch") || got.contains("Users"), "{got}");
+        } else {
+            assert_eq!(got, "rtok");
+        }
+    }
+
+    #[test]
+    fn is_rtok_bin_accepts_absolute_windows_exe() {
+        assert!(is_rtok_bin("rtok"));
+        assert!(is_rtok_bin("rtok.exe"));
+        assert!(is_rtok_bin(r"C:\Users\u\.ketch\bin\rtok.exe"));
+        assert!(!is_rtok_bin("rtok-extra"));
+        assert!(!is_rtok_bin(r"C:\bin\other.exe"));
+    }
 
     #[test]
     fn apply_carries_the_setup_flags() {

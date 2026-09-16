@@ -16,8 +16,13 @@ use serde_json::{Value, json};
 use super::{apply, plugin_src};
 use crate::config::Config;
 
-const PRE_CMD: &str = "rtok hook PreToolUse --host cursor";
-const POST_CMD: &str = "rtok hook PostToolUse --host cursor";
+fn pre_cmd() -> String {
+    format!("{} hook PreToolUse --host cursor", super::rtok_command())
+}
+
+fn post_cmd() -> String {
+    format!("{} hook PostToolUse --host cursor", super::rtok_command())
+}
 
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
@@ -37,7 +42,8 @@ fn mcp_path(cfg: &Config) -> PathBuf {
 
 /// Register `rtok mcp` in `~/.cursor/mcp.json` (sibling of `hooks.json`).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), "rtok", "rtok", &["mcp"])
+    let cmd = super::rtok_command();
+    rtok_agent_sdk::register_mcp(&apply(cfg), &mcp_path(cfg), "rtok", &cmd, &["mcp"])
 }
 
 /// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agent remove cursor`).
@@ -93,9 +99,11 @@ pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
 fn insert_ours(root: &mut Value) -> String {
     let hooks = object_at(root, "hooks");
     let mut added = Vec::new();
+    let pre = pre_cmd();
+    let post = post_cmd();
     for (event, cmd) in [
-        ("beforeShellExecution", PRE_CMD),
-        ("afterShellExecution", POST_CMD),
+        ("beforeShellExecution", pre.as_str()),
+        ("afterShellExecution", post.as_str()),
     ] {
         let arr = array_at(hooks, event);
         if !arr.iter().any(|e| is_cmd(e, cmd)) {
@@ -141,9 +149,21 @@ fn is_cmd(entry: &Value, cmd: &str) -> bool {
 }
 
 fn is_ours(entry: &Value) -> bool {
+    let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    let mut parts = cmd.split_whitespace();
     matches!(
-        entry.get("command").and_then(Value::as_str),
-        Some(PRE_CMD) | Some(POST_CMD)
+        (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ),
+        (Some(bin), Some("hook"), Some(ev), Some("--host"), Some("cursor"), None)
+            if matches!(ev, "PreToolUse" | "PostToolUse") && super::is_rtok_bin(bin)
     )
 }
 
@@ -205,12 +225,12 @@ mod tests {
         assert!(dry.contains("afterShellExecution"), "{dry}");
         assert!(!path.exists());
         let c = cfg(path.clone(), false);
-        assert!(run(&c, false).unwrap().contains(PRE_CMD));
+        assert!(run(&c, false).unwrap().contains(&pre_cmd()));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("\"version\""));
-        assert!(raw.contains(PRE_CMD));
-        assert!(raw.contains(POST_CMD));
+        assert!(raw.contains(&pre_cmd()));
+        assert!(raw.contains(&post_cmd()));
         assert!(raw.contains("afterShellExecution"));
         let _ = fs::remove_dir_all(dir);
     }
@@ -277,7 +297,7 @@ mod tests {
         assert!(report.contains("afterShellExecution"), "{report}");
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
-        assert!(after.iter().any(|e| e["command"] == POST_CMD), "{root}");
+        assert!(after.iter().any(|e| e["command"] == post_cmd()), "{root}");
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }

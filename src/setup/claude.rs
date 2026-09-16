@@ -24,14 +24,18 @@ const ENTRIES: &[(&str, &str)] = &[
 ];
 
 fn command(event: &str) -> String {
-    format!("rtok hook {event}")
+    format!("{} hook {event}", super::rtok_command())
 }
 
-/// Exactly `rtok hook <event>`, whitespace aside. Matching the three tokens anywhere in the
+/// Exactly `<rtok-bin> hook <event>`, whitespace aside. Matching the three tokens anywhere in the
 /// command also claimed a user's own chain (`notify-send hi && rtok hook Stop`), and `remove`
-/// deleted it with ours.
+/// deleted it with ours. Absolute `…/rtok.exe` counts as ours on Windows.
 fn is_ours(cmd: &str, event: &str) -> bool {
-    cmd.split_whitespace().eq(["rtok", "hook", event])
+    let mut parts = cmd.split_whitespace();
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some(bin), Some("hook"), Some(ev), None) if ev == event && super::is_rtok_bin(bin)
+    )
 }
 
 /// Apply, dry-run, or remove rtok hook entries.
@@ -127,13 +131,8 @@ fn strip_ours(root: &mut Value) -> String {
 
 /// Add `rtok mcp` to `mcpServers` in `~/.claude.json` (T4.7).
 pub fn register_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::register_mcp(
-        &apply(cfg),
-        &cfg.doctor.claude_json,
-        "rtok",
-        "rtok",
-        &["mcp"],
-    )
+    let cmd = super::rtok_command();
+    rtok_agent_sdk::register_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok", &cmd, &["mcp"])
 }
 
 /// Drop `mcpServers.rtok` from `~/.claude.json` (`rtok agent remove claude`).
