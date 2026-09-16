@@ -360,40 +360,98 @@ pub(crate) fn openai_proxy_url(cfg: &crate::config::Config) -> String {
     format!("http://{}:{}/v1", cfg.proxy.bind, cfg.proxy.port)
 }
 
+/// Join `rel` onto `base` by path components so Windows never gets a single
+/// component with embedded slashes (`plugins/cursor` → `plugins\cursor`).
+fn join_rel(base: &std::path::Path, rel: &str) -> std::path::PathBuf {
+    let mut out = base.to_path_buf();
+    for part in rel.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        out.push(part);
+    }
+    out
+}
+
 /// The tree this repo ships a host plugin from (D21 (6)).
 ///
-/// Resolution order: (1) `rel` next to the running binary (release archives ship
-/// `plugins/` beside `rtok`); (2) `CARGO_MANIFEST_DIR/rel` for `cargo test` / dev.
-/// When neither exists, return the best path for the error message (beside the
-/// binary when known, otherwise the cargo path).
+/// Resolution order:
+/// 1. `rel` next to the running binary (release archives ship `plugins/` beside `rtok`);
+/// 2. ketch layout: when the exe lives in `<root>/bin/`, prefer
+///    `<root>/store/rtok/v{version}/` matching `CARGO_PKG_VERSION`, else the
+///    newest `store/rtok/*/` that contains `rel`;
+/// 3. `CARGO_MANIFEST_DIR/rel` for `cargo test` / dev;
+/// 4. beside-exe path for a clear error when nothing exists.
 pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
     resolve_plugin_src(
         rel,
         std::env::current_exe().ok().as_deref(),
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+        env!("CARGO_PKG_VERSION"),
     )
 }
 
-/// Pure resolution used by [`plugin_src`] and unit tests (fake exe layout).
+/// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).
 pub(crate) fn resolve_plugin_src(
     rel: &str,
     exe: Option<&std::path::Path>,
     manifest_dir: &std::path::Path,
+    pkg_version: &str,
 ) -> std::path::PathBuf {
-    let cargo = manifest_dir.join(rel);
-    if let Some(exe) = exe
-        && let Some(dir) = exe.parent()
+    let cargo = join_rel(manifest_dir, rel);
+    let beside = exe.and_then(|e| e.parent()).map(|dir| join_rel(dir, rel));
+
+    if let Some(ref p) = beside
+        && p.is_dir()
     {
-        let beside = dir.join(rel);
-        if beside.is_dir() {
-            return beside;
-        }
-        if cargo.is_dir() {
-            return cargo;
-        }
-        return beside;
+        return p.clone();
     }
-    cargo
+
+    if let Some(exe) = exe
+        && let Some(bin_dir) = exe.parent()
+        && bin_dir.file_name().is_some_and(|n| n == "bin")
+        && let Some(root) = bin_dir.parent()
+        && let Some(found) = ketch_store_plugin(root, rel, pkg_version)
+    {
+        return found;
+    }
+
+    if cargo.is_dir() {
+        return cargo;
+    }
+
+    beside.unwrap_or(cargo)
+}
+
+/// ketch installs the full package under `<root>/store/rtok/vX.Y.Z/` and only
+/// copies the binary into `<root>/bin/`. Prefer the version that matches this
+/// build; otherwise take the newest store folder that still has `rel`.
+fn ketch_store_plugin(
+    root: &std::path::Path,
+    rel: &str,
+    pkg_version: &str,
+) -> Option<std::path::PathBuf> {
+    let store = root.join("store").join("rtok");
+    let versioned = join_rel(&store.join(format!("v{pkg_version}")), rel);
+    if versioned.is_dir() {
+        return Some(versioned);
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(&store)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .collect();
+    // Lexicographic order is enough for `v0.1.5`-style tags; newest last.
+    entries.sort_by(|a, b| {
+        a.file_name()
+            .unwrap_or_default()
+            .cmp(b.file_name().unwrap_or_default())
+    });
+    for dir in entries.into_iter().rev() {
+        let candidate = join_rel(&dir, rel);
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -412,6 +470,12 @@ mod tests {
         assert!(a.dry_run && a.yes && !a.backup);
     }
 
+    fn write_plugin(dir: &std::path::Path) {
+        use std::fs;
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("plugin.json"), "{}").unwrap();
+    }
+
     #[test]
     fn plugin_src_prefers_directory_beside_exe() {
         use std::fs;
@@ -419,30 +483,119 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let bin_dir = root.join("bin");
         let plugins = bin_dir.join("plugins").join("cursor");
-        fs::create_dir_all(&plugins).unwrap();
-        fs::write(plugins.join("plugin.json"), "{}").unwrap();
+        write_plugin(&plugins);
         let fake_exe = bin_dir.join("rtok");
         fs::write(&fake_exe, b"").unwrap();
         let missing_manifest = root.join("no-such-manifest");
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest);
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
         assert_eq!(got, plugins);
         // When beside-exe is missing, fall back to an existing cargo tree.
         let cargo_root = root.join("cargo");
         let cargo_plugins = cargo_root.join("plugins").join("cursor");
-        fs::create_dir_all(&cargo_plugins).unwrap();
+        write_plugin(&cargo_plugins);
         let lonely_exe = root.join("lonely").join("rtok");
         fs::create_dir_all(lonely_exe.parent().unwrap()).unwrap();
         fs::write(&lonely_exe, b"").unwrap();
-        let got = resolve_plugin_src("plugins/cursor", Some(&lonely_exe), &cargo_root);
+        let got = resolve_plugin_src("plugins/cursor", Some(&lonely_exe), &cargo_root, "0.1.5");
         assert_eq!(got, cargo_plugins);
         // Neither exists: still return the beside-exe path for a clear error.
         let empty = root.join("empty");
         let empty_exe = empty.join("rtok");
         fs::create_dir_all(&empty).unwrap();
         fs::write(&empty_exe, b"").unwrap();
-        let got = resolve_plugin_src("plugins/cursor", Some(&empty_exe), &empty);
+        let got = resolve_plugin_src("plugins/cursor", Some(&empty_exe), &empty, "0.1.5");
         assert_eq!(got, empty.join("plugins").join("cursor"));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_src_finds_ketch_store_when_bin_has_no_plugins() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-ketch-src-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bin_dir = root.join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let fake_exe = bin_dir.join("rtok");
+        fs::write(&fake_exe, b"").unwrap();
+        let store_plugins = root
+            .join("store")
+            .join("rtok")
+            .join("v0.1.5")
+            .join("plugins")
+            .join("cursor");
+        write_plugin(&store_plugins);
+        let missing_manifest = root.join("no-such-manifest");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
+        assert_eq!(got, store_plugins);
+        // Still prefer plugins beside the bin exe when both exist.
+        let beside = bin_dir.join("plugins").join("cursor");
+        write_plugin(&beside);
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
+        assert_eq!(got, beside);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_src_prefers_matching_ketch_store_version() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-ketch-ver-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let bin_dir = root.join("bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let fake_exe = bin_dir.join("rtok");
+        fs::write(&fake_exe, b"").unwrap();
+        let store = root.join("store").join("rtok");
+        let older = store.join("v0.1.4").join("plugins").join("cursor");
+        let newer = store.join("v0.1.5").join("plugins").join("cursor");
+        write_plugin(&older);
+        write_plugin(&newer);
+        let missing_manifest = root.join("no-such-manifest");
+        // Matching CARGO_PKG_VERSION wins even when a newer folder exists.
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.4",
+        );
+        assert_eq!(got, older);
+        // When the matching version has no plugins, take the newest that does.
+        fs::remove_dir_all(store.join("v0.1.4")).unwrap();
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.4",
+        );
+        assert_eq!(got, newer);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn join_rel_splits_slash_and_backslash() {
+        let base = std::path::Path::new("/tmp/root");
+        assert_eq!(
+            join_rel(base, "plugins/cursor"),
+            base.join("plugins").join("cursor")
+        );
+        assert_eq!(
+            join_rel(base, "plugins\\cursor"),
+            base.join("plugins").join("cursor")
+        );
     }
 
     #[test]
