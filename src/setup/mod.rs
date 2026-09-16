@@ -406,7 +406,9 @@ pub(crate) fn resolve_plugin_src(
 
     if let Some(exe) = exe
         && let Some(bin_dir) = exe.parent()
-        && bin_dir.file_name().is_some_and(|n| n == "bin")
+        && bin_dir
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("bin"))
         && let Some(root) = bin_dir.parent()
         && let Some(found) = ketch_store_plugin(root, rel, pkg_version)
     {
@@ -547,6 +549,34 @@ mod tests {
             "0.1.5",
         );
         assert_eq!(got, beside);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_src_finds_ketch_store_when_bin_dir_is_capitalised() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("rtok-ketch-Bin-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // Windows (and some shells) can surface the ketch bin dir as `Bin`.
+        let bin_dir = root.join("Bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let fake_exe = bin_dir.join("rtok");
+        fs::write(&fake_exe, b"").unwrap();
+        let store_plugins = root
+            .join("store")
+            .join("rtok")
+            .join("v0.1.6")
+            .join("plugins")
+            .join("cursor");
+        write_plugin(&store_plugins);
+        let missing_manifest = root.join("no-such-manifest");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.6",
+        );
+        assert_eq!(got, store_plugins);
         let _ = fs::remove_dir_all(&root);
     }
 
