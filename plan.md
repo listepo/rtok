@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T44.5 | in progress | P1 | 3 | 0% | Claude Code / Fable 5.1 |
 | T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.2 | in progress | P0 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
@@ -16,11 +15,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T46.2 | todo | P1 | 3 | 0% | |
 | T46.3 | todo | P1 | 2 | 0% | |
 | T46.4 | todo | P1 | 3 | 0% | |
-
-### T44.5. OpenCode CLI+Desktop MCP and plugin parity with Cursor
-
-OpenCode stays proxy-only while Cursor installs hooks+MCP+plugin; `hosts/opencode/rtok.ts` is copied by hand and `support(mcp/plugin)` is `No`. Done means `rtok agents setup opencode` writes the `mcp` table and links the plugin for CLI and Desktop independently, singleton as in Cursor (linked plugin serves MCP, `mcpServers.rtok` removed), fail open with the ketch install hint when `rtok` is missing.
-Plan: `src/agents/opencode/mod.rs` (register/unregister the `mcp.rtok` local entry — OpenCode's shape is `{type: "local", command: ["rtok", "mcp"], enabled: true}`, not `mcpServers` — and `offer_plugin` linking `plugins/opencode/rtok.ts` to `<config dir>/plugins/rtok.ts` for CLI and Desktop each; `support`/`installed`/`markers` updated), `src/agents/opencode/README.md` (parity table), `hosts/opencode/` moves to `plugins/opencode/` so the release archive ships it (`Cargo.toml` includes `plugins/`), `rtok-agent-sdk` copies a single-file plugin on Windows, `resolve_plugin_src` accepts a file. The plugin filters bash output and the MCP entry serves `read`/`search`: two capabilities, one call path each (D21), so no singleton clear. Verify: `mise exec -- cargo test -p rtok --lib agents::opencode` + `just check`.
 
 ### T45.1. OTel flush survives a traces error
 

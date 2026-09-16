@@ -48,7 +48,7 @@ fn opencode_plugin_unit_test_with_api_mock() {
             "--experimental-strip-types",
             "--disable-warning=ExperimentalWarning",
             "--test",
-            "hosts/opencode/rtok.test.ts",
+            "plugins/opencode/rtok.test.ts",
         ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .status()

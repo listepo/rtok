@@ -286,31 +286,51 @@ pub fn register_mcp(
     command: &str,
     args: &[&str],
 ) -> Result<String> {
+    let entry = json!({"type": "stdio", "command": command, "args": args});
+    let summary = format!("{command} {}", args.join(" "));
+    register_server(apply, path, "mcpServers", name, entry, &summary)
+}
+
+/// [`register_mcp`] for a host whose server map or entry has another shape: OpenCode keeps
+/// `mcp.<name> = {type: "local", command: [..]}`, Copilot adds `tools` to `mcpServers`.
+/// `summary` is what the report prints after `<key>.<name>: `.
+pub fn register_server(
+    apply: &Apply,
+    path: &Path,
+    key: &str,
+    name: &str,
+    entry: Value,
+    summary: &str,
+) -> Result<String> {
     edit_json(apply, path, |root| {
-        let entry = json!({"type": "stdio", "command": command, "args": args});
-        let servers = object_at(root, "mcpServers");
+        let servers = object_at(root, key);
         if servers.get(name) == Some(&entry) {
             return NO_CHANGES.into();
         }
         servers[name] = entry;
-        format!("mcpServers.{name}: {command} {}", args.join(" "))
+        format!("{key}.{name}: {summary}")
     })
 }
 
 /// Drop the `<name>` entry from a host's `mcpServers` map. Foreign servers are left alone, and a
 /// map that ends up empty goes with it so the file reads as it did before rtok arrived.
 pub fn unregister_mcp(apply: &Apply, path: &Path, name: &str) -> Result<String> {
+    unregister_server(apply, path, "mcpServers", name)
+}
+
+/// [`unregister_mcp`] under another map key (OpenCode's `mcp`).
+pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> Result<String> {
     edit_json(apply, path, |root| {
-        let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
+        let Some(servers) = root.get_mut(key).and_then(Value::as_object_mut) else {
             return NO_CHANGES.into();
         };
         if servers.remove(name).is_none() {
             return NO_CHANGES.into();
         }
         if servers.is_empty() {
-            root.as_object_mut().unwrap().remove("mcpServers");
+            root.as_object_mut().unwrap().remove(key);
         }
-        format!("- mcpServers.{name}")
+        format!("- {key}.{name}")
     })
 }
 
@@ -452,9 +472,15 @@ fn install_plugin(src: &Path, dest: &Path) -> Result<()> {
 }
 
 /// Recursively copy `src` into `dest` and leave [`OWNED_MARKER`] so remove can undo it.
-/// Compiled on every target so unit tests cover the Windows install path on Unix CI too.
+/// A single-file plugin (OpenCode's `rtok.ts`) is one copy; remove already unlinks a plain
+/// file. Compiled on every target so unit tests cover the Windows install path on Unix CI too.
 #[allow(dead_code)] // used on non-unix install and by unit tests
 fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
+    if src.is_file() {
+        fs::copy(src, dest)
+            .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
+        return Ok(());
+    }
     copy_dir(src, dest)
         .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
     fs::write(dest.join(OWNED_MARKER), b"")

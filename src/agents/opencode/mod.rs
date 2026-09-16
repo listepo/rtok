@@ -1,16 +1,21 @@
-//! OpenCode installer (`rtok agents setup opencode --proxy`, plan T11.5).
+//! OpenCode installer (`rtok agents setup opencode`, plan T11.5, T44.5).
+//!
+//! Three modules, one call path each (D21): `env.OPENAI_BASE_URL` points the host at the
+//! proxy, `mcp.rtok` serves `read`/`search`/`memory`/`graph` (OpenCode's own shape,
+//! `{type: "local", command: [..], enabled}`), and the linked `plugins/opencode/rtok.ts`
+//! filters bash output through `rtok filter`. OpenCode has no shell hook protocol.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
+use rtok_agent_sdk::{NO_CHANGES, PluginLink, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply};
+use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
 use crate::config::Config;
 
-/// OpenCode: `env.OPENAI_BASE_URL` in `opencode.json`. The CLI and the desktop app keep
-/// separate config files, so each variant installs alone.
+/// OpenCode: `env.OPENAI_BASE_URL`, `mcp.rtok` and a linked plugin. The CLI and the desktop
+/// app keep separate config directories, so each variant installs alone.
 pub struct OpenCode;
 
 static VARIANTS: [Variant; 2] = [
@@ -55,6 +60,14 @@ fn path_for(cfg: &Config, kind: Kind) -> PathBuf {
     }
 }
 
+/// The config with `config_path` pointed at this variant's file, so every step below reads
+/// one key.
+fn for_kind(cfg: &Config, kind: Kind) -> Config {
+    let mut c = cfg.clone();
+    c.setup.opencode.config_path = path_for(cfg, kind);
+    c
+}
+
 impl Agent for OpenCode {
     fn id(&self) -> &'static str {
         "opencode"
@@ -70,25 +83,31 @@ impl Agent for OpenCode {
 
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
-            "proxy" => Support::Yes,
-            "mcp" => Support::No(
-                "OpenCode reads MCP from opencode.json, but setup does not write the `mcp` table yet",
-            ),
-            "hooks" => Support::No(
-                "OpenCode has no shell hook events; hosts/opencode/rtok.ts filters tool output instead",
-            ),
+            "proxy" | "mcp" => Support::Yes,
+            "plugin" => Support::Flag("--yes"),
             _ => Support::No(
-                "the OpenCode plugin (hosts/opencode/rtok.ts) is copied by hand; setup does not link it yet",
+                "OpenCode has no shell hook events; the linked plugin filters bash output instead",
             ),
         }
+    }
+
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[rtok_plugin_sdk::Surface::Cli]
     }
 
     fn files(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
         vec![path_for(cfg, kind)]
     }
 
+    fn markers(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
+        let mut paths = self.files(cfg, kind);
+        paths.push(plugin_dest(&for_kind(cfg, kind)));
+        paths
+    }
+
     fn installed(&self, cfg: &Config, kind: Kind) -> Vec<&'static str> {
-        let s = super::read(&path_for(cfg, kind));
+        let c = for_kind(cfg, kind);
+        let s = super::read(&c.setup.opencode.config_path);
         let mut out = Vec::new();
         if s.contains("OPENAI_BASE_URL") {
             out.push("proxy");
@@ -96,18 +115,74 @@ impl Agent for OpenCode {
         if s.contains("\"rtok\"") {
             out.push("mcp");
         }
+        if link(&c).linked() {
+            out.push("plugin");
+        }
         out
     }
 
     fn apply(&self, cfg: &Config, kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        if kind == Kind::Desktop {
-            let mut desktop = cfg.clone();
-            desktop.setup.opencode.config_path = desktop_path();
-            return Ok(vec![run(&desktop, remove)?]);
+        let c = for_kind(cfg, kind);
+        let mut lines = vec![run(&c, remove)?];
+        if remove {
+            lines.push(unregister_mcp(&c)?);
+        } else if c.setup.mcp {
+            lines.push(register_mcp(&c)?);
         }
-        Ok(vec![run(cfg, remove)?])
+        lines.push(offer_plugin(&c, remove)?);
+        Ok(lines)
     }
+}
+
+const NAME: &str = "rtok";
+
+/// Register `rtok mcp` as `mcp.rtok` — OpenCode's local server shape, `command` as argv.
+pub fn register_mcp(cfg: &Config) -> Result<String> {
+    let cmd = super::rtok_command();
+    let entry = json!({"type": "local", "command": [cmd.as_str(), "mcp"], "enabled": true});
+    rtok_agent_sdk::register_server(
+        &apply(cfg),
+        &cfg.setup.opencode.config_path,
+        "mcp",
+        NAME,
+        entry,
+        &format!("{cmd} mcp"),
+    )
+}
+
+/// Drop `mcp.rtok` (`rtok agents remove opencode`).
+pub fn unregister_mcp(cfg: &Config) -> Result<String> {
+    rtok_agent_sdk::unregister_server(&apply(cfg), &cfg.setup.opencode.config_path, "mcp", NAME)
+}
+
+const PLUGIN_SRC_REL: &str = "plugins/opencode/rtok.ts";
+
+/// Plugin dest: `<config dir>/plugins/rtok.ts` — OpenCode loads every `*.ts` there.
+pub fn plugin_dest(cfg: &Config) -> PathBuf {
+    cfg.setup
+        .opencode
+        .config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("plugins")
+        .join("rtok.ts")
+}
+
+fn link(cfg: &Config) -> PluginLink<'static> {
+    PluginLink {
+        src_rel: PLUGIN_SRC_REL,
+        src: plugin_src(PLUGIN_SRC_REL),
+        dest: plugin_dest(cfg),
+        label: None,
+        host: "OpenCode",
+    }
+}
+
+/// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
+/// offer name `plugins/opencode` and `ketch install listepo/rtok`.
+pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
+    link(cfg).run(&apply(cfg), remove)
 }
 
 /// Set, dry-run, or remove `env.OPENAI_BASE_URL` in OpenCode's JSON config.
@@ -193,5 +268,63 @@ mod tests {
         let gone = fs::read_to_string(&path).unwrap();
         assert!(!gone.contains("OPENAI_BASE_URL"), "{gone}");
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn mcp_entry_is_local_argv_idempotent_and_remove_keeps_foreign() {
+        let (c, path) = cfg("mcp", false);
+        fs::write(&path, r#"{"mcp":{"other":{"type":"remote","url":"x"}}}"#).unwrap();
+        let first = register_mcp(&c).unwrap();
+        assert!(first.starts_with("mcp.rtok: "), "{first}");
+        assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(root["mcp"]["rtok"]["type"], "local");
+        assert_eq!(root["mcp"]["rtok"]["command"][1], "mcp");
+        assert_eq!(root["mcp"]["rtok"]["enabled"], true);
+        assert_eq!(OpenCode.installed(&c, Kind::Cli), ["mcp"]);
+        assert_eq!(unregister_mcp(&c).unwrap(), "- mcp.rtok");
+        assert_eq!(unregister_mcp(&c).unwrap(), NO_CHANGES);
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(root["mcp"]["rtok"].is_null(), "{root}");
+        assert_eq!(root["mcp"]["other"]["url"], "x");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn plugin_offer_links_one_file_beside_the_config() {
+        let (mut c, path) = cfg("plugin", true);
+        let dry = offer_plugin(&c, false).unwrap();
+        assert!(dry.contains("plugins/opencode"), "{dry}");
+        assert!(dry.contains("ketch install listepo/rtok"), "{dry}");
+        assert!(!plugin_dest(&c).exists());
+        c.setup.dry_run = false;
+        c.setup.yes = true;
+        assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
+        let dest = plugin_dest(&c);
+        assert_eq!(dest, path.parent().unwrap().join("plugins").join("rtok.ts"));
+        assert!(
+            fs::read_to_string(&dest)
+                .unwrap()
+                .contains("tool.execute.after")
+        );
+        assert_eq!(OpenCode.installed(&c, Kind::Cli), ["plugin"]);
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        assert!(offer_plugin(&c, true).unwrap().starts_with("- plugin"));
+        assert!(!dest.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn desktop_variant_uses_its_own_config_dir() {
+        let c = for_kind(&Config::default(), Kind::Desktop);
+        assert_eq!(c.setup.opencode.config_path, desktop_path());
+        assert_eq!(
+            plugin_dest(&c),
+            desktop_path()
+                .parent()
+                .unwrap()
+                .join("plugins")
+                .join("rtok.ts")
+        );
     }
 }

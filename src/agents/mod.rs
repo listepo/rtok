@@ -776,8 +776,9 @@ pub(crate) fn resolve_plugin_src(
     let cargo = join_rel(manifest_dir, rel);
     let beside = exe.and_then(|e| e.parent()).map(|dir| join_rel(dir, rel));
 
+    // `exists()`, not `is_dir()`: a host plugin may be one file (`plugins/opencode/rtok.ts`).
     if let Some(ref p) = beside
-        && p.is_dir()
+        && p.exists()
     {
         return p.clone();
     }
@@ -793,7 +794,7 @@ pub(crate) fn resolve_plugin_src(
         return found;
     }
 
-    if cargo.is_dir() {
+    if cargo.exists() {
         return cargo;
     }
 
@@ -810,7 +811,7 @@ fn ketch_store_plugin(
 ) -> Option<std::path::PathBuf> {
     let store = root.join("store").join("rtok");
     let versioned = join_rel(&store.join(format!("v{pkg_version}")), rel);
-    if versioned.is_dir() {
+    if versioned.exists() {
         return Some(versioned);
     }
     let mut entries: Vec<_> = std::fs::read_dir(&store)
@@ -827,7 +828,7 @@ fn ketch_store_plugin(
     });
     for dir in entries.into_iter().rev() {
         let candidate = join_rel(&dir, rel);
-        if candidate.is_dir() {
+        if candidate.exists() {
             return Some(candidate);
         }
     }
