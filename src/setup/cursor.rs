@@ -17,11 +17,11 @@ use super::{apply, plugin_src};
 use crate::config::Config;
 
 fn pre_cmd() -> String {
-    format!("{} hook PreToolUse --host cursor", super::rtok_command())
+    format!("{} hook PreToolUse --host cursor", super::rtok_hook_bin())
 }
 
 fn post_cmd() -> String {
-    format!("{} hook PostToolUse --host cursor", super::rtok_command())
+    format!("{} hook PostToolUse --host cursor", super::rtok_hook_bin())
 }
 
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
@@ -152,19 +152,15 @@ fn is_ours(entry: &Value) -> bool {
     let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
-    let mut parts = cmd.split_whitespace();
-    matches!(
-        (
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            parts.next(),
-        ),
-        (Some(bin), Some("hook"), Some(ev), Some("--host"), Some("cursor"), None)
-            if matches!(ev, "PreToolUse" | "PostToolUse") && super::is_rtok_bin(bin)
-    )
+    for event in ["PreToolUse", "PostToolUse"] {
+        let suffix = format!(" hook {event} --host cursor");
+        if let Some(bin) = cmd.strip_suffix(&suffix)
+            && super::is_rtok_bin(super::unquote_bin(bin))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

@@ -24,18 +24,18 @@ const ENTRIES: &[(&str, &str)] = &[
 ];
 
 fn command(event: &str) -> String {
-    format!("{} hook {event}", super::rtok_command())
+    format!("{} hook {event}", super::rtok_hook_bin())
 }
 
-/// Exactly `<rtok-bin> hook <event>`, whitespace aside. Matching the three tokens anywhere in the
-/// command also claimed a user's own chain (`notify-send hi && rtok hook Stop`), and `remove`
-/// deleted it with ours. Absolute `…/rtok.exe` counts as ours on Windows.
+/// Exactly `<rtok-bin> hook <event>`. Matching tokens anywhere claimed a user's
+/// chain (`notify-send hi && rtok hook Stop`). Suffix match keeps absolute paths
+/// with spaces (quoted) as ours on Windows.
 fn is_ours(cmd: &str, event: &str) -> bool {
-    let mut parts = cmd.split_whitespace();
-    matches!(
-        (parts.next(), parts.next(), parts.next(), parts.next()),
-        (Some(bin), Some("hook"), Some(ev), None) if ev == event && super::is_rtok_bin(bin)
-    )
+    let suffix = format!(" hook {event}");
+    let Some(bin) = cmd.strip_suffix(&suffix) else {
+        return false;
+    };
+    super::is_rtok_bin(super::unquote_bin(bin))
 }
 
 /// Apply, dry-run, or remove rtok hook entries.
