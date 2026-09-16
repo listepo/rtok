@@ -193,19 +193,32 @@ fn link_target(path: &Path) -> PathBuf {
     p
 }
 
-/// [`write`]'s atomic swap: write `body` to `.<name>.rtok-tmp-<pid>` beside `target`, copy
-/// `target`'s permissions onto it when `target` exists (a 0600 `~/.claude.json` must stay
-/// 0600), then `fs::rename` the temp file over `target` — atomic on one filesystem. Any failed
-/// step cleans up the temp file before returning the error.
+/// [`write`]'s atomic swap: write `body` to a sibling temp file, copy `target`'s
+/// permissions onto it when `target` exists (a 0600 `~/.claude.json` must stay
+/// 0600 on Unix), then `fs::rename` the temp file over `target` — atomic on one
+/// filesystem. Any failed step cleans up the temp file before returning the error.
+///
+/// On Windows, `MoveFileExW(REPLACE_EXISTING)` fails when the destination has the
+/// read-only attribute. Copying that bit onto the temp file (as Unix mode copy
+/// would) then made every update of a read-only host config fail; clear it on
+/// the destination instead. Temp names include a nanos suffix so two writes in
+/// the same process cannot share one leftover `.rtok-tmp-*` file.
 fn write_atomic(target: &Path, body: &str) -> Result<()> {
     let dir = target.parent().unwrap_or(Path::new("."));
     let name = target.file_name().unwrap_or_default().to_string_lossy();
-    let tmp = dir.join(format!(".{name}.rtok-tmp-{}", std::process::id()));
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = dir.join(format!(".{name}.rtok-tmp-{}-{nanos}", std::process::id()));
     let result: Result<()> = (|| -> Result<()> {
         fs::write(&tmp, body)?;
+        #[cfg(unix)]
         if let Ok(meta) = fs::metadata(target) {
             fs::set_permissions(&tmp, meta.permissions())?;
         }
+        #[cfg(windows)]
+        clear_readonly(target);
         fs::rename(&tmp, target)?;
         Ok(())
     })();
@@ -213,6 +226,20 @@ fn write_atomic(target: &Path, body: &str) -> Result<()> {
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+/// `MOVEFILE_REPLACE_EXISTING` cannot replace a read-only file; drop that bit.
+#[cfg(windows)]
+fn clear_readonly(path: &Path) {
+    let Ok(meta) = fs::metadata(path) else {
+        return;
+    };
+    let mut perms = meta.permissions();
+    if !perms.readonly() {
+        return;
+    }
+    perms.set_readonly(false);
+    let _ = fs::set_permissions(path, perms);
 }
 
 /// [`write`] for a JSON document: pretty-printed with the trailing newline host files carry.
@@ -549,6 +576,23 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".rtok-tmp-"))
             .collect();
         assert!(leftovers.is_empty(), "temp file left behind: {leftovers:?}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Windows refuses `rename` over a read-only destination. Agent setup must
+    /// still update a host config the user (or another tool) marked read-only.
+    #[cfg(windows)]
+    #[test]
+    fn write_replaces_a_readonly_file() {
+        let dir = tmp("readonly");
+        let path = dir.join("settings.json");
+        fs::write(&path, "old\n").unwrap();
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&path, perms).unwrap();
+        assert!(fs::metadata(&path).unwrap().permissions().readonly());
+        write(&apply(), &path, "new\n", "+ something").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new\n");
         let _ = fs::remove_dir_all(dir);
     }
 
