@@ -565,10 +565,7 @@ impl Config {
         if let Some(h) = std::env::var_os("RTOK_HOME") {
             return PathBuf::from(h);
         }
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_default()
-            .join(".rtok")
+        env_user_home().unwrap_or_default().join(".rtok")
     }
 
     /// `<home>/config.toml`.
@@ -805,24 +802,53 @@ pub(crate) fn apply_legacy_fold(cfg: &mut Config) {
     }
 }
 
+/// User home for `~` expansion and `$HOME/.rtok`.
+///
+/// Prefer `HOME` (Unix and Git Bash). On native Windows PowerShell `HOME` is
+/// often unset — fall back to `USERPROFILE` so `rtok agent setup` finds
+/// `~/.claude` / `~/.cursor` instead of skipping with "not found".
+pub(crate) fn env_user_home() -> Option<PathBuf> {
+    user_home_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
+
+/// Resolve home from explicit env values (testable without mutating the process).
+pub(crate) fn user_home_from(
+    home: Option<std::ffi::OsString>,
+    userprofile: Option<std::ffi::OsString>,
+) -> Option<PathBuf> {
+    // Empty HOME must not block USERPROFILE (Windows PowerShell often has
+    // HOME="" rather than unset).
+    nonempty_home(home).or_else(|| nonempty_home(userprofile))
+}
+
+fn nonempty_home(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 /// `~/.rtok/x` → `<home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` → `$HOME/x`.
 /// Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them literal is how
 /// tests without `finish` used to create a `./~` directory in the repo.
 fn expand(path: &Path, home: &Path) -> PathBuf {
+    expand_with(path, home, env_user_home().as_deref())
+}
+
+/// Like [`expand`], but takes an explicit user-home so Windows `USERPROFILE`
+/// fallback can be tested without mutating process env.
+fn expand_with(path: &Path, rtok_home: &Path, user_home: Option<&Path>) -> PathBuf {
     let raw = path.to_string_lossy();
     if raw == "~/.rtok" || raw == "~/.rtok/" {
-        return home.to_path_buf();
+        return rtok_home.to_path_buf();
     }
     if let Some(rest) = raw.strip_prefix("~/.rtok/") {
-        return home.join(rest);
+        return rtok_home.join(rest);
     }
     if raw == "~" {
-        return std::env::var_os("HOME")
-            .map(PathBuf::from)
+        return user_home
+            .map(Path::to_path_buf)
             .unwrap_or_else(|| path.to_path_buf());
     }
-    match (raw.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(h)) => PathBuf::from(h).join(rest),
+    match (raw.strip_prefix("~/"), user_home) {
+        (Some(rest), Some(h)) => h.join(rest),
         _ => path.to_path_buf(),
     }
 }
@@ -1125,18 +1151,76 @@ bogus = true
     }
 
     #[test]
+    fn user_home_prefers_home_then_userprofile() {
+        use std::ffi::OsString;
+        assert_eq!(
+            user_home_from(
+                Some(OsString::from("/Users/me")),
+                Some(OsString::from(r"C:\Users\me"))
+            ),
+            Some(PathBuf::from("/Users/me"))
+        );
+        assert_eq!(
+            user_home_from(None, Some(OsString::from(r"C:\Users\Example"))),
+            Some(PathBuf::from(r"C:\Users\Example"))
+        );
+        // Empty HOME must fall through to USERPROFILE (native Windows).
+        assert_eq!(
+            user_home_from(
+                Some(OsString::from("")),
+                Some(OsString::from(r"C:\Users\Example"))
+            ),
+            Some(PathBuf::from(r"C:\Users\Example"))
+        );
+        assert_eq!(user_home_from(None, None), None);
+        assert_eq!(
+            user_home_from(Some(OsString::from("")), Some(OsString::from(""))),
+            None
+        );
+    }
+
+    #[test]
     fn expand_covers_bare_tilde_and_rtok_home_dir() {
         let home = Path::new("/tmp/rtok-home");
         assert_eq!(expand(Path::new("~/.rtok"), home), home);
         assert_eq!(expand(Path::new("~/.rtok/"), home), home);
         assert_eq!(expand(Path::new("~/.rtok/db"), home), home.join("db"));
-        if let Some(h) = std::env::var_os("HOME") {
-            assert_eq!(expand(Path::new("~"), home), PathBuf::from(&h));
+        if let Some(h) = env_user_home() {
+            assert_eq!(expand(Path::new("~"), home), h);
             assert_eq!(
                 expand(Path::new("~/.claude/settings.json"), home),
-                PathBuf::from(h).join(".claude/settings.json")
+                h.join(".claude/settings.json")
             );
         }
+    }
+
+    #[test]
+    fn expand_with_userprofile_resolves_cursor_and_claude_paths() {
+        // Regression: without this, Windows `rtok agent setup cursor|claude`
+        // printed "not found, not installed" because `~/...` stayed literal.
+        let rtok = Path::new("/tmp/rtok-home");
+        let profile = Path::new(r"C:\Users\Example");
+        assert_eq!(
+            expand_with(Path::new("~/.cursor/hooks.json"), rtok, Some(profile)),
+            profile.join(".cursor/hooks.json")
+        );
+        assert_eq!(
+            expand_with(Path::new("~/.cursor/mcp.json"), rtok, Some(profile)),
+            profile.join(".cursor/mcp.json")
+        );
+        assert_eq!(
+            expand_with(Path::new("~/.claude/settings.json"), rtok, Some(profile)),
+            profile.join(".claude/settings.json")
+        );
+        assert_eq!(
+            expand_with(Path::new("~/.claude.json"), rtok, Some(profile)),
+            profile.join(".claude.json")
+        );
+        // No user home → leave `~/...` literal (same as pre-fix Windows).
+        assert_eq!(
+            expand_with(Path::new("~/.cursor/hooks.json"), rtok, None),
+            PathBuf::from("~/.cursor/hooks.json")
+        );
     }
 
     #[test]
