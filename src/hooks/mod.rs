@@ -79,8 +79,11 @@ fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
 fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<u8>, String> {
     let mut input: HookInput =
         serde_json::from_slice(stdin).map_err(|e| format!("hook {event}: bad stdin: {e}"))?;
+    let copilot = cfg.hook.host == "copilot";
     if cfg.hook.host == "cursor" {
         input.adapt_cursor(event);
+    } else if copilot {
+        input.adapt_copilot(event);
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
@@ -92,7 +95,43 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
-    Ok(dispatch(stdin, &input, &cx))
+    let out = dispatch(stdin, &input, &cx);
+    if copilot {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(copilot_output(&parsed));
+    }
+    Ok(out)
+}
+
+/// GitHub Copilot CLI reads a flat object: `{permissionDecision, permissionDecisionReason,
+/// modifiedArgs}` on preToolUse, `{additionalContext}` after a tool; nothing nests under
+/// `hookSpecificOutput`. A Claude `decision: block` becomes `deny`. `{}` stays `{}`.
+pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
+    let mut o = serde_json::Map::new();
+    let mut put = |k: &str, v: serde_json::Value| {
+        o.insert(k.to_string(), v);
+    };
+    if let Some(h) = &out.hook_specific_output {
+        if let Some(d) = &h.permission_decision {
+            put("permissionDecision", d.as_str().into());
+        }
+        if let Some(r) = &h.permission_decision_reason {
+            put("permissionDecisionReason", r.as_str().into());
+        }
+        if let Some(u) = &h.updated_input {
+            put("modifiedArgs", u.clone());
+        }
+        if let Some(c) = &h.additional_context {
+            put("additionalContext", c.as_str().into());
+        }
+    }
+    if out.decision.as_deref() == Some("block") && !o.contains_key("permissionDecision") {
+        o.insert("permissionDecision".into(), "deny".into());
+        if let Some(r) = &out.reason {
+            o.insert("permissionDecisionReason".into(), r.as_str().into());
+        }
+    }
+    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
 }
 
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
@@ -299,6 +338,57 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copilot_output_shapes_pre_post_block_and_empty() {
+        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
+        assert_eq!(
+            json(copilot_output(&HookOutput::default())),
+            serde_json::json!({})
+        );
+
+        let pre = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PreToolUse".into(),
+                permission_decision: Some("allow".into()),
+                permission_decision_reason: Some("rtok".into()),
+                updated_input: Some(serde_json::json!({"command": "rtok cmd -- git status"})),
+                additional_context: None,
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(copilot_output(&pre)),
+            serde_json::json!({
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "rtok",
+                "modifiedArgs": {"command": "rtok cmd -- git status"}
+            })
+        );
+
+        let post = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PostToolUse".into(),
+                additional_context: Some("ctx".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(copilot_output(&post)),
+            serde_json::json!({"additionalContext": "ctx"})
+        );
+
+        let block = HookOutput {
+            decision: Some("block".into()),
+            reason: Some("guard".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            json(copilot_output(&block)),
+            serde_json::json!({"permissionDecision": "deny", "permissionDecisionReason": "guard"})
+        );
+    }
     use crate::plugin::Runtime;
 
     #[test]

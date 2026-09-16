@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T46.3 — Copilot hook payload map
+
+**T46.3 Copilot hook payload map** · P1, 2/5 · `src/hooks/types.rs`, `src/hooks/mod.rs`, `src/cli.rs`, `config/default.toml`, `docs/config.md`
+Do: `rtok hook <Event> --host copilot` (or `[hook] host = "copilot"`) reads GitHub Copilot CLI's camelCase stdin as the Claude event and answers in Copilot's flat stdout. `HookInput::adapt_copilot` maps `sessionId` → `session_id`, `toolName` → `tool_name`, `toolArgs` → `tool_input`, `toolResult` → `tool_response`, takes the event from the CLI argument (Copilot's own camelCase names are accepted too: `preToolUse`, `postToolUse`, `sessionStart`, `sessionEnd`, `userPromptSubmitted`), and renames the tool so the plugins match: anything with `bash`/`shell`/`terminal`/`powershell` in it becomes `Bash`, `read*`/`view*` become `Read`; unmapped fields stay in `extra`. `copilot_output` turns the Claude `HookOutput` into `{permissionDecision, permissionDecisionReason, modifiedArgs}` (from `hookSpecificOutput.updatedInput`) or `{additionalContext}`; a top-level `decision: block` becomes `permissionDecision: deny`; `{}` stays `{}`. Wired in `dispatch_owned_strict` beside the Cursor branch, after the normal dispatch, so every plugin path is unchanged. `--host` docs and the `[hook] host` comments list `copilot`.
+Check: `hooks::types::tests::copilot_pre_tool_use_maps_camel_case_and_tool_names` (`run_in_terminal` → `Bash`, `view` → `Read`, `timestamp` kept in `extra`, `pre_tool()`/`post_tool()` views resolve); `hooks::tests::copilot_output_shapes_pre_post_block_and_empty`.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `mise exec -- cargo test -p rtok --lib -- hooks::` 18 passed; clippy `-D warnings` clean; fmt clean. Not verified on a live Copilot CLI: its exact tool names (the docs name `sessionId`, `toolName`, `toolArgs` and the stdout keys, not the tool ids), so the rename is by substring.
+Deviation: 5 files (≤3) — the three config/CLI doc lines are one-word mentions of the new host value.
+
 ## T46.2 — Kimi Code host
 
 **T46.2 Kimi Code host** · P1, 3/5 · `src/agents/kimi/{mod.rs,README.md}` (new), `src/agents/claude/mod.rs`, `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_setup.rs`, `tests/common/agents.rs`

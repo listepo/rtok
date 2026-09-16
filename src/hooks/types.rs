@@ -92,6 +92,39 @@ impl HookInput {
         }
     }
 
+    /// GitHub Copilot CLI hooks speak camelCase: stdin `sessionId`, `cwd`, `toolName`,
+    /// `toolArgs` (`toolResult` after the call); the Claude event is the one `rtok hook <Event>`
+    /// was invoked with. Shell tools become `Bash` and file reads `Read`, so the plugins see the
+    /// names they match on. Fields that are not mapped stay in `extra` and round-trip.
+    pub fn adapt_copilot(&mut self, event: &str) {
+        if self.session_id.is_empty()
+            && let Some(id) = self.extra.remove("sessionId").and_then(as_string)
+        {
+            self.session_id = id;
+        }
+        if self.tool_name.is_none()
+            && let Some(name) = self.extra.remove("toolName").and_then(as_string)
+        {
+            self.tool_name = Some(copilot_tool_name(&name));
+        }
+        if self.tool_input.is_none()
+            && let Some(args) = self.extra.remove("toolArgs")
+        {
+            self.tool_input = Some(args);
+        }
+        if self.tool_response.is_none()
+            && let Some(result) = self.extra.remove("toolResult")
+        {
+            self.tool_response = Some(result);
+        }
+        let name = if self.hook_event_name.is_empty() {
+            event
+        } else {
+            self.hook_event_name.as_str()
+        };
+        self.hook_event_name = claude_event(name).to_string();
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,
@@ -124,6 +157,41 @@ impl HookInput {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
             transcript_path: self.transcript_path.as_deref()?,
         })
+    }
+}
+
+fn as_string(v: Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s),
+        _ => None,
+    }
+}
+
+/// Copilot's event names, camelCase, to Claude's; a Claude name passes through.
+fn claude_event(name: &str) -> &str {
+    match name {
+        "preToolUse" => "PreToolUse",
+        "postToolUse" => "PostToolUse",
+        "sessionStart" => "SessionStart",
+        "sessionEnd" => "SessionEnd",
+        "userPromptSubmitted" => "UserPromptSubmit",
+        other => other,
+    }
+}
+
+/// Copilot's tool names are its own (`bash`, `run_in_terminal`, `read_file`, `view`, …); the
+/// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
+fn copilot_tool_name(name: &str) -> String {
+    let l = name.to_ascii_lowercase();
+    if ["bash", "shell", "terminal", "powershell"]
+        .iter()
+        .any(|k| l.contains(k))
+    {
+        "Bash".into()
+    } else if l.starts_with("read") || l.starts_with("view") {
+        "Read".into()
+    } else {
+        name.to_string()
     }
 }
 
@@ -254,6 +322,38 @@ mod tests {
         assert_eq!(input.tool_response.as_ref().unwrap(), "total 0\n");
         assert!(input.post_tool().is_some());
         assert!(input.pre_tool().is_none());
+    }
+
+    #[test]
+    fn copilot_pre_tool_use_maps_camel_case_and_tool_names() {
+        let raw = serde_json::json!({
+            "sessionId": "cp-1",
+            "timestamp": 1,
+            "cwd": "/tmp",
+            "toolName": "run_in_terminal",
+            "toolArgs": {"command": "git status"}
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_copilot("PreToolUse");
+        assert_eq!(input.session_id, "cp-1");
+        assert_eq!(input.hook_event_name, "PreToolUse");
+        assert_eq!(input.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(input.tool_input.as_ref().unwrap()["command"], "git status");
+        assert_eq!(input.extra.get("timestamp"), Some(&serde_json::json!(1)));
+        assert!(input.pre_tool().is_some());
+
+        let mut after: HookInput = serde_json::from_value(serde_json::json!({
+            "sessionId": "cp-1",
+            "toolName": "view",
+            "toolArgs": {"path": "a.rs"},
+            "toolResult": {"textResultForLlm": "fn main() {}"}
+        }))
+        .unwrap();
+        after.adapt_copilot("postToolUse");
+        assert_eq!(after.hook_event_name, "PostToolUse");
+        assert_eq!(after.tool_name.as_deref(), Some("Read"));
+        assert!(after.post_tool().is_some());
+        assert_eq!(copilot_tool_name("web_search"), "web_search");
     }
 
     #[test]

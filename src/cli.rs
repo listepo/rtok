@@ -31,7 +31,7 @@ enum Cmd {
     /// Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
     Hook {
         event: String,
-        /// Overlay `[hook] host` (`claude` | `cursor`)
+        /// Overlay `[hook] host` (`claude` | `cursor` | `copilot`)
         #[arg(long)]
         host: Option<String>,
     },

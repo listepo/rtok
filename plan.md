@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T46.3 | todo | P1 | 2 | 0% | |
 | T46.4 | todo | P1 | 3 | 0% | |
 
 ### T45.1. OTel flush survives a traces error
@@ -38,11 +37,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T46.3. Copilot hook payload map
-
-GitHub Copilot CLI hooks speak camelCase: stdin `sessionId`, `cwd`, `toolName`, `toolArgs`; events `preToolUse`, `postToolUse`, `sessionStart`, `userPromptSubmitted`; stdout `{permissionDecision, permissionDecisionReason, modifiedArgs}` for preToolUse and `{additionalContext}` for postToolUse — not `hookSpecificOutput`. Done means `rtok hook <Event> --host copilot` reads that stdin as the Claude event and writes that stdout, so `cmd`, `guard`, `read` and `inject` reach Copilot through the existing dispatcher; unknown fields still round-trip, and every path stays fail-open.
-Plan: `HookInput::adapt_copilot` in `src/hooks/types.rs` (field map, shell tool names to `Bash`, read tool names to `Read`), `copilot_output` in `src/hooks/mod.rs` (`HookOutput` → Copilot object, `{}` stays `{}`), host branch beside the Cursor one; unit tests on both. Verify: `mise exec -- cargo test -p rtok --lib hooks::`.
 
 ### T46.4. Copilot CLI and GitHub Copilot app host
 
