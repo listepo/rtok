@@ -487,7 +487,12 @@ mod tests {
         let fake_exe = bin_dir.join("rtok");
         fs::write(&fake_exe, b"").unwrap();
         let missing_manifest = root.join("no-such-manifest");
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest, "0.1.5");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
         assert_eq!(got, plugins);
         // When beside-exe is missing, fall back to an existing cargo tree.
         let cargo_root = root.join("cargo");
@@ -525,12 +530,22 @@ mod tests {
             .join("cursor");
         write_plugin(&store_plugins);
         let missing_manifest = root.join("no-such-manifest");
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest, "0.1.5");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
         assert_eq!(got, store_plugins);
         // Still prefer plugins beside the bin exe when both exist.
         let beside = bin_dir.join("plugins").join("cursor");
         write_plugin(&beside);
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest, "0.1.5");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.5",
+        );
         assert_eq!(got, beside);
         let _ = fs::remove_dir_all(&root);
     }
@@ -551,11 +566,21 @@ mod tests {
         write_plugin(&newer);
         let missing_manifest = root.join("no-such-manifest");
         // Matching CARGO_PKG_VERSION wins even when a newer folder exists.
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest, "0.1.4");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.4",
+        );
         assert_eq!(got, older);
         // When the matching version has no plugins, take the newest that does.
         fs::remove_dir_all(store.join("v0.1.4")).unwrap();
-        let got = resolve_plugin_src("plugins/cursor", Some(&fake_exe), &missing_manifest, "0.1.4");
+        let got = resolve_plugin_src(
+            "plugins/cursor",
+            Some(&fake_exe),
+            &missing_manifest,
+            "0.1.4",
+        );
         assert_eq!(got, newer);
         let _ = fs::remove_dir_all(&root);
     }
