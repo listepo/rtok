@@ -1,7 +1,6 @@
 /target
 .serena/
 .reasonix/
-~/.rtok/rtok.log
 
 # Hugo docs site (site/)
 /site/public/
@@ -9,7 +8,6 @@
 /site/_vendor/
 /site/.hugo_build.lock
 report/jscpd-report.json
-/~
 
 # Agent worktrees must not be indexed by graph walk
 .worktrees/

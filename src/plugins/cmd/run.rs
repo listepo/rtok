@@ -36,21 +36,16 @@ pub(crate) enum ShellKind {
 /// Classify by the executable basename so an explicit `[plugins.cmd] shell`
 /// still picks the right flags (`-lc` vs `/C` vs `-Command`).
 pub(crate) fn shell_kind(shell: &str) -> ShellKind {
-    // Split on `/` and `\\` ourselves: `Path` on Unix treats `C:\\…\\cmd.exe` as
-    // one component, so Windows shell names must still classify on macOS/Linux CI.
-    let base = shell.rsplit(['/', '\\']).next().unwrap_or(shell);
-    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
-        &base[..base.len() - 4]
-    } else {
-        base
-    }
-    .to_ascii_lowercase();
-    match stem.as_str() {
+    match formatters::cmd_stem(shell).to_ascii_lowercase().as_str() {
         "cmd" => ShellKind::Cmd,
         "powershell" | "pwsh" => ShellKind::PowerShell,
         _ => ShellKind::Posix,
     }
 }
+
+/// `$SHELL` is honoured only for these: `script_for` emits `{ …\n} 2>&1`, which
+/// fish, nu or xonsh cannot parse. An explicit `[plugins.cmd] shell` is trusted as is.
+const POSIX_SHELLS: [&str; 6] = ["sh", "bash", "zsh", "dash", "ksh", "ash"];
 
 /// Join argv into a shell body. A single argument is already a shell snippet
 /// (the PreToolUse wrap quotes the original command as one argv); several
@@ -108,7 +103,10 @@ pub(crate) fn resolve_shell(
     if !cfg_shell.is_empty() {
         return cfg_shell.to_string();
     }
-    if let Some(s) = env_shell.filter(|s| !s.is_empty()) {
+    if let Some(s) = env_shell.filter(|s| {
+        let stem = formatters::cmd_stem(s);
+        POSIX_SHELLS.iter().any(|p| stem.eq_ignore_ascii_case(p))
+    }) {
         return s.to_string();
     }
     if windows {
@@ -354,6 +352,29 @@ mod tests {
         assert_eq!(resolve_shell("", None, true, None), "cmd.exe");
         assert_eq!(resolve_shell("", None, false, None), "/bin/sh");
         assert_eq!(resolve_shell("", Some(""), false, None), "/bin/sh");
+    }
+
+    /// `$SHELL=fish` (nu, xonsh) cannot run the `{ … } 2>&1` body: fall back to the host
+    /// default. Config still wins, and `.exe` / case do not matter.
+    #[test]
+    fn resolve_shell_ignores_non_posix_env_shell() {
+        for s in ["/opt/homebrew/bin/fish", "nu", "/usr/bin/xonsh", "fish"] {
+            assert_eq!(resolve_shell("", Some(s), false, None), "/bin/sh", "{s}");
+            assert_eq!(resolve_shell("", Some(s), true, None), "cmd.exe", "{s}");
+        }
+        for s in [
+            "/bin/bash",
+            "/usr/local/bin/zsh",
+            "dash",
+            "ksh",
+            r"C:\msys64\usr\bin\BASH.EXE",
+        ] {
+            assert_eq!(resolve_shell("", Some(s), false, None), s, "{s}");
+        }
+        assert_eq!(
+            resolve_shell("/usr/bin/fish", Some("/bin/zsh"), false, None),
+            "/usr/bin/fish"
+        );
     }
 
     #[test]

@@ -94,6 +94,10 @@ impl Cache {
         content_type: Option<&str>,
         status: u16,
     ) {
+        // A 429/529/500 replayed for `ttl_s` is an outage the cache would prolong.
+        if !(200..300).contains(&status) {
+            return;
+        }
         let hash = canonical_hash(prompt);
         // `lookup` only skips expired entries, so without this a long-running proxy kept every
         // missed prompt's full response forever (and scanned all of them per request). The
@@ -458,6 +462,22 @@ mod tests {
             "false hits at {:.2} hit_rate",
             report.hit_rate
         );
+    }
+
+    #[test]
+    fn an_error_response_is_never_cached() {
+        let body = serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+        let cfg = SemanticCache::default();
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let prompt = build_prompt(wire, &body, &cfg).unwrap();
+        let mut cache = Cache::new();
+        for status in [429, 500, 529] {
+            cache.store(&prompt, &cfg, b"overloaded", None, status);
+            assert!(cache.lookup(&prompt, &cfg).is_none(), "{status} was cached");
+        }
     }
 
     #[test]

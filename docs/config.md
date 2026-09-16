@@ -155,7 +155,7 @@ mcp_timeout_ms  = 15000               # per MCP server tools/list (uvx/npx serve
 instruction_warn_tokens = 1000        # --instructions: flag files above this
 instructions    = false               # run the instruction audit by default (--instructions)
 
-[setup]                               # rtok agents setup / remove <host>
+[setup]                               # rtok agents install / remove <host>
 dry_run      = false
 yes          = false                  # required by --replace
 backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
@@ -337,7 +337,7 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
-| `agents setup` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
+| `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | (no flags) | — (reads the host configs and `<bin> --version`) |
 | `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |

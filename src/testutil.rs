@@ -3,7 +3,7 @@
 
 use crate::config::Config;
 use crate::plugin::Runtime;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A fresh, empty directory unique to this call. The pid keeps parallel test binaries apart and
@@ -20,11 +20,17 @@ pub fn tmp_dir(tag: &str) -> PathBuf {
 /// Default config with the DB, the archive and the log under a fresh [`tmp_dir`].
 pub fn config(tag: &str) -> (Config, PathBuf) {
     let dir = tmp_dir(tag);
+    (config_in(&dir), dir)
+}
+
+/// Default config with every on-disk path under `dir`. A test that sets only `db_path` left
+/// `log.path` at its unexpanded default and wrote a literal `./~/.rtok/logs/` into the repo.
+pub fn config_in(dir: &Path) -> Config {
     let mut c = Config::default();
     c.core.db_path = dir.join("rtok.db");
     c.core.archive_dir = dir.join("archive");
     c.log.path = dir.join("rtok.log");
-    (c, dir)
+    c
 }
 
 /// A [`Runtime`] over [`config`]; `tag` doubles as the session id.

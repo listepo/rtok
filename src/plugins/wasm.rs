@@ -1,6 +1,7 @@
 //! Out-of-tree `.wasm` plugin host (P32, T32.2). Loaded only via [`Registry::from_plugins`]
 //! when Cargo feature `wasm-host` is on and `[plugins.wasm] enabled = true`.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -269,8 +270,8 @@ impl Plugin for WasmPlugin {
 
 fn json_measurement(v: &Value, plugin: &str) -> Measurement {
     Measurement {
-        plugin: leak_str(plugin.to_string()),
-        kind: leak_str(v["kind"].as_str().unwrap_or("").to_string()),
+        plugin: intern(plugin),
+        kind: intern(v["kind"].as_str().unwrap_or("")),
         before_bytes: v["before_bytes"].as_u64().unwrap_or(0),
         after_bytes: v["after_bytes"].as_u64().unwrap_or(0),
         est_before: v["est_before"].as_u64().unwrap_or(0) as u32,
@@ -319,6 +320,20 @@ fn unpack_i64(packed: i64) -> (i32, i32) {
 
 fn leak_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
+}
+
+/// One leak per distinct string. `Measurement` wants `&'static str`, and a guest records one
+/// per call; leaking each would grow `rtok mcp` for as long as it runs.
+fn intern(s: &str) -> &'static str {
+    static POOL: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+    let mut g = POOL.lock().unwrap_or_else(|e| e.into_inner());
+    let pool = g.get_or_insert_with(HashSet::new);
+    if let Some(k) = pool.get(s) {
+        return k;
+    }
+    let k = leak_str(s.to_string());
+    pool.insert(k);
+    k
 }
 
 fn leak_slice(v: Vec<Surface>) -> &'static [Surface] {

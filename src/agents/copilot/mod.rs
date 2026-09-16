@@ -1,4 +1,4 @@
-//! GitHub Copilot installer (`rtok agents setup copilot`, plan T46.4).
+//! GitHub Copilot installer (`rtok agents install copilot`, plan T46.4).
 //!
 //! Copilot CLI (`copilot`) and the GitHub Copilot app share `~/.copilot` (`[setup.copilot] dir`):
 //! MCP in `mcp-config.json` (`mcpServers.<name> = {type: "local", command, args, tools}`), hooks

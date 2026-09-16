@@ -53,7 +53,7 @@ pub fn recommendations(ledgers: &ReportLedgers, cfg: &Config) -> Vec<Recommendat
     };
     expand_rate(ledgers, cfg, &mut push);
     retire_plugin(ledgers, &mut push);
-    cache_busts(ledgers, &mut push);
+    cache_busts(&ledgers.cache, &mut push);
     idle_hooks(ledgers, &mut push);
     inject_budget(ledgers, cfg, &mut push);
     archive_window(ledgers, cfg, &mut push);
@@ -108,27 +108,61 @@ fn retire_plugin(ledgers: &ReportLedgers, push: Push<'_>) {
     }
 }
 
+/// Turns a grouped cache-bust finding names before it says "and K more".
+const BUST_TURNS_NAMED: usize = 5;
+
 /// (3) Cache busts the host caused: a rewritten tool list or system prompt, naming turn.
-fn cache_busts(ledgers: &ReportLedgers, push: Push<'_>) {
-    let c = &ledgers.cache;
+/// One finding per (session, cause): a session that busts on every turn used to produce
+/// one finding per turn, and `--ai` dropped the whole section over budget.
+fn cache_busts(c: &crate::web::model::ReportCache, push: Push<'_>) {
+    let mut groups: Vec<(&str, &str, Vec<&crate::web::model::ReportBust>)> = Vec::new();
     for b in &c.detail {
-        if b.cause == "tools" || b.cause == "system" {
-            let what = ["tool list", "system prompt"][(b.cause == "system") as usize];
-            push(
-                b.cache_create,
-                "cache-bust",
-                format!(
-                    "session {} turn {} busted the prompt cache (cause {}): {} cache-create tokens re-written with cache_read {} — pin the {what}; {} tokens would have stayed cached",
-                    b.session, b.turn, b.cause, b.cache_create, b.cache_read, b.cache_create
-                ),
-                format!(
-                    "{} over {} in {} with usage rows",
-                    count(c.busts, "cache bust"),
-                    count(c.turns, "turn"),
-                    count(c.sessions, "session")
-                ),
-            );
+        if b.cause != "tools" && b.cause != "system" {
+            continue;
         }
+        match groups
+            .iter_mut()
+            .find(|(s, k, _)| *s == b.session && *k == b.cause)
+        {
+            Some((_, _, busts)) => busts.push(b),
+            None => groups.push((&b.session, &b.cause, vec![b])),
+        }
+    }
+    for (session, cause, busts) in groups {
+        let what = ["tool list", "system prompt"][(cause == "system") as usize];
+        let create: i64 = busts.iter().map(|b| b.cache_create).sum();
+        let finding = match busts.as_slice() {
+            [b] => format!(
+                "session {session} turn {} busted the prompt cache (cause {cause}): {create} cache-create tokens re-written with cache_read {} — pin the {what}; {create} tokens would have stayed cached",
+                b.turn, b.cache_read
+            ),
+            _ => {
+                let mut turns = busts
+                    .iter()
+                    .take(BUST_TURNS_NAMED)
+                    .map(|b| b.turn.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if busts.len() > BUST_TURNS_NAMED {
+                    turns.push_str(&format!(" and {} more", busts.len() - BUST_TURNS_NAMED));
+                }
+                format!(
+                    "session {session} busted the prompt cache {} (cause {cause}, turns {turns}): {create} cache-create tokens re-written — pin the {what}; {create} tokens would have stayed cached",
+                    count(busts.len() as u64, "time")
+                )
+            }
+        };
+        push(
+            create,
+            "cache-bust",
+            finding,
+            format!(
+                "{} over {} in {} with usage rows",
+                count(c.busts, "cache bust"),
+                count(c.turns, "turn"),
+                count(c.sessions, "session")
+            ),
+        );
     }
 }
 
@@ -209,6 +243,43 @@ fn archive_window(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::web::model::{ReportBust, ReportCache};
+
+    /// A session busting on every turn is one finding with a count, not one per turn.
+    #[test]
+    fn cache_busts_group_per_session_and_cause() {
+        let bust = |session: &str, turn: u64, cause: &str| ReportBust {
+            session: session.into(),
+            turn,
+            cause: cause.into(),
+            cache_create: 100,
+            cache_read: 0,
+        };
+        let detail: Vec<ReportBust> = (1..=8)
+            .map(|t| bust("a", t, "tools"))
+            .chain([bust("a", 9, "system"), bust("b", 1, "tools")])
+            .collect();
+        let cache = ReportCache {
+            sessions: 2,
+            turns: 10,
+            busts: 10,
+            by_cause: vec![],
+            detail,
+        };
+        let mut found = Vec::new();
+        super::cache_busts(&cache, &mut |tokens, _, finding, _| {
+            found.push((tokens, finding));
+        });
+        assert_eq!(found.len(), 3, "{found:?}");
+        assert_eq!(found[0].0, 800);
+        assert!(
+            found[0].1.contains("8 times") && found[0].1.contains("1, 2, 3, 4, 5 and 3 more"),
+            "{}",
+            found[0].1
+        );
+        assert!(found[1].1.contains("session a turn 9"), "{}", found[1].1);
+    }
+
     /// Once setup installed `SessionEnd`, a busy week would have told the user to remove it.
     #[test]
     fn the_session_end_rtok_installs_is_not_idle() {

@@ -520,7 +520,7 @@ mod tests {
     }
 
     /// T25.0 Check: `pi` records as `pi`, not `other` — 0010.sql seeds the slug
-    /// `rtok agents setup pi` installs but 0002.sql's original list never had.
+    /// `rtok agents install pi` installs but 0002.sql's original list never had.
     #[test]
     fn pi_host_resolves_to_pi_not_other() {
         let dir = std::env::temp_dir().join(format!("rtok-hooks-t25-pi-{}", std::process::id()));

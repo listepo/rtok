@@ -16,18 +16,6 @@
 //! [`naive_always_minimum`] is the honest “prompt-only / unstructured” baseline used in
 //! `tests/mode_bench.rs`, not a claim about ponytail's published LOC numbers.
 
-/// Ponytail-style intensity. Affects only how aggressively speculative work is skipped;
-/// the rung order stays the same.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PonyIntensity {
-    /// Prefer naming a lazier alternative; still returns the same rungs (tests use Full).
-    Lite,
-    /// Enforce the ladder.
-    Full,
-    /// Speculative work is skipped even more readily (same flags; ultra trusts speculative).
-    Ultra,
-}
-
 /// Inputs describing what the agent already knows about a coding task.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LadderContext {
@@ -63,14 +51,6 @@ pub enum LadderDecision {
 /// Otherwise first true flag in YAGNI → reuse → stdlib → native → dep → one-liner wins;
 /// if none match, [`LadderDecision::Minimum`].
 pub fn evaluate_ladder(ctx: &LadderContext) -> LadderDecision {
-    evaluate_ladder_at(ctx, PonyIntensity::Full)
-}
-
-/// Apply the same rung precedence as [`evaluate_ladder`].
-///
-/// `intensity` is currently ignored and reserved for future speculative bias.
-pub fn evaluate_ladder_at(ctx: &LadderContext, intensity: PonyIntensity) -> LadderDecision {
-    let _ = intensity; // rung order is intensity-invariant; ultra may tighten speculative upstream.
     if ctx.must_not_simplify {
         return LadderDecision::Minimum;
     }

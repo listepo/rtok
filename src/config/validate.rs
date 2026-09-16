@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use figment::value::{Dict, Value as FigValue};
-use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
+use toml_edit::{DocumentMut, Item, TableLike, Value as TomlValue};
 
 use super::Config;
 
@@ -93,7 +93,18 @@ fn assign(doc: &mut DocumentMut, key: &str, value: TomlValue) -> Result<()> {
     let mut table: &mut dyn toml_edit::TableLike = doc.as_table_mut();
     while let Some(part) = parts.next() {
         if parts.peek().is_none() {
-            table.insert(part, toml_edit::value(value));
+            // `insert` replaces the whole (Key, Item) pair, dropping the key's padding and its
+            // trailing `# passthrough | compress` comment; swap the value in place instead.
+            match table.get_mut(part).and_then(Item::as_value_mut) {
+                Some(old) => {
+                    let decor = old.decor().clone();
+                    *old = value;
+                    *old.decor_mut() = decor;
+                }
+                None => {
+                    table.insert(part, toml_edit::value(value));
+                }
+            }
             return Ok(());
         }
         if !table.contains_key(part) {
@@ -128,11 +139,11 @@ fn check_table(
     path: &Path,
     src: &str,
     prefix: &str,
-    table: &Table,
+    table: &dyn TableLike,
     schema: &Dict,
     errors: &mut Vec<String>,
 ) {
-    for (k, item) in table.iter() {
+    for (k, item) in TableLike::iter(table) {
         let dotted = if prefix.is_empty() {
             k.to_string()
         } else {
@@ -146,7 +157,8 @@ fn check_table(
         }
         match schema.get(k) {
             None => errors.push(format!("{}: unknown key: {dotted}", loc(path, src, item))),
-            Some(FigValue::Dict(_, nested)) => match item.as_table() {
+            // `as_table_like`: the loader accepts `proxy = { port = 2 }`, so validate must too.
+            Some(FigValue::Dict(_, nested)) => match item.as_table_like() {
                 Some(t) => check_table(path, src, &dotted, t, nested, errors),
                 None => errors.push(format!(
                     "{}: {dotted}: expected table",
@@ -195,6 +207,20 @@ fn check_leaf(
                 errors.push(format!("{at}: {dotted}: expected number"));
                 return;
             }
+            // An unsigned default refuses a negative value here, not later in `Config::load`.
+            let unsigned = matches!(
+                num,
+                figment::value::Num::U8(_)
+                    | figment::value::Num::U16(_)
+                    | figment::value::Num::U32(_)
+                    | figment::value::Num::U64(_)
+                    | figment::value::Num::U128(_)
+                    | figment::value::Num::USize(_)
+            );
+            if unsigned && item.as_integer().is_some_and(|n| n < 0) {
+                errors.push(format!("{at}: {dotted} must be ≥ 0"));
+                return;
+            }
         }
         FigValue::Array(..) if item.as_array().is_none() => {
             errors.push(format!("{at}: {dotted}: expected array"));
@@ -213,9 +239,6 @@ fn check_leaf(
             }
             "tui.tick_secs" if n < 1 => {
                 errors.push(format!("{at}: {dotted} must be ≥ 1"));
-            }
-            "plugins.inject.budget_tokens" if n < 0 => {
-                errors.push(format!("{at}: {dotted} must be ≥ 0"));
             }
             // `read` never trims the `… archived <id> …` marker (79 chars): the id is what keeps
             // a cut lossless. A smaller cap passed validation and was then silently exceeded.
@@ -403,6 +426,48 @@ mod tests {
         );
         assert!(text.contains("# rtok proxy"), "{text}");
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// `set` swaps the value in place: the key's padding and its trailing doc comment stay.
+    #[test]
+    fn set_keeps_the_trailing_comment_and_padding() {
+        let home = tmp("decor");
+        Config::init(&home, false).unwrap();
+        set(&home, "proxy.mode", "compress", false).unwrap();
+        let text = std::fs::read_to_string(Config::path_for(&home)).unwrap();
+        assert!(
+            text.contains("mode            = \"compress\"       # passthrough | compress"),
+            "{text}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The loader accepts an inline table; validate used to report `expected table` for it.
+    #[test]
+    fn an_inline_table_is_a_table() {
+        let dir = tmp("inline");
+        let path = dir.join("c.toml");
+        std::fs::write(&path, "proxy = { port = 2 }\n").unwrap();
+        assert!(issues(&path).unwrap().is_empty());
+        std::fs::write(&path, "proxy = { port = 70000 }\n").unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(errs.iter().any(|e| e.contains("proxy.port")), "{errs:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A negative value for an unsigned key passed validation and then failed `Config::load`.
+    #[test]
+    fn a_negative_number_is_rejected_for_an_unsigned_key() {
+        let dir = tmp("negative");
+        let path = dir.join("c.toml");
+        std::fs::write(&path, "[core]\nretain_calls_days = -1\n").unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("core.retain_calls_days") && e.contains("≥ 0")),
+            "{errs:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     use super::super::layers;

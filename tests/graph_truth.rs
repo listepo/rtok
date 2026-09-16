@@ -9,7 +9,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use rtok::config::Config;
 use rtok::plugin::{Ctx, Runtime};
 use rtok::plugins::graph::index;
 
@@ -53,9 +52,7 @@ fn open(tag: &str) -> (Runtime, PathBuf) {
     let dir = std::env::temp_dir().join(format!("rtok-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut cfg = Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
-    cfg.core.archive_dir = dir.join("archive");
+    let cfg = rtok::testutil::config_in(&dir);
     (Runtime::open(cfg, tag).unwrap(), dir)
 }
 

@@ -1,4 +1,4 @@
-//! OpenCode installer (`rtok agents setup opencode`, plan T11.5, T44.5).
+//! OpenCode installer (`rtok agents install opencode`, plan T11.5, T44.5).
 //!
 //! Three modules, one call path each (D21): `env.OPENAI_BASE_URL` points the host at the
 //! proxy, `mcp.rtok` serves `read`/`search`/`memory`/`graph` (OpenCode's own shape,

@@ -1,6 +1,6 @@
 # Kimi Code
 
-`rtok agents setup kimi` — Moonshot's Kimi Code CLI (`kimi`). Two files under one key,
+`rtok agents install kimi` — Moonshot's Kimi Code CLI (`kimi`). Two files under one key,
 `[setup.kimi] config_path` (default `~/.kimi-code/config.toml`): hooks go into `config.toml`
 as `[[hooks]]` tables, MCP into the sibling `mcp.json`. Edits keep the user's comments and
 every hook or server that is not ours.

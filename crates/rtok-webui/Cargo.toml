@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
-slint = { version = "1.14", default-features = false, features = ["compat-1-2", "backend-winit", "renderer-femtovg", "std"] }
+slint = { version = "1.18", default-features = false, features = ["compat-1-2", "backend-winit", "renderer-femtovg", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -29,9 +29,9 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [build-dependencies]
-slint-build = "1.14"
+slint-build = "1.18"
 
 # Slint's recommended headless backend for integration tests (tests/e2e.rs):
 # `=` pin is mandatory — the crate ignores semver and must match `slint` exactly.
 [dev-dependencies]
-i-slint-backend-testing = "=1.17.1"
+i-slint-backend-testing = "=1.18.0"

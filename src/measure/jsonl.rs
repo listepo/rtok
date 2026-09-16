@@ -5,6 +5,7 @@
 //! `user` / `assistant` message.
 
 use serde_json::Value;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
@@ -36,11 +37,15 @@ pub struct Usage {
 pub struct Parsed {
     pub lines: u64,
     pub malformed: u64,
+    /// Lines that repeat an earlier `message.id`: Claude Code writes one line per streamed
+    /// content block, each carrying the whole message's `usage` again. They are one turn.
+    pub duplicates: u64,
     pub tool_uses: Vec<ToolUse>,
     pub tool_results: Vec<ToolResult>,
     pub assistant_texts: Vec<String>,
     pub usages: Vec<Usage>,
     pub turns: u32,
+    seen_ids: HashSet<String>,
 }
 
 pub fn parse_jsonl(text: &str) -> Parsed {
@@ -83,6 +88,7 @@ pub fn parse_dir(dir: &Path) -> std::io::Result<Parsed> {
                 let one = parse_path(&p)?;
                 acc.lines += one.lines;
                 acc.malformed += one.malformed;
+                acc.duplicates += one.duplicates;
                 acc.turns += one.turns;
                 acc.tool_uses.extend(one.tool_uses);
                 acc.tool_results.extend(one.tool_results);
@@ -122,12 +128,20 @@ fn count_line(line: &str, out: &mut Parsed) {
 
 fn ingest(v: &Value, out: &mut Parsed) {
     let ty = v.get("type").and_then(Value::as_str).unwrap_or("");
-    let is_turn = ty == "user" || ty == "assistant";
+    let msg = v.get("message").unwrap_or(v);
+    // A repeated `message.id` is another block of the same turn, not a new one; its `usage`
+    // is the same block already summed, so `rtok stats` counted every turn several times.
+    let repeat = msg
+        .get("id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !out.seen_ids.insert(id.to_string()));
+    let is_turn = (ty == "user" || ty == "assistant") && !repeat;
     if is_turn {
         out.turns += 1;
+    } else if repeat {
+        out.duplicates += 1;
     }
     let turn = out.turns.saturating_sub(1);
-    let msg = v.get("message").unwrap_or(v);
     if let Some(u) = usage_of(msg).or_else(|| usage_of(v))
         && is_turn
     {
@@ -328,6 +342,27 @@ mod tests {
         assert_eq!(p.usages[0].cache_read_input_tokens, 30);
         assert_eq!(p.tool_uses[0].turn, 0);
         assert_eq!(p.tool_results[0].turn, 1);
+    }
+
+    /// One streamed message is several lines sharing `message.id`, each repeating `usage`:
+    /// one turn, one usage row, every block kept.
+    #[test]
+    fn lines_sharing_a_message_id_are_one_turn() {
+        let usage = json!({"input_tokens": 10, "output_tokens": 4});
+        let a = json!({"type": "assistant", "message": {"id": "msg_1", "content": [
+            {"type": "text", "text": "hi"}], "usage": usage}});
+        let b = json!({"type": "assistant", "message": {"id": "msg_1", "content": [
+            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}], "usage": usage}});
+        let c = json!({"type": "assistant", "message": {"id": "msg_2", "content": [
+            {"type": "text", "text": "bye"}], "usage": usage}});
+        let p = parse_jsonl(&[a, b, c].map(|v| v.to_string()).join("\n"));
+        assert_eq!((p.lines, p.malformed, p.duplicates), (3, 0, 1));
+        assert_eq!(p.turns, 2);
+        assert_eq!(p.usages.len(), 2);
+        assert_eq!(p.usages.iter().map(|u| u.input_tokens).sum::<u32>(), 20);
+        assert_eq!(p.tool_uses.len(), 1);
+        assert_eq!(p.tool_uses[0].turn, 0, "the block stays in its turn");
+        assert_eq!(p.assistant_texts, ["hi", "bye"]);
     }
 
     #[test]

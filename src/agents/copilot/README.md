@@ -1,6 +1,6 @@
 # GitHub Copilot
 
-`rtok agents setup copilot` — GitHub Copilot CLI (`copilot`) and the GitHub Copilot desktop
+`rtok agents install copilot` — GitHub Copilot CLI (`copilot`) and the GitHub Copilot desktop
 app, which read one directory: `[setup.copilot] dir` (default `~/.copilot`, what
 `$COPILOT_HOME` points at). Setup writes two files there: `mcp-config.json` is merged and every
 other server survives; `hooks/rtok.json` is rtok's own file, since Copilot loads every

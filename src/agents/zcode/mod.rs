@@ -1,4 +1,4 @@
-//! ZCode installer (`rtok agents setup zcode`, plan T46.1).
+//! ZCode installer (`rtok agents install zcode`, plan T46.1).
 //!
 //! Z.ai's ZCode desktop app reads a Claude-compatible hook protocol from
 //! `~/.zcode/cli/config.json` — `hooks.enabled`, `hooks.events.<Event>[]` with `timeoutMs` —

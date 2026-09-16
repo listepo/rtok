@@ -197,7 +197,7 @@ pub fn duration(secs: i64) -> String {
     }
 }
 
-/// The `rtok agent sessions` table (T25.2): the operator model's Sessions page as console
+/// The `rtok agents sessions` table (T25.2): the operator model's Sessions page as console
 /// rows, newest first (the query's order). Live sessions only unless `all`; the run column
 /// is `now - started` while live and `ended - started` once ended, with `now` passed in so
 /// the rendering is testable. Dates reuse [`crate::log::stamp`] — the one calendar in the
@@ -264,7 +264,7 @@ pub fn sessions_table(rows: &[SessionTotals], all: bool, now: i64) -> String {
     out
 }
 
-/// One `rtok agent sessions watch` step (T25.3): the same table `sessions_table`
+/// One `rtok agents sessions watch` step (T25.3): the same table `sessions_table`
 /// renders, compared to the previous screen. A change — a session appearing,
 /// ending, spending tokens, or its duration ticking over — returns the whole
 /// table as `fresh` (a pipe prints it again, plain) and as `screen` (a TTY

@@ -1,5 +1,6 @@
 //! Background re-index of the graph store. One writer (D18): a thread in `rtok mcp`.
 #![allow(unexpected_cfgs)]
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::{RecursiveMode, Watcher, event::Event};
 use rtok_plugin_sdk::Ctx;
 use std::collections::HashSet;
@@ -92,6 +93,7 @@ async fn watchman_loop(
         )
         .await
         .map_err(|e| e.to_string())?;
+    let ig = gitignore(root);
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -106,7 +108,7 @@ async fn watchman_loop(
                     Ok(SubscriptionData::Canceled) => break,
                     Ok(SubscriptionData::FilesChanged(payload)) => {
                         for f in payload.files.unwrap_or_default() {
-                            if absorb_event(root.join(f.name.as_path()), &mut pending, &mut rescan) {
+                            if absorb_event(root.join(f.name.as_path()), &ig, &mut pending, &mut rescan) {
                                 last = Instant::now();
                             }
                         }
@@ -186,6 +188,7 @@ fn pump<F>(
 ) where
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
+    let ig = gitignore(root);
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -201,7 +204,7 @@ fn pump<F>(
                 }
                 let mut touched = false;
                 for p in events(ev) {
-                    if absorb_event(p, &mut pending, &mut rescan) {
+                    if absorb_event(p, &ig, &mut pending, &mut rescan) {
                         touched = true;
                     }
                 }
@@ -246,6 +249,15 @@ fn settle(
     *rescan = false;
 }
 
+/// The root's `.gitignore`, so watcher-delivered paths obey it like the walk does: without
+/// it `target/debug/build/*/out/*.rs` was indexed as soon as a build wrote it.
+// ponytail: root `.gitignore` only; add nested ones and `.git/info/exclude` if they show up.
+fn gitignore(root: &Path) -> Gitignore {
+    let mut b = GitignoreBuilder::new(root);
+    b.add(root.join(".gitignore"));
+    b.build().unwrap_or_else(|_| Gitignore::empty())
+}
+
 fn git_path(p: &Path) -> bool {
     p.components().any(|c| c.as_os_str() == ".git")
 }
@@ -258,8 +270,13 @@ fn relevant(p: &Path) -> bool {
 /// forces a rescan so vanished children drop (T36.17). Existing unsupported files — the store,
 /// WAL, logs, docs — must not: they used to clear `pending` and reset the quiet window on every
 /// SQLite write when the DB lived under the watch root (Linux inotify reports each WAL write).
-fn absorb_event(p: PathBuf, pending: &mut HashSet<PathBuf>, rescan: &mut bool) -> bool {
-    if git_path(&p) {
+fn absorb_event(
+    p: PathBuf,
+    ig: &Gitignore,
+    pending: &mut HashSet<PathBuf>,
+    rescan: &mut bool,
+) -> bool {
+    if git_path(&p) || ig.matched_path_or_any_parents(&p, p.is_dir()).is_ignore() {
         return false;
     }
     if relevant(&p) {
@@ -434,8 +451,10 @@ mod tests {
         fs::write(dir.join("rtok.db"), "x").unwrap();
         let mut pending = HashSet::from([dir.join("watched.rs")]);
         let mut rescan = false;
+        let ig = Gitignore::empty();
         assert!(!absorb_event(
             dir.join("rtok.db"),
+            &ig,
             &mut pending,
             &mut rescan
         ));
@@ -444,11 +463,32 @@ mod tests {
             "existing unsupported file triggered a rescan"
         );
         let gone_dir = dir.join("src/module");
-        assert!(absorb_event(gone_dir, &mut pending, &mut rescan));
+        assert!(absorb_event(gone_dir, &ig, &mut pending, &mut rescan));
         assert!(
             rescan && pending.is_empty(),
             "removed directory must rescan"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A path the root `.gitignore` covers never reaches `pending`, even under a missing dir.
+    #[test]
+    fn gitignored_event_is_dropped() {
+        let (_rt, dir) = mk("watch-gitignore");
+        fs::write(dir.join(".gitignore"), "target/\n").unwrap();
+        let ig = gitignore(&dir);
+        let mut pending = HashSet::new();
+        let mut rescan = false;
+        let built = dir.join("target/debug/build/x/out/y.rs");
+        assert!(!absorb_event(built, &ig, &mut pending, &mut rescan));
+        assert!(pending.is_empty() && !rescan);
+        assert!(absorb_event(
+            dir.join("src/lib.rs"),
+            &ig,
+            &mut pending,
+            &mut rescan
+        ));
+        assert_eq!(pending.len(), 1);
         let _ = fs::remove_dir_all(dir);
     }
 

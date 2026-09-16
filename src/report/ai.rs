@@ -318,8 +318,9 @@ fn flat_lines(keys: &[&str], rows: &[Vec<String>]) -> String {
         .join("\n")
 }
 
-/// One unfolded line per cell: a raw newline would break the toon block structure.
-fn flat(s: &str) -> String {
+/// One unfolded line per cell: a raw newline would break the toon block structure
+/// (and a Markdown table row — `markdown::cell` reuses it).
+pub(super) fn flat(s: &str) -> String {
     s.replace(['\n', '\r'], " ")
 }
 

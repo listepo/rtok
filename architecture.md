@@ -78,7 +78,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
 | `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Serves the D23 operator model `rtok tui` also renders; the WASM UI itself is still thin (Plugins strip) vs `model::pages()` — Sessions/Calls/Logs/Doctor are T19.4. UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
-| `src/agents/` | agent hosts (`rtok agents setup\|remove\|list`): one folder per host, each `<host>/mod.rs` implementing the `Agent` contract (variants, files, installed modules, apply) and `<host>/README.md` saying which rtok modules it takes and why the rest cannot be taken; a test keeps README and `support()` in step. Backups and `--dry-run` come from `rtok-agent-sdk`. | T2.3, P10, T44.2 |
+| `src/agents/` | agent hosts (`rtok agents install\|remove\|list`): one folder per host, each `<host>/mod.rs` implementing the `Agent` contract (variants, files, installed modules, apply) and `<host>/README.md` saying which rtok modules it takes and why the rest cannot be taken; a test keeps README and `support()` in step. Backups and `--dry-run` come from `rtok-agent-sdk`. | T2.3, P10, T44.2 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
 | `tests/fixtures/hooks/*.json` | one real payload per hook event | T0.6 |
 

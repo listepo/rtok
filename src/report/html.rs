@@ -6,6 +6,7 @@
 //! busts per cause. The model carries no per-turn series, so the rest stays tables.
 
 use super::Document;
+use super::markdown::ms;
 
 const CSS: &str = "body{font-family:sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;color:#222}\ntable{border-collapse:collapse;margin:1rem 0}\nth,td{border:1px solid #ccc;padding:.25rem .5rem;text-align:left}\npre{background:#f6f6f6;padding:1rem;overflow-x:auto}\nsvg.chart{background:#fafafa;margin:1rem 0}\n";
 
@@ -254,11 +255,6 @@ fn bars(title: &str, pairs: &[(String, i64)]) -> String {
     }
     o.push_str("</svg>\n");
     o
-}
-
-/// `4.0` for a recorded latency, `—` for none — the Markdown table's spelling.
-fn ms(v: Option<f64>) -> String {
-    v.map(|v| format!("{v:.1}")).unwrap_or_else(|| "—".into())
 }
 
 /// Escape text for element content and attribute values.

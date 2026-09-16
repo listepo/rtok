@@ -1,4 +1,4 @@
-//! Kimi Code installer (`rtok agents setup kimi`, plan T46.2).
+//! Kimi Code installer (`rtok agents install kimi`, plan T46.2).
 //!
 //! Moonshot's Kimi Code CLI reads hooks as `[[hooks]]` tables in `~/.kimi-code/config.toml`
 //! (`event`, `matcher`, `command`, `timeout` in seconds; Claude-compatible stdin, exit 2

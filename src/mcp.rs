@@ -6,7 +6,7 @@ use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow, bail};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ServerCapabilities,
     ServerInfo, Tool,
@@ -104,13 +104,25 @@ struct Server {
 
 impl Server {
     fn new(cfg: &Config) -> Result<Self> {
-        let cx = Runtime::open(cfg.clone(), "mcp")?;
+        // One session per process: `read_cache` rows are keyed by session and never expire, so
+        // the literal "mcp" made every `rtok mcp` process answer `unchanged since <sha>` for a
+        // file only another conversation had read. The surface stays "mcp" (see `record`).
+        let cx = Runtime::open(cfg.clone(), format!("mcp-{}", std::process::id()))?;
         let mut listed = vec![Listed {
             plugin: "archive",
             def: expand_def(),
         }];
+        let builtin: Vec<&str> = crate::plugins::all()
+            .iter()
+            .map(|p| p.manifest().id)
+            .collect();
         for p in Registry::new(cfg).enabled() {
             let id = p.manifest().id;
+            // Out-of-tree (WASM) plugins have no `tools/call` arm in `invoke` yet, so listing
+            // their tools only bought callers an `unknown tool` error.
+            if !builtin.contains(&id) {
+                continue;
+            }
             for def in p.mcp_tools() {
                 if listed.iter().any(|t| t.def.name == def.name) {
                     continue;
@@ -125,8 +137,24 @@ impl Server {
         self.listed.iter().map(|t| to_tool(&t.def)).collect()
     }
 
+    /// One line in, at most one line out. A JSON-RPC batch (top-level array) answers with an
+    /// array of the responses its members produced; an empty batch is `-32600` per JSON-RPC 2.0.
     fn handle_line(&self, line: &str) -> Option<String> {
         let req: Value = serde_json::from_str(line).ok()?;
+        if let Some(items) = req.as_array() {
+            if items.is_empty() {
+                return Some(
+                    json!({"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"empty batch"}})
+                        .to_string(),
+                );
+            }
+            let out: Vec<Value> = items.iter().filter_map(|v| self.handle_value(v)).collect();
+            return (!out.is_empty()).then(|| Value::Array(out).to_string());
+        }
+        self.handle_value(&req).map(|v| v.to_string())
+    }
+
+    fn handle_value(&self, req: &Value) -> Option<Value> {
         let method = req["method"].as_str().unwrap_or("");
         if req.get("id").is_none() || method.starts_with("notifications/") {
             return None;
@@ -150,12 +178,11 @@ impl Server {
             }
             _ => {
                 return Some(
-                    json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":method}})
-                        .to_string(),
+                    json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":method}}),
                 );
             }
         };
-        Some(json!({"jsonrpc":"2.0","id":id,"result":result}).to_string())
+        Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
     }
 
     fn call_tool(&self, name: &str, args: &Value) -> CallToolResult {
@@ -170,9 +197,19 @@ impl Server {
         } else {
             args.clone()
         };
-        let text = invoke(&self.cx, name, &args);
+        // A failure is an `isError` result with the same message text, not a success block
+        // the model has to recognise by wording.
+        let (text, ok) = match invoke(&self.cx, name, &args) {
+            Ok(t) => (t, true),
+            Err(e) => (e.to_string(), false),
+        };
         let _ = record(&self.cx, plugin, name, &args, &text);
-        CallToolResult::success(vec![ContentBlock::text(text)])
+        let content = vec![ContentBlock::text(text)];
+        if ok {
+            CallToolResult::success(content)
+        } else {
+            CallToolResult::error(content)
+        }
     }
 }
 
@@ -185,7 +222,7 @@ fn to_tool(def: &ToolDef) -> Tool {
     Tool::new(def.name, def.description, Arc::new(schema))
 }
 
-fn invoke(cx: &Runtime, name: &str, args: &Value) -> String {
+fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
     match name {
         "expand" => expand_text(cx, args),
         #[cfg(feature = "memory")]
@@ -204,28 +241,25 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> String {
         "symbol" | "callers" | "impact" | "outline" => {
             crate::plugins::graph::call(&crate::plugin::Ctx::new(cx), name, args)
         }
-        _ => format!("unknown tool: {name}"),
+        _ => bail!("unknown tool: {name}"),
     }
 }
 
-fn expand_text(cx: &Runtime, args: &Value) -> String {
+fn expand_text(cx: &Runtime, args: &Value) -> Result<String> {
     let id = args["id"].as_str().unwrap_or("");
-    if let Some(spec) = args["lines"].as_str()
-        && let Err(e) = crate::expand::parse_range(spec, usize::MAX)
-    {
-        return e.to_string();
+    if let Some(spec) = args["lines"].as_str() {
+        crate::expand::parse_range(spec, usize::MAX)?;
     }
-    match crate::expand::fetch(cx, id) {
-        Ok(Some(bytes)) => {
-            let text = String::from_utf8_lossy(&bytes);
-            match slice(&text, args["lines"].as_str(), args["grep"].as_str()) {
-                Ok(body) => cap_result(&body, id, cx.config.mcp.max_result_chars as usize),
-                Err(e) => e.to_string(),
-            }
-        }
-        Ok(None) => format!("unknown archive id: {id}"),
-        Err(e) => e.to_string(),
-    }
+    let Some(bytes) = crate::expand::fetch(cx, id)? else {
+        bail!("unknown archive id: {id}");
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let body = slice(&text, args["lines"].as_str(), args["grep"].as_str())?;
+    Ok(cap_result(
+        &body,
+        id,
+        cx.config.mcp.max_result_chars as usize,
+    ))
 }
 
 fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> Result<String> {
@@ -236,90 +270,66 @@ fn cap_result(text: &str, id: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }
-    let marker = format!("\n… expand({id}) …\n");
-    let body_budget = max.saturating_sub(marker.chars().count());
-    let keep = body_budget / 2;
-    let chars: Vec<char> = text.chars().collect();
-    let head: String = chars.iter().take(keep).collect();
-    let tail: String = chars
-        .iter()
-        .rev()
-        .take(keep)
-        .copied()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    format!("{head}{marker}{tail}")
+    crate::expand::cut(text, &format!("\n… expand({id}) …\n"), max)
 }
 
 #[cfg(feature = "memory")]
-fn mem_save(cx: &Runtime, args: &Value) -> String {
+fn mem_save(cx: &Runtime, args: &Value) -> Result<String> {
     let kind = args["kind"].as_str().unwrap_or("note");
     let title = args["title"].as_str().unwrap_or("");
     let body = args["body"].as_str().unwrap_or("");
     let project = args["project"].as_str();
-    match crate::plugins::memory::mem_save(cx, kind, title, body, project) {
-        Ok(id) => json!({"id": id}).to_string(),
-        Err(e) => e.to_string(),
-    }
+    let id = crate::plugins::memory::mem_save(cx, kind, title, body, project)?;
+    Ok(json!({"id": id}).to_string())
 }
 
 #[cfg(feature = "memory")]
-fn mem_search(cx: &Runtime, args: &Value) -> String {
+fn mem_search(cx: &Runtime, args: &Value) -> Result<String> {
     let query = args["query"].as_str().unwrap_or("");
-    let limit = args["limit"].as_u64().unwrap_or(5) as u32;
-    match crate::plugins::memory::mem_search(cx, query, limit) {
-        Ok(hits) => json!(
-            hits.iter()
-                .map(|h| json!({"id": h.id, "title": h.title, "snippet": h.snippet}))
-                .collect::<Vec<_>>()
-        )
-        .to_string(),
-        Err(e) => e.to_string(),
-    }
+    // `plugins.memory.search_limit` is the ceiling, not just the default: the caller's
+    // `limit` used to size the response unbounded.
+    let max = u64::from(cx.config.plugins.memory.search_limit);
+    let limit = args["limit"].as_u64().map_or(max, |n| n.min(max)) as u32;
+    let hits = crate::plugins::memory::mem_search(cx, query, limit)?;
+    Ok(json!(
+        hits.iter()
+            .map(|h| json!({"id": h.id, "title": h.title, "snippet": h.snippet}))
+            .collect::<Vec<_>>()
+    )
+    .to_string())
 }
 
 #[cfg(feature = "read")]
-fn search_files(cx: &Runtime, args: &Value) -> String {
+fn search_files(cx: &Runtime, args: &Value) -> Result<String> {
     let pattern = args["pattern"].as_str().unwrap_or("");
     let path = args["path"].as_str().unwrap_or(".");
     let max = args["max"].as_u64().map(|n| n as u32);
-    match crate::plugins::read::search::search(&crate::plugin::Ctx::new(cx), pattern, path, max) {
-        Ok(s) => s,
-        Err(e) => e.to_string(),
-    }
+    crate::plugins::read::search::search(&crate::plugin::Ctx::new(cx), pattern, path, max)
 }
 
 #[cfg(feature = "read")]
-fn tree_files(cx: &Runtime, args: &Value) -> String {
+fn tree_files(cx: &Runtime, args: &Value) -> Result<String> {
     let path = args["path"].as_str().unwrap_or(".");
     let depth = args["depth"].as_u64().map(|n| n as u32);
-    match crate::plugins::read::search::tree(&crate::plugin::Ctx::new(cx), path, depth) {
-        Ok(s) => s,
-        Err(e) => e.to_string(),
-    }
+    crate::plugins::read::search::tree(&crate::plugin::Ctx::new(cx), path, depth)
 }
 
 #[cfg(feature = "read")]
-fn read_file(cx: &Runtime, args: &Value) -> String {
+fn read_file(cx: &Runtime, args: &Value) -> Result<String> {
     let path = args["path"].as_str().unwrap_or("");
     let mode = args["mode"].as_str().unwrap_or("");
     let range = args["range"].as_str();
-    match crate::plugins::read::read(&crate::plugin::Ctx::new(cx), path, mode, range) {
-        Ok(s) => s,
-        Err(e) => e.to_string(),
-    }
+    crate::plugins::read::read(&crate::plugin::Ctx::new(cx), path, mode, range)
 }
 
 #[cfg(feature = "memory")]
-fn mem_get(cx: &Runtime, args: &Value) -> String {
-    let id = args["id"].as_i64().unwrap_or(0) as i32;
-    match crate::plugins::memory::mem_get(&crate::plugin::Ctx::new(cx), id) {
-        Ok(Some(body)) => body,
-        Ok(None) => format!("unknown note id: {id}"),
-        Err(e) => e.to_string(),
-    }
+fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
+    let id = args["id"]
+        .as_i64()
+        .and_then(|n| i32::try_from(n).ok())
+        .ok_or_else(|| anyhow!("invalid note id: {}", args["id"]))?;
+    crate::plugins::memory::mem_get(&crate::plugin::Ctx::new(cx), id)?
+        .ok_or_else(|| anyhow!("unknown note id: {id}"))
 }
 
 fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) -> Result<()> {
@@ -408,7 +418,7 @@ mod tests {
             .put_archive("mcp", blob.as_bytes(), &cx.config.core.archive_dir)
             .unwrap();
         let args = serde_json::json!({"id": id});
-        let out = expand_text(&cx, &args);
+        let out = expand_text(&cx, &args).unwrap();
         assert!(out.contains("expand("), "{out}");
         assert!(
             out.chars().count() <= max_chars as usize,
@@ -449,6 +459,50 @@ mod tests {
         assert_eq!(server.cx.store.count_kind("mcp_call").unwrap(), 1);
         assert_eq!(server.cx.store.count_call_io().unwrap(), 1);
         assert_eq!(server.cx.store.count_tokens().unwrap(), 3);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A failed call is an `isError` result carrying the message, never a success block.
+    #[test]
+    fn failed_call_sets_is_error() {
+        let (cfg, dir) = tmp("iserr");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope","arguments":{}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "unknown tool: nope");
+        let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A JSON-RPC batch answers as one array; notifications inside it produce nothing.
+    #[test]
+    fn batch_answers_with_an_array() {
+        let (cfg, dir) = tmp("batch");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","id":2,"method":"nope"}]"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        let arr = v.as_array().expect("array");
+        assert_eq!(arr.len(), 2, "{v}");
+        assert_eq!(arr[0]["id"], 1);
+        assert_eq!(arr[1]["error"]["code"], -32601);
+        assert!(server.handle_line("[]").unwrap().contains("-32600"));
+        assert!(
+            server
+                .handle_line(r#"[{"jsonrpc":"2.0","method":"notifications/x"}]"#)
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Each `rtok mcp` process is its own session; the surface tag stays "mcp".
+    #[test]
+    fn session_is_per_process() {
+        let (cfg, dir) = tmp("sess");
+        let server = Server::new(&cfg).unwrap();
+        assert_eq!(server.cx.session, format!("mcp-{}", std::process::id()));
         let _ = fs::remove_dir_all(dir);
     }
 

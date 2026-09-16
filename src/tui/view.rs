@@ -21,27 +21,15 @@ use crate::web::model::{self, PluginPage};
 /// The alert row stays up for the whole disabled period (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
     let alert = app.snapshot().usage.alerts.first().cloned();
-    let areas = if alert.is_some() {
-        Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .areas(frame.area())
-    } else {
-        // Same five slots; alert row height 0 when absent.
-        Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(0),
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .areas(frame.area())
-    };
-    let [header, alert_area, tabs, body, footer] = areas;
+    let [header, alert_area, tabs, body, footer] = Layout::vertical([
+        Constraint::Length(1),
+        // Alert row: height 0 when absent, same five slots either way.
+        Constraint::Length(u16::from(alert.is_some())),
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(frame.area());
     frame.render_widget(Paragraph::new(header_line(frame.area())), header);
     if let Some(msg) = alert {
         frame.render_widget(
@@ -373,7 +361,7 @@ fn time_of(ts: i64) -> String {
         .map_or_else(|| "-".into(), |(_, t)| t.to_string())
 }
 
-/// The model's Sessions page (T25.1 / D23): the same table `rtok agent sessions`
+/// The model's Sessions page (T25.1 / D23): the same table `rtok agents sessions`
 /// prints, built from the snapshot so the TUI cannot disagree with the CLI.
 fn sessions_text(app: &App) -> Paragraph<'static> {
     let now = std::time::SystemTime::now()

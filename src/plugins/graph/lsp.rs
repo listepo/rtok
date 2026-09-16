@@ -424,18 +424,7 @@ fn finish(cx: &Ctx, tool: &'static str, t0: Instant, text: String) -> Result<Str
 
 fn body(root: &Path, path: &str, line: i32, end_line: i32, budget: usize) -> String {
     let src = std::fs::read_to_string(root.join(path)).unwrap_or_default();
-    let first = line.max(1) as usize - 1;
-    let last = end_line.max(line) as usize;
-    let lines: Vec<&str> = src.lines().skip(first).take(last - first).collect();
-    let mut out = String::new();
-    for l in lines.iter().take(budget) {
-        out.push_str(l);
-        out.push('\n');
-    }
-    if lines.len() > budget {
-        out.push_str(&format!("  … {} more lines\n", lines.len() - budget));
-    }
-    out
+    super::body_lines(&src, line, end_line, budget)
 }
 
 pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
@@ -604,7 +593,14 @@ pub(crate) fn outline(cx: &Ctx, root: &Path, path: &str) -> Result<String> {
     } else {
         root.join(path)
     };
-    let ws = workspace_of(&abs);
+    // Same session key as `symbol` / `callers` / `impact` (cwd) whenever cwd is a workspace;
+    // the nearest manifest is the fallback. Keyed by the nearest manifest alone, alternating
+    // `outline` and `symbol` calls in a Cargo workspace killed and respawned the server each time.
+    let ws = if pick(root).is_ok() {
+        root.to_path_buf()
+    } else {
+        workspace_of(&abs)
+    };
     with_session(&ws, |s| {
         let uri = file_uri(&abs);
         s.did_open(&uri)?;

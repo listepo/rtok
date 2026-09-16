@@ -12,7 +12,7 @@ Commands:
   bench    A/B benchmark of host configurations
   doctor   Inspect hooks, MCP servers and the proxy chain
   info     Version, effective paths, disk usage, error count and proxy status
-  agents   Agent hosts (`rtok agents setup|remove|list …`) [alias: agent]
+  agents   Agent hosts (`rtok agents install|remove|list …`) [alias: agent]
   run      Execute a command, archive its raw output, print the filtered version
   filter   Filter text from stdin without executing
   expand   Print an archived payload

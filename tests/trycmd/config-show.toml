@@ -1,0 +1,8 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/bench-config.toml config show"
+
+# Hermetic by construction: the fixture pins the user layer and a cleared env keeps
+# ambient `RTOK_*` / `RTOK_HOME` / `RTOK_CONFIG` (and any `.env` above the repo) out of
+# the layering, so the output is defaults plus the fixture's `[bench]` keys.
+[env]
+inherit = false

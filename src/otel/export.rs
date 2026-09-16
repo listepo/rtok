@@ -1,6 +1,8 @@
 //! T16.5 (D19): read past each watermark, encode, POST, advance on 2xx. Never panics: a
 //! failure is one `logs` row (`source = otel`), the marks stay, and the report says so.
 //! T16.9: an exclusive file lock serialises concurrent flushers across processes.
+//! Each stream is isolated: a POST error keeps its own mark and continues with the next
+//! stream, so one failing pipeline does not stall the others for a round.
 //! A 404 on `/v1/traces`, `/v1/logs`, or `/v1/metrics` is a backend without that pipeline
 //! (Jaeger serves traces only; a logs-only collector may 404 traces): the stream is skipped,
 //! its mark stays, nothing is logged — else every flush would add the `logs` row that the next
@@ -20,6 +22,18 @@ use crate::plugin::Runtime;
 
 /// Rows per stream per flush; the rest goes next time.
 pub const BATCH: i64 = 1000;
+
+/// A `calls` row this young with no `ms` is still running — the proxy inserts the row before
+/// forwarding and sets `ms` and the usage in `finish`; a hook's row closes with `dispatch`.
+/// Exported as it stood, it was a 0 ms span without usage for good, the mark past it. Older
+/// than this it is a crashed call and drains as it is.
+const IN_FLIGHT_SECS: i64 = 300;
+
+fn in_flight(c: &crate::store::models::Call, now: i64) -> bool {
+    c.ms.is_none()
+        && matches!(c.kind.as_str(), "api_request" | "hook")
+        && c.ts > now - IN_FLIGHT_SECS
+}
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Report {
@@ -92,6 +106,8 @@ pub async fn flush(cx: &Runtime) -> Report {
         let msg = e.to_string();
         cx.log("error", "otel", "flush", &msg);
         rep.error = Some(msg);
+    } else if let Some(msg) = rep.error.as_deref() {
+        cx.log("error", "otel", "flush", msg);
     }
     rep
 }
@@ -134,7 +150,13 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
     let stail = store.otel_mark("sessions_tail")?;
     let cmark = store.otel_mark("calls")?;
     let sessions = store.sessions_pending_export(smark, stail, BATCH)?;
-    let calls = store.calls_after(cmark, BATCH)?;
+    let mut calls = store.calls_after(cmark, BATCH)?;
+    // Stop in front of the first row still running: the mark advances to the last exported
+    // id, so the finished span ships on the flush after `finish`.
+    let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+    if let Some(i) = calls.iter().position(|c| in_flight(c, now)) {
+        calls.truncate(i);
+    }
     if !(sessions.is_empty() && calls.is_empty()) {
         let mut spans = Vec::with_capacity(sessions.len() + calls.len());
         for se in &sessions {
@@ -148,15 +170,17 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
             let d = store.call_detail(c)?;
             spans.push(map::call_span(c, &d, &cx.config.otel));
         }
-        if post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await? {
-            rep.spans = spans.len();
-            rep.posted += 1;
-            if let Some(c) = calls.last() {
-                store.otel_advance("calls", i64::from(c.id))?;
+        match post(&client, ep, "/v1/traces", &otlp::traces(&res, &spans)).await {
+            Ok(true) => {
+                rep.spans = spans.len();
+                rep.posted += 1;
+                if let Some(c) = calls.last() {
+                    store.otel_advance("calls", i64::from(c.id))?;
+                }
+                advance_sessions(store, smark, stail, &sessions)?;
             }
-            advance_sessions(store, smark, stail, &sessions)?;
-        } else {
-            rep.skipped.push("traces");
+            Ok(false) => rep.skipped.push("traces"),
+            Err(e) => push_error(rep, e.to_string()),
         }
     }
 
@@ -164,14 +188,16 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
     let rows = store.logs_after(lmark, BATCH)?;
     if !rows.is_empty() {
         let recs: Vec<_> = rows.iter().map(map::log_record).collect();
-        if post(&client, ep, "/v1/logs", &otlp::logs(&res, &recs)).await? {
-            rep.logs = recs.len();
-            rep.posted += 1;
-            if let Some(r) = rows.last() {
-                store.otel_advance("logs", i64::from(r.id))?;
+        match post(&client, ep, "/v1/logs", &otlp::logs(&res, &recs)).await {
+            Ok(true) => {
+                rep.logs = recs.len();
+                rep.posted += 1;
+                if let Some(r) = rows.last() {
+                    store.otel_advance("logs", i64::from(r.id))?;
+                }
             }
-        } else {
-            rep.skipped.push("logs");
+            Ok(false) => rep.skipped.push("logs"),
+            Err(e) => push_error(rep, e.to_string()),
         }
     }
 
@@ -180,13 +206,27 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
     let sums = metrics::sums(store, now_ns)?;
-    if post(&client, ep, "/v1/metrics", &otlp::metrics(&res, &sums)).await? {
-        rep.points = sums.iter().map(|m| m.points.len()).sum();
-        rep.posted += 1;
-    } else {
-        rep.skipped.push("metrics");
+    match post(&client, ep, "/v1/metrics", &otlp::metrics(&res, &sums)).await {
+        Ok(true) => {
+            rep.points = sums.iter().map(|m| m.points.len()).sum();
+            rep.posted += 1;
+        }
+        Ok(false) => rep.skipped.push("metrics"),
+        Err(e) => push_error(rep, e.to_string()),
     }
     Ok(())
+}
+
+/// A failed stream keeps its watermark for the next flush; the message joins the report
+/// so one `logs` row covers every stream that failed.
+fn push_error(rep: &mut Report, msg: String) {
+    match &mut rep.error {
+        Some(prev) => {
+            prev.push_str("; ");
+            prev.push_str(&msg);
+        }
+        None => rep.error = Some(msg),
+    }
 }
 
 fn advance_sessions(

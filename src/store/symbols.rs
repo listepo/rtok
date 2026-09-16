@@ -6,11 +6,19 @@ use anyhow::Result;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Integer, Text};
+use diesel::sqlite::SqliteConnection;
 
 use super::Store;
 use super::schema::symbols;
 
 const INSERT_CHUNK: usize = 999 / 11;
+
+/// Every row of one file under one root, through the `(root, path)` index.
+fn delete_file(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<usize> {
+    diesel::delete(symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))))
+        .execute(conn)
+}
+
 impl Store {
     /// Rows indexed under one repo root (T8.3). Every symbol call is scoped to a root, so
     /// two repos in the one store (D8) never evict or answer for each other.
@@ -213,12 +221,26 @@ impl Store {
     }
 
     /// Drop rows for one canonical absolute file path. No indexing on the hook path.
-    /// Matched as `root || '/' || path` so a same-named file in another repo survives.
+    /// A same-named file in another repo survives: the row must match on `(root, path)`.
+    /// The caller does not know the root, so every `/` split of the path is tried through
+    /// [`Store::mark_symbols_stale_in`] — a dozen indexed point deletes, where
+    /// `WHERE ? = root || '/' || path` scanned the whole table on each `Edit`/`Write`.
     pub fn mark_symbols_stale(&self, abs_path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query("DELETE FROM symbols WHERE ? = root || '/' || path")
-            .bind::<Text, _>(abs_path)
-            .execute(&mut *conn)?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            for (i, _) in abs_path.match_indices('/') {
+                delete_file(conn, &abs_path[..i], &abs_path[i + 1..])?;
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    /// Drop the rows of `rel_path` under `root`: one indexed delete for a caller that knows
+    /// the root.
+    pub fn mark_symbols_stale_in(&self, root: &str, rel_path: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        delete_file(&mut conn, root, rel_path)?;
         Ok(())
     }
 

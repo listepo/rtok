@@ -1,6 +1,6 @@
 # pi
 
-`rtok agents setup pi` — the pi coding agent (`pi`). Desktop and CLI read the same
+`rtok agents install pi` — the pi coding agent (`pi`). Desktop and CLI read the same
 `~/.pi/agent/extensions` tree.
 
 No config file is edited: the install is one linked extension, `<extensions_path>/rtok` →

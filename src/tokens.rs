@@ -82,9 +82,6 @@ mod tests {
 
 /// T1.5: skip without a key. Full `count_tokens` fit lands when a key is present.
 pub fn calibrate_or_skip(_cfg: &crate::config::Config) -> &'static str {
-    if std::env::var_os("ANTHROPIC_API_KEY").is_none() {
-        return "skipped";
-    }
     "skipped"
 }
 

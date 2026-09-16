@@ -1,4 +1,4 @@
-//! What every `rtok agents setup <host>` installer does, once.
+//! What every `rtok agents install <host>` installer does, once.
 //!
 //! An agent host — Claude Code, Cursor, Codex, OpenCode, pi — is a config file rtok edits and,
 //! for some of them, a plugin directory rtok installs. The *shapes* differ (JSON hooks, a TOML

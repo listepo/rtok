@@ -97,6 +97,9 @@ fn rewrite_block(
     let a = cx.plugin_config::<crate::config::Archive>("archive");
     let (archive_id, live, kind) = match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
+        // `archive_decisions` is shared with `toon` (same `tool_use_id` key); replaying its
+        // block here measured the saving twice, once under each plugin.
+        Ok(Some(d)) if d.pointer.starts_with(crate::plugins::toon::PREFIX) => return None,
         Ok(Some(d)) => {
             let kind = if a.tiers {
                 tier_kind(&d.pointer)
@@ -340,7 +343,7 @@ mod tests {
         ];
         rewrite(refs(&mut second), &Ctx::new(&cx));
         assert_eq!(first_body, second);
-        assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
+        assert_eq!(cx.store.mark_expanded("s", &archive_id).unwrap(), 1);
         let mut third = vec![
             Value::String(big("one")),
             Value::String(big("two")),
@@ -351,6 +354,24 @@ mod tests {
         ];
         assert_eq!(rewrite(refs(&mut third), &Ctx::new(&cx)).len(), 1);
         assert_eq!(third[0], Value::String(big("one")));
+    }
+
+    /// `archive` runs before `toon` and both key `archive_decisions` by `tool_use_id`, so
+    /// a toon-encoded block used to come back as an `archive` measurement as well.
+    #[test]
+    fn a_toon_decision_is_not_replayed_as_an_archive_saving() {
+        use rtok_plugin_sdk::Archive;
+        let cx = cx("toon-scope");
+        let id = cx.put_archive(big("t1").as_bytes()).unwrap();
+        cx.store
+            .put_archive_decision("tu-1", &id, "s", &format!("[toon {id}]\na,b,c"))
+            .unwrap();
+        let mut values: Vec<Value> = (1..=6)
+            .map(|n| Value::String(big(&format!("t{n}"))))
+            .collect();
+        let ms = rewrite(refs(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 1, "only tu-2 is archive's");
+        assert_eq!(values[0], Value::String(big("t1")), "left for toon");
     }
 
     /// A pointer is cut from the payload it replaced, so it belongs to the session that made
@@ -536,7 +557,7 @@ mod tests {
                 );
             }
             let archive_id = ms[0].ref_id.clone().unwrap();
-            assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
+            assert_eq!(cx.store.mark_expanded("s", &archive_id).unwrap(), 1);
             let mut expanded = original.clone();
             assert_eq!(
                 rewrite(wire.tool_results(&mut expanded), &Ctx::new(&cx)).len(),

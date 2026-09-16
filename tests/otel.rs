@@ -6,7 +6,6 @@ use std::process::Command;
 use std::time::Duration;
 
 use httpmock::prelude::*;
-use rtok::config::Config;
 use rtok::otel::export::flush_blocking;
 use rtok::plugin::{Measurement, Runtime};
 
@@ -20,9 +19,7 @@ fn home(tag: &str) -> PathBuf {
 }
 
 fn ctx(dir: &Path, endpoint: &str) -> Runtime {
-    let mut cfg = Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
-    cfg.core.archive_dir = dir.join("archive");
+    let mut cfg = rtok::testutil::config_in(dir);
     cfg.otel.endpoint = endpoint.into();
     cfg.otel.headers = "x-key=k".into();
     cfg.otel.flush_secs = 2;
@@ -51,6 +48,8 @@ fn seed(cx: &Runtime) {
     let req = br#"{"hook_event_name":"PostToolUse","tool_name":"Read","tool_use_id":"toolu_1","tool_input":{"file_path":"/x"},"tool_response":"body"}"#;
     s.insert_call_io(hook, Some(req), None, 65536, None)
         .unwrap();
+    // `dispatch` closes a hook row with its `ms`; an open one is still running.
+    s.set_call_ms(hook, 1.5).unwrap();
     let mcp = s
         .insert_call(
             "s1",
@@ -84,6 +83,8 @@ fn seed(cx: &Runtime) {
             Some("/v1/messages"),
         )
         .unwrap();
+    // `finish` sets `ms` and the usage once the response is through.
+    s.set_call_ms(chat, 25.0).unwrap();
     s.insert_usage("s1", Some("claude-x"), "anthropic", 100, 10, 20, 30, chat)
         .unwrap();
     s.insert_measurement(
@@ -204,6 +205,58 @@ fn session_in_watermark_second_posts_once() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A proxy call whose response is still streaming has its `calls` row but no `ms` or usage
+/// yet: the batch stops in front of it — and of everything after it — and the mark stays
+/// there, so the finished span ships on the next flush instead of a 0 ms one for good.
+#[test]
+fn an_in_flight_call_waits_for_its_finish() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}");
+    });
+    for path in ["/v1/logs", "/v1/metrics"] {
+        server.mock(|when, then| {
+            when.method(POST).path(path);
+            then.status(200).body("{}");
+        });
+    }
+    let dir = home("inflight");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let s = &cx.store;
+    let (pid, mid) = s.upsert_model("anthropic", "claude-x").unwrap();
+    let open = s
+        .insert_call(
+            "s1",
+            "proxy",
+            "api_request",
+            None,
+            Some(pid),
+            Some(mid),
+            None,
+            Some("/v1/messages"),
+        )
+        .unwrap();
+    let later = s
+        .insert_call("s1", "hook", "hook", None, None, None, None, Some("Stop"))
+        .unwrap();
+    s.set_call_ms(later, 2.0).unwrap();
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    assert_eq!(
+        r.spans, 3,
+        "the seeded calls ship; the open one and its followers wait"
+    );
+    assert_eq!(s.otel_mark("calls").unwrap(), 3);
+    s.set_call_ms(open, 40.0).unwrap();
+    assert_eq!(flush_blocking(&cx).spans, 2, "finished: both ship");
+    assert_eq!(s.otel_mark("calls").unwrap(), i64::from(later));
+    assert_eq!(flush_blocking(&cx).spans, 0);
+    traces.assert_calls(2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Traces 404 must not block logs and metrics or log an error every flush.
 #[test]
 fn a_traces_404_still_posts_logs_and_metrics() {
@@ -233,6 +286,39 @@ fn a_traces_404_still_posts_logs_and_metrics() {
     flush_blocking(&cx);
     logs.assert_calls(1);
     metrics.assert_calls(2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A 500 on traces must not stall the other streams: logs and metrics still post, only
+/// the traces mark stays for the retry, and the error is reported.
+#[test]
+fn traces_500_still_posts_logs_and_metrics() {
+    let server = MockServer::start();
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(500).body("nope");
+    });
+    let logs = server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}");
+    });
+    let metrics = server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}");
+    });
+    let dir = home("t500");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let r = flush_blocking(&cx);
+    let err = r.error.clone().expect("a 500 is an error");
+    assert!(err.contains("/v1/traces: HTTP 500"), "{err}");
+    assert_eq!((r.spans, r.logs, r.points, r.posted), (0, 1, 8, 2));
+    assert!(r.skipped.is_empty(), "{r:?}");
+    traces.assert_calls(1);
+    logs.assert_calls(1);
+    metrics.assert_calls(1);
+    assert_eq!(cx.store.otel_mark("calls").unwrap(), 0);
+    assert_eq!(cx.store.otel_mark("logs").unwrap(), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -453,6 +539,8 @@ fn metrics_repeat_the_totals_every_flush() {
             .body_includes("rtok.tokens.saved")
             .body_includes("rtok.calls")
             .body_includes(r#""isMonotonic":true"#)
+            // `rtok.tokens.saved` can go down (an `expand` row is a negative saving).
+            .body_includes(r#""isMonotonic":false"#)
             .body_includes(r#""aggregationTemporality":2"#)
             .body_includes(r#""asInt":"100""#)
             .body_includes(r#""asInt":"2""#);

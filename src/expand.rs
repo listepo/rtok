@@ -15,9 +15,9 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     else {
         return Ok(None);
     };
-    if cx.store.mark_expanded(id)? > 0 {
+    if cx.store.mark_expanded(&cx.session, id)? > 0 {
         let n = bytes.len() as u64;
-        let plugin = match cx.store.live_zone_pointer(id)? {
+        let plugin = match cx.store.live_zone_pointer(&cx.session, id)? {
             Some(p) if p.starts_with("[toon ") => "toon",
             Some(_) => "archive",
             None => "archive",
@@ -60,6 +60,23 @@ pub fn filter_lines<'a>(
         out.retain(|l| l.contains(g));
     }
     Ok(out)
+}
+
+/// Head and tail of `text` around `marker`, at most `max` chars in total. Shared by the
+/// `read` cap and the MCP `expand` cap; the caller decides what the marker names.
+///
+/// The marker is the floor: below its length only the marker comes back, because the id
+/// in it is what makes the cut lossless (`config validate` rejects `max_chars` < 100).
+pub(crate) fn cut(text: &str, marker: &str, max: usize) -> String {
+    let body_budget = max.saturating_sub(marker.chars().count());
+    let keep = body_budget / 2;
+    // Byte offsets of the first and last `keep` chars; no `Vec<char>` copy of the whole text.
+    let head_end = text.char_indices().nth(keep).map_or(text.len(), |(i, _)| i);
+    let tail_start = match keep {
+        0 => text.len(),
+        k => text.char_indices().rev().nth(k - 1).map_or(0, |(i, _)| i),
+    };
+    format!("{}{marker}{}", &text[..head_end], &text[tail_start..])
 }
 
 fn cap_lines(out: &mut Vec<&str>, max_lines: u32) -> usize {

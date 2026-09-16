@@ -59,10 +59,19 @@ impl Plugin for Guard {
     }
 
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> {
-        let key = cache_key(ev.tool_name, ev.tool_input)?;
-        let body = payload(ev.tool_response);
-        let id = cx.put_archive(&body).ok()?;
-        let _ = cx.put_read_cache(&key, &id, Some(&id));
+        match cache_key(ev.tool_name, ev.tool_input) {
+            Some(key) => {
+                let body = payload(ev.tool_response);
+                let id = cx.put_archive(&body).ok()?;
+                let _ = cx.put_read_cache(&key, &id, Some(&id));
+            }
+            // A mutating Bash, Edit or Write can change what any earlier command prints:
+            // drop every `bash\t…` key (the store deletes by the `bash` prefix).
+            None if matches!(ev.tool_name, "Bash" | "Edit" | "Write") => {
+                let _ = cx.clear_read_cache("bash");
+            }
+            None => {}
+        }
         None
     }
 }
@@ -74,10 +83,25 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
             (!p.is_empty()).then(|| format!("read:{p}"))
         }
         "Bash" => {
-            let c = input.get("command")?.as_str()?;
-            Some(format!("bash:{}", norm_cmd(c)))
+            let c = norm_cmd(input.get("command")?.as_str()?);
+            // Only read-only commands are keyed: a repeat of `cargo test` after an Edit is
+            // new information, not a duplicate.
+            read_only(&c).then(|| format!("bash\t{c}"))
         }
         _ => None,
+    }
+}
+
+/// Stems whose output only changes when something else ran in between.
+fn read_only(cmd: &str) -> bool {
+    let mut w = cmd.split_whitespace();
+    match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
+        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" => true,
+        "git" => matches!(
+            w.next(),
+            Some("status" | "log" | "diff" | "show" | "branch")
+        ),
+        _ => false,
     }
 }
 
@@ -138,15 +162,15 @@ mod tests {
     fn bash_repeat_behind_cd_prefix_denies() {
         let cx = setup();
         let g = Guard;
-        let first = json!({"command": "cargo   test"});
-        let resp = json!({"stdout": "test result: ok. 3 passed"});
+        let first = json!({"command": "ls   -la"});
+        let resp = json!({"stdout": "total 3"});
         let post = PostToolUse {
             tool_name: "Bash",
             tool_input: &first,
             tool_response: &resp,
         };
         assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
-        let again = json!({"command": "cd /repo && cd sub && cargo test"});
+        let again = json!({"command": "cd /repo && cd sub && ls -la"});
         let pre = |input| PreToolUse {
             tool_name: "Bash",
             tool_input: input,
@@ -155,8 +179,49 @@ mod tests {
             g.pre_tool(&pre(&again), &Ctx::new(&cx)),
             Some(PreToolDecision::Deny { .. })
         ));
-        let other = json!({"command": "cargo build"});
+        let other = json!({"command": "ls -l"});
         assert!(g.pre_tool(&pre(&other), &Ctx::new(&cx)).is_none());
+    }
+
+    /// `cargo test` is never keyed, and a mutating Bash, Edit or Write drops every Bash key.
+    #[test]
+    fn mutation_between_commands_allows_the_repeat() {
+        let cx = setup();
+        let g = Guard;
+        let resp = json!({"stdout": "out"});
+        let post = |name: &'static str, input: &Value| {
+            let ev = PostToolUse {
+                tool_name: name,
+                tool_input: input,
+                tool_response: &resp,
+            };
+            assert!(g.post_tool(&ev, &Ctx::new(&cx)).is_none());
+        };
+        let denied = |input: &Value| {
+            let ev = PreToolUse {
+                tool_name: "Bash",
+                tool_input: input,
+            };
+            matches!(
+                g.pre_tool(&ev, &Ctx::new(&cx)),
+                Some(PreToolDecision::Deny { .. })
+            )
+        };
+        let test = json!({"command": "cargo test"});
+        post("Bash", &test);
+        assert!(!denied(&test), "cargo test is not read-only");
+        let cat = json!({"command": "cat a.txt"});
+        post("Bash", &cat);
+        assert!(denied(&cat));
+        post("Bash", &test);
+        assert!(!denied(&cat), "a mutating Bash clears bash keys");
+        post("Bash", &cat);
+        assert!(denied(&cat));
+        post("Edit", &json!({"file_path": "/proj/b.rs"}));
+        assert!(!denied(&cat), "an Edit clears bash keys");
+        post("Bash", &json!({"command": "git status"}));
+        assert!(denied(&json!({"command": "git status"})));
+        assert!(!denied(&json!({"command": "git add ."})));
     }
 
     #[test]

@@ -24,6 +24,25 @@ pub use rtok_plugin_sdk::{
     ToolResults, WireRequest,
 };
 
+/// The longest prefix of `text` that estimates to at most `budget` tokens.
+///
+/// One estimate of the whole text gives the chars-per-token rate; the estimator rounds
+/// up, so `chars * budget / est` never keeps too much. The loop after it only absorbs
+/// float rounding and runs a couple of times at most — never once per character.
+pub fn fit_budget(cx: &Ctx, text: &str, class: Class, budget: u32) -> String {
+    let est = cx.estimate(text, class);
+    if est <= budget {
+        return text.to_string();
+    }
+    let chars = text.chars().count() as u64;
+    let keep = (chars * u64::from(budget) / u64::from(est)) as usize;
+    let mut out: String = text.chars().take(keep).collect();
+    while !out.is_empty() && cx.estimate(&out, class) > budget {
+        out.pop();
+    }
+    out
+}
+
 /// Everything a plugin may touch: config, the store, and the session id.
 /// The archive store is added in T3.1.
 pub struct Runtime {
@@ -247,7 +266,7 @@ impl Archive for Runtime {
     }
 
     fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
-        self.store.mark_expanded(archive_id)
+        self.store.mark_expanded(&self.session, archive_id)
     }
 }
 

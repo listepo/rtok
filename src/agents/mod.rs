@@ -1,4 +1,4 @@
-//! Agent hosts (`rtok agents setup|remove|list`).
+//! Agent hosts (`rtok agents install|remove|list`).
 //!
 //! Everything the hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
 //! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28). Each host is one
@@ -94,7 +94,7 @@ pub enum Support {
     No(&'static str),
 }
 
-/// What `rtok agents setup|remove` does to a host.
+/// What `rtok agents install|remove` does to a host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Install,
@@ -506,7 +506,7 @@ pub fn block(agent: &dyn Agent, v: &Variant, cfg: &Config, outcome: Outcome) -> 
     out
 }
 
-/// What `rtok agents setup|remove` was asked to do.
+/// What `rtok agents install|remove` was asked to do.
 pub struct Request {
     pub hosts: Vec<String>,
     pub mode: Mode,

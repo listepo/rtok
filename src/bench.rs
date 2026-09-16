@@ -161,33 +161,43 @@ fn one(prompt: &str, settings: &Path, timeout_s: u64) -> (u64, u64, u64, f64) {
     let Some(out) = run_bounded(&mut cmd, Duration::from_secs(timeout_s.max(1))) else {
         return (0, 0, 0, 0.0);
     };
-    parse_usage(&out.stdout)
+    parse_usage(&out)
 }
 
 /// How often [`run_bounded`] checks whether the child has exited.
 const POLL: Duration = Duration::from_millis(20);
 
-/// Run `cmd` and collect its output, killing it once `timeout` has passed. `None` when it
+/// Run `cmd` and collect its stdout, killing it once `timeout` has passed. `None` when it
 /// could not be spawned, exited badly, or was killed.
-fn run_bounded(cmd: &mut Command, timeout: Duration) -> Option<std::process::Output> {
+fn run_bounded(cmd: &mut Command, timeout: Duration) -> Option<Vec<u8>> {
     let mut child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
         .ok()?;
+    // Drain while polling: a child that fills the pipe (64 KiB) before exiting would
+    // otherwise block on write, never exit, and be scored as a timeout.
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
+        buf
+    });
     let deadline = Instant::now() + timeout;
-    loop {
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(Some(status)) => break Some(status),
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return None;
+                break None;
             }
             Ok(None) => std::thread::sleep(POLL),
-            Err(_) => return None,
+            Err(_) => break None,
         }
-    }
+    };
+    let out = reader.join().ok()?;
+    status?.success().then_some(out)
 }
 
 fn parse_usage(bytes: &[u8]) -> (u64, u64, u64, f64) {
@@ -257,7 +267,15 @@ mod tests {
         let mut quick = Command::new("sh");
         quick.arg("-c").arg("printf hello");
         let out = run_bounded(&mut quick, Duration::from_secs(30)).expect("runs");
-        assert_eq!(out.stdout, b"hello");
-        assert!(out.status.success());
+        assert_eq!(out, b"hello");
+    }
+
+    /// More than a pipe buffer of output used to deadlock the child and score as a timeout.
+    #[test]
+    fn a_run_past_the_pipe_buffer_is_drained_not_timed_out() {
+        let mut big = Command::new("sh");
+        big.arg("-c").arg("head -c 300000 /dev/zero");
+        let out = run_bounded(&mut big, Duration::from_secs(10)).expect("runs");
+        assert_eq!(out.len(), 300_000);
     }
 }

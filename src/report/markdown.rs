@@ -205,7 +205,8 @@ pub(crate) fn ms(v: Option<f64>) -> String {
     v.map(|ms| format!("{ms:.1}")).unwrap_or_else(|| "—".into())
 }
 
-/// A table cell: `|` would end the cell early, so it is escaped.
+/// A table cell: `|` would end the cell early, so it is escaped; a newline would end the
+/// row, so it folds to a space (the `--ai` rendering's `flat`).
 fn cell(s: &str) -> String {
-    s.replace('|', "\\|")
+    super::ai::flat(s).replace('|', "\\|")
 }

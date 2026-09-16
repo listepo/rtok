@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::Result;
 use figment::providers::{Env, Format, Serialized, Toml};
@@ -62,6 +63,16 @@ impl Provider for LegacyFold {
     }
 
     fn data(&self) -> Result<FMap<Profile, Dict>, figment::Error> {
+        // Hook path (≤ 10 ms): no file sets a legacy key → nothing to fold, skip the extract
+        // and the two serialisations below.
+        let legacy_set = LEGACY_KEYS.iter().any(|k| {
+            self.base
+                .find_value(k)
+                .is_ok_and(|v| !matches!(v, Value::Empty(..)))
+        });
+        if !legacy_set {
+            return Ok(Profile::Default.collect(Dict::new()));
+        }
         let mut cfg: Config = self.base.extract()?;
         let before = cfg.clone();
         super::apply_legacy_fold(&mut cfg);
@@ -84,6 +95,16 @@ impl Provider for LegacyFold {
         Ok(Profile::Default.collect(out))
     }
 }
+
+/// The file keys [`super::apply_legacy_fold`] reads; `None` (their default) serialises as
+/// [`Value::Empty`].
+const LEGACY_KEYS: &[&str] = &[
+    "core.inject_budget_tokens",
+    "core.log_file",
+    "core.log_level",
+    "core.log_to_db",
+    "dashboard",
+];
 
 fn leaf_value(root: &Dict, dotted: &str) -> Option<Value> {
     let parts = dotted.split('.').collect::<Vec<_>>();
@@ -166,13 +187,17 @@ fn dotenv_pairs(home: &Path, cwd: Option<&Path>) -> Vec<(String, String)> {
 /// (so the env provider knows to split on `,`). Built once from `Config::default()` so a
 /// dotted key's canonical env name is always `key.to_uppercase().replace('.', "_")` — no
 /// guessing which underscores in `openai_upstream` or `budget_tokens` are separators.
-fn env_leaf_table() -> BTreeMap<String, (String, bool)> {
-    let mut table = BTreeMap::new();
-    let root = Value::serialize(Config::default()).expect("Config serializes");
-    if let Some(dict) = root.into_dict() {
-        walk(&dict, "", &mut table);
-    }
-    table
+fn env_leaf_table() -> &'static BTreeMap<String, (String, bool)> {
+    // Three providers per load asked for it; serialising `Config::default()` once is enough.
+    static LEAVES: OnceLock<BTreeMap<String, (String, bool)>> = OnceLock::new();
+    LEAVES.get_or_init(|| {
+        let mut table = BTreeMap::new();
+        let root = Value::serialize(Config::default()).expect("Config serializes");
+        if let Some(dict) = root.into_dict() {
+            walk(&dict, "", &mut table);
+        }
+        table
+    })
 }
 
 fn walk(dict: &Dict, prefix: &str, out: &mut BTreeMap<String, (String, bool)>) {
@@ -208,7 +233,7 @@ const LEGACY_ALIASES: &[(&str, &str)] = &[
 struct RtokEnv {
     /// Provenance name: `env` (process) or `dotenv` (`.env` files) — same resolution, two layers.
     name: &'static str,
-    table: BTreeMap<String, (String, bool)>,
+    table: &'static BTreeMap<String, (String, bool)>,
     /// `RTOK_`-stripped, uppercased names. Empty in tests so ambient env cannot leak.
     vars: Vec<(String, String)>,
 }

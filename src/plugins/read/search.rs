@@ -25,6 +25,12 @@ fn display_rel(path: &Path, root: &Path, cwd: &Path) -> String {
         .to_string()
 }
 
+/// `WalkBuilder::hidden(false)` also descends into `.git/`; no tool wants object files,
+/// packed refs or reflogs as hits (`search` returned `.git/logs/HEAD`, 2026-09-16).
+pub(crate) fn skip_git(e: &ignore::DirEntry) -> bool {
+    e.file_name() != ".git"
+}
+
 /// `path:line: snippet` rows, at most `max` (default `plugins.read.search_max`).
 pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<String> {
     let cfg = cx.plugin_config::<crate::config::Read>("read");
@@ -37,7 +43,11 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
     let cap = max.unwrap_or(cfg.search_max).max(1) as usize;
     let re = Regex::new(pattern)?;
     let mut hits = Vec::new();
-    for entry in WalkBuilder::new(&root).hidden(false).build() {
+    for entry in WalkBuilder::new(&root)
+        .hidden(false)
+        .filter_entry(skip_git)
+        .build()
+    {
         if hits.len() >= cap {
             break;
         }
@@ -65,7 +75,7 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
             hits.push(format!("{rel}:{}: {snippet}", i + 1));
         }
     }
-    Ok(hits.join("\n"))
+    super::cap(cx, hits.join("\n"))
 }
 
 /// Compact listing `path size` down to `depth` (default `plugins.read.tree_depth`).
@@ -81,6 +91,7 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
     let mut rows = Vec::new();
     for entry in WalkBuilder::new(&root)
         .hidden(false)
+        .filter_entry(skip_git)
         .max_depth(Some(depth))
         .build()
     {
@@ -96,7 +107,7 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         rows.push(format!("{rel} {size}"));
     }
     rows.sort();
-    Ok(rows.join("\n"))
+    super::cap(cx, rows.join("\n"))
 }
 
 #[cfg(test)]
@@ -139,6 +150,37 @@ mod tests {
             !out.contains(abs.as_ref()),
             "must not echo the absolute search root: {out}"
         );
+    }
+
+    /// `.git/` is never walked: no hit from a reflog, no `.git/objects` rows in a tree.
+    #[test]
+    fn search_and_tree_skip_git_dir() {
+        let (rt, dir) = crate::plugins::read::tests::cx("skipgit");
+        let git = dir.join(".git").join("logs");
+        fs::create_dir_all(&git).unwrap();
+        fs::write(git.join("HEAD"), "needle in reflog\n").unwrap();
+        fs::write(dir.join("a.txt"), "needle in tree\n").unwrap();
+        let cx = Ctx::new(&rt);
+        let out = search(&cx, "needle", dir.to_str().unwrap(), None).unwrap();
+        assert!(out.contains("a.txt:1:") && !out.contains(".git"), "{out}");
+        let out = tree(&cx, dir.to_str().unwrap(), Some(3)).unwrap();
+        assert!(out.contains("a.txt") && !out.contains(".git"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Oversized output is archived like `read`, so `max`/`depth` cannot flood the context.
+    #[test]
+    fn search_output_is_capped_with_archive_id() {
+        let (mut c, dir) = crate::testutil::config("searchcap");
+        c.plugins.read.allow_paths = vec![dir.clone()];
+        c.plugins.read.max_chars = 200;
+        let rt = crate::plugin::Runtime::open(c, "searchcap").unwrap();
+        let body = "needle line\n".repeat(100);
+        fs::write(dir.join("big.txt"), body).unwrap();
+        let out = search(&Ctx::new(&rt), "needle", dir.to_str().unwrap(), Some(100)).unwrap();
+        assert!(out.contains("archived"), "{out}");
+        assert!(out.chars().count() <= 200, "{}", out.chars().count());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

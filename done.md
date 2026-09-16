@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T44.6 — Host plugin docs links
+
+**T44.6 Host plugin docs links** · P1, 2/5 · `plugins/{cursor,pi,opencode}/README.md`, `src/agents/{claude,codex,cursor,opencode,pi}/README.md`, `plugins/pi/{package.json,skills/rtok/SKILL.md}`, `tests/host_docs.rs`, `AGENTS.md`, `ideas.md`
+Do: rule (AGENTS.md, D21 line): every `plugins/<host>/README.md` and `src/agents/<host>/README.md` carries a `## Docs` list linking the host's current config and plugin documentation, re-verified on each change. Every link was fetched on 2026-09-17: Cursor plugins / manifest reference / hooks / MCP, Agent Plugins spec, pi extensions / packages / skills, OpenCode config / MCP / plugins, Codex config reference and MCP (developers.openai.com now 308-redirects to learn.chatgpt.com), Claude Code hooks / settings-reference#env / MCP, Claude Desktop via modelcontextprotocol.io. Fixes the audit found: the OpenCode plugin dir is `~/.config/opencode/plugins/` (README said `plugin/`); pi `SKILL.md` got the frontmatter the skills spec requires (`name`, `description`) and `package.json` a `pi.skills` entry (a `pi` manifest disables default discovery, so the skill was never loaded). Findings not changed, filed as I-35..I-37 in `ideas.md`: pi loads `extensions/*/index.ts` and the linked dir has none; `pi.appendEntry` never reaches the model; Cursor `mcp.json` bypasses `scripts/mcp.sh|cmd`.
+Check: `tests/host_docs.rs::every_host_readme_links_its_docs` — every dir under `plugins/` and `src/agents/` has a README with a `## Docs` section and at least one `- … https://` bullet.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `cargo test --test host_docs --test pi_plugin --test cursor_plugin` 14 passed; rustfmt clean on the new test. `agents::tests::readme_tables_match_support` fails on OpenCode's `Reachable:` line because of the uncommitted T44.5 `src/agents/mod.rs` (mcp + plugin now reach `cmd`, `read`, `memory`, `graph`); the `## Docs` sections are not read by that test.
+Deviation: 13 files — the rule is one section per host, and the audit fixes are one-liners in the pi bundle.
+
 ## T46.4 — Copilot CLI and GitHub Copilot app host
 
 **T46.4 Copilot CLI and GitHub Copilot app host** · P1, 3/5 · `src/agents/copilot/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `crates/rtok-agent-sdk/src/lib.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_setup.rs`, `tests/common/agents.rs`

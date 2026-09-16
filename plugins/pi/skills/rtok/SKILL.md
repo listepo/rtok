@@ -1,3 +1,8 @@
+---
+name: rtok
+description: Recover full bash output that rtok shortened (rtok expand <id>) and install rtok with ketch when it is missing.
+---
+
 # rtok pi skill
 
 Use `rtok` to keep bash output small without losing anything.

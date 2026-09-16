@@ -1,6 +1,5 @@
 //! Gate P29 — optional embed search beside FTS5 (T29.2).
 
-use rtok::config::Config;
 use rtok::plugin::{Measurement, Runtime};
 use rtok::plugins::memory::{mem_save, mem_search};
 
@@ -47,9 +46,7 @@ fn open(tag: &str, embed_enabled: bool, hybrid: bool) -> (Runtime, std::path::Pa
     let dir = std::env::temp_dir().join(format!("rtok-p29-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut cfg = Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
-    cfg.core.archive_dir = dir.join("archive");
+    let mut cfg = rtok::testutil::config_in(&dir);
     cfg.plugins.memory.embed.enabled = embed_enabled;
     cfg.plugins.memory.embed.hybrid = hybrid;
     (Runtime::open(cfg, tag).unwrap(), dir)

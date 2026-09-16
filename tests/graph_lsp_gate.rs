@@ -6,7 +6,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use rtok::config::Config;
 use rtok::plugin::{Ctx, Plugin, Runtime};
 use rtok::plugins::graph::{Graph, callers, outline, symbol};
 
@@ -41,9 +40,7 @@ fn open(tag: &str, backend: &str) -> (Runtime, PathBuf) {
     let dir = std::env::temp_dir().join(format!("rtok-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    let mut cfg = Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
-    cfg.core.archive_dir = dir.join("archive");
+    let mut cfg = rtok::testutil::config_in(&dir);
     cfg.plugins.graph.backend = backend.into();
     // The fixture crate lives outside cwd; `outline` checks paths against `read`'s roots.
     cfg.plugins.read.allow_paths = vec![dir.clone()];

@@ -85,6 +85,11 @@ pub const OVERVIEW_TURNS: usize = 120;
 /// snapshot per 2 s tick.
 pub const CALLS_ROWS: usize = 120;
 
+/// Sessions the Sessions page rides (T25.1): the same budget as [`CALLS_ROWS`]. The
+/// page is read on every 2 s tick, so it aggregates the newest sessions, not every
+/// session the store ever recorded.
+pub const SESSIONS_ROWS: usize = 120;
+
 /// A plugin's page: its manifest, the static copy it contributes through
 /// `Plugin::dashboard_page`, and the stats widget when it saves tokens.
 #[derive(Debug, Serialize)]
@@ -122,7 +127,7 @@ pub fn snapshot(cfg: &Config) -> Snapshot {
 }
 
 /// The Sessions page (T25.1, D27): one row per session, newest first — the same rows
-/// the snapshot's `sessions` key carries and `rtok agent sessions` (T25.2) renders.
+/// the snapshot's `sessions` key carries and `rtok agents sessions` (T25.2) renders.
 /// `since` is a `started_at` floor in unix seconds; `0` asks for every session.
 /// The store is required, like `plugin_stats`: a page whose whole content is the
 /// store's rows reports an unreadable store rather than rendering an empty page.
@@ -620,14 +625,14 @@ impl<'a> Model<'a> {
         }
     }
 
-    /// Sessions page (T25.1): every session the store knows, newest first, through the
-    /// store's one `session_totals` query — the model does not keep a second reader
+    /// Sessions page (T25.1): the newest [`SESSIONS_ROWS`] sessions, newest first, through
+    /// the store's one `session_totals` query — the model does not keep a second reader
     /// (D27), and it does not decide what "live" means: `ended_at` is in the row and
     /// the renderers filter. No store (or one that will not read): an empty page,
     /// like Overview's zeros.
     pub fn sessions(&self, since: i64) -> Vec<SessionTotals> {
         self.store
-            .and_then(|s| s.session_totals(since).ok())
+            .and_then(|s| s.recent_session_totals(since, SESSIONS_ROWS as i64).ok())
             .unwrap_or_default()
     }
 

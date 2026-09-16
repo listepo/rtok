@@ -1,4 +1,4 @@
-//! T44.4: the `rtok agents setup` matrix over every host and both app kinds.
+//! T44.4: the `rtok agents install` matrix over every host and both app kinds.
 //!
 //! Check: per host, a second setup takes no new backup and heads its block `already
 //! installed`; a second remove says `no changes`; `--dry-run` creates nothing and copies
@@ -41,7 +41,7 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
 }
 
 fn setup_args<'a>(host: &'a str, flags: &[&'a str]) -> Vec<&'a str> {
-    let mut a = vec!["agents", "setup", host];
+    let mut a = vec!["agents", "install", host];
     a.extend_from_slice(flags);
     a
 }
@@ -151,7 +151,7 @@ fn the_agent_alias_prints_what_agents_prints() {
         rtok(&["agents", "list"], &cfg, &home)
     );
     let a = rtok(&["agent", "setup", "codex", "--dry-run"], &cfg, &home);
-    let b = rtok(&["agents", "setup", "codex", "--dry-run"], &cfg, &home);
+    let b = rtok(&["agents", "install", "codex", "--dry-run"], &cfg, &home);
     assert_eq!(a, b);
 }
 
@@ -160,27 +160,27 @@ fn cli_and_desktop_flags_pick_the_block() {
     let home = tmp("kinds");
     let cfg = write_cfg(&home);
     let cli = rtok(
-        &["agents", "setup", "cursor", "--yes", "--cli"],
+        &["agents", "install", "cursor", "--yes", "--cli"],
         &cfg,
         &home,
     );
     assert!(cli.contains("CLI: Cursor CLI"), "{cli}");
     assert!(!cli.contains("Desktop: Cursor"), "{cli}");
     let desktop = rtok(
-        &["agents", "setup", "cursor", "--yes", "--desktop"],
+        &["agents", "install", "cursor", "--yes", "--desktop"],
         &cfg,
         &home,
     );
     assert!(desktop.contains("Desktop: Cursor"), "{desktop}");
     assert!(!desktop.contains("CLI: Cursor CLI"), "{desktop}");
     // Both kinds: the shared-config sibling points at the block above it.
-    let both = rtok(&["agents", "setup", "cursor", "--yes"], &cfg, &home);
+    let both = rtok(&["agents", "install", "cursor", "--yes"], &cfg, &home);
     assert!(
         both.contains("CLI: Cursor CLI") && both.contains("Desktop: Cursor — same files as above"),
         "{both}"
     );
     // `--desktop` never touches the CLI file of a host whose apps keep separate configs.
-    let only = rtok(&["agents", "setup", "opencode", "--desktop"], &cfg, &home);
+    let only = rtok(&["agents", "install", "opencode", "--desktop"], &cfg, &home);
     assert!(only.contains("Desktop: OpenCode Desktop"), "{only}");
     assert!(!only.contains("CLI: OpenCode"), "{only}");
     assert!(!home.join(".config/opencode/opencode.json").exists());
@@ -194,7 +194,7 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(&file, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
 
-    let out = rtok(&["agents", "setup", "claude", "--desktop"], &cfg, &home);
+    let out = rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(out.contains("Desktop: Claude Desktop"), "{out}");
     assert!(!out.contains("CLI: Claude Code"), "{out}");
     assert!(out.contains("✓ mcp     installed"), "{out}");
@@ -213,7 +213,7 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
     assert_eq!(backups(&file).len(), 1);
 
-    let again = rtok(&["agents", "setup", "claude", "--desktop"], &cfg, &home);
+    let again = rtok(&["agents", "install", "claude", "--desktop"], &cfg, &home);
     assert!(
         again.contains("Desktop: Claude Desktop — already installed"),
         "{again}"
@@ -232,7 +232,7 @@ fn an_unknown_host_is_refused_before_any_backup() {
     let cfg = write_cfg(&home);
     let settings = home.join(".claude/settings.json");
     fs::write(&settings, "{}").unwrap();
-    let out = raw(&["agents", "setup", "windsurf"], &cfg, &home);
+    let out = raw(&["agents", "install", "windsurf"], &cfg, &home);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("unknown host: windsurf"), "{err}");

@@ -77,7 +77,7 @@ pub fn record(
     if !enabled(cfg, level) {
         return;
     }
-    append(cfg, level, source, name, message);
+    append_line(cfg, level, source, name, message);
     if cfg.log.to_db {
         let _ = store.insert_log(level, source, name, message, session, call_id, None);
     }
@@ -91,6 +91,11 @@ pub fn append(cfg: &Config, level: &str, source: &str, name: &str, message: &str
     if !enabled(cfg, level) {
         return;
     }
+    append_line(cfg, level, source, name, message);
+}
+
+/// [`append`] past the level check, for a caller that already made it.
+fn append_line(cfg: &Config, level: &str, source: &str, name: &str, message: &str) {
     let _ = write_line(&cfg.log, &line(now(), level, source, name, message));
 }
 

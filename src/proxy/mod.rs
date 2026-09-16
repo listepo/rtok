@@ -63,6 +63,9 @@ pub mod wire;
 /// only to bound memory, not to reject legitimate traffic.
 const MAX_BODY_BYTES: usize = 256 * 1024 * 1024;
 
+/// TCP connect deadline; `proxy.timeout_s` bounds reads only.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Shared server state: the DB, the upstream client and the effective `[proxy]` settings.
 pub struct ProxyState {
     pub store: Store,
@@ -88,8 +91,10 @@ impl ProxyState {
         // `proxy.timeout_s` (extended thinking, many tool calls) was cut mid-SSE with the
         // client left without a `message_stop`. `proxy.timeout_s` bounds one read instead.
         let budget = Duration::from_secs(cfg.proxy.timeout_s.max(1));
+        // Connecting is not streaming: a black-holed upstream used to hold the client for the
+        // whole read budget (10 minutes by default) before it saw a 502.
         let client = Client::builder()
-            .connect_timeout(budget)
+            .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(budget)
             .build()
             .context("reqwest client")?;
@@ -230,7 +235,7 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
             .ok()
             .and_then(|guard| guard.lookup(&prompt, sc));
         if let Some(hit) = cache_hit {
-            return cache_response(state, recorded, start, &hit);
+            return cache_response(state, Some(wire), recorded, &request_body, start, &hit);
         }
     }
 
@@ -240,15 +245,17 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     };
 
     let mut rb = state.client.request(method.clone(), target);
-    for (name, value) in headers.iter() {
-        if !hop_by_hop(name.as_str()) {
-            rb = rb.header(name, value);
-        }
-    }
     // The client's `accept-encoding` is not honoured by this build: reqwest is linked
     // without its decompression features, so a compressed body would reach the client
     // intact but decode to no `usage` row, no `tokens` row and lossy text in `call_io`.
-    // Asking upstream for `identity` is what keeps the tee readable.
+    // Asking upstream for `identity` is what keeps the tee readable — and it has to be the
+    // only value: `header` appends, so copying the client's `gzip, deflate, br` first made
+    // upstream see both and reply gzipped.
+    for (name, value) in headers.iter() {
+        if !hop_by_hop(name.as_str()) && name != ACCEPT_ENCODING {
+            rb = rb.header(name, value);
+        }
+    }
     rb = rb.header(ACCEPT_ENCODING, "identity");
     let upstream = match rb.body(request_body.clone()).send().await {
         Ok(r) => r,
@@ -269,10 +276,23 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
                     ms: start.elapsed().as_secs_f64() * 1000.0,
                 });
             } else {
-                log_err(
+                let session = recorded.as_ref().map_or("?", |r| r.session.as_str());
+                let call_id = recorded.as_ref().map(|r| r.call_id);
+                if let Some(id) = call_id {
+                    let _ = state
+                        .store
+                        .set_call_ms(id, start.elapsed().as_secs_f64() * 1000.0);
+                }
+                // Every request owes one usage row (T5.1): with no response there
+                // are no counters. The `api` comes from the wire, like `finish`.
+                if let (Some(wire), Some(r)) = (wire, recorded.as_ref()) {
+                    r.usage(&state, wire, None);
+                }
+                log(
                     &state,
-                    &recorded,
-                    start,
+                    session,
+                    call_id,
+                    "error",
                     &format!("upstream {method} {path}: {e}"),
                 );
             }
@@ -502,6 +522,57 @@ fn record(
     }
 }
 
+/// One `usage` row per request (T5.1 four counters) — `finish`, `cache_response` and
+/// the upstream-error arm share it. `Some` also writes the provider `tokens` row;
+/// `None` (error, non-2xx, usage-less body, unparseable cache hit) is an all-zero row
+/// with no `tokens` row. Best-effort: a failure logs, the response is untouched.
+fn record_usage(
+    state: &ProxyState,
+    session: &str,
+    model: Option<&str>,
+    api: &str,
+    counters: Option<(i64, wire::Usage)>,
+    call_id: i32,
+) {
+    let (total, usage) = counters.unwrap_or_default();
+    if let Err(e) = state.store.insert_usage(
+        session,
+        model,
+        api,
+        usage.input,
+        usage.cache_create,
+        usage.cache_read,
+        usage.output,
+        call_id,
+    ) {
+        log(
+            state,
+            session,
+            Some(call_id),
+            "error",
+            &format!("usage: {e:#}"),
+        );
+    }
+    if counters.is_some()
+        && let Err(e) = state.store.insert_provider_tokens(
+            call_id,
+            total,
+            usage.input,
+            usage.cache_create,
+            usage.cache_read,
+            usage.output,
+        )
+    {
+        log(
+            state,
+            session,
+            Some(call_id),
+            "error",
+            &format!("tokens: {e:#}"),
+        );
+    }
+}
+
 /// After the body was fully forwarded: `calls.ms`, `call_io`, then `usage` + provider
 /// `tokens` when the response carried a usage block. All best-effort.
 ///
@@ -562,50 +633,25 @@ async fn finish(
     ) {
         log_err("call_io", e);
     }
-    match wire.and_then(|wire| wire::usage_from_response(wire, content_type, response_body)) {
-        Some(usage) => {
-            let provider_total = wire.map_or_else(
-                || {
-                    usage
-                        .input
-                        .saturating_add(usage.cache_create)
-                        .saturating_add(usage.cache_read)
-                        .saturating_add(usage.output)
-                },
-                |wire| wire.provider_total(usage),
+    match wire.and_then(|wire| {
+        wire::usage_from_response(wire, content_type, response_body).map(|u| (wire, u))
+    }) {
+        Some((wire, usage)) => r.usage(state, wire, Some((wire.provider_total(usage), usage))),
+        // A wire that carried no counters (non-2xx, usage-less 200) still owes its one
+        // usage row (T5.1). Endpoints this build has no wire for (e.g. /v1/models)
+        // never carry usage — logging there on every request would be noise.
+        None if wire.is_some() => {
+            if let Some(wire) = wire {
+                r.usage(state, wire, None);
+            }
+            log(
+                state,
+                &session,
+                Some(r.call_id),
+                "info",
+                "no usage in upstream response",
             );
-            if let Err(e) = state.store.insert_usage(
-                &r.session,
-                r.model.as_deref(),
-                wire.map(api_of).unwrap_or("anthropic"),
-                usage.input,
-                usage.cache_create,
-                usage.cache_read,
-                usage.output,
-                r.call_id,
-            ) {
-                log_err("usage", e);
-            }
-            if let Err(e) = state.store.insert_provider_tokens(
-                r.call_id,
-                provider_total,
-                usage.input,
-                usage.cache_create,
-                usage.cache_read,
-                usage.output,
-            ) {
-                log_err("tokens", e);
-            }
         }
-        // Endpoints this build has no wire for (e.g. /v1/models) never carry usage —
-        // logging here on every such request would be noise, not a signal.
-        None if wire.is_some() => log(
-            state,
-            &session,
-            Some(r.call_id),
-            "info",
-            "no usage in upstream response",
-        ),
         None => {}
     }
     let sc = &state.cfg.plugins.proxy.semantic_cache;
@@ -619,9 +665,16 @@ async fn finish(
     }
 }
 
+/// Semantic-cache hit: the same bookkeeping as `finish` minus the upstream round
+/// trip — the measurement, `calls.ms`, `call_io` (with the request bytes: the request
+/// is what the cache key came from), and the `usage` + provider `tokens` rows decoded
+/// from the cached body. A cached body with no parseable usage still owes its one
+/// usage row (counters unknown → zeros, no `tokens` row).
 fn cache_response(
     state: Arc<ProxyState>,
+    wire: Option<&'static dyn Wire>,
     recorded: Option<Recorded>,
+    request_body: &[u8],
     start: Instant,
     hit: &semantic_cache::CacheHit,
 ) -> AxumResponse {
@@ -646,11 +699,19 @@ fn cache_response(
             .set_call_ms(call_id, start.elapsed().as_secs_f64() * 1000.0);
         let _ = state.store.insert_call_io(
             call_id,
-            None,
+            Some(request_body),
             Some(hit.response.as_ref()),
             inline_cap,
             archive_dir.as_deref(),
         );
+        // Every request owes one usage row (T5.1): decode the cached body's counters
+        // through the wire, exactly like `finish` — zeros when unparseable.
+        if let Some(wire) = wire {
+            let counters =
+                wire::usage_from_response(wire, hit.content_type.as_deref(), hit.response.as_ref())
+                    .map(|usage| (wire.provider_total(usage), usage));
+            r.usage(&state, wire, counters);
+        }
     }
     let mut response = Response::builder().status(hit.status);
     if let Some(ct) = &hit.content_type {
@@ -659,20 +720,6 @@ fn cache_response(
     response
         .body(Body::from(hit.response.clone()))
         .unwrap_or_else(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
-}
-
-fn log_err(state: &ProxyState, recorded: &Option<Recorded>, start: Instant, msg: &str) {
-    let session = recorded
-        .as_ref()
-        .map(|r| r.session.clone())
-        .unwrap_or_else(|| "?".to_string());
-    let call_id = recorded.as_ref().map(|r| r.call_id);
-    if let Some(r) = recorded {
-        let _ = state
-            .store
-            .set_call_ms(r.call_id, start.elapsed().as_secs_f64() * 1000.0);
-    }
-    log(state, &session, call_id, "error", msg);
 }
 
 /// The proxy's log lines go through the one funnel (`log::record`), so the file line and
@@ -696,21 +743,29 @@ struct Recorded {
     call_id: i32,
 }
 
+impl Recorded {
+    /// This request's `usage` row through the shared insert: `Some` counters also
+    /// write the provider `tokens` row, `None` is the all-zero row.
+    fn usage(&self, state: &ProxyState, wire: &dyn Wire, counters: Option<(i64, wire::Usage)>) {
+        record_usage(
+            state,
+            &self.session,
+            self.model.as_deref(),
+            api_of(wire),
+            counters,
+            self.call_id,
+        );
+    }
+}
+
 fn session_for(
     wire: Option<&dyn Wire>,
     body: Option<&Value>,
     headers: &HeaderMap,
     raw: &[u8],
 ) -> String {
+    // The wire owns the body's session field (`metadata.user_id`, OpenAI `user`).
     if let Some(session) = wire.and_then(|wire| body.and_then(|body| wire.session_id(body))) {
-        return session.to_string();
-    }
-    if let Some(session) = body
-        .and_then(|body| body.get("metadata"))
-        .and_then(|metadata| metadata.get("user_id"))
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty())
-    {
         return session.to_string();
     }
     for name in ["x-rtok-session", "x-session-id"] {
@@ -938,6 +993,12 @@ mod tests {
             .measurement_count("proxy")
             .expect("measurements");
         assert_eq!(n, 1);
+        // T45.2: the cache hit must also write a usage row.
+        let sessions = state.store.usage_sessions().expect("usage sessions");
+        assert!(
+            !sessions.is_empty(),
+            "cache hit must write a usage row (T5.1)"
+        );
         task.abort();
     }
 

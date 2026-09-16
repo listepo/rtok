@@ -3,12 +3,9 @@
 use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 use serde_json::json;
 
-fn first_word(cmd: &str) -> &str {
-    cmd.split_whitespace().next().unwrap_or("")
-}
-
 fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
-    let first = first_word(cmd);
+    let mut toks = cmd.split_whitespace();
+    let first = toks.next().unwrap_or("");
     // Same stem rules as formatters::cmd_stem / run::shell_kind: Windows argv may
     // be `C:\…\sudo.exe` while never_wrap lists bare `sudo`.
     let base = super::formatters::cmd_stem(first);
@@ -18,10 +15,9 @@ fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
     if cmd.contains("<<") {
         return true;
     }
-    let toks: Vec<&str> = cmd.split_whitespace().collect();
-    if toks
-        .iter()
-        .any(|t| *t == "&" || *t == "-i" || *t == "--interactive")
+    if std::iter::once(first)
+        .chain(toks)
+        .any(|t| matches!(t, "&" | "-i" | "--interactive"))
     {
         return true;
     }

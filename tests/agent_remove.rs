@@ -1,4 +1,4 @@
-//! T10.9: `rtok agents remove <host>` takes back everything `rtok agents setup <host>` wrote,
+//! T10.9: `rtok agents remove <host>` takes back everything `rtok agents install <host>` wrote,
 //! and both commands copy the host's config files before they touch anything.
 //!
 //! Check: per host, seed a foreign entry, install, remove, and assert rtok is gone while the
@@ -28,7 +28,7 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
     .unwrap();
 
     rtok(
-        &["agents", "setup", "claude", "--mcp", "--proxy"],
+        &["agents", "install", "claude", "--mcp", "--proxy"],
         &cfg,
         &home,
     );
@@ -78,7 +78,7 @@ fn cursor_remove_strips_hooks_mcp_and_plugin_link() {
     let mcp = home.join(".cursor/mcp.json");
     fs::write(&mcp, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
 
-    rtok(&["agents", "setup", "cursor", "--yes"], &cfg, &home);
+    rtok(&["agents", "install", "cursor", "--yes"], &cfg, &home);
     assert!(fs::read_to_string(&hooks).unwrap().contains("rtok hook"));
     let link = home.join(".cursor/plugins/local/rtok");
     assert!(link.symlink_metadata().is_ok(), "plugin linked");
@@ -99,7 +99,7 @@ fn codex_remove_strips_mcp_block_and_provider_and_keeps_foreign() {
     let path = home.join(".codex/config.toml");
     fs::write(&path, "# mine\n[mcp_servers.foreign]\ncommand = \"x\"\n").unwrap();
 
-    rtok(&["agents", "setup", "codex", "--proxy"], &cfg, &home);
+    rtok(&["agents", "install", "codex", "--proxy"], &cfg, &home);
     let installed = fs::read_to_string(&path).unwrap();
     assert!(installed.contains("[mcp_servers.rtok]"), "{installed}");
 
@@ -118,7 +118,7 @@ fn opencode_remove_strips_base_url_and_keeps_foreign() {
     let path = home.join(".config/opencode/opencode.json");
     fs::write(&path, r#"{"env":{"KEEP":"1"}}"#).unwrap();
 
-    rtok(&["agents", "setup", "opencode"], &cfg, &home);
+    rtok(&["agents", "install", "opencode"], &cfg, &home);
     assert!(
         fs::read_to_string(&path)
             .unwrap()
@@ -136,7 +136,7 @@ fn opencode_remove_strips_base_url_and_keeps_foreign() {
 fn pi_remove_unlinks_the_extension() {
     let home = tmp("pi");
     let cfg = write_cfg(&home);
-    rtok(&["agents", "setup", "pi", "--yes"], &cfg, &home);
+    rtok(&["agents", "install", "pi", "--yes"], &cfg, &home);
     let link = home.join(".pi/agent/extensions/rtok");
     assert!(link.symlink_metadata().is_ok(), "extension linked");
 
@@ -154,7 +154,7 @@ fn setup_copies_the_config_before_it_writes() {
     let before = r#"{"env":{"KEEP":"1"}}"#;
     fs::write(&settings, before).unwrap();
 
-    let out = rtok(&["agents", "setup", "claude"], &cfg, &home);
+    let out = rtok(&["agents", "install", "claude"], &cfg, &home);
     assert!(
         out.contains("backup "),
         "setup reports its copies too: {out}"
@@ -178,7 +178,7 @@ fn dry_run_remove_writes_nothing() {
     let cfg = write_cfg(&home);
     let settings = home.join(".claude/settings.json");
     fs::write(&settings, r#"{"env":{"KEEP":"1"}}"#).unwrap();
-    rtok(&["agents", "setup", "claude"], &cfg, &home);
+    rtok(&["agents", "install", "claude"], &cfg, &home);
     let installed = fs::read_to_string(&settings).unwrap();
 
     rtok(&["agents", "remove", "claude", "--dry-run"], &cfg, &home);

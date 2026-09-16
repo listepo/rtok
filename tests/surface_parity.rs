@@ -151,7 +151,7 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     // writing: a surface that shows numbers is not one that mutates a tree (D27)
     (
-        "agents setup",
+        "agents install",
         "installs hooks, MCP and the proxy into a host",
     ),
     ("agents remove", "takes rtok back out of a host"),
@@ -159,7 +159,7 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents list",
         "lists known hosts with app type, version, install state and modules",
     ),
-    ("setup", "deprecated spelling of `rtok agents setup`"),
+    ("setup", "deprecated spelling of `rtok agents install`"),
     ("config init", "writes the annotated reference file"),
     ("config set", "edits one key in the user file"),
     ("bench", "runs the A/B schedule and writes Measurement rows"),

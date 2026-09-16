@@ -1,6 +1,6 @@
 # Claude
 
-`rtok agents setup claude` — the Claude Code CLI (`claude`) and the Claude Desktop app. They
+`rtok agents install claude` — the Claude Code CLI (`claude`) and the Claude Desktop app. They
 keep separate files, so each selected app installs on its own (`--cli` / `--desktop`).
 
 - CLI: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP).
@@ -30,7 +30,7 @@ proxy; see `migrate.rs`. On the desktop it is a plain install.
 ## rtok plugins this host reaches
 
 Each plugin declares its surfaces (hook, mcp, proxy, cli); hooks carry `hook` and `cli`, MCP
-carries `mcp`, the proxy carries `proxy`. `rtok agents setup claude` prints the split as
+carries `mcp`, the proxy carries `proxy`. `rtok agents install claude` prints the split as
 installed / not installed / not supported.
 
 Reachable (cli): measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon, compress

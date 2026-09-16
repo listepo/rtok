@@ -75,12 +75,15 @@ pub struct LogRecord {
     pub span_id: Option<String>,
 }
 
-/// A cumulative, monotonic integer sum: one data point per attribute set.
+/// A cumulative integer sum: one data point per attribute set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sum {
     pub name: String,
     pub unit: String,
     pub description: String,
+    /// `false` for a sum a point of which can go down between flushes (`rtok.tokens.saved`:
+    /// an `expand` row is a negative saving), so a backend does not read a drop as a reset.
+    pub monotonic: bool,
     pub start_ns: u64,
     pub time_ns: u64,
     pub points: Vec<(Vec<Attr>, i64)>,
@@ -191,7 +194,7 @@ pub fn logs(res: &Resource, records: &[LogRecord]) -> Value {
     }] })
 }
 
-/// Body for `POST /v1/metrics`: cumulative (`aggregationTemporality` 2), monotonic sums.
+/// Body for `POST /v1/metrics`: cumulative (`aggregationTemporality` 2) sums.
 pub fn metrics(res: &Resource, sums: &[Sum]) -> Value {
     let ms: Vec<Value> = sums
         .iter()
@@ -202,7 +205,7 @@ pub fn metrics(res: &Resource, sums: &[Sum]) -> Value {
                 "description": m.description,
                 "sum": {
                     "aggregationTemporality": 2,
-                    "isMonotonic": true,
+                    "isMonotonic": m.monotonic,
                     "dataPoints": m.points.iter().map(|(a, n)| json!({
                         "attributes": attrs(a),
                         "startTimeUnixNano": m.start_ns.to_string(),
@@ -329,16 +332,24 @@ mod tests {
             name: "rtok.tokens".into(),
             unit: "{token}".into(),
             description: "d".into(),
+            monotonic: true,
             start_ns: 1,
             time_ns: 2,
             points: vec![(vec![s("gen_ai.token.type", "input")], 42)],
         };
-        let v = metrics(&res, &[sum]);
+        let saved = Sum {
+            name: "rtok.tokens.saved".into(),
+            monotonic: false,
+            ..sum.clone()
+        };
+        let v = metrics(&res, &[sum, saved]);
         let m = &v["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0];
         assert_eq!(m["name"], "rtok.tokens");
         assert_eq!(m["sum"]["aggregationTemporality"], 2);
         assert_eq!(m["sum"]["isMonotonic"], true);
         assert_eq!(m["sum"]["dataPoints"][0]["asInt"], "42");
         assert_eq!(m["sum"]["dataPoints"][0]["startTimeUnixNano"], "1");
+        let m = &v["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][1];
+        assert_eq!(m["sum"]["isMonotonic"], false);
     }
 }

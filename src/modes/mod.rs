@@ -25,6 +25,4 @@ mod compress;
 mod ladder;
 
 pub use compress::{CaveIntensity, compress_prose};
-pub use ladder::{
-    LadderContext, LadderDecision, PonyIntensity, evaluate_ladder, naive_always_minimum,
-};
+pub use ladder::{LadderContext, LadderDecision, evaluate_ladder, naive_always_minimum};

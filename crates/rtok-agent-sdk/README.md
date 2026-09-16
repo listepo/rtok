@@ -1,6 +1,6 @@
 # rtok-agent-sdk
 
-The agent-host half of [rtok](https://github.com/listepo/rtok): what `rtok agents setup <host>` and
+The agent-host half of [rtok](https://github.com/listepo/rtok): what `rtok agents install <host>` and
 `rtok agents remove <host>` do to a host's configuration, factored out of the hosts themselves.
 
 Five hosts ship in rtok — Claude Code, Cursor, Codex, OpenCode, pi — and each one edits a different

@@ -21,7 +21,7 @@ counters — so the host's prompt cache keeps hitting.
 
 Modes (`terse`, `yagni`; aliases `cave`→terse, `pony`→yagni) are markdown files under
 `~/.rtok/modes/` (builtins via `include_str!`), ≤ 250 estimated prose tokens each,
-enabled with `rtok agents setup --mode terse,yagni`, injected once per session at priority 5.
+enabled with `rtok agents install --mode terse,yagni`, injected once per session at priority 5.
 Enriched terse captures caveman-style full-intensity rules (shortest reply, fence-safe
 exactness, auto-clarity); yagni captures the ponytail YAGNI ladder. Structured helpers live
 in `rtok::modes` (`compress_prose`, `evaluate_ladder`) — native safety nets beyond prompt-only

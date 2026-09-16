@@ -1,6 +1,6 @@
 # Cursor
 
-`rtok agents setup cursor` — the desktop app (`cursor`) and the CLI (`cursor-agent`). Both
+`rtok agents install cursor` — the desktop app (`cursor`) and the CLI (`cursor-agent`). Both
 read the same `~/.cursor` tree, so one install covers both; `--cli` / `--desktop` only pick
 which app the report shows.
 

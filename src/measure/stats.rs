@@ -254,7 +254,11 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             if mtime < cutoff {
                 continue;
             }
-            let parsed = jsonl::parse_path(&p)?;
+            // One unreadable transcript is one malformed entry, not the end of the report.
+            let Ok(parsed) = jsonl::parse_path(&p) else {
+                report.malformed += 1;
+                continue;
+            };
             fold_session(&parsed, plugin, replay, &mut report, &mut finals);
         }
     }

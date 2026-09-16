@@ -50,7 +50,7 @@ impl Plugin for Read {
         vec![
             ToolDef {
                 name: "read",
-                description: "Read a file; mode full|lines|map|signatures; optional range a-b.",
+                description: "Read a file; mode full|lines|map|signatures; range a-b for full|lines.",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
             },
             ToolDef {
@@ -80,17 +80,17 @@ pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<Str
     let body = if mode == "map" || mode == "signatures" {
         outline::render(&abs, &raw, mode)?
     } else {
-        let mut rows: Vec<(usize, &str)> =
-            raw.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
-        if mode == "lines"
-            && let Some(spec) = range
-            && let Some((a, b)) = spec.split_once('-')
-            && let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>())
-        {
-            rows.retain(|(n, _)| *n >= a && *n <= b);
-        }
-        rows.iter()
-            .map(|(n, l)| format!("{n}:{l}"))
+        // Same grammar as `expand --lines` (`a`, `a-b`, `a-`, `-b`); a malformed range is an
+        // error, not the whole file. Outline modes carry their own line numbers per definition.
+        let lines: Vec<&str> = raw.lines().collect();
+        let (a, b) = match range {
+            Some(spec) => crate::expand::parse_range(spec, lines.len())?,
+            None => (1, lines.len()),
+        };
+        crate::expand::slice_lines(lines, a, b)
+            .iter()
+            .enumerate()
+            .map(|(i, l)| format!("{}:{l}", a + i))
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -179,27 +179,17 @@ fn under_ascii_case_insensitive(path: &Path, root: &Path) -> bool {
     })
 }
 
-fn cap(cx: &Ctx, text: String) -> Result<String> {
+/// Cap at `plugins.read.max_chars`; an oversized text is archived and the cut carries its id.
+pub(crate) fn cap(cx: &Ctx, text: String) -> Result<String> {
     let max = cx.plugin_config::<crate::config::Read>("read").max_chars as usize;
     if text.chars().count() <= max {
         return Ok(text);
     }
     let id = cx.put_archive(text.as_bytes())?;
-    let marker = format!("\n… archived {id} …\n");
-    // The marker is the floor: below its length only the marker comes back, because the id
-    // is what makes the cut lossless. `config validate` rejects `max_chars` < 100 for that.
-    let body_budget = max.saturating_sub(marker.chars().count());
-    let keep = body_budget / 2;
-    // Byte offsets of the first and last `keep` chars; no `Vec<char>` copy of the whole file.
-    let head_end = text.char_indices().nth(keep).map_or(text.len(), |(i, _)| i);
-    let tail_start = match keep {
-        0 => text.len(),
-        k => text.char_indices().rev().nth(k - 1).map_or(0, |(i, _)| i),
-    };
-    Ok(format!(
-        "{}{marker}{}",
-        &text[..head_end],
-        &text[tail_start..]
+    Ok(crate::expand::cut(
+        &text,
+        &format!("\n… archived {id} …\n"),
+        max,
     ))
 }
 
@@ -223,6 +213,22 @@ pub(crate) mod tests {
         fs::write(&p, "alpha\nbeta\ngamma\n").unwrap();
         let out = read(&Ctx::new(&cx), p.to_str().unwrap(), "full", None).unwrap();
         assert_eq!(out, "1:alpha\n2:beta\n3:gamma");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `range` follows `expand --lines` in every line mode; a malformed one is an error.
+    #[test]
+    fn range_applies_to_full_and_lines_and_rejects_junk() {
+        let (cx, dir) = cx("range");
+        let p = dir.join("r.txt");
+        fs::write(&p, "a\nb\nc\nd\n").unwrap();
+        let path = p.to_str().unwrap();
+        let cx = Ctx::new(&cx);
+        assert_eq!(read(&cx, path, "full", Some("2-3")).unwrap(), "2:b\n3:c");
+        assert_eq!(read(&cx, path, "lines", Some("3")).unwrap(), "3:c\n4:d");
+        assert_eq!(read(&cx, path, "lines", Some("-1")).unwrap(), "1:a");
+        assert!(read(&cx, path, "lines", Some("x-y")).is_err());
+        assert!(read(&cx, path, "full", Some("3-2")).is_err());
         let _ = fs::remove_dir_all(dir);
     }
 

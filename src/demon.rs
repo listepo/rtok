@@ -125,13 +125,19 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
             continue;
         }
         if let Some(st) = read(cfg, service) {
-            if alive(st.supervisor) {
-                println!("{service} already running (supervisor {})", st.supervisor);
-                continue;
+            // The lock just proved no supervisor is up, so the state file is stale; its pids
+            // are only worth signalling if they date from this boot — after a reboot the
+            // kernel hands the same numbers to unrelated processes.
+            let this_boot = boot_time().is_some_and(|boot| st.since >= boot);
+            if !this_boot {
+                println!(
+                    "{service}: stale state from before this boot, not signalling pid {}",
+                    st.child
+                );
             }
             // A supervisor that died from outside can leave its child up. Starting another
             // supervisor would put two owners on the same port — retire the orphan first.
-            if alive(st.child) {
+            if this_boot && alive(st.child) {
                 rtok_sys::process_term(st.child);
                 for _ in 0..40 {
                     if !alive(st.child) {
@@ -146,6 +152,11 @@ pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Res
             let _ = fs::remove_file(file(cfg, service, "json"));
         }
         let _ = fs::remove_file(file(cfg, service, "stop"));
+        if service == Service::Mcp {
+            eprintln!(
+                "{service}: no stdin client under the demon — `rtok mcp` exits at EOF and is restarted"
+            );
+        }
         let mut cmd = Command::new(&exe);
         if let Some(c) = config_file {
             cmd.arg("--config").arg(c);
@@ -216,9 +227,9 @@ pub struct Row {
 }
 
 /// The query behind `rtok demon status`: one row per named service, or every service when none
-/// is named, so a stopped one reads as stopped rather than going missing. Liveness comes
-/// from `kill(2)`, so a state file left behind by a killed supervisor reads as stopped instead
-/// of as whatever it said.
+/// is named, so a stopped one reads as stopped rather than going missing. Liveness is the
+/// supervisor's `flock`, which dies with it, so a state file left behind by a killed
+/// supervisor reads as stopped instead of as whatever it said — even when its pid was reused.
 pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
     let services = if named.is_empty() {
         Service::value_variants()
@@ -228,7 +239,8 @@ pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
     let mut out = Vec::new();
     for &service in services {
         let st = read(cfg, service);
-        let up = st.as_ref().is_some_and(|s| alive(s.supervisor));
+        // `Ok(None)` is "held elsewhere"; the probe's own lock drops at once.
+        let up = st.is_some() && matches!(claim(cfg, service), Ok(None));
         let live = |s: &State| {
             (
                 Some(s.supervisor),
@@ -433,6 +445,36 @@ fn claim(cfg: &Config, service: Service) -> Result<Option<fs::File>> {
     match rtok_sys::try_lock_exclusive(&f)? {
         true => Ok(Some(f)),
         false => Ok(None),
+    }
+}
+
+/// Unix seconds the machine booted, where a file read tells: `/proc/stat` on Linux,
+/// `sysctl kern.boottime` on macOS. `None` elsewhere, and a stale pid is then never signalled.
+fn boot_time() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        fs::read_to_string("/proc/stat")
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_prefix("btime ")?.trim().parse().ok())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // `{ sec = 1700000000, usec = 0 } Tue Nov 14 ...`
+        let out = Command::new("sysctl")
+            .args(["-n", "kern.boottime"])
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout);
+        let rest = s.split_once("sec = ")?.1;
+        rest.split(|c: char| !c.is_ascii_digit())
+            .next()?
+            .parse()
+            .ok()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
     }
 }
 

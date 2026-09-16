@@ -1,4 +1,4 @@
-//! `rtok agents setup claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
+//! `rtok agents install claude --replace` (plan T9.3): drop legacy token hooks, retarget the proxy.
 
 use anyhow::{Result, bail};
 use rtok_agent_sdk::{NO_CHANGES, read_json, write_json};

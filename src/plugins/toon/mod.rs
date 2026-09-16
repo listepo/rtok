@@ -13,6 +13,10 @@ use rtok_plugin_sdk::{
 
 pub struct Toon;
 
+/// How a toon pointer starts; `archive` shares the `archive_decisions` table and uses it to
+/// leave toon's blocks alone.
+pub(crate) const PREFIX: &str = "[toon ";
+
 impl Plugin for Toon {
     fn manifest(&self) -> Manifest {
         Manifest {
@@ -73,6 +77,9 @@ fn rewrite_block(
 
     match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
+        // An `archive` pointer under the same `tool_use_id` is that plugin's block, and its
+        // saving was measured there; replaying it here added a second `toon` row.
+        Ok(Some(d)) if !d.pointer.starts_with(PREFIX) => return None,
         Ok(Some(d)) => {
             let m = Measurement {
                 plugin: "toon",
@@ -102,7 +109,7 @@ fn rewrite_block(
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("put: {e}")))
         .ok()?;
     let encoded = encode(rows, &keys);
-    let replacement = format!("[toon {archive_id}]\n{encoded}");
+    let replacement = format!("{PREFIX}{archive_id}]\n{encoded}");
     cx.put_archive_decision(tool_use_id, &archive_id, &replacement)
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("decision: {e}")))
         .ok()?;
@@ -409,6 +416,25 @@ mod tests {
         let mut again = original.clone();
         filter(&mut again, &Ctx::new(&cx));
         assert_eq!(body, again);
+    }
+
+    /// The same `tool_use_id` archived by `archive` first must not come back as a `toon`
+    /// row too (both plugins key `archive_decisions` by that id).
+    #[test]
+    fn an_archive_pointer_is_not_replayed_as_a_toon_saving() {
+        use rtok_plugin_sdk::Archive;
+        let cx = cx("archive-owned", true, 3);
+        let table = rows_3x4();
+        let id = cx
+            .put_archive(serde_json::to_string_pretty(&table).unwrap().as_bytes())
+            .unwrap();
+        cx.store
+            .put_archive_decision("t", &id, "s", "[archived x: 3 lines]")
+            .unwrap();
+        let mut body = tool_req(table);
+        let original = body.clone();
+        assert!(filter(&mut body, &Ctx::new(&cx)).is_empty());
+        assert_eq!(body, original);
     }
 
     #[test]

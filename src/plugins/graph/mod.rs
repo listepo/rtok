@@ -102,8 +102,8 @@ pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
     }
 }
 
-/// MCP dispatch for the three tools (`mcp.rs` `invoke`). Errors become the result text.
-pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
+/// MCP dispatch for the four tools (`mcp.rs` `invoke`). An `Err` becomes an `isError` result.
+pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let arg = |k: &str| args[k].as_str().unwrap_or("");
     match name {
@@ -116,9 +116,8 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> String {
             args["depth"].as_u64().unwrap_or(2) as u32,
         ),
         "outline" => outline(cx, arg("path")),
-        _ => Ok(format!("unknown tool: {name}")),
+        _ => anyhow::bail!("unknown tool: {name}"),
     }
-    .unwrap_or_else(|e| e.to_string())
 }
 
 /// `symbol(name)`: `path:line kind` per definition, then that definition's source from
@@ -145,19 +144,31 @@ pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
                 std::fs::read_to_string(root.join(path)).unwrap_or_default(),
             ));
         }
-        let src = &cached.as_ref().unwrap().1;
-        let first = (*line).max(1) as usize - 1;
-        let last = (*end_line).max(*line) as usize;
-        let body: Vec<&str> = src.lines().skip(first).take(last - first).collect();
-        for l in body.iter().take(budget) {
-            out.push_str(l);
-            out.push('\n');
-        }
-        if body.len() > budget {
-            out.push_str(&format!("  … {} more lines\n", body.len() - budget));
-        }
+        out.push_str(&body_lines(
+            &cached.as_ref().unwrap().1,
+            *line,
+            *end_line,
+            budget,
+        ));
     }
     cap(cx, out)
+}
+
+/// Source of one definition, `line..=end_line`, at most `budget` lines then `N more lines`.
+/// Shared with the LSP backend so both print a body the same way.
+pub(crate) fn body_lines(src: &str, line: i32, end_line: i32, budget: usize) -> String {
+    let first = line.max(1) as usize - 1;
+    let last = end_line.max(line) as usize;
+    let body: Vec<&str> = src.lines().skip(first).take(last - first).collect();
+    let mut out = String::new();
+    for l in body.iter().take(budget) {
+        out.push_str(l);
+        out.push('\n');
+    }
+    if body.len() > budget {
+        out.push_str(&format!("  … {} more lines\n", body.len() - budget));
+    }
+    out
 }
 
 /// `callers(name)`: one line per calling definition, `path  scope xN (Lline)` (T8.5).

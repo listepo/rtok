@@ -1,6 +1,6 @@
 # Codex
 
-`rtok agents setup codex` — the Codex CLI (`codex`).
+`rtok agents install codex` — the Codex CLI (`codex`).
 
 File: `~/.codex/config.toml`, edited with `toml_edit` so comments and other servers survive.
 

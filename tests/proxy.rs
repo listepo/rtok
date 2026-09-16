@@ -245,14 +245,24 @@ async fn proxy_passthrough_body_records_usage_rows() {
 }
 
 /// A client that negotiates gzip must not cost us the usage row: this build links reqwest
-/// without its decompression features, so the upstream request has to ask for `identity`.
+/// without its decompression features, so the upstream request has to ask for `identity` —
+/// and for nothing else: the client's own `gzip, deflate, br` used to be forwarded next to
+/// it, and upstream picked gzip.
 #[tokio::test]
 async fn upstream_request_asks_for_identity_encoding() {
     let server = httpmock::MockServer::start();
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/messages")
-            .header("accept-encoding", "identity");
+            .is_true(|req: &httpmock::HttpMockRequest| {
+                let values: Vec<String> = req
+                    .headers()
+                    .get_all("accept-encoding")
+                    .iter()
+                    .map(|v| v.to_str().unwrap_or("?").to_string())
+                    .collect();
+                values == ["identity"]
+            });
         then.status(200)
             .header("content-type", "application/json")
             .body(MockUpstream::anthropic_messages_body().fixture);
@@ -1055,6 +1065,100 @@ async fn enabled_compress_still_archives_when_flags_on() {
     assert!(
         snap.calls.iter().all(|c| c.kind != "live_passthrough"),
         "no live rows when recording"
+    );
+    task.abort();
+}
+
+// ── T45.2: every request owes one usage row — cache hits and upstream errors ──
+
+/// The second identical request is served from the semantic cache: upstream sees one
+/// hit, but both requests leave a usage row with the cached body's counters.
+#[tokio::test]
+async fn proxy_cache_hit_records_usage_and_request_bytes() {
+    let up = MockUpstream::anthropic_messages_body();
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t452-hit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = up.base_url();
+    cfg.plugins.proxy.semantic_cache.enabled = true;
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+
+    let body = t51_request();
+    let resp = t51_post(&addr, body.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+    // The recorder task caches the first response; wait for its row before re-posting.
+    t51_usage(&state.store, T51_SESSION).await;
+    let resp = t51_post(&addr, body.clone()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage_n(&state.store, T51_SESSION, 2).await;
+    assert_eq!(rows.len(), 2, "miss and hit each leave one usage row");
+    for u in &rows {
+        assert_eq!(
+            (u.input, u.cache_create, u.cache_read, u.output),
+            (10, 0, 0, 2),
+            "hit usage comes from the cached body's counters"
+        );
+        assert_eq!(u.model.as_deref(), Some(T51_MODEL));
+        u.call_id.expect("usage.call_id points at the calls row");
+    }
+    // Newest first: rows[0] is the cache hit.
+    let hit_req = state
+        .store
+        .call_io_request(rows[0].call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    assert_eq!(hit_req, body, "hit call_io keeps the request bytes");
+    assert_eq!(state.store.count_tokens().expect("tokens"), 2);
+    assert_eq!(
+        state
+            .store
+            .measurement_count("proxy")
+            .expect("measurements"),
+        1
+    );
+    task.abort();
+}
+
+/// Upstream connection refused → 502, but the request still leaves its `calls` row
+/// and a minimal all-zero usage row (no counters known, so no `tokens` row).
+#[tokio::test]
+async fn proxy_upstream_error_still_records_usage_row() {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t452-err-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = "http://127.0.0.1:1".to_string(); // nothing listens: refused
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+
+    let resp = t51_post(&addr, t51_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::BAD_GATEWAY);
+    let rows = t51_usage(&state.store, T51_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row despite the error");
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (0, 0, 0, 0),
+        "no response means no counters"
+    );
+    u.call_id.expect("usage.call_id points at the calls row");
+    assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
+    assert_eq!(
+        state.store.count_tokens().expect("tokens"),
+        0,
+        "no provider counters, no tokens row"
     );
     task.abort();
 }

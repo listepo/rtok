@@ -1,4 +1,4 @@
-//! Codex installer (`rtok agents setup codex`, plan T10.3).
+//! Codex installer (`rtok agents install codex`, plan T10.3).
 //!
 //! Codex reads MCP servers from `~/.codex/config.toml` as `[mcp_servers.<name>]`
 //! tables with `command` and `args`. It has no shell hooks, so MCP plus proxy

@@ -369,8 +369,7 @@ fn inject_still_emits_enriched_modes() {
     let dir = std::env::temp_dir().join(format!("rtok-mode-bench-inject-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut cfg = rtok::config::Config::default();
-    cfg.core.db_path = dir.join("rtok.db");
+    let mut cfg = rtok::testutil::config_in(&dir);
     cfg.plugins.inject.modes = vec!["terse".into(), "yagni".into()];
     let start = serde_json::json!({
         "hook_event_name": "SessionStart",

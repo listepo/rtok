@@ -1,6 +1,6 @@
 # ZCode
 
-`rtok agents setup zcode` — Z.ai's ZCode desktop app (the GLM coding harness). One config
+`rtok agents install zcode` — Z.ai's ZCode desktop app (the GLM coding harness). One config
 file, `[setup.zcode] config_path`, default `~/.zcode/cli/config.json`, carries hooks and MCP.
 The app starts without a shell PATH, so every command written is the absolute `rtok` binary.
 

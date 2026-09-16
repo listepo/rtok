@@ -2,7 +2,7 @@
 
 use rtok_plugin_sdk::{Class, Ctx, Injection};
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::Path;
 
 /// Parsed compact snapshot.
@@ -35,18 +35,24 @@ impl Checkpoint {
     }
 }
 
-/// Last 20 user prompts (≤ 300 chars), file paths, and error lines from a JSONL transcript.
+/// Last 20 user prompts (≤ 300 chars), file paths, and the last 8 error lines from a JSONL
+/// transcript.
 pub fn extract(jsonl: &str) -> Checkpoint {
     let mut prompts = Vec::new();
     let mut paths = BTreeSet::new();
-    let mut errors = Vec::new();
+    let mut errors = VecDeque::new();
     for line in jsonl.lines() {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         walk(&v, &mut paths, &mut |s| {
-            if errors.len() < 8 && s.to_ascii_lowercase().contains("error") {
-                errors.push(s.chars().take(200).collect());
+            // The three spellings that occur in compiler, test and runtime output; no
+            // lowercased copy of every transcript string.
+            if ["error", "Error", "ERROR"].iter().any(|n| s.contains(n)) {
+                if errors.len() == 8 {
+                    errors.pop_front();
+                }
+                errors.push_back(s.chars().take(200).collect());
             }
         });
         if let Some(p) = user_prompt(&v) {
@@ -59,7 +65,7 @@ pub fn extract(jsonl: &str) -> Checkpoint {
     Checkpoint {
         prompts,
         paths: paths.into_iter().collect(),
-        errors,
+        errors: errors.into(),
     }
 }
 
@@ -112,23 +118,28 @@ fn walk(v: &Value, paths: &mut BTreeSet<String>, text: &mut impl FnMut(&str)) {
     }
 }
 
-/// Read `transcript_path`, store a `notes` row `kind=checkpoint`.
+/// Note kind per session: compaction keeps the session id, and two hosts compacting at
+/// once must not restore each other's checkpoint.
+fn kind(cx: &Ctx) -> String {
+    format!("checkpoint:{}", cx.session())
+}
+
+/// Read `transcript_path`, store a `notes` row `kind=checkpoint:<session>`.
 pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
     let cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
-    cx.insert_note(Some("rtok"), "checkpoint", "compact", &cp.render())?;
+    cx.insert_note(Some("rtok"), &kind(cx), "compact", &cp.render())?;
     Ok(cp)
 }
 
-/// Latest checkpoint as an injection, capped at `plugins.memory.checkpoint_tokens`.
+/// Latest checkpoint of this session as an injection, capped at
+/// `plugins.memory.checkpoint_tokens`.
 pub fn offer(cx: &Ctx) -> Option<Injection> {
-    let mut text = cx.latest_note("checkpoint").ok().flatten()?;
+    let text = cx.latest_note(&kind(cx)).ok().flatten()?;
     let cap = cx
         .plugin_config::<crate::config::Memory>("memory")
         .checkpoint_tokens
         .max(1);
-    while cx.estimate(&text, Class::Prose) > cap && !text.is_empty() {
-        text.pop();
-    }
+    let text = crate::plugin::fit_budget(cx, &text, Class::Prose, cap);
     (!text.is_empty()).then_some(Injection {
         plugin: "inject",
         text,
@@ -160,21 +171,58 @@ mod tests {
         assert_eq!(out, b"{}");
         let body = crate::store::Store::open(&cfg.core.db_path)
             .unwrap()
-            .latest_note("checkpoint")
+            .latest_note("checkpoint:t25")
             .unwrap()
             .expect("note");
-        let start = serde_json::json!({"hook_event_name":"SessionStart","session_id":"t25","source":"compact"});
-        out.clear();
-        crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, &cfg);
-        let text = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["hookSpecificOutput"]
-            ["additionalContext"]
-            .as_str()
-            .unwrap()
-            .to_string();
+        let restore = |session: &str, out: &mut Vec<u8>| {
+            let start = serde_json::json!({"hook_event_name":"SessionStart","session_id":session,"source":"compact"});
+            out.clear();
+            crate::hooks::run(
+                "SessionStart",
+                start.to_string().as_bytes(),
+                &mut *out,
+                &cfg,
+            );
+            serde_json::from_slice::<serde_json::Value>(out).unwrap()["hookSpecificOutput"]
+                ["additionalContext"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
+        let text = restore("t25", &mut out);
         let cx = crate::plugin::Runtime::in_memory("budget").unwrap();
         for p in ["src/a.rs", "src/b.rs", "src/c.rs"] {
             assert!(body.contains(p) && text.contains(p), "{body}\n{text}");
         }
         assert!(cx.estimate(&text, Class::Prose) <= cx.config.plugins.memory.checkpoint_tokens);
+        // Another session compacting against the same store gets nothing of t25's.
+        let other = restore("t25-other", &mut out);
+        assert!(!other.contains("src/a.rs"), "{other}");
+    }
+
+    #[test]
+    fn errors_keep_the_last_eight() {
+        let lines = (0..12)
+            .map(|i| format!(r#"{{"type":"assistant","message":{{"content":"Error {i}"}}}}"#))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cp = extract(&lines);
+        assert_eq!(cp.errors.len(), 8);
+        assert_eq!(cp.errors[0], "Error 4");
+        assert_eq!(cp.errors[7], "Error 11");
+    }
+
+    /// The cap is a hard ceiling whatever the text size, and the cut is not one pop per char.
+    #[test]
+    fn offer_fits_checkpoint_tokens() {
+        let cx = crate::plugin::Runtime::in_memory("cap").unwrap();
+        let ctx = Ctx::new(&cx);
+        let cap = cx.config.plugins.memory.checkpoint_tokens.max(1);
+        let big = "checkpoint\n".repeat(4000);
+        ctx.insert_note(Some("rtok"), &kind(&ctx), "compact", &big)
+            .unwrap();
+        let inj = offer(&ctx).expect("injection");
+        assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
+        assert!(inj.text.starts_with("checkpoint\n"), "{}", inj.text);
     }
 }

@@ -141,13 +141,57 @@ fn inject_session_start_records_measurement() {
 #[test]
 fn guard_denies_repeat_bash() {
     let home = tmp("guard");
-    let post = r#"{"session_id":"s-guard","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"echo dup-t382"},"hook_event_name":"PostToolUse","tool_response":{"stdout":"dup-output-body"}}"#;
+    let post = r#"{"session_id":"s-guard","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"cat dup-t382"},"hook_event_name":"PostToolUse","tool_response":{"stdout":"dup-output-body"}}"#;
     run(&home, &["hook", "PostToolUse"], post, &home.0);
-    let pre = r#"{"session_id":"s-guard","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"echo dup-t382"},"hook_event_name":"PreToolUse"}"#;
+    let pre = r#"{"session_id":"s-guard","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"cat dup-t382"},"hook_event_name":"PreToolUse"}"#;
     let out = run(&home, &["hook", "PreToolUse"], pre, &home.0);
     let d = &js(&out)["hookSpecificOutput"]["permissionDecision"];
     assert!(d == "deny", "{out}");
     assert!(kinds(&home, "guard").iter().any(|k| k == "guard"));
+}
+/// `cargo test` → Edit → `cargo test` must run again: the second result is new information.
+/// A read-only command repeated after an Edit is allowed too (the Edit drops Bash keys).
+#[test]
+fn guard_allows_repeat_after_edit() {
+    let home = tmp("guard-edit");
+    let bash = |event: &str, cmd: &str| {
+        format!(
+            r#"{{"session_id":"s-guard-edit","cwd":"/tmp","tool_name":"Bash","tool_input":{{"command":"{cmd}"}},"hook_event_name":"{event}","tool_response":{{"stdout":"body"}}}}"#
+        )
+    };
+    let decision = |cmd: &str| {
+        let out = run(
+            &home,
+            &["hook", "PreToolUse"],
+            &bash("PreToolUse", cmd),
+            &home.0,
+        );
+        js(&out)["hookSpecificOutput"]["permissionDecision"].clone()
+    };
+    let edit = r#"{"session_id":"s-guard-edit","cwd":"/tmp","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.rs"},"hook_event_name":"PostToolUse","tool_response":{}}"#;
+    run(
+        &home,
+        &["hook", "PostToolUse"],
+        &bash("PostToolUse", "cargo test"),
+        &home.0,
+    );
+    run(&home, &["hook", "PostToolUse"], edit, &home.0);
+    assert!(
+        decision("cargo test").is_null(),
+        "cargo test is never a duplicate"
+    );
+    run(
+        &home,
+        &["hook", "PostToolUse"],
+        &bash("PostToolUse", "cat x.rs"),
+        &home.0,
+    );
+    assert_eq!(decision("cat x.rs"), "deny");
+    run(&home, &["hook", "PostToolUse"], edit, &home.0);
+    assert!(
+        decision("cat x.rs").is_null(),
+        "an Edit clears the Bash keys"
+    );
 }
 #[tokio::test]
 async fn proxy_passthrough_records_usage() {

@@ -1,4 +1,4 @@
-//! Cursor installer (`rtok agents setup cursor`) and field mapping (plan T10.1).
+//! Cursor installer (`rtok agents install cursor`) and field mapping (plan T10.1).
 //!
 //! Cursor shell stdin uses top-level `command` and `conversation_id`.
 //! `beforeShellExecution` → PreToolUse; `afterShellExecution` → PostToolUse

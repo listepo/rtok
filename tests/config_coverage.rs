@@ -27,7 +27,7 @@ const ALLOW: &[&str] = &[
     "stdin",   // action: rtok filter reads stdin (T10.2)
     "all",     // action: agent sessions also lists ended sessions (T25.2); not a setting
     "cli",     // action: agent setup variant filter (T37.0); not a setting
-    "desktop", // action: agents setup variant filter (T37.0); not a setting
+    "desktop", // action: agents install variant filter (T37.0); not a setting
 ];
 
 /// Flags that are actions on one command rather than settings, so they get no config key.
@@ -103,7 +103,7 @@ fn config_key(path: &[&str], long: &str) -> String {
         _ => name.as_str(),
     };
     match path {
-        // `rtok agents setup|remove` keeps the `[setup]` table it had as `rtok setup`.
+        // `rtok agents install|remove` keeps the `[setup]` table it had as `rtok setup`.
         ["agents", ..] => format!("setup.{name}"),
         // `rtok dashboard` is the hidden deprecated spelling of `rtok web`; one table, `[web]`.
         ["dashboard", ..] => format!("web.{name}"),

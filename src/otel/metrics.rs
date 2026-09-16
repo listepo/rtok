@@ -1,5 +1,6 @@
-//! T16.7 (D19): cumulative, monotonic sums from whole-table aggregates. No watermark: the
-//! same numbers `rtok stats` prints, re-posted each flush with a later timestamp.
+//! T16.7 (D19): cumulative sums from whole-table aggregates. No watermark: the same numbers
+//! `rtok stats` prints, re-posted each flush with a later timestamp. `rtok.tokens.saved` is
+//! not monotonic: an `expand` row is a negative saving, so a point can go down.
 
 use anyhow::Result;
 
@@ -17,10 +18,11 @@ fn provider(api: &str) -> &str {
 
 pub fn sums(store: &Store, now_ns: u64) -> Result<Vec<Sum>> {
     let start_ns = seconds_to_ns(store.otel_first_ts()?);
-    let sum = |name: &str, unit: &str, description: &str, points| Sum {
+    let sum = |name: &str, unit: &str, description: &str, monotonic: bool, points| Sum {
         name: name.into(),
         unit: unit.into(),
         description: description.into(),
+        monotonic,
         start_ns,
         time_ns: now_ns,
         points,
@@ -75,18 +77,21 @@ pub fn sums(store: &Store, now_ns: u64) -> Result<Vec<Sum>> {
             "rtok.tokens",
             "{token}",
             "Tokens billed by the provider, from the proxy's usage ledger",
+            true,
             tokens,
         ),
         sum(
             "rtok.tokens.saved",
             "{token}",
             "Estimated tokens removed by rtok plugins (est_before − est_after)",
+            false,
             saved,
         ),
         sum(
             "rtok.calls",
             "{call}",
             "Hook, MCP and proxied calls recorded",
+            true,
             calls,
         ),
     ])

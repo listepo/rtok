@@ -1,6 +1,6 @@
 # OpenCode
 
-`rtok agents setup opencode` — the CLI (`opencode`) and the desktop app. They keep separate
+`rtok agents install opencode` — the CLI (`opencode`) and the desktop app. They keep separate
 config files, so each selected app installs on its own:
 
 - CLI: `[setup.opencode] config_path`, default `~/.config/opencode/opencode.json`

@@ -121,13 +121,13 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Agent hosts (`rtok agents setup|remove|list …`)
+    /// Agent hosts (`rtok agents install|remove|list …`)
     #[command(visible_alias = "agent")]
     Agents {
         #[command(subcommand)]
         action: AgentCmd,
     },
-    /// Deprecated spelling of `rtok agents setup <host>`; still runs, still prints where to go
+    /// Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go
     #[command(hide = true)]
     Setup(SetupArgs),
     /// Execute a command, archive its raw output, print the filtered version
@@ -298,7 +298,8 @@ enum GraphCmd {
 #[derive(Subcommand)]
 enum AgentCmd {
     /// Install hooks, MCP server and proxy into a host
-    Setup(SetupArgs),
+    #[command(alias = "setup")]
+    Install(SetupArgs),
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
     Remove(RemoveArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
@@ -332,7 +333,7 @@ struct RemoveArgs {
     dry_run: bool,
 }
 
-/// One definition behind `rtok agents setup` and the deprecated `rtok setup`.
+/// One definition behind `rtok agents install` and the deprecated `rtok setup`.
 #[derive(clap::Args)]
 struct SetupArgs {
     /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`)
@@ -630,7 +631,7 @@ pub fn run() -> Result<()> {
             crate::web::serve_blocking(cfg)?;
         }
         Cmd::Agents { action } => match action {
-            AgentCmd::Setup(args) => setup_host(config_file.as_deref(), args)?,
+            AgentCmd::Install(args) => setup_host(config_file.as_deref(), args)?,
             AgentCmd::Remove(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
@@ -685,7 +686,7 @@ pub fn run() -> Result<()> {
         },
         Cmd::Setup(args) => {
             eprintln!(
-                "warning: `rtok setup {0}` is deprecated; use `rtok agents setup {0}`",
+                "warning: `rtok setup {0}` is deprecated; use `rtok agents install {0}`",
                 args.host
             );
             setup_host(config_file.as_deref(), args)?;
@@ -897,7 +898,7 @@ fn bench_flags(
     Some(flags)
 }
 
-/// The host installers, one call site for `rtok agents setup|remove` and the deprecated
+/// The host installers, one call site for `rtok agents install|remove` and the deprecated
 /// `rtok setup`. Unknown hosts are refused before any backup is taken.
 fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<()> {
     let SetupArgs {
@@ -914,7 +915,7 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         all,
     } = args;
     let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
-    // Comma-separated hosts: `rtok agents setup opencode,cursor` installs both.
+    // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
     let hosts: Vec<String> = host
         .split(',')
         .map(|s| s.trim().to_string())

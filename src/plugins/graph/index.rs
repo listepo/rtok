@@ -107,7 +107,11 @@ pub fn run_with(
     let mut report = Report::default();
     let mut keep = HashSet::new();
     let mut jobs = Vec::new();
-    for entry in WalkBuilder::new(&root).hidden(false).build() {
+    for entry in WalkBuilder::new(&root)
+        .hidden(false)
+        .filter_entry(crate::plugins::read::search::skip_git)
+        .build()
+    {
         let Ok(entry) = entry else {
             continue;
         };
