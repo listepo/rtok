@@ -60,7 +60,7 @@ pub struct Apply {
 
 impl Apply {
     /// True when this run may write a file for `report`.
-    fn writes(&self, report: &str) -> bool {
+    pub fn writes(&self, report: &str) -> bool {
         !self.dry_run && report != NO_CHANGES
     }
 }

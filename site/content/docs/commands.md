@@ -21,8 +21,8 @@ build never blocks the host.
 | `rtok expand <id>` | print an archived payload, whole or by `--lines` / `--grep` |
 | `rtok stats` | measurements from session logs and the proxy |
 | `rtok doctor` | inspect hooks, MCP servers, proxy chain — including what each costs per turn |
-| `rtok agents setup claude\|cursor\|codex\|opencode\|pi\|zcode\|kimi` | install into a host, with backups; `--dry-run` |
-| `rtok agents remove claude\|cursor\|codex\|opencode\|pi\|zcode\|kimi` | take rtok back out of a host, with backups; `--dry-run` |
+| `rtok agents setup claude\|cursor\|codex\|opencode\|pi\|zcode\|kimi\|copilot` | install into a host, with backups; `--dry-run` |
+| `rtok agents remove claude\|cursor\|codex\|opencode\|pi\|zcode\|kimi\|copilot` | take rtok back out of a host, with backups; `--dry-run` |
 | `rtok agents list` | every known app: kind and name, path and version, config files, rtok modules |
 | `rtok graph index [path]` | build the tree-sitter symbol index for a tree |
 | `rtok memory import <file>` | import notes as JSONL, deduped by body hash |

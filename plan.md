@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T46.4 | todo | P1 | 3 | 0% | |
 
 ### T45.1. OTel flush survives a traces error
 
@@ -37,11 +36,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T46.4. Copilot CLI and GitHub Copilot app host
-
-Copilot CLI (`copilot`) and the GitHub Copilot desktop app share `~/.copilot`: MCP in `mcp-config.json` (`mcpServers.<name> = {type: "local", command, args, tools: ["*"]}`), hooks as any `~/.copilot/hooks/*.json` file (`{version: 1, hooks: {preToolUse: [{type: "command", bash, powershell, timeoutSec}]}}`). Done means `rtok agents setup copilot` writes `mcp-config.json` and its own `hooks/rtok.json` (no merge into a user file), `remove` takes both back, `list` shows CLI and app as one shared host (Cursor pattern), README matches `support()`. Proxy stays `no` (BYOK is env-only: `COPILOT_PROVIDER_BASE_URL`); plugin stays `no` (`installed-plugins/` is owned by the marketplace); the app's hook support is undocumented, so `hooks (desktop)` is `no` while the shared file still applies.
-Plan: `src/agents/copilot/{mod.rs,README.md}` (`shared()`, two variants, `edit_json` for both files), `[setup.copilot] dir` in config + default.toml + docs, registration and host lists as T46.1. Blocked by T46.3. Verify: `mise exec -- cargo test -p rtok --lib agents::copilot` + parity.
 
 ## Reference
 

@@ -177,6 +177,8 @@ extensions_path = "~/.pi/agent/extensions"
 config_path   = "~/.zcode/cli/config.json"
 [setup.kimi]
 config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
+[setup.copilot]
+dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

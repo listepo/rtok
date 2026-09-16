@@ -267,6 +267,7 @@ section! {
         pi: SetupPi = SetupPi::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
+        copilot: SetupCopilot = SetupCopilot::default(),
     }
 }
 
@@ -303,6 +304,11 @@ section! {
 section! {
     /// `[setup.kimi]` — `mcp.json` is read beside `config_path`.
     SetupKimi { config_path: PathBuf = p("~/.kimi-code/config.toml") }
+}
+
+section! {
+    /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
+    SetupCopilot { dir: PathBuf = p("~/.copilot") }
 }
 
 section! {
@@ -722,6 +728,7 @@ impl Config {
             &mut self.setup.pi.extensions_path,
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
+            &mut self.setup.copilot.dir,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
@@ -935,6 +942,7 @@ mod tests {
             &cfg.setup.pi.extensions_path,
             &cfg.setup.zcode.config_path,
             &cfg.setup.kimi.config_path,
+            &cfg.setup.copilot.dir,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
