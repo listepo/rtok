@@ -6,6 +6,21 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
+| T44.2 | in progress | P1 | 4 | 0% | Claude Code / Fable 5.1 |
+| T44.3 | todo | P1 | 3 | 0% | |
+| T44.4 | todo | P1 | 3 | 0% | |
+
+### T44.2. `rtok agents` with one folder per host
+
+Rename the command to `rtok agents` (`agent` stays as an alias) and move `src/setup/` to `src/agents/` with one folder per host: `src/agents/<host>/mod.rs` implements the `Agent` contract (variants, files, installed modules, apply) and `src/agents/<host>/README.md` says which rtok modules and plugins the host takes, and why the rest cannot be taken. The per-host `match` blocks in `src/cli.rs` and `src/setup/mod.rs` collapse into one loop over the contract. Plan: `git mv`, trait + `Variant`/`Support` in `agents/mod.rs`, generic `agents::run`, README per host, parity test README ↔ `support()`, `--desktop` (alias `--gui`), docs and site swap to `rtok agents`; `just check`.
+
+### T44.3. Setup and list output: app, path, modules, plugins
+
+Both `rtok agents setup <host>` and `rtok agents list` print one block per app: `CLI: Codex` / `Desktop: Claude Desktop`, under it the app path and version and the config files rtok edits, then every module as installed / not installed (with the flag that installs it) / not supported (with the reason), then rtok's plugins grouped the same way from the modules' surfaces. When the installer changed nothing the header says `already installed` and the same block follows. Claude Desktop joins as a Desktop variant of `claude` (MCP only, absolute rtok path because the app has no shell PATH). Plan: `agents::block`, `Support::{Yes, Flag, No}`, plugin matrix from `Registry` manifests, doctor keeps reading the same rows; e2e asserts the block and the `already installed` header; `just check`.
+
+### T44.4. Checks, e2e and platforms
+
+More checks around setup: warn when `rtok` is not on PATH (hooks would fail to spawn), verify after each write that the requested modules read back as installed, and refuse unknown hosts before any backup. Tests: an e2e matrix in `tests/agents_setup.rs` over every host (setup twice → one backup, `already installed`; remove twice → `no changes`; `--dry-run` writes nothing; `agent` alias equals `agents`; `--cli`/`--desktop` filters; Claude Desktop under a temp home), Windows path cases as unit tests, and a `windows-latest` job in `ci.yml` (advisory until green). `just check`.
 
 ## Reference
 

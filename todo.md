@@ -1,1 +1,3 @@
-
+- T44.2. `rtok agents` with one folder per host
+- T44.3. Setup and list output: app, path, modules, plugins
+- T44.4. Checks, e2e and platforms
