@@ -62,16 +62,31 @@ fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
 }
 
 fn file_uri(p: &Path) -> String {
-    format!(
-        "file://{}",
-        dunce::canonicalize(p)
-            .unwrap_or_else(|_| p.to_path_buf())
-            .display()
-    )
+    // LSP wants RFC 8089 `file:///C:/…` on Windows. `.display()` keeps
+    // backslashes and omits the third slash, which rust-analyzer rejects.
+    let path = dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let s = path.to_string_lossy().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
+fn path_from_file_uri(uri: &str) -> PathBuf {
+    let rest = uri.strip_prefix("file://").unwrap_or(uri);
+    // `file:///C:/Users/…` → `C:/Users/…`; `file:///home/…` keeps the root slash.
+    if cfg!(windows) {
+        let trimmed = rest.trim_start_matches('/');
+        if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' {
+            return PathBuf::from(trimmed);
+        }
+    }
+    PathBuf::from(rest)
 }
 
 fn rel(root: &Path, uri: &str) -> String {
-    let p = PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri));
+    let p = path_from_file_uri(uri);
     pathdiff::diff_paths(&p, root)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| p.display().to_string())
@@ -267,7 +282,7 @@ impl Session {
         if !self.opened.insert(uri.to_string()) {
             return Ok(());
         }
-        let path = PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri));
+        let path = path_from_file_uri(uri);
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         let language_id = match path.extension().and_then(|e| e.to_str()) {
             Some("rs") => "rust",
@@ -657,5 +672,42 @@ mod tests {
         let alive = Command::new("kill").args(["-0", &pid]).status().unwrap();
         assert!(!alive.success(), "server {pid} still running");
         assert!(!err_path.exists());
+    }
+}
+
+#[cfg(test)]
+mod uri_tests {
+    use super::{file_uri, path_from_file_uri};
+    use std::path::PathBuf;
+
+    #[test]
+    fn file_uri_uses_forward_slashes() {
+        let dir = std::env::temp_dir().join(format!("rtok-uri-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = file_uri(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(uri.starts_with("file://"), "{uri}");
+        assert!(!uri.contains('\\'), "no backslashes: {uri}");
+        if cfg!(windows) {
+            assert!(
+                uri.starts_with("file:///"),
+                "windows needs three slashes: {uri}"
+            );
+        }
+        let round = path_from_file_uri(&uri);
+        assert!(!round.as_os_str().is_empty(), "{round:?}");
+    }
+
+    #[test]
+    fn path_from_file_uri_keeps_unix_root() {
+        let p = path_from_file_uri("file:///tmp/a");
+        assert_eq!(p, PathBuf::from("/tmp/a"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_from_file_uri_strips_slash_before_drive() {
+        let p = path_from_file_uri("file:///C:/Users/x");
+        assert_eq!(p, PathBuf::from(r"C:\Users\x"));
     }
 }

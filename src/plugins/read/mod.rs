@@ -128,7 +128,9 @@ fn normalize(root: &Path, path: &Path) -> PathBuf {
     };
     for c in path.components() {
         match c {
-            Component::RootDir => out = PathBuf::from("/"),
+            // Push, do not replace: on Windows `C:\foo` is Prefix("C:") then
+            // RootDir — replacing wiped the drive and confined to `\foo`.
+            Component::RootDir => out.push(Component::RootDir.as_os_str()),
             Component::Prefix(p) => out = PathBuf::from(p.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
@@ -275,6 +277,19 @@ pub(crate) mod tests {
         let _ = fs::remove_file(&outside);
         assert!(err.contains("outside cwd"), "{err}");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn normalize_absolute_unix_path_still_roots() {
+        let got = normalize(Path::new("/unused"), Path::new("/tmp/a/../b"));
+        assert_eq!(got, PathBuf::from("/tmp/b"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalize_keeps_windows_drive_prefix() {
+        let got = normalize(Path::new(r"C:\unused"), Path::new(r"D:\Users\x\..\y"));
+        assert_eq!(got, PathBuf::from(r"D:\Users\y"));
     }
 
     /// The lexical twin of `symlink_escape_is_err`: `..` climbs past every allowed root.
