@@ -210,3 +210,31 @@ fn setup_cursor_yes_links_plugin_without_mcp_json() {
     assert!(!dest.exists(), "remove must unlink plugin; stdout={rm}");
     let _ = fs::remove_dir_all(&home);
 }
+
+#[test]
+fn setup_cursor_clears_leftover_mcp_when_plugin_already_linked() {
+    let home = tmp("leftover-mcp");
+    let cfg = write_cfg(&home);
+    let (stdout, stderr, code) = setup(&["agent", "setup", "cursor", "--yes"], &cfg, &home);
+    assert_eq!(code, 0, "stderr={stderr} stdout={stdout}");
+    let dest = home.join(".cursor/plugins/local/rtok");
+    assert!(dest.symlink_metadata().is_ok(), "plugin must be linked");
+    let mcp_path = home.join(".cursor/mcp.json");
+    fs::write(
+        &mcp_path,
+        r#"{"mcpServers":{"rtok":{"type":"stdio","command":"rtok","args":["mcp"]},"other":{"command":"x"}}}"#,
+    )
+    .unwrap();
+    let (again, stderr2, code2) = setup(&["agent", "setup", "cursor"], &cfg, &home);
+    assert_eq!(code2, 0, "stderr={stderr2} stdout={again}");
+    let body = fs::read_to_string(&mcp_path).unwrap();
+    assert!(
+        !body.contains("\"rtok\""),
+        "already-linked setup must clear leftover mcpServers.rtok: {body}"
+    );
+    assert!(
+        body.contains("other"),
+        "foreign MCP servers must remain: {body}"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
