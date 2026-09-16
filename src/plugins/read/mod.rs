@@ -109,10 +109,10 @@ pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<Path
         normalize(cwd, path)
     };
     // Lexical allow, then (when the path exists) reject symlink escapes past the root.
-    let check = abs.canonicalize().unwrap_or_else(|_| abs.clone());
+    let check = dunce::canonicalize(&abs).unwrap_or_else(|_| abs.clone());
     let roots: Vec<PathBuf> = std::iter::once(cwd.to_path_buf())
         .chain(extra.iter().cloned())
-        .map(|r| r.canonicalize().unwrap_or(r))
+        .map(|r| dunce::canonicalize(&r).unwrap_or(r))
         .collect();
     if roots.iter().any(|r| under(&check, r)) {
         return Ok(abs);

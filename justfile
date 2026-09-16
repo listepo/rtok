@@ -33,7 +33,7 @@ dup:
 
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 test:
-    {{cargo}} test --workspace
+    {{cargo}} nextest run --workspace
 
 # T0.4: one plugin feature must build alone
 build-min:

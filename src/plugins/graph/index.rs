@@ -35,11 +35,11 @@ fn changed_abs(root: &Path, event_path: &Path) -> PathBuf {
     } else {
         root.join(event_path)
     };
-    raw.canonicalize().unwrap_or_else(|_| {
+    dunce::canonicalize(&raw).unwrap_or_else(|_| {
         let name = event_path.file_name();
         event_path
             .parent()
-            .and_then(|p| p.canonicalize().ok())
+            .and_then(|p| dunce::canonicalize(p).ok())
             .and_then(|p| name.map(|n| p.join(n)))
             .unwrap_or(raw)
     })
@@ -58,7 +58,7 @@ fn stat_key(md: &std::fs::Metadata) -> (i64, i64) {
 /// Canonical absolute path as one string: the index key of a root, and the match key of a
 /// file for `mark_symbols_stale` (T8.3). Rows are scoped to it so one store holds many repos.
 pub fn canon(p: &Path) -> String {
-    p.canonicalize()
+    dunce::canonicalize(p)
         .unwrap_or_else(|_| p.to_path_buf())
         .to_string_lossy()
         .replace('\\', "/")
@@ -95,7 +95,7 @@ pub fn run_with(
     dry_run: bool,
     pb: &indicatif::ProgressBar,
 ) -> Result<Report> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let current_fp = extractor_fingerprint();
     let stored_fp = cx.extractor_fingerprint(&rk)?;
@@ -118,9 +118,12 @@ pub fn run_with(
         if !outline::supported(path) {
             continue;
         }
-        let rel = path
-            .strip_prefix(&root)
-            .unwrap_or(path)
+        let rel = pathdiff::diff_paths(path, &root)
+            .filter(|p| {
+                !p.components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            })
+            .unwrap_or_else(|| path.to_path_buf())
             .to_string_lossy()
             .replace('\\', "/");
         keep.insert(rel.clone());
@@ -178,16 +181,19 @@ fn run_changed_with(
     dry_run: bool,
     pb: &indicatif::ProgressBar,
 ) -> Result<Report> {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
     let mut jobs = Vec::new();
     for event_path in changed {
         let abs = changed_abs(&root, event_path);
-        let rel = abs
-            .strip_prefix(&root)
+        let rel = pathdiff::diff_paths(&abs, &root)
+            .filter(|p| {
+                !p.components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+            })
             .map(|p| p.to_string_lossy().replace('\\', "/"));
-        let Ok(rel) = rel else {
+        let Some(rel) = rel else {
             continue;
         };
         if !abs.exists() || !outline::supported(&abs) {

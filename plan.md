@@ -83,7 +83,7 @@ Plugin catalogue (v0.1). Every plugin is native Rust written from scratch here (
 - Fail open: any plugin error → log to DB and return the unmodified input/empty output. A hook that crashes must still exit 0 in ≤ 10 ms.
 - No new dependency without a one-line justification in the commit message.
 - Don't duplicate code or logic: find the existing helper and reuse it, or extract one shared helper at the responsible layer.
-- Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo test` green before every Check.
+- Code style: `cargo fmt`, `cargo clippy -D warnings`, `cargo nextest run` green before every Check.
 - Anything unmeasurable is a bug in the plan: add a `Measurement` before adding a feature.
 - Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12).
 - No plugin shells out to, links, imports from, or reads the data of a third-party tool (D6).

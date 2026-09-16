@@ -64,7 +64,7 @@ fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
 fn file_uri(p: &Path) -> String {
     format!(
         "file://{}",
-        p.canonicalize()
+        dunce::canonicalize(p)
             .unwrap_or_else(|_| p.to_path_buf())
             .display()
     )
@@ -72,9 +72,9 @@ fn file_uri(p: &Path) -> String {
 
 fn rel(root: &Path, uri: &str) -> String {
     let p = PathBuf::from(uri.strip_prefix("file://").unwrap_or(uri));
-    p.strip_prefix(root)
+    pathdiff::diff_paths(&p, root)
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| p.display().to_string())
+        .unwrap_or_else(|| p.display().to_string())
 }
 
 fn kind_name(k: u64) -> &'static str {
@@ -162,7 +162,7 @@ impl Session {
             stdin,
             stdout,
             next_id: 1,
-            root: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+            root: dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf()),
             opened: HashSet::new(),
             err_path,
         };
