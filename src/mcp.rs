@@ -210,19 +210,26 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> String {
 
 fn expand_text(cx: &Runtime, args: &Value) -> String {
     let id = args["id"].as_str().unwrap_or("");
+    if let Some(spec) = args["lines"].as_str()
+        && let Err(e) = crate::expand::parse_range(spec, usize::MAX)
+    {
+        return e.to_string();
+    }
     match crate::expand::fetch(cx, id) {
         Ok(Some(bytes)) => {
             let text = String::from_utf8_lossy(&bytes);
-            let body = slice(&text, args["lines"].as_str(), args["grep"].as_str());
-            cap_result(&body, id, cx.config.mcp.max_result_chars as usize)
+            match slice(&text, args["lines"].as_str(), args["grep"].as_str()) {
+                Ok(body) => cap_result(&body, id, cx.config.mcp.max_result_chars as usize),
+                Err(e) => e.to_string(),
+            }
         }
         Ok(None) => format!("unknown archive id: {id}"),
         Err(e) => e.to_string(),
     }
 }
 
-fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> String {
-    crate::expand::filter_lines(text, lines, grep).join("\n")
+fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> Result<String> {
+    Ok(crate::expand::filter_lines(text, lines, grep)?.join("\n"))
 }
 
 fn cap_result(text: &str, id: &str, max: usize) -> String {
@@ -383,8 +390,9 @@ mod tests {
             .map(|n| format!("L{n}"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(slice(&text, Some("10"), None), "L10\nL11\nL12");
-        assert_eq!(slice(&text, Some("10-10"), None), "L10");
+        assert_eq!(slice(&text, Some("10"), None).unwrap(), "L10\nL11\nL12");
+        assert_eq!(slice(&text, Some("10-10"), None).unwrap(), "L10");
+        assert!(slice(&text, Some("wat"), None).is_err());
     }
 
     #[rstest]

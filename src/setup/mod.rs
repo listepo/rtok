@@ -421,10 +421,12 @@ fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
 /// True when `bin` names the rtok binary (bare, `.exe`, or an absolute path).
 pub(crate) fn is_rtok_bin(bin: &str) -> bool {
     let base = bin.rsplit(['/', '\\']).next().unwrap_or(bin);
-    let stem = base
-        .strip_suffix(".exe")
-        .or_else(|| base.strip_suffix(".EXE"))
-        .unwrap_or(base);
+    // Windows executable suffix casing is arbitrary (`.Exe`, `.eXe`, …).
+    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    };
     stem.eq_ignore_ascii_case("rtok")
 }
 
@@ -590,6 +592,8 @@ mod tests {
     fn is_rtok_bin_accepts_absolute_windows_exe() {
         assert!(is_rtok_bin("rtok"));
         assert!(is_rtok_bin("rtok.exe"));
+        assert!(is_rtok_bin("RTOK.Exe"));
+        assert!(is_rtok_bin(r"C:\Users\u\.ketch\bin\rtok.eXe"));
         assert!(is_rtok_bin(r"C:\Users\u\.ketch\bin\rtok.exe"));
         assert!(!is_rtok_bin("rtok-extra"));
         assert!(!is_rtok_bin(r"C:\bin\other.exe"));

@@ -46,17 +46,20 @@ pub fn slice_lines(lines: Vec<&str>, a: usize, b: usize) -> Vec<&str> {
 }
 
 /// Optional `--lines` / `--grep` filtering shared with the MCP `expand` tool.
-pub fn filter_lines<'a>(text: &'a str, lines: Option<&str>, grep: Option<&str>) -> Vec<&'a str> {
+pub fn filter_lines<'a>(
+    text: &'a str,
+    lines: Option<&str>,
+    grep: Option<&str>,
+) -> Result<Vec<&'a str>> {
     let mut out: Vec<&str> = text.lines().collect();
-    if let Some(spec) = lines
-        && let Ok((a, b)) = parse_range(spec, out.len())
-    {
+    if let Some(spec) = lines {
+        let (a, b) = parse_range(spec, out.len())?;
         out = slice_lines(out, a, b);
     }
     if let Some(g) = grep {
         out.retain(|l| l.contains(g));
     }
-    out
+    Ok(out)
 }
 
 fn cap_lines(out: &mut Vec<&str>, max_lines: u32) -> usize {
@@ -79,8 +82,8 @@ pub(crate) fn render_lines(
     lines: Option<&str>,
     grep: Option<&str>,
     max_lines: u32,
-) -> String {
-    let mut out = filter_lines(text, lines, grep);
+) -> Result<String> {
+    let mut out = filter_lines(text, lines, grep)?;
     let omitted = cap_lines(&mut out, max_lines);
     let mut rendered = out.join("\n");
     if omitted > 0 {
@@ -89,11 +92,16 @@ pub(crate) fn render_lines(
         }
         rendered.push_str(&format!("… {omitted} lines omitted (expand {id})"));
     }
-    rendered
+    Ok(rendered)
 }
 
 /// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is substring.
 pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> Result<()> {
+    // Validate before fetch: fetching a live-zone pointer freezes it. A malformed
+    // range must not mutate archive state even though no payload can be printed.
+    if let Some(spec) = lines {
+        parse_range(spec, usize::MAX)?;
+    }
     let cx = Runtime::open(cfg.clone(), "expand")?;
     let Some(bytes) = fetch(&cx, id)? else {
         bail!("unknown archive id: {id}");
@@ -104,7 +112,7 @@ pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> R
         return Ok(());
     }
     let text = String::from_utf8_lossy(&bytes);
-    let rendered = render_lines(&text, id, lines, grep, max_lines);
+    let rendered = render_lines(&text, id, lines, grep, max_lines)?;
     if !rendered.is_empty() {
         println!("{rendered}");
     }
@@ -112,10 +120,33 @@ pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> R
 }
 
 pub(crate) fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        bail!("invalid line range `{spec}`: expected a positive line or a-b");
+    }
     let mut parts = spec.splitn(2, '-');
-    let a: usize = parts.next().unwrap_or("1").parse().unwrap_or(1);
-    let b: usize = parts.next().map(|s| s.parse().unwrap_or(n)).unwrap_or(n);
-    Ok((a.max(1), b.min(n)))
+    let start = parts.next().unwrap_or_default();
+    let end = parts.next();
+    let a = if start.is_empty() {
+        1
+    } else {
+        start.parse::<usize>().map_err(|_| {
+            anyhow::anyhow!("invalid line range `{spec}`: expected a positive line or a-b")
+        })?
+    };
+    let requested_b = match end {
+        Some("") | None => None,
+        Some(s) => Some(s.parse::<usize>().map_err(|_| {
+            anyhow::anyhow!("invalid line range `{spec}`: expected a positive line or a-b")
+        })?),
+    };
+    if a == 0 || requested_b == Some(0) {
+        bail!("invalid line range `{spec}`: lines are 1-based");
+    }
+    if requested_b.is_some_and(|b| a > b) {
+        bail!("invalid line range `{spec}`: start exceeds end");
+    }
+    Ok((a, requested_b.unwrap_or(n).min(n)))
 }
 
 #[cfg(test)]
@@ -125,6 +156,13 @@ mod tests {
 
     fn cfg(name: &str) -> Config {
         crate::testutil::config(name).0
+    }
+
+    #[test]
+    fn malformed_range_is_rejected_before_archive_lookup() {
+        let c = cfg("bad-range");
+        let err = run(&c, "no-such", Some("3-2"), None).unwrap_err();
+        assert!(err.to_string().contains("invalid line range"), "{err}");
     }
 
     #[test]
@@ -187,6 +225,19 @@ mod tests {
     fn parse_range_bare_start_runs_to_end() {
         assert_eq!(parse_range("10", 20).unwrap(), (10, 20));
         assert_eq!(parse_range("5-5", 20).unwrap(), (5, 5));
+        assert_eq!(parse_range("-5", 20).unwrap(), (1, 5));
+        assert_eq!(parse_range("5-", 20).unwrap(), (5, 20));
+    }
+
+    #[test]
+    fn parse_range_rejects_malformed_zero_and_reverse_ranges() {
+        for spec in ["", "abc", "1-two", "1-2-3", "0", "0-2", "3-2"] {
+            let err = parse_range(spec, 20).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid line range"),
+                "{spec}: {err}"
+            );
+        }
     }
 
     #[rstest]
@@ -195,7 +246,7 @@ mod tests {
             .map(|n| format!("line{n}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let out = render_lines(&text, "arc123", None, None, 100);
+        let out = render_lines(&text, "arc123", None, None, 100).unwrap();
         assert_eq!(
             out.lines().filter(|l| !l.contains("lines omitted")).count(),
             100
