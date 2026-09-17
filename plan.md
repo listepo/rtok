@@ -210,27 +210,25 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 
 ### Should fix
 
-1. **T55.1 — `display_rel` case-sensitive `strip_prefix` (Windows residual).** `src/plugins/read/search.rs` vs case-insensitive `under` in `read/mod.rs`. Absolute search/tree paths when only case differs.
-2. **T55.2 — `never_wrap` case-sensitive stem.** `src/plugins/cmd/hook.rs` `skip_wrap`: `SUDO.EXE` still wrapped despite default `sudo`.
-3. **T55.3 — `file_uri` lacks percent-encoding.** `src/plugins/graph/lsp.rs`: spaced Windows user dirs → invalid LSP URIs.
-4. **T55.4 — POSIX-only wrap quotes on PowerShell/cmd hosts.** `cmd/hook.rs` + `agents::shell_quote_bin`.
-5. **T55.5 — unbounded `read_to_string` in search/tree.** Memory/latency footgun on huge files.
-6. **T55.6 — `plugins/cursor/scripts/mcp.cmd` bare `rtok mcp`.** Need `call` for `.cmd` shims.
+1. ~~**T55.1**~~ — done in #49 (`display_rel` case-insensitive strip).
+2. ~~**T55.2**~~ — done in #49 (`never_wrap` case-insensitive stem).
+3. ~~**T55.3**~~ — done in #49 (`file_uri` percent-encoding).
+4. ~~**T55.4**~~ — done in #49 (host-shell-safe wrap / cmd quoting).
+5. ~~**T55.5**~~ — done in #49 (`search_max_bytes`).
+6. ~~**T55.6**~~ — done in #49 (`call` in mcp.cmd).
 
 ### Nits
 
-1. **T55.7 — `measure/stats.rs` `strip_prefix_cd` and quoted spaced paths.** Family stats only; guard path OK.
-2. **`expand::parse_range` when start > line count** returns `(a, n)` with `a > n`; `slice_lines` yields empty quietly (no crash). Optional: clamp or error.
-3. **`guard::strip_wrap` only unwraps POSIX single quotes.** Safe while hook uses `sh_quote`; revisit with T55.4 if wrap gains double quotes.
+1. **T55.7 — `strip_prefix_cd` and quoted spaced paths** (still open).
+2. **`expand::parse_range` when start > line count** — empty slice quietly; optional clamp.
+3. **`guard::strip_wrap`** — updated in #49 for PowerShell `''`.
 
 ### Residual still open (called out before)
 
-- **search `display_rel` case-sensitive strip (Windows)** — still open → T55.1.
-- **PATH / single-quote parsers** — rtok: T55.7 (+ env strip already quotes). Larger residual remains in **ketch** (not this repo).
-- **MCP / setup / plugins / cmd / read / write**
-  - **T48.3 still todo:** `plugins/cursor/mcp.json` still points at bare `command: rtok` / `args: ["mcp"]`, so the ketch-hint `scripts/mcp.sh|mcp.cmd` launchers are never used when Cursor loads the linked plugin. Scripts exist and are tested in isolation; wiring is the gap.
-  - Cursor plugin hooks also use bare `rtok hook …` (PATH-dependent); install path for `~/.cursor/mcp.json` via `agents install` does use `rtok_command()` (absolute on Windows PATH miss) — OK for non-plugin MCP.
-  - cmd/read Windows stems, read `under` case fold, agent atomic replace readonly, expand range validation: covered by #37–#47; do not re-open.
+- T55.1–T55.6 closed by #49.
+- PATH / single-quote parsers — rtok: T55.7; larger residual in ketch.
+- Test VFS migration — D29 / T56.x (`Vfs` helper in #49).
+- T48.3 still todo: Cursor plugin mcp.json still bare `rtok mcp`.
 
 ### Out of scope this pass
 
