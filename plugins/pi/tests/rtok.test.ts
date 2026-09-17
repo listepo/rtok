@@ -13,15 +13,20 @@ const filterPrints = (out: string) =>
 type Handler = (event: any) => Promise<any>;
 
 /** Load the extension against a stub `pi`, with `rtok` as `fakeRtok(body)` sets it up. */
-function load(body: string | null) {
+function load(body: string | null, withoutSendMessage = false) {
   fakeRtok(body);
   const on: Record<string, Handler> = {};
   const entries: [string, string][] = [];
-  extension({
+  const messages: any[] = [];
+  const pi: any = {
     on: (name: string, fn: Handler) => (on[name] = fn),
     appendEntry: (kind: string, text: string) => entries.push([kind, text]),
-  });
-  return { on, entries };
+  };
+  if (!withoutSendMessage) {
+    pi.sendMessage = (message: any) => messages.push(message);
+  }
+  extension(pi);
+  return { on, entries, messages };
 }
 
 test("bash calls are rewritten to one quoted `rtok run --`", async () => {
@@ -42,14 +47,26 @@ test("other tools are left alone", async () => {
 });
 
 test("missing rtok fails open and names ketch", async () => {
-  const { on, entries } = load(null);
+  const { on, entries, messages } = load(null);
   const event = { toolName: "bash", input: { command: "ls" } };
   await on.tool_call(event);
   assert.equal(event.input.command, "ls", "the command runs unchanged");
-  assert.equal(entries.length, 1);
-  assert.match(entries[0][1], /ketch install listepo\/rtok/);
+  assert.equal(messages.length, 1, "the hint reaches the model via sendMessage");
+  assert.match(String(messages[0]?.content ?? ""), /ketch install listepo\/rtok/);
+  assert.equal(entries.length, 0, "TUI-only appendEntry stays unused when sendMessage exists");
+  await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
+  assert.equal(messages.length, 1, "once per session");
   const result = await on.tool_result({ toolName: "bash", content: [{ text: "big" }] });
   assert.equal(result, undefined, "the result passes through");
+});
+
+test("without sendMessage the hint falls back to appendEntry once", async () => {
+  const { on, entries, messages } = load(null, true);
+  await on.tool_call({ toolName: "bash", input: { command: "ls" } });
+  await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
+  assert.equal(messages.length, 0);
+  assert.equal(entries.length, 1);
+  assert.match(entries[0][1], /ketch install listepo\/rtok/);
 });
 
 test("a shorter filter result replaces the bash output", async () => {

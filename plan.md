@@ -6,12 +6,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.2 | todo | P1 | 1 | 0% | |
 | T48.3 | todo | P1 | 2 | 0% | |
 | T48.4 | todo | P2 | 4 | 0% | |
 | T48.5 | todo | P2 | 3 | 0% | |
 | T48.6 | todo | P2 | 3 | 0% | |
-| T48.7 | todo | P3 | 2 | 0% | |
+| T48.7 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T48.8 | todo | P2 | 3 | 0% | |
 | T49.1 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
@@ -22,21 +21,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T51.1 | todo | P3 | 5 | 0% | |
 | T51.2 | todo | P3 | 3 | 0% | |
 | T51.3 | todo | P3 | 4 | 0% | |
-| T51.4 | todo | P3 | 2 | 0% | |
+| T51.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
-| T52.4 | todo | P3 | 2 | 0% | |
+| T52.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T52.5 | todo | P3 | 3 | 0% | |
 | T53.1 | todo | P3 | 3 | 0% | |
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
-
-### T48.2. pi install hint reaches the model
-
-From I-36. `plugins/pi/extensions/rtok.ts` reports a missing `rtok` with `pi.appendEntry`, which pi documents as not part of the LLM context, so the model never learns why bash output is unfiltered or how to fix it (D21 asks the plugin to say "install with ketch"). Fail-open already holds.
-Done when the hint goes through the call pi documents as reaching the model (`pi.sendMessage` or the current equivalent), still once per session, the unit test (`plugins/pi/tests/rtok.test.ts`) asserts that call, and the pi README says so.
 
 ### T48.3. Cursor plugin MCP goes through the ketch-hint launcher
 
@@ -62,6 +56,8 @@ Done when `rtok agents install zed` adds `context_servers.rtok` without destroyi
 
 From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where `openai-api-base` / `anthropic-api-base` (or the env vars) can point it at `rtok proxy`, which is the only rtok surface it can use.
 Done when `rtok agents install aider --proxy` writes the base URL key into the YAML config without losing comments (reuse an installed YAML-preserving approach or a line edit; no new dependency without approval), the support table explains why hooks and mcp are `no`, remove strips only rtok's key, and the host joins the e2e matrix and docs.
+
+Execution plan (G3): 1) `src/agents/aider/{mod.rs,README.md}` — line-edit `openai-api-base` (only base-url key aider documents; no `anthropic-api-base` in options reference) preserving comments, idempotent, fail-open on unparsable YAML shape (leave file, error); `support`: proxy `Flag(--proxy)`, hooks/mcp/plugin `No` with reasons; 2) wire `HOSTS`/`host()`, `[setup.aider] config_path` default `~/.aider.conf.yml` (config/default.toml + mod.rs + docs/config.md row, D12); 3) e2e matrix (`tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`) + README host line; verify `cargo fmt/clippy/nextest` + `just check`.
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -118,6 +114,12 @@ Done when `src/proxy/gemini.rs` implements the `Wire` adapter (usage, cached tok
 From I-12. Pointing a host at the proxy means editing its config; for a one-off run it is simpler to set `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` for one process.
 Done when `rtok wrap -- <cmd> [args]` ensures the proxy is running (via `demon` or in-process), execs the command with both base URLs set, forwards the exit code and signals, prints nothing on the happy path, and has an integration test with a fake agent that echoes its env.
 
+Execution plan (OpenCode / Muse Spark 1.3):
+1. `src/proxy/cli.rs`: add `wrap` module fns — `base_urls(cfg)` reusing `agents::{anthropic_proxy_url,openai_proxy_url}` (already the exact strings installers write), `health_ok(cfg)` via a hand-rolled `GET /health` over `TcpStream` (no new dep; reqwest has no blocking feature), `ensure_proxy(cfg)` spawning the axum `app` in-process on a background thread + own runtime when health is down (poll health ≤5s; bind failure → fail-open `None`), `run(cfg, argv) -> i32` setting both env vars, inheriting stdio, exiting with the child's code (Unix signal death → 128+signo shell convention; terminal signals already reach the child via the shared foreground pgroup, so no signal crate needed).
+2. `src/cli.rs`: `Wrap { command: Vec<String> }` trailing-var-arg, no long flags → no new config keys (T12.4 walk skips positionals), arm calls `std::process::exit(wrap::run(...))`.
+3. `tests/wrap.rs`: hermetic temp `RTOK_HOME`/`HOME` (plugins_e2e pattern); fake agent echoes env — unix `sh -c`, Windows `cmd /c`; asserts exact stdout (silent happy path), both URLs, exit-code forwarding (`exit 3` → 3), plus an ensure-proxy unit path: POST `/v1/messages` through the ensured proxy at a mock upstream (`RTOK_UPSTREAM`) and assert one usage row.
+4. Verify: `mise exec -- cargo fmt`, `clippy --all-targets --all-features -D warnings`, `cargo nextest run --workspace` (or `just check`).
+
 ### T52.1. Query language over the graph index
 
 From I-14. `graph` answers `symbol`, `callers`, `impact` and `outline`; composite questions (callers of X inside path Y of kind Z) take several calls.
@@ -137,6 +139,12 @@ Done when a P7-style A/B shows the map lowers cost per passed task; the map is r
 
 From I-29. Definitions with zero reference sites are cheap to list once edges exist, but pub API, trait impls and macros make naive output noisy.
 Done when `impact` (or `rtok graph dead`) lists unreferenced private definitions, excludes pub items, trait impls, tests and macro-generated symbols, and a fixture repo test asserts no false positives on those classes.
+
+Execution plan (T52.4, OpenCode / Muse Spark 1.3):
+1. `src/store/symbols.rs`: `symbol_dead_candidates(root)` — defs with no same-name ref row under the root (one SQL, `NOT EXISTS`), excluding empty names.
+2. `src/plugins/graph/mod.rs`: `dead(cx, root)` — index_for, candidates, then filters: skip `macro` kind; skip test paths (`tests/`, `_test`, `test_`); skip `pub` lines (read source once per file); skip methods inside `impl X for Y` ranges (tree-sitter parse per file); skip `main`; cap + `Measurement` via existing `cap`.
+3. `src/cli.rs`: `GraphCmd::Dead` + dispatch printing `dead()`; e2e via binary on a fixture repo.
+4. Verify: new unit test with fixture repo covering pub fn, trait impl method, `#[test]` fn, `macro_rules!` + used + truly-dead private fn (only the dead one listed); `mise exec -- cargo fmt`, clippy, nextest; `just check`.
 
 ### T52.5. Type-position and scoped-call references
 
