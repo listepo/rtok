@@ -55,7 +55,8 @@ pub struct Report {
     /// with and without the price table (T49.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<CostReport>,
-    #[serde(default)]
+    /// Absent from `--json` when no session edited anything, so the T15.11 goldens hold.
+    #[serde(default, skip_serializing_if = "EditRow::is_empty")]
     pub edits: EditRow,
 }
 
@@ -68,6 +69,12 @@ pub struct EditRow {
     pub old_bytes: u64,
     pub new_bytes: u64,
     pub tool_input_bytes: u64,
+}
+
+impl EditRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
