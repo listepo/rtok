@@ -6,12 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T45.6. Extra hook/expand/guard/read/toon coverage
-
-Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
-Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
 
 ## Reference
 
