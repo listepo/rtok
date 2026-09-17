@@ -17,6 +17,8 @@ pub mod cache;
 pub mod hook;
 pub(crate) mod outline;
 pub mod search;
+#[cfg(test)]
+pub(crate) mod walk;
 
 pub struct Read;
 

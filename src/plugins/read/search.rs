@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    // WalkBuilder integration — stays on host disk until T56.4 walk/VFS adapter.
+    // WalkBuilder host-disk e2e — kept; Vfs twins use walk::WalkFs (T56.4).
     fn search_paths_stay_relative_for_allow_paths_root() {
         let (rt, dir) = crate::plugins::read::tests::cx("searchrel");
         let nested = dir.join("nest");
@@ -277,86 +277,22 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// Mirror `skip_git`: any path segment named `.git` is excluded (T56.2 twin of WalkBuilder filter).
-    fn vfs_skips_git(path: &str) -> bool {
-        path.split(['/', '\\']).any(|s| s == ".git")
-    }
-
-    /// T55.5 / T56.2: size gate + regex hits against an in-memory VFS (no WalkBuilder / host disk).
+    /// T56.4: thin wrappers over [`super::walk`] so twins share the real WalkFs adapter.
     fn search_hits_from_vfs(
         vfs: &crate::testutil::Vfs,
         pattern: &str,
         max_bytes: u64,
         max_hits: usize,
     ) -> Vec<String> {
-        let re = Regex::new(pattern).unwrap();
-        let mut hits = Vec::new();
-        for path in vfs.paths() {
-            if hits.len() >= max_hits {
-                break;
-            }
-            if vfs_skips_git(&path) {
-                continue;
-            }
-            let Some(len) = vfs.len(&path) else {
-                continue;
-            };
-            if len > max_bytes {
-                continue;
-            }
-            let Some(text) = vfs.read_str(&path) else {
-                continue;
-            };
-            for (i, line) in text.lines().enumerate() {
-                if hits.len() >= max_hits {
-                    break;
-                }
-                if !re.is_match(line) {
-                    continue;
-                }
-                hits.push(format!("{path}:{}: {}", i + 1, line.trim()));
-            }
-        }
-        hits
+        crate::plugins::read::walk::search_hits(vfs, "", pattern, max_bytes, max_hits)
     }
 
-    /// T56.2: compact `rel size` rows from Vfs file keys (dirs are implicit; depth = path segments).
     fn tree_rows_from_vfs(
         vfs: &crate::testutil::Vfs,
         root_prefix: &str,
         max_depth: usize,
     ) -> Vec<String> {
-        let mut rows = Vec::new();
-        let under = if root_prefix.is_empty() {
-            vfs.paths().collect::<Vec<_>>()
-        } else {
-            vfs.paths_under(root_prefix)
-        };
-        for path in under {
-            if path == root_prefix {
-                continue;
-            }
-            if vfs_skips_git(&path) {
-                continue;
-            }
-            let rel = if root_prefix.is_empty() {
-                path.clone()
-            } else {
-                let with_sep = format!("{root_prefix}/");
-                match path.strip_prefix(&with_sep) {
-                    Some(r) => r.to_string(),
-                    None => continue,
-                }
-            };
-            let depth = rel.split('/').filter(|s| !s.is_empty()).count();
-            if depth == 0 || depth > max_depth {
-                continue;
-            }
-            let size = vfs.len(&path).unwrap_or(0);
-            rows.push(format!("{rel} {size}"));
-        }
-        rows.sort();
-        rows
+        crate::plugins::read::walk::tree_rows(vfs, root_prefix, max_depth)
     }
 
     #[test]
@@ -449,16 +385,12 @@ mod tests {
         );
     }
 
-    /// T56.2 twin of `search_paths_stay_relative_for_allow_paths_root` (hit path under nested root).
+    /// T56.2/T56.4 twin of `search_paths_stay_relative_for_allow_paths_root` via WalkFs root.
     #[test]
     fn search_paths_stay_relative_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         vfs.write("nest/hit.rs", b"fn needle() {}\n");
-        // Simulate walking only under nest/: filter keys with paths_under + strip prefix in assert.
-        let hits: Vec<_> = search_hits_from_vfs(&vfs, "needle", 1024, 10)
-            .into_iter()
-            .map(|h| h.replacen("nest/", "", 1))
-            .collect();
+        let hits = crate::plugins::read::walk::search_hits(&vfs, "nest", "needle", 1024, 10);
         assert!(
             hits.iter().any(|h| h.starts_with("hit.rs:")),
             "expected path relative to allow_paths root, got {hits:?}"
