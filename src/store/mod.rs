@@ -2152,6 +2152,63 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// T45.3: the same `tool_use_id` in two sessions is two decisions (composite key, 0014).
+    #[test]
+    fn archive_decision_repeated_id_persists_per_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-t453-id-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let id = store.put_archive("a", b"body", &dir).unwrap();
+        store
+            .put_archive_decision("tu-1", &id, "a", "ptr-a")
+            .unwrap();
+        store
+            .put_archive_decision("tu-1", &id, "b", "ptr-b")
+            .unwrap();
+        let a = store
+            .archive_decision("a", "tu-1")
+            .unwrap()
+            .expect("session a");
+        let b = store
+            .archive_decision("b", "tu-1")
+            .unwrap()
+            .expect("session b");
+        assert_eq!((a.pointer.as_str(), b.pointer.as_str()), ("ptr-a", "ptr-b"));
+        assert_eq!(
+            store.live_zone_pointer("b", &id).unwrap().as_deref(),
+            Some("ptr-b")
+        );
+        assert_eq!(store.live_zone_pointer("c", &id).unwrap(), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T45.3: `expand` in one session freezes that session's decision only.
+    #[test]
+    fn expand_in_one_session_does_not_freeze_another() {
+        let dir = std::env::temp_dir().join(format!("rtok-t453-exp-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let id = store.put_archive("a", b"body", &dir).unwrap();
+        store.put_archive_decision("tu-1", &id, "a", "p").unwrap();
+        store.put_archive_decision("tu-1", &id, "b", "p").unwrap();
+        assert_eq!(store.mark_expanded("a", &id).unwrap(), 1);
+        assert_eq!(store.mark_expanded("a", &id).unwrap(), 0, "already frozen");
+        assert!(
+            store
+                .archive_decision("a", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded
+        );
+        assert!(
+            !store
+                .archive_decision("b", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded
+        );
+        assert_eq!(store.archive_decision_counts().unwrap(), (2, 1));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[rstest]
     fn retention_keeps_plugin_archives_without_call_io() {
         let dir = std::env::temp_dir().join(format!("rtok-retain-plugin-{}", std::process::id()));

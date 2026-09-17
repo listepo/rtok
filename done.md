@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T45.3 — Archive decisions scoped per session
+
+**T45.3 Archive decisions scoped per session** · P1, 3/5 · `migrations/0014.sql`, `src/store/mod.rs`, `src/expand.rs`, `src/plugin.rs`
+Do: `archive_decisions` was keyed by bare `tool_use_id` while reads and writes scoped by `(session, tool_use_id)`, so a repeated id in a second session hit `INSERT OR IGNORE` and was never stored, and `mark_expanded` froze every session. `0014.sql` rebuilds the table with `PRIMARY KEY (session, tool_use_id)` and an `archive_id` index; `mark_expanded(session, id)` and `live_zone_pointer(session, id)` filter by session, and `expand` passes the calling session.
+Check: `store::tests::archive_decision_repeated_id_persists_per_session` (same id, two sessions, two pointers; a third session sees none); `store::tests::expand_in_one_session_does_not_freeze_another` (`mark_expanded` 1 then 0, only session a expanded, counts `(2, 1)`).
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3 (migration, callers); Claude Code / Fable 5.1 (store methods in T47.4, tests)
+Evidence: both tests pass; `just check` exit 0 (716 passed).
+Deviation: the migration and callers landed inside `a423aca`, the store methods in T47.4; this commit adds the two tests the card asked for and closes the task.
+
 ## T47.3 — Unit and e2e tests for every host plugin
 
 **T47.3 Unit and e2e tests for every host plugin** · P1, 3/5 · `plugins/pi/tests/rtok.test.ts` (new), `plugins/opencode/rtok.test.ts`, `tests/opencode_plugin.rs` (new), `tests/pi_plugin.rs`, `plugins/pi/README.md`

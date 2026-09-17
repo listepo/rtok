@@ -8,7 +8,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.2 | in progress | P0 | 3 | 0% | OpenCode / Muse Spark 1.3 |
-| T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 
@@ -21,11 +20,6 @@ Plan: `src/otel/export.rs` (match per-stream `post` results), `tests/otel.rs` (n
 
 A semantic-cache hit writes measurement + `call_io` but no `usage`/`tokens` row and drops request bytes; upstream errors and non-2xx/no-usage responses also leave no row. Every request owes one usage row (T5.1).
 Plan: `src/proxy/mod.rs` (insert usage + provider tokens on cache hit with request bytes; minimal row on error), `tests/proxy.rs` (new cases). Verify: `mise exec -- cargo test --test proxy`.
-
-### T45.3. Archive decisions scoped per session
-
-`archive_decisions` PK is bare `tool_use_id` while reads/writes scope `(session, tool_use_id)`: a repeated id in a second session hits `INSERT OR IGNORE` and is never persisted; `mark_expanded` is global so expanding in session A freezes B.
-Plan: new migration `migrations/0014.sql` (composite PK, never edit applied ones), `src/store/mod.rs`, `src/expand.rs`. Verify: `mise exec -- cargo test --lib store::` + expand tests.
 
 ### T45.5. Gates cover tests, webui and examples
 
