@@ -855,6 +855,84 @@ async fn proxy_compress_rewrites_old_tool_results_identically() {
     task.abort();
 }
 
+/// T55.11: `rtok expand <id>` runs under its own session, not the proxy session that
+/// wrote the decision — the freeze is keyed by archive id, so the next forwarded request
+/// carries the original block for the expanded id while other pointers stay.
+#[tokio::test]
+async fn proxy_expand_freezes_the_pointer_for_the_next_request() {
+    let up = MockUpstream::anthropic_messages_body();
+    let label = "expand-freeze";
+    let (addr, state, task) = t51_server(label, &up, "compress").await;
+    // `usage_rows` is newest first, so the latest request is always `rows[0]`.
+    let sent_request = |n: usize| {
+        let state = state.clone();
+        async move {
+            let rows = t51_usage_n(&state.store, T53_SESSION, n).await;
+            let bytes = state
+                .store
+                .call_io_request(rows[0].call_id.expect("call id") as i32)
+                .expect("call_io")
+                .expect("request");
+            String::from_utf8(bytes).expect("utf-8")
+        }
+    };
+    let resp = t51_post(&addr, t53_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let first = sent_request(1).await;
+    let contents = tool_result_contents(&first);
+    let pointer = contents[0].as_str();
+    assert!(pointer.starts_with("[archived "), "{pointer}");
+    let id: String = pointer
+        .split("expand(")
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .expect("expand id")
+        .to_string();
+    // The CLI expand surface: its own session, the same store.
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t51-{label}-{}", std::process::id()));
+    let cfg = Config::load_from(&dir).expect("config");
+    let cx = rtok::plugin::Runtime::open(cfg, "expand").expect("expand runtime");
+    assert_eq!(
+        rtok::expand::fetch(&cx, &id).unwrap().unwrap(),
+        contents_original_bytes(1),
+        "expand returns the archived original"
+    );
+    let resp = t51_post(&addr, t53_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let second = sent_request(2).await;
+    let contents = tool_result_contents(&second);
+    assert!(
+        contents[0].starts_with("t1 line 1:"),
+        "expanded id goes to upstream whole: {}",
+        contents[0]
+    );
+    assert!(
+        contents[1].starts_with("[archived "),
+        "the un-expanded turn-2 pointer stays"
+    );
+    task.abort();
+}
+
+fn tool_result_contents(body: &str) -> Vec<String> {
+    let body: serde_json::Value = serde_json::from_str(body).expect("json");
+    body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .map(|m| m["content"][0]["content"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The original turn-`t` payload of [`t53_request`], as archived bytes.
+fn contents_original_bytes(t: usize) -> Vec<u8> {
+    (1..=400)
+        .map(|i| format!("t{t} line {i}: some shell output with words"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes()
+}
+
 const T114_SESSION: &str = "sess-t114";
 const ANTHROPIC_6TURNS: &[u8] = include_bytes!("fixtures/proxy/anthropic_messages_6turns.json");
 const OPENAI_CHAT_6TURNS: &[u8] = include_bytes!("fixtures/proxy/openai_chat_6turns.json");

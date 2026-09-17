@@ -19,7 +19,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.8 | todo | P2 | 2 | 0% | |
 | T55.9 | todo | P3 | 2 | 0% | |
 | T55.10 | todo | P3 | 1 | 0% | |
-| T55.11 | in progress | P2 | 3 | 20% | ZCode / GLM-5.3 |
+| T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
 | T55.14 | todo | P3 | 1 | 0% | |
@@ -118,11 +118,6 @@ Done when the key keeps the effective `cd` target (normalized spacing, quotes ha
 
 From review 2026-09-17 (code read, no fix). The "basename, split on `/` and `\`, drop `.exe` case-insensitively" helper exists three times: `plugins::cmd::formatters::cmd_stem`, `measure::stats::bash_family` (inline), `agents::is_rtok_bin` (inline). `bash_family` cannot call the `cmd` one because `measure` builds without the `cmd` feature (`just build-min`).
 Done when one `pub(crate) fn cmd_stem` lives in a feature-free module (e.g. `src/util.rs` or `src/agents/mod.rs`), the other two call it, behavior is unchanged, and `cmd_stem_strips_windows_path_and_exe` plus the `bash_family_*` and `is_rtok_bin` tests still pass under `just check` and `just build-min`.
-
-### T55.11. `expand` never freezes the owning session's pointer
-
-From review 2026-09-17, second pass (reproduced). `store::mark_expanded` (T45.3) updates `archive_decisions … WHERE session = ? AND archive_id = ?`, but every `expand` caller runs under a session that owns no decisions: CLI `rtok expand <id>` opens `Runtime::open(cfg, "expand")` (`src/expand.rs:122`) and MCP `expand` opens `mcp-<pid>` (`src/mcp.rs:110`), while the decisions belong to the proxy session (`metadata.user_id` / `x-rtok-session` / body sha). So `mark_expanded` always touches 0 rows: the pointer is rewritten again on every later request (the doc claim in `src/expand.rs:8-11` — "the owning plugin sends the original from the next request on" — is false end-to-end), `live_zone_pointer` never matches so every expand Measurement is attributed to `archive` (never `toon`), and `archive_decision_counts`'s expanded count stays 0 — the expand-rate honesty metric reads 0 % forever. Repro (scratch test, run and deleted 2026-09-17): put a decision under session `proxy-sess`, call `expand::fetch` through a `Runtime` with session `expand`, then `archive_decision("proxy-sess", …).expanded` is still `false`.
-Done when expanding an id freezes the decisions that actually point at it — either `mark_expanded` drops the session filter (one `expand` freezes every session following that pointer; cross-session blast radius stated in the card) or expand learns the owning session — with tests `cli_expand_freezes_the_owning_sessions_pointer` (decisions rows flipped) and `expand_measurement_attributes_toon_pointers` (`live_zone_pointer` without a session), and `tests/proxy.rs` extended: after `rtok expand <id>`, the next forwarded request carries the original block, not the pointer.
 
 ### T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 
@@ -339,7 +334,7 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 
 Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/cache/hook/search), archive, proxy (mod/wire/anthropic/openai_chat/semantic_cache), expand, store (archive/decisions/read_cache paths), mcp session handling. Four findings reproduced with a scratch integration test (written, run, deleted — `cargo nextest run --test zz_review_repro` → 4 failed exactly as predicted); two filed from code read. No code fixes in this pass — findings tracked as T55.11–T55.16, propositions as I-39/I-40.
 
-- **T55.11 (P2)** — `expand` never freezes the owning session's pointer: every expand caller runs under session `expand` / `mcp-<pid>`, decisions belong to the proxy session; expand rate stays 0, toon attribution dead. Reproduced.
+- ~~**T55.11 (P2)**~~ — done: `expand` never froze the owning session's pointer (every expand caller runs under session `expand` / `mcp-<pid>`, decisions belong to the proxy session; expand rate stayed 0, toon attribution dead). Reproduced.
 - **T55.12 (P2)** — Windows `wrap_quote` `''` quoting is wrong under Git Bash (Claude Code's Windows shell): apostrophes silently dropped from the rewritten command. Code read.
 - ~~**T55.13 (P3)**~~ — done: Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
 - **T55.14 (P3)** — semantic-cache key ignores tool_result text; two requests differing only in tool results hash identically and are both eligible under defaults. Reproduced.

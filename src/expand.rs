@@ -15,9 +15,9 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
     else {
         return Ok(None);
     };
-    if cx.store.mark_expanded(&cx.session, id)? > 0 {
+    if cx.store.mark_expanded(id)? > 0 {
         let n = bytes.len() as u64;
-        let plugin = match cx.store.live_zone_pointer(&cx.session, id)? {
+        let plugin = match cx.store.live_zone_pointer(id)? {
             Some(p) if p.starts_with("[toon ") => "toon",
             Some(_) => "archive",
             None => "archive",
@@ -236,6 +236,55 @@ mod tests {
         drop(cx);
         let err = run(&c, &id, None, None).unwrap_err();
         assert!(err.to_string().contains("unknown archive id"), "{err}");
+    }
+
+    /// T55.11: `rtok expand` runs under session "expand", not the proxy session that
+    /// owns the decision — the freeze must still reach the owning session's pointer.
+    #[test]
+    fn cli_expand_freezes_the_owning_sessions_pointer() {
+        let c = cfg("freeze-owner");
+        let cx_proxy = crate::plugin::Runtime::open(c.clone(), "proxy-sess").unwrap();
+        let id = cx_proxy
+            .store
+            .put_archive("proxy-sess", b"payload\n", &c.core.archive_dir)
+            .unwrap();
+        cx_proxy
+            .store
+            .put_archive_decision("tu-1", &id, "proxy-sess", &format!("[archived {id}]"))
+            .unwrap();
+        drop(cx_proxy);
+        let cx_cli = crate::plugin::Runtime::open(c, "expand").unwrap();
+        assert_eq!(fetch(&cx_cli, &id).unwrap().unwrap(), b"payload\n");
+        assert!(
+            cx_cli
+                .store
+                .archive_decision("proxy-sess", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded,
+            "the writer's session must see the freeze"
+        );
+    }
+
+    /// T55.11: an expand of a toon pointer attributes its Measurement to `toon`;
+    /// `live_zone_pointer` no longer needs the writer's session.
+    #[test]
+    fn expand_measurement_attributes_toon_pointers() {
+        let c = cfg("toon-attr");
+        let cx_proxy = crate::plugin::Runtime::open(c.clone(), "proxy-sess").unwrap();
+        let id = cx_proxy
+            .store
+            .put_archive("proxy-sess", b"table\n", &c.core.archive_dir)
+            .unwrap();
+        cx_proxy
+            .store
+            .put_archive_decision("tu-1", &id, "proxy-sess", &format!("[toon {id}]\na,b"))
+            .unwrap();
+        drop(cx_proxy);
+        let cx_cli = crate::plugin::Runtime::open(c, "expand").unwrap();
+        assert!(fetch(&cx_cli, &id).unwrap().is_some());
+        let rows = cx_cli.store.list_measurements("toon").unwrap();
+        assert!(rows.iter().any(|r| r.kind == "expand"), "{rows:?}");
     }
 
     #[test]

@@ -11,7 +11,6 @@
 - T55.8. Guard `read:` keys survive a mutating Bash
 - T55.9. Guard Bash key is cwd-blind
 - T55.10. One `cmd_stem`
-- T55.11. `expand` never freezes the owning session's pointer
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 - T55.14. Semantic-cache key drops tool_result content
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks

@@ -266,7 +266,7 @@ impl Archive for Runtime {
     }
 
     fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
-        self.store.mark_expanded(&self.session, archive_id)
+        self.store.mark_expanded(archive_id)
     }
 }
 

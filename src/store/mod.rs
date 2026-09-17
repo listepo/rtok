@@ -499,29 +499,31 @@ impl Store {
         Ok(())
     }
 
-    /// Live-zone pointer text for one archive id in one session (T36.2: attribute expand rows
-    /// to toon vs archive; T45.3: decisions are keyed per session).
-    pub fn live_zone_pointer(&self, session: &str, archive_id: &str) -> Result<Option<String>> {
+    /// Any pointer text for one archive id (T36.2: attribute expand rows to toon vs archive;
+    /// T55.11: the expander — CLI session `expand`, MCP `mcp-<pid>` — never shares a session
+    /// with the proxy that wrote the decision, so the lookup is by archive id alone).
+    pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;
         let rows: Vec<PointerRow> = sql_query(
-            "SELECT pointer FROM archive_decisions WHERE session = ? AND archive_id = ? LIMIT 1",
+            "SELECT pointer FROM archive_decisions WHERE archive_id = ?
+             ORDER BY tool_use_id, session LIMIT 1",
         )
-        .bind::<Text, _>(session)
         .bind::<Text, _>(archive_id)
         .load(&mut *conn)?;
         Ok(rows.into_iter().next().map(|r| r.pointer))
     }
 
-    /// T5.4: an `expand <id>` freezes every decision in that session pointing at that archive
-    /// id; another session's decisions stay live (T45.3). Returns how many decisions changed
-    /// (0 = the id was not a live-zone pointer in this session).
-    pub fn mark_expanded(&self, session: &str, archive_id: &str) -> Result<usize> {
+    /// T5.4/T55.11: an `expand <id>` freezes every decision pointing at that archive id.
+    /// The expander's session is never the writer's, so the freeze is keyed by archive id
+    /// alone: every session following that pointer starts receiving the original from its
+    /// next request (more tokens; never wrong bytes — the archive holds the exact payload).
+    /// Returns how many decisions changed (0 = nothing pointed at the id).
+    pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
         let mut conn = self.lock()?;
         Ok(sql_query(
             "UPDATE archive_decisions SET expanded_ts = unixepoch()
-             WHERE session = ? AND archive_id = ? AND expanded_ts IS NULL",
+             WHERE archive_id = ? AND expanded_ts IS NULL",
         )
-        .bind::<Text, _>(session)
         .bind::<Text, _>(archive_id)
         .execute(&mut *conn)?)
     }
@@ -2224,23 +2226,26 @@ mod tests {
             .expect("session b");
         assert_eq!((a.pointer.as_str(), b.pointer.as_str()), ("ptr-a", "ptr-b"));
         assert_eq!(
-            store.live_zone_pointer("b", &id).unwrap().as_deref(),
-            Some("ptr-b")
+            store.live_zone_pointer(&id).unwrap().as_deref(),
+            Some("ptr-a"),
+            "deterministic by (tool_use_id, session)"
         );
-        assert_eq!(store.live_zone_pointer("c", &id).unwrap(), None);
+        let other = store.put_archive("c", b"none", &dir).unwrap();
+        assert_eq!(store.live_zone_pointer(&other).unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// T45.3: `expand` in one session freezes that session's decision only.
+    /// T55.11: the expander's session is never the writer's, so one `expand` freezes
+    /// every session's decision pointing at that archive id; a second expand is a no-op.
     #[test]
-    fn expand_in_one_session_does_not_freeze_another() {
+    fn expand_freezes_every_session_pointing_at_the_archive() {
         let dir = std::env::temp_dir().join(format!("rtok-t453-exp-{}", std::process::id()));
         let store = Store::open_in_memory().unwrap();
         let id = store.put_archive("a", b"body", &dir).unwrap();
         store.put_archive_decision("tu-1", &id, "a", "p").unwrap();
         store.put_archive_decision("tu-1", &id, "b", "p").unwrap();
-        assert_eq!(store.mark_expanded("a", &id).unwrap(), 1);
-        assert_eq!(store.mark_expanded("a", &id).unwrap(), 0, "already frozen");
+        assert_eq!(store.mark_expanded(&id).unwrap(), 2);
+        assert_eq!(store.mark_expanded(&id).unwrap(), 0, "already frozen");
         assert!(
             store
                 .archive_decision("a", "tu-1")
@@ -2249,13 +2254,13 @@ mod tests {
                 .expanded
         );
         assert!(
-            !store
+            store
                 .archive_decision("b", "tu-1")
                 .unwrap()
                 .unwrap()
                 .expanded
         );
-        assert_eq!(store.archive_decision_counts().unwrap(), (2, 1));
+        assert_eq!(store.archive_decision_counts().unwrap(), (2, 2));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -2279,7 +2284,7 @@ mod tests {
         store
             .put_archive_decision("tu-1", &arch_id, "sess", "pointer")
             .unwrap();
-        store.mark_expanded("sess", &arch_id).unwrap();
+        store.mark_expanded(&arch_id).unwrap();
         let body_read = b"read/cmd style archive";
         let read_arch_id = store
             .put_archive("sess", body_read, &cfg.core.archive_dir)

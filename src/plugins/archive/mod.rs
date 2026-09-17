@@ -477,7 +477,7 @@ mod tests {
         ];
         rewrite(refs(&mut second), &Ctx::new(&cx));
         assert_eq!(first_body, second);
-        assert_eq!(cx.store.mark_expanded("s", &archive_id).unwrap(), 1);
+        assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
         let mut third = vec![
             Value::String(big("one")),
             Value::String(big("two")),
@@ -691,7 +691,7 @@ mod tests {
                 );
             }
             let archive_id = ms[0].ref_id.clone().unwrap();
-            assert_eq!(cx.store.mark_expanded("s", &archive_id).unwrap(), 1);
+            assert_eq!(cx.store.mark_expanded(&archive_id).unwrap(), 1);
             let mut expanded = original.clone();
             assert_eq!(
                 rewrite(wire.tool_results(&mut expanded), &Ctx::new(&cx)).len(),
@@ -811,7 +811,7 @@ mod tests {
         assert!(values[1].as_str().unwrap().starts_with("[archived "));
         assert_eq!(values[2], Value::String("small".into()), "under min_tokens");
         let id = ms[0].ref_id.clone().unwrap();
-        assert_eq!(cx.store.mark_expanded("s", &id).unwrap(), 1);
+        assert_eq!(cx.store.mark_expanded(&id).unwrap(), 1);
         let mut again: Vec<Value> = vec![
             Value::String(uri),
             Value::String(bare),

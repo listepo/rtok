@@ -109,7 +109,7 @@ fn seed(home: &Path) -> String {
             .put_archive_decision(tool, &archive_id, "s1", "head…")
             .unwrap();
     }
-    store.mark_expanded("s1", &first_archive_id).unwrap();
+    store.mark_expanded(&first_archive_id).unwrap();
     // cmd: 25→10. archive: pointer 100→20 and expand 0→5 (retrieval costs tokens);
     // the expand row names the frozen id.
     for (plugin, kind, est_before, est_after, ref_id) in [
@@ -426,7 +426,7 @@ fn seed_advice(home: &Path) {
             .put_archive_decision(&format!("u{i}"), &archive_id, "adv", "head…")
             .unwrap();
     }
-    store.mark_expanded("adv", &first_archive_id).unwrap();
+    store.mark_expanded(&first_archive_id).unwrap();
 
     // Measurements: cmd and archive net positive, inject 1500/turn over the 800 budget,
     // toon net −15 (the one plugin to retire); the expand row names the frozen id.
