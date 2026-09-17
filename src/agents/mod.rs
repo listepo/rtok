@@ -17,6 +17,7 @@ pub mod opencode;
 pub mod pi;
 pub mod windsurf;
 pub mod zcode;
+pub mod zed;
 
 use std::path::{Path, PathBuf};
 
@@ -29,6 +30,7 @@ use crate::config::Config;
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
     "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot", "aider", "windsurf",
+    "zed",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -47,6 +49,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "copilot" => Some(&copilot::Copilot),
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
+        "zed" => Some(&zed::Zed),
         _ => None,
     }
 }
@@ -1119,6 +1122,8 @@ mod tests {
             "Desktop: OpenCode Desktop",
             "CLI: pi",
             "Desktop: Windsurf",
+            "CLI: Zed CLI",
+            "Desktop: Zed",
         ] {
             assert!(
                 out.contains(&format!("{head}\n")) || out.contains(&format!("{head} — ")),

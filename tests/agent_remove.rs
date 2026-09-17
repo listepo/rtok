@@ -295,6 +295,36 @@ fn windsurf_remove_keeps_foreign_servers() {
 }
 
 #[test]
+fn zed_remove_keeps_comments_and_foreign_servers() {
+    let home = tmp("zed");
+    let cfg = write_cfg(&home);
+    let path = home.join(".config/zed/settings.json");
+    fs::write(
+        &path,
+        "{\n  // my theme\n  \"theme\": \"One Dark\",\n  \"context_servers\": {\n    // foreign\n    \"other\": {\"command\": \"npx\", \"args\": [\"x\"]}\n  }\n}\n",
+    )
+    .unwrap();
+
+    rtok(&["agents", "install", "zed"], &cfg, &home);
+    let installed: serde_json::Value = serde_json::from_str(&rtok::agents::zed::strip_comments(
+        &fs::read_to_string(&path).unwrap(),
+    ))
+    .unwrap();
+    assert!(installed["context_servers"]["rtok"].is_object());
+
+    rtok(&["agents", "remove", "zed"], &cfg, &home);
+    let left = fs::read_to_string(&path).unwrap();
+    assert!(!left.contains("\"rtok\""), "every rtok entry goes: {left}");
+    assert!(left.contains("// my theme"), "comments survive: {left}");
+    assert!(left.contains("// foreign"), "comments survive: {left}");
+    let servers: serde_json::Value =
+        serde_json::from_str(&rtok::agents::zed::strip_comments(&left)).unwrap();
+    assert!(servers["context_servers"]["other"].is_object(), "{servers}");
+    let again = rtok(&["agents", "remove", "zed"], &cfg, &home);
+    assert!(again.contains("no changes"), "second remove: {again}");
+}
+
+#[test]
 fn setup_copies_the_config_before_it_writes() {
     let home = tmp("bak");
     let cfg = write_cfg(&home);

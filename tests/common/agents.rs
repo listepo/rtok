@@ -37,6 +37,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".kimi-code",
         ".copilot/hooks",
         ".codeium/windsurf",
+        ".config/zed",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -55,7 +56,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\
              [setup.copilot]\ndir = \"{h}/.copilot\"\n\
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
-              [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n"
+              [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
+              [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n"
         ),
     )
     .unwrap();

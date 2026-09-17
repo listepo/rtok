@@ -6,16 +6,15 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.6 | in progress | P2 | 3 | 70% | Cursor / grok 4.6 |
 | T48.8 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T51.1 | todo | P3 | 5 | 0% | |
+| T51.1 | in progress | P3 | 5 | 5% | OpenCode / Muse Spark 1.3 |
 | T52.2 | todo | P3 | 3 | 0% | |
-| T52.3 | todo | P3 | 4 | 0% | |
-| T53.1 | todo | P3 | 3 | 0% | |
-| T53.3 | todo | P3 | 3 | 0% | |
+| T52.3 | in progress | P3 | 4 | 10% | OpenCode / Muse Spark 1.3 |
+| T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
+| T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.1 | todo | P1 | 2 | 0% | |
 | T55.2 | todo | P1 | 1 | 0% | |
@@ -24,13 +23,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.5 | todo | P2 | 2 | 0% | |
 | T55.6 | todo | P2 | 1 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
-
-### T48.6. Zed host
-
-From I-17. Zed configures MCP as `context_servers` in `~/.config/zed/settings.json` (JSON with comments) and has no shell hook events; its agent can also use external agents over ACP.
-Done when `rtok agents install zed` adds `context_servers.rtok` without destroying comments or foreign servers, the support table says hooks/proxy/plugin `no` with the reason, remove restores the file, and the host joins the e2e matrix, config and docs.
-
-Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https://zed.dev/docs/assistant/model-context-protocol (`context_servers` in the settings file, `{command, args, env}` local shape; Zed-configured servers are also forwarded to external agents over ACP), models https://zed.dev/docs/ai/models (hosted models or own API keys — no base-URL proxy surface, so proxy stays `no`), extensions https://zed.dev/docs/extensions/mcp-extensions (marketplace WASM extensions, no linkable plugin dir). `edit_json` (serde_json) fails on `//` comments, and no JSONC crate may be added without approval, so `src/agents/zed/mod.rs` does a comment-aware textual edit: strip comments only to validate/parse, locate `context_servers` and `rtok` spans with a string/comment-aware scanner, insert/replace/excise surgically. Files: `src/agents/zed/{mod.rs,README.md}` (new; CLI `zed` + Desktop variants sharing one file, `shared()`), registry + HOSTS, `[setup.zed] config_path` (config/mod.rs, default.toml, docs/config.md), cli help, README, commands.md, blessed agents table, config-show.stdout, agents_install matrix, agent_remove zed test (seeded with comments), common write_cfg. Unit tests: dry_run touches nothing, apply into missing/commented file + idempotent, remove keeps foreign + comments (comment-only object left in place), second remove no changes, malformed file errors without writing. Verify: fmt/clippy/test for agents/config/e2e scope (full `just check` may fail on concurrent WIP — report).
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -57,18 +49,13 @@ Done when a measurement on those files shows which extra mode (imports-only, com
 From I-09. `archive` rewrites only old `tool_result`s; huge JSON dumps and `data:` blobs in other live-zone fields stay whole every turn.
 Done when a proxy-side pass shrinks such payloads losslessly (archived, `expand <id>`), only for content that is byte-stable across turns so the prompt cache holds, with a byte-stability test over a six-turn fixture on both wires and a `Measurement` row. Off by default until a bench shows cost per passed task does not rise.
 
-### T51.3. Gemini wire in the proxy
-
-From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
-Done when `src/proxy/gemini.rs` implements the `Wire` adapter (usage, cached tokens, streaming passthrough byte-identical), routes by path, records usage rows like the other wires, and has body and stream tests against a mock upstream.
-
-Execution plan (OpenCode / Muse Spark 1.3; shapes verified against ai.google.dev REST docs 2026-09-17: `POST /v1beta/models/{m}:{generateContent,streamGenerateContent}` (SSE via `alt=sse`), request `contents[{role:user|model, parts[{text|functionCall|functionResponse:{name,response}}]}]`, response `usageMetadata{promptTokenCount,cachedContentTokenCount,candidatesTokenCount,totalTokenCount}` in body / final stream chunk; function parts carry no stable call id — key archive decisions by `functionResponse.name`):
-1. `src/proxy/gemini.rs` (new): `matches` on `:generateContent`/`:streamGenerateContent` suffix; `provider()="gemini"`; `tool_results` over `contents` (user-role turns; `functionResponse` parts, content=`response` so the name stays visible); `usage_block` over `usageMetadata` (object or array-scanned-from-end for non-SSE streams); `provider_total=input+output` (prompt already contains cached); `model()` parsed from the path (body carries none).
-2. `src/proxy/wire.rs`: `GEMINI_PROVIDER`/`API_GEMINI` consts, `wire_ids` arm, `WIRES` entry; defaulted `Wire::model(path, body)` (body `model`, as today) overridden by Gemini.
-3. `src/proxy/mod.rs`: `pub mod gemini`, `ProxyState.gemini_upstream`, `upstream_for` arm; `record()` uses `wire.model()`.
-4. Config: `[proxy] gemini_upstream` (mod.rs + default.toml + docs/config.md + config-show.snapshot; env `RTOK_PROXY_GEMINI_UPSTREAM` free).
-5. `tests/proxy.rs` + 2 fixtures: mock upstream on `gemini_upstream` only (Anthropic upstream dead → proves routing); body test asserts counters incl. cached + model slug; stream test asserts byte-identical passthrough + merged usage.
-6. Verify: fmt, clippy, targeted nextest, build-min. ~7 files — deviation noted (wire + config + fixtures + tests).
+Execution plan (OpenCode / Muse Spark 1.3; scope from I-09: NON-`tool_result` content — nested JSON dumps + `data:` blobs in user content blocks; plain live-tail text/code stays (model is working with it; last-2-turns rule); Responses/Gemini deferred with default-empty, card's "both wires" = Anthropic + Chat):
+1. SDK `wire.rs` (additive, defaulted): `BlobRef { content, turn }` (no provider id — keyed by content hash) + `ToolResults::live_blobs(req)` (empty default) + `WireRequest::live_blobs()` passthrough.
+2. `Anthropic`/`OpenAiChat` `impl ToolResults`: override `live_blobs` — user blocks only, SKIP `tool_result` blocks (archive owns them), yield text/image-document base64 + big-JSON text strings with turn counting mirrored from `tool_results`.
+3. `archive/mod.rs`: `rewrite_blobs()` — `[plugins.archive] live_blobs = false` gate (default off: zero behavior change); eligible turn >= 2 (proxy invariant, not keep_turns); candidate = `data:`/base64 or JSON-parseable text over `min_tokens`; key `blob:{sha256}`, `pointer()` reuse with kind `live_blob`, expanded-skip, shared `record_run` tail with `rewrite()`.
+4. Config key in mod.rs + default.toml + docs/config.md + config-show snapshot (env free, no flag).
+5. `tests/proxy.rs`: six-turn inline requests (stable JSON blob in user turns) on Anthropic + Chat, compress mode — two identical POSTs byte-identical upstream; eligible turns pointered, turns 0-1 untouched, archive rows 0, `live_blob` Measurements present, `rtok expand <id>` recovers the original.
+6. Verify: fmt, clippy, targeted nextest, build-min, jscpd. ~10 files — deviation noted.
 
 ### T52.2. More grammars and compressed index payloads
 
@@ -80,15 +67,25 @@ Done when each added grammar is an optional feature (dependency reasons in the c
 From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
 Done when a P7-style A/B shows the map lowers cost per passed task; the map is ranked by reference count from `symbols`, fits a share of the D5 budget alongside `memory`, is byte-stable across turns, and is off by default until that A/B passes.
 
+Execution plan (OpenCode / Muse Spark 1.3): `bench` shells to `claude -p` (LLM-gated), so no A/B pass is obtainable in-task → implement OFF BY DEFAULT, record the outcome (stays off). One key `plugins.graph.map_tokens = 0` (0 = off; nonzero = token cap, the D5-budget share next to `memory.recall_tokens`); no indexing on the hook path (map reads existing rows only, empty index → no injection). `Store::symbol_top_refs(root, limit)`: names with ref counts + one def site, ORDER BY refs DESC, name ASC (byte-stable). `Graph::session_start` offers priority-1 `repo map` lines trimmed to the cap. Files: `src/plugins/graph/mod.rs`, `src/store/symbols.rs`, `src/config/mod.rs` + `config/default.toml` + `docs/config.md` (D12). Tests: ranked order, byte-stability, cap trim, off-by-default (no injection at 0), SessionStart hook e2e on/off. Measure map tokens on this repo for the record. Verify in isolation (main red on concurrent WIP).
+
 ### T53.1. Coaching nudges under an A/B
 
 From I-18. Short nudges ("do not re-read", "use expand") may cut waste, but they are re-read every turn and dilute instructions.
 Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 budget and byte-stable, and a P7-style A/B on the bench shows it does not raise cost per passed task; without that result it stays off.
 
+Execution plan (T53.1, OpenCode / Muse Spark 1.3):
+1. `modes/nudges.md` (new, data per D7): re-read/expand/outline-first/search-before-Grep nudges, ≤250 tokens like terse/yagni.
+2. `src/plugins/inject/mod.rs`: `NUDGES` const + `builtin("nudges")` arm (same resolution as terse/yagni; opt-in via modes list, default off); test: ≤250 tok, SessionStart-once + byte-stable, absent from UserPromptSubmit.
+3. Evidence: hook SessionStart bytes on/off (measured), dry `rtok bench` both ways (pass parity; zeros without RTOK_BENCH_LIVE), recorded in `research.md`; live cost gate stays open → default off. No live bench (needs API spend + approval — not run).
+4. Verify in isolated worktree: fmt, clippy `-D warnings`, nextest (inject, hook e2e).
+
 ### T53.3. Hook start without Security.framework
 
 From I-32. On macOS the one binary links Security.framework and CoreFoundation for reqwest's platform verifier, costing about 1.3–1.5 ms of dyld time per hook spawn, as much as the hook's own work.
 Done when the creator picks the trade-off (webpki roots with `use_preconfigured_tls` and dead-stripped dylibs, versus a second tiny hook binary), the choice is recorded as a decision, and the hook p95 before/after is measured and stored in `research.md`. Corporate CA support must be documented either way.
+
+Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_preconfigured_tls`, single binary): verified in reqwest 0.13.4 source that feature removal cannot work — `rustls_platform_verifier::Verifier::new` is referenced ungated under `__rustls`, and 0.13 has no webpki-roots feature, so `__rustls`-only does not compile; the `rustls` feature stays and the verifier becomes never-called-but-linked (otool decides the fact). 1) `Cargo.toml` + `rustls 0.23` + `webpki-roots 1` + `rustls-pemfile 2` (one-line reason in commit), `toolchain.md` + workspace `rust.md` rows; 2) `src/tls.rs`: `preconfigured()` builds `rustls::ClientConfig` (aws-lc-rs provider) from Mozilla roots, extended with `SSL_CERT_FILE` PEM bundle when set (fail closed with context — curl parity); unit tests (roots non-empty, bundle loads, missing/empty errors); 3) `src/proxy/mod.rs` + `src/otel/export.rs`: both client builders add `.use_preconfigured_tls(...)` (one shared helper, no duplication); 4) `research.md` T53.3 section: decision record + otool before/after + release hook p95 before/after via `tests/latency.rs` serialized + binary size; 5) `docs/config.md` [proxy] corporate-CA paragraph. Verify in isolation worktree (HEAD + own files): fmt, clippy `-D warnings`, nextest (tls/proxy/otel scope); release latency + otool before/after. Commit own hunks only.
 
 ### T53.4. `just otel-check` against real backends
 

@@ -142,6 +142,7 @@ setup.proxy = false
 setup.windsurf.config_path = ~/.codeium/windsurf/mcp_config.json
 setup.yes = false
 setup.zcode.config_path = ~/.zcode/cli/config.json
+setup.zed.config_path = ~/.config/zed/settings.json
 stats.baseline = 
 stats.calibrate_samples = 30
 stats.format = table

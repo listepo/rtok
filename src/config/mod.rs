@@ -343,6 +343,7 @@ section! {
         copilot: SetupCopilot = SetupCopilot::default(),
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
+        zed: SetupZed = SetupZed::default(),
     }
 }
 
@@ -394,6 +395,11 @@ section! {
 section! {
     /// `[setup.windsurf]` — Cascade's `mcp_config.json` (T48.5).
     SetupWindsurf { config_path: PathBuf = p("~/.codeium/windsurf/mcp_config.json") }
+}
+
+section! {
+    /// `[setup.zed]` — Zed's `settings.json` carries `context_servers` (T48.6).
+    SetupZed { config_path: PathBuf = p("~/.config/zed/settings.json") }
 }
 
 section! {
@@ -822,6 +828,7 @@ impl Config {
             &mut self.setup.copilot.dir,
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
+            &mut self.setup.zed.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
@@ -1039,6 +1046,7 @@ mod tests {
             &cfg.setup.copilot.dir,
             &cfg.setup.aider.config_path,
             &cfg.setup.windsurf.config_path,
+            &cfg.setup.zed.config_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,

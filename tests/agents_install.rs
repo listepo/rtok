@@ -44,6 +44,7 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec![],
             Some(home.join(".codeium/windsurf/mcp_config.json")),
         ),
+        ("zed", vec![], Some(home.join(".config/zed/settings.json"))),
     ]
 }
 
