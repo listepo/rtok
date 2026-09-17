@@ -51,6 +51,7 @@ use wire::{API_ANTHROPIC, Wire, WireRequest, api_of, join_upstream};
 
 pub mod anthropic;
 pub mod cli;
+pub mod gemini;
 pub mod live;
 pub use live::LiveCall;
 pub mod openai_chat;
@@ -74,6 +75,8 @@ pub struct ProxyState {
     upstream: String,
     /// Where the OpenAI wires go; Anthropic paths keep using `upstream` (D11).
     openai_upstream: String,
+    /// Where the Gemini wire goes (T51.3).
+    gemini_upstream: String,
     host_id: Option<i32>,
     inline_cap: usize,
     archive_dir: Option<PathBuf>,
@@ -107,6 +110,7 @@ impl ProxyState {
             client,
             upstream: cfg.proxy.upstream.trim_end_matches('/').to_string(),
             openai_upstream: cfg.proxy.openai_upstream.trim_end_matches('/').to_string(),
+            gemini_upstream: cfg.proxy.gemini_upstream.trim_end_matches('/').to_string(),
             host_id,
             inline_cap: cfg.core.call_io_inline_bytes as usize,
             archive_dir: Some(cfg.core.archive_dir.clone()),
@@ -122,6 +126,7 @@ impl ProxyState {
     fn upstream_for(&self, wire: Option<&'static dyn Wire>) -> &str {
         match wire.map(Wire::provider) {
             Some("openai") => &self.openai_upstream,
+            Some("gemini") => &self.gemini_upstream,
             _ => &self.upstream,
         }
     }
@@ -546,9 +551,12 @@ fn record(
     raw: &[u8],
 ) -> Option<Recorded> {
     let session = session_for(wire, body, headers, raw);
-    let model = body
-        .and_then(|v| v.get("model").and_then(Value::as_str))
-        .map(str::to_string);
+    // The model slug: each wire knows where its own lives (Gemini's travels in the
+    // path, not the body — T51.3). Unwired paths keep the old body lookup.
+    let model = wire.and_then(|wire| wire.model(path, body)).or_else(|| {
+        body.and_then(|v| v.get("model").and_then(Value::as_str))
+            .map(str::to_string)
+    });
     let provider = wire
         .map(Wire::provider)
         .or_else(|| matches!(path, "/v1/chat/completions" | "/v1/responses").then_some("openai"));

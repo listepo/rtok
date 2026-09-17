@@ -161,6 +161,7 @@ section! {
         mode: String = s("passthrough"),
         upstream: String = s("https://api.anthropic.com"),
         openai_upstream: String = s("https://api.openai.com"),
+        gemini_upstream: String = s("https://generativelanguage.googleapis.com"),
         timeout_s: u64 = 600,
         include_usage: bool = true,
         /// Opt-in Anthropic server-side context editing (T51.2): add

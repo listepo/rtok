@@ -20,6 +20,8 @@ const OPENAI_CHAT_STREAM: &[u8] = include_bytes!("fixtures/proxy/openai_chat_str
 const OPENAI_RESPONSES_BODY: &[u8] = include_bytes!("fixtures/proxy/openai_responses_body.json");
 const OPENAI_RESPONSES_STREAM: &[u8] =
     include_bytes!("fixtures/proxy/openai_responses_stream.json");
+const GEMINI_GENERATE_BODY: &[u8] = include_bytes!("fixtures/proxy/gemini_generate_body.json");
+const GEMINI_GENERATE_STREAM: &[u8] = include_bytes!("fixtures/proxy/gemini_generate_stream.json");
 
 /// One mock route serving a fixture body. T5.1+ reuse this for passthrough checks.
 pub struct MockUpstream {
@@ -56,6 +58,20 @@ impl MockUpstream {
         Self::mount(
             "/v1/responses",
             OPENAI_RESPONSES_STREAM,
+            "text/event-stream",
+        )
+    }
+    pub fn gemini_generate_body() -> Self {
+        Self::mount(
+            "/v1beta/models/gemini-2.0-flash:generateContent",
+            GEMINI_GENERATE_BODY,
+            "application/json",
+        )
+    }
+    pub fn gemini_generate_stream() -> Self {
+        Self::mount(
+            "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+            GEMINI_GENERATE_STREAM,
             "text/event-stream",
         )
     }
@@ -647,8 +663,117 @@ async fn proxy_openai_responses_stream_is_byte_identical_and_records_usage() {
     task.abort();
 }
 
-const T53_SESSION: &str = "sess-t53";
+// ── T51.3: Gemini wire — own upstream, usage with cached tokens, SSE passthrough ──
 
+const T513_SESSION: &str = "sess-t513";
+const T513_MODEL: &str = "gemini-2.0-flash";
+const T513_GENERATE: &str = "/v1beta/models/gemini-2.0-flash:generateContent";
+const T513_STREAM: &str = "/v1beta/models/gemini-2.0-flash:streamGenerateContent";
+
+/// Points `proxy.gemini_upstream` (not `proxy.upstream`) at the mock, so a request
+/// that reaches the fixture proves the Gemini wire picked the Gemini upstream.
+/// Gemini carries no session or model in the body: the session rides the
+/// `x-rtok-session` header, the model comes from the path.
+async fn gemini_server(
+    label: &str,
+    up: &MockUpstream,
+    mode: &str,
+) -> (
+    String,
+    Arc<ProxyState>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
+) {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t513-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = "http://127.0.0.1:1".to_string(); // Anthropic upstream must go unused
+    cfg.proxy.gemini_upstream = up.base_url();
+    cfg.proxy.mode = mode.to_string();
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+    (addr, state, task)
+}
+
+async fn gemini_post(addr: &str, path: &str, body: serde_json::Value) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("http://{addr}{path}"))
+        .header("content-type", "application/json")
+        .header("x-rtok-session", T513_SESSION)
+        .body(serde_json::to_vec(&body).expect("request json"))
+        .send()
+        .await
+        .expect("request through the proxy")
+}
+
+#[tokio::test]
+async fn proxy_gemini_body_records_usage_with_cached_tokens_and_path_model() {
+    let up = MockUpstream::gemini_generate_body();
+    let (addr, state, task) = gemini_server("generate-body", &up, "passthrough").await;
+    let resp = gemini_post(
+        &addr,
+        T513_GENERATE,
+        serde_json::json!({"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("response body"));
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T513_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row");
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (12, 0, 7, 3),
+        "cache_read comes from cachedContentTokenCount; no cache_create on this wire"
+    );
+    assert_eq!(u.model.as_deref(), Some(T513_MODEL));
+    assert_eq!(u.api, "gemini");
+    assert_eq!(state.store.count_kind("api_request").expect("calls"), 1);
+    assert_eq!(state.store.count_call_io().expect("call_io"), 1);
+    assert_eq!(state.store.count_tokens().expect("tokens"), 1);
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_gemini_stream_is_byte_identical_and_records_usage() {
+    let up = MockUpstream::gemini_generate_stream();
+    let (addr, state, task) = gemini_server("generate-stream", &up, "passthrough").await;
+    let resp = gemini_post(
+        &addr,
+        T513_STREAM,
+        serde_json::json!({"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|c| c.contains("text/event-stream"))
+            .unwrap_or(false),
+        "SSE content-type must pass through"
+    );
+    up.assert_passthrough_bytes(&resp.bytes().await.expect("response body"));
+    up.assert_upstream_called_once();
+
+    let rows = t51_usage(&state.store, T513_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row");
+    let u = &rows[0];
+    assert_eq!(
+        (u.input, u.cache_create, u.cache_read, u.output),
+        (12, 0, 7, 3),
+        "usage decoded from the final SSE chunk"
+    );
+    assert_eq!(u.model.as_deref(), Some(T513_MODEL));
+    task.abort();
+}
+
+const T53_SESSION: &str = "sess-t53";
 /// Six user turns, each carrying one 400-line tool_result (well above `archive.min_tokens`).
 fn t53_request() -> Vec<u8> {
     let mut messages = Vec::new();
