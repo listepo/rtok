@@ -15,7 +15,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.8 | in progress | P2 | 2 | 60% | ZCode / GLM-5.3 |
 | T55.9 | todo | P3 | 2 | 0% | |
 | T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
@@ -105,11 +104,6 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
-
-### T55.8. Guard `read:` keys survive a mutating Bash
-
-From review 2026-09-17 (code read, no fix). `src/plugins/guard/mod.rs` `post_tool` clears only the `bash\t…` prefix on a non-keyed `Bash`/`Edit`/`Write`; the guard's own `read:{path}` keys are cleared only by `plugins::read::cache::invalidate` on `Edit`/`Write`. So `Read foo.rs` → `Bash cargo fmt` (or `sed -i`, `git checkout`) → `Read foo.rs` within `window_turns` is denied with the stale archive; the same happens on `Edit` when the `read` plugin is disabled. `Store::clear_read_cache` deletes `path` or `path\t…`, so `read:{path}` cannot be cleared by prefix today.
-Done when the guard owns invalidation of its own keys: a mutating `Bash` drops every guard `read` key (key scheme `read\t{path}` or a prefix clear), `Edit`/`Write` drop that path's key without depending on the `read` plugin, with unit tests `bash_mutation_allows_the_next_read` and `edit_with_read_plugin_off_allows_the_next_read`, and the existing `edit_clears_guard_read_so_the_next_read_is_allowed` still passes.
 
 ### T55.9. Guard Bash key is cwd-blind
 

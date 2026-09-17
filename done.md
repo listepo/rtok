@@ -3084,3 +3084,11 @@ Complexity: 1/5 — three files, net −17 LOC.
 Status: done 2026-09-17
 Check result: targeted `nextest -E 'test(cmd_stem) or test(bash_family) or test(is_rtok_bin)'` 4 passed; full `just check` exit 0 in the isolation worktree (HEAD `11eef8b` + own three files; main checkout carries T55.8 WIP) — fmt, clippy `-D warnings`, nextest, build-min, jscpd 1.88 % (was 1.90 % before the dedup). 3 files, no new dependency.
 Model: ZCode / GLM-5.3-Flash
+
+**T55.8 Guard `read:` keys survive a mutating Bash** · review 2026-09-17 · `src/plugins/guard/mod.rs`, `src/plugins/read/cache.rs`
+Do: the guard owns invalidation of its own keys. Key scheme `read\t{path}` (prefix-clearable); a non-keyed mutating `Bash` clears every `bash\t…` and `read\t…` key; `Edit`/`Write` clear the bash keys plus their own path's `read\t{path}` key (all `read` keys when the path is missing) with no dependency on the `read` plugin; `plugins::read::cache::invalidate` clears the guard's key under the new scheme too.
+Check: `bash_mutation_allows_the_next_read` and `edit_with_read_plugin_off_allows_the_next_read` unit tests; existing `edit_clears_guard_read_so_the_next_read_is_allowed` still passes.
+Complexity: 2/5 — two files, ~100 LOC incl. tests (WIP finished from 60 %).
+Status: done 2026-09-17
+Check result: targeted nextest `test(guard) or test(cache)` 48 passed; full `just check` in the isolation worktree (HEAD `4f9d18a` + own two files): fmt + clippy `-D warnings` clean, nextest 758 passed with one failure = `otel::hooks_stay_fast_with_an_unreachable_endpoint`, the documented load flake (passes twice standalone in the same worktree), `just build-min` exit 0, `just dup` exit 0. Migration note: `read:{path}` rows written by the old scheme are never read again — dead keys age out with the window; the deny direction only loses dedups, never adds false denies.
+Model: ZCode / GLM-5.3-Flash

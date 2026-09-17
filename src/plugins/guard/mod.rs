@@ -70,10 +70,32 @@ impl Plugin for Guard {
                 let id = cx.put_archive(&body).ok()?;
                 let _ = cx.put_read_cache(&key, &id, Some(&id));
             }
-            // A mutating Bash, Edit or Write can change what any earlier command prints:
-            // drop every `bash\t…` key (the store deletes by the `bash` prefix).
+            // A mutating Bash, Edit or Write can change what any earlier command printed
+            // or any earlier Read returned. The guard owns its keys (T55.8): a mutating
+            // Bash drops every `bash\t…` and `read\t…` key (prefix clears); an Edit or
+            // Write drops the bash keys plus its own path's `read\t{path}` key — no
+            // dependency on the `read` plugin's invalidation.
             None if matches!(ev.tool_name, "Bash" | "Edit" | "Write") => {
                 let _ = cx.clear_read_cache("bash");
+                let mutated_path = ev
+                    .tool_input
+                    .get("file_path")
+                    .or_else(|| ev.tool_input.get("path"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty());
+                match (ev.tool_name, mutated_path) {
+                    ("Bash", _) => {
+                        let _ = cx.clear_read_cache("read");
+                    }
+                    (_, Some(p)) => {
+                        let _ = cx.clear_read_cache(&format!("read\t{p}"));
+                    }
+                    // An Edit/Write whose path is missing can name any file: drop them all.
+                    (_, None) => {
+                        let _ = cx.clear_read_cache("read");
+                    }
+                }
             }
             None => {}
         }
@@ -120,13 +142,15 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
     match tool {
         // Claude Code sends `file_path`; Copilot's `read_file`/`view` are adapted to the
         // tool name `Read` but keep their own input key `path` — either names the file.
+        // The `read\t` prefix is what the mutating arm below clears in one store call
+        // (`clear_read_cache` deletes `x` and every `x\t…`).
         "Read" => {
             let p = input
                 .get("file_path")
                 .or_else(|| input.get("path"))?
                 .as_str()?
                 .trim();
-            (!p.is_empty()).then(|| format!("read:{p}"))
+            (!p.is_empty()).then(|| format!("read\t{p}"))
         }
         "Bash" => {
             let c = norm_cmd(input.get("command")?.as_str()?);
@@ -450,6 +474,75 @@ mod tests {
                 other => panic!("{key}: {other:?}"),
             }
         }
+    }
+
+    /// T55.8: a mutating Bash between two identical Reads must not serve the stale
+    /// archive — the guard drops its own `read\t…` keys, no `read` plugin involved.
+    #[test]
+    fn bash_mutation_allows_the_next_read() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/src/main.rs"});
+        let resp = json!({"content": "fn main() {}"});
+        let post = |name: &'static str, input: &Value| {
+            assert!(
+                g.post_tool(
+                    &PostToolUse {
+                        tool_name: name,
+                        tool_input: input,
+                        tool_response: &resp,
+                    },
+                    &Ctx::new(&cx),
+                )
+                .is_none()
+            );
+        };
+        post("Read", &path);
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(matches!(
+            g.pre_tool(&read, &Ctx::new(&cx)),
+            Some(PreToolDecision::Deny { .. })
+        ));
+        post("Bash", &json!({"command": "cargo fmt"}));
+        assert!(
+            g.pre_tool(&read, &Ctx::new(&cx)).is_none(),
+            "a mutating Bash must drop the guard read key"
+        );
+    }
+
+    /// T55.8: Edit drops that path's guard read key even with the `read` plugin off.
+    #[test]
+    fn edit_with_read_plugin_off_allows_the_next_read() {
+        let (mut c, _dir) = crate::testutil::config("guard-edit-noread");
+        c.plugins.read.enabled = false;
+        let cx = crate::plugin::Runtime::open(c, "guard-edit-noread").unwrap();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/src/main.rs"});
+        let resp = json!({"content": "fn main() {}"});
+        for name in ["Read", "Edit"] {
+            assert!(
+                g.post_tool(
+                    &PostToolUse {
+                        tool_name: name,
+                        tool_input: &path,
+                        tool_response: &resp,
+                    },
+                    &Ctx::new(&cx),
+                )
+                .is_none()
+            );
+        }
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(
+            g.pre_tool(&read, &Ctx::new(&cx)).is_none(),
+            "guard's own Edit invalidation must not need the read plugin"
+        );
     }
 
     /// T55.16: the deny reads metadata only — an unreadable body file still denies
