@@ -211,8 +211,6 @@ section! {
         format: String = s("table"),
         plugin: String = String::new(),
         transcripts_dir: PathBuf = p("~/.claude/projects"),
-        /// Codex CLI session logs, read as one more `api` row (T49.2).
-        codex_dir: PathBuf = p("~/.codex/sessions"),
         calibrate_samples: u32 = 30,
         baseline: String = String::new(),
         /// Show per-model USD costs from `prices` (`rtok stats --price`, T49.1).
@@ -587,11 +585,6 @@ section! {
         /// MCP `search`/`tree`. Off by default; also stays silent while the
         /// `read` plugin is disabled (no `search`/`tree` to point at).
         deny_grep_glob: bool = false,
-        /// Opt-in (T62.1): on `PreToolUse(Skill)` a `SKILL.md` over `skill_max_bytes`
-        /// is archived and denied with its markdown map plus the `expand` pointer,
-        /// unless its frontmatter carries a key the host applies on invocation.
-        skills: bool = false,
-        skill_max_bytes: u32 = 8192,
     }
 }
 
@@ -826,7 +819,6 @@ impl Config {
             &mut self.log.path,
             &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
-            &mut self.stats.codex_dir,
             &mut self.report.out,
             &mut self.bench.tasks,
             &mut self.doctor.settings_path,

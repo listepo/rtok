@@ -1,6 +1,5 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
-pub mod export;
 pub mod import;
 
 use rtok_plugin_sdk::{
@@ -31,7 +30,7 @@ impl Plugin for Memory {
         vec![
             ToolDef {
                 name: "mem_save",
-                description: "Save a note (kind, title, body); same project+kind+title updates it.",
+                description: "Save a note (kind, title, body).",
                 input_schema: json!({"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"project":{"type":"string"}},"required":["kind","title","body"]}),
             },
             ToolDef {
@@ -100,16 +99,15 @@ pub fn mem_save(
     title: &str,
     body: &str,
     project: Option<&str>,
-) -> anyhow::Result<(i32, bool)> {
+) -> anyhow::Result<i32> {
+    let cx = Ctx::new(rt);
     let proj = project
         .map(str::to_string)
         .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
-    // The title is the topic key (T66.1): a re-save updates the row, recall never shows
-    // a stale twin next to the new one.
-    let (id, updated) = rt.store.upsert_note(proj.as_deref(), kind, title, body)?;
+    let id = cx.insert_note(proj.as_deref(), kind, title, body)?;
     rt.store
         .upsert_note_embedding(id, title, body, &rt.config.plugins.memory.embed)?;
-    Ok((id, updated))
+    Ok(id)
 }
 
 pub fn mem_search(
@@ -146,8 +144,7 @@ mod tests {
             "the walrus journal lives here",
             Some("rtok"),
         )
-        .unwrap()
-        .0;
+        .unwrap();
         let _b = mem_save(
             &cx,
             "decision",
@@ -171,22 +168,6 @@ mod tests {
         assert!(hits[0].snippet.len() <= 120);
         let body = mem_get(&Ctx::new(&cx), a).unwrap().unwrap();
         assert_eq!(body, "the walrus journal lives here");
-    }
-
-    #[test]
-    fn same_project_kind_title_updates_in_place() {
-        let cx = crate::plugin::Runtime::in_memory("t671").unwrap();
-        let (a, first) = mem_save(&cx, "decision", "auth model", "sessions", Some("p")).unwrap();
-        let (b, second) = mem_save(&cx, "decision", "auth model", "jwt", Some("p")).unwrap();
-        assert_eq!((first, second, a == b), (false, true, true));
-        // A different kind or project is another topic.
-        let (c, _) = mem_save(&cx, "note", "auth model", "other kind", Some("p")).unwrap();
-        let (d, _) = mem_save(&cx, "decision", "auth model", "other project", Some("q")).unwrap();
-        assert!(a != c && a != d && c != d);
-        assert_eq!(cx.store.list_notes(Some("p")).unwrap().len(), 2);
-        let hits = mem_search(&cx, "jwt", 5).unwrap();
-        assert_eq!(hits[0].id, a);
-        assert!(mem_search(&cx, "sessions", 5).unwrap().is_empty());
     }
 
     #[test]

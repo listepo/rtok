@@ -156,7 +156,6 @@ pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
             let _ = stats::attach_costs(&mut report, &store, &cfg.stats.prices);
         }
     }
-    stats::attach_codex(&mut report, &cfg.stats.codex_dir, since);
     Ok(report)
 }
 

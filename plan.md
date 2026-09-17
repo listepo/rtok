@@ -7,85 +7,52 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.8 | todo | P2 | 3 | 0% | |
+| T49.2 | in progress | P2 | 4 | 0% | Claude Code / Fable 5.1 |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T51.1 | todo | P3 | 5 | 5% | |
+| T51.1 | in progress | P3 | 5 | 5% | OpenCode / Muse Spark 1.3 |
 | T52.2 | todo | P3 | 3 | 0% | |
-| T52.3 | todo | P3 | 4 | 10% | |
-| T53.1 | todo | P3 | 3 | 10% | |
-| T53.3 | todo | P3 | 3 | 0% | |
+| T52.3 | in progress | P3 | 4 | 10% | OpenCode / Muse Spark 1.3 |
+| T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
+| T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
+| T55.8 | todo | P2 | 2 | 0% | |
+| T55.9 | todo | P3 | 2 | 0% | |
+| T55.10 | todo | P3 | 1 | 0% | |
+| T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
+| T55.13 | done | P3 | 1 | 100% | |
+| T55.14 | done | P3 | 1 | 100% | |
 | T55.15 | todo | P3 | 2 | 0% | |
-| T56.2 | todo | P2 | 3 | 95% | |
-| T56.3 | todo | P2 | 3 | 85% | |
-| T56.5 | todo | P2 | 2 | 80% | |
+| T55.16 | done | P3 | 1 | 100% | |
+| T56.1 | done | P2 | 2 | 100% | |
+| T56.2 | in progress | P2 | 3 | 95% | |
+| T56.3 | in progress | P2 | 3 | 85% | |
+| T56.4 | done | P3 | 2 | 100% | |
+| T56.5 | in progress | P2 | 2 | 80% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
+| T59.2 | todo | P3 | 1 | 0% | |
 | T59.3 | todo | P3 | 2 | 0% | |
+| T59.4 | in progress | P3 | 4 | 0% | Claude Code / Fable 5.1 |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.7 | todo | P3 | 2 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
-| T60.1 | todo | P2 | 3 | 0% | |
-| T60.2 | todo | P2 | 3 | 0% | |
-| T60.3 | todo | P3 | 3 | 0% | |
-| T60.4 | todo | P3 | 4 | 0% | |
-| T60.5 | todo | P2 | 3 | 0% | |
-| T60.6 | todo | P2 | 2 | 0% | |
-| T60.7 | todo | P3 | 2 | 0% | |
-| T60.8 | todo | P3 | 1 | 0% | |
-| T60.9 | todo | P3 | 2 | 0% | |
-| T60.10 | todo | P3 | 2 | 0% | |
-| T61.1 | todo | P2 | 2 | 0% | |
-| T61.2 | todo | P3 | 3 | 0% | |
-| T61.3 | todo | P3 | 2 | 0% | |
-| T62.1 | todo | P3 | 3 | 90% | |
-| T62.3 | todo | P3 | 3 | 0% | |
-| T63.1 | todo | P3 | 3 | 0% | |
-| T64.1 | todo | P3 | 3 | 0% | |
-| T64.2 | todo | P3 | 2 | 0% | |
-| T64.3 | todo | P2 | 1 | 0% | |
-| T65.1 | todo | P2 | 3 | 0% | |
-| T65.2 | todo | P3 | 3 | 0% | |
-| T65.3 | todo | P3 | 1 | 0% | |
-| T65.4 | todo | P2 | 2 | 0% | |
-| T67.2 | todo | P3 | 2 | 0% | |
-| T68.1 | todo | P2 | 4 | 0% | |
-| T68.2 | todo | P3 | 2 | 0% | |
-| T68.3 | todo | P2 | 2 | 0% | |
-| T68.4 | todo | P3 | 2 | 0% | |
-| T68.5 | todo | P2 | 3 | 0% | |
-| T68.6 | todo | P3 | 3 | 0% | |
-| T68.7 | todo | P3 | 2 | 0% | |
-| T68.8 | todo | P3 | 2 | 0% | |
-| T68.9 | todo | P2 | 3 | 0% | |
-| T68.10 | todo | P3 | 2 | 0% | |
-| T69.1 | todo | P2 | 3 | 0% | |
-| T69.2 | todo | P3 | 3 | 0% | |
-| T69.3 | todo | P3 | 3 | 0% | |
-| T69.4 | todo | P3 | 2 | 0% | |
-| T69.5 | todo | P3 | 2 | 0% | |
-| T69.6 | todo | P3 | 3 | 0% | |
-| T70.1 | todo | P2 | 3 | 0% | |
-| T70.2 | todo | P2 | 4 | 0% | |
-| T70.3 | todo | P3 | 4 | 0% | |
-| T70.4 | todo | P2 | 3 | 0% | |
-| T70.5 | todo | P3 | 3 | 0% | |
-| T70.6 | todo | P3 | 3 | 0% | |
-| T70.7 | todo | P2 | 2 | 0% | |
-| T71.1 | todo | P3 | 3 | 0% | |
-| T71.2 | todo | P3 | 3 | 0% | |
-| T71.3 | todo | P3 | 2 | 0% | |
-| T71.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
+
+### T49.2. Ingest Codex, OpenCode and Cursor session logs
+
+From I-03. `measure` reads Claude Code JSONL only; the other hosts reach the `usage` table only when they go through `rtok proxy`, so their sessions without the proxy are invisible to `stats`, the TUI and the dashboard.
+Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, OpenCode `opencode.db`, Cursor where it exposes token counts) is read by one reader per host behind the existing `measure` ingest, rows carry the host slug, re-ingest is idempotent, and each reader has a fixture test. A host without token counts is documented as unsupported, not estimated.
+Execution plan (Claude Code / Fable 5.1): (1) survey the three stores on this machine (`~/.codex/sessions`, OpenCode's SQLite, Cursor's state dir) and record the schema that carries usage per host in the card — a host without per-turn token counts stops here as "unsupported"; (2) `src/measure/hosts/{codex,opencode}.rs` behind one `HostReader` fn signature `read(dir) -> Vec<UsageRow>` reusing the `usage` table writer `proxy` already uses, host slug column already present; idempotency by `(host, session_id, turn)` unique key; (3) `rtok stats --host <slug>` filter and the host column in the api table; (4) fixture per host under `tests/fixtures/hosts/`; (5) `docs/measure` page rows. One commit per host, ≤ 3 files each.
 
 ### T50.1. More `cmd` filter families
 
@@ -149,6 +116,21 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
 
+### T55.8. Guard `read:` keys survive a mutating Bash
+
+From review 2026-09-17 (code read, no fix). `src/plugins/guard/mod.rs` `post_tool` clears only the `bash\t…` prefix on a non-keyed `Bash`/`Edit`/`Write`; the guard's own `read:{path}` keys are cleared only by `plugins::read::cache::invalidate` on `Edit`/`Write`. So `Read foo.rs` → `Bash cargo fmt` (or `sed -i`, `git checkout`) → `Read foo.rs` within `window_turns` is denied with the stale archive; the same happens on `Edit` when the `read` plugin is disabled. `Store::clear_read_cache` deletes `path` or `path\t…`, so `read:{path}` cannot be cleared by prefix today.
+Done when the guard owns invalidation of its own keys: a mutating `Bash` drops every guard `read` key (key scheme `read\t{path}` or a prefix clear), `Edit`/`Write` drop that path's key without depending on the `read` plugin, with unit tests `bash_mutation_allows_the_next_read` and `edit_with_read_plugin_off_allows_the_next_read`, and the existing `edit_clears_guard_read_so_the_next_read_is_allowed` still passes.
+
+### T55.9. Guard Bash key is cwd-blind
+
+From review 2026-09-17 (code read, no fix). `norm_cmd` strips every leading `cd … &&`, so `cat x` and `cd docs && cat x` share one key and the second is denied as a duplicate of the first (`bash_repeat_behind_cd_prefix_denies` pins this as intended). Relative paths and `git status` differ per directory, so the deny returns the wrong archive. `strip_cd_and` also cuts at the first `&&` even inside quotes (`cd 'a && b' && ls`).
+Done when the key keeps the effective `cd` target (normalized spacing, quotes handled by one helper shared with `measure::stats` if the shapes match), `cd a && ls` ≠ `ls` ≠ `cd b && ls`, `cd a && cd a && ls` = `cd a && ls`, a quoted path with `&&` inside is not split, and the existing test is rewritten to assert those cases.
+
+### T55.10. One `cmd_stem`
+
+From review 2026-09-17 (code read, no fix). The "basename, split on `/` and `\`, drop `.exe` case-insensitively" helper exists three times: `plugins::cmd::formatters::cmd_stem`, `measure::stats::bash_family` (inline), `agents::is_rtok_bin` (inline). `bash_family` cannot call the `cmd` one because `measure` builds without the `cmd` feature (`just build-min`).
+Done when one `pub(crate) fn cmd_stem` lives in a feature-free module (e.g. `src/util.rs` or `src/agents/mod.rs`), the other two call it, behavior is unchanged, and `cmd_stem_strips_windows_path_and_exe` plus the `bash_family_*` and `is_rtok_bin` tests still pass under `just check` and `just build-min`.
+
 ### T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 
 From review 2026-09-17, second pass (code read — not reproducible on macOS). `run::wrap_quote` (`src/plugins/cmd/run.rs:18-24`) emits PowerShell `''` escaping on Windows, and `cmd/hook.rs:45` rewrites the Bash command to `rtok run -- 'echo it''s fine'`. Claude Code on Windows executes the Bash tool through Git Bash (POSIX sh), where `'echo it''s fine'` concatenates to the single argv `echo its fine`: the apostrophe is silently dropped and the command the model asked for is not the command that runs (fail-open violation, no error anywhere). T55.4 weighed PowerShell and cmd.exe but not the POSIX host.
@@ -159,20 +141,32 @@ Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-
 From review 2026-09-17, second pass (reproduced, flag off by default). `Anthropic::live_blobs` (`src/proxy/anthropic.rs:96-105`) yields `source.data` of `image`/`document` blocks and `OpenAiChat::live_blobs` yields `image_url.url` (`src/proxy/openai_chat.rs:65-70`); `archive::rewrite_blob` then overwrites that field with pointer text. Repro: after `rewrite_blobs`, `source.data` reads `[archived 7da78e9924c6: 1 lines · 3200 tokens · expand(7da…)]` — not base64, so the moment `[plugins.archive] live_blobs = true` is switched on, every request carrying an old image is rejected by the API (400), which is not fail-open. Text blocks carrying `data:` URIs are the case T51.1 actually wants.
 Done when binary-bearing fields are never rewritten in place: `live_blobs` yields text blocks (and `data:` URIs inside text) only, or the rewrite replaces the whole block with a `text` pointer block; tests `image_source_data_is_never_rewritten` and `openai_image_url_is_never_rewritten` assert the fields stay byte-identical through `rewrite_blobs`, and the existing `live_blobs_*` suite still passes.
 
+### T56.1. Test VFS helper and convention
+
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` ships `Vfs` (path → bytes) with `write` / `read` / `read_str` / `len` / `exists` / `paths` / `paths_under`.
+**Done** — D29 recorded, AGENTS.md notes the rule, Vfs covers the API above, and read (`search_max_bytes_gate_uses_vfs_sizes`), cmd (`Settings::from_vfs` rules tests), and graph (`file_uri_encodes_spaces`) unit tests use it with no host temp dir.
+
 ### T56.2. Migrate read/search unit tests to VFS
 
 Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
-**Landed so far (unclaimed)** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. WalkBuilder e2e disk fixtures **kept** with Vfs rewrite twins: `search_and_tree_skip_git_dir_from_vfs`, `tree_paths_stay_relative_from_vfs`, `search_paths_stay_relative_from_vfs`, `search_skips_files_over_search_max_bytes_from_vfs` (`.git` skip + tree rows helpers). T56.4 walk adapter landed (dir metadata / list + read). T56.5 `ReadFs` + `read_with`/`resolve_with`: disk e2e **kept**; Vfs twins for three-lines / range / caps / symlink escape. Remaining: polish any leftover disk-only read paths if still useful.
+**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. WalkBuilder e2e disk fixtures **kept** with Vfs rewrite twins: `search_and_tree_skip_git_dir_from_vfs`, `tree_paths_stay_relative_from_vfs`, `search_paths_stay_relative_from_vfs`, `search_skips_files_over_search_max_bytes_from_vfs` (`.git` skip + tree rows helpers). T56.4 walk adapter landed (dir metadata / list + read). T56.5 `ReadFs` + `read_with`/`resolve_with`: disk e2e **kept**; Vfs twins for three-lines / range / caps / symlink escape. Remaining: polish any leftover disk-only read paths if still useful.
 
 ### T56.3. Migrate cmd/setup path tests to VFS
 
 Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-**Landed so far (unclaimed)** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras. `issues_in_from_vfs` + spaced-path twin added (disk `issues_in_*` kept). Agent setup hook writers: disk e2e **kept**; Claude/Kimi Vfs rewrite twins for insert/strip/idempotent/foreign/wrong-shape/spaced profile. Remaining: more hosts (cursor/codex/…) Vfs twins if needed; MCP register still disk (SDK write path).
+**In progress** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras. `issues_in_from_vfs` + spaced-path twin added (disk `issues_in_*` kept). Agent setup hook writers: disk e2e **kept**; Claude/Kimi Vfs rewrite twins for insert/strip/idempotent/foreign/wrong-shape/spaced profile. Remaining: more hosts (cursor/codex/…) Vfs twins if needed; MCP register still disk (SDK write path).
+
+### T56.4. Optional walk/VFS adapter for search/tree
+
+If search/tree keep needing real walks, introduce a narrow trait (metadata + read bytes + list dir) with a `Vfs` impl so oversized-file and relative-path tests run without host disk.
+Done when search/tree unit tests for the size-cap and relative-path cases can run against `Vfs`, or the card closes with a measured reason to keep WalkBuilder-on-disk.
+**Done** — `plugins::read::walk::{WalkFs, walk, search_hits, tree_rows}` + `Vfs::{list_dir, meta}` (dirs inferred). Production `search`/`tree` keep host `WalkBuilder` (gitignore); disk e2e kept. Size-cap / relative-path / skip-`.git` twins run on the adapter. `HostFs: WalkFs` stub landed under test (T56.5); prod swap of WalkBuilder is T56.5 follow-up, not required here.
+
 
 ### T56.5. ReadFs trait + optional HostFs walk swap
 
 Post-T56.4 leftover: drive full `read()` resolve/content (line numbering, caps, symlink) through a narrow FS trait on `testutil::Vfs` without deleting disk e2e; optionally share `WalkFs` with production search/tree later.
-**Landed so far (unclaimed)** — `plugins::read::fs::{ReadFs, HostFs}` + `read_with` / `resolve_with`; production `read`/`resolve` use `HostFs`. Vfs gains optional symlinks. Disk tests kept; Vfs twins for three-lines / range / caps / symlink. `HostFs: WalkFs` stub + smoke test (cfg test). **Follow-up (not this PR):** swap production `search`/`tree` from `ignore::WalkBuilder` to `WalkFs`+`HostFs` only if gitignore parity is measured and the swap stays small — do not rewrite for its own sake.
+**In progress** — `plugins::read::fs::{ReadFs, HostFs}` + `read_with` / `resolve_with`; production `read`/`resolve` use `HostFs`. Vfs gains optional symlinks. Disk tests kept; Vfs twins for three-lines / range / caps / symlink. `HostFs: WalkFs` stub + smoke test (cfg test). **Follow-up (not this PR):** swap production `search`/`tree` from `ignore::WalkBuilder` to `WalkFs`+`HostFs` only if gitignore parity is measured and the swap stays small — do not rewrite for its own sake.
 
 
 ### T57.1. Flag-aware `guard` read-only classes
@@ -223,10 +217,25 @@ Done when:
 2. `skip_wrap` consults the stem first: `-i` means interactive only for the REPL stems above and `--interactive` anywhere; every other stem is wrapped. Table lives next to `never_wrap` and is overridable in config.
 3. Unit tests: `ffmpeg -i x` wrapped, `ssh -i key host` wrapped, `python -i` skipped, `docker run -i` skipped, `--interactive` always skipped; hook e2e: `curl -i` produces a `Measurement`.
 
+### T59.2. Canonicalize `cwd` once per `search` / `tree` call
+
+From I-40. `display_rel` canonicalizes `cwd` per hit or row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory.
+Done when `search` and `tree` canonicalize once per call and pass the base down, `display_rel` takes the canonical base, existing tests pass unchanged, and a Vfs unit test asserts one canonicalization per call (counter on the adapter).
+
 ### T59.3. Batch the cold `graph` index in one transaction per N files
 
 From I-30 (codebase-memory-mcp: Linux kernel in 3 min). Measured 2026-09-04: 3 000 files cold 27.2 s, warm 0.053 s; the cold path is paid once per repo, so it was parked.
 Done when the cold index writes symbols and edges in one Diesel transaction per 200 files instead of per file, the T8.4 cold bench on the same fixture is re-run and recorded in `research.md` next to the old number, the warm path and the ≤ 10 ms hook stay untouched, and the change is reverted if the cold time does not drop by a third.
+
+### T59.4. Lossless MCP wrapper for foreign servers
+
+From I-44 (atlassian-labs/mcp-compressor; headroom MCP wrapper; `research.md` §9.1). `rtok mcp --wrap -- <server cmd>` spawns the server, proxies stdio JSON-RPC, and shortens `tools/call` results the way `cmd` results are shortened today: raw archived, `expand <id>` trailer, a `Measurement { plugin = "mcp", kind = "wrap", family = <server>/<tool> }` per call. Descriptions, `tools/list`, prompts and resources pass through untouched; the wrapped server keeps its name.
+Done when:
+1. Evidence first: `stats` over transcripts ranks foreign MCP servers by result bytes (§2 measured 15 K of 2.83 M for this workload); the card records the number and the wrapper stays off by default until a server above 5 % is measured — the code still lands behind `--wrap`.
+2. Framing handled for both MCP stdio transports (newline-delimited JSON and `Content-Length` headers); a malformed frame is forwarded byte-for-byte (fail open); server exit code propagated; no third-party MCP crate beyond what `mcp.rs` already uses.
+3. Only `result.content[].text` of `tools/call` responses is shortened, by the `cmd` rule engine with a `[mcp]` default rule (`Rule::default()` semantics) and per-`server/tool` overrides in `rules/default.toml`; `isError` results are never shortened.
+4. Tests: an in-process fake server (Vfs-free, stdio pipes) with a 3 000-line result → shortened result carries the trailer and `expand <id>` returns the raw text; `tools/list` byte-identical; header-framed and newline-framed fixtures; `isError` untouched. Docs: one section on the MCP docs page with the measured row.
+Execution plan (Claude Code / Fable 5.1): (1) `src/mcp/wrap.rs` — frame reader/writer for both transports, child spawn, pass-through loop; (2) result shortening via `plugins::cmd::rules` + `Archive` + `Measurement`; (3) `mcp --wrap` clap flag in `mcp.rs`; (4) tests in `tests/mcp_wrap.rs` with a fake server binary from `assert_cmd::cargo_bin` or a `sh` script; (5) `stats` server ranking row; (6) docs. Three commits: framing + pass-through, shortening + tests, stats + docs.
 
 ### T59.5. Byte-stable `tools[]` description rewrite in the proxy
 
@@ -253,345 +262,6 @@ Done when `doctor` has three checks — Claude Code auto-memory on while `memory
 
 From I-48 (caveman `learn`, context-budget plugin). `stats` has per-family and per-tool rows and `report` renders the D24 rules; what is missing is "which ten paths and commands cost the most, and which rtok switch would have shortened each".
 Done when `report` gains one rule that prints the top-10 sinks by bytes over the session window (file path for Read/read, first stem for Bash/cmd, server/tool for MCP), each with the switch that applies (`read.default_mode = map`, a `[stem]` rule, `--wrap`, or "none: already shortened"), sourced from `Measurement` rows only, with a fixture test and a line on the report docs page.
-
-### T60.1. `--json` on every reading command
-
-Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
-Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
-
-### T60.2. trycmd goldens for every subcommand
-
-Survey 2026-09-17: trycmd (`tests/cli_trycmd.rs`, `tests/trycmd/*.toml`) covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands. The other 16 have behaviour tests but no byte-level snapshot of what the binary prints, so a wording, column or ordering change on `doctor`, `info`, `plugins`, `expand`, `report` and the rest lands unnoticed (T59.4 changed the `mcp` help line and only the top-level `help` golden caught it).
-Done when every subcommand has at least one trycmd case of its real output, hermetic the way `stats-price.toml` is (`inherit = false`, `RTOK_HOME` under `target/tmp/`, `--config tests/trycmd/input/<case>.toml`, fixture store or empty dirs), plus a `--help` case for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`). Command list and how each becomes deterministic:
-- `stats` (table and `--json` on the fixture store), `info` (`--json`; paths via `[..]`), `doctor`, `plugins`, `config init|path|get|validate|set`, `expand <fixture id>` with `--lines` and `--grep`, `filter --cmd`, `run -- echo`, `completions` for zsh/fish/powershell, `man`, `agents list`, `agents sessions` (empty store), `demon status` (nothing running), `otel status`, `logs print` (empty log), `report --format md` (fixture store, date via `[..]`), `bench --dry-run` (exists), `hook <event>` with a fixture stdin JSON, `mcp` with a `tools/list` frame on stdin, `proxy --dry-run`.
-- `web` and `tui` get `--help` only (a server and a TTY are not snapshot material; `tests/web.rs` and `tests/tui_tty.rs` stay the behaviour tests).
-- Timestamps, ids, versions and absolute paths are matched with trycmd `[..]` / `[EXE]`, never frozen; a golden must not depend on the machine.
-- One `tests/trycmd/README.md` line per case saying what it pins; `README.md`'s command table is checked against the trycmd case list by the existing README test so a new command cannot land without a golden.
-Blessing: `TRYCMD=overwrite cargo nextest run -p rtok --test cli_trycmd`, reviewed by eye once, then committed. Split into ≤ 3-file commits: help cases; reading commands on the fixture store; stdin-driven commands (`hook`, `mcp`, `filter`, `run`).
-
-### T60.3. Per-session drill-down on `tui` and `web`
-
-`SessionTotals` carries `project`, `api`, `started_at`, `last_activity`, `ended_at` (survey 2026-09-17, `src/web/model.rs`) and neither surface shows them; the Sessions page is a list on both, so "what did this session cost and which calls made it" needs the CLI.
-Done when Enter on a Sessions row (TUI) and a click (web) open a detail pane with those fields, the API row, and the session's calls filtered from the same snapshot; both surfaces read the same `model` accessor (D23: one model, two renderings), `tests/surface_parity.rs` asserts the detail exists on both, and a TUI `TestBackend` test plus a Slint e2e case cover the selection.
-
-### T60.4. Archive `expand` on `tui` and `web`
-
-Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
-Done when a Calls row with an archive id opens the payload in a scrollable pane — `e` on the TUI, a button on the web — through `expand::fetch` with `--lines`/`--grep` parity (a `/` filter on the TUI, a filter box on the web); the web path is one inbound WebSocket request `{"expand": id}` answered with the payload, capped by `[expand] max_lines` like the CLI; fetching a live-zone pointer freezes it exactly as the CLI does (same function, no second path); tests: TUI `TestBackend` on a fixture store, `tests/web.rs` request/response, and `surface_parity` lists the page on both.
-
-### T60.5. Plugin toggle on the web Plugins page
-
-The TUI Plugins tab toggles `plugins.<id>.enabled` through `config set`; the web page renders the same rows read-only and `src/web/mod.rs` has no inbound WebSocket message at all (survey 2026-09-17) — a D23 defect.
-Done when the web Plugins page has the same toggle, sent as one inbound WebSocket message `{"set": {"key": "plugins.<id>.enabled", "value": bool}}` handled by the same `config set` function the TUI and CLI use (keys limited to that allow-list; anything else is refused with a message frame), the next snapshot reflects it, `tests/web.rs` covers accept and refuse, and the Slint e2e test clicks the toggle.
-
-### T60.6. Error and connection states on `web` and `tui`
-
-A store that fails to open renders an empty web page, and a dropped WebSocket leaves the last frame on screen with no hint (survey 2026-09-17, `src/web/mod.rs`, `crates/rtok-webui`); the TUI shows a doctor failure string but no store error line.
-Done when the snapshot carries an `error: Option<String>` the model fills when the store or doctor fails, both surfaces render it as a banner instead of empty pages, the web client reconnects with capped backoff and shows "reconnecting" until the next frame, and `tests/web.rs` plus a TUI `TestBackend` test cover the unreadable-store case (a `Vfs`-style fixture: point `db_path` at a directory).
-
-### T60.7. WASM bundle size gate
-
-`crates/rtok-webui/pkg/rtok_webui_bg.wasm` is 10,560,601 bytes (`ls -l`, 2026-09-17), served uncompressed from `rtok web`; no release profile, `lto` or `wasm-opt` is set for the crate.
-Done when the webui release profile sets `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `just web` runs `wasm-opt -Oz` when it is on PATH (fail open to the unoptimised file otherwise, with a line), `rtok web` serves the file with `Content-Encoding` negotiation for a pre-compressed `.wasm.br`/`.wasm.gz` when present, a test asserts the served size is under a number set from the measured result of this task, and the before/after bytes go into `research.md` with the date and command.
-
-### T60.8. TUI help overlay and manual refresh
-
-Key bindings live in the footer only and differ per page (survey 2026-09-17, `src/tui/app.rs`); there is no way to refresh before the tick.
-Done when `?` toggles an overlay listing the global and per-page keys generated from the same table the key handler matches on (one source, no hand-written list), `r` refreshes the snapshot immediately, the footer names `?`, and `app.rs`/`view.rs` tests cover the overlay and the refresh.
-
-### T60.9. Web theme toggle
-
-`app.slint` has a dark-mode icon (`crates/rtok-webui/ui/app.slint:288`, survey 2026-09-17) but no toggle and no `prefers-color-scheme` read; the UI is dark-only.
-Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it, the choice persists in `localStorage`, every colour comes from one palette struct (no literals in components), and the Slint e2e test flips the theme.
-
-### T60.10. Sessions tab in the TUI is a static paragraph
-
-Checked 2026-09-17 (`src/tui/view.rs:72,366`, `src/tui/app.rs`): the Sessions page renders `render::sessions_table` as one `Paragraph` — no cursor, no scroll, no selection, no keys, no live-only filter — while Plugins and Calls have row state in `app.rs`, `↑/↓`, and a detail toggle. A store with more sessions than the terminal has lines shows only the top of the table. The `placeholder()` fallback at `view.rs:75` still exists for an unknown page although every `model::pages()` entry now has a body.
-Done when Sessions has the same row model as Calls: a `sessions` cursor in `app.rs`, `↑/↓` moving it with the table scrolling to keep it visible, the selected row marked like the Calls row, `l` toggling the live-only filter the CLI exposes as a flag (`sessions_table(rows, all, now)` already takes it), the footer naming the keys; the `placeholder()` fallback is deleted and an unknown page is a `surface_parity` failure instead; `app.rs` and `view.rs` `TestBackend` tests cover cursor, scroll on a 200-row snapshot and the filter. T60.3 builds its detail pane on this cursor.
-
-### T61.1. `stats` counts injected skill bodies
-
-From I-49 (`research.md` §10.2, §10.7). The `Skill` tool_result is 22 B; the body lands as a separate `isMeta` user record joined to the tool_use by `sourceToolUseID` (measured 2026-09-17: median 8,863 B, max 248,175 B), and `stats` sees only the 22 B.
-Done when `measure::jsonl` keeps `isMeta` user records with a `sourceToolUseID` as `Injected { tool_use_id, bytes, turn }`, `stats` folds them into a `skill` family keyed by the `Skill` tool_use's `input.skill` — calls, bytes, mean, p95, est. tokens, and `resident` = bytes × the number of later API requests in that session (what the context actually carried) — printed as one table under `mcp` and present in `--json`; unit test on a fixture transcript with one 3-line and one 3,000-line body; `stats_model` golden re-blessed in the same commit; the measured row from this machine goes into `research.md` §10.2 with the command.
-
-### T61.2. Archive skill bodies outside the live zone
-
-From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
-Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
-Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
-
-### T61.3. `doctor` skill audit
-
-From I-50 (`research.md` §10.4, §10.7); T59.7 covers the host-feature half of the overlap check. Nothing today tells the operator that 66 skills ride in every request or that one body is 248 KB.
-Done when `rtok doctor` prints a `skills` section for the current host: every skill the host lists (Claude Code: `~/.claude/skills`, project `.claude/skills`, enabled plugins from `installed_plugins.json`; other hosts: their documented roots from `research.md` §10.1), with description chars, body bytes, invocations in the last 30 d (from T61.1 when the store has them, `-` otherwise), and one flag per row where it applies — `desc > 200`, `body > 8 KB` (suggest `references/`), `never invoked` (suggest `disable-model-invocation` or project scope) — plus a one-line total (listed skills, description bytes ≈ tokens per request); advice only, no file is edited; `doctor --json` carries the same rows; unit test on a `Vfs` tree with three skills; `docs/` doctor page gains the section with the measured totals from this machine and the date.
-
-### T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
-
-From `research.md` §10.8. The body of a skill is injected after the `Skill` tool call; a `PreToolUse` hook on matcher `Skill` runs before that and may deny with a reason the model reads. A 248 KB body (`update-config`, measured 2026-09-17) then becomes a digest plus an `expand <id>` pointer instead of 62 K resident tokens.
-Done when `src/agents/claude/mod.rs` `ENTRIES` gains `("PreToolUse", "Skill")` (host table re-blessed with `RTOK_BLESS=1 tests/agents_doc.rs`), the `guard` plugin handles it behind `[plugins.guard] skills = false` (default off) with `skill_max_bytes = 8192`: resolve `tool_input.skill` to its `SKILL.md` through the existing `doctor::skill_md_path` (user skills) plus the plugin roots from `installed_plugins.json` for `/plugin:skill` names, read it, and when the body exceeds the cap and its frontmatter has none of `allowed-tools`, `model`, `context`, `agent` — archive the body, answer `deny` whose reason is the markdown map (every heading with its first non-empty line, produced by the `read` plugin's map mode for markdown, no second outliner) followed by `[rtok <id> · N lines · expand: rtok expand <id>]` and one sentence telling the model to `expand` a section by `--grep` or to re-invoke with `[plugins.guard] skills` off; anything else (small body, frontmatter keys, unresolved path, read error) is `allow` untouched; `Measurement { plugin = "guard", kind = "skill" }`; the hook stays under 10 ms on a 250 KB file (measured in the test) and fails open; tests: fixture skills of 3 lines, 3,000 lines, and one with `allowed-tools`; docs: the guard page and `docs/agents.md` note that a digested skill does not apply its frontmatter.
-Execution plan: (1) `src/config/mod.rs` Guard section gains `skills = false`, `skill_max_bytes = 8192`; golden `tests/trycmd/config-show.stdout` and `docs/config.md`. (2) `src/plugins/guard/skill.rs`: resolve the name (`doctor::skill_md_path` made `pub(crate)`, project `.claude/skills`, plugin roots from `installed_plugins.json`), frontmatter guard, outline (headings + first line; `read` has no markdown map mode, so this is the first outliner — noted at close), archive, deny reason with the `[rtok <id> …]` trailer, Measurement; one branch in `guard/mod.rs` `pre_tool`; unit tests on `Vfs`-free temp files incl. the 10 ms check on 250 KB. (3) `ENTRIES` + re-blessed `docs/agents.md`, guard README line, close-out. Verify: fmt, clippy, `nextest -p rtok`, build-min, dup.
-Landed (2026-09-18, unclaimed since): commits `c2a42ef` (config knobs), `1e513d3` (`guard/skill.rs`, `pre_tool` branch), `d3b3f21` (`ENTRIES`, guard and agents docs). Not closed: no Check result was recorded. The next agent runs the Check against the card (fixture skills 3 / 3,000 lines / `allowed-tools`, 10 ms on 250 KB, fail open) and moves the card to `done.md`; readiness 90 % reflects that.
-
-### T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
-
-From `research.md` §10.8. `plugins/opencode/rtok.ts` already replaces bash output through `rtok filter` in `tool.execute.after`; if OpenCode delivers a skill body through a tool call, the same hook sees it.
-Step 1 (decides the task): verify against OpenCode's current docs and one real session log (`~/.local/share/opencode/opencode.db`, `part` rows) which tool carries a skill body and whether `tool.execute.after` receives its `output`; record the finding in the card. If skills are injected outside the tool path, close the task with that finding and no code.
-Done when (if step 1 passes) the plugin routes that tool's output through `rtok filter --cmd "skill <name>"` with a `[skill]` rule in `rules/default.toml` (head 30 / tail 5, keep headings), the cut is lossless — `filter` archives the raw body and prints the `expand <id>` trailer, adding an `--archive` flag to `filter` if it has none today (check first; one code path with `run`) — `rtok.test.ts` covers a 3,000-line body and a small one, `Measurement { plugin = "cmd", kind = "skill" }`, and `plugins/opencode/README.md` documents it with the verified docs link (`tests/host_docs.rs`).
-
-### T63.1. Skills page on `tui` and `web`
-
-Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: which of the 66 listed skills (`research.md` §10.2, this machine) were ever invoked, which never, how many bytes each body is, and how much of the input a session carried as skill bodies. `rtok stats` gains the numbers in T61.1 and `doctor` the audit in T61.3; this task renders both on the same page.
-Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
-
-### T64.1. `cmd` grouping pass: files by directory, diagnostics by type
-
-From `research.md` §11 (rtk's four strategies, 2026-09-18). rtk groups similar items — files by directory, errors by type; rtok's rule engine (`src/plugins/cmd/rules.rs`) only keeps, drops, cuts by position and folds adjacent duplicates, and the `ls`/`find`/`tree` formatters just take the first 40 lines.
-Done when a rule may set `group = "dir"` (path-per-line output: `find`, `rg -l`, `git status` untracked, `ls -R`) or `group = "diag"` (diagnostics keyed by code or rule id: `cargo` `error[E…]`, `tsc` `TS…`, `eslint` rule, `pytest` exception class), the pass rewrites the lines as `dir/ (N files): a, b, c …` and `E0308 ×N: first message (file:line, …)` before the head/tail cut, stays lossless (raw output archived as today, `expand <id>` trailer), and a fixture per family in `tests/cmd_golden` records before/after bytes that beat the same rule without `group` — a family that does not win is not switched on. T58.5 keeps its per-family formatters; this is the generic pass a TOML rule turns on.
-
-### T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
-
-From `research.md` §11. `rules::dedupe` folds consecutive identical lines to `line (×N)`; logs repeat the same line with a different timestamp, pid or request id and never fold, and a line that repeats after one other line never folds either.
-Done when `dedupe = "normalized"` (the current behaviour stays `dedupe = true`) keys a line with timestamps, hex ids, pids and durations replaced by placeholders, folds every later match into the first occurrence as `line (×N, also lines k, l, …)` keeping the first verbatim, and a fixture of 3,000 log lines (nginx access log, a `cargo test` run with 200 identical warnings, `kubectl logs`) shows the bytes saved against `dedupe = true`; unit tests for the key normaliser (no false merge of two different error codes). Ordering of the kept lines is unchanged so the head/tail cut still works.
-
-### T64.3. Prompt-cache FAQ with the measured hit rate per surface
-
-From `research.md` §11. rtk's README answers "does it break Claude's prompt cache" in one paragraph; rtok has the stronger story (byte-stable injection, live-zone proxy rewrites, `rtok report` cache section) and no page that says it.
-Done when a `docs/` FAQ section "Does rtok break the prompt cache?" states it per surface with a measured number each: the hook filters once and the host stores the result in its transcript (same shape as rtk — nothing on later turns changes), `inject` is byte-stable per turn (name the test), `archive`/`proxy` rewrite only outside `keep_turns` with byte-identical pointers (name the test and the cache hit rate before/after from `rtok report` on this machine, dated), and `guard` denials add no bytes; the README links the section and `docs/comparison.md` §"The platform itself" points at it instead of restating the number.
-
-### T65.1. Content-hash dedup of tool output within a session
-
-From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before in the session comes back as a 13-token `§ref:HASH§` instead of the text. rtok's `guard` dedups by input key (`guard::cache_key`: same tool, same normalised input), so `cat a` followed by `head -1000 a`, or the same `cargo test` failure printed twice, is paid twice.
-Step 1 (gate): `stats` gains a `repeat` column — share of tool_result bytes whose SHA-256 (`sha2` is already a dependency, T13.3) equals an earlier result in the same session — measured over 30 d on this machine into `research.md` §11. Proceeds only above 1 % of result bytes; otherwise the card leaves for `ideas.md` with the number.
-Done when `cmd::run` and the `read` plugin hash the raw output before archiving, a hit in the same session returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` instead of the body (`Measurement { kind = "dedup" }`, before = body bytes), a miss archives as today, the lookup is one indexed query on the archive table (≤ 10 ms, fail open), and a test replays two different commands with identical output.
-
-### T65.2. `cmd` JSON output compaction
-
-From `research.md` §11. sqz strips nulls and flattens arrays in JSON output; rtok cuts `gh … --json`, `aws`, `kubectl -o json` and `curl` bodies by line position, which keeps the opening of the document and loses the keys the model asked for. `toon` (off) is the wire-side encoder and does not run in the hook path.
-Step 1 (gate): `stats` share of Bash result bytes whose body parses as JSON, 30 d, this machine, into `research.md` §11.
-Done when output that parses as JSON is rewritten before the line cut: null / empty-string / empty-container fields dropped, arrays beyond `json_items` (default 20) elements shown as `… +K more`, object keys kept, strings longer than `json_string` (default 200) cut with their length, one line per top-level key; lossless via the archived raw body and the trailer; a fixture per source (`gh pr list --json`, `aws ec2 describe-instances`, `kubectl get pods -o json`) records the bytes against the default rule; a body that does not parse is untouched.
-
-### T65.3. `cmd` column-padding collapse
-
-From `research.md` §11. sqz collapses padding in columnar output; `docker ps`, `kubectl get`, `ps aux`, `ls -l` spend a third of their bytes on alignment spaces.
-Done when a rule may set `collapse_columns = true` (on in `Rule::default()` if the fixtures win), runs of two or more spaces inside a line fold to one, leading indentation is kept (tracebacks, YAML, diffs are not columnar — the pass is skipped when the rule already keeps a block, T65.4), and a fixture per source records the bytes saved; `expand <id>` returns the aligned original.
-
-### T65.4. Never cut a stack trace
-
-From `research.md` §11. sqz's safe mode passes stack traces and secrets through whole. rtok keeps single lines matching `BUILTIN_KEEP` (`error`, `panic`, `traceback`) but the head/tail cut in `rules::apply` drops the frames under them, which is the part the model needs; secrets are deliberately not redacted (`ten_families_and_aws_key_unredacted`) and stay so.
-Done when `rules::apply` detects a trace block — Python `Traceback (most recent call last):` to the next non-indented line, Rust `thread '…' panicked at` plus a following `stack backtrace:` block, JS `Error:` with `    at ` frames, Go `goroutine N [` frames, Java `Exception in thread` with `\tat` frames — and keeps the whole block in the output regardless of `head`/`tail`, only the block's own length counting against `max_lines`; a fixture per language shows the frames survive a 40-line cap; the trailer still names the archive id.
-
-### T67.2. `expand --context N` around grep hits
-
-From I-54 (`research.md` §12). After T67.1 the model needs two calls to see the lines around a hit (grep, then `--lines`); in rtok's metric every extra call is a turn that re-reads the whole prompt, so one call that returns hit ± N lines is cheaper than two smaller ones.
-Done when `expand` takes `context` (CLI `--context N`, MCP `expand.context`, default 0 = today's output) and, with `grep`, prints each hit with N numbered lines before and after it, overlapping windows merged, windows separated by `--`, still under `expand.max_lines`; without `grep` the flag is ignored; per call like `--grep` (no config key; the `config_coverage` allow-list and the `docs/config.md` row name it); a test with two hits whose windows overlap and one at the file edge; the README example gains the one-call form.
-
-### T68.1. `explore`: one call answers a code question
-
-From the codegraph / graphify review (2026-09-18; https://github.com/colbymchenry/codegraph, https://github.com/Graphify-Labs/graphify). codegraph's single `codegraph_explore` returns, for a free-text question, the matching symbols' source grouped by file, the call paths between them and a blast-radius line; its README claims 88 % fewer tool calls (2–4 vs 6–43) on 7 repos — a vendor number until T68.9 measures it here. rtok answers the same question in three to five calls (`symbol`, `callers`, `impact`, `read`), and in rtok's metric every extra call is a turn that re-reads the whole prompt.
-Done when a fifth MCP tool `explore(query, path?)` splits the query into identifier tokens, resolves each against `symbol_defs` (exact, then prefix on `symbols.name`, best 5 by reference count), prints each definition's body once per file (`body_lines` cap, files in path order), then the call paths between the resolved symbols (T68.4's `to` walk, depth ≤ 3) and one fan-out line per symbol (`impact` depth 1 count); the tags and LSP backends share one assembler; the whole answer goes through `cap` with an archive id; description ≤ 60 tokens and the surface stays ≤ 150 (`graph_surface_is_four_tools_under_150_tokens` re-blessed to five); `tests/graph_contract.rs` pins one two-symbol question byte-exact; `Measurement { plugin = "graph", kind = "explore" }` records bytes returned versus the sum of the calls it replaced. Off the hook path; no indexing on call beyond `auto_index`.
-
-### T68.2. `symbol` lists what a definition calls
-
-From the codegraph / graphify review. codegraph exposes `callees`; graphify's `explain` shows a node's outgoing edges. rtok stores the edge already (T8.5: every reference row carries `scope` = its enclosing definition) and shows only the incoming side (`callers`).
-Done when `symbol` output ends each definition with one `calls: a, b, c (+N)` line — distinct referenced names whose `scope` is that definition, ordered by first line, capped at `body_lines / 2` names — from one `symbol_callees(root, name)` query on the existing rows (no schema change, no new tool: the surface budget is spent on T68.1); the LSP backend derives the same line from `documentSymbol` plus references inside the span or prints nothing; the unfiltered `symbol` contract strings are re-blessed once in the same commit; unit test on the `impact` fixture asserts the chain reads forward as `callers` reads it backward.
-
-### T68.3. Staleness line on every graph answer
-
-From the codegraph / graphify review. codegraph prepends a banner naming files edited during the watcher's debounce window and tells the model to read those directly; graphify re-extracts on post-commit / post-checkout. rtok marks a file stale in `post_tool` and the watcher settles after `QUIET`, but a `symbol` call inside that window, or any call with `auto_index = false`, answers from old rows and says nothing.
-Done when every graph tool answer with `auto_index = false`, or with the watcher on and a non-empty pending set, starts with `stale: N files pending (a.rs, b.rs, …)` (up to 5 names, sorted, byte-stable for the same pending set) followed by the answer; `Store::symbol_pending(root)` counts rows carrying the T8.3 stale mark; the watcher publishes its in-flight pending set through `Ctx` (one shared set behind a mutex, read-only from the tools); `rtok graph status` (CLI, `--json` per T60.1) prints root, rows, files, pending, watcher mode and last index time; a test edits a file with `auto_index = false`, sees the line, runs `graph index`, sees it gone. Hook p95 unchanged (the line is built on the MCP path only).
-
-### T68.4. `impact` with a target: call paths between two symbols
-
-From the codegraph / graphify review. graphify `path A B` and codegraph's "call paths between them" answer "how does A reach B"; rtok's `impact` walks outward from one symbol and prints every reachable definition, so the model reads the whole fan-out to find one chain.
-Done when `impact` takes optional `to` (MCP field, CLI `--to`) and prints only the chains from `name` that reach `to` within `depth`, one line per chain `a → b → c` in BFS order, `no path from a to b within depth N` when none, the same `impact_bfs` walk with its parent map kept (no second traversal); the LSP backend applies the same filter on its `callHierarchy` result; description still ≤ 60 tokens; unit test on the `impact` fixture (one chain found, one absent, depth too small).
-
-### T68.5. `affected`: which tests a change touches
-
-From the codegraph / graphify review. codegraph `affected` traces a diff to the test files it reaches so the agent runs those instead of the suite; rtok has `impact(name)` and `is_test_path`, and no path from "these files changed" to "run these tests", so `cargo test` / `pytest` output — the largest Bash family in `research.md` §2 — is paid for the whole suite.
-Done when `rtok graph affected [--since <ref> | --staged]` (CLI, `--json`) takes changed files from `git diff --name-only` (no libgit — `cmd` already shells out to git), their definitions from `symbol_defs`, `impact_bfs` to `depth` (default 3), and prints the reachable definitions whose file passes `is_test_path` as `test file ← via symbol` grouped by file, with the command to run them per language (`cargo test <name>`, `pytest path::name`, `go test -run`, `vitest path`); MCP `impact` accepts `path` alone (no `name`) with the same semantics; an empty result says `no indexed test reaches the change; run the suite`; `Measurement { kind = "affected" }` is written only when a transcript or T68.9 shows the subset actually ran (before = the suite's last measured bytes, after = the subset's), never on the print alone; test on a fixture repo with two tests, one reaching the change.
-
-### T68.6. Import edges in the index
-
-From the codegraph / graphify review. Both tools store `imports` edges (codegraph resolves them to source files; graphify's `module_source`); rtok's rows are definitions and reference sites only, so a file that imports a module without calling a uniquely named symbol has no edge, and T68.5 cannot reach it. T52.5 already appends rtok's own tags queries to the grammar's, so this is query data plus one row kind.
-Done when the extra queries capture `use` / `import` / `require` / `from … import` for Rust, TS/JS, Python, Go and Dart as rows of kind `import` whose `name` is the last path segment, `scope` empty, `is_def = false`; `symbol_imports(root, path)` lists a file's imports and `symbol_importers(root, module)` the files importing a module; `outline` prints an `imports:` line first; `impact_bfs` follows an import row to the file's definitions at cost 1 (one extra step in the same query, argument `follow_imports` default true); T8.8 recall on the 30-symbol set unchanged (imports never count as references); index time on this repo before / after in `research.md` with the command; no migration (kind is a string) — the extractor fingerprint bump re-indexes.
-
-### T68.7. Mark ambiguous references
-
-From the codegraph / graphify review. graphify tags every edge `EXTRACTED` / `INFERRED` / `AMBIGUOUS`; codegraph marks heuristic bridges `provenance: heuristic`. rtok's tags backend resolves by name: `callers(new)` on a repo with twelve `new` definitions merges them all and the model cannot tell.
-Done when `callers`, `impact` and T68.1 append ` ?` to a reference line whose name has more than one definition in the root (`symbol_defs` count > 1, one query per distinct name, cached per call), the answer's first line says `N names ambiguous (?): narrow with path or kind, or backend = "lsp"` when any is, the LSP backend never marks (its resolution is exact), unfiltered contract strings for names with one definition stay byte-identical, unit test with two `new` definitions and one `alpha`.
-
-### T68.8. Markdown outline shared by `outline`, `read map` and the skill digest
-
-From the codegraph / graphify review. graphify indexes Markdown headings as nodes beside code. rtok's `outline` and `read` mode `map` return nothing for `.md`, and T62.1's execution plan writes a first heading outliner inside `guard/skill.rs` — a second one would be a duplicate the day `outline` gains it.
-Done when `plugins::read::outline` has one Markdown mode (`#` headings with their level and first non-empty body line, fenced code blocks skipped, line numbers as for code), `read` mode `map` and `outline` on `.md` / `.mdx` use it, T62.1's digest calls the same function (moved there if it landed first), no `tree-sitter-md` dependency (headings are a line scan), test on a three-heading fixture with a heading inside a fence, and the `read` docs page lists `.md` under `map`.
-
-### T68.9. With / without bench for the graph tools
-
-From the codegraph / graphify review. codegraph's number is the only measured one in the pair: median of 4 runs, 7 repos, Claude Opus 4.8 answering architecture questions with and without the graph — tool calls, wall time, tokens, cost — and it also reports the cost (80 % more retrieval context resident at session end). rtok's `docs/comparison.md` §5 still says no end-to-end win is demonstrated, and Gate P8b's task-set clause was never closable in code.
-Done when `rtok bench --suite graph` runs N fixed questions (≥ 10, three repos including this one, in `bench/graph.toml`) through the existing `claude -p` harness twice — rtok MCP on, rtok MCP off (native Read / Grep only) — and reports per question and in total: tool calls, tokens in / out / cache-read, wall time, cost via `stats --price`, resident context at the last turn, pass / fail against an expected-answer regex; `--dry-run` prints the schedule without spend; the live run needs the creator's go (API spend) and its result goes into `research.md` and `docs/comparison.md` §4 / §5 with the date and command; the vendor's 88 % / 62 % numbers are quoted there only next to rtok's own.
-
-### T68.10. `[plugins.graph]` exclude, include and extension map
-
-From the codegraph / graphify review. codegraph's `codegraph.json` has `exclude` (gitignore-style), `include` (force gitignored source back in), `deprioritize` and `extensions` (`.tpl → php`); graphify has the same for its walker. rtok's walker is `ignore::WalkBuilder` with `.gitignore` only and a fixed extension → grammar table, so a vendored tree cannot be dropped, a gitignored generated source cannot be indexed, and projects with custom extensions get no rows.
-Done when `[plugins.graph]` gains `exclude = []`, `include = []` (both gitignore syntax, applied through `WalkBuilder` overrides — no hand-written matcher) and `extensions = {}` (`ext = "grammar"`, unknown grammar names rejected by `config validate`); the watcher applies the same three (`relevant()` / `absorb_event` share the matcher with the walker); `deprioritize` is not added (rtok ranks by reference count, T52.3); rows in `docs/config.md` and the config-show golden; a unit test on a `Vfs` tree with an excluded dir, an included gitignored file and a mapped extension; `rtok graph index` reports how many files each list changed.
-
-### T69.1. Note lifecycle: retire, supersede, pin — never delete
-
-From the graymatter gap review (`research.md` §14, 2026-09-18). graymatter's `revise` / `forget` / `pin` / `unpin`: a correction is a tombstone (the old fact stays on disk, is never recalled again, and the receipt names what replaced it); a pinned fact is exempt from decay and always recalled. rtok's `notes` table is insert-only — `mem_save`, `mem_search`, `mem_get`; the in-place update keyed by `project + kind + title` is the memory card "`mem_save` updates a note in place" — so a fact that turned out wrong under a different title stays in FTS5 and in the last-5 recall forever, and nothing keeps a convention on top of five newer notes. Lossless by default (D4) means a tombstone, never `DELETE`.
-Done when:
-1. A new migration (never an edit to `0001.sql`) adds `notes.retired INTEGER NULL` (unix ts), `notes.superseded_by INTEGER NULL`, `notes.pinned INTEGER NOT NULL DEFAULT 0`; existing rows stay live.
-2. One MCP tool `mem_update(id, retire?, superseded_by?, pinned?)` and the same operations as `rtok memory retire|pin|unpin <id>` and `rtok memory revise <id> --title --body` (revise = save the replacement through the in-place `mem_save` path, then retire the old id with `superseded_by`); one function per operation in `plugins/memory`, called by both the MCP and the CLI path (D21). The memory tool surface stays ≤ 60 description tokens (`rtok doctor` measures it).
-3. `list_note_titles`, `search_notes`, `search_notes_hybrid` and the SessionStart recall exclude retired rows; pinned rows come first in recall (id order), then the rest, inside `recall_tokens`. `mem_get` of a retired id still returns the body, prefixed by one line `retired <ts>[, superseded by <id>]`, so nothing is lost.
-4. Tests on the in-memory store: revise → `mem_search` for the old title's words returns the replacement only; retire → recall omits the id and `mem_get` returns the body with the retired line; 20 newer notes plus one pinned → the pinned id is first and the injection is byte-stable across two runs; the migration applies to a fixture `rtok.db` of the previous schema.
-5. Docs: memory plugin README / AGENTS invariants and the memory tool table in `README.md`. T69.3 measures the effect (superseded facts returned = 0). Covers ideas I-57 (engram `pinned`) and the MemPalace / tinymemory / engram-`supersedes` row (retire); both rows tick promoted.
-
-### T69.2. Recall ranking: recency decay and use counts, off by default
-
-From the graymatter gap review (`research.md` §14). graymatter ranks recall by vector + keyword + recency with a deterministic 30-day half-life and per-signal "receipts"; facts fade without access and are never hard-deleted. rtok: SessionStart recall is the newest `recall_titles` (5) ids of the project; `mem_search` is bare BM25 (`search_notes`) or RRF over BM25 + hash-embed when `embed.enabled` — a note used in every session for a month drops out of recall the moment five newer notes exist, and a stale note ranks as high as a fresh one.
-Done when:
-1. Evidence first: `rtok memory status` (T69.4) on this machine — notes per project and how many projects hold more than `recall_titles` live notes — recorded in `research.md` §14. If no project does, the order never matters and the card closes with the number.
-2. A migration adds `notes.uses INTEGER NOT NULL DEFAULT 0` and `notes.last_used INTEGER NULL`; `mem_get` and every `mem_search` hit bump them; inclusion in a SessionStart recall does not (the hook path writes nothing per note, D13).
-3. `[plugins.memory] half_life_days = 0` — 0 keeps today's id-desc order with byte-identical output; N > 0 scores `ln(1 + uses) × 0.5^(age_days / N)`, ties by id desc. Recall and search share one scoring function; search re-ranks the top `3 × limit` BM25 / RRF hits so FTS5 still does the retrieval. `NoteHit` gains `score` and `age_days` (graymatter's receipts), so the MCP result shows why a hit ranked. Decay ranks, never prunes (D4).
-4. Tests: a fixture of 20 notes where a 60-day-old note used 10× outranks a fresh unused one only when `half_life_days > 0`; `half_life_days = 0` reproduces the T6.2 recall bytes exactly; scoring is deterministic under a frozen clock.
-5. The default stays 0 until T69.3 shows a higher hit rate on the 100-session run without more recall bytes; the card records the numbers either way. `docs/config.md` row in the same commit (D12).
-
-### T69.3. Memory recall bench: planted, drifted, superseded facts
-
-From the graymatter gap review (`research.md` §14). graymatter publishes a no-LLM benchmark (`go run ./benchmarks/token_count`, keyword embedder): tokens per session against full-history injection at 1 / 10 / 30 / 100 sessions, a fact planted 96 sessions ago retrieved 83 % of the time, superseded facts returned 0 % (its numbers, not re-measured). rtok's `memory` has no recall-quality number at all — `graph` has one (T8.8, 30 hand-labelled symbols) — and Gate P6 ("revert if recall is worse") has nothing to compare against. D3.
-Done when:
-1. `tests/memory_bench.rs` (`cargo test --test memory_bench -- --nocapture`, the `mode_bench` shape) builds an in-memory store from a seeded generator: N sessions (1, 10, 30, 100) × K notes of realistic length, 20 target facts planted at known session offsets, 5 of them revised later (T69.1); no network, no LLM.
-2. Reported per configuration — FTS5 default; `half_life_days = 30` (T69.2); `embed.enabled` hybrid (P29): hit rate of the target in `mem_search` top-`search_limit` for a query built from the fact's own words; superseded facts returned (the test asserts 0 after T69.1); SessionStart recall bytes per session against the "full injection" baseline (every live body of the project) — rtok's own version of graymatter's table.
-3. Numbers land in `research.md` §14 with the command and date and on the memory docs page; `README.md` / `docs/comparison.md` cite that row and never graymatter's. The gate for T69.2's default is written from this run.
-4. The generator and the expected hit rates are checked in; a change that lowers the hit rate on any row fails the test.
-
-### T69.4. `rtok memory status` and the Memory page rows
-
-From the graymatter gap review (`research.md` §14). graymatter's `status` and its 4-tab `tui` show facts stored, memory cost (KB), recall counts, health and weight distribution. rtok's Memory dashboard page (`web::model::config_fields`) shows two config keys and nothing from the store: how many notes exist, per project and kind, their bytes, pinned / retired, recalls in the window and the bytes they injected. T69.2 step 1 needs these numbers, and D27 says anything the store keeps is a page.
-Done when:
-1. SessionStart recall records `Measurement { plugin = "memory", kind = "recall" }` (before = bytes of the live bodies the injected titles stand for, after = injected bytes, `ref_id` = session); `mem_search` / `mem_get` counts come from the `calls` rows `rtok mcp` already writes (`mcp::record`).
-2. `rtok memory status [--project <name>] [--since 30d] [--json]` prints: notes live / pinned / retired, per project, per kind, body bytes, oldest / newest ts, recalls in the window with injected vs stood-for bytes, `mem_search` / `mem_get` calls; `--json` is the same `web::model` type (T60.1 rule: one serde path).
-3. The Memory page on `web` and `tui` renders those rows through one model accessor (D23; `tests/surface_parity.rs`); a TUI `TestBackend` snapshot and a `tests/web.rs` case on an in-memory store with three notes; a trycmd golden for `status` on the fixture store (T60.2 style).
-4. Docs: memory page and the CLI table in `README.md`.
-
-### T69.5. `remember:` prompts save a note; per-turn recall stays behind an A/B
-
-From the graymatter gap review (`research.md` §14). graymatter's `UserPromptSubmit` hook does two things: a prompt starting with `remember: <text>` is saved instantly, and every turn injects the top-3 facts recalled for the prompt. rtok's `UserPromptSubmit` carries nothing from `memory`: saving a note costs a `mem_save` tool round trip (an API turn plus the output tokens of the call) even when the human typed the fact; per-turn recall would cost ~30–60 tokens per turn, unmeasured — and graymatter's own table compares against full-history injection, not against no injection.
-Done when:
-1. The SDK gains `Plugin::user_prompt(&self, ev: &UserPrompt, cx: &Ctx) -> Option<Injection>` with a no-op default (semver-minor; `inject` keeps the budget and the byte-stability test for modes), dispatched from `rtok hook UserPromptSubmit`.
-2. `memory` handles it: a prompt whose first line matches `^remember:\s*(.+)` saves kind `user`, title = the first 80 chars of the rest, body = the rest (through the in-place `mem_save` path, so a repeat is a no-op), project from the hook cwd, and answers with one line `saved note <id>`; any other prompt → no output; the hook stays ≤ 10 ms and fails open (store error → nothing). The prompt is stored only as that note, never logged. Hook e2e: with and without the prefix; a second identical save returns the same id.
-3. `[plugins.memory] prompt_recall = 0` (0 = off; N = titles per turn): when N > 0 the hook runs the T69.2 ranking on the prompt's words and offers N `id title` lines at priority 11 inside the D5 budget; a turn whose top-N equals the previous turn's (per-session sha in the store) emits nothing; `Measurement { plugin = "memory", kind = "prompt_recall" }`. Stays 0 by default until a `rtok bench` A/B (T53.1 shape) shows cost per passed task does not rise; the card records the dry result.
-4. `docs/config.md` rows, the memory page, and `docs/agents.md` re-blessed if the host table changes.
-
-### T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
-
-From the graymatter gap review (`research.md` §14). graymatter's `context-sync` projects the highest-weight facts into a marker-fenced block in `CLAUDE.md` / `AGENTS.md` within an explicit token budget, detects hand edits inside the block, backs the file up and never writes outside the markers. Every host reads those files natively — including the hosts whose `support()` row has no SessionStart injection (`docs/agents.md`) — and the block sits in the cached prefix at the same price as a hook injection. Risk: on a host where hook recall is on, the same titles are paid twice (the T59.7 overlap class).
-Done when:
-1. `rtok memory sync [--file CLAUDE.md|AGENTS.md] [--budget N] [--dry-run] [--remove]` writes pinned notes first, then the T69.2 order, as `id title` lines between `<!-- rtok:memory -->` / `<!-- /rtok:memory -->`, ≤ `[plugins.memory] sync_tokens` (default 300), byte-stable for an unchanged store (no timestamps); creates the block at the end of the file when absent; backs the file up through `rtok_agent_sdk::backup` (one helper, no copy); never changes a byte outside the markers; `--remove` deletes the block and nothing else.
-2. Hand-edit guard: the sha256 of the last written block is kept in the store; a block whose bytes differ is refused with a message and exit 1 unless `--force`; `--dry-run` prints the unified diff.
-3. Not automatic: no hook writes a file (fail-open rule). `doctor` (the T59.7 list) prints the overlap when a synced block exists and hook recall is on for the host; `sync` prints the same line.
-4. `Vfs` tests: create, update, hand-edit refusal, `--remove`, outside bytes identical, budget trim; a trycmd golden; `docs/config.md` row; the memory page.
-
-### T70.1. pi extension shortens every tool result, not only bash
-
-From `research.md` §15.3. D2's constraint is that a PostToolUse hook can only add context, so on Claude Code every tool except `Bash` (rewritten to `rtok run` in PreToolUse) enters context whole; on a host with no proxy there is no second chance. pi's `tool_result` event is documented to return replacement `content` for **any** tool, and `plugins/pi/extensions/rtok.ts` uses it for bash only. Read is 15 % of tool-result tokens and its largest single results are 9.5–17 K tokens each (§2), so the tools worth adding are pi's file and search tools.
-Done when:
-1. Step 1 (decides the task): verify against pi's current docs (`## Docs` links in `plugins/pi/README.md`, re-checked as `tests/host_docs.rs` requires) and one real pi session that a `tool_result` handler's returned `content` replaces what the model sees for a non-bash built-in tool, and record pi's tool names in the card. If only bash may be replaced, close the task with that finding and no code.
-2. The extension routes the result of pi's read / grep / find / list tools through `rtok filter --stdin --cmd "<tool> <path-or-pattern>"`, keeping the existing bash path unchanged and reusing the one `rtok()` helper already in the file — no second spawn path (D21: one call path per capability). Every shortened result carries the `expand <id>` trailer (D4).
-3. Fail open exactly as today: a missing `rtok`, a spawn error, or empty stdout returns the original content; the ketch hint is printed once.
-4. `plugins/pi/tests/rtok.test.ts` covers a large read result (shortened, trailer present), a small one (byte-identical passthrough) and a spawn failure (original returned); `Measurement { plugin = "cmd", kind = "rule" }` rows appear per tool family.
-5. `plugins/pi/README.md` and `src/agents/pi/README.md` list the new call path and the reached plugins; `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table in `docs/agents.md` if the reached set changes.
-
-### T70.2. pi `context` hook: the `archive` live zone without a proxy
-
-From `research.md` §15.3 and §1 (shrinking old results in context is the top-ranked lever). `archive` rewrites old `tool_result` blocks into `expand <id>` pointers, but only inside `rtok proxy` — so on every host with no base-URL setting (pi, Cursor, Claude Desktop, Windsurf, Zed, ZCode, Kimi, Copilot) old results are re-sent whole for the rest of the session. pi's `context` event is documented to fire before each LLM call with the message array and to accept a modified array back, which is the same position in the chain the proxy live zone occupies. This also covers pi skill bodies (§10.8 lists only Claude Code and OpenCode), with no separate task.
-Done when:
-1. Step 1 (decides the task): verify against pi's docs and one real session that `context` receives the full message array and that the returned array is what is sent; record whether pi re-runs the handler per call (so the rewrite must be idempotent) in the card. Not so → close with the finding.
-2. A CLI entry point carries it: `rtok archive rewrite --stdin` reads the message array as JSON, applies the existing `plugins::archive::rewrite` through the same wire view the proxy uses (`ToolResultRef`, `keep_turns`, `live_blobs`) and writes the rewritten array to stdout. No second implementation of the live zone — the proxy and this path call one function, or the task is not done.
-3. Byte-stability (D5, §6 (2)): the same message array in rewrites to the same bytes out, so pi's prompt prefix does not churn; a test replays one array three times and asserts byte-identical output, and a fourth call with one new turn changes only the newly-aged block.
-4. The extension calls it from `context` and fails open (any error → the untouched array); `Measurement { plugin = "archive", kind = "live" }` rows carry before/after bytes with `ref_id` = the archive id.
-5. Tests: `plugins/pi/tests/rtok.test.ts` for the wiring (large array shortened, small array untouched, spawn failure untouched); a Rust test for `archive rewrite --stdin` on a 3-turn fixture asserting the pointer appears exactly outside `keep_turns` and `expand <id>` returns the original.
-6. Docs: the archive plugin page says the live zone has two carriers (proxy, pi `context`) and that they share one function; `plugins/pi/README.md` and `src/agents/pi/README.md` add `archive` to the reached set with the host table re-blessed.
-
-### T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
-
-From `research.md` §15.3. `src/agents/pi/README.md` records "Not reachable: read, archive, proxy, inject, guard, memory, graph, toon, compress" because pi's philosophy is no MCP. `pi.registerTool` is documented as pi's own tool registration, which is not MCP, so the MCP-surface plugins have a path in on pi after all. The cost is description tokens in every pi request, which is the thing D15 holds `graph` and `memory` to (4 tools / 94 tokens, 3 memory tools).
-Done when:
-1. Step 1 (decides the task): verify `pi.registerTool`'s signature and result shape against pi's current docs and one real session; confirm a registered tool's description rides the request the way an MCP tool's does, and measure the byte cost of the set. If registration is not available to an extension, close with the finding.
-2. One call path per capability (D21): the extension's registered tools are thin callers of the same `rtok mcp` tool implementations through a CLI shim (`rtok mcp --call <tool> --json <args>` or the existing subcommands), never a second implementation of `read` / `search` / `symbol` / `mem_search`.
-3. Which tools: the measured-value set only — `read`, `search`, `tree`, `symbol`, `callers`, `expand`, `mem_search`, `mem_get` — with the total description budget at or under what `rtok doctor` prices for the same tools on an MCP host, recorded in the card. A tool that does not fit the budget is not registered.
-4. Off by default until step 1 and step 3 numbers are in: `[setup.pi] tools = false` (D12: config key + `docs/config.md` row in the same commit).
-5. Tests: `plugins/pi/tests/rtok.test.ts` registers against a fake `rtok` and asserts one call path per tool and fail-open on a missing binary; `src/agents/pi/README.md` module table and the reached set updated, host table re-blessed.
-
-### T70.4. Cursor plugin shortens MCP results the host launched
-
-From `research.md` §15.3. T59.4 landed `rtok mcp -- <server argv>`, which only wraps servers **rtok itself spawns**; a server Cursor launches from its own `mcp.json` is untouched, and foreign MCP results are the measured 27 % of tool-result bytes over 30 days (§2, lean-ctx). The scan of 2026-09-18 reports that Cursor's post-MCP hook may return replacement output, which is the only surface that reaches those results without re-launching the server under rtok.
-Done when:
-1. Step 1 (decides the task): verify against https://cursor.com/docs/agent/hooks which event carries an MCP result and whether its output may be replaced (the scan says yes for MCP and no for shell; `src/agents/cursor/mod.rs` writes only `beforeShellExecution` / `afterShellExecution` today, so the event names must be re-read, not assumed). Record the verified schema in the card. Not replaceable → close with the finding, and the wrapper stays the only path.
-2. `plugins/cursor/hooks/hooks.json` gains that event pointing at `rtok hook PostToolUse --host cursor`, and the existing hook path shortens the result through the same code `rtok mcp --wrap` uses (T59.4) — one implementation, lossless, `expand <id>` trailer.
-3. Never blocks and never changes a call: only the result text, only above the existing size threshold, fail open in ≤ 10 ms; results of rtok's own MCP server are skipped (they are already short).
-4. Tests: a hook e2e per result size on a fixture payload, `Measurement { plugin = "archive", kind = "mcp" }` rows, and `plugins/cursor/README.md` + `src/agents/cursor/README.md` updated with the verified docs link (`tests/host_docs.rs`); host table re-blessed.
-
-### T70.5. `guard` on pi and OpenCode through the plugin
-
-From `research.md` §15.3. `guard` denies a repeated identical read or command within N turns, and it answers on `PreToolUse` — so it is unreachable on pi, OpenCode and Codex, which have no hook events. pi documents `tool_call` returning a block with a reason, and OpenCode documents `tool.execute.before`, which is the same position.
-Done when:
-1. Step 1: verify both APIs (block shape and whether the reason reaches the model) against their current docs and one real session each; a host where the block has no reason string is closed with the finding, because a silent deny violates fail-open expectations.
-2. Each plugin calls one new CLI path — `rtok guard check --tool <name> --json <input>` printing the same allow/deny verdict the hook path produces from `plugins::guard` — with no second key-building or dedup implementation.
-3. Fail open everywhere: missing `rtok`, non-zero exit, unparsable output, or any spawn error allows the call. T57.1's false-deny concern carries over: a wrong "read-only" verdict must not deny a call whose output changed, so the same tests run against this path.
-4. Tests: `plugins/pi/tests/rtok.test.ts` and `plugins/opencode/rtok.test.ts` each cover allow, deny-with-reason and fail-open; `Measurement { plugin = "guard", kind = "deny" }` rows; both READMEs and the host table updated.
-
-### T70.6. Compaction on pi and OpenCode through the plugin
-
-From `research.md` §15.3; the plugin-side half of T58.2, which registers host **hook** events and therefore cannot reach pi or OpenCode. Both document a compaction event that owns the summary — pi's may supply it or cancel, OpenCode's may replace the prompt — which is stronger than Claude Code's checkpoint note (T2.5), where rtok writes a note and hopes the summary keeps it.
-Done when:
-1. Step 1: verify both events against current docs and one real session; record what each accepts back.
-2. Each plugin calls `rtok hook PreCompact --host <host>` (or the CLI equivalent) so the existing `checkpoint::save` runs unchanged — the checkpoint content, its budget and its archive ids (T58.2 step 2) are not re-implemented in TypeScript.
-3. Where the host accepts a summary, the plugin returns the rendered checkpoint **appended to** the host's own summary, never replacing it: rtok's checkpoint is prompts, paths, errors and ids, not a conversation summary, and replacing the summary would lose what the host knows.
-4. Restore: the next call injects the checkpoint the way `inject::session_start` does on `source = "compact"`, inside the same budget (D5).
-5. Tests per plugin for a compaction with and without rtok present (fail open), a Rust test that the injected bytes equal Claude Code's for the same store, and both READMEs updated with verified links; cross-reference T58.2 so the two cards do not both claim the host list.
-
-### T70.7. Cursor: `inject` has no path in, and the host table says it does
-
-From `research.md` §15.3. `agents::reaches` marks a plugin reachable when the host supports the plugin's declared surface, so `inject` (Surface::Hook) is listed as reached on Cursor — but the installer writes only `beforeShellExecution` and `afterShellExecution`, and neither carries a session start or a user prompt, so the injection budget (D5) never runs there. Either the path or the claim is wrong, and today the generated table in `docs/agents.md` overstates what an install does.
-Done when:
-1. Step 1: verify against https://cursor.com/docs/agent/hooks which events carry session start and prompt submission and what their output schema accepts (the scan of 2026-09-18 reports `sessionStart` with `additional_context` and `beforeSubmitPrompt`); record the verified schema in the card.
-2. If the events exist: `plugins/cursor/hooks/hooks.json` and `src/agents/cursor/mod.rs` register them onto `rtok hook SessionStart` / `rtok hook UserPromptSubmit --host cursor`, the injection is byte-stable and inside the existing budget, and a hook e2e asserts the same bytes Claude Code gets for the same store.
-3. If they do not exist: `inject` stops being claimed on Cursor — the surface claim is narrowed where `reaches` computes it, not patched in the markdown — and the card records the doc line that says so.
-4. Either way `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table, `src/agents/cursor/README.md` explains the outcome, and the same audit is run for every other host whose table claims a plugin no registered event can carry (one line per host in the card).
-
-### T71.1. `curl` / `wget` HTML pages as readable text
-
-From I-71 (tinyjuice `TokenJuice`, read 2026-09-18: HTML/RSS → text, 77.0 % smaller self-reported). The `[curl]` rule (`rules/default.toml`) cuts by position (head 10 / tail 10, keep `error|HTTP|curl:`), so a page fetched with `curl` or `wget -O-` keeps 20 lines of `<head>` boilerplate and drops the body text the model asked for. A TOML rule cannot do it (T50.1 is data only); it is one formatter in `formatters.rs`, the T58.5 shape.
-Gated on T50.1 step 1: proceeds only when the `stats` family table shows HTML bodies as a visible slice of the `curl` / `wget` family on this machine (≥ 1 % of Bash result bytes); otherwise the card leaves for `ideas.md` with the number.
-Done when:
-1. A `curl` / `wget` formatter detects `<html` or `<!doctype html` (case-insensitive) in the first KB and returns `None` otherwise, so the rule path stays the fallback for JSON, plain text and errors.
-2. Output keeps `<title>`, headings (`h1`–`h6` as `# …` lines) and text nodes in document order; `script`, `style`, `nav`, `footer`, `svg`, comments and tags are dropped; whitespace collapsed; entities decoded for the common set (`&amp; &lt; &gt; &quot; &#39; &nbsp;`); the `curl` progress and `HTTP/` status lines stay. A character scanner, no new dependency (an HTML parser crate needs creator approval and a one-line reason).
-3. Lossless: the raw page is archived as today and the `expand <id>` trailer is kept; the head/tail cut of the `[curl]` rule applies after the pass.
-4. `tests/cmd_golden` fixtures: one real page (saved, ≤ 100 KB), one JSON response (untouched), one error; `Measurement { plugin = "cmd", kind = "formatter" }` beats the `[curl]` rule on the page fixture or the formatter is not added; the cmd docs page family table cites the row.
-
-### T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
-
-From I-56 (engram `mem_context`, `research.md` §13; MemPalace Stop-hook checkpoint). T2.5 writes a checkpoint only at `PreCompact`, so a session that ends without compacting leaves nothing: on this machine ≥ 80 % of Claude sessions over 20 KB since 2026-09-14 ended with no note (96 sessions touched, 18 checkpoints — a rough mtime count, `ideas.md` I-56). `SessionEnd` is already registered and dispatched (`src/agents/claude/mod.rs`, unhandled), so the save is one call site. The injection half costs up to `checkpoint_tokens` on every startup, which is why it stays off until measured.
-Done when:
-1. Evidence: `stats` counts sessions with and without a checkpoint note (next to the T58.2 compaction count) and the number replaces the rough one in `research.md` §13 with date and command.
-2. `rtok hook SessionEnd` runs the existing `checkpoint::save` (same extractor and render as `PreCompact`, no second implementation) under kind `session:<session-id>` with the project from the hook cwd; hook ≤ 10 ms, fail open; nothing is injected by this half.
-3. `[plugins.memory] startup_recall = false` (D12 row in the same commit): when `true`, `SessionStart` with `source = "startup"` offers the newest `session:*` note of the project at the checkpoint priority inside `checkpoint_tokens`, rendered by the same function as the compact restore, byte-stable for an unchanged store; `Measurement { plugin = "memory", kind = "handoff" }`.
-4. Hook e2e: end → note exists; start with the key off → bytes identical to today; on → the restore lines present and within budget; a second start → the same bytes.
-5. Stays off by default until a P7-style A/B (T53.1 shape) shows cost per passed task does not rise; the dry result is recorded on the card. Hosts other than Claude Code that register `SessionEnd` get it through the same dispatcher (`docs/agents.md` re-blessed if the reached set changes).
-
-### T71.3. rtok's own skill, installed with the host plugin
-
-From I-52 (creator request 2026-09-17; `research.md` §10.5). Nothing tells a model that `expand <id>`, `read` modes, `mem_search` or `symbol` exist unless the human writes it into `CLAUDE.md`; a skill is the host-native way to say it, and its listing cost is measurable (§10.2: ~49 tokens per description on this machine). Scope assumed here: **one hub skill per host**, not one per surface — the creator confirms or narrows it on this card before it is claimed.
-Done when:
-1. `skills/rtok/SKILL.md` in the repo: description ≤ 120 chars, body ≤ 2 KB (a `tests/skill.rs` check on both), `disable-model-invocation` unset, body = when to use `expand`, `read` modes, `search` / `tree`, the memory and graph tools, each one line pointing at its `docs/` page — no second copy of the docs.
-2. `rtok agents install <host>` copies it into the host's documented skill root for every host whose format is in `research.md` §10.1 (Claude Code `~/.claude/skills/rtok/`; others per that table), `remove` deletes only that directory, both idempotent and byte-stable; hosts without a skill format are untouched. Through `rtok-agent-sdk` (D28), one write cycle with the plugin offer.
-3. `doctor`'s skill section (T61.3) lists it like any other skill; its description bytes on this machine go into `research.md` §10.2.
-4. `Vfs` tests: install, re-install (no change), remove (foreign skills kept); `tests/host_docs.rs` covers the skill-root doc link per host; `docs/agents.md` host table re-blessed if `support()` changes.
-
-### T71.4. Measure the per-skill listing overhead through the proxy
-
-From `research.md` §10.6 (open question). The docs say "~100 tokens per skill"; the measured description here averages 194 chars ≈ 49 tokens, so the framing per listed skill (name, path, wrapper text) is unknown, and T61.3 / T63.1 total "description bytes ≈ tokens per request" without it.
-Done when one Claude Code request captured through `rtok proxy` on this machine (a `call_io` row under the inline cap, or the request body dumped behind `[proxy] dump_request_dir` — off by default, one key with its `docs/config.md` row, added only if no existing row holds the body) is measured: bytes of the skills block, bytes per listed skill beyond its description, count of listed skills; recorded in `research.md` §10.6 with date and command; T61.3's total and T63.1's header use the measured per-skill constant (one named const in `doctor`, dated) instead of the docs figure; the card closes with the number alone if an existing capture already answers it.
 
 ## Reference
 

@@ -174,8 +174,7 @@ one command away:
 ```bash
 rtok expand 7f3a91                    # the whole thing
 rtok expand 7f3a91 --lines 120-180    # just that range
-rtok expand 7f3a91 --grep "panicked"  # just the matches, as N:line (regex)
-rtok expand 7f3a91 --lines 210-230    # then the lines around hit 214
+rtok expand 7f3a91 --grep "panicked"  # just the matches
 ```
 
 With the hooks installed this happens on its own: `PreToolUse` rewrites the agent's Bash
@@ -284,7 +283,6 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 | `rtok agents install cursor` / `codex` / `opencode` / `pi` / `zcode` / `kimi` / `copilot` / `aider --proxy` / `windsurf` / `zed` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
-| `rtok mcp -- <server argv>` | wrap a foreign stdio MCP server: long `tools/call` text blocks are archived and cut by the `[mcp]` rule, everything else passes byte-for-byte, `rtok expand <id>` returns the raw block |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
 | `rtok web` | local Slint/WASM UI + WebSocket API (`--host`, `--port`; `rtok dashboard` is the deprecated spelling) |
 | `rtok stats` | report transcript and proxy measurements |
@@ -297,7 +295,6 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 | `rtok config show --sources` | show effective configuration and its source |
 | `rtok graph index [path]` | build the symbol index for a tree |
 | `rtok memory import <file>` | import notes as JSONL |
-| `rtok memory export [--project <name>]` | print notes as the JSONL `import` reads; session checkpoints stay behind |
 | `rtok otel flush` / `status` | export the ledgers over OTLP, or report the watermarks |
 
 ## Plugins

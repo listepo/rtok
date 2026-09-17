@@ -4,7 +4,6 @@ use crate::config::Config;
 use crate::plugin::{Measurement, Runtime};
 use crate::tokens::Class;
 use anyhow::{Result, bail};
-use regex::Regex;
 
 /// Read an archived payload. When the id is a live-zone pointer (T5.3) this freezes it:
 /// the owning plugin sends the original from the next request on, and one `expand`
@@ -38,7 +37,7 @@ pub fn fetch(cx: &Runtime, id: &str) -> Result<Option<Vec<u8>>> {
 }
 
 /// 1-based inclusive line range over already-split lines.
-pub fn slice_lines<T>(lines: Vec<T>, a: usize, b: usize) -> Vec<T> {
+pub fn slice_lines(lines: Vec<&str>, a: usize, b: usize) -> Vec<&str> {
     lines
         .into_iter()
         .take(b)
@@ -47,26 +46,20 @@ pub fn slice_lines<T>(lines: Vec<T>, a: usize, b: usize) -> Vec<T> {
 }
 
 /// Optional `--lines` / `--grep` filtering shared with the MCP `expand` tool.
-///
-/// `grep` is a regex (a pattern that does not compile is matched literally) and every hit
-/// prints as `N:line`, numbered by its position in the archived payload, so a following
-/// `--lines a-b` can pull the context around a hit instead of the whole body — the
-/// search-then-slice loop of recursive-llm (`research.md` §12, T66.1).
-pub fn filter_lines(text: &str, lines: Option<&str>, grep: Option<&str>) -> Result<Vec<String>> {
-    let mut out: Vec<(usize, &str)> = text.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
+pub fn filter_lines<'a>(
+    text: &'a str,
+    lines: Option<&str>,
+    grep: Option<&str>,
+) -> Result<Vec<&'a str>> {
+    let mut out: Vec<&str> = text.lines().collect();
     if let Some(spec) = lines {
         let (a, b) = parse_range(spec, out.len())?;
         out = slice_lines(out, a, b);
     }
-    let Some(g) = grep else {
-        return Ok(out.into_iter().map(|(_, l)| l.to_string()).collect());
-    };
-    let re = Regex::new(g).or_else(|_| Regex::new(&regex::escape(g)))?;
-    Ok(out
-        .into_iter()
-        .filter(|(_, l)| re.is_match(l))
-        .map(|(n, l)| format!("{n}:{l}"))
-        .collect())
+    if let Some(g) = grep {
+        out.retain(|l| l.contains(g));
+    }
+    Ok(out)
 }
 
 /// Head and tail of `text` around `marker`, at most `max` chars in total. Shared by the
@@ -86,7 +79,7 @@ pub(crate) fn cut(text: &str, marker: &str, max: usize) -> String {
     format!("{}{marker}{}", &text[..head_end], &text[tail_start..])
 }
 
-fn cap_lines<T>(out: &mut Vec<T>, max_lines: u32) -> usize {
+fn cap_lines(out: &mut Vec<&str>, max_lines: u32) -> usize {
     if max_lines == 0 {
         return 0;
     }
@@ -119,8 +112,7 @@ pub(crate) fn render_lines(
     Ok(rendered)
 }
 
-/// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is a regex whose
-/// hits come back `N:`-numbered (see [`filter_lines`]).
+/// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is substring.
 pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> Result<()> {
     // Validate before fetch: fetching a live-zone pointer freezes it. A malformed
     // range must not mutate archive state even though no payload can be printed.
@@ -293,32 +285,6 @@ mod tests {
         assert!(fetch(&cx_cli, &id).unwrap().is_some());
         let rows = cx_cli.store.list_measurements("toon").unwrap();
         assert!(rows.iter().any(|r| r.kind == "expand"), "{rows:?}");
-    }
-
-    /// T66.1: a hit carries its line number so `--lines` can follow; the pattern is a
-    /// regex, or the literal text when it does not compile.
-    #[test]
-    fn grep_is_regex_numbered_by_archive_line_and_falls_back_to_literal() {
-        let text = "alpha\nerror[E0308]: mismatched\nbeta\nerror[E0599]: no method\n";
-        assert_eq!(
-            filter_lines(text, None, Some(r"error\[E0\d+\]")).unwrap(),
-            ["2:error[E0308]: mismatched", "4:error[E0599]: no method"]
-        );
-        // Numbers stay absolute inside a range.
-        assert_eq!(
-            filter_lines(text, Some("3-4"), Some("error")).unwrap(),
-            ["4:error[E0599]: no method"]
-        );
-        // An unclosed bracket is not a regex: match it literally, never error.
-        assert_eq!(
-            filter_lines(text, None, Some("[E0308")).unwrap(),
-            ["2:error[E0308]: mismatched"]
-        );
-        // Without grep the output is the bare lines, as before.
-        assert_eq!(
-            filter_lines(text, Some("1-2"), None).unwrap(),
-            ["alpha", "error[E0308]: mismatched"]
-        );
     }
 
     #[test]

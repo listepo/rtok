@@ -1,75 +1,31 @@
 - T48.8. VS Code Copilot Chat host
+- T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
 - T50.3. Extra `read` modes
 - T51.1. Compress JSON and code inside the live zone
 - T52.2. More grammars and compressed index payloads
-- T52.3. Ranked repo map at SessionStart
+- T52.3. Ranked repo map at SessionStart (in progress)
 - T53.1. Coaching nudges under an A/B
-- T53.3. Hook start without Security.framework
+- T53.3. Hook start without Security.framework (in progress)
 - T53.4. `just otel-check` against real backends
+- T55.8. Guard `read:` keys survive a mutating Bash
+- T55.9. Guard Bash key is cwd-blind
+- T55.10. One `cmd_stem`
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T56.2. Migrate read/search unit tests to VFS
 - T56.3. Migrate cmd/setup path tests to VFS
+- T56.4. Optional walk/VFS adapter for search/tree
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T58.1. `read` delta since last read
 - T58.2. Compaction checkpoint on every host, with archive ids
 - T58.5. `cmd` formatters for structured families
 - T59.1. Per-stem interactive table for `skip_wrap`
+- T59.2. Canonicalize `cwd` once per `search` / `tree` call
 - T59.3. Batch the cold `graph` index in one transaction per N files
+- T59.4. Lossless MCP wrapper for foreign servers
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
 - T59.6. `handoff` MCP tool for sub-agents
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
 - T59.8. Token-sink ranking in `report`
-- T60.1. `--json` on every reading command
-- T60.2. trycmd goldens for every subcommand
-- T60.3. Per-session drill-down on `tui` and `web`
-- T60.4. Archive `expand` on `tui` and `web`
-- T60.5. Plugin toggle on the web Plugins page
-- T60.6. Error and connection states on `web` and `tui`
-- T60.7. WASM bundle size gate
-- T60.8. TUI help overlay and manual refresh
-- T60.9. Web theme toggle
-- T60.10. Sessions tab in the TUI is a static paragraph
-- T61.1. `stats` counts injected skill bodies
-- T61.2. Archive skill bodies outside the live zone
-- T61.3. `doctor` skill audit
-- T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
-- T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
-- T63.1. Skills page on `tui` and `web`
-- T64.1. `cmd` grouping pass: files by directory, diagnostics by type
-- T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
-- T64.3. Prompt-cache FAQ with the measured hit rate per surface
-- T65.1. Content-hash dedup of tool output within a session
-- T65.2. `cmd` JSON output compaction
-- T65.3. `cmd` column-padding collapse
-- T65.4. Never cut a stack trace
-- T67.2. `expand --context N` around grep hits
-- T68.1. `explore`: one call answers a code question
-- T68.2. `symbol` lists what a definition calls
-- T68.3. Staleness line on every graph answer
-- T68.4. `impact` with a target: call paths between two symbols
-- T68.5. `affected`: which tests a change touches
-- T68.6. Import edges in the index
-- T68.7. Mark ambiguous references
-- T68.8. Markdown outline shared by `outline`, `read map` and the skill digest
-- T68.9. With / without bench for the graph tools
-- T68.10. `[plugins.graph]` exclude, include and extension map
-- T69.1. Note lifecycle: retire, supersede, pin — never delete
-- T69.2. Recall ranking: recency decay and use counts, off by default
-- T69.3. Memory recall bench: planted, drifted, superseded facts
-- T69.4. `rtok memory status` and the Memory page rows
-- T69.5. `remember:` prompts save a note; per-turn recall stays behind an A/B
-- T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
-- T70.1. pi extension shortens every tool result, not only bash
-- T70.2. pi `context` hook: the `archive` live zone without a proxy
-- T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
-- T70.4. Cursor plugin shortens MCP results the host launched
-- T70.5. `guard` on pi and OpenCode through the plugin
-- T70.6. Compaction on pi and OpenCode through the plugin
-- T70.7. Cursor: `inject` has no path in, and the host table says it does
-- T71.1. `curl` / `wget` HTML pages as readable text
-- T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
-- T71.3. rtok's own skill, installed with the host plugin
-- T71.4. Measure the per-skill listing overhead through the proxy

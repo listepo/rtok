@@ -2,23 +2,7 @@
 
 View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tasks and Checks; this file is the order to build each plugin. When a task moves to `done.md`, tick it here in the same commit.
 
-**Now (2026-09-18):** every lane below is implemented (v0.1 numbered work incl. T30.2 is in `done.md`); the open rows in `plan.md` are follow-ups per lane, listed here in the order the lane's card gates them. `plan.md` is the source; this list is the grouping.
-
-| Lane | Open rows in `plan.md` |
-|------|------------------------|
-| core / installers / tests | T48.8, T53.3, T53.4, T55.12, T56.2, T56.3, T56.5, T60.1, T60.2, T71.3 |
-| `measure` / `report` / docs | T61.1, T59.8, T64.3, T71.4 |
-| `inject` | T52.3, T53.1, T58.2 |
-| `cmd` / `expand` | T50.1, T58.5, T59.1, T64.1, T64.2, T65.1, T65.2, T65.3, T65.4, T67.2, T71.1 |
-| `read` | T50.3, T58.1, T68.8 |
-| `proxy` / `archive` | T51.1, T55.15, T59.5, T61.2 |
-| `memory` | T69.1, T69.3, T69.4, T69.2, T69.5, T69.6, T59.6, T71.2 |
-| `graph` | T52.2, T59.3, T68.3, T68.1, T68.2, T68.4, T68.5, T68.6, T68.7, T68.9, T68.10 |
-| `guard` / `doctor` | T57.1, T62.1, T59.7, T61.3 |
-| TUI / web | T60.10, T60.3, T60.4, T60.5, T60.6, T60.7, T60.8, T60.9, T63.1 |
-| host plugins (pi, OpenCode, Cursor) | T62.3, T70.1, T70.2, T70.3, T70.4, T70.5, T70.6, T70.7 |
-
-Remaining approved-not-in-plan work is [Later (v0.2+)](#later-v02).
+**Now:** no open rows in `plan.md`. Numbered work including T30.2 (optional LSP graph backend) is in `done.md`. Plugin lanes below are implemented; design notes (D15) landed with each first task. Remaining approved-not-in-plan work is [Later (v0.2+)](#later-v02).
 
 **Sequence if time is short** (`plan.md` §5): P12 → P13 → T14.0 → P1 `measure` → P2 hooks + `inject` → P5 `proxy` passthrough → P3 `cmd` → P4 `read` → P5 `archive` compress → P9 bench. `memory` / `graph` / `guard` / `toon` / P10 / P11 after the core pays for itself; P11 first among those if an OpenAI-API host is in daily use. v0.2+ (LLM compression, embeddings, LSP `graph`, WASM) is [Later](#later-v02); daemon was promoted to P20. Do not start Later while treating v0.1 as unfinished bookkeeping — the numbered tasks are done.
 

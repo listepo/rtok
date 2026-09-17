@@ -48,19 +48,10 @@ fn strip_prefix_ci(path: &Path, prefix: &Path) -> Option<PathBuf> {
     Some(out)
 }
 
-/// Canonical walk base: `dunce::canonicalize(cwd)`, or `cwd` when it does not
-/// exist. `search`/`tree` compute this once per call (T59.2) — `display_rel`
-/// takes the base instead of paying the syscalls per hit or row.
-fn canonical_base_with(fs: &impl super::fs::ReadFs, cwd: &Path) -> PathBuf {
-    fs.canonicalize(cwd).unwrap_or_else(|| cwd.to_path_buf())
-}
-
-fn canonical_base(cwd: &Path) -> PathBuf {
-    canonical_base_with(&super::fs::HostFs, cwd)
-}
-
-fn display_rel(path: &Path, root: &Path, base: &Path) -> String {
-    strip_prefix_ci(path, base)
+fn display_rel(path: &Path, root: &Path, cwd: &Path) -> String {
+    let base = dunce::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    strip_prefix_ci(path, &base)
+        .or_else(|| strip_prefix_ci(path, cwd))
         .or_else(|| strip_prefix_ci(path, root))
         .unwrap_or_else(|| path.to_path_buf())
         .display()
@@ -84,7 +75,6 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
     )?;
     let cap = max.unwrap_or(cfg.search_max).max(1) as usize;
     let re = Regex::new(pattern)?;
-    let base = canonical_base(&cwd);
     let mut hits = Vec::new();
     for entry in WalkBuilder::new(&root)
         .hidden(false)
@@ -110,7 +100,7 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
         let Ok(text) = fs::read_to_string(entry.path()) else {
             continue;
         };
-        let rel = display_rel(entry.path(), &root, &base);
+        let rel = display_rel(entry.path(), &root, &cwd);
         for (i, line) in text.lines().enumerate() {
             if hits.len() >= cap {
                 break;
@@ -138,7 +128,6 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         &cfg.allow_paths,
     )?;
     let depth = depth.unwrap_or(cfg.tree_depth).max(1) as usize;
-    let base = canonical_base(&cwd);
     let mut rows = Vec::new();
     for entry in WalkBuilder::new(&root)
         .hidden(false)
@@ -153,7 +142,7 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         if p == root {
             continue;
         }
-        let rel = display_rel(p, &root, &base);
+        let rel = display_rel(p, &root, &cwd);
         let size = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
         rows.push(format!("{rel} {size}"));
     }
@@ -257,7 +246,7 @@ mod tests {
         let path = Path::new(r"C:\Users\Me\Proj\src\a.rs");
         let root = Path::new(r"c:\users\me\proj");
         let cwd = Path::new(r"C:\Users\Me\Proj");
-        let rel = display_rel(path, root, &canonical_base(cwd));
+        let rel = display_rel(path, root, cwd);
         if cfg!(windows) {
             assert_eq!(rel.replace('/', "\\"), r"src\a.rs");
         } else {
@@ -432,7 +421,7 @@ mod tests {
         let path = Path::new(r"C:\Users\Ivan Tuhai\proj\src\a.rs");
         let root = Path::new(r"C:\Users\Ivan Tuhai\proj");
         let cwd = Path::new(r"C:\Users\Ivan Tuhai\proj");
-        let rel = display_rel(path, root, &canonical_base(cwd));
+        let rel = display_rel(path, root, cwd);
         assert!(rel.contains("a.rs"), "{rel}");
         // When strip works (Windows case fold or exact match), stay relative.
         if cfg!(windows) || path.starts_with(root) {
@@ -441,55 +430,5 @@ mod tests {
                 "{rel}"
             );
         }
-    }
-
-    /// T59.2: one canonicalization per call — `search`/`tree` resolve the base once
-    /// on the adapter and per-row `display_rel` never touches the FS.
-    #[test]
-    fn display_rel_canonicalizes_base_once_per_call_from_vfs() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        use crate::plugins::read::fs::ReadFs;
-
-        struct CountingFs<'a> {
-            fs: &'a crate::testutil::Vfs,
-            calls: &'a AtomicUsize,
-        }
-        impl ReadFs for CountingFs<'_> {
-            fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
-                ReadFs::read_to_string(self.fs, path)
-            }
-            fn canonicalize(&self, path: &Path) -> Option<PathBuf> {
-                self.calls.fetch_add(1, Ordering::Relaxed);
-                ReadFs::canonicalize(self.fs, path)
-            }
-        }
-
-        let mut vfs = crate::testutil::Vfs::new();
-        vfs.write("src/a.rs", b"fn main() {}\n");
-        vfs.write("src/b.rs", b"fn other() {}\n");
-        let calls = AtomicUsize::new(0);
-        let cfs = CountingFs {
-            fs: &vfs,
-            calls: &calls,
-        };
-
-        // The call: the base is canonicalized exactly once…
-        let base = canonical_base_with(&cfs, Path::new("src"));
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
-        assert_eq!(base, PathBuf::from("src"));
-
-        // …then any number of rows display without another adapter call.
-        assert_eq!(
-            display_rel(Path::new("src/a.rs"), Path::new("src"), &base),
-            "a.rs"
-        );
-        let _ = display_rel(Path::new("src/b.rs"), Path::new("src"), &base);
-        let _ = display_rel(Path::new("elsewhere/x.rs"), Path::new("src"), &base);
-        assert_eq!(
-            calls.load(Ordering::Relaxed),
-            1,
-            "per-row display must not canonicalize"
-        );
     }
 }

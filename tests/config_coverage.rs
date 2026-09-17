@@ -38,8 +38,6 @@ const ALLOW_KEYS: &[&str] = &[
     "config.set.dry_run",
     "memory.import.dry_run",
     "graph.index.dry_run",
-    // `memory export --project` narrows one dump; the store, not a setting, decides it.
-    "memory.export.project",
 ];
 
 #[test]

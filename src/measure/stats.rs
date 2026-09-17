@@ -292,17 +292,6 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
     Ok(())
 }
 
-/// Codex CLI sessions as one more `api` row (T49.2), read from `dir` with the same `since`
-/// window as the Claude Code transcripts. Absent dir or no `token_count` line → no row.
-pub fn attach_codex(report: &mut Report, dir: &Path, since: Duration) {
-    let cutoff = SystemTime::now()
-        .checked_sub(since)
-        .unwrap_or(SystemTime::UNIX_EPOCH);
-    if let Some(row) = super::codex::collect(dir, cutoff) {
-        report.api.insert("codex".into(), row);
-    }
-}
-
 /// USD for one model's counters at its `$` per MTok row: `(cost, saved)`.
 /// `saved` is what the cache reads saved versus uncached input price — the only
 /// saving computable from the `usage` rows alone (T49.1). Dust below a tenth of
@@ -424,13 +413,34 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         .unwrap_or(SystemTime::UNIX_EPOCH);
     let mut report = Report::default();
     let mut finals = Vec::new();
-    for p in super::codex::jsonl_paths(dir, cutoff) {
-        // One unreadable transcript is one malformed entry, not the end of the report.
-        let Ok(parsed) = jsonl::parse_path(&p) else {
-            report.malformed += 1;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
             continue;
         };
-        fold_session(&parsed, plugin, replay, &mut report, &mut finals);
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|s| s.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let meta = e.metadata().ok();
+            let mtime = meta
+                .and_then(|m| m.modified().ok())
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            if mtime < cutoff {
+                continue;
+            }
+            // One unreadable transcript is one malformed entry, not the end of the report.
+            let Ok(parsed) = jsonl::parse_path(&p) else {
+                report.malformed += 1;
+                continue;
+            };
+            fold_session(&parsed, plugin, replay, &mut report, &mut finals);
+        }
     }
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
@@ -607,7 +617,13 @@ pub fn bash_family(cmd: &str) -> String {
     }
     let first = s.split_whitespace().next().unwrap_or("other");
     // Split `/` and `\` + strip `.exe` so Windows session logs still bucket by family.
-    crate::agents::cmd_stem(first).to_string()
+    let base = first.rsplit(['/', '\\']).next().unwrap_or(first);
+    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    };
+    stem.to_string()
 }
 
 fn strip_prefix_env(s: &str) -> Option<&str> {
@@ -616,7 +632,7 @@ fn strip_prefix_env(s: &str) -> Option<&str> {
     if ident_end == 0 || !t.as_bytes().get(ident_end).is_some_and(|b| *b == b'=') {
         return None;
     }
-    crate::plugins::skip_word(&t[ident_end + 1..])
+    skip_word(&t[ident_end + 1..])
 }
 
 fn strip_prefix_cd(s: &str) -> Option<&str> {
@@ -628,9 +644,26 @@ fn strip_prefix_cd(s: &str) -> Option<&str> {
     let rest = if after.starts_with("&&") {
         after
     } else {
-        crate::plugins::skip_word(after)?
+        skip_word(after)?
     };
     Some(rest.strip_prefix("&&")?.trim_start())
+}
+
+/// Skips one shell word (bare, or with `'…'` / `"…"` segments such as `~/'My Documents'`)
+/// and returns what follows it, left-trimmed. An unterminated quote yields `None` so the
+/// caller fails open and leaves the command untouched.
+fn skip_word(s: &str) -> Option<&str> {
+    let mut quote = None;
+    for (i, b) in s.bytes().enumerate() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'\'' || b == b'"' => quote = Some(b),
+            None if b.is_ascii_whitespace() => return Some(s[i..].trim_start()),
+            None => {}
+        }
+    }
+    quote.is_none().then_some("")
 }
 
 fn mcp_group(name: &str) -> Option<&str> {

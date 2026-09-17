@@ -129,7 +129,6 @@ since           = "30d"
 format          = "table"             # table | json      (--json)
 plugin          = ""                  # "" = all         (--plugin <id>)
 transcripts_dir = "~/.claude/projects"
-codex_dir       = "~/.codex/sessions" # Codex CLI logs → one more `api` row (T49.2); OpenCode, Cursor and Copilot CLI stores carry no token counts (surveyed 2026-09-17), so they are not read
 calibrate_samples = 30                # per class        (--calibrate)
 baseline        = ""                  # default name for --compare; "" = none
 price           = false               # show per-model USD costs (--price)
@@ -308,14 +307,12 @@ modes         = []                    # same as [setup].modes; setup writes here
 enabled      = true
 window_turns = 8
 deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP search/tree (T50.4)
-skills = false                   # opt-in (Claude Code): deny a Skill whose SKILL.md exceeds skill_max_bytes with its map + `expand <id>` (T62.1)
-skill_max_bytes = 8192           # bodies at or under this load whole; so does any skill with allowed-tools / model / context / agent in its frontmatter
 
 [plugins.memory]
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
-checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
+checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
 
 [plugins.memory.embed]
@@ -393,10 +390,9 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | (no flags) | — (reads the host configs and `<bin> --version`) |
-| `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
+| `expand` | `--lines`, `--grep` | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
-| `memory export` | `--project` | per call (no key): narrows one dump to a project's notes |
 
 The coverage test (T12.4) walks the clap command tree and fails if a non-positional flag
 appears without a key in `config/default.toml`, so this table cannot silently drift.

@@ -35,12 +35,8 @@ enum Cmd {
         #[arg(long)]
         host: Option<String>,
     },
-    /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
-    Mcp {
-        /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
-        #[arg(last = true)]
-        wrap: Vec<String>,
-    },
+    /// Serve MCP tools over stdio
+    Mcp,
     /// Local API proxy for ANTHROPIC_BASE_URL
     Proxy {
         /// Override `[proxy] port`
@@ -157,7 +153,7 @@ enum Cmd {
         /// Inclusive 1-based range `a-b`
         #[arg(long)]
         lines: Option<String>,
-        /// Regex filter (literal when it does not compile); hits print as `N:line`
+        /// Substring filter
         #[arg(long)]
         grep: Option<String>,
     },
@@ -175,7 +171,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ConfigCmd,
     },
-    /// Notes (`mem_save` / import / export)
+    /// Notes (`mem_save` / import)
     #[cfg(feature = "memory")]
     Memory {
         #[command(subcommand)]
@@ -294,12 +290,6 @@ enum MemoryCmd {
         /// Count what would be imported and write nothing
         #[arg(long)]
         dry_run: bool,
-    },
-    /// Print every note but session checkpoints as the JSONL `import` reads
-    Export {
-        /// Only notes of this project
-        #[arg(long)]
-        project: Option<String>,
     },
 }
 
@@ -738,16 +728,9 @@ pub fn run() -> Result<()> {
             let _ = io::stdin().read_to_string(&mut buf);
             print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));
         }
-        Cmd::Mcp { wrap } => {
+        Cmd::Mcp => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if wrap.is_empty() {
-                crate::mcp::run(&cfg)?;
-            } else {
-                #[cfg(feature = "cmd")]
-                std::process::exit(crate::mcp::wrap::run(&cfg, &wrap)?);
-                #[cfg(not(feature = "cmd"))]
-                bail!("rtok mcp -- <server>: the wrapper needs the `cmd` feature");
-            }
+            crate::mcp::run(&cfg)?;
         }
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
@@ -769,10 +752,6 @@ pub fn run() -> Result<()> {
                         "{}",
                         crate::plugins::memory::import::run(&cfg, &file, dry_run)?
                     );
-                }
-                MemoryCmd::Export { project } => {
-                    let mut out = io::stdout().lock();
-                    crate::plugins::memory::export::run(&cfg, project.as_deref(), &mut out)?;
                 }
             }
         }

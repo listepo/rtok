@@ -20,7 +20,6 @@ use super::{Agent, Kind, Mode, Support, Variant, apply};
 pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("PreToolUse", "Bash"),
     ("PreToolUse", "Read"),
-    ("PreToolUse", "Skill"),
     ("PostToolUse", "*"),
     ("UserPromptSubmit", ""),
     ("SessionStart", ""),

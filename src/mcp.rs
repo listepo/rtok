@@ -13,9 +13,6 @@ use rmcp::model::{
 };
 use serde_json::{Value, json};
 
-#[cfg(feature = "cmd")]
-pub mod wrap;
-
 use crate::config::Config;
 use crate::plugin::{Runtime, ToolDef};
 use crate::plugins::Registry;
@@ -24,7 +21,7 @@ use crate::tokens::Class;
 fn expand_def() -> ToolDef {
     ToolDef {
         name: "expand",
-        description: "Return archived payload by id; optional lines a-b and regex grep (hits as N:line).",
+        description: "Return archived payload by id; optional lines a-b and grep.",
         input_schema: json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"string"},"grep":{"type":"string"}},"required":["id"]}),
     }
 }
@@ -282,8 +279,8 @@ fn mem_save(cx: &Runtime, args: &Value) -> Result<String> {
     let title = args["title"].as_str().unwrap_or("");
     let body = args["body"].as_str().unwrap_or("");
     let project = args["project"].as_str();
-    let (id, updated) = crate::plugins::memory::mem_save(cx, kind, title, body, project)?;
-    Ok(json!({"id": id, "updated": updated}).to_string())
+    let id = crate::plugins::memory::mem_save(cx, kind, title, body, project)?;
+    Ok(json!({"id": id}).to_string())
 }
 
 #[cfg(feature = "memory")]

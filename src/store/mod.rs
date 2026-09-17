@@ -638,59 +638,6 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// One row per `(project, kind, title)` — the title is the topic key (T66.1). An
-    /// existing row gets the new body and a fresh `ts`; returns `(id, updated)`.
-    pub fn upsert_note(
-        &self,
-        project: Option<&str>,
-        kind: &str,
-        title: &str,
-        body: &str,
-    ) -> Result<(i32, bool)> {
-        let conn = self.lock()?;
-        let mut q = notes::table
-            .filter(notes::kind.eq(kind))
-            .filter(notes::title.eq(title))
-            .order(notes::id.desc())
-            .select(notes::id)
-            .into_boxed();
-        q = match project {
-            Some(p) => q.filter(notes::project.eq(p)),
-            None => q.filter(notes::project.is_null()),
-        };
-        let mut conn = conn;
-        if let Some(id) = q.first::<i32>(&mut *conn).optional()? {
-            diesel::update(notes::table.find(id))
-                .set((
-                    notes::body.eq(body),
-                    notes::ts.eq(diesel::dsl::sql::<BigInt>("unixepoch()")),
-                ))
-                .execute(&mut *conn)?;
-            return Ok((id, true));
-        }
-        drop(conn);
-        Ok((self.insert_note(project, kind, title, body)?, false))
-    }
-
-    /// Every note but the session-local `checkpoint:*` rows, id order (`memory export`,
-    /// T66.2): `(project, kind, title, body)`.
-    #[allow(clippy::type_complexity)]
-    pub fn list_notes(
-        &self,
-        project: Option<&str>,
-    ) -> Result<Vec<(Option<String>, String, String, String)>> {
-        let mut conn = self.lock()?;
-        let mut q = notes::table
-            .filter(notes::kind.not_like("checkpoint:%"))
-            .order(notes::id.asc())
-            .select((notes::project, notes::kind, notes::title, notes::body))
-            .into_boxed();
-        if let Some(p) = project {
-            q = q.filter(notes::project.eq(p));
-        }
-        q.load(&mut *conn).map_err(Into::into)
-    }
-
     /// Newest note body for `kind`, if any.
     pub fn latest_note(&self, kind: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;

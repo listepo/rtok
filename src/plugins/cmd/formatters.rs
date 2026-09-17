@@ -46,9 +46,16 @@ pub fn family(argv: &[String]) -> String {
 }
 
 /// Basename of argv[0], splitting on `/` and `\` and dropping a trailing `.exe`
-/// (case-insensitive). Re-export of [`crate::agents::cmd_stem`] — one definition,
-/// shared with `measure::stats::bash_family` and `agents::is_rtok_bin` (T55.10).
-pub(crate) use crate::agents::cmd_stem;
+/// (case-insensitive). Matches `run::shell_kind` / `agents::is_rtok_bin` so Windows
+/// paths still name the family a Measurement and a `[rule]` expect.
+pub(crate) fn cmd_stem(path: &str) -> &str {
+    let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    }
+}
 
 fn bin(argv: &[String]) -> &str {
     argv.first().map(|a| cmd_stem(a)).unwrap_or("")
@@ -306,6 +313,15 @@ mod tests {
         assert_eq!(family(&argv(&["git status | head"])), "git");
         assert_eq!(family(&argv(&["/usr/bin/git", "status"])), "git");
         assert_eq!(family(&argv(&[])), "other");
+    }
+
+    #[test]
+    fn cmd_stem_strips_windows_path_and_exe() {
+        assert_eq!(cmd_stem(r"C:\Program Files\Git\cmd\git.exe"), "git");
+        assert_eq!(cmd_stem(r"C:\Windows\System32\cmd.EXE"), "cmd");
+        assert_eq!(cmd_stem("/usr/bin/git"), "git");
+        assert_eq!(cmd_stem("sudo"), "sudo");
+        assert_eq!(cmd_stem("rtok.exe"), "rtok");
     }
 
     #[test]

@@ -385,9 +385,6 @@ _rtok() {
             rtok__subcmd__help__subcmd__logs,watch)
                 cmd="rtok__subcmd__help__subcmd__logs__subcmd__watch"
                 ;;
-            rtok__subcmd__help__subcmd__memory,export)
-                cmd="rtok__subcmd__help__subcmd__memory__subcmd__export"
-                ;;
             rtok__subcmd__help__subcmd__memory,import)
                 cmd="rtok__subcmd__help__subcmd__memory__subcmd__import"
                 ;;
@@ -415,17 +412,11 @@ _rtok() {
             rtok__subcmd__logs__subcmd__help,watch)
                 cmd="rtok__subcmd__logs__subcmd__help__subcmd__watch"
                 ;;
-            rtok__subcmd__memory,export)
-                cmd="rtok__subcmd__memory__subcmd__export"
-                ;;
             rtok__subcmd__memory,help)
                 cmd="rtok__subcmd__memory__subcmd__help"
                 ;;
             rtok__subcmd__memory,import)
                 cmd="rtok__subcmd__memory__subcmd__import"
-                ;;
-            rtok__subcmd__memory__subcmd__help,export)
-                cmd="rtok__subcmd__memory__subcmd__help__subcmd__export"
                 ;;
             rtok__subcmd__memory__subcmd__help,help)
                 cmd="rtok__subcmd__memory__subcmd__help__subcmd__help"
@@ -1986,22 +1977,8 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__memory)
-            opts="import export"
+            opts="import"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtok__subcmd__help__subcmd__memory__subcmd__export)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2380,7 +2357,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__memory)
-            opts="-h --config --help import export help"
+            opts="-h --config --help import help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2397,45 +2374,9 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtok__subcmd__memory__subcmd__export)
-            opts="-h --project --config --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --project)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                --config)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         rtok__subcmd__memory__subcmd__help)
-            opts="import export help"
+            opts="import help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtok__subcmd__memory__subcmd__help__subcmd__export)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi

@@ -720,26 +720,20 @@ fn bare_rtok_on_path(path: Option<&std::ffi::OsStr>) -> bool {
     false
 }
 
-/// Basename of a command path — split on `/` and `\`, drop a trailing `.exe`
-/// (case-insensitive). Lives in this feature-free module because `measure`
-/// builds without the `cmd` feature (`just build-min`), so the `formatters`
-/// copy cannot be shared; `formatters` re-exports this one (T55.10).
-pub(crate) fn cmd_stem(path: &str) -> &str {
-    let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
-        &base[..base.len() - 4]
-    } else {
-        base
-    }
-}
-
 /// True when `bin` names the rtok binary (bare, `.exe`, an absolute path, or the running
 /// executable itself whatever it is called — `cargo test` names it `rtok-<hash>`).
 pub(crate) fn is_rtok_bin(bin: &str) -> bool {
     if std::env::current_exe().is_ok_and(|e| dunce::simplified(&e).to_string_lossy() == bin) {
         return true;
     }
-    cmd_stem(bin).eq_ignore_ascii_case("rtok")
+    let base = bin.rsplit(['/', '\\']).next().unwrap_or(bin);
+    // Windows executable suffix casing is arbitrary (`.Exe`, `.eXe`, …).
+    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
+        &base[..base.len() - 4]
+    } else {
+        base
+    };
+    stem.eq_ignore_ascii_case("rtok")
 }
 
 /// Quote `bin` for a host shell hook command when it contains whitespace.
@@ -911,16 +905,6 @@ mod tests {
         assert!(is_rtok_bin(r"C:\Users\u\.ketch\bin\rtok.exe"));
         assert!(!is_rtok_bin("rtok-extra"));
         assert!(!is_rtok_bin(r"C:\bin\other.exe"));
-    }
-
-    /// Moved from `formatters` with the definition (T55.10).
-    #[test]
-    fn cmd_stem_strips_windows_path_and_exe() {
-        assert_eq!(cmd_stem(r"C:\Program Files\Git\cmd\git.exe"), "git");
-        assert_eq!(cmd_stem(r"C:\Windows\System32\cmd.EXE"), "cmd");
-        assert_eq!(cmd_stem("/usr/bin/git"), "git");
-        assert_eq!(cmd_stem("sudo"), "sudo");
-        assert_eq!(cmd_stem("rtok.exe"), "rtok");
     }
 
     #[test]
