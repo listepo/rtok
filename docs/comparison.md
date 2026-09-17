@@ -38,6 +38,17 @@ formatters for `cargo`, `git`, test runners, `ls`/`find`) and adds the two thing
 missing: the raw output goes to `~/.rtok/archive/<id>` before anything is cut, and the
 before/after byte counts go to `measurements`.
 
+### Command-output filters — sqz
+
+The same idea in Rust (github.com/ojuschugh1/sqz; ELv2; 625 stars on 2026-09-18), with 45+
+formatters, a content-hash dedup that returns a 13-token `§ref:HASH§` for bytes already seen
+in the session, JSON null-stripping, column-padding collapse and a safe mode that passes
+stack traces through whole. Lossless like rtok (`sqz expand`). Its numbers are self-reported
+(README: 24.7 % average over 3,003 compressions). Against rtok: the content-hash dedup, JSON
+and table passes and the trace guard are gaps (`research.md` §11 → T65.1–T65.4); rtok keys
+its dedup by call input (`guard`), measures every cut into one ledger, and runs the same
+plugin set over the proxy and MCP surfaces, which sqz does not have.
+
 ### Read, search and shell MCP servers — lean-ctx, token-optimizer
 
 Bounded reads, outline modes, deduplicated re-reads, compact directory trees. Also correct,
@@ -195,8 +206,9 @@ Stated plainly, because §4 is only worth reading if this section exists.
   serena's LSP backend is more precise here. An LSP backend for `graph` is v0.2.
 - **No LLM compression, no embeddings, no semantic search.** claude-mem and mem0 do those
   today. In rtok they are v0.2+ and gated on beating the lossless path in a bench.
-- **Smaller filter library than rtk.** 9 rule families plus a handful of per-family
-  formatters, against rtk's ~80 filters.
+- **Smaller filter library than rtk and sqz.** 9 rule families plus ten per-family
+  formatters, against rtk's ~80 filters and sqz's 45+; no content-hash dedup, JSON or
+  column pass yet (`research.md` §11, T65.1–T65.4).
 - **Younger, and a single maintainer.** Several tools in §2 have five-figure star counts and
   years of edge cases baked in. rtok is at v0.0.1.
 - **`toon` and `graph-watchman` are opt-in** because they lost their gates on this machine.

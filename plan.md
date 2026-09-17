@@ -52,6 +52,17 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T62.1 | in progress | P3 | 3 | 0% | Claude Code / Fable 5.1 |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
+| T64.1 | todo | P3 | 3 | 0% | |
+| T64.2 | todo | P3 | 2 | 0% | |
+| T64.3 | todo | P2 | 1 | 0% | |
+| T65.1 | todo | P2 | 3 | 0% | |
+| T65.2 | todo | P3 | 3 | 0% | |
+| T65.3 | todo | P3 | 1 | 0% | |
+| T65.4 | todo | P2 | 2 | 0% | |
+| T66.1 | in progress | P3 | 2 | 0% | Claude Code / Fable 5.1 |
+| T66.2 | in progress | P3 | 1 | 0% | Claude Code / Fable 5.1 |
+| T66.1 | in progress | P2 | 2 | 0% | Claude Code / Fable 5.1 |
+| T66.2 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -324,6 +335,66 @@ Done when (if step 1 passes) the plugin routes that tool's output through `rtok 
 
 Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: which of the 66 listed skills (`research.md` §10.2, this machine) were ever invoked, which never, how many bytes each body is, and how much of the input a session carried as skill bodies. `rtok stats` gains the numbers in T61.1 and `doctor` the audit in T61.3; this task renders both on the same page.
 Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
+
+### T64.1. `cmd` grouping pass: files by directory, diagnostics by type
+
+From `research.md` §11 (rtk's four strategies, 2026-09-18). rtk groups similar items — files by directory, errors by type; rtok's rule engine (`src/plugins/cmd/rules.rs`) only keeps, drops, cuts by position and folds adjacent duplicates, and the `ls`/`find`/`tree` formatters just take the first 40 lines.
+Done when a rule may set `group = "dir"` (path-per-line output: `find`, `rg -l`, `git status` untracked, `ls -R`) or `group = "diag"` (diagnostics keyed by code or rule id: `cargo` `error[E…]`, `tsc` `TS…`, `eslint` rule, `pytest` exception class), the pass rewrites the lines as `dir/ (N files): a, b, c …` and `E0308 ×N: first message (file:line, …)` before the head/tail cut, stays lossless (raw output archived as today, `expand <id>` trailer), and a fixture per family in `tests/cmd_golden` records before/after bytes that beat the same rule without `group` — a family that does not win is not switched on. T58.5 keeps its per-family formatters; this is the generic pass a TOML rule turns on.
+
+### T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
+
+From `research.md` §11. `rules::dedupe` folds consecutive identical lines to `line (×N)`; logs repeat the same line with a different timestamp, pid or request id and never fold, and a line that repeats after one other line never folds either.
+Done when `dedupe = "normalized"` (the current behaviour stays `dedupe = true`) keys a line with timestamps, hex ids, pids and durations replaced by placeholders, folds every later match into the first occurrence as `line (×N, also lines k, l, …)` keeping the first verbatim, and a fixture of 3,000 log lines (nginx access log, a `cargo test` run with 200 identical warnings, `kubectl logs`) shows the bytes saved against `dedupe = true`; unit tests for the key normaliser (no false merge of two different error codes). Ordering of the kept lines is unchanged so the head/tail cut still works.
+
+### T64.3. Prompt-cache FAQ with the measured hit rate per surface
+
+From `research.md` §11. rtk's README answers "does it break Claude's prompt cache" in one paragraph; rtok has the stronger story (byte-stable injection, live-zone proxy rewrites, `rtok report` cache section) and no page that says it.
+Done when a `docs/` FAQ section "Does rtok break the prompt cache?" states it per surface with a measured number each: the hook filters once and the host stores the result in its transcript (same shape as rtk — nothing on later turns changes), `inject` is byte-stable per turn (name the test), `archive`/`proxy` rewrite only outside `keep_turns` with byte-identical pointers (name the test and the cache hit rate before/after from `rtok report` on this machine, dated), and `guard` denials add no bytes; the README links the section and `docs/comparison.md` §"The platform itself" points at it instead of restating the number.
+
+### T65.1. Content-hash dedup of tool output within a session
+
+From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before in the session comes back as a 13-token `§ref:HASH§` instead of the text. rtok's `guard` dedups by input key (`guard::cache_key`: same tool, same normalised input), so `cat a` followed by `head -1000 a`, or the same `cargo test` failure printed twice, is paid twice.
+Step 1 (gate): `stats` gains a `repeat` column — share of tool_result bytes whose SHA-256 (`sha2` is already a dependency, T13.3) equals an earlier result in the same session — measured over 30 d on this machine into `research.md` §11. Proceeds only above 1 % of result bytes; otherwise the card leaves for `ideas.md` with the number.
+Done when `cmd::run` and the `read` plugin hash the raw output before archiving, a hit in the same session returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` instead of the body (`Measurement { kind = "dedup" }`, before = body bytes), a miss archives as today, the lookup is one indexed query on the archive table (≤ 10 ms, fail open), and a test replays two different commands with identical output.
+
+### T65.2. `cmd` JSON output compaction
+
+From `research.md` §11. sqz strips nulls and flattens arrays in JSON output; rtok cuts `gh … --json`, `aws`, `kubectl -o json` and `curl` bodies by line position, which keeps the opening of the document and loses the keys the model asked for. `toon` (off) is the wire-side encoder and does not run in the hook path.
+Step 1 (gate): `stats` share of Bash result bytes whose body parses as JSON, 30 d, this machine, into `research.md` §11.
+Done when output that parses as JSON is rewritten before the line cut: null / empty-string / empty-container fields dropped, arrays beyond `json_items` (default 20) elements shown as `… +K more`, object keys kept, strings longer than `json_string` (default 200) cut with their length, one line per top-level key; lossless via the archived raw body and the trailer; a fixture per source (`gh pr list --json`, `aws ec2 describe-instances`, `kubectl get pods -o json`) records the bytes against the default rule; a body that does not parse is untouched.
+
+### T65.3. `cmd` column-padding collapse
+
+From `research.md` §11. sqz collapses padding in columnar output; `docker ps`, `kubectl get`, `ps aux`, `ls -l` spend a third of their bytes on alignment spaces.
+Done when a rule may set `collapse_columns = true` (on in `Rule::default()` if the fixtures win), runs of two or more spaces inside a line fold to one, leading indentation is kept (tracebacks, YAML, diffs are not columnar — the pass is skipped when the rule already keeps a block, T65.4), and a fixture per source records the bytes saved; `expand <id>` returns the aligned original.
+
+### T65.4. Never cut a stack trace
+
+From `research.md` §11. sqz's safe mode passes stack traces and secrets through whole. rtok keeps single lines matching `BUILTIN_KEEP` (`error`, `panic`, `traceback`) but the head/tail cut in `rules::apply` drops the frames under them, which is the part the model needs; secrets are deliberately not redacted (`ten_families_and_aws_key_unredacted`) and stay so.
+Done when `rules::apply` detects a trace block — Python `Traceback (most recent call last):` to the next non-indented line, Rust `thread '…' panicked at` plus a following `stack backtrace:` block, JS `Error:` with `    at ` frames, Go `goroutine N [` frames, Java `Exception in thread` with `\tat` frames — and keeps the whole block in the output regardless of `head`/`tail`, only the block's own length counting against `max_lines`; a fixture per language shows the frames survive a 40-line cap; the trailer still names the archive id.
+
+### T66.1. `mem_save` updates a note in place: project + kind + title is the topic key
+
+From the engram gap review (`research.md` §12, 2026-09-18). engram's `topic_key` upserts the observation for the same `project + scope + topic_key` and bumps a revision counter, so an evolving decision stays one row; rtok's `mem_save` always inserts, so re-saving "auth model" after a change leaves two rows with the same title, and SessionStart recall (5 titles) shows the stale one beside the new one. Zero-LLM, no schema change: the title already is the stable key.
+Done when `mem_save` with an existing `(project, kind, title)` updates that row's body and `ts` instead of inserting (FTS triggers and the embedding upsert already key by id), returns `{"id", "updated": true}`, an identical re-save is a no-op update, checkpoints keep using `insert_note` (kind `checkpoint:<session>` is per session and `latest_note` orders by id), the tool description says so in one clause, and a unit test saves the same title twice and asserts one row, the new body, and the same id on `mem_search`.
+Execution plan: `Store::upsert_note` (select id by project/kind/title, `UPDATE` or `INSERT`) in `src/store/mod.rs`; `plugins::memory::mem_save` returns `(id, updated)`; `mcp.rs` reports it; README/AGENTS lines. Verify: fmt, clippy `-D warnings`, `nextest -p rtok memory`, e2e `memory_save_then_search`.
+
+### T66.2. `rtok memory export`: the JSONL that `memory import` reads
+
+From the engram gap review (`research.md` §12). engram's Git Sync exports memories as portable chunks a second machine imports; rtok has `memory import <file.jsonl>` (T6.3) and no way to produce that file from its own store, so notes cannot move between machines or be backed up outside `rtok.db`.
+Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,project}` per line for every note except `checkpoint:*` rows (session-local), in id order, and an export piped into `import` on a fresh store inserts every row and a second pass skips them all (round-trip test on three notes plus one checkpoint); the CLI table in `README.md` and the plugin README name it.
+Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
+
+### T66.1. `expand --grep` is a regex with numbered hits
+
+From I-53 (`research.md` §12, recursive-llm). The RLM loop is search → slice: the model regex-searches the externalised context and pulls only the span around a hit. `expand --grep` today is a substring match that prints bare lines, so a hit has no position and `--lines a-b` cannot follow; the model's only way to see the context around a match is a full expand, which is the expand-rate cost `report` flags.
+Done when `grep` (CLI `--grep`, MCP `expand.grep`) compiles as a regex through the `regex` crate `search` already uses (a pattern that does not compile is matched literally, never an error the model has to retry), every hit prints as `N:line` with its 1-based line number in the archived payload (absolute inside a `--lines` range, the format of `read` mode `lines`), output without `grep` is byte-identical to today, `slice_lines` stays the one range helper shared with `read`; unit test on a four-line fixture (regex hit, literal fallback, numbering inside a range, no-grep unchanged); tool description still ≤ `mcp.max_description_tokens`; README and the `docs/config.md` row updated.
+Execution plan (Claude Code / Fable 5.1): `src/expand.rs` (`filter_lines` → `Vec<String>`, generic `slice_lines` / `cap_lines`, one test), `src/mcp.rs` description, `src/cli.rs` flag doc, README, `docs/config.md`. Verify: fmt, clippy `-D warnings`, `nextest -p rtok expand mcp`.
+
+### T66.2. `expand --context N` around grep hits
+
+From I-54 (`research.md` §12). After T66.1 the model needs two calls to see the lines around a hit (grep, then `--lines`); in rtok's metric every extra call is a turn that re-reads the whole prompt, so one call that returns hit ± N lines is cheaper than two smaller ones.
+Done when `expand` takes `context` (CLI `--context N`, MCP `expand.context`, default 0 = today's output) and, with `grep`, prints each hit with N numbered lines before and after it, overlapping windows merged, windows separated by `--`, still under `expand.max_lines`; without `grep` the flag is ignored; per call like `--grep` (no config key; the `config_coverage` allow-list and the `docs/config.md` row name it); a test with two hits whose windows overlap and one at the file edge; the README example gains the one-call form.
 
 ## Reference
 

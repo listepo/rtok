@@ -39,3 +39,12 @@
 - T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
 - T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
 - T63.1. Skills page on `tui` and `web`
+- T64.1. `cmd` grouping pass: files by directory, diagnostics by type
+- T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
+- T64.3. Prompt-cache FAQ with the measured hit rate per surface
+- T65.1. Content-hash dedup of tool output within a session
+- T65.2. `cmd` JSON output compaction
+- T65.3. `cmd` column-padding collapse
+- T65.4. Never cut a stack trace
+- T66.1. `expand --grep` is a regex with numbered hits
+- T66.2. `expand --context N` around grep hits

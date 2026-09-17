@@ -759,3 +759,59 @@ and `plugins/opencode/rtok.ts` (`tool.execute.after` already rewrites bash outpu
 
 `PostToolUse(Skill)` stays useless for this: it can only add context, and the body is
 already on its way. `UserPromptSubmit` carries the human prompt only.
+
+## 11. rtk's four strategies and sqz, each against rtok (2026-09-18)
+
+Sources: rtk README ("four strategies", "Does RTK break Claude's prompt cache?") and sqz README
+(github.com/ojuschugh1/sqz, fetched 2026-09-18: Rust, ELv2, 625 stars, 265 commits; self-reported
+"178,442 tokens saved across 3,003 compressions, 24.7 % avg reduction, up to 92 % with dedup").
+Every claim on their side is vendor-reported; nothing here was re-measured. rtok side checked
+in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/agents/`.
+
+| Their feature | rtok today | Gap | Task |
+| --- | --- | --- | --- |
+| rtk smart filtering (noise, comments, boilerplate) | `keep`/`drop` patterns per rule, `BUILTIN_KEEP`, 10 formatters, raw archived first | Coverage, not mechanism: 9 rules + 10 formatters vs ~80 (rtk) / 45+ (sqz) | T50.1, T58.5 |
+| rtk grouping (files by directory, errors by type) | none — `ls`/`find`/`tree` take 40 lines | generic grouping pass | T64.1 |
+| rtk truncation | `max_lines`/`head`/`tail`, lossless (`expand <id>`) | rtok is ahead: rtk drops, rtok archives | — |
+| rtk / sqz dedup of repeated log lines | `dedupe` folds adjacent identical lines to `(×N)` | non-adjacent, timestamp-normalised | T64.2 |
+| rtk "does not break the prompt cache" paragraph | byte-stable inject, live-zone proxy rewrites, `report` cache section, 98.1 % hit rate on this machine | no page says it | T64.3 |
+| sqz content-hash dedup (`§ref:HASH§`, 13 tokens) | `guard` dedups by input key only | same bytes from a different call paid twice | T65.1 (gated on a measured share) |
+| sqz structural summaries (imports + signatures, ~70 %) | `read` modes via tree-sitter (`map`, `signatures`) | none | — |
+| sqz JSON pipeline (nulls, arrays) | line cut; `toon` is wire-side and off | JSON-aware cut in the hook path | T65.2 (gated) |
+| sqz table compaction | none | padding collapse | T65.3 |
+| sqz safe mode (traces, secrets pass whole) | single `panic`/`traceback` lines kept, frames cut; secrets never redacted | keep the block | T65.4 |
+| sqz hosts: Windsurf, Cline, Gemini CLI, Kiro, Zed, Copilot CLI; browser and IDE extensions | 12 hosts in `src/agents/` (no Cline, Kiro, Gemini); no extensions | hosts on request; extensions out of scope (one binary, D21) | — |
+| sqz `gain` / `stats --breakdown` | `stats`, `report`, `dashboard`, one ledger | none | — |
+
+Order by expected effect on this workload (§2: Bash 35 % of result tokens): T65.4 and T64.3
+are cheap and close a correctness / documentation hole; T65.1 and T65.2 start with a
+measured share and only proceed above it; T64.1, T64.2, T65.3 are fixture-gated.
+
+## 12. recursive-llm (RLM), against rtok (2026-09-18)
+
+Source: github.com/grishahq/recursive-llm (Python library, MIT, 604 stars, v0.4.0, last commit
+2026-09-03); one Haiku agent read the README, `src/rlm/{core,repl,prompts,budget,stats}.py` and
+`DOCUMENT_EVALUATION.md`. Self-reported numbers, not re-measured here: on 100 K-character
+documents RLM cut tokens 61–78 % against direct completion (gpt-4-mini $0.0089 → $0.0048 with
+3/3 correct vs 0/3; DeepSeek V4 Flash −61 %, 2/3 vs 0/3) at 5–10× the latency.
+
+The idea: the document never enters the prompt. It sits as a `context` string in a sandboxed
+Python REPL; the model writes code (`len(context)`, `re.search`, slicing) and gets only the
+results back; `llm_query` / `rlm_query` run a child model on a slice, bounded by depth,
+iterations and a `RunBudget` (calls hard; tokens and cost soft; wall clock). The system prompt
+forbids answering before searching the context. Library only: no CLI, no MCP, no hooks.
+
+| RLM feature | rtok today | Gap | Task |
+| --- | --- | --- | --- |
+| Context outside the prompt, a pointer with its size in the prompt | `cmd` trailer `[rtok <id> · N lines]`, `archive` live-zone pointer with head/tail and est. tokens, `read` cap | same shape | — |
+| `re.search` over the context | `expand --grep` is a substring match that prints bare lines | a hit has no position, so nothing can follow but a full expand | T66.1 |
+| Slice around a hit (`context[i-500:i+500]`) | `expand --lines a-b` | with T66.1 it takes two calls; every call is a turn that re-reads the prompt | T66.2 |
+| Child model on a slice (`rlm_query`) | the host's Agent tool plus `expand <id>`; `handoff` (T59.6) parked at 23 K of 2.83 M | nothing on rtok's side — rtok is not the agent loop; RLM's accuracy-up / tokens-down result is the reason to re-measure the sub-agent share when T59.6 reopens | — |
+| `RunBudget` hard/soft caps on calls, tokens, cost, time | none; hosts auto-compact; `stats --price`, `report` | not a saving lever for a tool outside the loop; parked as I-55 | — |
+| "Search before you answer" system prompt | `inject` modes and T53.1 nudges; the T62.1 skill digest tells the model to `expand --grep <heading>` | none | — |
+| REPL snapshot cap (1 MB) | `mcp.max_result_chars`, `read` cap with archive id | none | — |
+| Per-depth usage tracker, trajectory JSONL | `calls` / `measurements` ledgers, `--json` (T60.1) | none | — |
+| Benchmark: accuracy and cost vs direct | `rtok bench` cost per passed task | none | — |
+
+What transfers is the loop, not the runtime: rtok already externalises every large payload
+behind an id; T66.1 gives a grep hit a position and T66.2 folds the slice into the same call.
