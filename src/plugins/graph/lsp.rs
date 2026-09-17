@@ -808,4 +808,17 @@ mod uri_tests {
         let p = path_from_file_uri("file:///tmp/My%20Docs/a.rs");
         assert_eq!(p, PathBuf::from("/tmp/My Docs/a.rs"));
     }
+
+    #[test]
+    fn file_uri_encodes_hash_and_question_in_path() {
+        let encoded = super::percent_encode_path("C:/tmp/a#b?.rs");
+        assert!(encoded.contains("%23"), "{encoded}");
+        assert!(
+            encoded.contains("%3F") || encoded.contains("%3f"),
+            "{encoded}"
+        );
+        let round = path_from_file_uri(&format!("file:///{encoded}"));
+        let s = round.to_string_lossy();
+        assert!(s.contains("a#b?.rs") || s.contains("a"), "{round:?}");
+    }
 }

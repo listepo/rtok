@@ -105,6 +105,35 @@ fn setup_twice_takes_one_backup_and_says_already_installed() {
     }
 }
 
+/// A remove/install block printed a real edit (diff line or "N removed").
+/// Sibling Desktop/CLI headers may still say `— no changes` while the other kind edits.
+fn remove_made_edits(out: &str) -> bool {
+    out.lines().any(|l| {
+        let bare = strip_ansi(l.trim_start());
+        bare.starts_with('-') || bare.starts_with('+') || bare.ends_with(" removed")
+    })
+}
+
+fn strip_ansi(s: &str) -> &str {
+    // `render::paint` wraps diff lines in a CSI colour sequence ending in `m`.
+    if s.as_bytes().starts_with(&[0x1b, b'[']) {
+        s.find('m').map(|i| &s[i + 1..]).unwrap_or(s)
+    } else {
+        s
+    }
+}
+
+/// Every CLI:/Desktop: header is idle (`— no changes` / not found / same files).
+fn all_variants_idle(out: &str) -> bool {
+    out.lines()
+        .filter(|l| l.starts_with("CLI:") || l.starts_with("Desktop:"))
+        .all(|l| {
+            l.contains("— no changes")
+                || l.contains("— not found")
+                || l.contains("— same files as above")
+        })
+}
+
 #[test]
 fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
     let home = tmp("remove");
@@ -112,14 +141,20 @@ fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
     for (host, flags, file) in hosts(&home) {
         rtok(&setup_args(host, &flags), &cfg, &home);
         let first = rtok(&["agents", "remove", host], &cfg, &home);
-        assert!(!first.contains("no changes"), "{host}: {first}");
+        assert!(
+            remove_made_edits(&first),
+            "{host}: expected removals, got {first}"
+        );
         let second = rtok(&["agents", "remove", host], &cfg, &home);
-        assert!(second.contains("— no changes"), "{host}: {second}");
+        assert!(
+            all_variants_idle(&second) && !remove_made_edits(&second),
+            "{host}: {second}"
+        );
+        assert!(!second.contains("backup "), "{host}: {second}");
         if let Some(f) = &file {
             // setup created the file (no copy), the first remove copied it, the second
             // changed nothing and left no copy behind.
             assert_eq!(backups(f).len(), 1, "{host}: {:?}", backups(f));
-            assert!(!second.contains("backup "), "{host}: {second}");
         }
     }
 }

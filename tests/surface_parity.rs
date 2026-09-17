@@ -131,10 +131,7 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     ("mcp", "serves MCP tools over stdio"),
     ("run", "executes a command and filters its live output"),
-    (
-        "wrap",
-        "execs a command with the proxy base URLs set (T51.4)",
-    ),
+    // `wrap` (T51.4) joins EXEMPT when the clap command lands — not before.
     ("filter", "filters stdin without executing"),
     ("expand", "prints one archived payload"),
     // surfaces: renderers of the model, not pages of it (D23)
