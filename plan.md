@@ -9,7 +9,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T48.8 | todo | P2 | 3 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T51.1 | todo | P3 | 5 | 5% | |
+| T51.1 | in progress | P3 | 5 | 60% | Claude Code / opus-5 |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 10% | |
 | T53.1 | todo | P3 | 3 | 10% | |
@@ -113,6 +113,8 @@ Execution plan (OpenCode / Muse Spark 1.3; scope from I-09: NON-`tool_result` co
 4. Config key in mod.rs + default.toml + docs/config.md + config-show snapshot (env free, no flag).
 5. `tests/proxy.rs`: six-turn inline requests (stable JSON blob in user turns) on Anthropic + Chat, compress mode — two identical POSTs byte-identical upstream; eligible turns pointered, turns 0-1 untouched, archive rows 0, `live_blob` Measurements present, `rtok expand <id>` recovers the original.
 6. Verify: fmt, clippy, targeted nextest, build-min, jscpd. ~10 files — deviation noted.
+
+Steps 1–4 landed in `d899760`; the unit suite in `archive/mod.rs` covers candidates, the off gate and expand. Remaining (Claude Code / opus-5): step 5 only — the proxy-level acceptance. Inline six-turn requests on Anthropic (`user` `text` blocks) and Chat (`user` string content), `live_blobs = true`, mode `compress`: two identical POSTs are byte-identical upstream, turns 0–1 stay whole, turns 2+ carry the pointer, every `archive` measurement is `kind = "live_blob"` (a blob-only fixture leaves the result pass with nothing to do), and `get_archive(ref_id)` returns the original blob bytes. `t51_server`/`openai_server` gain a shared builder so the flag can be set without a third copy of the setup. Image/document fields stay out of scope — T55.15 owns that bug.
 
 ### T52.2. More grammars and compressed index payloads
 
