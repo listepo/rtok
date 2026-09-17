@@ -4,7 +4,7 @@ Usage: rtok [OPTIONS] <COMMAND>
 
 Commands:
   hook         Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
-  mcp          Serve MCP tools over stdio
+  mcp          Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
   proxy        Local API proxy for ANTHROPIC_BASE_URL
   web          Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
   tui          Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
