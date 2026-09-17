@@ -227,6 +227,43 @@ pub fn issues_in(rules_path: &std::path::Path, rules_dir: &std::path::Path) -> V
     errs
 }
 
+/// T56.3: same validation as [`issues_in`], reading rule bodies from a [`crate::testutil::Vfs`].
+#[cfg(test)]
+pub(crate) fn issues_in_from_vfs(
+    vfs: &crate::testutil::Vfs,
+    rules_file: &str,
+    rules_dir: &str,
+) -> Vec<String> {
+    let mut errs = Vec::new();
+    let mut files = Vec::new();
+    if vfs.exists(rules_file) {
+        files.push(rules_file.to_string());
+    }
+    let mut dropins: Vec<String> = vfs
+        .paths_under(rules_dir)
+        .into_iter()
+        .filter(|p| p.ends_with(".toml") && p != rules_dir)
+        .collect();
+    dropins.sort();
+    files.extend(dropins);
+    for path in files {
+        match vfs.read_str(&path) {
+            Some(s) => {
+                if let Err(e) = parse_strict(s) {
+                    errs.push(format!("{path}: {e}"));
+                }
+            }
+            None => {
+                // Missing / non-UTF-8: disk twin reports "cannot read"; Vfs has no IO error kind.
+                if vfs.exists(&path) {
+                    errs.push(format!("{path}: cannot read (not utf-8)"));
+                }
+            }
+        }
+    }
+    errs
+}
+
 impl Default for Rule {
     fn default() -> Self {
         Self {
@@ -770,5 +807,32 @@ mod tests {
         // Missing file and dir report nothing.
         assert!(issues_in(&dir.join("nope.toml"), &dir.join("nope-d")).is_empty());
         let _ = fs::remove_dir_all(&dir);
+    }
+    /// T56.3 twin: malformed drop-in named in Vfs keys (keep disk `issues_in_*`).
+    #[test]
+    fn issues_in_names_every_malformed_file_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("rules.d/bad.toml", "[grep]\nmax_lines = \"many\"\n");
+        vfs.write("rules.d/good.toml", "[echo]\nmax_lines = 2\n");
+        let errs = issues_in_from_vfs(&vfs, "no-such-rules.toml", "rules.d");
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(errs[0].contains("bad.toml"), "{errs:?}");
+        assert!(errs[0].contains("max_lines"), "{errs:?}");
+        assert!(issues_in_from_vfs(&vfs, "nope.toml", "nope-d").is_empty());
+    }
+
+    #[test]
+    fn issues_in_from_vfs_names_spaced_path() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "Users/Ivan Tuhai/.config/rtok/rules.d/bad.toml";
+        vfs.write(path, "[grep]\nmax_lines = \"many\"\n");
+        let errs = issues_in_from_vfs(
+            &vfs,
+            "missing.toml",
+            "Users/Ivan Tuhai/.config/rtok/rules.d",
+        );
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(errs[0].contains("Ivan Tuhai"), "{errs:?}");
+        assert!(errs[0].contains("max_lines"), "{errs:?}");
     }
 }

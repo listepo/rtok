@@ -266,6 +266,73 @@ mod tests {
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
+    // --- Vfs twins (T56.3): TOML hook insert/strip in memory; keep disk e2e ---
+
+    fn hooks_roundtrip_vfs(
+        vfs: &mut crate::testutil::Vfs,
+        path: &str,
+        remove: bool,
+        timeout: u64,
+    ) -> String {
+        let raw = vfs.read_str(path).unwrap_or("");
+        let mut doc: DocumentMut = raw.parse().unwrap_or_default();
+        let report = if remove {
+            strip_ours(&mut doc)
+        } else {
+            insert_ours(&mut doc, timeout).unwrap()
+        };
+        vfs.write(path, doc.to_string());
+        report
+    }
+
+    #[test]
+    fn dry_run_names_eight_tables_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "config.toml";
+        vfs.write(path, "# mine\n");
+        let before = vfs.read_str(path).unwrap().to_string();
+        let out = {
+            // Report-only: parse + insert without writing back (dry twin).
+            let mut doc: DocumentMut = before.parse().unwrap();
+            insert_ours(&mut doc, 5).unwrap()
+        };
+        assert!(out.contains("8 additions"), "{out}");
+        assert!(out.contains("+ [[hooks]] PreToolUse Bash "), "{out}");
+        assert_eq!(vfs.read_str(path).unwrap(), before);
+    }
+
+    #[test]
+    fn apply_keeps_comments_and_foreign_hooks_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "config.toml";
+        vfs.write(
+            path,
+            "# kimi config\nmodel = \"k2\"\n\n[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
+        );
+        assert!(hooks_roundtrip_vfs(&mut vfs, path, false, 5).contains("8 additions"));
+        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false, 5), NO_CHANGES);
+        let raw = vfs.read_str(path).unwrap();
+        assert!(raw.starts_with("# kimi config\nmodel = \"k2\"\n"), "{raw}");
+        assert!(raw.contains("command = \"echo other\""), "{raw}");
+        let doc: DocumentMut = raw.parse().unwrap();
+        let hooks = doc["hooks"].as_array_of_tables().unwrap();
+        assert_eq!(hooks.len(), 9);
+        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, true, 5), "8 removed");
+        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, true, 5), NO_CHANGES);
+        let raw = vfs.read_str(path).unwrap();
+        assert!(raw.contains("echo other") && !raw.contains("rtok"), "{raw}");
+    }
+
+    #[test]
+    fn spaced_profile_config_path_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "Users/Ivan Tuhai/.kimi-code/config.toml";
+        vfs.write(path, "# mine\n");
+        let out = hooks_roundtrip_vfs(&mut vfs, path, false, 5);
+        assert!(out.contains("8 additions"), "{out}");
+        assert!(vfs.read_str(path).unwrap().contains("rtok hook"));
+    }
+
     #[test]
     fn mcp_lands_beside_the_config_without_a_type_field() {
         let (c, path) = cfg("mcp", false);
