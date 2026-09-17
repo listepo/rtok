@@ -108,7 +108,7 @@ Hottest filesystem tests first: `display_rel` / search size-gate logic should us
 ### T56.3. Migrate cmd/setup path tests to VFS
 
 Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-**In progress** — `Settings::from_vfs` + migrated `user_rules_*`, `drop_ins_merge_*`, `a_broken_drop_in_*`. Still on disk: `issues_in_names_every_malformed_file` (path strings in errors), agent install / setup hook writers (template next).
+**In progress** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras (empty file, spaced/unicode paths, ordered/many drop-ins, max_lines=0). Still on disk: `issues_in_*` (path strings in errors), agent install / setup hook writers (next: keep disk + add Vfs rewrite).
 
 ### T56.4. Optional walk/VFS adapter for search/tree
 

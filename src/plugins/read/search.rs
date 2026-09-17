@@ -334,4 +334,56 @@ mod tests {
         let hits = search_hits_from_vfs(&vfs, "needle", 1024, 10);
         assert_eq!(hits, vec!["nest/hit.rs:1: fn needle() {}".to_string()]);
     }
+
+    #[test]
+    fn vfs_search_respects_max_hits_across_files() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("a.txt", b"needle\nneedle\n");
+        vfs.write("b.txt", b"needle\n");
+        let hits = search_hits_from_vfs(&vfs, "needle", 1024, 2);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert!(hits.iter().all(|h| h.contains("needle")), "{hits:?}");
+    }
+
+    #[test]
+    fn vfs_search_skips_non_utf8_bodies() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("bin.dat", [0xff, 0xfe, 0x00]);
+        vfs.write("ok.txt", b"needle here\n");
+        let hits = search_hits_from_vfs(&vfs, "needle", 1024, 10);
+        assert_eq!(hits, vec!["ok.txt:1: needle here".to_string()]);
+    }
+
+    #[test]
+    fn vfs_search_empty_is_empty() {
+        let vfs = crate::testutil::Vfs::new();
+        assert!(search_hits_from_vfs(&vfs, "needle", 1024, 10).is_empty());
+    }
+
+    #[test]
+    fn vfs_search_spaced_windows_style_keys() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write(r"C:/Users/Ivan Tuhai/proj/src/a.rs", b"fn needle() {}\n");
+        let hits = search_hits_from_vfs(&vfs, "needle", 1024, 10);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert!(hits[0].contains("Ivan Tuhai"), "{hits:?}");
+        assert!(hits[0].contains("a.rs:1:"), "{hits:?}");
+    }
+
+    /// Pure path: display_rel with spaced profile (T55/T56 edge).
+    #[test]
+    fn display_rel_keeps_spaced_segment_when_prefix_matches() {
+        let path = Path::new(r"C:\Users\Ivan Tuhai\proj\src\a.rs");
+        let root = Path::new(r"C:\Users\Ivan Tuhai\proj");
+        let cwd = Path::new(r"C:\Users\Ivan Tuhai\proj");
+        let rel = display_rel(path, root, cwd);
+        assert!(rel.contains("a.rs"), "{rel}");
+        // When strip works (Windows case fold or exact match), stay relative.
+        if cfg!(windows) || path.starts_with(root) {
+            assert!(
+                !rel.contains("Ivan Tuhai") || rel.starts_with("src"),
+                "{rel}"
+            );
+        }
+    }
 }

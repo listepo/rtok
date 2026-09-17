@@ -443,6 +443,34 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn range_from_vfs_rejects_junk_like_disk_twin() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("r.txt", b"a\nb\nc\nd\n");
+        let raw = vfs.read_str("r.txt").unwrap();
+        let lines: Vec<&str> = raw.lines().collect();
+        assert!(crate::expand::parse_range("x-y", lines.len()).is_err());
+        assert!(crate::expand::parse_range("3-2", lines.len()).is_err());
+    }
+
+    #[test]
+    fn empty_file_from_vfs_numbers_nothing() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("empty.txt", b"");
+        assert_eq!(
+            numbered_from_vfs(vfs.read_str("empty.txt").unwrap(), None),
+            ""
+        );
+    }
+
+    #[test]
+    fn spaced_path_content_from_vfs_numbers_lines() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("My Docs/notes.txt", b"one\ntwo\n");
+        let out = numbered_from_vfs(vfs.read_str("My Docs/notes.txt").unwrap(), Some("1-2"));
+        assert_eq!(out, "1:one\n2:two");
+    }
+
+    #[test]
     fn map_src_main_lists_fn_main() {
         let (cx, dir) = crate::testutil::runtime("mapmain");
         let out = read(&Ctx::new(&cx), "src/main.rs", "map", None).unwrap();

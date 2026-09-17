@@ -124,4 +124,39 @@ mod tests {
             vec!["rules.d/a.toml".to_string(), "rules.d/b.toml".to_string()]
         );
     }
+
+    #[test]
+    fn vfs_read_str_rejects_non_utf8_and_missing() {
+        let mut v = super::Vfs::new();
+        v.write("bin", [0x80, 0x81]);
+        assert!(v.exists("bin"));
+        assert_eq!(v.read_str("bin"), None);
+        assert_eq!(v.read_str("nope"), None);
+        assert!(!v.exists("nope"));
+    }
+
+    #[test]
+    fn vfs_paths_under_trailing_slash_and_exact() {
+        let mut v = super::Vfs::new();
+        v.write("rules.d/x.toml", b"1");
+        v.write("rules.d", b"not-a-dir-key"); // exact prefix key
+        v.write("other/y.toml", b"2");
+        assert_eq!(
+            v.paths_under("rules.d/"),
+            vec!["rules.d/x.toml".to_string()]
+        );
+        let under = v.paths_under("rules.d");
+        assert!(under.contains(&"rules.d".to_string()));
+        assert!(under.contains(&"rules.d/x.toml".to_string()));
+        assert!(!under.iter().any(|p| p.starts_with("other")));
+    }
+
+    #[test]
+    fn vfs_overwrite_replaces_bytes_and_len() {
+        let mut v = super::Vfs::new();
+        v.write("a.txt", b"hi");
+        v.write("a.txt", b"hello");
+        assert_eq!(v.read_str("a.txt"), Some("hello"));
+        assert_eq!(v.len("a.txt"), Some(5));
+    }
 }

@@ -495,9 +495,95 @@ mod tests {
         assert_eq!(n_lines - content, expect_omitted, "{out}");
     }
 
+    // --- disk Settings::load twins (restored; keep coverage of real path I/O) ---
+
     #[test]
     fn user_rules_file_changes_output_for_match_cmd() {
-        // T56.3: load rules from Vfs — no host TempDir.
+        let dir = std::env::temp_dir().join(format!("rtok-rules-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rules.toml");
+        fs::write(
+            &path,
+            "[echo]\nmax_lines = 2\nhead = 1\ntail = 1\ndedupe = false\n",
+        )
+        .unwrap();
+        let s = Settings::load(&path, None, 80);
+        let body = (0..10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let rule = s.pick("echo");
+        let out = apply(&s, &body, 0, &rule, "id");
+        assert_eq!(out.lines().count(), 2, "{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_rule_overrides_builtin_match_cmd() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-ovr-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rules.toml");
+        fs::write(
+            &path,
+            "[grep]\nmax_lines = 5\nhead = 2\ntail = 2\ndedupe = false\n",
+        )
+        .unwrap();
+        let s = Settings::load(&path, None, 80);
+        assert_eq!(s.pick("grep").max_lines, 5);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn dropin(dir: &std::path::Path, name: &str, body: &str) {
+        fs::write(dir.join(name), body).unwrap();
+    }
+
+    /// Drop-ins merge after the single user file in name order: `b.toml` wins
+    /// over both the file and `a.toml`, and a new family is appended.
+    #[test]
+    fn drop_ins_merge_in_name_order_after_the_user_file() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-d-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let dropins = dir.join("rules.d");
+        fs::create_dir_all(&dropins).unwrap();
+        let file = dir.join("rules.toml");
+        fs::write(&file, "[grep]\nmax_lines = 5\n").unwrap();
+        dropin(&dropins, "b.toml", "[grep]\nmax_lines = 7\n");
+        dropin(
+            &dropins,
+            "a.toml",
+            "[grep]\nmax_lines = 6\n[pytest]\nmax_lines = 9\n",
+        );
+        dropin(&dropins, "skip.txt", "[grep]\nmax_lines = 1\n");
+        let s = Settings::load(&file, Some(&dropins), 80);
+        assert_eq!(s.pick("grep").max_lines, 7, "b.toml wins in name order");
+        assert_eq!(s.pick("pytest").max_lines, 9, "new families append");
+        assert_eq!(s.pick("cat").max_lines, 80, "untouched defaults stay");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A malformed drop-in is skipped, fail open: the good files still apply
+    /// and the builtin underneath is untouched.
+    #[test]
+    fn a_broken_drop_in_is_skipped_fail_open() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-bad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let dropins = dir.join("rules.d");
+        fs::create_dir_all(&dropins).unwrap();
+        dropin(&dropins, "bad.toml", "[grep\nmax_lines = \n");
+        dropin(&dropins, "good.toml", "[grep]\nmax_lines = 7\n");
+        let missing = dir.join("no-such-rules.toml");
+        let s = Settings::load(&missing, Some(&dropins), 80);
+        assert_eq!(s.pick("grep").max_lines, 7);
+        // A missing dir is built-ins, not an error.
+        let s = Settings::load(&missing, Some(&dir.join("no-such-d")), 80);
+        assert_eq!(s.pick("grep").max_lines, 40);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- Vfs twins (T56.3): same assertions, no host TempDir ---
+
+    #[test]
+    fn user_rules_file_changes_output_for_match_cmd_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         vfs.write(
             "rules.toml",
@@ -514,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn user_rule_overrides_builtin_match_cmd() {
+    fn user_rule_overrides_builtin_match_cmd_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         vfs.write(
             "rules.toml",
@@ -524,14 +610,8 @@ mod tests {
         assert_eq!(s.pick("grep").max_lines, 5);
     }
 
-    fn dropin(dir: &std::path::Path, name: &str, body: &str) {
-        fs::write(dir.join(name), body).unwrap();
-    }
-
-    /// Drop-ins merge after the single user file in name order: `b.toml` wins
-    /// over both the file and `a.toml`, and a new family is appended.
     #[test]
-    fn drop_ins_merge_in_name_order_after_the_user_file() {
+    fn drop_ins_merge_in_name_order_after_the_user_file_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         vfs.write("rules.toml", "[grep]\nmax_lines = 5\n");
         vfs.write("rules.d/b.toml", "[grep]\nmax_lines = 7\n");
@@ -546,19 +626,113 @@ mod tests {
         assert_eq!(s.pick("cat").max_lines, 80, "untouched defaults stay");
     }
 
-    /// A malformed drop-in is skipped, fail open: the good files still apply
-    /// and the builtin underneath is untouched.
     #[test]
-    fn a_broken_drop_in_is_skipped_fail_open() {
+    fn a_broken_drop_in_is_skipped_fail_open_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         vfs.write("rules.d/bad.toml", "[grep\nmax_lines = \n");
         vfs.write("rules.d/good.toml", "[grep]\nmax_lines = 7\n");
-        // Missing rules file + good drop-ins.
         let s = Settings::from_vfs(&vfs, "no-such-rules.toml", Some("rules.d"), 80);
         assert_eq!(s.pick("grep").max_lines, 7);
-        // A missing dir is built-ins, not an error.
         let s = Settings::from_vfs(&vfs, "no-such-rules.toml", Some("no-such-d"), 80);
         assert_eq!(s.pick("grep").max_lines, 40);
+    }
+
+    /// Extra Vfs edge cases: empty rules file keeps builtins; spaced path keys work.
+    #[test]
+    fn empty_rules_file_from_vfs_keeps_builtins() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("rules.toml", "");
+        let s = Settings::from_vfs(&vfs, "rules.toml", None, 80);
+        assert_eq!(s.pick("grep").max_lines, 40);
+        assert_eq!(s.pick("cat").max_lines, 80);
+        assert_eq!(
+            s.pick("echo").max_lines,
+            40,
+            "unknown cmds use Rule::default"
+        );
+    }
+
+    #[test]
+    fn vfs_rules_under_spaced_profile_path() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write(
+            "Users/Ivan Tuhai/.config/rtok/rules.toml",
+            "[rg]\nmax_lines = 3\nhead = 1\ntail = 1\ndedupe = false\n",
+        );
+        let s = Settings::from_vfs(&vfs, "Users/Ivan Tuhai/.config/rtok/rules.toml", None, 80);
+        assert_eq!(s.pick("rg").max_lines, 3);
+        let body = (0..10)
+            .map(|i| format!("L{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = apply(&s, &body, 0, &s.pick("rg"), "id");
+        assert_eq!(out.lines().count(), 3, "{out}");
+    }
+
+    #[test]
+    fn vfs_dropin_later_file_overrides_earlier_and_user() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("rules.toml", "[grep]\nmax_lines = 1\n");
+        vfs.write("rules.d/01-a.toml", "[grep]\nmax_lines = 2\n");
+        vfs.write("rules.d/02-b.toml", "[grep]\nmax_lines = 9\n");
+        let s = Settings::from_vfs(&vfs, "rules.toml", Some("rules.d"), 80);
+        assert_eq!(s.pick("grep").max_lines, 9);
+    }
+
+    /// Unicode path segments are ordinary Vfs keys (D29 string paths).
+    #[test]
+    fn vfs_rules_under_unicode_path_string() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "профіль/настройки/rules.toml";
+        vfs.write(
+            path,
+            "[cat]\nmax_lines = 4\nhead = 2\ntail = 2\ndedupe = false\n",
+        );
+        let s = Settings::from_vfs(&vfs, path, None, 80);
+        assert_eq!(s.pick("cat").max_lines, 4);
+        let drop_dir = "профіль/настройки/rules.d";
+        vfs.write(format!("{drop_dir}/zz.toml"), "[cat]\nmax_lines = 11\n");
+        let s = Settings::from_vfs(&vfs, path, Some(drop_dir), 80);
+        assert_eq!(s.pick("cat").max_lines, 11);
+    }
+
+    /// `max_lines = 0` parses; apply clamps the budget to 1 and head/tail to 0,
+    /// so multi-line output becomes a single omission trailer.
+    #[test]
+    fn vfs_max_lines_zero_clamps_to_one_on_apply() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write(
+            "rules.toml",
+            "[echo]\nmax_lines = 0\nhead = 1\ntail = 1\ndedupe = false\n",
+        );
+        let s = Settings::from_vfs(&vfs, "rules.toml", None, 80);
+        assert_eq!(s.pick("echo").max_lines, 0);
+        let body = "a\nb\nc\n";
+        let out = apply(&s, body, 0, &s.pick("echo"), "id");
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert!(out.contains("3 lines omitted"), "{out}");
+    }
+
+    /// Several drop-ins plus a non-toml sibling: only `*.toml` merge, in name order.
+    #[test]
+    fn vfs_many_dropins_merge_name_order_skipping_non_toml() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("rules.toml", "[grep]\nmax_lines = 1\n");
+        vfs.write(
+            "rules.d/10.toml",
+            "[grep]\nmax_lines = 3\n[jq]\nmax_lines = 2\n",
+        );
+        vfs.write("rules.d/20.toml", "[grep]\nmax_lines = 5\n");
+        vfs.write(
+            "rules.d/30.toml",
+            "[grep]\nmax_lines = 8\n[fd]\nmax_lines = 6\n",
+        );
+        vfs.write("rules.d/note.md", "[grep]\nmax_lines = 99\n");
+        vfs.write("rules.d/00.bak", "[grep]\nmax_lines = 99\n");
+        let s = Settings::from_vfs(&vfs, "rules.toml", Some("rules.d"), 80);
+        assert_eq!(s.pick("grep").max_lines, 8);
+        assert_eq!(s.pick("jq").max_lines, 2);
+        assert_eq!(s.pick("fd").max_lines, 6);
     }
 
     #[test]
