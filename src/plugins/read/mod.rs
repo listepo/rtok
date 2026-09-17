@@ -17,6 +17,7 @@ pub mod cache;
 pub mod hook;
 pub(crate) mod outline;
 pub mod search;
+pub(crate) mod walk;
 
 pub struct Read;
 
