@@ -252,10 +252,8 @@ mod tests {
     /// `[bench] timeout_s` was read by nothing, so a hung host held `rtok bench` forever.
     #[test]
     fn a_hung_run_is_killed_instead_of_hanging_the_bench() {
-        // Spawn `sleep` directly: `sh -c 'sleep 30'` leaves the sleep child holding
-        // the pipe after `kill` on the shell, so the reader thread waited the full 30s.
-        let mut slow = Command::new("sleep");
-        slow.arg("30");
+        let mut slow = Command::new("sh");
+        slow.arg("-c").arg("sleep 30");
         let start = Instant::now();
         assert!(run_bounded(&mut slow, Duration::from_millis(150)).is_none());
         assert!(

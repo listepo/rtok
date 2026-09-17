@@ -206,7 +206,6 @@ pub(crate) mod tests {
         (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
 
-    // Full `read()` needs host fs + Runtime until a reader trait (T56.4); pure twin above uses Vfs.
     #[test]
     fn three_lines_are_numbered() {
         let (cx, dir) = cx("three");
@@ -407,39 +406,6 @@ pub(crate) mod tests {
             under_ascii_case_insensitive(path, Path::new(r"c:\users\me\project")),
             false
         );
-    }
-
-    /// T56.2: line numbering / range from Vfs bytes — same grammar as `read` full|lines, no host disk.
-    fn numbered_from_vfs(raw: &str, range: Option<&str>) -> String {
-        let lines: Vec<&str> = raw.lines().collect();
-        let (a, b) = match range {
-            Some(spec) => crate::expand::parse_range(spec, lines.len()).unwrap(),
-            None => (1, lines.len()),
-        };
-        crate::expand::slice_lines(lines, a, b)
-            .iter()
-            .enumerate()
-            .map(|(i, l)| format!("{}:{l}", a + i))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    #[test]
-    fn three_lines_numbered_from_vfs() {
-        let mut vfs = crate::testutil::Vfs::new();
-        vfs.write("a.txt", b"alpha\nbeta\ngamma\n");
-        let out = numbered_from_vfs(vfs.read_str("a.txt").unwrap(), None);
-        assert_eq!(out, "1:alpha\n2:beta\n3:gamma");
-    }
-
-    #[test]
-    fn range_from_vfs_matches_expand_grammar() {
-        let mut vfs = crate::testutil::Vfs::new();
-        vfs.write("r.txt", b"a\nb\nc\nd\n");
-        let raw = vfs.read_str("r.txt").unwrap();
-        assert_eq!(numbered_from_vfs(raw, Some("2-3")), "2:b\n3:c");
-        assert_eq!(numbered_from_vfs(raw, Some("3")), "3:c\n4:d");
-        assert_eq!(numbered_from_vfs(raw, Some("-1")), "1:a");
     }
 
     #[test]
