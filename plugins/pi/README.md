@@ -10,7 +10,7 @@ Files:
   `rtok filter` with an `expand <id>` trailer. Missing `rtok` fails open and names ketch
   (`ketch install listepo/rtok`).
 - `skills/rtok/SKILL.md` — tells the model how to recover full output (`rtok expand <id>`).
-- `tests/rtok.test.ts` — Node unit test of the extension against a fake `rtok` on PATH; run by
+- `tests/rtok.test.ts` — Node unit test of the extension against a fake `rtok` on PATH (`tests/node/fake-rtok.ts`, every OS); run by
   `tests/pi_plugin.rs`. Outside `extensions/`, so pi never loads it.
 
 ## Docs

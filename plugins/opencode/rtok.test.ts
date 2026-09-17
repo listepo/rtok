@@ -1,21 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { fakeRtok } from "../../tests/node/fake-rtok.ts";
 import { createPlugin, filterStdin } from "./rtok.ts";
-
-const posix = { skip: process.platform === "win32" ? "fake rtok is a sh script" : false };
-
-/** PATH = a dir holding `rtok` with `script` as its body (none when null), plus /bin for sh. */
-function withRtok(script: string | null) {
-  const dir = mkdtempSync(join(tmpdir(), "rtok-opencode-"));
-  if (script !== null) {
-    writeFileSync(join(dir, "rtok"), `#!/bin/sh\n${script}\n`);
-    chmodSync(join(dir, "rtok"), 0o755);
-  }
-  process.env.PATH = `${dir}:/bin:/usr/bin`;
-}
 
 test("replaces bash output via the injected filter", async () => {
   const plugin = await createPlugin((cmd, stdin) => {
@@ -43,18 +29,21 @@ test("leaves non-bash tools unchanged", async () => {
   assert.equal(output.output, "fn main() {}");
 });
 
-test("filterStdin passes the command and stdin to `rtok filter`", posix, () => {
-  withRtok(`[ "$1 $2 $3 $4" = "filter --stdin --cmd git status" ] || exit 9\ntr a-z A-Z`);
+test("filterStdin passes the command and stdin to `rtok filter`", () => {
+  fakeRtok(
+    `if (args.join(" ") !== "filter --stdin --cmd git status") process.exit(9);\n` +
+      `process.stdout.write(input.toUpperCase());`,
+  );
   assert.equal(filterStdin("git status", "on branch"), "ON BRANCH");
 });
 
-test("filterStdin fails open on a non-zero exit", posix, () => {
-  withRtok("echo partial; exit 1");
+test("filterStdin fails open on a non-zero exit", () => {
+  fakeRtok(`process.stdout.write("partial"); process.exit(1);`);
   assert.equal(filterStdin("ls", "original"), "original");
 });
 
-test("missing rtok fails open and names ketch once", posix, (t) => {
-  withRtok(null);
+test("missing rtok fails open and names ketch once", (t) => {
+  fakeRtok(null);
   const errors: string[] = [];
   t.mock.method(console, "error", (msg: string) => errors.push(msg));
   assert.equal(filterStdin("ls", "original"), "original");
