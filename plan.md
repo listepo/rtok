@@ -59,8 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T65.2 | todo | P3 | 3 | 0% | |
 | T65.3 | todo | P3 | 1 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
-| T66.1 | in progress | P3 | 2 | 0% | Claude Code / Fable 5.1 |
-| T66.2 | in progress | P3 | 1 | 0% | Claude Code / Fable 5.1 |
 | T67.2 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
@@ -371,18 +369,6 @@ Done when a rule may set `collapse_columns = true` (on in `Rule::default()` if t
 
 From `research.md` §11. sqz's safe mode passes stack traces and secrets through whole. rtok keeps single lines matching `BUILTIN_KEEP` (`error`, `panic`, `traceback`) but the head/tail cut in `rules::apply` drops the frames under them, which is the part the model needs; secrets are deliberately not redacted (`ten_families_and_aws_key_unredacted`) and stay so.
 Done when `rules::apply` detects a trace block — Python `Traceback (most recent call last):` to the next non-indented line, Rust `thread '…' panicked at` plus a following `stack backtrace:` block, JS `Error:` with `    at ` frames, Go `goroutine N [` frames, Java `Exception in thread` with `\tat` frames — and keeps the whole block in the output regardless of `head`/`tail`, only the block's own length counting against `max_lines`; a fixture per language shows the frames survive a 40-line cap; the trailer still names the archive id.
-
-### T66.1. `mem_save` updates a note in place: project + kind + title is the topic key
-
-From the engram gap review (`research.md` §12, 2026-09-18). engram's `topic_key` upserts the observation for the same `project + scope + topic_key` and bumps a revision counter, so an evolving decision stays one row; rtok's `mem_save` always inserts, so re-saving "auth model" after a change leaves two rows with the same title, and SessionStart recall (5 titles) shows the stale one beside the new one. Zero-LLM, no schema change: the title already is the stable key.
-Done when `mem_save` with an existing `(project, kind, title)` updates that row's body and `ts` instead of inserting (FTS triggers and the embedding upsert already key by id), returns `{"id", "updated": true}`, an identical re-save is a no-op update, checkpoints keep using `insert_note` (kind `checkpoint:<session>` is per session and `latest_note` orders by id), the tool description says so in one clause, and a unit test saves the same title twice and asserts one row, the new body, and the same id on `mem_search`.
-Execution plan: `Store::upsert_note` (select id by project/kind/title, `UPDATE` or `INSERT`) in `src/store/mod.rs`; `plugins::memory::mem_save` returns `(id, updated)`; `mcp.rs` reports it; README/AGENTS lines. Verify: fmt, clippy `-D warnings`, `nextest -p rtok memory`, e2e `memory_save_then_search`.
-
-### T66.2. `rtok memory export`: the JSONL that `memory import` reads
-
-From the engram gap review (`research.md` §12). engram's Git Sync exports memories as portable chunks a second machine imports; rtok has `memory import <file.jsonl>` (T6.3) and no way to produce that file from its own store, so notes cannot move between machines or be backed up outside `rtok.db`.
-Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,project}` per line for every note except `checkpoint:*` rows (session-local), in id order, and an export piped into `import` on a fresh store inserts every row and a second pass skips them all (round-trip test on three notes plus one checkpoint); the CLI table in `README.md` and the plugin README name it.
-Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
 
 ### T67.2. `expand --context N` around grep hits
 

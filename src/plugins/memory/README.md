@@ -13,7 +13,7 @@ progressive disclosure.
 
 - `mem_save(kind, title, body, project?)` — project defaults to the git root name of cwd.
   The title is the topic key: a second save with the same project, kind and title updates
-  that row (`{"id", "updated": true}`) instead of adding a stale twin to recall (T67.1).
+  that row (`{"id", "updated": true}`) instead of adding a stale twin to recall (T66.1).
 - `mem_search(query, limit=5)` — ids, titles, 120-char snippets ranked by FTS5 `bm25`.
 - `mem_get(id)` — full body.
 
@@ -34,14 +34,14 @@ no third-party schema (D6).
 
 `rtok memory export [--project <name>]` prints the same shape from the store — every note
 but the session-local `checkpoint:*` rows — so notes move between machines through a file
-you commit or copy (T67.2). An export piped into `import` on a second store inserts each
+you commit or copy (T66.2). An export piped into `import` on a second store inserts each
 row once; a second import skips them all.
 
 ## Tasks
 
 See `roadmap.md` § `memory`. Checks in `plan.md`.
 
-T6.1 notes API · T2.5 checkpoint · T6.2 recall · T6.3 import · T67.1 upsert · T67.2 export.
+T6.1 notes API · T2.5 checkpoint · T6.2 recall · T6.3 import · T66.1 upsert · T66.2 export.
 
 ## Status
 

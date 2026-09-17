@@ -104,7 +104,7 @@ pub fn mem_save(
     let proj = project
         .map(str::to_string)
         .or_else(|| std::env::current_dir().ok().and_then(|d| project_name(&d)));
-    // The title is the topic key (T67.1): a re-save updates the row, recall never shows
+    // The title is the topic key (T66.1): a re-save updates the row, recall never shows
     // a stale twin next to the new one.
     let (id, updated) = rt.store.upsert_note(proj.as_deref(), kind, title, body)?;
     rt.store

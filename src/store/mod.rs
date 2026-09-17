@@ -638,7 +638,7 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// One row per `(project, kind, title)` — the title is the topic key (T67.1). An
+    /// One row per `(project, kind, title)` — the title is the topic key (T66.1). An
     /// existing row gets the new body and a fresh `ts`; returns `(id, updated)`.
     pub fn upsert_note(
         &self,
@@ -673,7 +673,7 @@ impl Store {
     }
 
     /// Every note but the session-local `checkpoint:*` rows, id order (`memory export`,
-    /// T67.2): `(project, kind, title, body)`.
+    /// T66.2): `(project, kind, title, body)`.
     #[allow(clippy::type_complexity)]
     pub fn list_notes(
         &self,

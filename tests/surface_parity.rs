@@ -192,7 +192,7 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     (
         "memory export",
-        "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T67.2)",
+        "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T66.2)",
     ),
     (
         "otel status",

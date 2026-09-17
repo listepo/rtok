@@ -1,4 +1,4 @@
-//! `rtok memory export` (plan T67.2): the JSONL that `memory import` reads.
+//! `rtok memory export` (plan T66.2): the JSONL that `memory import` reads.
 
 use crate::config::Config;
 use anyhow::Result;
