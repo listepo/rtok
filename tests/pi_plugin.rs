@@ -94,6 +94,24 @@ fn pi_extension_owns_the_single_bash_call_path() {
     }
 }
 
+/// T47.3: the extension's own unit test (`plugins/pi/tests/rtok.test.ts`) — rewrite, quoting,
+/// fail-open with the ketch hint, and the filter result — against a fake `rtok` on PATH.
+#[test]
+fn pi_extension_unit_test_with_fake_rtok() {
+    let status = Command::new("node")
+        .args([
+            "--experimental-strip-types",
+            "--disable-warning=ExperimentalWarning",
+            "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+            "--test",
+            "plugins/pi/tests/rtok.test.ts",
+        ])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .status()
+        .expect("node");
+    assert!(status.success());
+}
+
 #[test]
 fn setup_pi_dry_run_offers_plugin() {
     let home = tmp("dry");

@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T47.3 — Unit and e2e tests for every host plugin
+
+**T47.3 Unit and e2e tests for every host plugin** · P1, 3/5 · `plugins/pi/tests/rtok.test.ts` (new), `plugins/opencode/rtok.test.ts`, `tests/opencode_plugin.rs` (new), `tests/pi_plugin.rs`, `plugins/pi/README.md`
+Do: each host plugin now has a unit test of its own file and an e2e through the binary. pi had none of its own: `plugins/pi/tests/rtok.test.ts` (`node:test`, no dependency) loads the extension against a stub `pi` and a fake `rtok` shell script first on PATH — a bash call becomes one single-quoted `rtok run -- '…'` and is never wrapped twice, other tools are untouched, a missing `rtok` leaves the command and the result alone and appends the ketch hint once, a shorter `rtok filter` result replaces the bash output, and unchanged or empty filter output keeps the original; it lives outside `extensions/` so pi never loads it, and `tests/pi_plugin.rs::pi_extension_unit_test_with_fake_rtok` runs it. OpenCode's unit test gains `filterStdin` itself: the argv `filter --stdin --cmd <command>` and stdin reach `rtok`, a non-zero exit fails open, and a missing `rtok` fails open and prints the ketch hint once per process. `tests/opencode_plugin.rs` is the OpenCode D21 e2e, mirroring `cursor_plugin.rs`: the plugin registers no tool and no `tool.execute.before`; `--dry-run` offers `plugins/opencode/rtok.ts` at `<config dir>/plugins/rtok.ts` with the ketch hint and writes nothing; a plain install writes `mcp.rtok` and leaves the offer open; `--yes` links exactly one file that reads as the source, keeps a foreign MCP server, says `already installed` the second time; remove unlinks it, drops `mcp.rtok`, keeps the foreign server and the source. Cursor already had both (`cursor_plugin.rs`: manifests, `scripts/mcp.sh|cmd` ketch hint, link and unlink); its plugin is JSON and shell, so there is no script unit to add.
+Check: `cargo test --test opencode_plugin --test pi_plugin --test cursor_plugin --test filter`; `just check`.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `opencode_plugin` 4, `pi_plugin` 5, `cursor_plugin` 9, `filter` 2 passed; Node: pi 5/5, OpenCode 5/5; `just check` exit 0, 714 tests passed, jscpd clone count unchanged (70). The Node cases skip on Windows, where the fake `rtok` would need a `.cmd`.
+Deviation: 5 files (≤3) — two plugins, each with a unit file and an e2e file, plus the pi README line for the new test file. The pi test sits in `plugins/pi/tests/`, not `extensions/` as the card planned, so pi cannot load it as an extension.
+
 ## T47.2 — Remove and list e2e for every host
 
 **T47.2 Remove and list e2e for every host** · P1, 2/5 · `tests/agent_remove.rs`, `tests/agents_install.rs`

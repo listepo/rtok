@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T47.3 | todo | P1 | 3 | 0% | |
 
 ### T45.1. OTel flush survives a traces error
 
@@ -37,11 +36,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T47.3. Unit and e2e tests for every host plugin
-
-`plugins/cursor` and `plugins/pi` have D21 e2e files (`tests/cursor_plugin.rs`, `tests/pi_plugin.rs`); `plugins/opencode` has a Node unit test (`rtok.test.ts`, run by `tests/filter.rs`) but no e2e through `rtok agents install opencode`; `plugins/pi/extensions/rtok.ts` has no unit test at all. Done means each of the three plugins has both: a unit test of the plugin file itself (Node `node:test`, no new dependency) and an e2e file that installs it through the binary and checks D21 (one call path, ketch hint when `rtok` is missing, second apply `no changes`, remove unlinks).
-Plan: `plugins/pi/extensions/rtok.test.ts` (bash call path builds `rtok cmd --`, fail open on spawn error, ketch hint once) run from `tests/pi_plugin.rs` like `filter.rs` runs the OpenCode one; new `tests/opencode_plugin.rs` mirroring `tests/cursor_plugin.rs` (`--dry-run` names `plugins/opencode/rtok.ts` and the dest, `--yes` links one file beside the config, no `mcp.rtok` duplicate when the plugin serves it, `remove` unlinks); a Node test for `plugins/cursor/scripts/mcp.sh` is shell, so its unit check stays the existing `d21_missing_rtok_names_ketch`. Verify: `mise exec -- cargo test -p rtok --test opencode_plugin --test pi_plugin --test cursor_plugin --test filter`.
 
 ## Reference
 
