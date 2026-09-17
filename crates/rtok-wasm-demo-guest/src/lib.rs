@@ -1,10 +1,23 @@
 //! First-party Gate P32 example guest — built to `wasm32-unknown-unknown`, not in `all()`.
 #![no_std]
 
+// Host imports exist only under wasmi on wasm32. Native `cargo test` / nextest
+// (Windows MSVC especially) still builds this crate as `(lib test)` and must link.
+#[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
     fn rtok_estimate(ptr: i32, len: i32, class: i32) -> i32;
     fn rtok_record_measurement(ptr: i32, len: i32) -> i32;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn rtok_estimate(_ptr: i32, _len: i32, _class: i32) -> i32 {
+    0
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn rtok_record_measurement(_ptr: i32, _len: i32) -> i32 {
+    0
 }
 
 static MANIFEST: &[u8] = br#"{"id":"wasm-demo","surfaces":["mcp"],"default_on":true,"title":"WASM Demo","summary":"Example out-of-tree plugin.","saves_tokens":true}"#;
