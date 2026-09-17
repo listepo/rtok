@@ -141,7 +141,10 @@ fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
     for (host, flags, file) in hosts(&home) {
         rtok(&setup_args(host, &flags), &cfg, &home);
         let first = rtok(&["agents", "remove", host], &cfg, &home);
-        assert!(remove_made_edits(&first), "{host}: expected removals, got {first}");
+        assert!(
+            remove_made_edits(&first),
+            "{host}: expected removals, got {first}"
+        );
         let second = rtok(&["agents", "remove", host], &cfg, &home);
         assert!(
             all_variants_idle(&second) && !remove_made_edits(&second),
