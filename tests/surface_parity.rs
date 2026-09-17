@@ -131,7 +131,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ),
     ("mcp", "serves MCP tools over stdio"),
     ("run", "executes a command and filters its live output"),
-    ("wrap", "execs a command with the proxy base URLs set (T51.4)"),
+    (
+        "wrap",
+        "execs a command with the proxy base URLs set (T51.4)",
+    ),
     ("filter", "filters stdin without executing"),
     ("expand", "prints one archived payload"),
     // surfaces: renderers of the model, not pages of it (D23)
@@ -181,6 +184,14 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "config validate",
         "checks a file and exits nonzero on issues",
+    ),
+    (
+        "completions",
+        "prints shell completions generated from the clap tree (T53.2)",
+    ),
+    (
+        "man",
+        "prints the man page generated from the clap tree (T53.2)",
     ),
     (
         "otel status",

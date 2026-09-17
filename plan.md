@@ -6,20 +6,19 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.6 | todo | P2 | 3 | 0% | |
+| T48.6 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark |
+| T48.7 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T48.8 | todo | P2 | 3 | 0% | |
+| T49.1 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T49.2 | todo | P2 | 4 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
-| T50.2 | todo | P3 | 2 | 0% | |
+| T50.2 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T50.4 | todo | P3 | 2 | 0% | |
+| T50.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T51.1 | todo | P3 | 5 | 0% | |
-| T51.3 | todo | P3 | 4 | 0% | |
-| T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
 | T53.1 | todo | P3 | 3 | 0% | |
-| T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
 
@@ -28,10 +27,26 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 From I-17. Zed configures MCP as `context_servers` in `~/.config/zed/settings.json` (JSON with comments) and has no shell hook events; its agent can also use external agents over ACP.
 Done when `rtok agents install zed` adds `context_servers.rtok` without destroying comments or foreign servers, the support table says hooks/proxy/plugin `no` with the reason, remove restores the file, and the host joins the e2e matrix, config and docs.
 
+Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https://zed.dev/docs/assistant/model-context-protocol (`context_servers` in the settings file, `{command, args, env}` local shape; Zed-configured servers are also forwarded to external agents over ACP), models https://zed.dev/docs/ai/models (hosted models or own API keys — no base-URL proxy surface, so proxy stays `no`), extensions https://zed.dev/docs/extensions/mcp-extensions (marketplace WASM extensions, no linkable plugin dir). `edit_json` (serde_json) fails on `//` comments, and no JSONC crate may be added without approval, so `src/agents/zed/mod.rs` does a comment-aware textual edit: strip comments only to validate/parse, locate `context_servers` and `rtok` spans with a string/comment-aware scanner, insert/replace/excise surgically. Files: `src/agents/zed/{mod.rs,README.md}` (new; CLI `zed` + Desktop variants sharing one file, `shared()`), registry + HOSTS, `[setup.zed] config_path` (config/mod.rs, default.toml, docs/config.md), cli help, README, commands.md, blessed agents table, config-show.stdout, agents_install matrix, agent_remove zed test (seeded with comments), common write_cfg. Unit tests: dry_run touches nothing, apply into missing/commented file + idempotent, remove keeps foreign + comments (comment-only object left in place), second remove no changes, malformed file errors without writing. Verify: fmt/clippy/test for agents/config/e2e scope (full `just check` may fail on concurrent WIP — report).
+
+### T48.7. aider host
+
+From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where `openai-api-base` / `anthropic-api-base` (or the env vars) can point it at `rtok proxy`, which is the only rtok surface it can use.
+Done when `rtok agents install aider --proxy` writes the base URL key into the YAML config without losing comments (reuse an installed YAML-preserving approach or a line edit; no new dependency without approval), the support table explains why hooks and mcp are `no`, remove strips only rtok's key, and the host joins the e2e matrix and docs.
+
+Execution plan (G3): 1) `src/agents/aider/{mod.rs,README.md}` — line-edit `openai-api-base` (only base-url key aider documents; no `anthropic-api-base` in options reference) preserving comments, idempotent, fail-open on unparsable YAML shape (leave file, error); `support`: proxy `Flag(--proxy)`, hooks/mcp/plugin `No` with reasons; 2) wire `HOSTS`/`host()`, `[setup.aider] config_path` default `~/.aider.conf.yml` (config/default.toml + mod.rs + docs/config.md row, D12); 3) e2e matrix (`tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`) + README host line; verify `cargo fmt/clippy/nextest` + `just check`.
+
 ### T48.8. VS Code Copilot Chat host
 
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
+
+### T49.1. `rtok stats --price`
+
+From I-02. `rtok stats` reports tokens but not money, so a saving cannot be compared with a model's cost; cache reads are priced very differently from input (research.md §8).
+Done when a price table (per model: input, cache write, cache read, output per MTok) lives in config with defaults that cite a dated source, `rtok stats --price` adds cost columns and a saved-cost total computed from the same `usage` rows, unknown models show `-` instead of a guess, and a trycmd snapshot plus a unit test on the arithmetic cover it.
+
+Execution plan (G3): 1) config: `[stats] price=false` + `BTreeMap<String, Price{input,cache_write,cache_read,output}> stats.prices` with 4 dated defaults (Anthropic Sonnet 5/Haiku 4.5 + OpenAI gpt-5/gpt-5-mini, fetched 2026-09-17); default.toml + docs/config.md rows (D12); validate exempts `stats.prices` subtree (open-ended model keys, bench.configs precedent); 2) store `usage_by_model()` grouped sums; 3) measure `attach_costs`: cost=Σtok/1e6×rate, saved=cache_read×(input−read)/1e6, unknown→`-` excluded from totals; 4) CLI `--price`→stats.price flag; costs attach only when set (default output byte-identical); 5) tests: unit arithmetic, `tests/stats_price.rs` fixture-store e2e (known+unknown), hermetic trycmd empty-store snapshot, config-show rows; stats_model.rs goldens unchanged.
 
 ### T49.2. Ingest Codex, OpenCode and Cursor session logs
 
@@ -48,6 +63,8 @@ Done when the families are chosen by `rtok discover`-style counts from real tran
 From I-06. Users can already override rules through one user rules file, but there is no `rules.d/*.toml` drop-in, no published schema and no example, so writing a filter means reading `src/plugins/cmd/rules.rs`.
 Done when every `*.toml` in a configured rules dir is merged after the defaults in name order, a malformed file is reported by `rtok config validate` and skipped at runtime (fail open), `docs/cmd-rules.md` documents every field with a worked example (and a site row), and tests cover merge order and a broken file.
 
+Execution plan (G3): 1) config: `[plugins.cmd] rules_dir` (default `~/.rtok/rules.d`) alongside existing `rules` file; `Settings::load` reads defaults < `rules` file < sorted `rules.d/*.toml`, later files win per `match_cmd` (existing `merge_rules`); unreadable/malformed drop-in → skipped at runtime (fail open, stderr note off the hook path); 2) `config validate` reports malformed rules.d files (parse each `*.toml` with same parser); 3) new `docs/cmd-rules.md` (every field + worked example) + site docs row; 4) tests: unit merge-order (defaults<file<dir a<b), broken-file skipped + validate reports; D12 rows for `rules_dir`.
+
 ### T50.3. Extra `read` modes
 
 From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
@@ -58,22 +75,29 @@ Done when a measurement on those files shows which extra mode (imports-only, com
 From I-08. lean-ctx denies the host's Grep/Glob to force its own tools; rtok's MCP `search`/`tree` are cheaper but the model still reaches for the native tools.
 Done when `rtok doctor` reports the share of Read-class tokens spent in Grep/Glob, and an opt-in `guard` rule (off by default) denies them in PreToolUse with a pointer to `search`/`tree`, fails open when the MCP server is not installed, and is covered by hook tests. Default stays off unless the doctor numbers justify it.
 
+Execution plan (T50.4, OpenCode / Muse Spark 1.3):
+1. `src/config/mod.rs` + `config/default.toml` + `docs/config.md`: `[plugins.guard] deny_grep_glob = false` (opt-in; no CLI flag).
+2. `src/doctor.rs`: `read-share` line from `stats::collect` over `cfg.stats.transcripts_dir` — (grep+glob est_tokens)/(read+grep+glob); `no data` when empty/missing (fail open). Unit test with synthetic JSONL transcripts + no-data test.
+3. `src/plugins/guard/mod.rs`: PreToolUse denies `Grep`→`search`, `Glob`→`tree` only when the knob is on AND the read plugin is enabled (fail open = search/tree unavailable); records `guard/native_deny` zero-delta Measurement (countable, claims no saving). Unit tests (default off, on-denies with pointer, read-disabled allows) + hook e2e via `tests/fixtures/hooks/pre_tool_grep.json` + binary stdin with the knob on/off.
+4. Verify in isolated worktree: fmt, clippy `-D warnings`, nextest (guard, doctor, commands_e2e, config_coverage), single-feature build.
+
 ### T51.1. Compress JSON and code inside the live zone
 
 From I-09. `archive` rewrites only old `tool_result`s; huge JSON dumps and `data:` blobs in other live-zone fields stay whole every turn.
 Done when a proxy-side pass shrinks such payloads losslessly (archived, `expand <id>`), only for content that is byte-stable across turns so the prompt cache holds, with a byte-stability test over a six-turn fixture on both wires and a `Measurement` row. Off by default until a bench shows cost per passed task does not rise.
-
-
 
 ### T51.3. Gemini wire in the proxy
 
 From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
 Done when `src/proxy/gemini.rs` implements the `Wire` adapter (usage, cached tokens, streaming passthrough byte-identical), routes by path, records usage rows like the other wires, and has body and stream tests against a mock upstream.
 
-### T52.1. Query language over the graph index
-
-From I-14. `graph` answers `symbol`, `callers`, `impact` and `outline`; composite questions (callers of X inside path Y of kind Z) take several calls.
-Done when a measured transcript shows such chains, and a small filter syntax on an existing tool (not a fourth tool, to keep description tokens flat) answers them from the `symbols` edges with tests; otherwise the card closes with the evidence.
+Execution plan (OpenCode / Muse Spark 1.3; shapes verified against ai.google.dev REST docs 2026-09-17: `POST /v1beta/models/{m}:{generateContent,streamGenerateContent}` (SSE via `alt=sse`), request `contents[{role:user|model, parts[{text|functionCall|functionResponse:{name,response}}]}]`, response `usageMetadata{promptTokenCount,cachedContentTokenCount,candidatesTokenCount,totalTokenCount}` in body / final stream chunk; function parts carry no stable call id — key archive decisions by `functionResponse.name`):
+1. `src/proxy/gemini.rs` (new): `matches` on `:generateContent`/`:streamGenerateContent` suffix; `provider()="gemini"`; `tool_results` over `contents` (user-role turns; `functionResponse` parts, content=`response` so the name stays visible); `usage_block` over `usageMetadata` (object or array-scanned-from-end for non-SSE streams); `provider_total=input+output` (prompt already contains cached); `model()` parsed from the path (body carries none).
+2. `src/proxy/wire.rs`: `GEMINI_PROVIDER`/`API_GEMINI` consts, `wire_ids` arm, `WIRES` entry; defaulted `Wire::model(path, body)` (body `model`, as today) overridden by Gemini.
+3. `src/proxy/mod.rs`: `pub mod gemini`, `ProxyState.gemini_upstream`, `upstream_for` arm; `record()` uses `wire.model()`.
+4. Config: `[proxy] gemini_upstream` (mod.rs + default.toml + docs/config.md + config-show.snapshot; env `RTOK_PROXY_GEMINI_UPSTREAM` free).
+5. `tests/proxy.rs` + 2 fixtures: mock upstream on `gemini_upstream` only (Anthropic upstream dead → proves routing); body test asserts counters incl. cached + model slug; stream test asserts byte-identical passthrough + merged usage.
+6. Verify: fmt, clippy, targeted nextest, build-min. ~7 files — deviation noted (wire + config + fixtures + tests).
 
 ### T52.2. More grammars and compressed index payloads
 
@@ -89,11 +113,6 @@ Done when a P7-style A/B shows the map lowers cost per passed task; the map is r
 
 From I-18. Short nudges ("do not re-read", "use expand") may cut waste, but they are re-read every turn and dilute instructions.
 Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 budget and byte-stable, and a P7-style A/B on the bench shows it does not raise cost per passed task; without that result it stays off.
-
-### T53.2. Shell completions and man page
-
-From I-20. `rtok` has a large clap surface but no completions or man page.
-Done when `rtok completions <shell>` prints bash/zsh/fish/powershell completions and `rtok man` (or a build step) produces the man page, a trycmd snapshot covers one shell, and the README shows installation. Needs creator approval for `clap_complete` and `clap_mangen` before code.
 
 ### T53.3. Hook start without Security.framework
 

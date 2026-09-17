@@ -9,7 +9,7 @@ use crate::config::validate;
 use crate::demon::Service;
 use crate::web::model;
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 /// `0.1.0 (1a2b3c4d5)` — the sha comes from `build.rs` (T10.4).
 pub(crate) const VERSION: &str =
@@ -162,6 +162,13 @@ enum Cmd {
         #[arg(long)]
         grep: Option<String>,
     },
+    /// Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+    Completions {
+        /// Shell to complete for
+        shell: clap_complete::Shell,
+    },
+    /// Print the man page (roff) to stdout
+    Man,
     /// List plugins: id, enabled, surfaces
     Plugins,
     /// The one config file
@@ -477,7 +484,18 @@ pub fn run() -> Result<()> {
                 }
                 ConfigCmd::Validate { path } => {
                     let path = path.unwrap_or(user);
-                    let errs = validate::issues(&path)?;
+                    let mut errs = validate::issues(&path)?;
+                    // The filter drop-ins are deployment state, not part of the
+                    // file: read them through the same file as the user layer
+                    // (`--config` wins when both are given). `layers::load`
+                    // creates nothing, so a read-only check stays read-only.
+                    let layer = config_file.as_deref().or(Some(&path));
+                    let cfg = crate::config::layers::load(&home, layer, None)
+                        .unwrap_or_default();
+                    errs.extend(validate::rules_issues(
+                        &cfg.plugins.cmd.rules,
+                        &cfg.plugins.cmd.rules_dir,
+                    ));
                     if errs.is_empty() {
                         println!("ok {}", path.display());
                     } else {
@@ -729,6 +747,13 @@ pub fn run() -> Result<()> {
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
+        }
+        Cmd::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "rtok", &mut io::stdout());
+        }
+        Cmd::Man => {
+            clap_mangen::Man::new(Cli::command()).render(&mut io::stdout())?;
         }
         #[cfg(feature = "memory")]
         Cmd::Memory { action } => {

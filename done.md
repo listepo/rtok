@@ -1,5 +1,59 @@
 # rtok — completed tasks
 
+## T50.2 — User filter drop-in directory and schema
+
+**T50.2 User filter drop-in directory and schema** · P3, 2/5 · `src/plugins/cmd/rules.rs`, `src/config/mod.rs`, `src/config/validate.rs`, `src/cli.rs`, `config/default.toml`, `docs/config.md`, `docs/cmd-rules.md` (new), `site/content/docs/reference/_content.gotmpl`, `tests/cmd_rules.rs` (new), `tests/trycmd/config-show.stdout`
+
+From I-06. Users can already override rules through one user rules file, but there is no `rules.d/*.toml` drop-in, no published schema and no example, so writing a filter means reading `src/plugins/cmd/rules.rs`.
+
+Do: `[plugins.cmd] rules_dir` (default `~/.rtok/rules.d`) joins the single `rules` file; `Settings::load` merges built-ins < user file < sorted `rules.d/*.toml`, later files winning per `match_cmd` through the existing `merge_rules`. Both layers now parse strictly (`parse_strict`: TOML syntax, table-only top level, known fields, right types) and a malformed file is skipped whole at runtime (fail open — previously a bad value fell back per-field). `rtok config validate` additionally reports malformed rules files (single file when present + every drop-in; missing paths are not errors) via feature-gated `validate::rules_issues`, reading the dirs through the validated file as the user layer with a loader that creates nothing. `docs/cmd-rules.md` documents every field with defaults, merge order, fail-open semantics and a worked pytest example; site reference row added. D12: `rules_dir` key + docs row, no new flag.
+Check: unit tests (drop-ins merge in name order after the file, broken drop-in skipped + missing dir is built-ins, strict rejects syntax/wrong-type/unknown-field, `issues_in` names the file); `tests/cmd_rules.rs` e2e (`config validate` fails naming the file then passes once fixed; `filter --stdin` proves the drop-in wins and a broken sibling does not stop it); `config_coverage`, `cli_trycmd` (config-show row), `filter` green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: PENDING.
+Deviation: none; no new dependency.
+
+## T52.1 — Query language over the graph index
+
+**T52.1 Query language over the graph index** · P3, 3/5 · `src/plugins/graph/mod.rs`, `src/plugins/graph/lsp.rs`, `tests/graph_contract.rs`, `src/plugins/graph/README.md`, `research.md`
+
+From I-14. `graph` answers `symbol`, `callers`, `impact` and `outline`; composite questions (callers of X inside path Y of kind Z) take several calls.
+
+Do: measured 172 transcripts in `~/.claude/projects/*/*.jsonl` (2026-09-17, 157 sessions with tool calls): 615 `ctx_search` calls, 610 carrying a path scope; 252 search→search refinement chains in 33 sessions; 528 search→read chains in 46 sessions; 41/98 shell `rg` calls with a path arg — verdict GO. Optional `path` (substring) on `symbol`/`callers`/`impact` plus optional `kind` (exact) on `symbol`, on the existing tools (no new tool, no new required schema fields); a `Filter` rows check threads through the tags path and the LSP backend with the same semantics (`impact` walks the full graph, filters reported lines). Old 3-arg `symbol`/`callers`/`impact` stay as thin wrappers, so benches, `watch.rs` and `graph_lsp_gate.rs` need no churn. Empty answers name the scope (`no definition of b of kind struct`); unfiltered answers stay byte-exact (T8.9). Surface after: 4 tools, 94 description tokens (was 62; bar ≤ 150, each description ≤ 60).
+Check: 4 new unit tests in `mod.rs` (path keeps one file, kind picks struct over function, callers/impact keep one subtree incl. empty-scope messages) + `tests/graph_contract.rs::filters_narrow_to_one_subtree` (MCP stdio e2e through the binary, hermetic tmp home); existing contract byte-exact assertions unchanged and green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo nextest run -p rtok --lib plugins::graph` 47 passed; `--test graph_contract` 4/4; `--test graph_lsp_gate --test graph_bench --test graph_truth` 10 passed; `mcp::descriptions_at_most_60_tokens` green; `cargo clippy -p rtok --lib --tests --all-features` clean; `rustfmt --check` on the three files clean. One mid-task contract run showed 2 failures from concurrent agents' mid-edit tree breakage (transient `src/plugins/cmd/rules.rs` compile error); green on rerun after the tree settled. Full `just check` stays red on concurrent WIP — reported, not fixed.
+
+Deviation: compat wrappers (3×3 lines) instead of a signature churn across benches/watch/gate tests; code in 3 files, docs (`README.md` surfaces row, `research.md` §2 table) alongside.
+
+## T51.3 — Gemini wire in the proxy
+
+**T51.3 Gemini wire in the proxy** · P3, 4/5 · `src/proxy/gemini.rs` (new), `src/proxy/wire.rs`, `src/proxy/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/proxy.rs`, `tests/fixtures/proxy/gemini_generate_{body,stream}.json` (new), `tests/trycmd/config-show.stdout`
+
+From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
+
+Do: `src/proxy/gemini.rs` implements `Wire` — matches `:generateContent`/`:streamGenerateContent` path suffixes; `contents` tool results keyed by `functionResponse.name` (the API carries no stable call id; rewritten payload is `response` so the name stays visible); `usageMetadata` counters (`promptTokenCount` in, `cachedContentTokenCount` cached-read, `candidatesTokenCount` out; body object or end-scanned array, SSE events); `provider_total = input + output` (prompt already contains cached); model slug parsed from the path (the body carries none) via a new defaulted `Wire::model()`. Routes to new `[proxy] gemini_upstream` (default `https://generativelanguage.googleapis.com`; env `RTOK_PROXY_GEMINI_UPSTREAM`; no CLI flag). Shared `UsageFields` gains the `container` key (`usage` vs `usageMetadata`) instead of a fourth usage-walk copy.
+Check: `tests/proxy.rs::proxy_gemini_body_records_usage_with_cached_tokens_and_path_model` + `proxy_gemini_stream_is_byte_identical_and_records_usage` (mock on `gemini_upstream` only, Anthropic upstream dead; counters, cached tokens, model slug, `api = "gemini"`, byte-identical SSE, `calls`/`call_io`/`tokens` rows) plus `gemini.rs` unit tests (matches, path model, name-keyed results, body/array/SSE usage).
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo test --test proxy` 26 passed incl. 2 new; `cargo test --lib gemini` 5 passed, `wire` 4 passed; `--test wrap/config_coverage` + `cli_trycmd` help/version/bench/config-show green (`completions-bash` fails on T53.2's uncommitted work); `fmt --check`, `build-min`, `jscpd` green. A temporary public-API mirror (since deleted) caught and fixed one real bug while lib-test was uncompilable on others' edits (path model accepted action-less paths).
+
+Deviation: 10 files (wire + shared helper + config/docs + 2 fixtures + tests + snapshot); no new dependency.
+
+## T53.2 — Shell completions and man page
+
+**T53.2 Shell completions and man page** · P3, 1/5 · `Cargo.toml`, `Cargo.lock`, `src/cli.rs`, `tests/completions.rs`, `tests/surface_parity.rs`, `tests/trycmd/completions-bash.toml`, `tests/trycmd/completions-bash.stdout`, `tests/trycmd/help.stdout`, `README.md`, `toolchain.md`
+
+From I-20. `rtok` has a large clap surface but no completions or man page.
+
+Do: `rtok completions <shell>` prints bash/zsh/fish/powershell completions via `clap_complete::generate`, `rtok man` prints the roff page via `clap_mangen::Man` — both generated from `Cli::command()`, so they stay byte-exact with the CLI surface. The shell is a positional `ValueEnum` (no long flag), so no D12 config key and no `config_coverage` ALLOW change; both commands are classified in `surface_parity.rs` EXEMPT as helpers (D27 gate). Workspace `rust.md` already listed both crates — no change there.
+Check: `tests/trycmd/completions-bash.toml` + blessed `.stdout` (one shell), `tests/completions.rs` (assert_cmd: every shell renders non-empty output naming the binary, unknown shell refused, `man` carries `.TH`/rtok/completions markers — no `man` snapshot, the page embeds the git-sha version), regenerated `help.stdout`, README install snippet.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolation worktree at 7d1e2a1 + own files only — `cargo fmt --check` green; `cargo clippy --workspace --all-targets --all-features --exclude rtok-wasm-demo-guest -- -D warnings` green; `cargo nextest run --test completions --test cli_trycmd --test surface_parity --test config_coverage` 9 passed. Full `just check` on main stays red on concurrent agents' in-progress work (graph test arity errors, windsurf unused import, transient mid-edit lib breakage) — reported, left for the owners.
+
+Deviation: ~100 hand-written LOC but 10 files (the D27 gate, both snapshots and the docs each demand their file); `completions-bash.stdout` is 2796 generated lines, not counted. Includes the 4-line rustfmt normalization of the `wrap` EXEMPT entry — HEAD was not fmt-clean there, and without it no commit can pass `fmt --check`.
+
 ## T48.5 — Windsurf host
 
 **T48.5 Windsurf host** · P2, 3/5 · `src/agents/windsurf/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

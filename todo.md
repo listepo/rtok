@@ -1,16 +1,15 @@
 - T48.6. Zed host
+- T48.7. aider host (in progress)
 - T48.8. VS Code Copilot Chat host
+- T49.1. `rtok stats --price` (in progress)
 - T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
-- T50.2. User filter drop-in directory and schema
+- T50.2. User filter drop-in directory and schema (in progress)
 - T50.3. Extra `read` modes
 - T50.4. Optional deny of native Grep and Glob
 - T51.1. Compress JSON and code inside the live zone
-- T51.3. Gemini wire in the proxy
-- T52.1. Query language over the graph index
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
 - T53.1. Coaching nudges under an A/B
-- T53.2. Shell completions and man page
 - T53.3. Hook start without Security.framework
 - T53.4. `just otel-check` against real backends

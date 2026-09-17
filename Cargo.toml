@@ -79,6 +79,8 @@ anyhow = "1.0.104"
 rtok-plugin-sdk = { version = "0.0.1", path = "crates/rtok-plugin-sdk" } # the plugin contract (D25)
 rtok-agent-sdk = { version = "0.0.1", path = "crates/rtok-agent-sdk" }   # the agent-host contract (D28)
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
+clap_complete = "4.6" # `rtok completions` (T53.2)
+clap_mangen = "0.3" # `rtok man` (T53.2)
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
 libsqlite3-sys = { version = "0.30", features = ["bundled"] } # FTS5 in the SQLite bundle

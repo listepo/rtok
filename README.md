@@ -50,6 +50,14 @@ mise exec -- cargo install --path .
 rtok --version
 ```
 
+Shell completions and the man page are generated from the same clap tree as
+`--help`, so they never drift from the CLI surface:
+
+```bash
+rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
+rtok man | man -l -                                  # or save as manpath/rtok.1
+```
+
 ## Start with Claude Code
 
 Install rtok's eight hooks and MCP entry. The installer backs up the settings file before
