@@ -26,7 +26,7 @@
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
 - T59.8. Token-sink ranking in `report`
 - T60.1. `--json` on every reading command
-- T60.2. `--help` goldens for every subcommand
+- T60.2. trycmd goldens for every subcommand
 - T60.3. Per-session drill-down on `tui` and `web`
 - T60.4. Archive `expand` on `tui` and `web`
 - T60.5. Plugin toggle on the web Plugins page

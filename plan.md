@@ -38,7 +38,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.7 | todo | P3 | 2 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
-| T60.2 | todo | P3 | 1 | 0% | |
+| T60.2 | todo | P2 | 3 | 0% | |
 | T60.3 | todo | P3 | 3 | 0% | |
 | T60.4 | todo | P3 | 4 | 0% | |
 | T60.5 | todo | P2 | 3 | 0% | |
@@ -241,10 +241,15 @@ Done when `report` gains one rule that prints the top-10 sinks by bytes over the
 Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
 Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
 
-### T60.2. `--help` goldens for every subcommand
+### T60.2. trycmd goldens for every subcommand
 
-Survey 2026-09-17: trycmd covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands; a doc-comment edit on any other subcommand (T59.4 changed the `mcp` line) is caught only by the top-level `help` golden.
-Done when one trycmd case runs `rtok <cmd> --help` for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`), the goldens are blessed once, and `README.md`'s command table is checked against the same list by the existing README test so a command cannot be added without a row.
+Survey 2026-09-17: trycmd (`tests/cli_trycmd.rs`, `tests/trycmd/*.toml`) covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands. The other 16 have behaviour tests but no byte-level snapshot of what the binary prints, so a wording, column or ordering change on `doctor`, `info`, `plugins`, `expand`, `report` and the rest lands unnoticed (T59.4 changed the `mcp` help line and only the top-level `help` golden caught it).
+Done when every subcommand has at least one trycmd case of its real output, hermetic the way `stats-price.toml` is (`inherit = false`, `RTOK_HOME` under `target/tmp/`, `--config tests/trycmd/input/<case>.toml`, fixture store or empty dirs), plus a `--help` case for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`). Command list and how each becomes deterministic:
+- `stats` (table and `--json` on the fixture store), `info` (`--json`; paths via `[..]`), `doctor`, `plugins`, `config init|path|get|validate|set`, `expand <fixture id>` with `--lines` and `--grep`, `filter --cmd`, `run -- echo`, `completions` for zsh/fish/powershell, `man`, `agents list`, `agents sessions` (empty store), `demon status` (nothing running), `otel status`, `logs print` (empty log), `report --format md` (fixture store, date via `[..]`), `bench --dry-run` (exists), `hook <event>` with a fixture stdin JSON, `mcp` with a `tools/list` frame on stdin, `proxy --dry-run`.
+- `web` and `tui` get `--help` only (a server and a TTY are not snapshot material; `tests/web.rs` and `tests/tui_tty.rs` stay the behaviour tests).
+- Timestamps, ids, versions and absolute paths are matched with trycmd `[..]` / `[EXE]`, never frozen; a golden must not depend on the machine.
+- One `tests/trycmd/README.md` line per case saying what it pins; `README.md`'s command table is checked against the trycmd case list by the existing README test so a new command cannot land without a golden.
+Blessing: `TRYCMD=overwrite cargo nextest run -p rtok --test cli_trycmd`, reviewed by eye once, then committed. Split into ≤ 3-file commits: help cases; reading commands on the fixture store; stdin-driven commands (`hook`, `mcp`, `filter`, `run`).
 
 ### T60.3. Per-session drill-down on `tui` and `web`
 
