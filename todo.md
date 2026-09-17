@@ -20,8 +20,6 @@
 - T57.1. Flag-aware `guard` read-only classes
 - T58.1. `read` delta since last read
 - T58.2. Compaction checkpoint on every host, with archive ids
-- T58.3. Measure the `old_string` share of assistant output
-- T58.4. MCP `patch` tool: anchored edits without `old_string`
 - T58.5. `cmd` formatters for structured families
 - T59.1. Per-stem interactive table for `skip_wrap`
 - T59.2. Canonicalize `cwd` once per `search` / `tree` call

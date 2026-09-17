@@ -1,5 +1,16 @@
 # rtok — completed tasks
 
+## T58.3 — Measure the `old_string` share of assistant output
+
+From the competitive gap review (`research.md` §9.3, §9.4 item 1; idea I-43). §2 shows assistant output is 8.6 M tokens, 96 % of it tool input, and on Fable/Mythos 5.1 output is 39 % of the bill. Every `Edit` re-emits `old_string` verbatim and nobody has measured what that costs. The number decides T58.4.
+Done when:
+1. `rtok stats` (the transcripts path `measure::stats::collect` already parses) adds rows: Edit/MultiEdit calls, sum of `old_string` bytes, sum of `new_string` bytes, share of all tool-input bytes and of total assistant output; per host where the edit tool name differs (verify Cursor/Codex names before adding them).
+2. Unit test on a fixture transcript with two Edit calls; the measured numbers land in `research.md` §2 with date and command.
+3. The card closes with a decision line: T58.4 proceeds only if `old_string` is ≥ 10 % of assistant output on the measured workload; otherwise T58.4 leaves the plan for `ideas.md` with the number.
+Execution plan (Claude Code / Fable 5.1): `src/measure/stats.rs` only — `Report` gains an `edits: EditRow { calls, old_bytes, new_bytes, tool_input_bytes, output_tokens }`; `fold_session` sums `old_string`/`new_string` over `Edit`, `MultiEdit.edits[]`, `apply_patch`/`edit_file`-style names verified per host, and `serde_json::to_string(&u.input).len()` over every tool_use; `to_table` prints one `edit` line with the two shares (share of tool-input bytes; est. tokens vs `usage_output`); unit test on a two-Edit fixture next to `ctt_and_tool_totals_on_mini_session`; run on the real transcripts dir, paste the row into `research.md` §2 with the date and command.
+
+**Result (2026-09-17, `rtok stats --since 90d`, 925 sessions):** 5,990 Edit/MultiEdit calls, `old_string` 1.61 MB, `new_string` 3.60 MB; `old_string` = 3.8 % of tool-input bytes, ≈ 1.3 % of output tokens. Under the 10 % gate → T58.4 not built, I-43 keeps the number. Landed: `EditRow` in `src/measure/stats.rs` (`edits` in `--json`, one `edit` line in the table), unit test on an Edit + MultiEdit fixture; row in `research.md` §2.
+
 
 ## T55.16 — Guard deny reads archive metadata, not the body
 

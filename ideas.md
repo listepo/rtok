@@ -46,7 +46,7 @@ that v0.1 does not schedule.
 |----|-------------|------|-------------|---------------------------|
 | I-40 | code read 2026-09-17 (second pass) | `read` | **promoted T59.2** — `display_rel` canonicalizes `cwd` once per hit/row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory; `search`/`tree` should canonicalize once per call and pass the base down. | MCP path, off the ≤ 10 ms hook budget; no measured latency complaint yet. Fold into the next touch of `search.rs`/`tree.rs` rather than its own task. |
 | I-41 | lean-ctx `diff` read mode; token-optimizer-mcp delta reads (`research.md` §9.3) | `read` | **promoted T58.1** — a re-read of a file that changed since the last read returns a unified diff against the archived previous read (the sha256 dedup already stores that id) instead of the whole file; full fallback when the diff is not smaller. | Read is 15 % of tool-result tokens (§2) but the changed-file re-read share is unmeasured; T58.1 step 1 counts it before building. |
-| I-43 | lean-ctx `ctx_patch` (line + hash anchors); serena `replace_symbol_body` (`research.md` §9.3) | `read` | **promoted T58.3 / T58.4** — an MCP `patch` tool anchored on `(path, line range, file sha)` so the model sends only the new text; every `Edit` today re-emits `old_string` verbatim, which is pure output-token waste on the 96 %-tool-input output slice. | Share of `old_string` in assistant output is unmeasured; T58.3 measures, T58.4 is gated on ≥ 10 %. |
+| I-43 | lean-ctx `ctx_patch` (line + hash anchors); serena `replace_symbol_body` (`research.md` §9.3) | `read` | **measured 2026-09-17 (T58.3), not built** — an MCP `patch` tool anchored on `(path, line range, file sha)` so the model sends only the new text; every `Edit` today re-emits `old_string` verbatim, which is pure output-token waste on the 96 %-tool-input output slice. | Measured 2026-09-17 (T58.3, `rtok stats --since 90d`, 925 sessions): `old_string` 3.8 % of tool-input bytes, ≈ 1.3 % of output tokens — under the 10 % gate. Re-open only with a workload where `Edit` is not already replaced by an anchored tool. |
 
 ### `guard`
 
@@ -137,7 +137,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-38 | T57.1 | Flag-aware `guard` read-only classes: writer markers (`>`, `-delete`, `sed -i`, `tail -f`, pipe into a writer) take the mutating path; new read-only stems only with transcript counts. | 2026-09-17 |
 | I-41 | T58.1 | `read` delta since last read: unified diff against the archived previous read; full fallback. | 2026-09-17 |
 | I-42 | T58.2 | Compaction hooks: re-inject the SessionStart budget after `PostCompact`, one memory note with live archive ids at `PreCompact`. | 2026-09-17 |
-| I-43 | T58.3 / T58.4 | Measure the `old_string` share of assistant output, then an anchored MCP `patch` tool gated on it. | 2026-09-17 |
+| I-43 | T58.3 (T58.4 dropped) | `old_string` measured at 3.8 % of tool-input bytes / ≈ 1.3 % of output tokens over 925 sessions; the `patch` tool stays an idea with that number. | 2026-09-17 |
 | I-39 | T59.1 | Per-stem interactive table for `skip_wrap`: `-i` is interactive only for REPL stems, `ffmpeg -i` / `curl -i` / `ssh -i` get wrapped. | 2026-09-17 |
 | I-40 | T59.2 | Canonicalize `cwd` once per `search` / `tree` call instead of per row. | 2026-09-17 |
 | I-30 | T59.3 | Batch the cold `graph` index in one transaction per 200 files; re-run the T8.4 cold bench. | 2026-09-17 |

@@ -33,8 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
-| T58.3 | in progress | P1 | 2 | 0% | Claude Code / Fable 5.1 |
-| T58.4 | in progress | P2 | 4 | 0% | Claude Code / Fable 5.1 |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
 | T59.2 | todo | P3 | 1 | 0% | |
@@ -210,26 +208,6 @@ Done when:
 2. One formatter per family in `formatters.rs`, returning `None` on unrecognized output so the rule path stays the fallback; failures and the `expand <id>` trailer kept; golden fixtures before/after.
 3. `Measurement` rows `kind = formatter` per family beat the rule's row on the same fixture; the cmd docs page table cites them.
 4. ≤ 200 LOC per commit: split by family group (containers, TypeScript tooling, JVM) if needed.
-
-### T58.3. Measure the `old_string` share of assistant output
-
-From the competitive gap review (`research.md` §9.3, §9.4 item 1; idea I-43). §2 shows assistant output is 8.6 M tokens, 96 % of it tool input, and on Fable/Mythos 5.1 output is 39 % of the bill. Every `Edit` re-emits `old_string` verbatim and nobody has measured what that costs. The number decides T58.4.
-Done when:
-1. `rtok stats` (the transcripts path `measure::stats::collect` already parses) adds rows: Edit/MultiEdit calls, sum of `old_string` bytes, sum of `new_string` bytes, share of all tool-input bytes and of total assistant output; per host where the edit tool name differs (verify Cursor/Codex names before adding them).
-2. Unit test on a fixture transcript with two Edit calls; the measured numbers land in `research.md` §2 with date and command.
-3. The card closes with a decision line: T58.4 proceeds only if `old_string` is ≥ 10 % of assistant output on the measured workload; otherwise T58.4 leaves the plan for `ideas.md` with the number.
-Execution plan (Claude Code / Fable 5.1): `src/measure/stats.rs` only — `Report` gains an `edits: EditRow { calls, old_bytes, new_bytes, tool_input_bytes, output_tokens }`; `fold_session` sums `old_string`/`new_string` over `Edit`, `MultiEdit.edits[]`, `apply_patch`/`edit_file`-style names verified per host, and `serde_json::to_string(&u.input).len()` over every tool_use; `to_table` prints one `edit` line with the two shares (share of tool-input bytes; est. tokens vs `usage_output`); unit test on a two-Edit fixture next to `ctt_and_tool_totals_on_mini_session`; run on the real transcripts dir, paste the row into `research.md` §2 with the date and command.
-
-### T58.4. MCP `patch` tool: anchored edits without `old_string`
-
-Gated on T58.3 (both claimed together: T58.3 is the blocker). Precedent: lean-ctx `ctx_patch` (line + hash anchors), serena `replace_symbol_body` (`research.md` §9.3). The model sends `(path, start, end, new_text, base_sha)`; `base_sha` is the file sha256 the sha256 dedup already computes, printed in `read` results so the anchor costs no extra tokens. No per-line hashes: a stale sha is a conflict.
-Done when:
-1. MCP tool `patch` with one or more ops per call applied bottom-up; stale `base_sha` → `CONFLICT` with a re-read hint and nothing written; out-of-range → error; CRLF and trailing-newline state preserved. Description ≤ 60 tokens (`doctor` prices it).
-2. Lossless: the replaced span is archived and `expand <id>` returns it (manual undo).
-3. `Measurement` rows `plugin = read`, `kind = patch`, before = replaced-span bytes + new text (what `Edit` would have emitted), after = request bytes.
-4. Vfs unit tests: single replace; two ops bottom-up; stale sha; out-of-range; CRLF. PreToolUse(Edit) advice names `patch` only when the file was read through rtok in this session; the tool is documented next to `read` with the T58.3 number.
-Execution plan (Claude Code / Fable 5.1): (1) `src/plugins/read/patch.rs` — `apply(fs, path, ops, base_sha) -> Result<Applied>` on `ReadFs` (T56.5) so the Vfs tests need no disk; ops sorted descending, sha check before any write, CRLF/trailing-newline preserved; (2) `read` result prints `sha <hex>` once (already computed by the dedup) — a byte change on the read output, so the golden fixtures are re-blessed in the same commit; (3) MCP tool `patch` in `mcp.rs` (description ≤ 60 tokens, `doctor` check) calling `patch::apply`, archiving the pre-image via `Archive`, recording `Measurement { plugin = read, kind = patch }`; (4) PreToolUse(Edit) advice line in `read/hook.rs` when the path is in `read_cache`; (5) the bench from step 5 as `tests/patch_bench.rs` (ignored by default, prints the three totals). Commits: patch.rs + tests; sha line + golden; MCP tool + advice; bench + docs.
-5. Better than the precedents, measured: lean-ctx pays for its anchors on every `anchored` read (a hash per line) and serena needs an LSP; rtok's anchor is the one sha the read already prints. Bench: the same ten edits from a fixture transcript replayed as `Edit` (`old_string` + `new_string` bytes), as lean-ctx `ctx_read(anchored)` + `ctx_patch` (read + request bytes, tool installed locally), and as rtok `read` + `patch`; the three totals go into `research.md` §2 and the docs page. The tool ships only if rtok's total is the smallest.
 
 ### T59.1. Per-stem interactive table for `skip_wrap`
 

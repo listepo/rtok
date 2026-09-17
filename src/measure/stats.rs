@@ -9,6 +9,7 @@ use crate::render::{Col, table};
 use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -54,6 +55,19 @@ pub struct Report {
     /// with and without the price table (T49.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<CostReport>,
+    #[serde(default)]
+    pub edits: EditRow,
+}
+
+/// What the model re-types to edit (plan T58.3). `old_string` is the span `Edit` and every
+/// `MultiEdit.edits[]` entry quote back verbatim; `tool_input_bytes` is every `tool_use`
+/// input serialized — the "tool input" denominator of `research.md` §2.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EditRow {
+    pub calls: u64,
+    pub old_bytes: u64,
+    pub new_bytes: u64,
+    pub tool_input_bytes: u64,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -173,6 +187,17 @@ impl Report {
         }
         if let Some(cost) = &self.cost {
             s.push_str(&cost.to_table());
+        }
+        if self.edits.calls > 0 {
+            let e = &self.edits;
+            s.push_str(&format!(
+                "edit calls {}  old_string {} B  new_string {} B  old/tool_input {:.1}%  old/output_tokens (est) {:.1}%\n",
+                e.calls,
+                e.old_bytes,
+                e.new_bytes,
+                pct(e.old_bytes, e.tool_input_bytes),
+                pct(est_tokens(e.old_bytes), self.usage_output)
+            ));
         }
         s.push_str(&format_section("tool", &self.tools));
         s.push_str(&format_section("bash", &self.bash_families));
@@ -448,6 +473,7 @@ fn fold_session(
         {
             id_family.insert(u.id.as_str(), bash_family(cmd));
         }
+        fold_edits(&mut report.edits, u);
     }
     for r in &parsed.tool_results {
         let name = id_name
@@ -509,6 +535,40 @@ fn replay_ctt(content: &str, tokens: u64, remain: u64, rp: Replay) -> u64 {
         .sum();
     let pointer = est_tokens(kept as u64 + 64); // + the `[archived …]` line itself
     tokens.saturating_mul(rp.keep_turns) + pointer.saturating_mul(remain - rp.keep_turns)
+}
+
+/// T58.3: every tool input counts toward the denominator; `Edit` and each `MultiEdit.edits[]`
+/// entry add the `old_string` the model had to re-type and the `new_string` it meant to write.
+fn fold_edits(row: &mut EditRow, u: &jsonl::ToolUse) {
+    row.tool_input_bytes += u.input.to_string().len() as u64;
+    let edits: Vec<&Value> = match u.name.as_str() {
+        "Edit" => vec![&u.input],
+        "MultiEdit" => u
+            .input
+            .get("edits")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().collect())
+            .unwrap_or_default(),
+        _ => return,
+    };
+    for e in edits {
+        let len = |k: &str| {
+            e.get(k)
+                .and_then(Value::as_str)
+                .map_or(0, |s| s.len() as u64)
+        };
+        row.calls += 1;
+        row.old_bytes += len("old_string");
+        row.new_bytes += len("new_string");
+    }
+}
+
+fn pct(part: u64, whole: u64) -> f64 {
+    if whole == 0 {
+        0.0
+    } else {
+        100.0 * part as f64 / whole as f64
+    }
 }
 
 fn add(map: &mut BTreeMap<String, SizeRow>, name: &str, bytes: u64, tokens: u64, ctt: u64) {
@@ -775,6 +835,50 @@ mod tests {
         assert_eq!(bash.ctt, 8);
         assert_eq!(r.bash_families.get("sed").unwrap().count, 1);
         assert_eq!(r.usage_cache_read, 80);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn edit_row_sums_old_and_new_strings_over_edit_and_multiedit() {
+        let dir = tempfile_dir();
+        let path = dir.join("e.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        // One Edit (old 10 B, new 3 B), one MultiEdit with two edits (old 4+6 B, new 1+2 B),
+        // one Bash that only feeds the denominator.
+        let edit = json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/a.rs","old_string":"0123456789","new_string":"abc"}}],"usage":{"input_tokens":1,"output_tokens":10}}});
+        let multi = json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"MultiEdit","input":{"file_path":"/b.rs","edits":[{"old_string":"abcd","new_string":"x"},{"old_string":"abcdef","new_string":"xy"}]}}],"usage":{"input_tokens":1,"output_tokens":10}}});
+        let bash = json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":1,"output_tokens":10}}});
+        for line in [&edit, &multi, &bash] {
+            writeln!(f, "{line}").unwrap();
+        }
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let e = &r.edits;
+        assert_eq!((e.calls, e.old_bytes, e.new_bytes), (3, 20, 6));
+        let denom: u64 = [&edit, &multi, &bash]
+            .iter()
+            .map(|v| v["message"]["content"][0]["input"].to_string().len() as u64)
+            .sum();
+        assert_eq!(e.tool_input_bytes, denom);
+        let table = r.to_table();
+        assert!(
+            table.contains("edit calls 3  old_string 20 B  new_string 6 B"),
+            "{table}"
+        );
+        assert!(
+            table.contains(&format!(
+                "old/tool_input {:.1}%",
+                100.0 * 20.0 / denom as f64
+            )),
+            "{table}"
+        );
+        // 20 B → 5 est. tokens of 30 output tokens.
+        assert!(table.contains("old/output_tokens (est) 16.7%"), "{table}");
         fs::remove_dir_all(&dir).ok();
     }
 
