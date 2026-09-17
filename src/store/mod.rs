@@ -589,6 +589,34 @@ impl Store {
         Ok(None)
     }
 
+    /// Size-only variant of [`Self::get_archive`] for hot paths (T55.16: the guard deny):
+    /// the `archive` row's `bytes` when the payload file still exists (`dir/<id>`, else
+    /// the stored path), `None` otherwise. Never reads the body.
+    pub fn archive_size(&self, id: &str, dir: Option<&Path>) -> Result<Option<u64>> {
+        let mut conn = self.lock()?;
+        let row: Option<(i64, String)> = archive::table
+            .find(id)
+            .select((archive::bytes, archive::path))
+            .first(&mut *conn)
+            .optional()?;
+        drop(conn);
+        let Some((bytes, stored)) = row else {
+            return Ok(None);
+        };
+        let mut paths = Vec::new();
+        if let Some(d) = dir {
+            paths.push(d.join(id));
+        }
+        let stored_path = PathBuf::from(stored);
+        if !paths.contains(&stored_path) {
+            paths.push(stored_path);
+        }
+        Ok(paths
+            .iter()
+            .find(|p| std::fs::metadata(p).is_ok())
+            .map(|_| bytes.max(0) as u64))
+    }
+
     /// Insert a note (T2.5 checkpoints, later memory).
     pub fn insert_note(
         &self,

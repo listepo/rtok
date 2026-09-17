@@ -154,6 +154,10 @@ impl Archive for MemoryHost {
         Ok(self.blobs.lock().unwrap().get(id).cloned())
     }
 
+    fn archive_size(&self, id: &str) -> Result<Option<u64>> {
+        Ok(self.blobs.lock().unwrap().get(id).map(|b| b.len() as u64))
+    }
+
     fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>> {
         Ok(self.decisions.lock().unwrap().get(tool_use_id).cloned())
     }

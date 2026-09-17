@@ -176,6 +176,13 @@ pub trait Archive {
     /// The bytes behind a handle, or `None` if the host no longer has them.
     fn get_archive(&self, id: &str) -> Result<Option<Vec<u8>>>;
 
+    /// The payload's size in bytes, or `None` if the host no longer has it. Metadata only:
+    /// hot paths (the guard deny) must not read a possibly-megabyte body. The default fails
+    /// open (`None`), so hosts that only keep bodies in memory need no change.
+    fn archive_size(&self, _id: &str) -> Result<Option<u64>> {
+        Ok(None)
+    }
+
     /// The decision already made for `tool_use_id`, if this result was shortened before.
     fn archive_decision(&self, tool_use_id: &str) -> Result<Option<ArchiveDecision>>;
 

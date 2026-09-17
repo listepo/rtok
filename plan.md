@@ -24,7 +24,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.13 | done | P3 | 1 | 100% | |
 | T55.14 | done | P3 | 1 | 100% | |
 | T55.15 | todo | P3 | 2 | 0% | |
-| T55.16 | in progress | P3 | 1 | 50% | ZCode / GLM-5.3 |
+| T55.16 | done | P3 | 1 | 100% | |
 | T56.1 | done | P2 | 2 | 100% | |
 | T56.2 | in progress | P2 | 3 | 95% | |
 | T56.3 | in progress | P2 | 3 | 85% | |
@@ -133,11 +133,6 @@ Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-
 
 From review 2026-09-17, second pass (reproduced, flag off by default). `Anthropic::live_blobs` (`src/proxy/anthropic.rs:96-105`) yields `source.data` of `image`/`document` blocks and `OpenAiChat::live_blobs` yields `image_url.url` (`src/proxy/openai_chat.rs:65-70`); `archive::rewrite_blob` then overwrites that field with pointer text. Repro: after `rewrite_blobs`, `source.data` reads `[archived 7da78e9924c6: 1 lines · 3200 tokens · expand(7da…)]` — not base64, so the moment `[plugins.archive] live_blobs = true` is switched on, every request carrying an old image is rejected by the API (400), which is not fail-open. Text blocks carrying `data:` URIs are the case T51.1 actually wants.
 Done when binary-bearing fields are never rewritten in place: `live_blobs` yields text blocks (and `data:` URIs inside text) only, or the rewrite replaces the whole block with a `text` pointer block; tests `image_source_data_is_never_rewritten` and `openai_image_url_is_never_rewritten` assert the fields stay byte-identical through `rewrite_blobs`, and the existing `live_blobs_*` suite still passes.
-
-### T55.16. Guard deny loads the whole archive on the PreToolUse hot path
-
-From review 2026-09-17, second pass (code read). `guard::pre_tool` (`src/plugins/guard/mod.rs:45-50`) calls `cx.get_archive(&id)` and estimates tokens over the full body just to fill the denial Measurement — on the ≤ 10 ms hook path, for an archive that can be megabytes (`cmd` archives raw stdout). The `archive` row already stores `bytes`; retrievability needs an existence check, not the body.
-Done when the deny path touches only metadata (row `bytes` + file existence; the estimate derived from size, or the Measurement reduced to what a size-based estimate supports), with the existing guard tests green and a new `deny_does_not_read_the_archive_body` (poison/absent body file still denies or fails open without reading megabytes — assert via a huge archive and the latency harness or by construction).
 
 ### T56.1. Test VFS helper and convention
 
@@ -350,7 +345,7 @@ Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/
 - ~~**T55.13 (P3)**~~ — done: Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
 - ~~**T55.14 (P3)**~~ — done: the semantic-cache key ignored tool_result text; two requests differing only in tool results hashed identically and were both eligible under defaults. Reproduced.
 - **T55.15 (P3)** — `live_blobs` overwrites image/document `source.data` / `image_url.url` with pointer text → invalid request when the flag is on. Reproduced.
-- **T55.16 (P3)** — guard deny reads the full archived body (and estimates over it) on the ≤ 10 ms PreToolUse path. Code read.
+- ~~**T55.16 (P3)**~~ — done: the guard deny read the full archived body (and estimated over it) on the ≤ 10 ms PreToolUse path. Code read.
 
 ### Out of scope this pass
 

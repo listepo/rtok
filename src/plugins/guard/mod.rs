@@ -1,8 +1,8 @@
 //! Deny duplicate Read/Bash when a prior archive id exists (plan T2.6).
 
 use rtok_plugin_sdk::{
-    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision,
-    PreToolUse, Surface,
+    Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision, PreToolUse,
+    Surface,
 };
 use serde_json::Value;
 
@@ -41,13 +41,15 @@ impl Plugin for Guard {
         }
         let reason = format!("duplicate; rtok expand {id}");
         // AGENTS: denial Measurement carries the avoided result size (archive bytes).
-        // Never deny without a retrievable original (lossless + fail open).
-        let body = cx.get_archive(&id).ok().flatten()?;
-        if body.is_empty() {
+        // Never deny without a retrievable original (lossless + fail open). Metadata only:
+        // reading a possibly-megabyte body would break the ≤ 10 ms hook budget (T55.16).
+        let avoided = cx.archive_size(&id).ok().flatten()?;
+        if avoided == 0 {
             return None;
         }
-        let avoided = body.len() as u64;
-        let est = cx.estimate(&String::from_utf8_lossy(&body), Class::Code);
+        // The same bytes/4 heuristic `record_context_path` and the semantic-cache
+        // measurement use — the body is not loaded to estimate it.
+        let est = (avoided / 4).max(1) as u32;
         let _ = cx.record(&Measurement {
             plugin: "guard",
             kind: "guard",
@@ -448,6 +450,47 @@ mod tests {
                 other => panic!("{key}: {other:?}"),
             }
         }
+    }
+
+    /// T55.16: the deny reads metadata only — an unreadable body file still denies
+    /// (the old body read would have failed open), so megabytes never cross the
+    /// ≤ 10 ms hook path.
+    #[cfg(unix)]
+    #[test]
+    fn deny_does_not_read_the_archive_body() {
+        use std::os::unix::fs::PermissionsExt;
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/src/hot.rs"});
+        let resp = json!({"content": "fn main() {}"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Read",
+                    tool_input: &path,
+                    tool_response: &resp,
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
+        );
+        let key = cache_key("Read", &path).unwrap();
+        let (id, _) = cx.store.get_read_cache(&cx.session, &key).unwrap().unwrap();
+        let id = id.unwrap();
+        let file = cx.config.core.archive_dir.join(&id);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        assert!(
+            matches!(
+                g.pre_tool(&read, &Ctx::new(&cx)),
+                Some(PreToolDecision::Deny { .. })
+            ),
+            "an unreadable body must still deny — only its metadata was consulted"
+        );
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
     }
 
     #[test]

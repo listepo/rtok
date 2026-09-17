@@ -268,6 +268,11 @@ impl Archive for Runtime {
     fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
         self.store.mark_expanded(archive_id)
     }
+
+    fn archive_size(&self, id: &str) -> Result<Option<u64>> {
+        self.store
+            .archive_size(id, Some(&self.config.core.archive_dir))
+    }
 }
 
 impl Notes for Runtime {
