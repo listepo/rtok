@@ -17,9 +17,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
-| T56.1 | done | P2 | 2 | 100% | |
-| T56.2 | in progress | P2 | 3 | 60% | |
-| T56.3 | in progress | P2 | 3 | 50% | |
+| T56.1 | todo | P2 | 2 | 0% | |
+| T56.2 | todo | P2 | 3 | 0% | |
+| T56.3 | todo | P2 | 3 | 0% | |
 | T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
@@ -97,18 +97,18 @@ Done when `strip_prefix_cd` accepts single- and double-quoted path segments (mal
 
 ### T56.1. Test VFS helper and convention
 
-**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` ships `Vfs` (path → bytes) with `write` / `read` / `read_str` / `len` / `exists` / `paths` / `paths_under`.
-**Done** — D29 recorded, AGENTS.md notes the rule, Vfs covers the API above, and read (`search_max_bytes_gate_uses_vfs_sizes`), cmd (`Settings::from_vfs` rules tests), and graph (`file_uri_encodes_spaces`) unit tests use it with no host temp dir.
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` now ships a thin `Vfs` (path → bytes).
+Done when this decision is recorded (D29), AGENTS.md notes the rule, `Vfs` covers write/read/len/paths, and at least one read/cmd/graph unit test uses it with no host temp dir.
 
 ### T56.2. Migrate read/search unit tests to VFS
 
 Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
-**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. Remaining disk follow-ups (T56.4): `search_paths_stay_relative_*`, `search_and_tree_skip_git_dir`, `search_skips_files_over_search_max_bytes` (WalkBuilder e2e), `tree_paths_*`, full `read()` Runtime tests (`three_lines_are_numbered`, caps, symlink).
+Done when the pure path and size-gate tests need no host temp dir, and remaining disk tests are listed as follow-ups.
 
 ### T56.3. Migrate cmd/setup path tests to VFS
 
 Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-**In progress** — `Settings::from_vfs` + migrated `user_rules_*`, `drop_ins_merge_*`, `a_broken_drop_in_*`. Still on disk: `issues_in_names_every_malformed_file` (path strings in errors), agent install / setup hook writers (template next).
+Done when new file-touching unit tests in setup/agents use `Vfs` (or document why a disk fixture remains), and one legacy test is migrated as a template.
 
 ### T56.4. Optional walk/VFS adapter for search/tree
 
@@ -210,25 +210,27 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 
 ### Should fix
 
-1. ~~**T55.1**~~ — done in #49 (`display_rel` case-insensitive strip).
-2. ~~**T55.2**~~ — done in #49 (`never_wrap` case-insensitive stem).
-3. ~~**T55.3**~~ — done in #49 (`file_uri` percent-encoding).
-4. ~~**T55.4**~~ — done in #49 (host-shell-safe wrap / cmd quoting).
-5. ~~**T55.5**~~ — done in #49 (`search_max_bytes`).
-6. ~~**T55.6**~~ — done in #49 (`call` in mcp.cmd).
+1. **T55.1 — `display_rel` case-sensitive `strip_prefix` (Windows residual).** `src/plugins/read/search.rs` vs case-insensitive `under` in `read/mod.rs`. Absolute search/tree paths when only case differs.
+2. **T55.2 — `never_wrap` case-sensitive stem.** `src/plugins/cmd/hook.rs` `skip_wrap`: `SUDO.EXE` still wrapped despite default `sudo`.
+3. **T55.3 — `file_uri` lacks percent-encoding.** `src/plugins/graph/lsp.rs`: spaced Windows user dirs → invalid LSP URIs.
+4. **T55.4 — POSIX-only wrap quotes on PowerShell/cmd hosts.** `cmd/hook.rs` + `agents::shell_quote_bin`.
+5. **T55.5 — unbounded `read_to_string` in search/tree.** Memory/latency footgun on huge files.
+6. **T55.6 — `plugins/cursor/scripts/mcp.cmd` bare `rtok mcp`.** Need `call` for `.cmd` shims.
 
 ### Nits
 
-1. **T55.7 — `strip_prefix_cd` and quoted spaced paths** (still open).
-2. **`expand::parse_range` when start > line count** — empty slice quietly; optional clamp.
-3. **`guard::strip_wrap`** — updated in #49 for PowerShell `''`.
+1. **T55.7 — `measure/stats.rs` `strip_prefix_cd` and quoted spaced paths.** Family stats only; guard path OK.
+2. **`expand::parse_range` when start > line count** returns `(a, n)` with `a > n`; `slice_lines` yields empty quietly (no crash). Optional: clamp or error.
+3. **`guard::strip_wrap` only unwraps POSIX single quotes.** Safe while hook uses `sh_quote`; revisit with T55.4 if wrap gains double quotes.
 
 ### Residual still open (called out before)
 
-- T55.1–T55.6 closed by #49.
-- PATH / single-quote parsers — rtok: T55.7; larger residual in ketch.
-- Test VFS migration — D29 / T56.x (`Vfs` helper in #49).
-- T48.3 still todo: Cursor plugin mcp.json still bare `rtok mcp`.
+- **search `display_rel` case-sensitive strip (Windows)** — still open → T55.1.
+- **PATH / single-quote parsers** — rtok: T55.7 (+ env strip already quotes). Larger residual remains in **ketch** (not this repo).
+- **MCP / setup / plugins / cmd / read / write**
+  - **T48.3 still todo:** `plugins/cursor/mcp.json` still points at bare `command: rtok` / `args: ["mcp"]`, so the ketch-hint `scripts/mcp.sh|mcp.cmd` launchers are never used when Cursor loads the linked plugin. Scripts exist and are tested in isolation; wiring is the gap.
+  - Cursor plugin hooks also use bare `rtok hook …` (PATH-dependent); install path for `~/.cursor/mcp.json` via `agents install` does use `rtok_command()` (absolute on Windows PATH miss) — OK for non-plugin MCP.
+  - cmd/read Windows stems, read `under` case fold, agent atomic replace readonly, expand range validation: covered by #37–#47; do not re-open.
 
 ### Out of scope this pass
 
