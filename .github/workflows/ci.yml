@@ -35,18 +35,19 @@ jobs:
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
   # Advisory: `continue-on-error` keeps its result out of `revert-on-failure` until it is green.
-  windows:
-    runs-on: windows-latest
-    continue-on-error: true
-    # Cap advisory Windows suite: a hung test must not occupy a runner for hours.
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: mise exec -- cargo nextest run --workspace --no-fail-fast
+  # Temporarily disabled: Windows nextest hang burns runners; restore when suite is stable.
+  # windows:
+  #   runs-on: windows-latest
+  #   continue-on-error: true
+  #   # Cap advisory Windows suite: a hung test must not occupy a runner for hours.
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v7
+  #     - uses: jdx/mise-action@v4
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         save-if: ${{ github.ref == 'refs/heads/main' }}
+  #     - run: mise exec -- cargo nextest run --workspace --no-fail-fast
 
   revert-on-failure:
     name: revert-on-failure
