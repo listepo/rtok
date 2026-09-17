@@ -2,6 +2,8 @@
 
 Linked by `rtok agents install pi --yes` to `~/.pi/agent/extensions/rtok` (D21: one bash call
 path, no MCP). `rtok agents install pi --remove` unlinks it. By hand: `pi install /path/to/plugins/pi`.
+pi loads a directory in `extensions/` from its `package.json` `pi.extensions` first and falls back to
+`index.ts`, so the link needs no `index.ts` (pi 0.85.1 `resolveExtensionEntries`; the docs list only `*/index.ts`).
 
 Files:
 
@@ -10,6 +12,8 @@ Files:
   `rtok filter` with an `expand <id>` trailer. Missing `rtok` fails open and names ketch
   (`ketch install listepo/rtok`).
 - `skills/rtok/SKILL.md` — tells the model how to recover full output (`rtok expand <id>`).
+- `tests/load.test.ts` — loads the linked directory with pi's own `discoverAndLoadExtensions` and expects
+  one extension with `tool_call` and `tool_result`; skipped when pi is not installed.
 - `tests/rtok.test.ts` — Node unit test of the extension against a fake `rtok` on PATH (`tests/node/fake-rtok.ts`, every OS); run by
   `tests/pi_plugin.rs`. Outside `extensions/`, so pi never loads it.
 

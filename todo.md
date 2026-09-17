@@ -1,4 +1,3 @@
-- T48.1. pi loads the rtok extension from its linked directory
 - T48.2. pi install hint reaches the model
 - T48.3. Cursor plugin MCP goes through the ketch-hint launcher
 - T48.4. DeepSeek Harness host

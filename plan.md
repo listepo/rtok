@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.1 | todo | P0 | 2 | 0% | |
 | T48.2 | todo | P1 | 1 | 0% | |
 | T48.3 | todo | P1 | 2 | 0% | |
 | T48.4 | todo | P2 | 4 | 0% | |
@@ -33,11 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
-
-### T48.1. pi loads the rtok extension from its linked directory
-
-From I-35 (pi docs audit 2026-09-17). `rtok agents install pi --yes` symlinks `plugins/pi/` to `~/.pi/agent/extensions/rtok`. pi's extension loader documents two shapes only: `extensions/*.ts` and `extensions/*/index.ts`; `package.json` `pi.extensions` is honoured when a package is installed with `pi install <path>`, not when a directory sits in `extensions/`. The linked directory has no `index.ts`, so pi most likely never runs `rtok.ts`: bash is not routed through `rtok run`, results are not filtered, and every current test still passes because they check the link, not the load.
-Done when a pi started against a temp agent dir that `rtok agents install pi --yes` prepared actually runs the extension (a bash call is rewritten to `rtok run -- …`), install stays idempotent, remove undoes it, and the README and docs describe the real loading path.
 
 ### T48.2. pi install hint reaches the model
 

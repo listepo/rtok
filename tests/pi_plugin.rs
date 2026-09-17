@@ -4,7 +4,7 @@
 //! `ketch install listepo/rtok` and touches nothing; `--yes` links the
 //! extension, second apply is `no changes`, `--remove` unlinks; the TS
 //! extension owns the single bash call path with no `read`/`search`
-//! duplication.
+//! duplication; pi's own loader loads the linked directory once (T48.1).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -98,18 +98,24 @@ fn pi_extension_owns_the_single_bash_call_path() {
 /// fail-open with the ketch hint, and the filter result — against a fake `rtok` on PATH.
 #[test]
 fn pi_extension_unit_test_with_fake_rtok() {
-    let status = Command::new("node")
-        .args([
-            "--experimental-strip-types",
-            "--disable-warning=ExperimentalWarning",
-            "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-            "--test",
-            "plugins/pi/tests/rtok.test.ts",
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .status()
-        .expect("node");
-    assert!(status.success());
+    node_test("plugins/pi/tests/rtok.test.ts", None);
+}
+
+/// Run one Node test file; `agent_dir` becomes `RTOK_PI_AGENT_DIR`.
+fn node_test(file: &str, agent_dir: Option<&Path>) {
+    let mut cmd = Command::new("node");
+    cmd.args([
+        "--experimental-strip-types",
+        "--disable-warning=ExperimentalWarning",
+        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        "--test",
+        file,
+    ])
+    .current_dir(env!("CARGO_MANIFEST_DIR"));
+    if let Some(dir) = agent_dir {
+        cmd.env("RTOK_PI_AGENT_DIR", dir);
+    }
+    assert!(cmd.status().expect("node").success(), "{file}");
 }
 
 #[test]
@@ -139,6 +145,8 @@ fn setup_pi_yes_links_remove_unlinks() {
     let dest = home.join("extensions/rtok");
     let meta = fs::symlink_metadata(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
     assert!(meta.file_type().is_symlink() || dest.is_dir(), "{dest:?}");
+    // T48.1: pi's own loader (skipped without pi) runs the extension from the linked dir.
+    node_test("plugins/pi/tests/load.test.ts", Some(&home));
     let (again, stderr2, code2) = setup(&["agents", "install", "pi", "--yes"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2}");
     assert!(again.contains("already installed"), "second apply: {again}");
