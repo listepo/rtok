@@ -6,13 +6,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T45.5. Gates cover tests, webui and examples
-
-`.jscpd.json` scans only three src dirs, blind to `tests/`/`crates/rtok-webui` where the known mirrors live; `examples/mcp_tool.rs` teaches zero-`Measurement` plugins against D3.
-Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (record + assert one row like `hello_plugin`), `tests/trycmd/*` (one more surface snapshot). Verify: `mise exec -- jscpd` + scoped cargo tests.
 
 ### T45.6. Extra hook/expand/guard/read/toon coverage
 
