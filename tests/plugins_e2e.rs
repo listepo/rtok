@@ -105,8 +105,29 @@ fn cmd_run_records_measurement() {
 fn read_dedup_on_second_mcp_read() {
     let home = tmp("read");
     std::fs::write(home.0.join("a.txt"), "line one\nline two\n").unwrap();
-    let first = tool(&home, &home.0, "read", r#"{"path":"a.txt"}"#);
-    let second = tool(&home, &home.0, "read", r#"{"path":"a.txt"}"#);
+    // One `rtok mcp` process is one session (read_cache is per session), so both reads go
+    // down the same stdin.
+    let req = |id: u8| {
+        format!(
+            r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"read","arguments":{{"path":"a.txt"}}}}}}"#
+        )
+    };
+    let out = run(
+        &home,
+        &["mcp"],
+        &format!("{}\n{}\n", req(1), req(2)),
+        &home.0,
+    );
+    let texts: Vec<String> = out
+        .lines()
+        .map(|l| {
+            js(l)["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .into()
+        })
+        .collect();
+    let (first, second) = (&texts[0], &texts[1]);
     assert!(first.contains("line one"), "{first}");
     assert!(second.contains("unchanged since"), "{second}");
     assert!(kinds(&home, "read").iter().any(|k| k == "dedup"));

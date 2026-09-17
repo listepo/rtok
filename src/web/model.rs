@@ -1160,6 +1160,7 @@ mod tests {
     fn live_calls_prefer_in_process_ring_over_empty_http() {
         // Regression: a listener on the default proxy port that answers `/live`
         // with `[]` used to hide rows pushed into this process's ring.
+        let _ring = crate::proxy::live::test_lock();
         crate::proxy::live::clear();
         crate::proxy::live::push(crate::proxy::LiveCall {
             ts: 1,

@@ -701,6 +701,7 @@ mod tests {
 
     #[rstest]
     fn live_passthrough_rows_show_bytes_not_tokens() {
+        let _ring = crate::proxy::live::test_lock();
         crate::proxy::live::clear();
         crate::proxy::live::push(crate::proxy::LiveCall {
             ts: 1,

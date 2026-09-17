@@ -606,10 +606,17 @@ mod tests {
         supervise(&cfg, None, Service::Web).unwrap();
         assert!(read(&cfg, Service::Web).is_none());
         drop(held);
-        assert!(
-            claim(&cfg, Service::Web).unwrap().is_some(),
-            "released on drop"
-        );
+        // A child spawned by a parallel test can hold the inherited lock fd for the instant
+        // between fork and exec, so the release is polled, briefly.
+        let mut released = false;
+        for _ in 0..50 {
+            released = claim(&cfg, Service::Web).unwrap().is_some();
+            if released {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(released, "released on drop");
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -38,3 +38,12 @@ Not reachable (cli): -
 
 Reachable (desktop): read, archive, memory, graph, toon
 Not reachable (desktop): measure, cmd, proxy, inject, guard, compress
+
+## Docs
+
+Host documentation setup writes against; re-check the links when this host changes.
+
+- Hooks (`~/.claude/settings.json`, event names incl. `PreCompact`, `PostCompact`, `SessionEnd`): https://code.claude.com/docs/en/hooks
+- Settings (`env.ANTHROPIC_BASE_URL`): https://code.claude.com/docs/en/settings
+- MCP (user scope in `~/.claude.json` `mcpServers`): https://code.claude.com/docs/en/mcp
+- Claude Desktop (`claude_desktop_config.json` `mcpServers.<name>.command` / `args`): https://modelcontextprotocol.io/docs/develop/connect-local-servers

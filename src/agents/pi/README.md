@@ -22,3 +22,11 @@ The extension owns the bash call path (`tool_call` bash → `rtok run -- …`, `
 
 Reachable: measure, cmd
 Not reachable: read, archive, proxy, inject, guard, memory, graph, toon, compress
+
+## Docs
+
+Host documentation setup writes against; re-check the links when this host changes.
+
+- Extensions (`~/.pi/agent/extensions/*.ts` or `*/index.ts`; `tool_call`, `tool_result`): https://pi.dev/docs/latest/extensions
+- Packages (`package.json` `pi` key, `pi install <path>`): https://pi.dev/docs/latest/packages
+- The linked bundle: `plugins/pi/README.md`

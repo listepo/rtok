@@ -49,6 +49,14 @@ pub fn snapshot() -> Vec<LiveCall> {
         .unwrap_or_default()
 }
 
+/// Serialises unit tests that clear and fill the process-wide ring; parallel ones wiped each
+/// other's rows.
+#[cfg(test)]
+pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Test helper: empty the ring between cases.
 pub fn clear() {
     if let Ok(mut q) = ring().lock() {

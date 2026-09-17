@@ -23,3 +23,13 @@ Nothing carries `proxy`.
 
 Reachable: measure, cmd, read, archive, inject, guard, memory, graph, toon
 Not reachable: proxy, compress
+
+## Docs
+
+Host documentation setup writes against; re-check the links when this host changes.
+
+- Plugins (manifest `.cursor-plugin/plugin.json`, local install `~/.cursor/plugins/local/<name>`): https://cursor.com/docs/plugins
+- Manifest reference (`hooks`, `mcpServers` fields): https://cursor.com/docs/reference/plugins
+- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`): https://cursor.com/docs/agent/hooks
+- MCP (`~/.cursor/mcp.json`, `mcpServers.<name>.command` / `args`): https://cursor.com/docs/context/mcp
+- The linked bundle: `plugins/cursor/README.md`

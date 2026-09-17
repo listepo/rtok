@@ -6,7 +6,7 @@ use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ServerCapabilities,
     ServerInfo, Tool,
@@ -327,9 +327,9 @@ fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
     let id = args["id"]
         .as_i64()
         .and_then(|n| i32::try_from(n).ok())
-        .ok_or_else(|| anyhow!("invalid note id: {}", args["id"]))?;
+        .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
     crate::plugins::memory::mem_get(&crate::plugin::Ctx::new(cx), id)?
-        .ok_or_else(|| anyhow!("unknown note id: {id}"))
+        .ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
 }
 
 fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) -> Result<()> {

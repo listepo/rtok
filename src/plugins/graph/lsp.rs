@@ -593,13 +593,15 @@ pub(crate) fn outline(cx: &Ctx, root: &Path, path: &str) -> Result<String> {
     } else {
         root.join(path)
     };
-    // Same session key as `symbol` / `callers` / `impact` (cwd) whenever cwd is a workspace;
-    // the nearest manifest is the fallback. Keyed by the nearest manifest alone, alternating
-    // `outline` and `symbol` calls in a Cargo workspace killed and respawned the server each time.
-    let ws = if pick(root).is_ok() {
-        root.to_path_buf()
-    } else {
-        workspace_of(&abs)
+    // Same session key as `symbol` / `callers` / `impact` (cwd) when the file sits under cwd and
+    // its nearest manifest speaks cwd's server; otherwise the nearest manifest. Keyed by the
+    // nearest manifest alone, alternating `outline` and `symbol` calls in a Cargo workspace
+    // killed and respawned the server each time; keyed by cwd alone, a Dart file outside a
+    // Cargo cwd was sent to rust-analyzer and outlined as empty.
+    let near = workspace_of(&abs);
+    let ws = match (pick(root), pick(&near)) {
+        (Ok((a, _)), Ok((b, _))) if a == b && abs.starts_with(root) => root.to_path_buf(),
+        _ => near,
     };
     with_session(&ws, |s| {
         let uri = file_uri(&abs);

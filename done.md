@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T47.4 — Repair main after the swept snapshot commit
+
+**T47.4 Repair main after the swept snapshot commit** · P0, 3/5 · `src/store/mod.rs`, `AGENTS.md`, `src/agents/{claude,codex,cursor,pi}/README.md`, `src/plugins/graph/lsp.rs`, `tests/plugins_e2e.rs`, `src/mcp.rs`, `src/demon.rs`, `src/proxy/live.rs`, `src/tui/view.rs`, `src/web/model.rs`
+Do: `a423aca` committed a working tree in which a broken rename script (T47.1) had emptied files and a restore from the previous HEAD had dropped uncommitted edits, so `main` did not compile and `just check` was red. Store: migrations `0013.sql` and `0014.sql` are registered; `mark_expanded(session, archive_id)` and `live_zone_pointer(session, archive_id)` are scoped per session, as `0014.sql` keys `archive_decisions` by `(session, tool_use_id)` and the callers in `expand.rs` / `plugin.rs` already passed the session; `recent_session_totals(since, limit)` is `session_totals` with an SQL `LIMIT` (`session_totals` delegates with `-1`). T44.6 leftovers: the `## Docs` sections of the claude, codex, cursor and pi host READMEs and the AGENTS.md D21 sentence are back, taken from the T44.6 session's own edits. Regressions in the swept T45.x work: `graph` `outline` keys the LSP session by cwd only when the file sits under cwd and its nearest manifest picks the same server (a Dart package outside a Cargo cwd went to rust-analyzer and outlined empty); `read_dedup_on_second_mcp_read` sends both reads down one `rtok mcp` stdin, since one process is now one session; the min-feature build no longer warns on an `anyhow` import used only under `memory`. Flaky unit tests: the TUI and web tests that clear and fill the process-wide live-call ring take `proxy::live::test_lock()`; the demon lock-release test polls for 500 ms, because a child spawned by a parallel test can hold the inherited lock fd between fork and exec.
+Check: `just check` — fmt, clippy `-D warnings` (workspace and wasm guest), nextest, min-feature build, jscpd.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `just check` exit 0, 705 tests passed, 2 skipped; `cargo test --lib` three runs in a row green; `graph_lsp_gate` 5 passed with `dart` on PATH; `host_docs` passed.
+Deviation: 12 files (≤3) and not claimed in `plan.md` first: the repair unblocks every open task on `main`. The T45.x rows stay `in progress` under their agent; this commit only makes their swept code compile and pass.
+
 ## T44.6 — Host plugin docs links
 
 **T44.6 Host plugin docs links** · P1, 2/5 · `plugins/{cursor,pi,opencode}/README.md`, `src/agents/{claude,codex,cursor,opencode,pi}/README.md`, `plugins/pi/{package.json,skills/rtok/SKILL.md}`, `tests/host_docs.rs`, `AGENTS.md`, `ideas.md`

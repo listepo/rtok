@@ -40,6 +40,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0010.sql", include_str!("../../migrations/0010.sql")),
     ("0011.sql", include_str!("../../migrations/0011.sql")),
     ("0012.sql", include_str!("../../migrations/0012.sql")),
+    ("0013.sql", include_str!("../../migrations/0013.sql")),
+    ("0014.sql", include_str!("../../migrations/0014.sql")),
 ];
 
 pub struct Store {
@@ -497,24 +499,29 @@ impl Store {
         Ok(())
     }
 
-    /// Live-zone pointer text for one archive id (T36.2: attribute expand rows to toon vs archive).
-    pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
+    /// Live-zone pointer text for one archive id in one session (T36.2: attribute expand rows
+    /// to toon vs archive; T45.3: decisions are keyed per session).
+    pub fn live_zone_pointer(&self, session: &str, archive_id: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;
-        let rows: Vec<PointerRow> =
-            sql_query("SELECT pointer FROM archive_decisions WHERE archive_id = ? LIMIT 1")
-                .bind::<Text, _>(archive_id)
-                .load(&mut *conn)?;
+        let rows: Vec<PointerRow> = sql_query(
+            "SELECT pointer FROM archive_decisions WHERE session = ? AND archive_id = ? LIMIT 1",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(archive_id)
+        .load(&mut *conn)?;
         Ok(rows.into_iter().next().map(|r| r.pointer))
     }
 
-    /// T5.4: an `expand <id>` freezes every decision pointing at that archive id. Returns
-    /// how many decisions changed (0 = the id was not a live-zone pointer).
-    pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
+    /// T5.4: an `expand <id>` freezes every decision in that session pointing at that archive
+    /// id; another session's decisions stay live (T45.3). Returns how many decisions changed
+    /// (0 = the id was not a live-zone pointer in this session).
+    pub fn mark_expanded(&self, session: &str, archive_id: &str) -> Result<usize> {
         let mut conn = self.lock()?;
         Ok(sql_query(
             "UPDATE archive_decisions SET expanded_ts = unixepoch()
-             WHERE archive_id = ? AND expanded_ts IS NULL",
+             WHERE session = ? AND archive_id = ? AND expanded_ts IS NULL",
         )
+        .bind::<Text, _>(session)
         .bind::<Text, _>(archive_id)
         .execute(&mut *conn)?)
     }
@@ -1016,6 +1023,12 @@ impl Store {
     /// Newest first; `ended_at IS NULL` is "live". A session with no `usage` rows yet
     /// still appears, zeroed, with `last_activity = started_at`.
     pub fn session_totals(&self, since: i64) -> Result<Vec<SessionTotals>> {
+        self.recent_session_totals(since, -1)
+    }
+
+    /// [`Store::session_totals`] capped at the newest `limit` sessions in SQL, so the Sessions
+    /// page does not load every session to show a screenful. A negative `limit` is no cap.
+    pub fn recent_session_totals(&self, since: i64, limit: i64) -> Result<Vec<SessionTotals>> {
         let mut conn = self.lock()?;
         // tot: the four sums per session. last_u: the newest `usage` row's api and
         // model — what the session is spending on now. act: last activity as MAX(ts)
@@ -1060,9 +1073,11 @@ impl Store {
              LEFT JOIN act ON act.sid = s.id
              LEFT JOIN prov ON prov.sid = s.id
              WHERE s.started_at >= ?
-             ORDER BY s.started_at DESC, s.id",
+             ORDER BY s.started_at DESC, s.id
+             LIMIT ?",
         )
         .bind::<BigInt, _>(since)
+        .bind::<BigInt, _>(limit)
         .load::<SessionTotals>(&mut *conn)
         .map_err(Into::into)
     }
@@ -2157,7 +2172,7 @@ mod tests {
         store
             .put_archive_decision("tu-1", &arch_id, "sess", "pointer")
             .unwrap();
-        store.mark_expanded(&arch_id).unwrap();
+        store.mark_expanded("sess", &arch_id).unwrap();
         let body_read = b"read/cmd style archive";
         let read_arch_id = store
             .put_archive("sess", body_read, &cfg.core.archive_dir)
