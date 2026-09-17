@@ -565,28 +565,38 @@ fn strip_prefix_env(s: &str) -> Option<&str> {
     if ident_end == 0 || !t.as_bytes().get(ident_end).is_some_and(|b| *b == b'=') {
         return None;
     }
-    let rest = &t[ident_end + 1..];
-    let rest = if rest.starts_with('\'') || rest.starts_with('"') {
-        let q = rest.as_bytes()[0];
-        let end = rest.as_bytes().iter().skip(1).position(|b| *b == q)? + 1;
-        rest[end + 1..].trim_start()
-    } else {
-        rest.split_once(char::is_whitespace)?.1.trim_start()
-    };
-    Some(rest)
+    skip_word(&t[ident_end + 1..])
 }
 
 fn strip_prefix_cd(s: &str) -> Option<&str> {
-    let t = s.trim_start();
-    if !t.starts_with("cd ") && !t.starts_with("cd\t") {
+    let after = s.trim_start().strip_prefix("cd")?;
+    if !after.starts_with([' ', '\t']) {
         return None;
     }
-    let after = t[2..].trim_start();
-    if let Some(rest) = after.strip_prefix("&&") {
-        return Some(rest.trim_start());
+    let after = after.trim_start();
+    let rest = if after.starts_with("&&") {
+        after
+    } else {
+        skip_word(after)?
+    };
+    Some(rest.strip_prefix("&&")?.trim_start())
+}
+
+/// Skips one shell word (bare, or with `'…'` / `"…"` segments such as `~/'My Documents'`)
+/// and returns what follows it, left-trimmed. An unterminated quote yields `None` so the
+/// caller fails open and leaves the command untouched.
+fn skip_word(s: &str) -> Option<&str> {
+    let mut quote = None;
+    for (i, b) in s.bytes().enumerate() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'\'' || b == b'"' => quote = Some(b),
+            None if b.is_ascii_whitespace() => return Some(s[i..].trim_start()),
+            None => {}
+        }
     }
-    let after_path = after.split_once(char::is_whitespace)?.1.trim_start();
-    Some(after_path.strip_prefix("&&")?.trim_start())
+    quote.is_none().then_some("")
 }
 
 fn mcp_group(name: &str) -> Option<&str> {
@@ -704,6 +714,26 @@ mod tests {
         assert_eq!(bash_family("sed -n 1p"), "sed");
         assert_eq!(bash_family(r"C:\Git\cmd\git.exe status"), "git");
         assert_eq!(bash_family("cargo.exe test"), "cargo");
+    }
+
+    #[test]
+    fn bash_family_strips_quoted_cd_paths() {
+        assert_eq!(bash_family("cd 'My Documents' && git status"), "git");
+        assert_eq!(
+            bash_family(r#"cd "C:\Program Files\App" && npm test"#),
+            "npm"
+        );
+        assert_eq!(
+            bash_family("cd ~/'My Documents'/src && cargo build"),
+            "cargo"
+        );
+        assert_eq!(bash_family(r#"FOO="a b" cd 'x y' && rg z"#), "rg");
+        assert_eq!(bash_family("cd\t'a b'\t&& sed -n 1p"), "sed");
+        // Malformed quotes fail open: nothing is stripped.
+        assert_eq!(bash_family("cd 'unterminated && git status"), "cd");
+        assert_eq!(bash_family("FOO='x cd y && git status"), "FOO='x");
+        // `cd` followed by something other than a path separator is not `cd`.
+        assert_eq!(bash_family("cdx && git status"), "cdx");
     }
 
     #[test]

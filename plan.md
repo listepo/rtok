@@ -16,7 +16,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.7 | todo | P3 | 1 | 0% | |
+| T55.8 | todo | P2 | 2 | 0% | |
+| T55.9 | todo | P3 | 2 | 0% | |
+| T55.10 | todo | P3 | 1 | 0% | |
 | T56.1 | done | P2 | 2 | 100% | |
 | T56.2 | in progress | P2 | 3 | 95% | |
 | T56.3 | in progress | P2 | 3 | 85% | |
@@ -91,10 +93,20 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
 
-### T55.7. Stats `strip_prefix_cd` and quoted paths
+### T55.8. Guard `read:` keys survive a mutating Bash
 
-From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine.
-Done when `strip_prefix_cd` accepts single- and double-quoted path segments (malformed quotes fail-open), with unit tests for spaced quoted paths.
+From review 2026-09-17 (code read, no fix). `src/plugins/guard/mod.rs` `post_tool` clears only the `bash\t…` prefix on a non-keyed `Bash`/`Edit`/`Write`; the guard's own `read:{path}` keys are cleared only by `plugins::read::cache::invalidate` on `Edit`/`Write`. So `Read foo.rs` → `Bash cargo fmt` (or `sed -i`, `git checkout`) → `Read foo.rs` within `window_turns` is denied with the stale archive; the same happens on `Edit` when the `read` plugin is disabled. `Store::clear_read_cache` deletes `path` or `path\t…`, so `read:{path}` cannot be cleared by prefix today.
+Done when the guard owns invalidation of its own keys: a mutating `Bash` drops every guard `read` key (key scheme `read\t{path}` or a prefix clear), `Edit`/`Write` drop that path's key without depending on the `read` plugin, with unit tests `bash_mutation_allows_the_next_read` and `edit_with_read_plugin_off_allows_the_next_read`, and the existing `edit_clears_guard_read_so_the_next_read_is_allowed` still passes.
+
+### T55.9. Guard Bash key is cwd-blind
+
+From review 2026-09-17 (code read, no fix). `norm_cmd` strips every leading `cd … &&`, so `cat x` and `cd docs && cat x` share one key and the second is denied as a duplicate of the first (`bash_repeat_behind_cd_prefix_denies` pins this as intended). Relative paths and `git status` differ per directory, so the deny returns the wrong archive. `strip_cd_and` also cuts at the first `&&` even inside quotes (`cd 'a && b' && ls`).
+Done when the key keeps the effective `cd` target (normalized spacing, quotes handled by one helper shared with `measure::stats` if the shapes match), `cd a && ls` ≠ `ls` ≠ `cd b && ls`, `cd a && cd a && ls` = `cd a && ls`, a quoted path with `&&` inside is not split, and the existing test is rewritten to assert those cases.
+
+### T55.10. One `cmd_stem`
+
+From review 2026-09-17 (code read, no fix). The "basename, split on `/` and `\`, drop `.exe` case-insensitively" helper exists three times: `plugins::cmd::formatters::cmd_stem`, `measure::stats::bash_family` (inline), `agents::is_rtok_bin` (inline). `bash_family` cannot call the `cmd` one because `measure` builds without the `cmd` feature (`just build-min`).
+Done when one `pub(crate) fn cmd_stem` lives in a feature-free module (e.g. `src/util.rs` or `src/agents/mod.rs`), the other two call it, behavior is unchanged, and `cmd_stem_strips_windows_path_and_exe` plus the `bash_family_*` and `is_rtok_bin` tests still pass under `just check` and `just build-min`.
 
 ### T56.1. Test VFS helper and convention
 
