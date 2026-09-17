@@ -12,3 +12,4 @@
 - T56.2. Migrate read/search unit tests to VFS
 - T56.3. Migrate cmd/setup path tests to VFS
 - T56.4. Optional walk/VFS adapter for search/tree
+- T56.5. ReadFs trait + optional HostFs walk swap
