@@ -20,6 +20,7 @@
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T58.1. `read` delta since last read
-- T58.2. Compaction hooks: re-inject after `PostCompact`, note at `PreCompact`
+- T58.2. Compaction checkpoint on every host, with archive ids
 - T58.3. Measure the `old_string` share of assistant output
 - T58.4. MCP `patch` tool: anchored edits without `old_string`
+- T58.5. `cmd` formatters for structured families

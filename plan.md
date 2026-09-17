@@ -24,7 +24,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.13 | done | P3 | 1 | 100% | |
 | T55.14 | done | P3 | 1 | 100% | |
 | T55.15 | todo | P3 | 2 | 0% | |
-| T55.16 | todo | P3 | 1 | 0% | |
+| T55.16 | in progress | P3 | 1 | 50% | ZCode / GLM-5.3 |
 | T56.1 | done | P2 | 2 | 100% | |
 | T56.2 | in progress | P2 | 3 | 95% | |
 | T56.3 | in progress | P2 | 3 | 85% | |
@@ -35,6 +35,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T58.2 | todo | P2 | 3 | 0% | |
 | T58.3 | todo | P1 | 2 | 0% | |
 | T58.4 | todo | P2 | 4 | 0% | |
+| T58.5 | todo | P3 | 3 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -48,8 +49,12 @@ Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, Op
 
 ### T50.1. More `cmd` filter families
 
-From I-05. `rules/default.toml` covers grep, rg, sed, cat, make, curl, npm, pnpm, node on top of the built-in cargo/git/test/ls rules; python, pytest, pip, go, docker, kubectl, gh and friends pass through unfiltered.
-Done when the families are chosen by `rtok discover`-style counts from real transcripts (the evidence goes into `research.md`), each new rule has a fixture with before/after bytes and keeps failures and the `expand <id>` trailer, and `Measurement` rows show the saving per family.
+From I-05; re-scoped by the competitive gap review (`research.md` §9.3, "Command output"). Today: formatters for cargo/git/pytest/jest/vitest/go test/ls/find/tree, nine TOML rules (`rules/default.toml`: grep, rg, sed, cat, make, curl, npm, pnpm, node), and `Rule::default()` (40 lines, head 10 / tail 10, dedupe) for every other stem — so docker, kubectl, gh, aws, pip, python, mvn, gradle, dotnet, tsc, eslint are capped, not passed through, but their error lines and summaries are cut by position, not by meaning. rtk ships 100+ per-command filters; the parity target is a per-family rule for every family that carries real bytes, each one measured. Rules are data, so this task adds TOML and fixtures, no Rust.
+Done when:
+1. Evidence first: `rtok stats` over real transcripts ranks Bash families by after-bytes where `Measurement.kind = rule` fell back to the default rule (`bash_families` split by kind; a `stats` column, not a new command); the top-20 land in `research.md` with date and command.
+2. One `[stem]` rule per family from that list (expected from rtk's list and §2: docker / docker compose, kubectl, gh, aws, pip / uv, python tracebacks, go build / vet, cmake / ctest, mvn / gradle, dotnet, tsc, eslint, brew / apt), each with `keep` patterns for its error and summary lines and a `tests/cmd_golden` fixture with before/after bytes that keeps failures and the `expand <id>` trailer.
+3. `Measurement` rows per family show the saving; the family table in the cmd docs page cites them. A family whose rule does not beat the default rule on its fixture is not added (the default already wins there).
+4. Families where a rule cannot keep the signal (structured tables, grouped diagnostics) are listed in the card for T58.5, with the fixture that shows why.
 
 ### T50.3. Extra `read` modes
 
@@ -182,15 +187,25 @@ Done when:
 2. MCP `read` (and the PreToolUse advice for native Read) answers such a re-read with a unified diff against the archived previous content plus that archive id; full content when the diff is not below `read.delta_max_ratio` (default 0.6) of the file or the previous archive is gone. Lossless: `expand <id>` of the new result returns the full file.
 3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
 4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
+5. Parity with lean-ctx: its `diff` mode is opt-in per call and its unchanged re-read costs ~13 tokens (own README). rtok's delta is automatic (no mode to remember) and also reachable as `mode = "diff"` for the edit → verify flow; the unchanged-re-read line is measured on the same fixture and stays ≤ 13 tokens or the card says why.
 
-### T58.2. Compaction hooks: re-inject after `PostCompact`, note at `PreCompact`
+### T58.2. Compaction checkpoint on every host, with archive ids
 
-From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). Claude Code and Codex emit `PreCompact`/`PostCompact`, Cursor `preCompact`, Gemini CLI a compression hook. After auto-compaction the summary replaces the history: the SessionStart injection (modes, nudges, memory recall) and every archive pointer inside dropped tool results are gone for the rest of the session, so the measured mode savings stop and `expand` ids become unreachable.
+From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). What exists (T2.5): on Claude Code `agents install` registers `PreCompact` and `PostCompact`; `checkpoint::save` stores the last 20 prompts, touched paths and 8 error lines as a memory note, and `inject::session_start` re-emits it (priority 9) plus the modes when `source == "compact"`. Two gaps remain. (a) No other host registers its compaction event — Codex (`PreCompact`/`PostCompact`), Cursor (`preCompact`), Gemini CLI (compression hook), Copilot CLI (auto-compact at 80 %) are listed in `research.md` §9.2 as of 2026-09-17, ZCode has none — so on those hosts the modes and the checkpoint vanish after the summary. (b) The checkpoint carries no archive ids, so `expand <id>` of a tool result that the summary dropped needs the id from a transcript the model no longer sees. Neither rtk, headroom nor caveman handle compaction at all (§9.3), so closing (a) and (b) is "better", not parity.
 Done when:
-1. Each host's event names and payload verified against its current hooks doc (links in `src/agents/<host>/README.md` `## Docs`) and recorded here; hosts without such an event are untouched. Compactions per session counted from transcripts (`stats`) and recorded in `research.md` as the denominator for any later claim.
-2. `rtok hook post-compact` emits the same bytes as the SessionStart injection (800-token budget, byte-stable); hook e2e fixture asserts byte equality; fail open, ≤ 10 ms.
-3. `rtok hook pre-compact` writes one `memory` note `compaction <session> <n>` listing the archive ids referenced by this session's live tool results (from the store, not the transcript), capped by the budget, no note when there are none; `mem_search compaction` after the summary returns them.
-4. `agents install` registers both events for hosts that have them; `tests/agents_doc.rs` table regenerated with `RTOK_BLESS=1`; ≤ 3 files per commit, split in two if needed (hook first, installer second).
+1. Evidence: compactions per session counted from transcripts by `rtok stats` (a `compact` count next to the session rows) and recorded in `research.md`; the current checkpoint's injected bytes on the T2.5 fixture recorded as the baseline.
+2. `Checkpoint` gains `ids: Vec<String>`: the archive ids of this session's tool results that are still in the live window (from the store, not the transcript), newest first, capped so the rendered note stays under the existing checkpoint budget (`offer_fits_checkpoint_tokens` extended); rendered as `id <archive-id> <tool> <bytes>` lines. Unit test: a fixture with three archived results yields three `id` lines and the restore injection contains them.
+3. Per host, the compaction events verified against the current hooks doc (links in `src/agents/<host>/README.md` `## Docs`) and registered by `agents install` where they exist (Codex, Cursor, Gemini if a host, Copilot): the pre-event maps to `pre_compact`, the post-event to `session_start` with `source = "compact"`; hosts without the event are untouched. `tests/agents_doc.rs` regenerated with `RTOK_BLESS=1`. One commit per host if the 3-file limit needs it.
+4. Hook e2e per new host: pre-event → note exists; post-event → injection bytes equal Claude Code's for the same store; fail open, ≤ 10 ms.
+
+### T58.5. `cmd` formatters for structured families
+
+Follow-up of T50.1 step 4 (`research.md` §9.3, "Command output"). A TOML rule keeps lines by pattern and position; families whose signal is a table or a grouped diagnostic (expected: `docker ps` / `kubectl get` tables → one row per object; `tsc` / `eslint` → errors grouped by file with counts; `mvn` / `gradle` → the failing module and the last `BUILD` line; `git log`-like paged tools) need a formatter, like the existing cargo/git/pytest ones in `formatters.rs`.
+Done when:
+1. Only families named by T50.1 step 4, each with the fixture that showed the rule losing the signal.
+2. One formatter per family in `formatters.rs`, returning `None` on unrecognized output so the rule path stays the fallback; failures and the `expand <id>` trailer kept; golden fixtures before/after.
+3. `Measurement` rows `kind = formatter` per family beat the rule's row on the same fixture; the cmd docs page table cites them.
+4. ≤ 200 LOC per commit: split by family group (containers, TypeScript tooling, JVM) if needed.
 
 ### T58.3. Measure the `old_string` share of assistant output
 
@@ -208,6 +223,7 @@ Done when:
 2. Lossless: the replaced span is archived and `expand <id>` returns it (manual undo).
 3. `Measurement` rows `plugin = read`, `kind = patch`, before = replaced-span bytes + new text (what `Edit` would have emitted), after = request bytes.
 4. Vfs unit tests: single replace; two ops bottom-up; stale sha; out-of-range; CRLF. PreToolUse(Edit) advice names `patch` only when the file was read through rtok in this session; the tool is documented next to `read` with the T58.3 number.
+5. Better than the precedents, measured: lean-ctx pays for its anchors on every `anchored` read (a hash per line) and serena needs an LSP; rtok's anchor is the one sha the read already prints. Bench: the same ten edits from a fixture transcript replayed as `Edit` (`old_string` + `new_string` bytes), as lean-ctx `ctx_read(anchored)` + `ctx_patch` (read + request bytes, tool installed locally), and as rtok `read` + `patch`; the three totals go into `research.md` §2 and the docs page. The tool ships only if rtok's total is the smallest.
 
 ## Reference
 
