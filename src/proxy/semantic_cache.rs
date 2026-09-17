@@ -337,11 +337,50 @@ fn system_text(body: &Value) -> Option<String> {
 fn content_text(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
-        Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(Value::as_str).or_else(|| b.as_str()))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        Value::Array(blocks) => blocks.iter().map(block_text).collect::<Vec<_>>().join("\n"),
+        _ => String::new(),
+    }
+}
+
+/// One content block's contribution to the cache key (T55.14): text as-is; a
+/// `tool_result`'s id plus nested content; a `tool_use`'s id and name; binary-bearing
+/// blocks (image/document source data, OpenAI `image_url`) contribute their sha256, so
+/// payloads never rendered as text still tell two requests apart.
+fn block_text(b: &Value) -> String {
+    if let Some(text) = b.get("text").and_then(Value::as_str) {
+        return text.to_string();
+    }
+    if let Some(s) = b.as_str() {
+        return s.to_string();
+    }
+    let kind = b.get("type").and_then(Value::as_str).unwrap_or("");
+    match kind {
+        "tool_result" => {
+            let id = b.get("tool_use_id").and_then(Value::as_str).unwrap_or("");
+            format!(
+                "tool_result {id}: {}",
+                content_text(b.get("content").unwrap_or(&Value::Null))
+            )
+        }
+        "tool_use" => format!(
+            "tool_use {} {}",
+            b.get("id").and_then(Value::as_str).unwrap_or(""),
+            b.get("name").and_then(Value::as_str).unwrap_or("")
+        ),
+        "image" | "document" => {
+            let data = b
+                .pointer("/source/data")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            format!("{kind} {}", crate::store::hex_sha256(data.as_bytes()))
+        }
+        "image_url" => {
+            let url = b
+                .pointer("/image_url/url")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            format!("image_url {}", crate::store::hex_sha256(url.as_bytes()))
+        }
         _ => String::new(),
     }
 }
@@ -425,6 +464,85 @@ fn hex8(hash: &[u8; 32]) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// T55.14: tool_result text is part of the key — two requests whose results differ
+    /// must not share one cache entry, and the shape stays eligible under defaults.
+    #[test]
+    fn tool_result_text_joins_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |result: &str| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [
+                    {"role": "assistant", "content": [
+                        {"type": "tool_use", "id": "t", "name": "run", "input": {}}
+                    ]},
+                    {"role": "user", "content": [
+                        {"type": "tool_result", "tool_use_id": "t", "content": result},
+                        {"type": "text", "text": "summarize the result"}
+                    ]}
+                ]
+            })
+        };
+        let a = body("tests passed: 200 ok");
+        let b = body("tests FAILED: 1 broken");
+        for v in [&a, &b] {
+            assert!(
+                eligible(v, &cfg),
+                "shape stays cache-eligible under defaults"
+            );
+        }
+        let pa = build_prompt(wire, &a, &cfg).unwrap();
+        let pb = build_prompt(wire, &b, &cfg).unwrap();
+        assert_ne!(
+            canonical_hash(&pa),
+            canonical_hash(&pb),
+            "different tool results must not share one cache entry"
+        );
+    }
+
+    /// T55.14: the tool_use id joins the key even when the result text is identical.
+    #[test]
+    fn tool_use_ids_join_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |id: &str| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [
+                    {"role": "assistant", "content": [
+                        {"type": "tool_use", "id": id, "name": "run", "input": {}}
+                    ]},
+                    {"role": "user", "content": [
+                        {"type": "tool_result", "tool_use_id": id, "content": "same output"}
+                    ]}
+                ]
+            })
+        };
+        let pa = build_prompt(wire, &body("t-1"), &cfg).unwrap();
+        let pb = build_prompt(wire, &body("t-2"), &cfg).unwrap();
+        assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
+
+    /// T55.14: image source data joins the key as its sha256, not rendered text.
+    #[test]
+    fn image_blocks_hash_into_the_cache_key() {
+        let wire = crate::proxy::wire::for_path("/v1/messages").unwrap();
+        let cfg = SemanticCache::default();
+        let body = |data: &str| {
+            serde_json::json!({
+                "model": "m",
+                "messages": [{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}},
+                    {"type": "text", "text": "what is in the picture?"}
+                ]}]
+            })
+        };
+        let pa = build_prompt(wire, &body(&"aB3dE5g7".repeat(600)), &cfg).unwrap();
+        let pb = build_prompt(wire, &body(&"7g5E3dBa".repeat(600)), &cfg).unwrap();
+        assert_ne!(canonical_hash(&pa), canonical_hash(&pb));
+    }
 
     #[test]
     fn direct_hit_on_exact_replay() {

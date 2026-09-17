@@ -12,7 +12,6 @@
 - T55.9. Guard Bash key is cwd-blind
 - T55.10. One `cmd_stem`
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
-- T55.14. Semantic-cache key drops tool_result content
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T55.16. Guard deny loads the whole archive on the PreToolUse hot path
 - T56.2. Migrate read/search unit tests to VFS

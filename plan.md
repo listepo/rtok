@@ -22,7 +22,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
-| T55.14 | todo | P3 | 1 | 0% | |
+| T55.14 | done | P3 | 1 | 100% | |
 | T55.15 | todo | P3 | 2 | 0% | |
 | T55.16 | todo | P3 | 1 | 0% | |
 | T56.1 | done | P2 | 2 | 100% | |
@@ -123,11 +123,6 @@ Done when one `pub(crate) fn cmd_stem` lives in a feature-free module (e.g. `src
 
 From review 2026-09-17, second pass (code read — not reproducible on macOS). `run::wrap_quote` (`src/plugins/cmd/run.rs:18-24`) emits PowerShell `''` escaping on Windows, and `cmd/hook.rs:45` rewrites the Bash command to `rtok run -- 'echo it''s fine'`. Claude Code on Windows executes the Bash tool through Git Bash (POSIX sh), where `'echo it''s fine'` concatenates to the single argv `echo its fine`: the apostrophe is silently dropped and the command the model asked for is not the command that runs (fail-open violation, no error anywhere). T55.4 weighed PowerShell and cmd.exe but not the POSIX host.
 Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-but-wrong — the minimal fix mirrors the heredoc skip: on `cfg!(windows)`, `skip_wrap` also returns true for any command containing an apostrophe (nothing is wrapped, output stays whole; compression loss is the safe direction) — with pure tests `windows_apostrophe_commands_stay_unwrapped` and a parse-simulation `ps_quoting_does_not_round_trip_under_sh` proving the current form is lossy, plus the existing `wrap_keeps_apostrophe_host_safe` updated to the new contract.
-
-### T55.14. Semantic-cache key drops tool_result content
-
-From review 2026-09-17, second pass (reproduced). `semantic_cache::messages_text`/`content_text` (`src/proxy/semantic_cache.rs:318-347`) keep only `text` fields, so a `tool_result` block contributes nothing to `CachePrompt` — neither to the direct hash nor to `scope_hash`. Two requests that differ only in tool-result text hash identically: repro shows `canonical_hash` byte-equal for `content: "tests passed: 200 ok"` vs `content: "tests FAILED: 1 broken"`, both `eligible` under default config (one user message, no tools, not streaming). Under today's defaults (`max_messages = 1`, direct tier) the collision needs a same-shape retry with a changed tool result; the moment an operator relaxes `max_messages` (the config comment itself cites bifrost's 3), any two agent runs sharing a prompt but not tool outputs serve each other's cached answer. I-23's "a hit can be a wrong answer" does not cover a key that ignores the request's own data.
-Done when `content_text` folds tool_result block text into the prompt (tool_use ids + result text; images contribute their sha256), with tests `tool_result_text_joins_the_cache_key` (the two bodies above hash differently), `tool_use_ids_join_the_cache_key`, and the existing `only_near_identical_prompts_clear_the_threshold` family unchanged.
 
 ### T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 
@@ -337,7 +332,7 @@ Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/
 - ~~**T55.11 (P2)**~~ — done: `expand` never froze the owning session's pointer (every expand caller runs under session `expand` / `mcp-<pid>`, decisions belong to the proxy session; expand rate stayed 0, toon attribution dead). Reproduced.
 - **T55.12 (P2)** — Windows `wrap_quote` `''` quoting is wrong under Git Bash (Claude Code's Windows shell): apostrophes silently dropped from the rewritten command. Code read.
 - ~~**T55.13 (P3)**~~ — done: Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
-- **T55.14 (P3)** — semantic-cache key ignores tool_result text; two requests differing only in tool results hash identically and are both eligible under defaults. Reproduced.
+- ~~**T55.14 (P3)**~~ — done: the semantic-cache key ignored tool_result text; two requests differing only in tool results hashed identically and were both eligible under defaults. Reproduced.
 - **T55.15 (P3)** — `live_blobs` overwrites image/document `source.data` / `image_url.url` with pointer text → invalid request when the flag is on. Reproduced.
 - **T55.16 (P3)** — guard deny reads the full archived body (and estimates over it) on the ≤ 10 ms PreToolUse path. Code read.
 
