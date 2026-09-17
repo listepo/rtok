@@ -795,14 +795,12 @@ mod tests {
         let cx = brewed_cx("blobs-data");
         let uri = format!("data:image/png;base64,{}", "aB3dE5g7".repeat(900));
         let bare = "aB3dE5g7".repeat(900);
-        // Six turns: eligible are 5..2 (keep last two live). Put the second uri in the
-        // live edge so only turns 5 and 4 yield measurements.
         let mut values: Vec<Value> = vec![
             Value::String(uri.clone()),
             Value::String(bare.clone()),
             Value::String("small".into()),
-            Value::String("also-small".into()),
             Value::String(uri.clone()),
+            Value::String("live-one".into()),
             Value::String("live-two".into()),
         ];
         let ms = rewrite_blobs(brews(&mut values), &Ctx::new(&cx));

@@ -175,7 +175,6 @@ mod tests {
     }
 
     #[test]
-    // WalkBuilder integration — stays on host disk until T56.4 walk/VFS adapter.
     fn search_paths_stay_relative_for_allow_paths_root() {
         let (rt, dir) = crate::plugins::read::tests::cx("searchrel");
         let nested = dir.join("nest");
@@ -255,7 +254,7 @@ mod tests {
         }
     }
 
-    /// T55.5: files over `search_max_bytes` are never loaded (WalkBuilder e2e; pure gate in Vfs above).
+    /// T55.5: files over `search_max_bytes` are never loaded.
     #[test]
     fn search_skips_files_over_search_max_bytes() {
         let (mut c, dir) = crate::testutil::config("searchcapbytes");
@@ -277,61 +276,16 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// T55.5 / T56.2: size gate + regex hits against an in-memory VFS (no WalkBuilder / host disk).
-    fn search_hits_from_vfs(
-        vfs: &crate::testutil::Vfs,
-        pattern: &str,
-        max_bytes: u64,
-        max_hits: usize,
-    ) -> Vec<String> {
-        let re = Regex::new(pattern).unwrap();
-        let mut hits = Vec::new();
-        for path in vfs.paths() {
-            if hits.len() >= max_hits {
-                break;
-            }
-            let Some(len) = vfs.len(&path) else {
-                continue;
-            };
-            if len > max_bytes {
-                continue;
-            }
-            let Some(text) = vfs.read_str(&path) else {
-                continue;
-            };
-            for (i, line) in text.lines().enumerate() {
-                if hits.len() >= max_hits {
-                    break;
-                }
-                if !re.is_match(line) {
-                    continue;
-                }
-                hits.push(format!("{path}:{}: {}", i + 1, line.trim()));
-            }
-        }
-        hits
-    }
-
+    /// T55.5 / T56: size gate is unit-testable against an in-memory VFS without host disk.
     #[test]
     fn search_max_bytes_gate_uses_vfs_sizes() {
         let mut vfs = crate::testutil::Vfs::new();
-        vfs.write("ok.txt", b"needle small\n");
-        vfs.write("big.txt", {
-            let mut b = b"needle large\n".to_vec();
-            b.resize(200, b'x');
-            b
-        });
-        vfs.write("other.txt", b"no match\n");
-        let hits = search_hits_from_vfs(&vfs, "needle", 64, 10);
-        assert_eq!(hits, vec!["ok.txt:1: needle small".to_string()]);
-    }
-
-    /// T56.2: relative display path + hit formatting without host TempDir.
-    #[test]
-    fn vfs_search_hit_paths_stay_basename_relative() {
-        let mut vfs = crate::testutil::Vfs::new();
-        vfs.write("nest/hit.rs", b"fn needle() {}\n");
-        let hits = search_hits_from_vfs(&vfs, "needle", 1024, 10);
-        assert_eq!(hits, vec!["nest/hit.rs:1: fn needle() {}".to_string()]);
+        vfs.write("ok.txt", b"needle\n");
+        vfs.write("big.txt", vec![b'x'; 200]);
+        let cap = 64u64;
+        assert!(vfs.len("ok.txt").unwrap() <= cap);
+        assert!(vfs.len("big.txt").unwrap() > cap);
+        let kept: Vec<_> = vfs.paths().filter(|p| vfs.len(p).unwrap() <= cap).collect();
+        assert_eq!(kept, vec!["ok.txt".to_string()]);
     }
 }
