@@ -6,15 +6,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T45.1 | in progress | P0 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.2 | in progress | P0 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-
-### T45.1. OTel flush survives a traces error
-
-`flush_into` aborts the whole flush on a non-404 traces POST error (`?`), so logs/metrics stall one extra round. Per-stream isolation: stash the error in `rep.error` and continue; the traces mark stays, other streams advance.
-Plan: `src/otel/export.rs` (match per-stream `post` results), `tests/otel.rs` (new `traces_500_still_posts_logs_and_metrics` case). Verify: `mise exec -- cargo test --test otel`.
 
 ### T45.2. Proxy cache hits and errors keep usage rows
 
