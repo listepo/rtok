@@ -3,15 +3,14 @@
 - T50.3. Extra `read` modes
 - T51.1. Compress JSON and code inside the live zone
 - T52.2. More grammars and compressed index payloads
-- T52.3. Ranked repo map at SessionStart (in progress)
+- T52.3. Ranked repo map at SessionStart
 - T53.1. Coaching nudges under an A/B
-- T53.3. Hook start without Security.framework (in progress)
+- T53.3. Hook start without Security.framework
 - T53.4. `just otel-check` against real backends
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T56.2. Migrate read/search unit tests to VFS
 - T56.3. Migrate cmd/setup path tests to VFS
-- T56.4. Optional walk/VFS adapter for search/tree
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T58.1. `read` delta since last read
@@ -47,3 +46,30 @@
 - T65.3. `cmd` column-padding collapse
 - T65.4. Never cut a stack trace
 - T67.2. `expand --context N` around grep hits
+- T68.1. `explore`: one call answers a code question
+- T68.2. `symbol` lists what a definition calls
+- T68.3. Staleness line on every graph answer
+- T68.4. `impact` with a target: call paths between two symbols
+- T68.5. `affected`: which tests a change touches
+- T68.6. Import edges in the index
+- T68.7. Mark ambiguous references
+- T68.8. Markdown outline shared by `outline`, `read map` and the skill digest
+- T68.9. With / without bench for the graph tools
+- T68.10. `[plugins.graph]` exclude, include and extension map
+- T69.1. Note lifecycle: retire, supersede, pin — never delete
+- T69.2. Recall ranking: recency decay and use counts, off by default
+- T69.3. Memory recall bench: planted, drifted, superseded facts
+- T69.4. `rtok memory status` and the Memory page rows
+- T69.5. `remember:` prompts save a note; per-turn recall stays behind an A/B
+- T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
+- T70.1. pi extension shortens every tool result, not only bash
+- T70.2. pi `context` hook: the `archive` live zone without a proxy
+- T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
+- T70.4. Cursor plugin shortens MCP results the host launched
+- T70.5. `guard` on pi and OpenCode through the plugin
+- T70.6. Compaction on pi and OpenCode through the plugin
+- T70.7. Cursor: `inject` has no path in, and the host table says it does
+- T71.1. `curl` / `wget` HTML pages as readable text
+- T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
+- T71.3. rtok's own skill, installed with the host plugin
+- T71.4. Measure the per-skill listing overhead through the proxy

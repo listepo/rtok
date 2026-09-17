@@ -712,7 +712,7 @@ the conversation for every later request of that session.
 
 - Claude Code's "~100 tokens per skill" is the docs' figure; measured descriptions here
   average 194 chars ≈ 49 tokens, so the per-skill overhead beyond the description (name,
-  path, framing) is unknown until a captured system prompt is measured through the proxy.
+  path, framing) is unknown until a captured system prompt is measured through the proxy (T71.4).
 - Whether hosts other than Claude Code and Cursor honour `disable-model-invocation` in the
   listing is not documented (10.1).
 
@@ -814,7 +814,7 @@ forbids answering before searching the context. Library only: no CLI, no MCP, no
 | Benchmark: accuracy and cost vs direct | `rtok bench` cost per passed task | none | — |
 
 What transfers is the loop, not the runtime: rtok already externalises every large payload
-behind an id; T66.1 gives a grep hit a position and T66.2 folds the slice into the same call.
+behind an id; T67.1 gives a grep hit a position and T67.2 folds the slice into the same call.
 
 ## 13. engram, feature by feature against `memory` (2026-09-18)
 
@@ -827,7 +827,7 @@ is useful. engram's own docs carry no token-saving number; its value is recall, 
 | --- | --- | --- | --- |
 | `topic_key` upsert: same `project + scope + topic_key` updates the row, `revision_count++` | every `mem_save` inserts; a re-saved decision leaves two rows with one title in the 5-title recall | adopt, zero-LLM, no schema: the title is the key, upsert on `(project, kind, title)` | T66.1 |
 | Git Sync: gzipped JSONL chunks + manifest, `engram sync --import` | `memory import <file.jsonl>` exists (T6.3); nothing produces that file from `rtok.db` | adopt the missing half: `memory export` in the shape `import` reads; no chunk manifest (a file in git is the manifest) | T66.2 |
-| `mem_context` at session start: pinned + recent observations + sessions + prompts, 16 KiB default budget | SessionStart recall: 5 titles + ids ≤ 200 tokens; compaction checkpoint ≤ 400 tokens, same session only | keep rtok's shape (D5 budget, titles not bodies); cross-session handoff parked until an A/B | I-56 |
+| `mem_context` at session start: pinned + recent observations + sessions + prompts, 16 KiB default budget | SessionStart recall: 5 titles + ids ≤ 200 tokens; compaction checkpoint ≤ 400 tokens, same session only | keep rtok's shape (D5 budget, titles not bodies); cross-session handoff off by default behind an A/B | I-56 → T71.2 |
 | `pinned` observations first in context | recency only | parked; `kind = "pin"` would do it without a column | I-57 |
 | project identity from the normalised `origin` remote, `.engram/config.json` override, child-repo scan | git-root basename | parked; one checkout per repo is the workflow here | I-58 |
 | `mem_update(id)` | none | covered by T66.1: re-save the same title | — |
@@ -842,3 +842,104 @@ is useful. engram's own docs carry no token-saving number; its value is recall, 
 
 Net: two tasks (T66.1, T66.2), three ideas (I-56–I-58), nothing that adds an MCP tool — the
 description column stays at 3 memory tools.
+
+## 14. graymatter, against rtok's `memory` (2026-09-18)
+
+Source: github.com/angelnicolasc/graymatter (Go, MIT, one ~10 MB static binary; bbolt +
+chromem-go in `.graymatter/gray.db`; MCP server, CLI and importable library; README fetched
+2026-09-18). Every number below is graymatter's own (`go run ./benchmarks/token_count`,
+keyword embedder, no LLM); nothing was re-measured here. rtok side checked in
+`src/plugins/memory/mod.rs`, `src/store/mod.rs` (`notes`, `list_note_titles`, `search_notes`),
+`src/store/embed.rs`, `migrations/0001.sql`, `src/agents/claude/mod.rs` (`ENTRIES`),
+`src/web/model.rs` (`config_fields`).
+
+Its claims: tokens per session against full-history injection ~80 → ~80 (1 session),
+~630 → ~550 (10), ~1 880 → ~550 (30), ~6 960 → ~670 (100, "90 %"); a fact planted 96 sessions
+ago retrieved 83 % of the time; superseded facts returned 0 %. The baseline is "re-inject the
+whole history", which no coding host does, so the 90 % is not a bill delta; the two recall
+numbers are the useful ones, because rtok has none for `memory`.
+
+| Their feature | rtok today | Gap | Task |
+| --- | --- | --- | --- |
+| Hybrid recall: vector + keyword + recency, top-8, per-signal receipts | FTS5 BM25; optional hash-embed RRF (P29); SessionStart = newest 5 ids of the project; no recency, no receipts | ranking by age and use | T69.2 |
+| 30-day decay half-life; never hard-delete; pinned facts exempt | none: every note is live forever, no pin | lifecycle | T69.1 (pin, retire), T69.2 (decay) |
+| `revise` / `forget` as tombstones; corrections recorded | insert-only; the in-place update by title is the memory card "`mem_save` updates a note in place" | retire + supersede | T69.1 |
+| Benchmark: tokens/session vs full injection, plant-and-recall, superseded = 0 | none for `memory` (T8.8 exists for `graph`) | a recall-quality number | T69.3 |
+| Claude Code hooks: SessionStart facts + conventions; UserPromptSubmit top-3 + `remember:`; PreCompact checkpoint; SessionEnd checkpoint + consolidation; errors to `hooks.log`, never break the session | SessionStart titles (T6.2); PreCompact checkpoint (T2.5); fail open ≤ 10 ms; nothing on UserPromptSubmit; SessionEnd registered, unhandled | `remember:`; per-turn recall (A/B); SessionEnd | T69.5; I-56 (engram `mem_context`) |
+| `context-sync`: budgeted managed block in CLAUDE.md / AGENTS.md, hand-edit detection, backup | none (hook injection only; hosts without a SessionStart hook get no recall) | a sync command | T69.6 |
+| `status` / 4-tab `tui`: facts, KB, recall counts, health, weights | Memory page shows two config keys; no `memory status` | store rows on the page | T69.4 |
+| Knowledge graph: entities, co-mentions, Obsidian export, HTML force graph | `graph` is the code index | — | I-72 |
+| Consolidation: summarise + decay + prune + extract (Ollama; OpenAI / Anthropic / keyword fallback) | no LLM (P28 is Later) | the mechanical half only | T69.1 / T69.2; I-73 |
+| Embedding chain Ollama → OpenAI → Voyage → keyword | hash-embed local or `openai` (P29) | — | I-75 |
+| `export --format obsidian` | JSONL import (T6.3); JSONL export is the memory card "`rtok memory export`" | markdown | I-74 |
+| MCP wiring: Claude Code, Cursor, Codex, OpenCode, Antigravity, Windsurf, VS Code Copilot | 12 hosts in `src/agents/`; VS Code is T48.8; Windsurf / Antigravity on request | — | — |
+| Security: loopback + bearer on network surfaces; recalled facts fenced, never in the system prompt | `rtok mcp` is stdio; recall is `id title` lines in the hook's `additionalContext`, bodies only via `mem_get` | — | — |
+| Go library in three lines | `rtok-plugin-sdk` (D25) | — | — |
+
+Where rtok is ahead: one ledger — `Measurement` rows plus proxy `usage` — where graymatter's
+numbers are its own bench; FTS5 in the same SQLite file as every other plugin (D8) and three
+memory tools inside the measured 11-tool / ~143-token surface (`docs/comparison.md` §2); the
+`expand` path and the compaction checkpoint with modes re-injected (T2.5); titles → ids → bodies
+where graymatter injects the top-K bodies.
+
+Order by expected effect: T69.1 first (a wrong fact recalled is worse than a missing one),
+T69.3 (the number Gate P6 lacks), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
+T69.6 behind their gates.
+
+## 15. What a host plugin can do that rtok's own surfaces cannot (2026-09-18)
+
+Creator request: go through §1–§13 and `ideas.md` for everything parked because rtok's three
+surfaces (D2: hook, MCP, proxy) cannot reach it, and check whether a **host plugin** —
+`plugins/<host>/`, linked by `rtok agents install <host>` (D21) — can.
+
+Method: one Haiku web agent read the three plugin APIs rtok already links against
+(https://pi.dev/docs/latest/extensions, https://opencode.ai/docs/plugins/,
+https://cursor.com/docs/agent/hooks) and answered, per event, whether a return value may
+replace a tool result, block a call, change the messages sent to the model, or run at
+compaction. Vendor docs only — nothing re-measured here, and the scan disagrees with
+`src/agents/cursor/mod.rs` on Cursor's event names (the installer writes
+`beforeShellExecution` / `afterShellExecution`; the scan also reports `preToolUse` /
+`postToolUse`). **Every task below therefore starts with a step that re-verifies the API
+against the host's current docs and one real session, and closes with that finding if the
+capability is not there.**
+
+### 15.1 The three constraints that park work today
+
+| Constraint | Where it is stated | What it blocks |
+| --- | --- | --- |
+| PostToolUse can only add context, never modify a tool result | §3, D2, `plan.md` working agreement | On Claude Code only `Bash` shrinks (PreToolUse rewrite → `rtok run`); `Read`, `Grep`, `Glob`, `WebFetch`, `Task` and every foreign MCP result enter context whole |
+| The live zone needs the proxy | §9.3, `archive` plugin docs | A host with no base-URL setting (Cursor, Claude Desktop, pi, Windsurf, Zed, ZCode, Kimi, Copilot) never shrinks an old tool result — the lever §1 ranks first |
+| A host without hook events reaches no hook plugin | `src/agents/<host>/README.md` module tables | `inject`, `guard` unreachable on pi, OpenCode, Codex; `guard` unreachable on every MCP-only host |
+
+### 15.2 What each plugin API offers against those constraints
+
+Scan of 2026-09-18, unverified against a running host. "—" is "not documented".
+
+| Capability | pi extension | OpenCode plugin | Cursor plugin |
+| --- | --- | --- | --- |
+| Replace a tool result | `tool_result` returns `content` for **every** tool | `tool.execute.after` mutates `output` (rtok uses it for bash; other tools — not documented) | MCP results only, per the scan (`updated_mcp_tool_output`); shell output not replaceable |
+| Block a call with a reason | `tool_call` → `{block, reason}` | `tool.execute.before` (throw) | `beforeShellExecution` / `beforeMCPExecution` → `permission: deny` |
+| Rewrite the messages sent to the model | `context` fires before **each** LLM call with the message array | — | — |
+| Change the system prompt | `before_agent_start` | — | — |
+| Inject context at session start | — | — | `sessionStart` → `additional_context`, `env` |
+| Act at compaction | `session_before_compact` may supply the summary or cancel | `experimental.session.compacting` may replace the prompt | `preCompact` observational |
+| Register a tool without MCP | `pi.registerTool` | — (MCP entry does it) | — (MCP entry does it) |
+
+### 15.3 What that unblocks, and what it does not
+
+| Parked item | Why it was parked | Host plugin that reaches it | Task |
+| --- | --- | --- | --- |
+| Shrink results of tools other than Bash on a host with no proxy | PostToolUse cannot modify results (§3) | pi `tool_result` (all tools) | T70.1 |
+| `archive` live zone without a proxy | proxy-only (§9.3) | pi `context` rewrites the message array per call — the same job the proxy live zone does | T70.2 |
+| pi reaches only `measure`, `cmd` (`src/agents/pi/README.md`) | "pi philosophy is no MCP" | `pi.registerTool` is not MCP: `read` / `search` / `graph` / `memory` can be pi tools | T70.3 |
+| Foreign MCP results the **host** launched | T59.4 wraps only servers rtok itself spawns (`rtok mcp -- <argv>`); lean-ctx measured at ≈ 27 % of tool-result bytes over 30 d (§2) | Cursor's post-MCP output replacement | T70.4 |
+| `guard` unreachable on pi and OpenCode | no hook events on either host | pi `tool_call` block, OpenCode `tool.execute.before` | T70.5 |
+| Compaction outside Claude Code (T58.2 (a)) | T58.2 registers host **hook** events; pi and OpenCode have none | pi `session_before_compact`, OpenCode `experimental.session.compacting` — both stronger than a note: they own the summary | T70.6 |
+| `inject` claimed reachable on Cursor | `reaches()` counts declared surfaces, and Cursor supports hooks — but the installer registers only the two shell events, which never carry a session start or a prompt | Cursor `sessionStart` / `beforeSubmitPrompt` | T70.7 |
+| Skill bodies on pi | §10.8 lists Claude Code (T62.1) and OpenCode (T62.3) only | pi `context` (T70.2) drops an old body from the array like any other block; no separate task | — |
+| Sub-agent handoff (I-46), strict-mode Read deny (I-82), `RunBudget` (I-55) | parked on a **measured share**, not on a missing surface | — | stay parked |
+
+Reading: two of the three constraints are host-plugin-shaped, and pi is the host where the
+gap is widest — it reaches two plugins today and its extension API is the most capable of
+the three. The proxy stays the only path on Codex, Claude Desktop, Windsurf, Zed, ZCode,
+Kimi and Copilot, which have neither a plugin directory nor the events.

@@ -1,5 +1,22 @@
 # rtok — completed tasks
 
+## T56.1 — Test VFS helper and convention
+
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` ships `Vfs` (path → bytes) with `write` / `read` / `read_str` / `len` / `exists` / `paths` / `paths_under`.
+
+**Result.** D29 recorded, AGENTS.md notes the rule, Vfs covers the API above, and read (`search_max_bytes_gate_uses_vfs_sizes`), cmd (`Settings::from_vfs` rules tests), and graph (`file_uri_encodes_spaces`) unit tests use it with no host temp dir. Moved out of `plan.md` on 2026-09-18 (the row had sat there as `done` / 100 %).
+
+---
+
+## T56.4 — Optional walk/VFS adapter for search/tree
+
+If search/tree keep needing real walks, introduce a narrow trait (metadata + read bytes + list dir) with a `Vfs` impl so oversized-file and relative-path tests run without host disk.
+Done when search/tree unit tests for the size-cap and relative-path cases can run against `Vfs`, or the card closes with a measured reason to keep WalkBuilder-on-disk.
+
+**Result.** `plugins::read::walk::{WalkFs, walk, search_hits, tree_rows}` + `Vfs::{list_dir, meta}` (dirs inferred). Production `search`/`tree` keep host `WalkBuilder` (gitignore); disk e2e kept. Size-cap / relative-path / skip-`.git` twins run on the adapter. `HostFs: WalkFs` stub landed under test (T56.5); prod swap of WalkBuilder is the T56.5 follow-up, not required here. Moved out of `plan.md` on 2026-09-18 (the row had sat there as `done` / 100 %).
+
+---
+
 ### T67.1. `expand --grep` is a regex with numbered hits
 
 From I-53 (`research.md` §12, recursive-llm). The RLM loop is search → slice: the model regex-searches the externalised context and pulls only the span around a hit. `expand --grep` today is a substring match that prints bare lines, so a hit has no position and `--lines a-b` cannot follow; the model's only way to see the context around a match is a full expand, which is the expand-rate cost `report` flags.
