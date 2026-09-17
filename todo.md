@@ -16,7 +16,6 @@
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
 - T52.4. Dead code report
-- T52.5. Type-position and scoped-call references (in progress)
 - T53.1. Coaching nudges under an A/B
 - T53.2. Shell completions and man page
 - T53.3. Hook start without Security.framework

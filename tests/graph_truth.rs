@@ -93,10 +93,16 @@ fn every_label_names_a_file_that_mentions_the_symbol() {
     );
 }
 
-/// The constructs `src/plugins/graph/PLAN.md` lists under "Known misses", pinned on a one-file
+/// The constructs `src/plugins/graph/PLAN.md` lists under "Known misses", pinned on a small
 /// repo: a change in what the tags query captures fails here by name instead of drifting a
-/// repo-wide ratio. One parse, milliseconds. `scoped_callee` is caught by rtok's own
+/// repo-wide ratio. One parse per file, milliseconds. `scoped_callee` is caught by rtok's own
 /// `RUST_SCOPED_CALL` pattern (`outline.rs`); the grammar's query alone would miss it.
+/// T52.5: `OnlyTyped` is caught by rtok's own `RUST_EXTRA_REF` (bare
+/// `type_identifier`); path segments (`outer`, `middle`) by its
+/// `scoped_identifier` arms. The TypeScript half (`TS_CALL_TYPE_REF`: plain,
+/// member and nested-member calls, generic type arguments) is pinned on
+/// `main.ts` in the same repo. Macro bodies stay missed — their arguments
+/// parse as an opaque `token_tree` no query can reach into.
 #[test]
 fn reference_capture_matches_the_known_misses() {
     let (cx, dir) = open("truth-constructs");
@@ -111,6 +117,14 @@ impl Recv {
 pub fn plain_callee() {}
 pub fn scoped_callee() {}
 pub fn macro_callee() -> bool { true }
+pub mod outer {
+    pub mod middle {
+        pub fn leaf() {}
+    }
+}
+pub fn seg_user() {
+    outer::middle::leaf();
+}
 pub fn user(r: Recv, t: Vec<OnlyTyped>) {
     plain_callee();
     self::scoped_callee();
@@ -119,6 +133,16 @@ pub fn user(r: Recv, t: Vec<OnlyTyped>) {
 }
 ";
     std::fs::write(root.join("lib.rs"), src).unwrap();
+    let ts = "\
+export interface TsTyped { v: number; }
+export function ts_plain_callee(): void {}
+export const holder = { ts_member_callee(): void {} };
+export function ts_user(t: Array<TsTyped>) {
+    ts_plain_callee();
+    holder.ts_member_callee();
+}
+";
+    std::fs::write(root.join("main.ts"), ts).unwrap();
     index::run(&Ctx::new(&cx), &root, false).unwrap();
     let key = index::canon(&root);
     let seen = |n: &str| !cx.store.symbol_refs(&key, n).unwrap().is_empty();
@@ -126,8 +150,15 @@ pub fn user(r: Recv, t: Vec<OnlyTyped>) {
         ("plain_callee", true),
         ("scoped_callee", true),
         ("method_callee", true),
-        ("OnlyTyped", false),    // type position
-        ("macro_callee", false), // macro arguments are an opaque token_tree
+        ("OnlyTyped", true),        // T52.5 type position via RUST_EXTRA_REF
+        ("Recv", true),             // T52.5 parameter type via RUST_EXTRA_REF
+        ("outer", true),            // T52.5 path root via RUST_EXTRA_REF
+        ("middle", true),           // T52.5 intermediate segment via RUST_EXTRA_REF
+        ("leaf", true),             // qualified call name (RUST_SCOPED_CALL)
+        ("ts_plain_callee", true),  // T52.5 plain call via TS_CALL_TYPE_REF
+        ("ts_member_callee", true), // T52.5 member call via TS_CALL_TYPE_REF
+        ("TsTyped", true),          // T52.5 generic argument via TS_CALL_TYPE_REF
+        ("macro_callee", false),    // macro arguments are an opaque token_tree
     ]
     .into_iter()
     .filter(|(n, want)| seen(n) != *want)
@@ -140,11 +171,68 @@ pub fn user(r: Recv, t: Vec<OnlyTyped>) {
     );
 }
 
-/// Definitions must clear the P8b bar of 0.9 and do, at 1.0. References do not: the Rust tags
-/// query sees no type positions and nothing inside a macro body, which is 73 of the 147
-/// labelled sites. The floor below is a regression guard on the measured 0.305 (0.351 at T8.8,
-/// 0.339 at T8.19, 0.318 before T34.6; repo drift, not index drift), not a target;
-/// `src/plugins/graph/PLAN.md` names the constructs under "Known misses".
+/// T52.5: the new constructs flow into `callers`. Rust groups them under the
+/// enclosing definition; TypeScript groups them at file level, because the
+/// upstream TS tags query captures no `function_declaration` definitions —
+/// a separate definitions gap, not covered here (see `PLAN.md` Known misses).
+#[test]
+fn new_constructs_group_under_the_enclosing_definition() {
+    let (cx, dir) = open("truth-scopes");
+    let root = dir.join("repo");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("lib.rs"),
+        "pub struct OnlyTyped;\npub fn helper() {}\npub fn user(t: Vec<OnlyTyped>) {\n    crate::helper();\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("main.ts"),
+        "export interface TsTyped { v: number; }\nexport const holder = { ts_member_callee(): void {} };\nexport function ts_user(t: Array<TsTyped>) {\n    holder.ts_member_callee();\n}\n",
+    )
+    .unwrap();
+    index::run(&Ctx::new(&cx), &root, false).unwrap();
+    let key = index::canon(&root);
+    let scopes = |n: &str| {
+        cx.store
+            .symbol_ref_groups(&key, n)
+            .unwrap()
+            .into_iter()
+            .map(|(p, s, c, _)| format!("{p}/{s}x{c}"))
+            .collect::<Vec<_>>()
+    };
+    let got = scopes("OnlyTyped");
+    assert_eq!(
+        got,
+        ["lib.rs/userx1"],
+        "type use groups under user, got {got:?}"
+    );
+    let got = scopes("helper");
+    assert_eq!(
+        got,
+        ["lib.rs/userx1"],
+        "scoped call groups under user, got {got:?}"
+    );
+    // No `function_declaration` defs upstream, so both TS refs sit at file level —
+    // the rows exist (the pre-T52.5 answer was no rows at all).
+    let got = scopes("TsTyped");
+    assert_eq!(
+        got,
+        ["main.ts/x1"],
+        "generic argument is found, got {got:?}"
+    );
+    let got = scopes("ts_member_callee");
+    assert_eq!(got, ["main.ts/x1"], "member call is found, got {got:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Definitions must clear the P8b bar of 0.9 and do, at 1.0. References clear it
+/// too since T52.5: rtok's own `RUST_EXTRA_REF` / `TS_CALL_TYPE_REF` cover type
+/// positions, scoped calls and path segments, and every remaining miss is inside
+/// a macro body (opaque `token_tree`), which no tags query can reach. The floor
+/// below is a regression guard on the measured 0.914 (0.305 before T52.5, 0.351
+/// at T8.8, 0.339 at T8.19, 0.318 before T34.6; repo drift, not index drift),
+/// with slack for label drift — not a target. `src/plugins/graph/PLAN.md`
+/// names the constructs under "Known misses".
 ///
 /// Why it is the slowest test here: it indexes the whole repo cold, in a debug build, one file
 /// after another — walk, stat query, read, sha256, a tags parse that first compiles the Rust
@@ -244,8 +332,9 @@ fn labelled_symbols_are_found() {
         "definition precision {precision:.3}: a name resolved to a file it is not defined in"
     );
     assert!(
-        ref_recall >= 0.30,
-        "reference recall {ref_recall:.3} fell below the 0.30 floor; run \
+        ref_recall >= 0.85,
+        "reference recall {ref_recall:.3} fell below the 0.85 floor (measured 0.914 after \
+         T52.5; every remaining miss is a macro body); run \
          every_label_names_a_file_that_mentions_the_symbol first — a stale label reads as a miss"
     );
     assert!(

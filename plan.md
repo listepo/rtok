@@ -24,7 +24,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
 | T52.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
-| T52.5 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.1 | todo | P3 | 3 | 0% | |
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
@@ -135,18 +134,6 @@ Execution plan (T52.4, OpenCode / Muse Spark 1.3):
 2. `src/plugins/graph/mod.rs`: `dead(cx, root)` — index_for, candidates, then filters: skip `macro` kind; skip test paths (`tests/`, `_test`, `test_`); skip `pub` lines (read source once per file); skip methods inside `impl X for Y` ranges (tree-sitter parse per file); skip `main`; cap + `Measurement` via existing `cap`.
 3. `src/cli.rs`: `GraphCmd::Dead` + dispatch printing `dead()`; e2e via binary on a fixture repo.
 4. Verify: new unit test with fixture repo covering pub fn, trait impl method, `#[test]` fn, `macro_rules!` + used + truly-dead private fn (only the dead one listed); `mise exec -- cargo fmt`, clippy, nextest; `just check`.
-
-### T52.5. Type-position and scoped-call references
-
-From I-31. Reference recall was 0.351 (T8.8), and 65 of 74 misses were type positions and `scoped_identifier` calls, which the grammars' tag queries do not emit.
-Done when rtok ships its own extra tags query for Rust (then TS) covering those two constructs, T8.8's recall measurement is rerun and recorded in `research.md`, and `callers` tests include both constructs.
-
-Execution plan (T52.5, OpenCode / Muse Spark 1.3):
-1. `src/plugins/read/outline.rs`: `RUST_TYPE_REF` extra query (bare `type_identifier` + `scoped_type_identifier` name/path as `@reference.type`) appended to the Rust tags config; `TS_SCOPED_CALL` extra query (`call_expression` with `identifier` and `member_expression` property as `@reference.call`) appended to the TS/TSX configs. No new crate (queries are data).
-2. `src/plugins/graph/index.rs`: extractor fingerprint hashes the two new query strings (stale rows re-index, T35.5); `scoped()` drops def-line self-refs (same name+line as a def) and cross-kind duplicates (a `type` ref where a non-`type` ref of the same name+line+scope exists, e.g. `impl` items).
-3. `tests/graph_truth.rs`: constructs fixture gains type-position (`Vec<OnlyTyped>`, param type) and TS member-call cases; `OnlyTyped` flips to hit; `callers` asserts both constructs group under the enclosing fn.
-4. `research.md` §2: re-record T8.8 recall after the change (was refs 32/105 recall 0.305).
-5. Verify: `graph_contract.rs` byte-exact (fixtures have no type ids), `mise exec -- cargo fmt`, clippy `-D warnings`, nextest incl. `graph_truth`; `just check`. Files: outline.rs, index.rs, tests/graph_truth.rs, research.md (+ PLAN.md Known-misses note).
 
 ### T53.1. Coaching nudges under an A/B
 

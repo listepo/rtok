@@ -72,14 +72,15 @@ rtok config show --sources | grep plugins.graph.backend
 Call MCP `outline` on a sample file, then `callers` on one of its symbols.
 `tests/graph_lsp_gate.rs` is the runnable version of this check: it gets
 `outline` of a two-symbol `lib/main.dart` through `dart language-server`, asserts
-the type-position `OnlyTyped` reference (a tags miss) hits through
-rust-analyzer, and asserts one `lsp*` measurement row:
+the `OnlyTyped` reference hits through rust-analyzer (it hits through tags too
+since T52.5; the tags-miss pin is now a macro-body `macro_callee` reference),
+and asserts one `lsp*` measurement row:
 
 ```bash
 cargo test --test graph_lsp_gate
 ```
 
-All five tests pass when both servers are on `PATH`; the Dart and LSP tests
+All six tests pass when both servers are on `PATH`; the Dart and LSP tests
 skip otherwise.
 
 ## Without the server

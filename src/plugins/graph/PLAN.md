@@ -110,6 +110,25 @@ arguments missed. Re-scored 2026-09-10 after a fixture repair (T34.9): 147 sites
 42/42, references 32/105, recall 0.305. The fall from 0.351 is labels the tree dropped, not the
 index; `every_label_names_a_file_that_mentions_the_symbol` now catches those.
 
+### T52.5 — type positions and scoped calls from rtok's own queries (2026-09-17)
+
+I-31 closed for the two reachable constructs, plus path segments found along the
+way. `RUST_EXTRA_REF` (bare `type_identifier`, `scoped_type_identifier` path,
+and both `scoped_identifier` arms for every `a::b` segment) and
+`TS_CALL_TYPE_REF`
+(plain/member/nested-member calls, member constructions, bare `type_identifier` + namespace
+module) are appended to the grammar queries in `outline.rs`; the extractor
+fingerprint hashes them, so stale roots re-index (T35.5). Overlaps need no
+filter: tree-sitter-tags keeps one tag per node and the earlier pattern wins,
+and rtok's extras come last — `struct Foo;` keeps its def row, `impl Foo` its
+implementation row (verified in the scratch dump recorded in the task commit).
+What stays missed: macro bodies (opaque `token_tree`; 9/74) — now the
+discriminating fixture for any tags-vs-LSP comparison (`graph_lsp_gate.rs`
+`tags_backend_misses_macro_body`; the old `OnlyTyped` gate pin is a tags hit).
+Not covered: TS `function_declaration` definitions (the upstream TS query has
+none, so TS refs group at file level) and primitives — proposed follow-ups,
+not attempted here.
+
 ### Rejected in this round
 
 - A separate `explore` tool (codegraph) — the same result is `symbol` with a body; a fifth tool is description tokens for nothing.
@@ -253,7 +272,7 @@ Agents, hooks, and `tests/graph_contract.rs` pin **`symbol`**, **`callers`**, **
 3. **Dispatch** in `mod.rs`: `backend == "tags"` → existing `index` + `symbol_*` store methods; `backend == "lsp"` → `lsp::` module, no tags walk on that call (index may still run for `tags` mode only).
 4. **Measurement**: each LSP tool call records `plugin=graph`, `method=lsp.<tool>`, latency ms — compare against tags warm **23–26 ms** in `research.md`; unrecorded precision claims do not exist (D3).
 
-### Gate P30 fixture (tags miss, LSP hit)
+### Gate P30 fixture (tags miss, LSP hit) — fixture moved to macro bodies by T52.5
 
 **Fixture:** `tests/graph_truth.rs` → `reference_capture_matches_the_known_misses` (`truth-constructs` temp repo). Source pinned in-test:
 
@@ -264,8 +283,16 @@ pub fn user(r: Recv, t: Vec<OnlyTyped>) { /* … */ }
 
 | Query | Tags (`backend = "tags"`) | LSP (`backend = "lsp"`, rust-analyzer) |
 |-------|---------------------------|----------------------------------------|
-| Reference to `OnlyTyped` in `user`'s signature | **Miss** — `symbol_refs("OnlyTyped")` empty (type position; 64/74 T8.8 misses) | **Hit** — `textDocument/references` on the `OnlyTyped` struct definition returns the `Vec<OnlyTyped>` site in `user` |
-| `callers("OnlyTyped")` after grouping | Empty / no rows | At least one row naming `user` as the enclosing scope |
+| Reference to `OnlyTyped` in `user`'s signature | **Hit since T52.5** — `RUST_EXTRA_REF` captures the `Vec<OnlyTyped>` site (was a tags miss: `symbol_refs("OnlyTyped")` empty, type position, 64/74 T8.8 misses) | **Hit** — `textDocument/references` on the `OnlyTyped` struct definition returns the `Vec<OnlyTyped>` site in `user` |
+| `callers("OnlyTyped")` after grouping | One row naming `user` (T52.5) | At least one row naming `user` as the enclosing scope |
+
+T52.5 note (2026-09-17): both halves of the `OnlyTyped` row are hits now, so it
+no longer discriminates tags from LSP. The discriminating fixture moved to a
+macro-body reference (`assert!(macro_callee())`): tags miss (opaque
+`token_tree`), rust-analyzer resolves through the expansion.
+`tests/graph_lsp_gate.rs` pins `tags_backend_hits_onlytyped_type_position` and
+`tags_backend_misses_macro_body`; the LSP half (`lsp_backend_hits_onlytyped_type_position`)
+is unchanged and still green.
 
 T30.2 adds `tests/graph_lsp_gate.rs` (or extends `graph_contract.rs`) that runs the same file with `backend = "lsp"` against a functional `rust-analyzer` on `PATH`; skips when absent. **Secondary** candidate (not the gate): `&dyn Trait` dispatch — tags over-approximate by name; LSP resolves the trait method's `references` — but the gate uses the already-measured **type-position miss** so the row cites T8.8 evidence.
 

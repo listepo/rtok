@@ -140,6 +140,61 @@ pub(crate) const RUST_SCOPED_CALL: &str = "
         name: (identifier) @name)) @reference.call
 ";
 
+/// T52.5: the upstream Rust tags query sees no type positions (`Vec<Foo>`,
+/// `Surface::Mcp`, `fn f(m: Manifest)` — 64 of the 74 T8.8 misses). A bare
+/// `type_identifier` is every one of those sites; the `path` arm catches the
+/// module half of a two-segment type path (`Surface` in `Surface::Mcp`; the
+/// `Mcp` half is a `type_identifier` the bare arm already sees). Same-node
+/// double capture is what the Go grammar's own tags query does
+/// (`(type_identifier) @name @reference.type`).
+///
+/// The two `scoped_identifier` arms catch every `a::b` segment, so intermediate
+/// path pieces count as references: `plugin` in `crate::plugin::Surface::Mcp`,
+/// `Registry` in `Registry::new(..)`, `store`/`Store` in
+/// `use crate::store::Store`. `self`/`crate`/`super` never match — the grammar
+/// parses them as their own node types, not `identifier` (`Self::foo` does
+/// record a `Self` row; one junk name, accepted). The final call name is already
+/// claimed by an earlier pattern and one tag per node wins, so nothing counts
+/// twice (verified on the `truth-constructs` fixture).
+#[cfg(feature = "lang-rust")]
+pub(crate) const RUST_EXTRA_REF: &str = "
+(type_identifier) @name @reference.type
+(scoped_type_identifier
+    path: (identifier) @name) @reference.type
+(scoped_identifier
+    name: (identifier) @name) @reference.call
+(scoped_identifier
+    path: (identifier) @name) @reference.call
+";
+
+/// T52.5: the upstream TypeScript tags query sees no calls at all — only
+/// `type_annotation` and `new` with a bare constructor. Plain calls, member
+/// calls (`r.method(..)`, the `scoped_identifier` analog, one nesting level),
+/// and member constructions (`new ns.Foo()`) need these patterns; the bare
+/// `type_identifier` arm catches generic arguments (`Array<Foo>`) the
+/// `type_annotation` arm's direct-child match misses, and the `module` arm the
+/// namespace half of `ns.Foo`. Receiver roots (`holder` in `holder.x()`) are
+/// deliberately not captured — they are usually locals. Like the Rust extras,
+/// these come last so an earlier pattern wins any same-node tie.
+#[cfg(feature = "lang-ts")]
+pub(crate) const TS_CALL_TYPE_REF: &str = "
+(call_expression
+    function: (identifier) @name) @reference.call
+(call_expression
+    function: (member_expression
+        property: (property_identifier) @name)) @reference.call
+(call_expression
+    function: (member_expression
+        object: (member_expression
+            property: (property_identifier) @name))) @reference.call
+(new_expression
+    constructor: (member_expression
+        property: (property_identifier) @name)) @reference.class
+(type_identifier) @name @reference.type
+(nested_type_identifier
+    module: (identifier) @name) @reference.type
+";
+
 /// The query for `path`'s language, compiled on first use (T35.1): the compile was 19 ms of a
 /// 26.5 ms `tags` call on `graph/index.rs` (debug, 2026-09-10), paid again on every file.
 fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
@@ -147,19 +202,22 @@ fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
         #[cfg(feature = "lang-rust")]
         "rs" => compiled!(
             tree_sitter_rust::LANGUAGE,
-            &format!("{}{RUST_SCOPED_CALL}", tree_sitter_rust::TAGS_QUERY),
+            &format!(
+                "{}{RUST_SCOPED_CALL}{RUST_EXTRA_REF}",
+                tree_sitter_rust::TAGS_QUERY
+            ),
             ""
         ),
         #[cfg(feature = "lang-ts")]
         "ts" => compiled!(
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
-            tree_sitter_typescript::TAGS_QUERY,
+            &format!("{}{TS_CALL_TYPE_REF}", tree_sitter_typescript::TAGS_QUERY),
             tree_sitter_typescript::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-ts")]
         "tsx" => compiled!(
             tree_sitter_typescript::LANGUAGE_TSX,
-            tree_sitter_typescript::TAGS_QUERY,
+            &format!("{}{TS_CALL_TYPE_REF}", tree_sitter_typescript::TAGS_QUERY),
             tree_sitter_typescript::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-js")]
