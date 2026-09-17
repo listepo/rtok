@@ -141,7 +141,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-39 | T59.1 | Per-stem interactive table for `skip_wrap`: `-i` is interactive only for REPL stems, `ffmpeg -i` / `curl -i` / `ssh -i` get wrapped. | 2026-09-17 |
 | I-40 | T59.2 | Canonicalize `cwd` once per `search` / `tree` call instead of per row. | 2026-09-17 |
 | I-30 | T59.3 | Batch the cold `graph` index in one transaction per 200 files; re-run the T8.4 cold bench. | 2026-09-17 |
-| I-44 | T59.4 | Lossless MCP wrapper (`rtok mcp --wrap`) for foreign servers, behind evidence from `stats`. | 2026-09-17 |
+| I-44 | T59.4 (done) | Lossless MCP wrapper landed as `rtok mcp -- <server argv>`; lean-ctx measured at ≈ 27 % of tool-result bytes over 30 d, above the 5 % gate. | 2026-09-17 |
 | I-45 | T59.5 | Byte-stable `tools[]` description rewrite in the proxy, off by default, behind evidence. | 2026-09-17 |
 | I-46 | T59.6 | `handoff` MCP tool: budgeted digest for sub-agents, behind evidence. | 2026-09-17 |
 | I-47 | T59.7 | `doctor` names host-native features that duplicate a rtok surface. | 2026-09-17 |

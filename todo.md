@@ -23,7 +23,6 @@
 - T59.1. Per-stem interactive table for `skip_wrap`
 - T59.2. Canonicalize `cwd` once per `search` / `tree` call
 - T59.3. Batch the cold `graph` index in one transaction per N files
-- T59.4. Lossless MCP wrapper for foreign servers
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
 - T59.6. `handoff` MCP tool for sub-agents
 - T59.7. `doctor` names host-native features that duplicate a rtok surface

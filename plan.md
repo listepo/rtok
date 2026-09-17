@@ -17,7 +17,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.8 | in progress | P2 | 2 | 60% | ZCode / GLM-5.3 |
 | T55.9 | todo | P3 | 2 | 0% | |
-| T55.10 | todo | P3 | 1 | 0% | |
+| T55.10 | in progress | P3 | 1 | 0% | ZCode / GLM-5.3-Flash |
 | T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
@@ -34,9 +34,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T58.2 | todo | P2 | 3 | 0% | |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
-| T59.2 | todo | P3 | 1 | 0% | |
 | T59.3 | todo | P3 | 2 | 0% | |
-| T59.4 | in progress | P3 | 4 | 0% | Claude Code / Fable 5.1 |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.7 | todo | P3 | 2 | 0% | |
@@ -210,25 +208,10 @@ Done when:
 2. `skip_wrap` consults the stem first: `-i` means interactive only for the REPL stems above and `--interactive` anywhere; every other stem is wrapped. Table lives next to `never_wrap` and is overridable in config.
 3. Unit tests: `ffmpeg -i x` wrapped, `ssh -i key host` wrapped, `python -i` skipped, `docker run -i` skipped, `--interactive` always skipped; hook e2e: `curl -i` produces a `Measurement`.
 
-### T59.2. Canonicalize `cwd` once per `search` / `tree` call
-
-From I-40. `display_rel` canonicalizes `cwd` per hit or row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory.
-Done when `search` and `tree` canonicalize once per call and pass the base down, `display_rel` takes the canonical base, existing tests pass unchanged, and a Vfs unit test asserts one canonicalization per call (counter on the adapter).
-
 ### T59.3. Batch the cold `graph` index in one transaction per N files
 
 From I-30 (codebase-memory-mcp: Linux kernel in 3 min). Measured 2026-09-04: 3 000 files cold 27.2 s, warm 0.053 s; the cold path is paid once per repo, so it was parked.
 Done when the cold index writes symbols and edges in one Diesel transaction per 200 files instead of per file, the T8.4 cold bench on the same fixture is re-run and recorded in `research.md` next to the old number, the warm path and the ≤ 10 ms hook stay untouched, and the change is reverted if the cold time does not drop by a third.
-
-### T59.4. Lossless MCP wrapper for foreign servers
-
-From I-44 (atlassian-labs/mcp-compressor; headroom MCP wrapper; `research.md` §9.1). `rtok mcp --wrap -- <server cmd>` spawns the server, proxies stdio JSON-RPC, and shortens `tools/call` results the way `cmd` results are shortened today: raw archived, `expand <id>` trailer, a `Measurement { plugin = "mcp", kind = "wrap", family = <server>/<tool> }` per call. Descriptions, `tools/list`, prompts and resources pass through untouched; the wrapped server keeps its name.
-Done when:
-1. Evidence first: `stats` over transcripts ranks foreign MCP servers by result bytes (§2 measured 15 K of 2.83 M for this workload); the card records the number and the wrapper stays off by default until a server above 5 % is measured — the code still lands behind `--wrap`.
-2. Framing handled for both MCP stdio transports (newline-delimited JSON and `Content-Length` headers); a malformed frame is forwarded byte-for-byte (fail open); server exit code propagated; no third-party MCP crate beyond what `mcp.rs` already uses.
-3. Only `result.content[].text` of `tools/call` responses is shortened, by the `cmd` rule engine with a `[mcp]` default rule (`Rule::default()` semantics) and per-`server/tool` overrides in `rules/default.toml`; `isError` results are never shortened.
-4. Tests: an in-process fake server (Vfs-free, stdio pipes) with a 3 000-line result → shortened result carries the trailer and `expand <id>` returns the raw text; `tools/list` byte-identical; header-framed and newline-framed fixtures; `isError` untouched. Docs: one section on the MCP docs page with the measured row.
-Execution plan (Claude Code / Fable 5.1): (1) `src/mcp/wrap.rs` — frame reader/writer for both transports, child spawn, pass-through loop; (2) result shortening via `plugins::cmd::rules` + `Archive` + `Measurement`; (3) `mcp --wrap` clap flag in `mcp.rs`; (4) tests in `tests/mcp_wrap.rs` with a fake server binary from `assert_cmd::cargo_bin` or a `sh` script; (5) `stats` server ranking row; (6) docs. Three commits: framing + pass-through, shortening + tests, stats + docs.
 
 ### T59.5. Byte-stable `tools[]` description rewrite in the proxy
 
