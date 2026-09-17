@@ -39,29 +39,6 @@ The reference number is a property of the tree-sitter Rust tags query, not of rt
 captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
 else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
 
-### `graph` reference recall after T52.5 (2026-09-17)
-
-Rerun of the same `tests/graph_truth.rs` scoring with rtok's own extra queries
-(`RUST_EXTRA_REF`: bare `type_identifier`, `scoped_type_identifier` path, every
-`a::b` segment; `TS_CALL_TYPE_REF`: plain/member/nested-member calls, member
-constructions, generic type arguments). Dated command:
-`cargo test -p rtok --test graph_truth -- --nocapture labelled_symbols_are_found`.
-
-| Metric | T8.8 (2026-09-04) | T52.5 (2026-09-17) |
-|--------|-------------------|--------------------|
-| Definitions found | 30 / 30, recall 1.000, precision 1.000 | 40 / 40, recall 1.000, precision 1.000 |
-| References found | 40 / 114, recall 0.351 | 96 / 105, recall 0.914 |
-| All sites | 70 / 144, recall 0.486 | 136 / 145, recall 0.938 |
-
-(Label counts moved with the tree: T15.11/T27.0/T34.6 removed stale symbols;
-28 labels, 145 sites today.) Every one of the 9 remaining misses is a call site
-inside a macro body (`assert*!`, `println!`), which parses as an opaque
-`token_tree` no tags query can reach — the query-reachable ceiling. Reference
-recall clears the P8b 0.9 bar the definitions already held; the regression
-floor in the test is 0.85. The old P30 "tags miss, LSP hit" fixture
-(`OnlyTyped`) is a tags hit now; the discriminating fixture moved to macro
-bodies (`tests/graph_lsp_gate.rs`).
-
 ### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04)
 
 Release build. The 3 000-file repo is generated, each file one function calling two others.

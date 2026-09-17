@@ -41,18 +41,6 @@ function rtok(args, input, signal) {
 }
 
 export default function (pi) {
-  // Once per session: the missing-rtok hint reaches the model through
-  // `pi.sendMessage` (LLM context), not `pi.appendEntry` (TUI-only).
-  let hinted = false;
-  function hintMissing() {
-    if (hinted) return;
-    hinted = true;
-    if (typeof pi.sendMessage === "function") {
-      pi.sendMessage({ customType: "rtok-missing", content: KETCH_HINT, display: true });
-      return;
-    }
-    pi.appendEntry?.("system", KETCH_HINT);
-  }
   // One call path: bash → `rtok run -- <command>`. Not a duplicate of any
   // MCP read/search: pi has no MCP, and the hook never touches other tools.
   pi.on("tool_call", async (event) => {
@@ -62,7 +50,7 @@ export default function (pi) {
     // Probe install only: `rtok run` would execute the command before bash does.
     const r = await rtok(["--version"]);
     if (r.missing) {
-      hintMissing();
+      pi.appendEntry?.("system", KETCH_HINT);
       return;
     }
     const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;

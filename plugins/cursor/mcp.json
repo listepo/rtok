@@ -1,9 +1,8 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "rtok": {
-      "type": "stdio",
-      "command": "./scripts/mcp.cmd"
+      "command": "rtok",
+      "args": ["mcp"]
     }
   }
 }

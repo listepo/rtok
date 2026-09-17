@@ -380,13 +380,11 @@ fn extractor_fingerprint() -> String {
     {
         bytes.extend_from_slice(tree_sitter_rust::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(outline::RUST_SCOPED_CALL.as_bytes());
-        bytes.extend_from_slice(outline::RUST_EXTRA_REF.as_bytes());
     }
     #[cfg(feature = "lang-ts")]
     {
         bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_typescript::LOCALS_QUERY.as_bytes());
-        bytes.extend_from_slice(outline::TS_CALL_TYPE_REF.as_bytes());
     }
     store::hex_sha256(&bytes)
 }
@@ -394,15 +392,6 @@ fn extractor_fingerprint() -> String {
 /// Rows for one file, each reference tagged with the innermost definition enclosing it
 /// (T8.5). Ties break to the smaller span, so a nested `fn` wins over the `impl` around it;
 /// a reference outside every definition gets `""`, which reads as file level.
-///
-/// T52.5 note: the extra `type` patterns overlap the upstream query on one node
-/// (`struct Foo;` is both `@definition.class` and a bare `type_identifier`;
-/// `impl Foo` is both `@reference.implementation` and a type site). No filter is
-/// needed here: tree-sitter-tags keeps one tag per node and the earlier pattern
-/// wins, and rtok's extras are appended after the upstream query — so the
-/// definition (or the upstream reference) always stands and no site counts twice.
-/// Verified on the `truth-constructs` fixture: `OnlyTyped:1` yields the def row
-/// only, `impl Recv` the implementation row only.
 fn scoped(hits: &[outline::TagHit]) -> Vec<Row> {
     let defs: Vec<(usize, usize, &str)> = hits
         .iter()

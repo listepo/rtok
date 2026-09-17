@@ -1,5 +1,4 @@
-//! T30.2 / Gate P30: same MCP names; tags hit the type-position fixture since
-//! T52.5 (`RUST_EXTRA_REF`); macro bodies stay a tags miss. LSP coverage is unchanged.
+//! T30.2 / Gate P30: same MCP names; tags miss the type-position fixture; LSP hits it.
 //!
 //! Skips the rust-analyzer path when `rust-analyzer --version` is not on PATH.
 
@@ -86,39 +85,13 @@ fn tags_backend_callers_bytes_match_contract() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-/// T52.5: type-position `OnlyTyped` is a tags hit (`RUST_EXTRA_REF`); before it,
-/// this was the P30 "tags miss, LSP hit" fixture (T8.8). The remaining tags miss
-/// below keeps a discriminating fixture for the gate.
+/// Gate P30: type-position `OnlyTyped` is a tags miss (T8.8).
 #[test]
-fn tags_backend_hits_onlytyped_type_position() {
-    let (cx, dir) = open("p30-tags-hit", "tags");
+fn tags_backend_misses_onlytyped_type_position() {
+    let (cx, dir) = open("p30-tags-miss", "tags");
     let root = onlytyped_crate(&dir);
     let out = callers(&Ctx::new(&cx), &root, "OnlyTyped").unwrap();
-    assert!(out.contains("user"), "tags callers should hit user: {out}");
-    let _ = fs::remove_dir_all(&dir);
-}
-
-/// Macro bodies parse as an opaque `token_tree`, so no tags query reaches into
-/// them: `macro_callee` is only invoked inside `assert!(..)`. rust-analyzer
-/// resolves through the expansion, so this is the fixture a P30-style
-/// tags-vs-LSP comparison discriminates on now.
-#[test]
-fn tags_backend_misses_macro_body() {
-    let (cx, dir) = open("p30-tags-miss", "tags");
-    let root = dir.join("crate");
-    fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname = \"lsp_gate\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("src/lib.rs"),
-        "pub fn macro_callee() -> bool { true }\npub fn user() {\n    assert!(macro_callee());\n}\n",
-    )
-    .unwrap();
-    let out = callers(&Ctx::new(&cx), &root, "macro_callee").unwrap();
-    assert_eq!(out, "no references to macro_callee", "{out}");
+    assert_eq!(out, "no references to OnlyTyped", "{out}");
     let _ = fs::remove_dir_all(&dir);
 }
 

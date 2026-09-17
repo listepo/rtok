@@ -6,7 +6,6 @@ Commands:
   hook     Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
   mcp      Serve MCP tools over stdio
   proxy    Local API proxy for ANTHROPIC_BASE_URL
-  wrap     Run one command with ANTHROPIC_BASE_URL/OPENAI_BASE_URL pointed at the proxy
   web      Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
   tui      Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
   stats    Measurements from session logs and the proxy

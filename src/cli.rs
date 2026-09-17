@@ -52,11 +52,6 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Run one command with ANTHROPIC_BASE_URL/OPENAI_BASE_URL pointed at the proxy
-    Wrap {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        command: Vec<String>,
-    },
     /// Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
     Web {
         /// Override `[web] host`
@@ -621,12 +616,6 @@ pub fn run() -> Result<()> {
                 return Ok(());
             }
             crate::proxy::serve_blocking(cfg)?;
-        }
-        Cmd::Wrap { command } => {
-            std::process::exit(crate::proxy::cli::wrap(
-                &Config::load_with(config_file.as_deref(), None)?,
-                &command,
-            )?);
         }
         Cmd::Web { host, port } => {
             let cfg = Config::load_with(config_file.as_deref(), layers::web_flags(host, port))?;
