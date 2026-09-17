@@ -7,8 +7,6 @@
 - T53.1. Coaching nudges under an A/B
 - T53.3. Hook start without Security.framework (in progress)
 - T53.4. `just otel-check` against real backends
-- T55.8. Guard `read:` keys survive a mutating Bash
-- T55.9. Guard Bash key is cwd-blind
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T56.2. Migrate read/search unit tests to VFS

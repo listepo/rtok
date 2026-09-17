@@ -15,7 +15,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.9 | in progress | P3 | 2 | 0% | ZCode / GLM-5.3-Flash |
 | T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
@@ -114,11 +113,6 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
-
-### T55.9. Guard Bash key is cwd-blind
-
-From review 2026-09-17 (code read, no fix). `norm_cmd` strips every leading `cd … &&`, so `cat x` and `cd docs && cat x` share one key and the second is denied as a duplicate of the first (`bash_repeat_behind_cd_prefix_denies` pins this as intended). Relative paths and `git status` differ per directory, so the deny returns the wrong archive. `strip_cd_and` also cuts at the first `&&` even inside quotes (`cd 'a && b' && ls`).
-Done when the key keeps the effective `cd` target (normalized spacing, quotes handled by one helper shared with `measure::stats` if the shapes match), `cd a && ls` ≠ `ls` ≠ `cd b && ls`, `cd a && cd a && ls` = `cd a && ls`, a quoted path with `&&` inside is not split, and the existing test is rewritten to assert those cases.
 
 ### T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 

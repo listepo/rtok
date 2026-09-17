@@ -136,6 +136,25 @@ impl Registry {
     }
 }
 
+/// Skips one shell word (bare, or with `'…'` / `"…"` segments such as `~/'My Documents'`)
+/// and returns what follows it, left-trimmed. An unterminated quote yields `None` so the
+/// caller fails open and leaves the command untouched. Feature-free home (T55.9): both
+/// `measure::stats` (bash family) and `guard` (cd-aware Bash keys) compile in builds
+/// where the other's module is off, so neither can own it.
+pub(crate) fn skip_word(s: &str) -> Option<&str> {
+    let mut quote = None;
+    for (i, b) in s.bytes().enumerate() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'\'' || b == b'"' => quote = Some(b),
+            None if b.is_ascii_whitespace() => return Some(s[i..].trim_start()),
+            None => {}
+        }
+    }
+    quote.is_none().then_some("")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3092,3 +3092,11 @@ Complexity: 2/5 — two files, ~100 LOC incl. tests (WIP finished from 60 %).
 Status: done 2026-09-17
 Check result: targeted nextest `test(guard) or test(cache)` 48 passed; full `just check` in the isolation worktree (HEAD `4f9d18a` + own two files): fmt + clippy `-D warnings` clean, nextest 758 passed with one failure = `otel::hooks_stay_fast_with_an_unreachable_endpoint`, the documented load flake (passes twice standalone in the same worktree), `just build-min` exit 0, `just dup` exit 0. Migration note: `read:{path}` rows written by the old scheme are never read again — dead keys age out with the window; the deny direction only loses dedups, never adds false denies.
 Model: ZCode / GLM-5.3-Flash
+
+**T55.9 Guard Bash key is cwd-blind** · review 2026-09-17 · `src/plugins/guard/mod.rs`, `src/plugins/mod.rs`, `src/measure/stats.rs` (+ `guard/AGENTS.md` invariant line)
+Do: the Bash key keeps the effective `cd` target — `norm_cmd` folds leading `cd <dir> &&` hops to the *last* hop (that is where the command runs) instead of stripping them; the read-only stem check looks past the folded prefix via `after_cd_prefix`. Quote-aware splitting through `plugins::skip_word`, moved feature-free from `measure::stats` (guard and measure compile without each other's feature), byte-identical behavior on the stats side.
+Check: `cd a && ls` ≠ `ls` ≠ `cd b && ls`, `cd a && cd a && ls` = `cd a && ls`, `cd a && cd b && ls` = `cd b && ls`, `cd 'a && b' && ls` is one hop (the `&&` inside quotes is not a split point), spacing normalizes through the fold; the old `bash_repeat_behind_cd_prefix_denies` is rewritten as `bash_repeat_behind_cd_prefix_is_a_new_key` plus a pure `bash_key_keeps_the_cd_target`; `bash_family_*` tests unchanged and green.
+Complexity: 2/5 — three code files, ~120 LOC incl. tests.
+Status: done 2026-09-17
+Check result: targeted `cargo test --lib plugins::guard` 12 passed, `nextest -E 'test(bash_family)'` 2 passed; full `just check` exit 0 in the isolation worktree (HEAD `6f8bd6d` + own files): nextest 855/855 passed (10 slow, 2 skipped), fmt, clippy `-D warnings`, build-min, dup all green. Behavior note: `cd a&&ls` (no spaces, rare spelling) is no longer folded — it stays unkeyed, the fail-open direction (a missed dedup, never a wrong deny).
+Model: ZCode / GLM-5.3-Flash

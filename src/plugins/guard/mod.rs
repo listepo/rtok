@@ -162,9 +162,10 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
     }
 }
 
-/// Stems whose output only changes when something else ran in between.
+/// Stems whose output only changes when something else ran in between. Looks past the
+/// `cd <dir> &&` prefix [`norm_cmd`] keeps: only the command after it is keyed.
 fn read_only(cmd: &str) -> bool {
-    let mut w = cmd.split_whitespace();
+    let mut w = after_cd_prefix(cmd).split_whitespace();
     match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
         "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" => true,
         "git" => matches!(
@@ -175,13 +176,58 @@ fn read_only(cmd: &str) -> bool {
     }
 }
 
+/// Normalized Bash key body: whitespace collapsed, the `rtok run --` wrap stripped,
+/// leading `cd … &&` hops folded to the *last* hop's target (T55.9 — the key keeps the
+/// directory the rest of the command runs from: relative paths and `git status` differ
+/// per directory, so `cd a && ls` ≠ `ls` ≠ `cd b && ls`, and `cd a && cd a && ls`
+/// = `cd a && ls`). Quote-aware: `cd 'a && b' && ls` is one hop to `'a && b'`.
 fn norm_cmd(s: &str) -> String {
-    let mut t = collapse(s);
-    t = strip_wrap(&t);
-    while let Some(rest) = strip_cd_and(&t) {
+    let t = collapse(s);
+    let t = strip_wrap(&t);
+    let (dir, rest) = fold_cd(&t);
+    match dir {
+        Some(d) => format!("cd {d} && {rest}"),
+        None => rest,
+    }
+}
+
+/// Folds leading `cd <dir> &&` hops to the last hop's target. Each remainder re-runs
+/// `strip_wrap` because PostToolUse re-wraps the command the model actually ran.
+fn fold_cd(s: &str) -> (Option<String>, String) {
+    let mut dir = None;
+    let mut t = s.to_string();
+    while let Some((d, rest)) = strip_cd_hop(&t) {
+        dir = Some(d);
         t = strip_wrap(&rest);
     }
-    t
+    (dir, t)
+}
+
+/// One `cd <dir> &&` prefix: the target word (quotes kept as typed) and the remainder
+/// after `&&`. `None` unless `&&` follows the target at top level — a quoted path with
+/// `&&` inside is one word, not a split point.
+fn strip_cd_hop(s: &str) -> Option<(String, String)> {
+    let after = s.strip_prefix("cd ")?;
+    let rest = crate::plugins::skip_word(after)?;
+    let target = after[..after.len() - rest.len()].trim_end();
+    if target.is_empty() {
+        return None;
+    }
+    let rest = rest.strip_prefix("&&")?.trim_start();
+    Some((target.to_string(), rest.to_string()))
+}
+
+/// Strips the `cd <dir> &&` prefix [`norm_cmd`] folded in, so the read-only stem check
+/// sees the command that actually runs (`cd a && ls` → `ls`).
+fn after_cd_prefix(s: &str) -> &str {
+    let after = match s.strip_prefix("cd ") {
+        Some(a) => a,
+        None => return s,
+    };
+    match crate::plugins::skip_word(after).and_then(|r| r.strip_prefix("&&")) {
+        Some(rest) => rest.trim_start(),
+        None => s,
+    }
 }
 
 /// PreToolUse sees the user's command; PostToolUse often sees `rtok run -- '…'`.
@@ -202,12 +248,6 @@ fn strip_wrap(s: &str) -> String {
 
 fn collapse(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn strip_cd_and(s: &str) -> Option<String> {
-    let s = s.strip_prefix("cd ")?;
-    let i = s.find("&&")?;
-    Some(collapse(&s[i + 2..]))
 }
 
 fn payload(v: &Value) -> Vec<u8> {
@@ -232,10 +272,36 @@ mod tests {
         crate::testutil::runtime("guard").0
     }
 
-    /// The Bash key collapses whitespace and strips leading `cd … &&` hops, so the same
-    /// command run from a `cd` prefix is the same result.
+    /// T55.9: the Bash key keeps the effective `cd` target — relative paths and
+    /// `git status` differ per directory, so a repeat behind a `cd` is new information.
     #[test]
-    fn bash_repeat_behind_cd_prefix_denies() {
+    fn bash_key_keeps_the_cd_target() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}));
+        assert_eq!(k("ls"), Some("bash\tls".to_string()));
+        assert_eq!(k("cd a && ls"), Some("bash\tcd a && ls".to_string()));
+        assert_eq!(k("cd b && ls"), Some("bash\tcd b && ls".to_string()));
+        // Consecutive hops fold to the last one (that is where the command runs).
+        assert_eq!(
+            k("cd a && cd b && ls"),
+            Some("bash\tcd b && ls".to_string())
+        );
+        assert_eq!(
+            k("cd a && cd a && ls"),
+            Some("bash\tcd a && ls".to_string())
+        );
+        // A quoted path with `&&` inside is one target word, not a split point.
+        assert_eq!(
+            k("cd 'a && b' && ls"),
+            Some("bash\tcd 'a && b' && ls".to_string())
+        );
+        // Whitespace normalization survives the fold.
+        assert_eq!(k("cd   a   &&   ls"), k("cd a && ls"));
+    }
+
+    /// T55.9 rewrite of the cwd-blind pin: the same command behind a `cd` is a new
+    /// key (no deny); the same `cd` + command still denies as a duplicate.
+    #[test]
+    fn bash_repeat_behind_cd_prefix_is_a_new_key() {
         let cx = setup();
         let g = Guard;
         let first = json!({"command": "ls   -la"});
@@ -246,15 +312,40 @@ mod tests {
             tool_response: &resp,
         };
         assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
-        let again = json!({"command": "cd /repo && cd sub && ls -la"});
         let pre = |input| PreToolUse {
             tool_name: "Bash",
             tool_input: input,
         };
-        assert!(matches!(
-            g.pre_tool(&pre(&again), &Ctx::new(&cx)),
-            Some(PreToolDecision::Deny { .. })
-        ));
+        let behind_cd = json!({"command": "cd /repo && cd sub && ls -la"});
+        assert!(
+            g.pre_tool(&pre(&behind_cd), &Ctx::new(&cx)).is_none(),
+            "a repeat from another directory is new information, not a duplicate"
+        );
+        let again = json!({"command": "ls -la"});
+        assert!(
+            matches!(
+                g.pre_tool(&pre(&again), &Ctx::new(&cx)),
+                Some(PreToolDecision::Deny { .. })
+            ),
+            "the same directory-less repeat is still a duplicate"
+        );
+        let same_hop = g.post_tool(
+            &PostToolUse {
+                tool_name: "Bash",
+                tool_input: &behind_cd,
+                tool_response: &resp,
+            },
+            &Ctx::new(&cx),
+        );
+        assert!(same_hop.is_none());
+        let folded = json!({"command": "cd sub && ls -la"});
+        assert!(
+            matches!(
+                g.pre_tool(&pre(&folded), &Ctx::new(&cx)),
+                Some(PreToolDecision::Deny { .. })
+            ),
+            "same effective directory + command is the same key"
+        );
         let other = json!({"command": "ls -l"});
         assert!(g.pre_tool(&pre(&other), &Ctx::new(&cx)).is_none());
     }

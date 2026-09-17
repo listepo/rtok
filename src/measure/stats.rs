@@ -616,7 +616,7 @@ fn strip_prefix_env(s: &str) -> Option<&str> {
     if ident_end == 0 || !t.as_bytes().get(ident_end).is_some_and(|b| *b == b'=') {
         return None;
     }
-    skip_word(&t[ident_end + 1..])
+    crate::plugins::skip_word(&t[ident_end + 1..])
 }
 
 fn strip_prefix_cd(s: &str) -> Option<&str> {
@@ -628,26 +628,9 @@ fn strip_prefix_cd(s: &str) -> Option<&str> {
     let rest = if after.starts_with("&&") {
         after
     } else {
-        skip_word(after)?
+        crate::plugins::skip_word(after)?
     };
     Some(rest.strip_prefix("&&")?.trim_start())
-}
-
-/// Skips one shell word (bare, or with `'…'` / `"…"` segments such as `~/'My Documents'`)
-/// and returns what follows it, left-trimmed. An unterminated quote yields `None` so the
-/// caller fails open and leaves the command untouched.
-fn skip_word(s: &str) -> Option<&str> {
-    let mut quote = None;
-    for (i, b) in s.bytes().enumerate() {
-        match quote {
-            Some(q) if b == q => quote = None,
-            Some(_) => {}
-            None if b == b'\'' || b == b'"' => quote = Some(b),
-            None if b.is_ascii_whitespace() => return Some(s[i..].trim_start()),
-            None => {}
-        }
-    }
-    quote.is_none().then_some("")
 }
 
 fn mcp_group(name: &str) -> Option<&str> {
