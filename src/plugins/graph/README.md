@@ -5,7 +5,7 @@ four servers with 130+ tool descriptions in every request.
 
 | | |
 |---|---|
-| Surfaces | MCP `symbol(name)`, `callers(name)`, `impact(name, depth)`, `outline(path)` |
+| Surfaces | MCP `symbol(name, path?, kind?)`, `callers(name, path?)`, `impact(name, depth?, path?)`, `outline(path)` |
 | Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 

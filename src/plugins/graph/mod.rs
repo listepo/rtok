@@ -62,23 +62,22 @@ impl Plugin for Graph {
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {
-        let name =
-            json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]});
+        let named_path = json!({"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"}},"required":["name"]});
         vec![
             ToolDef {
                 name: "symbol",
-                description: "Definitions of a symbol with their source: path:line kind, then the body.",
-                input_schema: name.clone(),
+                description: "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"kind":{"type":"string"}},"required":["name"]}),
             },
             ToolDef {
                 name: "callers",
-                description: "Which definitions reference a symbol: path, calling definition, count.",
-                input_schema: name,
+                description: "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
+                input_schema: named_path,
             },
             ToolDef {
                 name: "impact",
-                description: "What breaks if a symbol changes: callers, their callers, up to depth.",
-                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"depth":{"type":"integer"}},"required":["name"]}),
+                description: "What breaks if a symbol changes: callers, their callers, up to depth. Optional path substring keeps one subtree.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}},"required":["name"]}),
             },
             ToolDef {
                 name: "outline",
@@ -86,6 +85,48 @@ impl Plugin for Graph {
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
             },
         ]
+    }
+}
+
+/// T52.1: optional narrow-down for `symbol` / `callers` / `impact` (`path`
+/// substring, `kind` exact on `symbol`). No new tool: the filters answer
+/// "callers of X inside path Y of kind Z" in the one call that transcripts now
+/// spend a scoped-search chain on (610 of 615 `ctx_search` calls carry a path;
+/// 252 search-to-search refinements in 33 sessions; research.md §2). `callers`
+/// and `impact` honour `path` only. `impact` walks the full graph and filters
+/// the reported lines, so depth still crosses files outside the filter.
+pub struct Filter {
+    pub path: String,
+    pub kind: String,
+}
+
+impl Filter {
+    pub fn none() -> Self {
+        Self {
+            path: String::new(),
+            kind: String::new(),
+        }
+    }
+
+    pub(crate) fn path_ok(&self, path: &str) -> bool {
+        self.path.is_empty() || path.contains(&self.path)
+    }
+
+    pub(crate) fn kind_ok(&self, kind: &str) -> bool {
+        self.kind.is_empty() || kind == self.kind
+    }
+
+    /// ` in <path>` / ` of kind <kind>` suffix for the empty-answer lines; empty
+    /// when no filter is set, so unfiltered answers stay byte-exact (T8.9).
+    pub(crate) fn scope_note(&self) -> String {
+        let mut s = String::new();
+        if !self.path.is_empty() {
+            s.push_str(&format!(" in {}", self.path));
+        }
+        if !self.kind.is_empty() {
+            s.push_str(&format!(" of kind {}", self.kind));
+        }
+        s
     }
 }
 
@@ -106,14 +147,19 @@ pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
 pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let arg = |k: &str| args[k].as_str().unwrap_or("");
+    let filter = Filter {
+        path: arg("path").to_string(),
+        kind: arg("kind").to_string(),
+    };
     match name {
-        "symbol" => symbol(cx, &root, arg("name")),
-        "callers" => callers(cx, &root, arg("name")),
-        "impact" => impact(
+        "symbol" => symbol_filtered(cx, &root, arg("name"), &filter),
+        "callers" => callers_filtered(cx, &root, arg("name"), &filter),
+        "impact" => impact_filtered(
             cx,
             &root,
             arg("name"),
             args["depth"].as_u64().unwrap_or(2) as u32,
+            &filter,
         ),
         "outline" => outline(cx, arg("path")),
         _ => anyhow::bail!("unknown tool: {name}"),
@@ -124,13 +170,22 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
 /// `line` to `end_line`, at most `plugins.graph.body_lines` lines each (T8.6). One call
 /// answers "what is this and what does it do", which took a `symbol` plus a `read` at v0.1.
 pub fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+    symbol_filtered(cx, root, name, &Filter::none())
+}
+
+/// Filtered `symbol`: a non-empty `filter` keeps only matching definitions (T52.1).
+pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Result<String> {
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
-        return lsp::symbol(cx, root, name);
+        return lsp::symbol(cx, root, name, filter);
     }
     index_for(cx, root)?;
-    let rows = cx.symbol_defs(&index::canon(root), name)?;
+    let rows: Vec<_> = cx
+        .symbol_defs(&index::canon(root), name)?
+        .into_iter()
+        .filter(|(path, kind, ..)| filter.path_ok(path) && filter.kind_ok(kind))
+        .collect();
     if rows.is_empty() {
-        return Ok(format!("no definition of {name}"));
+        return Ok(format!("no definition of {name}{}", filter.scope_note()));
     }
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
     let mut out = String::new();
@@ -175,13 +230,22 @@ pub(crate) fn body_lines(src: &str, line: i32, end_line: i32, budget: usize) -> 
 /// v0.1 printed every site with its source line; the edge is what the caller needs, and it
 /// costs a fraction of the bytes.
 pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+    callers_filtered(cx, root, name, &Filter::none())
+}
+
+/// Filtered `callers`: a non-empty `filter.path` keeps one subtree (T52.1).
+pub fn callers_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Result<String> {
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
-        return lsp::callers(cx, root, name);
+        return lsp::callers(cx, root, name, filter);
     }
     index_for(cx, root)?;
-    let rows = cx.symbol_ref_groups(&index::canon(root), name)?;
+    let rows: Vec<_> = cx
+        .symbol_ref_groups(&index::canon(root), name)?
+        .into_iter()
+        .filter(|(path, ..)| filter.path_ok(path))
+        .collect();
     if rows.is_empty() {
-        return Ok(format!("no references to {name}"));
+        return Ok(format!("no references to {name}{}", filter.scope_note()));
     }
     let mut out = String::new();
     for (path, scope, n, line) in rows {
@@ -199,13 +263,30 @@ pub fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
 /// `name`, who calls them, and so on (T8.7). One `depth  path  scope` line per definition
 /// reached. A definition is expanded once, so a call cycle terminates.
 pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
+    impact_filtered(cx, root, name, depth, &Filter::none())
+}
+
+/// Filtered `impact`: a non-empty `filter.path` keeps the reported lines in one
+/// subtree; the walk itself still crosses files outside it, so depth is not cut
+/// short (T52.1).
+pub fn impact_filtered(
+    cx: &Ctx,
+    root: &Path,
+    name: &str,
+    depth: u32,
+    filter: &Filter,
+) -> Result<String> {
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
-        return lsp::impact(cx, root, name, depth);
+        return lsp::impact(cx, root, name, depth, filter);
     }
     index_for(cx, root)?;
-    let rows = cx.symbol_impact(&index::canon(root), name, depth)?;
+    let rows: Vec<_> = cx
+        .symbol_impact(&index::canon(root), name, depth)?
+        .into_iter()
+        .filter(|(_, path, _)| filter.path_ok(path))
+        .collect();
     if rows.is_empty() {
-        return Ok(format!("nothing reaches {name}"));
+        return Ok(format!("nothing reaches {name}{}", filter.scope_note()));
     }
     let mut out = String::new();
     for (d, path, scope) in rows {
@@ -623,6 +704,134 @@ mod tests {
         bfs.sort();
         assert!(!cte.is_empty(), "fan-out-10 must reach sink");
         assert_eq!(cte, bfs, "query vs BFS");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T52.1: `path` keeps one subtree. One name defined in two files: the
+    /// unfiltered answer lists both, the filtered one only the match, and a
+    /// match-nothing filter names the scope in the empty answer.
+    #[test]
+    fn symbol_path_filter_keeps_one_file() {
+        let (cx, dir) = cx("filter-path");
+        fs::write(dir.join("a.rs"), "fn dup() {}\n").unwrap();
+        fs::write(dir.join("b.rs"), "fn dup() {}\n").unwrap();
+        let ctx = Ctx::new(&cx);
+        let both = symbol_filtered(&ctx, &dir, "dup", &Filter::none()).unwrap();
+        assert!(both.contains("a.rs") && both.contains("b.rs"), "{both}");
+        let one = symbol_filtered(
+            &ctx,
+            &dir,
+            "dup",
+            &Filter {
+                path: "b.rs".into(),
+                kind: String::new(),
+            },
+        )
+        .unwrap();
+        assert!(one.contains("b.rs") && !one.contains("a.rs"), "{one}");
+        assert_eq!(
+            symbol_filtered(
+                &ctx,
+                &dir,
+                "dup",
+                &Filter {
+                    path: "zzz".into(),
+                    kind: String::new(),
+                },
+            )
+            .unwrap(),
+            "no definition of dup in zzz"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T52.1: `kind` keeps one definition kind. A struct and a function share a
+    /// name (different namespaces, compiles); the filter keeps the asked kind.
+    #[test]
+    fn symbol_kind_filter_picks_struct_over_function() {
+        let (cx, dir) = cx("filter-kind");
+        fs::write(dir.join("k.rs"), "struct Shape;\nfn Shape() {}\n").unwrap();
+        let ctx = Ctx::new(&cx);
+        let out = symbol_filtered(
+            &ctx,
+            &dir,
+            "Shape",
+            &Filter {
+                path: String::new(),
+                kind: "struct".into(),
+            },
+        )
+        .unwrap();
+        assert!(out.contains("struct"), "{out}");
+        assert!(!out.contains("fn Shape"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T52.1: `callers` with a path keeps the callers in that subtree only.
+    #[test]
+    fn callers_path_filter_keeps_one_subtree() {
+        let (cx, dir) = cx("filter-callers");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("other.rs"), "fn d() {\n    c();\n    c();\n}\n").unwrap();
+        let ctx = Ctx::new(&cx);
+        let one = callers_filtered(
+            &ctx,
+            &dir,
+            "c",
+            &Filter {
+                path: "other".into(),
+                kind: String::new(),
+            },
+        )
+        .unwrap();
+        assert!(
+            one.contains("other.rs") && !one.contains("chain.rs"),
+            "{one}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T52.1: `impact` with a path reports only the lines in that subtree.
+    #[test]
+    fn impact_path_filter_reports_matching_lines() {
+        let (cx, dir) = cx("filter-impact");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("other.rs"), "fn d() {\n    c();\n    c();\n}\n").unwrap();
+        let ctx = Ctx::new(&cx);
+        let out = impact_filtered(
+            &ctx,
+            &dir,
+            "c",
+            2,
+            &Filter {
+                path: "other".into(),
+                kind: String::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(out, "1  other.rs  d\n", "{out}");
+        assert_eq!(
+            impact_filtered(
+                &ctx,
+                &dir,
+                "c",
+                2,
+                &Filter {
+                    path: "zzz".into(),
+                    kind: String::new(),
+                },
+            )
+            .unwrap(),
+            "nothing reaches c in zzz"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
