@@ -191,6 +191,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "prints the man page generated from the clap tree (T53.2)",
     ),
     (
+        "memory export",
+        "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T67.2)",
+    ),
+    (
         "otel status",
         "exporter echo: endpoint, watermarks, pending rows",
     ),

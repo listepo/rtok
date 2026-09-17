@@ -175,7 +175,7 @@ enum Cmd {
         #[command(subcommand)]
         action: ConfigCmd,
     },
-    /// Notes (`mem_save` / import)
+    /// Notes (`mem_save` / import / export)
     #[cfg(feature = "memory")]
     Memory {
         #[command(subcommand)]
@@ -294,6 +294,12 @@ enum MemoryCmd {
         /// Count what would be imported and write nothing
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Print every note but session checkpoints as the JSONL `import` reads
+    Export {
+        /// Only notes of this project
+        #[arg(long)]
+        project: Option<String>,
     },
 }
 
@@ -763,6 +769,10 @@ pub fn run() -> Result<()> {
                         "{}",
                         crate::plugins::memory::import::run(&cfg, &file, dry_run)?
                     );
+                }
+                MemoryCmd::Export { project } => {
+                    let mut out = io::stdout().lock();
+                    crate::plugins::memory::export::run(&cfg, project.as_deref(), &mut out)?;
                 }
             }
         }

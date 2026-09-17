@@ -297,6 +297,7 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 | `rtok config show --sources` | show effective configuration and its source |
 | `rtok graph index [path]` | build the symbol index for a tree |
 | `rtok memory import <file>` | import notes as JSONL |
+| `rtok memory export [--project <name>]` | print notes as the JSONL `import` reads; session checkpoints stay behind |
 | `rtok otel flush` / `status` | export the ledgers over OTLP, or report the watermarks |
 
 ## Plugins

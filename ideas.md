@@ -72,6 +72,9 @@ that v0.1 does not schedule.
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
 | I-30 | codebase-memory-mcp (Linux kernel in 3 min) | `graph` | **promoted T59.3** — Batch the cold index: one transaction per N files instead of per file. | Measured 2026-09-04 (T8.4, release): 3 000 files cold 27.2 s, warm 0.053 s. Only the warm path is gated (P8b), and the cold path is paid once per repo, so this is not a task yet. |
+| I-56 | engram `mem_context` (recent sessions + prompts at session start) (`research.md` §13) | `memory` | Cross-session handoff: save the PreCompact-style checkpoint at `SessionEnd` under `session:<project>` and inject the latest one on `SessionStart` with `source = startup`, inside `checkpoint_tokens`. | Costs up to 400 tokens on every startup for an unmeasured recall gain; needs a P7-style A/B before it can be on. `mem_search` already reaches the same notes on demand. |
+| I-57 | engram `pinned` observations (`research.md` §13) | `memory` | Pinned notes listed first in SessionStart recall regardless of age (`kind = "pin"`, no schema change). | Recall is 5 titles by recency and no session showed a pinned title being displaced; add when a user asks for it. |
+| I-58 | engram project identity from the `origin` remote (`research.md` §13) | `memory` | `project_name` from the normalised `origin` repo name so two checkouts of one repo share notes; git-root basename as the fallback. | Basename works for one checkout per repo; a rename would need a `notes.project` migration. Parked until a second checkout is the workflow. |
 
 ### Hosts and product
 

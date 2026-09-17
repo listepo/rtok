@@ -107,6 +107,14 @@ build the thing that saves tokens; mem0 wants Docker and a vector database. rtok
 is agent-written notes in SQLite FTS5 with progressive disclosure — titles, then ids, then
 bodies, never bodies at `SessionStart` — for 3 tools and no model calls.
 
+engram was re-read feature by feature on 2026-09-18 (`research.md` §13). Two of its ideas
+fit rtok's zero-LLM lane and were adopted: topic keys — one row per evolving topic, which
+rtok does as an upsert on project + kind + title with no new column — and a portable
+export that its own `import` reads. Its relation judging (`mem_judge`, `mem_compare`,
+`mem_review`), the mandatory end-of-session summary, and passive capture of the model's
+own `## Key Learnings` were not: each spends model output tokens on bookkeeping, and the
+18-tool description column above is the price of carrying them on every turn.
+
 ### Prompt-level — ponytail, terse modes
 
 The cheapest lever in the field, because output tokens are 20 % of the bill on standard

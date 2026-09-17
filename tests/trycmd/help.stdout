@@ -20,7 +20,7 @@ Commands:
   man          Print the man page (roff) to stdout
   plugins      List plugins: id, enabled, surfaces
   config       The one config file
-  memory       Notes (`mem_save` / import)
+  memory       Notes (`mem_save` / import / export)
   graph        Symbol index (`rtok graph index`)
   demon        Keep `rtok proxy` (or `mcp` / `web`) running in the background
   otel         OpenTelemetry export (`rtok otel flush | status`)

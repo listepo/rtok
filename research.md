@@ -815,3 +815,30 @@ forbids answering before searching the context. Library only: no CLI, no MCP, no
 
 What transfers is the loop, not the runtime: rtok already externalises every large payload
 behind an id; T66.1 gives a grep hit a position and T66.2 folds the slice into the same call.
+
+## 13. engram, feature by feature against `memory` (2026-09-18)
+
+Source: github.com/Gentleman-Programming/engram `README.md` and `DOCS.md` read on 2026-09-18
+(Go, MIT; the 18-tool / ~1 865-description-token row in §4 and `docs/comparison.md` is the
+`rtok doctor` measurement of 2026-09-09). Creator request: what is missing in rtok, add what
+is useful. engram's own docs carry no token-saving number; its value is recall, not bytes.
+
+| engram feature | rtok `memory` today | Verdict | Where |
+| --- | --- | --- | --- |
+| `topic_key` upsert: same `project + scope + topic_key` updates the row, `revision_count++` | every `mem_save` inserts; a re-saved decision leaves two rows with one title in the 5-title recall | adopt, zero-LLM, no schema: the title is the key, upsert on `(project, kind, title)` | T67.1 |
+| Git Sync: gzipped JSONL chunks + manifest, `engram sync --import` | `memory import <file.jsonl>` exists (T6.3); nothing produces that file from `rtok.db` | adopt the missing half: `memory export` in the shape `import` reads; no chunk manifest (a file in git is the manifest) | T67.2 |
+| `mem_context` at session start: pinned + recent observations + sessions + prompts, 16 KiB default budget | SessionStart recall: 5 titles + ids ≤ 200 tokens; compaction checkpoint ≤ 400 tokens, same session only | keep rtok's shape (D5 budget, titles not bodies); cross-session handoff parked until an A/B | I-56 |
+| `pinned` observations first in context | recency only | parked; `kind = "pin"` would do it without a column | I-57 |
+| project identity from the normalised `origin` remote, `.engram/config.json` override, child-repo scan | git-root basename | parked; one checkout per repo is the workflow here | I-58 |
+| `mem_update(id)` | none | covered by T67.1: re-save the same title | — |
+| `normalized_hash` dedupe on save | `import` dedupes by body sha256; `mem_save` did not | covered by T67.1 (identical re-save is a no-op update) | — |
+| `scope` project / personal / global | `project` column, `NULL` = no project | not needed: recall filters by project; a global note is a `project = NULL` row | — |
+| `mem_judge` / `mem_compare` / `mem_review`: relations (`supersedes`, `conflicts_with`, …) judged by the model, `judgment_required` envelopes | none | rejected: every judgment is model output spent on bookkeeping, and the tool descriptions ride every turn (D15 target: fewer description tokens than engram) | — |
+| `mem_session_summary` (mandatory before "done": goal, discoveries, next steps, files) | PreCompact checkpoint extracted mechanically from the transcript (prompts, paths, errors, skills) | rejected as a protocol; an agent may still `mem_save` a summary note by hand | — |
+| `mem_capture_passive` (`## Key Learnings:` sections of the model's own output) | none | rejected: parses text the model already paid for; the agent-written note is the same bytes without a parser | — |
+| `expires_at`, `review_after`, `duplicate_count`, `last_seen_at` lifecycle columns | none | not needed at note counts recall shows (5 titles); revisit with a measured stale-hit rate | — |
+| HTTP API, TUI, cloud replication, Postgres backend | `rtok web` / `rtok tui` read the same store (D27); no cloud | out of scope (D8: one SQLite file) | — |
+| optional embeddings beside FTS5 | `[plugins.memory.embed]`, off by default (P29) | parity | — |
+
+Net: two tasks (T67.1, T67.2), three ideas (I-56–I-58), nothing that adds an MCP tool — the
+description column stays at 3 memory tools.

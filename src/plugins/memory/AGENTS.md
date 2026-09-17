@@ -9,7 +9,10 @@ if split out per T2.5.
 
 **Invariants**
 - No LLM calls. Notes are written by the agent through `mem_save` or extracted mechanically.
+- `mem_save` is an upsert on `(project, kind, title)` — the title is the topic key (T67.1);
+  checkpoints go through `insert_note` and are never upserted.
 - Recall injects titles and ids only; bodies are fetched on demand with `mem_get`.
+- `memory export` and `memory import` share one JSONL shape; `checkpoint:*` rows never leave.
 - Recall output is byte-stable across runs with unchanged notes and ≤ 200 tokens.
 - Import reads only the generic JSONL shape (no third-party DB schemas, D6) and is idempotent
   (dedupe by sha256 of body).

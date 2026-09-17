@@ -28,6 +28,11 @@
 # `every_label_names_a_file_that_mentions_the_symbol` now names such a label instead. Its
 # first run also found `Registry` and `Replay` labelled in `src/cli.rs`, which T15.11 had
 # emptied of both (the calls moved to `src/web/model.rs`, where they are now labelled).
+#
+# T67.1 (2026-09-18): `mem_save` became an upsert, so `src/plugins/memory/mod.rs` calls
+# `upsert_note` and no longer names `insert_note`. The call site did not disappear, it was
+# renamed: `insert_note` loses that one ref (`import.rs` and `checkpoint.rs` still call it)
+# and `upsert_note` enters with the same def/ref pair, so the sample keeps its size.
 
 [[symbol]]
 name = "Manifest"
@@ -119,7 +124,15 @@ kind = "fn"
 # T23.3: the host's capability impl in `src/plugin.rs` defines it a second time; T23.5's
 # `MemoryHost` a third (T8.19 repair).
 defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
-refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs", "src/plugins/memory/mod.rs"]
+refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs"]
+
+[[symbol]]
+name = "upsert_note"
+kind = "fn"
+# T67.1: the store's only definition; `mem_save` is the only caller (the capability trait
+# in `src/plugin.rs` still exposes `insert_note` alone).
+defs = ["src/store/mod.rs"]
+refs = ["src/plugins/memory/mod.rs"]
 
 [[symbol]]
 name = "put_read_cache"

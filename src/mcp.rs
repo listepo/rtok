@@ -282,8 +282,8 @@ fn mem_save(cx: &Runtime, args: &Value) -> Result<String> {
     let title = args["title"].as_str().unwrap_or("");
     let body = args["body"].as_str().unwrap_or("");
     let project = args["project"].as_str();
-    let id = crate::plugins::memory::mem_save(cx, kind, title, body, project)?;
-    Ok(json!({"id": id}).to_string())
+    let (id, updated) = crate::plugins::memory::mem_save(cx, kind, title, body, project)?;
+    Ok(json!({"id": id, "updated": updated}).to_string())
 }
 
 #[cfg(feature = "memory")]

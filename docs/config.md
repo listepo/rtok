@@ -396,6 +396,7 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
+| `memory export` | `--project` | per call (no key): narrows one dump to a project's notes |
 
 The coverage test (T12.4) walks the clap command tree and fails if a non-positional flag
 appears without a key in `config/default.toml`, so this table cannot silently drift.
