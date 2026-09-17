@@ -1149,14 +1149,7 @@ mod tests {
         }
         assert!(out.contains("  app     "), "{out}");
         assert!(out.contains("  config  "), "{out}");
-        // `plugins` is only printed for installed variants (`Outcome::Listed`).
-        // Clean CI runners have none, so require the section only when something is present.
-        let any_installed = out.lines().any(|l| {
-            (l.starts_with("CLI:") || l.starts_with("Desktop:")) && !l.contains("not found")
-        });
-        if any_installed {
-            assert!(out.contains("  plugins\n"), "{out}");
-        }
+        assert!(out.contains("  plugins\n"), "{out}");
     }
 
     /// Codex with an MCP block and no provider: MCP plugins ride it, proxy-only plugins wait
