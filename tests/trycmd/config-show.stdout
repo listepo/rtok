@@ -59,6 +59,7 @@ plugins.cmd.fail_tail_lines = 80
 plugins.cmd.never_wrap = [rtok, sudo]
 plugins.cmd.rewrite = true
 plugins.cmd.rules = ~/.rtok/rules.toml
+plugins.cmd.rules_dir = ~/.rtok/rules.d
 plugins.cmd.shell = 
 plugins.cmd.trailer_min_lines = 40
 plugins.compress.enabled = false

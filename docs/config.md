@@ -238,6 +238,7 @@ enabled  = true
 rewrite  = true                       # PreToolUse(Bash) → `rtok run -- …`
 shell    = ""                         # "" = $SHELL
 rules    = "~/.rtok/rules.toml"       # extra filter rules; missing → built-in rules/default.toml
+rules_dir = "~/.rtok/rules.d"         # drop-ins: every *.toml merges after rules in name order (T50.2)
 trailer_min_lines = 40                # add `[rtok <id> · N lines · expand …]` above this
 fail_tail_lines   = 80                # non-zero exit → last N lines verbatim
 never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&`, -i are always skipped

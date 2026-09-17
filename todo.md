@@ -4,7 +4,6 @@
 - T49.1. `rtok stats --price` (in progress)
 - T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
-- T50.2. User filter drop-in directory and schema (in progress)
 - T50.3. Extra `read` modes
 - T51.1. Compress JSON and code inside the live zone
 - T52.2. More grammars and compressed index payloads

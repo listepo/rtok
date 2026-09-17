@@ -12,7 +12,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T49.1 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T49.2 | todo | P2 | 4 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
-| T50.2 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T50.3 | todo | P3 | 3 | 0% | |
 | T51.1 | todo | P3 | 5 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
@@ -56,13 +55,6 @@ Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, Op
 
 From I-05. `rules/default.toml` covers grep, rg, sed, cat, make, curl, npm, pnpm, node on top of the built-in cargo/git/test/ls rules; python, pytest, pip, go, docker, kubectl, gh and friends pass through unfiltered.
 Done when the families are chosen by `rtok discover`-style counts from real transcripts (the evidence goes into `research.md`), each new rule has a fixture with before/after bytes and keeps failures and the `expand <id>` trailer, and `Measurement` rows show the saving per family.
-
-### T50.2. User filter drop-in directory and schema
-
-From I-06. Users can already override rules through one user rules file, but there is no `rules.d/*.toml` drop-in, no published schema and no example, so writing a filter means reading `src/plugins/cmd/rules.rs`.
-Done when every `*.toml` in a configured rules dir is merged after the defaults in name order, a malformed file is reported by `rtok config validate` and skipped at runtime (fail open), `docs/cmd-rules.md` documents every field with a worked example (and a site row), and tests cover merge order and a broken file.
-
-Execution plan (G3): 1) config: `[plugins.cmd] rules_dir` (default `~/.rtok/rules.d`) alongside existing `rules` file; `Settings::load` reads defaults < `rules` file < sorted `rules.d/*.toml`, later files win per `match_cmd` (existing `merge_rules`); unreadable/malformed drop-in → skipped at runtime (fail open, stderr note off the hook path); 2) `config validate` reports malformed rules.d files (parse each `*.toml` with same parser); 3) new `docs/cmd-rules.md` (every field + worked example) + site docs row; 4) tests: unit merge-order (defaults<file<dir a<b), broken-file skipped + validate reports; D12 rows for `rules_dir`.
 
 ### T50.3. Extra `read` modes
 

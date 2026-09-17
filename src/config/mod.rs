@@ -493,6 +493,8 @@ section! {
         rewrite: bool = true,
         shell: String = String::new(),
         rules: PathBuf = p("~/.rtok/rules.toml"),
+        /// Drop-in dir: every `*.toml` merges after `rules` in name order (T50.2).
+        rules_dir: PathBuf = p("~/.rtok/rules.d"),
         trailer_min_lines: u32 = 40,
         fail_tail_lines: u32 = 80,
         never_wrap: Vec<String> = strs(&["rtok", "sudo"]),
@@ -821,6 +823,7 @@ impl Config {
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.plugins.cmd.rules,
+            &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
         ] {
@@ -1037,6 +1040,7 @@ mod tests {
             &cfg.setup.aider.config_path,
             &cfg.setup.windsurf.config_path,
             &cfg.plugins.cmd.rules,
+            &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
         ];
