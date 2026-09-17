@@ -130,6 +130,33 @@ plugin          = ""                  # "" = all         (--plugin <id>)
 transcripts_dir = "~/.claude/projects"
 calibrate_samples = 30                # per class        (--calibrate)
 baseline        = ""                  # default name for --compare; "" = none
+price           = false               # show per-model USD costs (--price)
+# USD per MTok rows for --price (T49.1). Sources, fetched 2026-09-17:
+# Anthropic claude-sonnet-5 / claude-haiku-4-5: https://platform.claude.com/docs/en/about-claude/pricing
+# (input / 5m cache write / cache read / output). OpenAI gpt-5 / gpt-5-mini:
+# https://platform.openai.com/docs/pricing (short-context input / cached input /
+# output; no separate write price, so cache_write = input). Models without a row
+# print `-`, never a guess; add dated rows of your own the same way.
+[stats.prices."claude-sonnet-5"]
+input = 2.0
+cache_write = 2.5
+cache_read = 0.2
+output = 10.0
+[stats.prices."claude-haiku-4-5"]
+input = 1.0
+cache_write = 1.25
+cache_read = 0.1
+output = 5.0
+[stats.prices."gpt-5"]
+input = 1.25
+cache_write = 1.25
+cache_read = 0.125
+output = 10.0
+[stats.prices."gpt-5-mini"]
+input = 0.25
+cache_write = 0.25
+cache_read = 0.025
+output = 2.0
 
 [report]                              # rtok report (D24: renders the operator model, computes nothing)
 format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
@@ -307,6 +334,17 @@ dir     = "~/.rtok/plugins"          # scan one level for *.wasm; D6 — this re
 ```
 
 
+### Stats prices (`[stats.prices]`)
+
+`rtok stats --price` prices the proxy `usage` rows in USD: each leg at its
+`$` per MTok row, `cost` their sum, `saved` what the cache reads saved versus
+uncached input price — the only saving computable from the `usage` rows alone.
+A model without a row prints `-` for both dollar columns (its token counts
+still print); add a dated row of your own rather than guessing. The shipped
+rows were read off the providers' pricing pages on 2026-09-17 (sources in
+`config/default.toml`); re-check them when your bill disagrees. `stats.price`
+defaults the `--price` display on (`RTOK_STATS_PRICE=true` works too).
+
 ### WASM plugin host (`[plugins.wasm]`)
 
 Out-of-tree `.wasm` plugins (P32, decision D6). This repo writes every catalogue plugin from
@@ -336,7 +374,7 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `tui` | `--tab`, `--tick-secs` | `tui.tab`, `tui.tick_secs` |
-| `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
+| `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache`, `--price` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`), `stats.price` (`stats.prices.*` are data) |
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |

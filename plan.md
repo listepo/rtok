@@ -9,7 +9,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T48.5 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark |
 | T48.6 | todo | P2 | 3 | 0% | |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T49.1 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.2 | todo | P3 | 2 | 0% | |
@@ -41,11 +40,6 @@ Done when `rtok agents install zed` adds `context_servers.rtok` without destroyi
 
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
-
-### T49.1. `rtok stats --price`
-
-From I-02. `rtok stats` reports tokens but not money, so a saving cannot be compared with a model's cost; cache reads are priced very differently from input (research.md §8).
-Done when a price table (per model: input, cache write, cache read, output per MTok) lives in config with defaults that cite a dated source, `rtok stats --price` adds cost columns and a saved-cost total computed from the same `usage` rows, unknown models show `-` instead of a guess, and a trycmd snapshot plus a unit test on the arithmetic cover it.
 
 ### T49.2. Ingest Codex, OpenCode and Cursor session logs
 

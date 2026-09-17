@@ -212,7 +212,74 @@ section! {
         transcripts_dir: PathBuf = p("~/.claude/projects"),
         calibrate_samples: u32 = 30,
         baseline: String = String::new(),
+        /// Show per-model USD costs from `prices` (`rtok stats --price`, T49.1).
+        price: bool = false,
+        /// USD per MTok per model id (`rtok stats --price`, T49.1). A `usage` row
+        /// whose model has no entry here is listed with `-`, never priced by guess.
+        prices: BTreeMap<String, ModelPrice> = default_stats_prices(),
     }
+}
+
+section! {
+    /// One `[stats.prices."<model>"]` row — USD per MTok (T49.1). `cache_write` is
+    /// the 5-minute cache-creation price; providers without a separate write price
+    /// repeat `input`.
+    ModelPrice {
+        input: f64 = 0.0,
+        cache_write: f64 = 0.0,
+        cache_read: f64 = 0.0,
+        output: f64 = 0.0,
+    }
+}
+
+/// The shipped `[stats.prices]` rows (T49.1). Sources, fetched 2026-09-17:
+/// Anthropic `claude-sonnet-5` / `claude-haiku-4-5` from
+/// https://platform.claude.com/docs/en/about-claude/pricing (input / 5m write /
+/// read / output per MTok); OpenAI `gpt-5` / `gpt-5-mini` from
+/// https://platform.openai.com/docs/pricing (short-context input / cached input /
+/// output; no separate write price, so `cache_write = input`).
+fn default_stats_prices() -> BTreeMap<String, ModelPrice> {
+    [
+        (
+            "claude-sonnet-5",
+            ModelPrice {
+                input: 2.0,
+                cache_write: 2.5,
+                cache_read: 0.2,
+                output: 10.0,
+            },
+        ),
+        (
+            "claude-haiku-4-5",
+            ModelPrice {
+                input: 1.0,
+                cache_write: 1.25,
+                cache_read: 0.1,
+                output: 5.0,
+            },
+        ),
+        (
+            "gpt-5",
+            ModelPrice {
+                input: 1.25,
+                cache_write: 1.25,
+                cache_read: 0.125,
+                output: 10.0,
+            },
+        ),
+        (
+            "gpt-5-mini",
+            ModelPrice {
+                input: 0.25,
+                cache_write: 0.25,
+                cache_read: 0.025,
+                output: 2.0,
+            },
+        ),
+    ]
+    .into_iter()
+    .map(|(k, v)| (s(k), v))
+    .collect()
 }
 
 section! {

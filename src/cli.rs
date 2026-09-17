@@ -98,6 +98,9 @@ enum Cmd {
         /// Cache health per session from proxy usage rows: busts and their cause
         #[arg(long)]
         cache: bool,
+        /// Show per-model USD costs from `[stats.prices]` (`--price`)
+        #[arg(long)]
+        price: bool,
     },
     /// A/B benchmark of host configurations
     Bench {
@@ -518,10 +521,11 @@ pub fn run() -> Result<()> {
             compare,
             calibrate,
             cache,
+            price,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
-                stats_flags(since, json, plugin.clone(), compare.clone()),
+                stats_flags(since, json, plugin.clone(), compare.clone(), price),
             )?;
             if calibrate {
                 println!("{}", crate::tokens::calibrate_or_skip(&cfg));
@@ -864,6 +868,7 @@ fn stats_flags(
     json: bool,
     plugin: Option<String>,
     compare: Option<String>,
+    price: bool,
 ) -> Option<figment::value::Dict> {
     use figment::value::{Dict, Value};
     let mut stats = Dict::new();
@@ -878,6 +883,9 @@ fn stats_flags(
     }
     if let Some(c) = compare {
         stats.insert("baseline".into(), Value::from(c));
+    }
+    if price {
+        stats.insert("price".into(), Value::from(true));
     }
     if stats.is_empty() {
         return None;

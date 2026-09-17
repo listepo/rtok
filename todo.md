@@ -1,7 +1,6 @@
 - T48.5. Windsurf host
 - T48.6. Zed host
 - T48.8. VS Code Copilot Chat host
-- T49.1. `rtok stats --price`
 - T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
 - T50.2. User filter drop-in directory and schema

@@ -1,0 +1,10 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/stats-price.toml stats --price"
+
+# Hermetic by construction: the fixture pins the transcripts dir to an empty
+# input dir, the store lands under target/ (gitignored) via RTOK_HOME, and a
+# cleared env keeps ambient `RTOK_*` / HOME out of the layering — so the empty
+# usage ledger and the `--price` section render deterministically.
+[env]
+inherit = false
+RTOK_HOME = "target/tmp/trycmd-stats-price"

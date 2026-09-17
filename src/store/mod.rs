@@ -1013,6 +1013,45 @@ impl Store {
             .collect())
     }
 
+    /// Usage totals grouped by model (`rtok stats --price`, T49.1). One statement,
+    /// like [`Self::usage_by_api`]: `NULL` models group together and read back as
+    /// `"unknown"`.
+    pub fn usage_by_model(&self) -> Result<Vec<ModelUsage>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            model: String,
+            #[diesel(sql_type = BigInt)]
+            input: i64,
+            #[diesel(sql_type = BigInt)]
+            cache_create: i64,
+            #[diesel(sql_type = BigInt)]
+            cache_read: i64,
+            #[diesel(sql_type = BigInt)]
+            output: i64,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT COALESCE(model, 'unknown') AS model,
+                    COALESCE(SUM(input),0) AS input,
+                    COALESCE(SUM(cache_create),0) AS cache_create,
+                    COALESCE(SUM(cache_read),0) AS cache_read,
+                    COALESCE(SUM(output),0) AS output
+             FROM usage GROUP BY model ORDER BY model",
+        )
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| ModelUsage {
+                model: r.model,
+                input: r.input,
+                cache_create: r.cache_create,
+                cache_read: r.cache_read,
+                output: r.output,
+            })
+            .collect())
+    }
+
     /// One row per session the store knows (T25.1, D27): the single read behind the
     /// Sessions page and `rtok agent sessions`. One statement — `usage` (by `session`)
     /// and `calls` (by `session_id`) are pre-aggregated per session because joining
@@ -1321,6 +1360,17 @@ struct ArchiveDecisionRow {
 #[derive(Debug, Clone)]
 pub struct ApiUsage {
     pub api: String,
+    pub input: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+    pub output: i64,
+}
+
+/// Aggregated usage totals grouped by model (`rtok stats --price`, T49.1).
+/// A `NULL` model (older rows) reads back as `"unknown"`.
+#[derive(Debug, Clone)]
+pub struct ModelUsage {
+    pub model: String,
     pub input: i64,
     pub cache_create: i64,
     pub cache_read: i64,

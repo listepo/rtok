@@ -119,7 +119,9 @@ fn assign(doc: &mut DocumentMut, key: &str, value: TomlValue) -> Result<()> {
 }
 
 fn is_open(dotted: &str) -> bool {
-    dotted == "bench.configs"
+    // `bench.configs` is a free-form name → path map; `stats.prices` is keyed by
+    // provider model id, which no schema can enumerate — both skip value checks.
+    dotted == "bench.configs" || dotted == "stats.prices"
 }
 
 fn line_of(src: &str, span: Option<std::ops::Range<usize>>) -> usize {

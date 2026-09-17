@@ -1,5 +1,17 @@
 # rtok — completed tasks
 
+## T49.1 — `rtok stats --price`
+
+**T49.1 `rtok stats --price`** · P2, 3/5 · `src/measure/stats.rs`, `src/store/mod.rs`, `src/config/mod.rs`, `src/config/validate.rs`, `src/cli.rs`, `src/web/model.rs`, `config/default.toml`, `docs/config.md`, `tests/stats_price.rs` (new), `tests/trycmd/stats-price.{toml,stdout,stderr}` (new) + fixture config, `tests/trycmd/config-show.stdout`
+
+From I-02. `rtok stats` reports tokens but not money, so a saving cannot be compared with a model's cost; cache reads are priced very differently from input (research.md §8).
+
+Do: `[stats] price=false` plus `[stats.prices."<model>"]` (USD per MTok: input, cache_write, cache_read, output) with four shipped rows dated 2026-09-17 — Anthropic Sonnet 5 (2.0/2.5/0.2/10.0) and Haiku 4.5 (1.0/1.25/0.1/5.0) from platform.claude.com/docs/en/about-claude/pricing, OpenAI gpt-5 (1.25/1.25/0.125/10.0) and gpt-5-mini (0.25/0.25/0.025/2.0) from platform.openai.com/docs/pricing (no separate write price there, so cache_write = input). `rtok stats --price` attaches per-model costs from the same proxy `usage` rows (new `Store::usage_by_model`): cost = Σtok/1e6×rate, saved = cache_read×(input−read)/1e6 — the only saving computable from usage alone. Models without a row print `-` for both dollar columns (token counts still print), stay out of the totals, and are named. Costs attach only when the flag is set, so default table/JSON output is byte-identical. `config validate` exempts the open-ended `stats.prices` subtree (bench.configs precedent); every new key has its default.toml row, docs row and flag mapping (D12).
+Check: unit tests on the arithmetic (`row_cost` legs/saving/rounding, `attach_costs` priced+unknown+NULL-model on an in-memory store); `tests/stats_price.rs` fixture-ledger e2e (table totals $14.70 / saved $15.30, `-` rows, JSON cost object, plain `stats` mentions no costs); hermetic trycmd `stats-price` snapshot (empty ledger); `stats_model.rs` goldens unchanged; `config_coverage`, `host_docs`, `cli_trycmd` green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean worktree at e2e43a8 + these files: `cargo nextest run --workspace` 705 passed, 2 failed — both pre-existing (opencode `remove_twice`: real opencode 1.18.29 on PATH, fails identically without these changes; `surface_parity` on T51.4's `wrap` command, fails on clean HEAD too); `stats_price` 3/3; `stats_model` goldens unchanged; lib price unit tests pass; `cli_trycmd`, `config_coverage`, `host_docs` green; `cargo fmt --check` and `cargo clippy --workspace --all-targets --all-features -D warnings` clean. Full `just check` is not green in the main tree (other agents' concurrent uncommitted WIP breaks the build); untouched by this task.
+Deviation: none; no new dependency.
+
 ## T51.2 — Anthropic native context editing
 
 **T51.2 Anthropic native context editing** · P3, 3/5 · `src/proxy/anthropic.rs`, `src/proxy/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/proxy.rs`, `tests/trycmd/config-show.stdout`, `README.md`
