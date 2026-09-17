@@ -21,7 +21,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
-| T52.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.1 | todo | P3 | 3 | 0% | |
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
@@ -103,17 +102,6 @@ Done when each added grammar is an optional feature (dependency reasons in the c
 
 From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
 Done when a P7-style A/B shows the map lowers cost per passed task; the map is ranked by reference count from `symbols`, fits a share of the D5 budget alongside `memory`, is byte-stable across turns, and is off by default until that A/B passes.
-
-### T52.4. Dead code report
-
-From I-29. Definitions with zero reference sites are cheap to list once edges exist, but pub API, trait impls and macros make naive output noisy.
-Done when `impact` (or `rtok graph dead`) lists unreferenced private definitions, excludes pub items, trait impls, tests and macro-generated symbols, and a fixture repo test asserts no false positives on those classes.
-
-Execution plan (T52.4, OpenCode / Muse Spark 1.3):
-1. `src/store/symbols.rs`: `symbol_dead_candidates(root)` — defs with no same-name ref row under the root (one SQL, `NOT EXISTS`), excluding empty names.
-2. `src/plugins/graph/mod.rs`: `dead(cx, root)` — index_for, candidates, then filters: skip `macro` kind; skip test paths (`tests/`, `_test`, `test_`); skip `pub` lines (read source once per file); skip methods inside `impl X for Y` ranges (tree-sitter parse per file); skip `main`; cap + `Measurement` via existing `cap`.
-3. `src/cli.rs`: `GraphCmd::Dead` + dispatch printing `dead()`; e2e via binary on a fixture repo.
-4. Verify: new unit test with fixture repo covering pub fn, trait impl method, `#[test]` fn, `macro_rules!` + used + truly-dead private fn (only the dead one listed); `mise exec -- cargo fmt`, clippy, nextest; `just check`.
 
 ### T53.1. Coaching nudges under an A/B
 

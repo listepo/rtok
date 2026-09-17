@@ -218,6 +218,130 @@ pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
     cap(cx, out)
 }
 
+/// `dead()`: unreferenced private definitions as `path:line kind name` lines (T52.4).
+/// Drops pub items, methods in trait impls/trait bodies, test files and `#[test]`
+/// fns, `macro` definitions and `main`.
+pub fn dead(cx: &Ctx, root: &Path) -> Result<String> {
+    index_for(cx, root)?;
+    let key = index::canon(root);
+    let mut files: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut out = String::new();
+    for (path, name, kind, line) in cx.symbol_dead_candidates(&key)? {
+        if kind == "macro" || name == "main" || is_test_path(&path) {
+            continue;
+        }
+        let src = files
+            .entry(path.clone())
+            .or_insert_with(|| {
+                std::fs::read_to_string(root.join(&path))
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_string)
+                    .collect()
+            })
+            .clone();
+        let def = src
+            .get(line.max(1) as usize - 1)
+            .map(String::as_str)
+            .unwrap_or("");
+        let trimmed = def.trim_start();
+        if trimmed.starts_with("pub ") || trimmed.starts_with("pub(") || trimmed == "pub" {
+            continue;
+        }
+        if src[..(line.max(1) as usize - 1).min(src.len())]
+            .iter()
+            .rev()
+            .take(3)
+            .any(|l| {
+                let t = l.trim_start();
+                t.starts_with("#[test") || t.starts_with("#[cfg(test")
+            })
+        {
+            continue;
+        }
+        #[cfg(feature = "lang-rust")]
+        if path.ends_with(".rs") {
+            let (ranges, types) = rust_impls(&src.join("\n"));
+            // Named as an `impl` target (`impl S`, `impl T for S`): used.
+            if types.iter().any(|t| t == &name) {
+                continue;
+            }
+            if kind == "method"
+                && ranges
+                    .iter()
+                    .any(|(s, e)| *s <= line as usize && line as usize <= *e)
+            {
+                continue;
+            }
+        }
+        out.push_str(&format!("{path}:{line} {kind} {name}\n"));
+    }
+    if out.is_empty() {
+        return Ok(format!("no dead code in {}", root.display()));
+    }
+    cap(cx, out)
+}
+
+/// Test files by path: `tests/` dirs and test-named files. Test-only bodies
+/// (`#[test]`) are filtered at the call site from the source lines.
+fn is_test_path(path: &str) -> bool {
+    path == "tests"
+        || path.starts_with("tests/")
+        || path.contains("/tests/")
+        || path.split('/').next_back().is_some_and(|f| {
+            f.starts_with("test_") || f.starts_with("_test") || f.contains("_test.")
+        })
+}
+
+/// 1-based line ranges of `impl X for Y` blocks and `trait` bodies in Rust source
+/// (methods there are interface surface, not dead code), plus every `impl` target
+/// type name (`impl S`, `impl T for S` — the tags query records no reference for
+/// the type of a trait impl, so `S` would otherwise read as dead).
+#[cfg(feature = "lang-rust")]
+fn rust_impls(src: &str) -> (Vec<(usize, usize)>, Vec<String>) {
+    let mut parser = tree_sitter::Parser::new();
+    let lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    if parser.set_language(&lang).is_err() {
+        return (Vec::new(), Vec::new());
+    }
+    let Some(tree) = parser.parse(src, None) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut out = (Vec::new(), Vec::new());
+    collect_impls(tree.root_node(), src.as_bytes(), &mut out);
+    out
+}
+
+#[cfg(feature = "lang-rust")]
+fn collect_impls(
+    node: tree_sitter::Node<'_>,
+    src: &[u8],
+    out: &mut (Vec<(usize, usize)>, Vec<String>),
+) {
+    if node.kind() == "impl_item" {
+        if let Some(t) = node.child_by_field_name("type")
+            && let Ok(name) = t.utf8_text(src)
+        {
+            // Generics read as `S<T>` and never equal a definition name.
+            out.1
+                .push(name.split('<').next().unwrap_or(name).trim().to_string());
+        }
+        if node.child_by_field_name("trait").is_some() {
+            out.0
+                .push((node.start_position().row + 1, node.end_position().row + 1));
+        }
+    }
+    if node.kind() == "trait_item" {
+        out.0
+            .push((node.start_position().row + 1, node.end_position().row + 1));
+    }
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    for child in children {
+        collect_impls(child, src, out);
+    }
+}
 /// T8.7 BFS, kept as the T8.14 baseline. Not used on the tool path after T8.13.
 #[cfg(test)]
 pub(crate) fn impact_bfs(
@@ -563,6 +687,40 @@ mod tests {
         let (cx, dir) = cx("outline");
         let out = outline(&Ctx::new(&cx), "src/main.rs").unwrap();
         assert!(out.contains("main"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T52.4: one truly-dead private fn is listed; pub API, trait-impl methods,
+    /// `#[test]` fns, macro definitions and test-dir files are not.
+    #[test]
+    fn dead_lists_only_the_private_orphan() {
+        let (cx, dir) = cx("dead");
+        fs::write(
+            dir.join("live.rs"),
+            "pub fn caller() {\n    used();\n}\nfn used() {}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("dead.rs"), "fn orphan() {}\n").unwrap();
+        fs::write(dir.join("api.rs"), "pub fn exported() {}\n").unwrap();
+        fs::write(
+            dir.join("traits.rs"),
+            "struct S;\ntrait T {\n    fn m(&self);\n}\nimpl T for S {\n    fn m(&self) {}\n}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("mac.rs"), "macro_rules! gen {\n    () => {};\n}\n").unwrap();
+        fs::write(dir.join("tested.rs"), "#[test]\nfn my_test() {}\n").unwrap();
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(dir.join("tests/helper.rs"), "fn help_me() {}\n").unwrap();
+        let out = dead(&Ctx::new(&cx), &dir).unwrap();
+        assert!(out.contains("orphan"), "{out}");
+        for kept in [
+            "used", "caller", "exported", "m", "gen", "my_test", "help_me", "T", "S",
+        ] {
+            assert!(
+                !out.lines().any(|l| l.ends_with(&format!(" {kept}"))),
+                "{kept} must not be listed as dead:\n{out}"
+            );
+        }
         let _ = fs::remove_dir_all(dir);
     }
 

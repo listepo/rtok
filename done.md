@@ -16,6 +16,20 @@ Evidence: `just check` in a clean worktree at ef6c6ff: 693 passed, 2 failed, 2 s
 
 Deviation: 4 files. Claimed and closed in one commit without a plan.md row, because plan.md and done.md held other agents' uncommitted edits; only this entry is staged in done.md.
 
+## T52.4 — Dead code report
+
+**T52.4 Dead code report** · P3, 2/5 · `src/store/symbols.rs`, `src/plugins/graph/mod.rs`, `src/cli.rs`, `src/plugin.rs`, `crates/rtok-plugin-sdk/src/host.rs`, `tests/surface_parity.rs`
+
+From I-29. `Store::symbol_dead_candidates` lists defs with no same-name ref row under the root (one `NOT EXISTS` query, name-based like `callers`); `graph::dead` filters to actionable dead code — skips `macro` kind, `main`, test paths (`tests/`, `test_`/`_test`), `pub` lines, `#[test]`/`#[cfg(test)]` fns, methods inside trait/`impl X for Y` ranges and any `impl` target type (the tags query records no ref for a trait impl's type, so `S` in `impl T for S` would otherwise read as dead; one tree-sitter parse per `.rs` file, no new dependency); `rtok graph dead [path]` prints `path:line kind name` through the existing cap (one `graph/cap` Measurement per call, empty report is `no dead code in <root>`). MCP surface stays four tools (name-stability rule); `surface_parity` classifies `graph dead` as on-demand reading with no snapshot page yet, like `stats`.
+
+Check: `plugins::graph::tests::dead_lists_only_the_private_orphan` (fixture repo: pub fn, used private fn, trait + trait-impl method + impl-target struct, `macro_rules!`, `#[test]` fn, `tests/` file, `main` — only the orphan is listed); e2e `rtok graph dead` on a fixture repo prints one line and `rtok stats --plugin graph` shows the `cap` row; `graph_contract`/`graph_truth` byte-exact.
+
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolated worktrees with this task's hunks only. At 77af448: `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean; 43/43 `plugins::graph` lib tests; `graph_contract` + `graph_truth` 6/6; `surface_parity` 4/4; full nextest 694 passed / 2 failed / 2 skipped (both failures pre-existing on clean HEAD: `agents_install remove_twice…` opencode backup, plus the `surface_parity` row this commit adds); `cargo build --no-default-features --features measure` green. Re-verified at 0dfcad1: fmt/clippy clean, 43/43 graph, contract+truth green, `graph dead` classified; the one `surface_parity` failure there names HEAD's `wrap` (T51.4 landed without its EXEMPT row — not this task's command).
+
+Deviation: 6 files / 228 insertions (over the 200 LOC / 3-file guideline) — D25 forces the SDK trait seam (`Symbols::symbol_dead_candidates` with an empty default so out-of-tree hosts keep compiling, plus the `Runtime` delegation) beside the store query, the filter, the CLI and the parity row; no way to add a store-backed capability in fewer files without breaking the plugin contract. No new dependency (tree-sitter + tree-sitter-rust already behind the `read` feature `graph` requires).
+
 ## T48.7 — aider host
 
 **T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`

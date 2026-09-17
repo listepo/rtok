@@ -13,7 +13,6 @@
 - T52.1. Query language over the graph index
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
-- T52.4. Dead code report
 - T53.1. Coaching nudges under an A/B
 - T53.2. Shell completions and man page
 - T53.3. Hook start without Security.framework

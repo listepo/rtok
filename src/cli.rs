@@ -298,6 +298,8 @@ enum GraphCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// List unreferenced private definitions (skips pub, trait impls, tests, macros)
+    Dead { path: Option<PathBuf> },
 }
 
 #[derive(Subcommand)]
@@ -739,20 +741,30 @@ pub fn run() -> Result<()> {
         #[cfg(feature = "graph")]
         Cmd::Graph { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let GraphCmd::Index { path, dry_run } = action;
             let cx = crate::plugin::Runtime::open(cfg, "graph")?;
-            let root = path.unwrap_or(std::env::current_dir()?);
-            let pb = crate::render::spinner("indexing");
-            let r = crate::plugins::graph::index::run_with(
-                &crate::plugin::Ctx::new(&cx),
-                &root,
-                dry_run,
-                &pb,
-            )?;
-            println!(
-                "indexed {} files · {} rows · {} skipped · {} read",
-                r.indexed, r.inserted, r.skipped, r.read
-            );
+            match action {
+                GraphCmd::Index { path, dry_run } => {
+                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let pb = crate::render::spinner("indexing");
+                    let r = crate::plugins::graph::index::run_with(
+                        &crate::plugin::Ctx::new(&cx),
+                        &root,
+                        dry_run,
+                        &pb,
+                    )?;
+                    println!(
+                        "indexed {} files · {} rows · {} skipped · {} read",
+                        r.indexed, r.inserted, r.skipped, r.read
+                    );
+                }
+                GraphCmd::Dead { path } => {
+                    let root = path.unwrap_or(std::env::current_dir()?);
+                    print!(
+                        "{}",
+                        crate::plugins::graph::dead(&crate::plugin::Ctx::new(&cx), &root)?
+                    );
+                }
+            }
         }
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
