@@ -33,59 +33,32 @@ that v0.1 does not schedule.
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
 | I-01 | token-optimizer dashboard; rtk `gain`; headroom `savings` | TUI (`measure`) | **promoted P15** — ratatui `rtok tui` (not HTML); per-plugin, per-day CTT dashboard. | T1.2 done; promoted 2026-09-02 → P15 T15.1–T15.9, D17. |
-| I-02 | research.md §8 | `measure` | `rtok stats --price` with per-model input/cache/output rates (Fable/Mythos 0.025× cache read). | Open question; T1.2 has no price table. |
-| I-03 | Cursor, Codex, aider transcripts | `measure` | Ingest host logs beyond Claude Code JSONL (Cursor, Codex, OpenCode). | T1.1 is Claude JSONL first. Other hosts get `usage` via the proxy (P11). |
-| I-04 | Anthropic deferred tools / `ENABLE_TOOL_SEARCH` | `doctor` | Detect whether `ANTHROPIC_BASE_URL` disabled MCP tool search; report how to keep deferred tools. | research.md §8; T1.4 can grow a Check later. |
 
 ### `cmd`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-05 | rtk ~80 filters; token-optimizer 111 bash compressors; lean-ctx 95+ shell patterns | `cmd` | Broader family coverage (sed, grep, cat, pnpm, python — the bulk of your Bash tokens in research.md §2) beyond the T3.3 starter set. | T3.3 lists cargo/git/test/ls. Extra families are data in `rules/default.toml`, not a new plugin. |
-| I-06 | rtk TOML custom filters | `cmd` | Documented user filter API (`rules/*.toml` drop-in) matching rtk’s extension model, written here (D6). | T3.2 is the engine; a public schema + examples can wait until the engine exists. |
 
 ### `read`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-07 | lean-ctx 10 read modes | `read` | Extra modes beyond full/lines/map/signatures (e.g. imports-only, comments-stripped) if T4.3 does not cover the measured Read tail (38–68 K char files). | T4.2–T4.3 are four modes. Add a mode only with a Check on those files. |
-| I-08 | lean-ctx deny Grep/Glob | `read` / `guard` | PreToolUse deny of native Grep/Glob with a pointer to MCP `search`/`tree`. | lean-ctx does this to force its 78 tools; rtok wants fewer tools. Only promote if `doctor` shows Grep/Glob dominating Read-class tokens after T4.5. |
 
 ### `archive` / `proxy`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-09 | headroom JSON crusher + code compressor | `archive` or new plugin | Compress JSON/code *inside* the live zone that is not a `tool_result` (nested dumps, huge `data:` blobs). | P5 only rewrites old `tool_result`s (cache-safe). Other fields risk cache busts (issue #81967). Needs a byte-stability Check. |
-| I-10 | Anthropic context editing (`clear_tool_uses_*`, `compact_*`) | `proxy` | Optionally emit native context-editing instead of (or with) rtok rewrite, so the platform does the shrink. | v0.1 aligns with caching and does not fight the platform; a plugin that *sets* those headers is extra surface. |
-| I-11 | Gemini / other wires | `proxy` | Third `Wire` (e.g. Gemini). | architecture.md §9: new `src/proxy/<name>.rs`. Not scheduled until an OpenAI-API host is measured (P11). |
-| I-12 | headroom wrap CLI | `proxy` | `rtok wrap -- <agent>` that sets `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` for one process. | T5.2 is lifecycle/setup; wrap is sugar on top. |
 
 ### `memory` / `graph`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-13 | claude-mem progressive disclosure; engram 18-tool banner | `memory` | Titles → ids → bodies strictly; never inject bodies at SessionStart (research.md §6 #7). | T6.2 already goes through `inject`. Spell the ladder as a Check if T6.2 is too loose. |
-| I-14 | codebase-memory-mcp Cypher-like queries | `graph` | A small query language over the tags index (beyond `symbol`/`callers`/`outline`). | T8.2 is three tools. Cypher is a fourth surface; promote only if those three miss a measured query. |
-| I-15 | code-review-graph impact radius | `graph` | `impact(path)` / changed-symbol fan-out for reviews. | Same as I-14: extra MCP tool, extra description tokens. Drafted as T8.7 in `src/plugins/graph/PLAN.md` v0.2 (2026-09-04), not yet in `plan.md`. |
-| I-16 | codebase-memory-mcp 162 langs, LZ4 blobs | `graph` | More grammars + compressed index payloads. | T8.1 is tree-sitter-tags on this repo first; langs are data. |
-| I-28 | aider repo map (tree-sitter + PageRank, 1 K budget) | `inject`, `graph` | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inject` budget. | D5 budget is 800 tokens and `memory` recall already takes 200; needs a P7-style A/B before it takes any of it. Survey: `src/plugins/graph/PLAN.md` v0.2. |
-| I-29 | codebase-memory-mcp `detect_dead_code` | `graph` | Definitions with zero reference sites in the index. | One query once T8.5 edges exist, but pub API, trait impls and macros make it noisy; no measured need. |
 | I-30 | codebase-memory-mcp (Linux kernel in 3 min) | `graph` | Batch the cold index: one transaction per N files instead of per file. | Measured 2026-09-04 (T8.4, release): 3 000 files cold 27.2 s, warm 0.053 s. Only the warm path is gated (P8b), and the cold path is paid once per repo, so this is not a task yet. |
-| I-31 | T8.8 measurement | `graph` | rtok's own tags query on top of the grammar's, for type positions and `scoped_identifier` calls. | Measured 2026-09-04: reference recall 0.351, and 65 of 74 misses are these two constructs. A hand-written query per language is real maintenance; no task has yet needed a type reference. Macro bodies stay unreachable either way. |
 
 ### Hosts and product
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-17 | aider, Windsurf, Zed, Copilot Chat | `setup` | Installers beyond Claude / Cursor / OpenCode / Codex (T10.1–T10.3). Pi agent promoted 2026-09-08 → T10.6; the rest stays here. | P10 is those three + release. New host = new `src/setup/<host>.rs` after T10.1 pattern. |
-| I-18 | token-optimizer coaching / quality nudges | `inject` | Prompt nudges (“don’t re-read”, “use expand”). | Nudges are re-read every turn (D5). Lean-ctx’s 3.1 K banner is the cautionary tale. Promote only with a P7-style A/B. |
-| I-19 | `log`/`tracing` in every alternative CLI | core | Dedicated `tracing` logger: levels (`error`–`trace`), `core.log_file`, no stderr on the hook path; `Ctx::log` stays the DB path (D13). | Config already has `log_level` / `log_file`; P13 writes the `logs` table. File+level subscriber is not a numbered task. |
-| I-20 | clap ecosystem | CLI | Shell completions (`clap_complete`) and a man page (`clap_mangen`). | D14 is clap + figment. Completions are polish after T12.4. |
-| I-33 | Gate P16 clause (3), moved out 2026-09-07 | `otel` | Keep the two Docker recipes in `docs/otel.md` as a repeatable check: a `just otel-check` that starts Jaeger 2.11 and Grafana `otel-lgtm` on shifted ports (the defaults were taken on this machine: 16687/4320 and 3001/4321), flushes a copy of the ledger, and asserts through their APIs — Jaeger `/api/traces?service=rtok` has `execute_tool` spans, Tempo answers the trace id, Prometheus has `rtok_calls_total` — instead of a look at the UI. Jaeger 2.x is traces-only (404 on `/v1/logs` and `/v1/metrics`, now reported as `not served`); `otel-lgtm` takes all three streams. | Both backends were verified once by hand on 2026-09-07 (`research.md` §2) and the rest of the clause (real session, SigNoz, Maple) is Gate P18. A scripted re-check needs Docker on the machine that runs it and only re-proves what the mock-collector tests already gate. |
-| I-32 | Gate P17 latency breakdown (`research.md` §2, 2026-09-07) | `hook` / core | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook spawn (a hook's own work is ~1.3 ms) and only `proxy` / `otel` TLS uses them, through reqwest 0.13's mandatory `rustls-platform-verifier`. Options: a webpki-roots `ClientConfig` via `use_preconfigured_tls` plus `-dead_strip_dylibs`, or a second tiny hook binary. | Either changes the TLS trust story (corporate CAs) or breaks the one-binary rule (§1); needs a user decision. p95 passes the 10 ms bar without it on a quiet machine. |
-| I-35 | pi docs audit 2026-09-17 (https://pi.dev/docs/latest/extensions) | `setup` pi | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/index.ts` only, and honours `package.json` `pi.extensions` through `pi install <path>`. Either add a one-line `index.ts` entry or let setup run `pi install` (settings-based, no symlink). | Not verified on a live pi (`pi` is not on the shell allowlist here); needs a run before it becomes a task. |
-| I-36 | pi docs audit 2026-09-17 | `setup` pi | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM context"; `pi.sendMessage` is the call that reaches the model. | Fail-open still holds (bash runs unmodified); only the install hint is invisible. |
-| I-37 | Cursor / Agent Plugins docs audit 2026-09-17 (https://agent-plugins.org/specification) | `setup` cursor | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the spec also wants `$schema` and per-server `type: "stdio"` in `mcp.json`, which Cursor does not need. Decide whether the root `plugin.json` targets that spec at all. | Cursor works as is; the spec-conformance only matters for a second Agent Plugins host. |
 
 ---
 
@@ -119,6 +92,33 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-27 | P20 T20.1 | `rtok demon` supervises `proxy`/`mcp`/`dashboard` (D22) | 2026-09-09 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 | I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
+| I-02 | T49.1 | `rtok stats --price` with per-model input/cache/output rates (Fable/Mythos 0.025× cache read). | 2026-09-17 |
+| I-03 | T49.2 | Ingest host logs beyond Claude Code JSONL (Cursor, Codex, OpenCode). | 2026-09-17 |
+| I-04 | covered (no task) | Detect whether `ANTHROPIC_BASE_URL` disabled MCP tool search; report how to keep deferred tools. Already shipped: `rtok doctor` (`mcp_tool_search likely disabled`) | 2026-09-17 |
+| I-05 | T50.1 | Broader family coverage (sed, grep, cat, pnpm, python — the bulk of your Bash tokens in research.md §2) beyond the T3.3 | 2026-09-17 |
+| I-06 | T50.2 | Documented user filter API (`rules/*.toml` drop-in) matching rtk’s extension model, written here (D6). | 2026-09-17 |
+| I-07 | T50.3 | Extra modes beyond full/lines/map/signatures (e.g. imports-only, comments-stripped) if T4.3 does not cover the measured | 2026-09-17 |
+| I-08 | T50.4 | PreToolUse deny of native Grep/Glob with a pointer to MCP `search`/`tree`. | 2026-09-17 |
+| I-09 | T51.1 | Compress JSON/code *inside* the live zone that is not a `tool_result` (nested dumps, huge `data:` blobs). | 2026-09-17 |
+| I-10 | T51.2 | Optionally emit native context-editing instead of (or with) rtok rewrite, so the platform does the shrink. | 2026-09-17 |
+| I-11 | T51.3 | Third `Wire` (e.g. Gemini). | 2026-09-17 |
+| I-12 | T51.4 | `rtok wrap -- <agent>` that sets `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL` for one process. | 2026-09-17 |
+| I-13 | covered (no task) | Titles → ids → bodies strictly; never inject bodies at SessionStart (research.md §6 #7). Already shipped: SessionStart recall injects `id title` lines only; bodies via `mem_get`. | 2026-09-17 |
+| I-14 | T52.1 | A small query language over the tags index (beyond `symbol`/`callers`/`outline`). | 2026-09-17 |
+| I-15 | covered (no task) | `impact(path)` / changed-symbol fan-out for reviews. Already shipped: MCP `impact` (T8.7). | 2026-09-17 |
+| I-16 | T52.2 | More grammars + compressed index payloads. | 2026-09-17 |
+| I-28 | T52.3 | SessionStart map of the most-referenced definitions, ranked by reference count from the `symbols` table, under the `inje | 2026-09-17 |
+| I-29 | T52.4 | Definitions with zero reference sites in the index. | 2026-09-17 |
+| I-31 | T52.5 | rtok's own tags query on top of the grammar's, for type positions and `scoped_identifier` calls. | 2026-09-17 |
+| I-17 | T48.5–T48.8 | Installers beyond Claude / Cursor / OpenCode / Codex (T10.1–T10.3). Pi agent promoted 2026-09-08 → T10.6; the rest stays — promoted T48.5–T48.8 | 2026-09-17 |
+| I-18 | T53.1 | Prompt nudges (“don’t re-read”, “use expand”). | 2026-09-17 |
+| I-19 | covered (no task) | Dedicated `tracing` logger: levels (`error`–`trace`), `core.log_file`, no stderr on the hook path; `Ctx::log` stays the Already shipped: `[log]` rotating file with levels (T24.0, D26). | 2026-09-17 |
+| I-20 | T53.2 | Shell completions (`clap_complete`) and a man page (`clap_mangen`). | 2026-09-17 |
+| I-33 | T53.4 | Keep the two Docker recipes in `docs/otel.md` as a repeatable check: a `just otel-check` that starts Jaeger 2.11 and Gra | 2026-09-17 |
+| I-32 | T53.3 | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook | 2026-09-17 |
+| I-35 | T48.1 | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/in | 2026-09-17 |
+| I-36 | T48.2 | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM cont | 2026-09-17 |
+| I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
 
 | ID | Became | Date |
 |----|--------|------|
