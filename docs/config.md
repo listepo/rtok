@@ -308,6 +308,8 @@ modes         = []                    # same as [setup].modes; setup writes here
 enabled      = true
 window_turns = 8
 deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP search/tree (T50.4)
+skills = false                   # opt-in (Claude Code): deny a Skill whose SKILL.md exceeds skill_max_bytes with its map + `expand <id>` (T62.1)
+skill_max_bytes = 8192           # bodies at or under this load whole; so does any skill with allowed-tools / model / context / agent in its frontmatter
 
 [plugins.memory]
 enabled        = true
