@@ -11,7 +11,6 @@
 - T51.1. Compress JSON and code inside the live zone
 - T51.2. Anthropic native context editing
 - T51.3. Gemini wire in the proxy
-- T51.4. `rtok wrap -- <agent>`
 - T52.1. Query language over the graph index
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart

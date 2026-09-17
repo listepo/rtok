@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::Json;
 use axum::extract::State;
 use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
@@ -116,7 +116,7 @@ fn exit_code(status: std::process::ExitStatus) -> i32 {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        return 128 + status.signal().unwrap_or(0);
+        128 + status.signal().unwrap_or(0)
     }
     #[cfg(not(unix))]
     {
@@ -163,16 +163,16 @@ pub fn ensure_proxy(cfg: &Config) -> bool {
         return true;
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    let cfg = cfg.clone();
+    let serving = cfg.clone();
     std::thread::spawn(move || {
         let bound = (|| -> Result<()> {
-            let state = std::sync::Arc::new(super::ProxyState::new(&cfg)?);
+            let state = std::sync::Arc::new(super::ProxyState::new(&serving)?);
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
                 .context("tokio runtime")?;
             rt.block_on(async {
-                let addr = format!("{}:{}", cfg.proxy.bind, cfg.proxy.port);
+                let addr = format!("{}:{}", serving.proxy.bind, serving.proxy.port);
                 let listener = tokio::net::TcpListener::bind(&addr)
                     .await
                     .with_context(|| format!("bind {addr}"))?;
@@ -192,7 +192,7 @@ pub fn ensure_proxy(cfg: &Config) -> bool {
         return false;
     }
     for _ in 0..100 {
-        if health_ok(&cfg) {
+        if health_ok(cfg) {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));

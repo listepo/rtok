@@ -19,7 +19,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T51.1 | todo | P3 | 5 | 0% | |
 | T51.2 | todo | P3 | 3 | 0% | |
 | T51.3 | todo | P3 | 4 | 0% | |
-| T51.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
@@ -97,17 +96,6 @@ Done when `[proxy]` can add the context-management request fields for Anthropic 
 
 From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
 Done when `src/proxy/gemini.rs` implements the `Wire` adapter (usage, cached tokens, streaming passthrough byte-identical), routes by path, records usage rows like the other wires, and has body and stream tests against a mock upstream.
-
-### T51.4. `rtok wrap -- <agent>`
-
-From I-12. Pointing a host at the proxy means editing its config; for a one-off run it is simpler to set `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` for one process.
-Done when `rtok wrap -- <cmd> [args]` ensures the proxy is running (via `demon` or in-process), execs the command with both base URLs set, forwards the exit code and signals, prints nothing on the happy path, and has an integration test with a fake agent that echoes its env.
-
-Execution plan (OpenCode / Muse Spark 1.3):
-1. `src/proxy/cli.rs`: add `wrap` module fns — `base_urls(cfg)` reusing `agents::{anthropic_proxy_url,openai_proxy_url}` (already the exact strings installers write), `health_ok(cfg)` via a hand-rolled `GET /health` over `TcpStream` (no new dep; reqwest has no blocking feature), `ensure_proxy(cfg)` spawning the axum `app` in-process on a background thread + own runtime when health is down (poll health ≤5s; bind failure → fail-open `None`), `run(cfg, argv) -> i32` setting both env vars, inheriting stdio, exiting with the child's code (Unix signal death → 128+signo shell convention; terminal signals already reach the child via the shared foreground pgroup, so no signal crate needed).
-2. `src/cli.rs`: `Wrap { command: Vec<String> }` trailing-var-arg, no long flags → no new config keys (T12.4 walk skips positionals), arm calls `std::process::exit(wrap::run(...))`.
-3. `tests/wrap.rs`: hermetic temp `RTOK_HOME`/`HOME` (plugins_e2e pattern); fake agent echoes env — unix `sh -c`, Windows `cmd /c`; asserts exact stdout (silent happy path), both URLs, exit-code forwarding (`exit 3` → 3), plus an ensure-proxy unit path: POST `/v1/messages` through the ensured proxy at a mock upstream (`RTOK_UPSTREAM`) and assert one usage row.
-4. Verify: `mise exec -- cargo fmt`, `clippy --all-targets --all-features -D warnings`, `cargo nextest run --workspace` (or `just check`).
 
 ### T52.1. Query language over the graph index
 
