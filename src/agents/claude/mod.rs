@@ -435,6 +435,91 @@ mod tests {
         assert!(desktop_command().ends_with(".exe"), "{}", desktop_command());
     }
 
+    // --- Vfs twins (T56.3): hook insert/strip against in-memory fixtures; keep disk e2e ---
+
+    fn hooks_roundtrip_vfs(vfs: &mut crate::testutil::Vfs, path: &str, remove: bool) -> String {
+        let raw = vfs.read_str(path).unwrap_or("{}");
+        let mut root: Value =
+            serde_json::from_str(if raw.is_empty() { "{}" } else { raw }).unwrap();
+        let report = if remove {
+            strip_ours(root.get_mut("hooks"))
+        } else {
+            insert_ours(object_at(&mut root, "hooks"), ENTRIES, "rtok", "timeout", 5)
+        };
+        vfs.write(path, serde_json::to_string_pretty(&root).unwrap());
+        report
+    }
+
+    #[test]
+    fn apply_twice_then_remove_keeps_foreign_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "settings.json";
+        vfs.write(
+            path,
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#,
+        );
+        let first = hooks_roundtrip_vfs(&mut vfs, path, false);
+        assert!(first.contains("8 additions"), "{first}");
+        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false), NO_CHANGES);
+        let rm = hooks_roundtrip_vfs(&mut vfs, path, true);
+        assert!(rm.contains("removed"), "{rm}");
+        let raw = vfs.read_str(path).unwrap();
+        assert!(
+            raw.contains("echo other") && !raw.contains("rtok hook"),
+            "{raw}"
+        );
+    }
+
+    #[test]
+    fn remove_keeps_a_user_command_that_chains_rtok_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        let path = "settings.json";
+        let chain = "notify-send hi && rtok hook PreToolUse";
+        vfs.write(
+            path,
+            json!({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":chain}]}]}})
+                .to_string(),
+        );
+        hooks_roundtrip_vfs(&mut vfs, path, false);
+        hooks_roundtrip_vfs(&mut vfs, path, true);
+        let raw = vfs.read_str(path).unwrap();
+        assert!(raw.contains(chain), "{raw}");
+        assert!(!raw.contains("\"rtok hook PreToolUse\""), "{raw}");
+    }
+
+    #[test]
+    fn wrong_shaped_hooks_key_is_replaced_from_vfs() {
+        for body in [
+            r#"{"hooks":[]}"#,
+            r#"{"hooks":"nope"}"#,
+            r#"{"hooks":{"PreToolUse":"nope"}}"#,
+        ] {
+            let mut vfs = crate::testutil::Vfs::new();
+            let path = "settings.json";
+            vfs.write(path, body);
+            let report = hooks_roundtrip_vfs(&mut vfs, path, false);
+            assert!(report.contains("8 additions"), "{body} → {report}");
+            let root: Value = serde_json::from_str(vfs.read_str(path).unwrap()).unwrap();
+            assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
+        }
+    }
+
+    #[test]
+    fn dry_run_empty_is_eight_additions_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        // Absent file → empty object; dry-run style: mutate report only, do not require prior write.
+        let path = "Users/Ivan Tuhai/.claude/settings.json";
+        let report = hooks_roundtrip_vfs(&mut vfs, path, false);
+        assert!(report.contains("8 additions"), "{report}");
+        assert!(
+            report.contains("+ SessionEnd rtok hook SessionEnd"),
+            "{report}"
+        );
+        // Vfs now holds the written body (unlike disk dry_run); assert shape instead of absence.
+        let root: Value = serde_json::from_str(vfs.read_str(path).unwrap()).unwrap();
+        assert!(root["hooks"]["SessionEnd"].is_array());
+    }
+
     /// A settings file whose `hooks` is not an object is user data, not a reason to panic
     /// (`hooks: []` used to hit `as_object_mut().unwrap()`).
     #[test]

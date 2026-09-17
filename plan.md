@@ -18,8 +18,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
 | T56.1 | done | P2 | 2 | 100% | |
-| T56.2 | in progress | P2 | 3 | 60% | |
-| T56.3 | in progress | P2 | 3 | 50% | |
+| T56.2 | in progress | P2 | 3 | 85% | |
+| T56.3 | in progress | P2 | 3 | 85% | |
 | T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
@@ -103,12 +103,12 @@ Done when `strip_prefix_cd` accepts single- and double-quoted path segments (mal
 ### T56.2. Migrate read/search unit tests to VFS
 
 Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
-**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. Remaining disk follow-ups (T56.4): `search_paths_stay_relative_*`, `search_and_tree_skip_git_dir`, `search_skips_files_over_search_max_bytes` (WalkBuilder e2e), `tree_paths_*`, full `read()` Runtime tests (`three_lines_are_numbered`, caps, symlink).
+**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. WalkBuilder e2e disk fixtures **kept** with Vfs rewrite twins: `search_and_tree_skip_git_dir_from_vfs`, `tree_paths_stay_relative_from_vfs`, `search_paths_stay_relative_from_vfs`, `search_skips_files_over_search_max_bytes_from_vfs` (`.git` skip + tree rows helpers). Remaining for T56.4 walk adapter: full WalkBuilder-on-`Vfs` (dir metadata / real walk), full `read()` Runtime tests (`three_lines_are_numbered`, caps, symlink).
 
 ### T56.3. Migrate cmd/setup path tests to VFS
 
 Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-**In progress** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras (empty file, spaced/unicode paths, ordered/many drop-ins, max_lines=0). Still on disk: `issues_in_*` (path strings in errors), agent install / setup hook writers (next: keep disk + add Vfs rewrite).
+**In progress** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras. `issues_in_from_vfs` + spaced-path twin added (disk `issues_in_*` kept). Agent setup hook writers: disk e2e **kept**; Claude/Kimi Vfs rewrite twins for insert/strip/idempotent/foreign/wrong-shape/spaced profile. Remaining: more hosts (cursor/codex/…) Vfs twins if needed; MCP register still disk (SDK write path).
 
 ### T56.4. Optional walk/VFS adapter for search/tree
 

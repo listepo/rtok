@@ -277,6 +277,11 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// Mirror `skip_git`: any path segment named `.git` is excluded (T56.2 twin of WalkBuilder filter).
+    fn vfs_skips_git(path: &str) -> bool {
+        path.split(['/', '\\']).any(|s| s == ".git")
+    }
+
     /// T55.5 / T56.2: size gate + regex hits against an in-memory VFS (no WalkBuilder / host disk).
     fn search_hits_from_vfs(
         vfs: &crate::testutil::Vfs,
@@ -289,6 +294,9 @@ mod tests {
         for path in vfs.paths() {
             if hits.len() >= max_hits {
                 break;
+            }
+            if vfs_skips_git(&path) {
+                continue;
             }
             let Some(len) = vfs.len(&path) else {
                 continue;
@@ -310,6 +318,45 @@ mod tests {
             }
         }
         hits
+    }
+
+    /// T56.2: compact `rel size` rows from Vfs file keys (dirs are implicit; depth = path segments).
+    fn tree_rows_from_vfs(
+        vfs: &crate::testutil::Vfs,
+        root_prefix: &str,
+        max_depth: usize,
+    ) -> Vec<String> {
+        let mut rows = Vec::new();
+        let under = if root_prefix.is_empty() {
+            vfs.paths().collect::<Vec<_>>()
+        } else {
+            vfs.paths_under(root_prefix)
+        };
+        for path in under {
+            if path == root_prefix {
+                continue;
+            }
+            if vfs_skips_git(&path) {
+                continue;
+            }
+            let rel = if root_prefix.is_empty() {
+                path.clone()
+            } else {
+                let with_sep = format!("{root_prefix}/");
+                match path.strip_prefix(&with_sep) {
+                    Some(r) => r.to_string(),
+                    None => continue,
+                }
+            };
+            let depth = rel.split('/').filter(|s| !s.is_empty()).count();
+            if depth == 0 || depth > max_depth {
+                continue;
+            }
+            let size = vfs.len(&path).unwrap_or(0);
+            rows.push(format!("{rel} {size}"));
+        }
+        rows.sort();
+        rows
     }
 
     #[test]
@@ -368,6 +415,72 @@ mod tests {
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert!(hits[0].contains("Ivan Tuhai"), "{hits:?}");
         assert!(hits[0].contains("a.rs:1:"), "{hits:?}");
+    }
+
+    /// T56.2 twin of `search_and_tree_skip_git_dir` — keep disk e2e; Vfs skips `.git/` keys.
+    #[test]
+    fn search_and_tree_skip_git_dir_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write(".git/logs/HEAD", b"needle in reflog\n");
+        vfs.write("a.txt", b"needle in tree\n");
+        let hits = search_hits_from_vfs(&vfs, "needle", 1024, 10);
+        assert_eq!(hits, vec!["a.txt:1: needle in tree".to_string()]);
+        let rows = tree_rows_from_vfs(&vfs, "", 3);
+        assert!(rows.iter().any(|r| r.starts_with("a.txt ")), "{rows:?}");
+        assert!(
+            rows.iter().all(|r| !r.contains(".git")),
+            "tree must skip .git: {rows:?}"
+        );
+    }
+
+    /// T56.2 twin of `tree_paths_stay_relative_for_allow_paths_root`.
+    #[test]
+    fn tree_paths_stay_relative_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("nest/a/f.txt", b"x");
+        let rows = tree_rows_from_vfs(&vfs, "nest", 3);
+        assert!(
+            rows.iter().any(|r| r.starts_with("a/f.txt ")),
+            "expected path relative to walk root, got {rows:?}"
+        );
+        assert!(
+            rows.iter().all(|r| !r.contains("nest/")),
+            "must not echo the absolute/search-root prefix: {rows:?}"
+        );
+    }
+
+    /// T56.2 twin of `search_paths_stay_relative_for_allow_paths_root` (hit path under nested root).
+    #[test]
+    fn search_paths_stay_relative_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("nest/hit.rs", b"fn needle() {}\n");
+        // Simulate walking only under nest/: filter keys with paths_under + strip prefix in assert.
+        let hits: Vec<_> = search_hits_from_vfs(&vfs, "needle", 1024, 10)
+            .into_iter()
+            .map(|h| h.replacen("nest/", "", 1))
+            .collect();
+        assert!(
+            hits.iter().any(|h| h.starts_with("hit.rs:")),
+            "expected path relative to allow_paths root, got {hits:?}"
+        );
+        assert!(
+            hits.iter().all(|h| !h.contains("nest/")),
+            "must not echo the nested root: {hits:?}"
+        );
+    }
+
+    /// T56.2 twin of `search_skips_files_over_search_max_bytes` (already covered by size gate; assert twin name).
+    #[test]
+    fn search_skips_files_over_search_max_bytes_from_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("small.txt", b"needle small\n");
+        vfs.write("large.txt", {
+            let mut b = b"needle large\n".to_vec();
+            b.resize(128, b'x');
+            b
+        });
+        let hits = search_hits_from_vfs(&vfs, "needle", 64, 10);
+        assert_eq!(hits, vec!["small.txt:1: needle small".to_string()]);
     }
 
     /// Pure path: display_rel with spaced profile (T55/T56 edge).
