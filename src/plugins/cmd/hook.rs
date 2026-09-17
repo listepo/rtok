@@ -9,7 +9,7 @@ fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
     // Same stem rules as formatters::cmd_stem / run::shell_kind: Windows argv may
     // be `C:\…\sudo.exe` while never_wrap lists bare `sudo`.
     let base = super::formatters::cmd_stem(first);
-    if never_wrap.iter().any(|w| w == base) {
+    if never_wrap.iter().any(|w| w.eq_ignore_ascii_case(base)) {
         return true;
     }
     if cmd.contains("<<") {
@@ -42,7 +42,7 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     }
     let mut input = ev.tool_input.clone();
     // One argv so the outer shell cannot split on `&&`, `|`, `;`, or redirects.
-    input["command"] = json!(format!("rtok run -- {}", super::run::sh_quote(cmd)));
+    input["command"] = json!(format!("rtok run -- {}", super::run::wrap_quote(cmd)));
     Some(PreToolDecision::Rewrite {
         input,
         reason: "wrapped by rtok".into(),
@@ -96,7 +96,7 @@ mod tests {
             let d = decide(cmd).unwrap();
             assert_eq!(
                 wrapped(&d),
-                format!("rtok run -- {}", super::super::run::sh_quote(cmd))
+                format!("rtok run -- {}", super::super::run::wrap_quote(cmd))
             );
         }
     }
@@ -115,5 +115,27 @@ mod tests {
         assert!(decide("sudo.exe ls").is_none());
         // Still wrap a normal command with a Windows-looking path.
         assert!(decide(r"C:\Program Files\Git\cmd\git.exe status").is_some());
+    }
+
+    #[test]
+    fn sudo_exe_case_insensitive_never_wrap() {
+        assert!(decide("Sudo.exe ls").is_none());
+        assert!(decide("SUDO.EXE ls").is_none());
+        assert!(decide("RTOK.EXE run -- true").is_none());
+        assert!(decide("Sudo ls").is_none());
+    }
+
+    #[test]
+    fn wrap_keeps_apostrophe_host_safe() {
+        let d = decide("echo it's fine").unwrap();
+        let w = wrapped(&d);
+        assert!(w.starts_with("rtok run -- "), "{w}");
+        let q = &w["rtok run -- ".len()..];
+        assert_eq!(q, &super::super::run::wrap_quote("echo it's fine"));
+        // Must not contain the POSIX '"'"' embedding that PowerShell rejects.
+        if cfg!(windows) {
+            assert!(!q.contains("'\"'\"'"), "{q}");
+            assert_eq!(q, "'echo it''s fine'");
+        }
     }
 }

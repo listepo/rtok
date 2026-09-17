@@ -11,6 +11,18 @@ pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
+/// Quote a command for the PreToolUse rewrite `rtok run -- <quoted>`.
+/// On Windows, Cursor's beforeShellExecution often runs under PowerShell, so the
+/// POSIX `'"'"'` embedding from [`sh_quote`] breaks on apostrophes. PowerShell
+/// single-quoting (`''` escape) is safe for PS; commands without `'` also parse under cmd.
+pub(crate) fn wrap_quote(s: &str) -> String {
+    if cfg!(windows) {
+        format!("'{}'", s.replace('\'', "''"))
+    } else {
+        sh_quote(s)
+    }
+}
+
 /// Quote one argv word for `cmd.exe /C`. Double quotes; escape embedded `"` as `""`.
 pub(crate) fn cmd_quote(s: &str) -> String {
     if s.is_empty() {
@@ -430,5 +442,15 @@ mod tests {
         assert_eq!(args[0], "-NoProfile");
         assert_eq!(args[2], "-Command");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wrap_quote_is_host_safe_for_apostrophe() {
+        let q = wrap_quote("echo it's");
+        if cfg!(windows) {
+            assert_eq!(q, "'echo it''s'");
+        } else {
+            assert_eq!(q, sh_quote("echo it's"));
+        }
     }
 }

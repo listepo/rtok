@@ -25,9 +25,7 @@ fn seed(home: &Path) -> (PathBuf, PathBuf) {
     let h = home.display().to_string().replace('\\', "/");
     fs::write(
         home.join("config.toml"),
-        format!(
-            "[plugins.cmd]\nrules = \"{h}/rules.toml\"\nrules_dir = \"{h}/rules.d\"\n"
-        ),
+        format!("[plugins.cmd]\nrules = \"{h}/rules.toml\"\nrules_dir = \"{h}/rules.d\"\n"),
     )
     .unwrap();
     (rules, dir)
@@ -76,7 +74,11 @@ fn validate_names_a_broken_drop_in_and_passes_once_fixed() {
 fn filter_applies_drop_ins_in_order_and_skips_broken_ones() {
     let h = home("runtime");
     let (rules, dir) = seed(&h);
-    fs::write(&rules, "[echo]\nmax_lines = 5\nhead = 5\ntail = 0\ndedupe = false\n").unwrap();
+    fs::write(
+        &rules,
+        "[echo]\nmax_lines = 5\nhead = 5\ntail = 0\ndedupe = false\n",
+    )
+    .unwrap();
     fs::write(
         dir.join("echo.toml"),
         "[echo]\nmax_lines = 3\nhead = 1\ntail = 1\ndedupe = false\n",
@@ -84,7 +86,10 @@ fn filter_applies_drop_ins_in_order_and_skips_broken_ones() {
     .unwrap();
     fs::write(dir.join("bad.toml"), "[echo\nmax_lines = \n").unwrap();
 
-    let body = (0..10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let body = (0..10)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let mut child = Command::new(bin())
         .args(["filter", "--cmd", "echo"])
         .env("RTOK_HOME", &h)
@@ -94,7 +99,12 @@ fn filter_applies_drop_ins_in_order_and_skips_broken_ones() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.as_mut().unwrap().write_all(body.as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(body.as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(
         out.status.success(),

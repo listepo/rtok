@@ -758,10 +758,17 @@ mod tests {
         assert!(ms.iter().all(|m| m.kind == "live_blob"));
         for v in values.iter().take(4) {
             let s = v.as_str().unwrap();
-            assert!(s.starts_with("[archived ") && s.contains("expand("), "{s:.80}");
+            assert!(
+                s.starts_with("[archived ") && s.contains("expand("),
+                "{s:.80}"
+            );
         }
-        assert_eq!(values[4], Value::String(code), "code is not a dump");
-        assert_eq!(values[5], Value::String(prose), "prose is not a dump");
+        assert_eq!(values[4], Value::String(code.clone()), "code is not a dump");
+        assert_eq!(
+            values[5],
+            Value::String(prose.clone()),
+            "prose is not a dump"
+        );
         let first = values.clone();
         let mut second: Vec<Value> = vec![
             Value::String(json.clone()),
@@ -775,7 +782,10 @@ mod tests {
         assert_eq!(first, second, "same bytes in → byte-identical pointers out");
         // Lossless: the archived original is the dump, byte for byte.
         let id = ms[0].ref_id.clone().unwrap();
-        let back = crate::plugin::Ctx::new(&cx).get_archive(&id).unwrap().expect("archived");
+        let back = crate::plugin::Ctx::new(&cx)
+            .get_archive(&id)
+            .unwrap()
+            .expect("archived");
         assert_eq!(String::from_utf8(back).unwrap(), json);
     }
 

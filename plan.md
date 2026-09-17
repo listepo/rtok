@@ -16,13 +16,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.1 | todo | P1 | 2 | 0% | |
-| T55.2 | todo | P1 | 1 | 0% | |
-| T55.3 | todo | P1 | 2 | 0% | |
-| T55.4 | todo | P2 | 2 | 0% | |
-| T55.5 | todo | P2 | 2 | 0% | |
-| T55.6 | todo | P2 | 1 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
+| T56.1 | todo | P2 | 2 | 0% | |
+| T56.2 | todo | P2 | 3 | 0% | |
+| T56.3 | todo | P2 | 3 | 0% | |
+| T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -92,40 +90,30 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
 
-### T55.1. Case-insensitive `display_rel` on Windows
-
-From review 2026-09-17. `src/plugins/read/search.rs` `display_rel` still uses case-sensitive `Path::strip_prefix`, while `src/plugins/read/mod.rs` `under` / `under_ascii_case_insensitive` already treat Windows paths as case-insensitive. When canonicalize and the walk path disagree only in ASCII case (common under `allow_paths` or mixed-case cwd), every search/tree hit stays absolute.
-Done when `display_rel` strips with the same ASCII-case rule as `under` on Windows, a unit test covers mixed-case cwd vs canonical root, and Unix behaviour stays unchanged.
-
-### T55.2. Case-insensitive `never_wrap` stem match
-
-From review 2026-09-17. `src/plugins/cmd/hook.rs` `skip_wrap` compares `never_wrap` entries with `==` against `formatters::cmd_stem`, which preserves case. Default config lists `sudo` / `rtok`; Windows `SUDO.EXE` / `Sudo.exe` stem to `SUDO` / `Sudo` and still get wrapped. `run::shell_kind` already lowercases stems.
-Done when the match is ASCII-case-insensitive (same as shell stem checks), tests cover `Sudo.exe` and `RTOK.EXE`, and defaults keep working on Unix.
-
-### T55.3. Percent-encode spaces in graph `file_uri`
-
-From review 2026-09-17. `src/plugins/graph/lsp.rs` `file_uri` builds `file:///C:/Users/...` with forward slashes but does not percent-encode spaces or other URI-reserved characters. Windows profiles like `C:\Users\Ivan Tuhai\...` produce illegal LSP URIs that rust-analyzer can reject; `path_from_file_uri` also does not decode `%20`.
-Done when `file_uri` emits RFC 8089-safe encoding (at least spaces and non-ASCII), round-trip tests cover a spaced path on Windows, and Unix paths with spaces are encoded too.
-
-### T55.4. Host-shell-safe wrap quoting (Cursor/PowerShell)
-
-From review 2026-09-17. `cmd/hook.rs` always rewrites with `run::sh_quote` (POSIX single quotes / `'"'"'` embedding). Cursor `beforeShellExecution` on Windows often runs under PowerShell; an original command that contains `'` becomes `rtok run -- '…'"'"'…'` and PowerShell misparses it. `agents::shell_quote_bin` also escapes embedded `"` as `\"` (bash-style), which is wrong for `cmd.exe` hook lines (need `""`).
-Done when wrap quoting matches the host shell (or uses one form proven safe for Bash, PowerShell, and cmd for the rewrite Cursor/Claude execute), and tests cover an apostrophe in the wrapped command plus a spaced absolute `rtok` path on Windows.
-
-### T55.5. Cap bytes before `search`/`tree` `read_to_string`
-
-From review 2026-09-17. `src/plugins/read/search.rs` calls `fs::read_to_string` on every walked file with no size gate. A multi-GB blob under cwd (or a sparse/log file) can spike MCP memory and latency; binary skip only happens after the read fails UTF-8. `read` already has `native_max_bytes` for the PreToolUse gate.
-Done when search/tree skip or truncate files over a configured byte cap (reuse or mirror a `plugins.read` key), document the key, and a test with an oversized file does not load it whole.
-
-### T55.6. Windows `mcp.cmd` must `call` a `.cmd` shim
-
-From review 2026-09-17. `plugins/cursor/scripts/mcp.cmd` ends with bare `rtok mcp`. If `rtok` resolves to a `.cmd`/`.bat` shim (ketch/npm-style), cmd.exe returns after the shim and never keeps the MCP stdio session. Same class of bug as doctor’s Windows MCP spawn (fixed earlier with `cmd /C`).
-Done when the script uses `call rtok mcp` (or launches the `.exe` directly), and the missing-rtok ketch hint path still exits non-zero with the install text.
-
 ### T55.7. Stats `strip_prefix_cd` and quoted paths
 
-From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine. Residual PATH/single-quote debt remains larger in ketch than rtok.
-Done when `strip_prefix_cd` accepts single- and double-quoted path segments (and rejects malformed quotes fail-open), with unit tests for spaced quoted paths.
+From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine.
+Done when `strip_prefix_cd` accepts single- and double-quoted path segments (malformed quotes fail-open), with unit tests for spaced quoted paths.
+
+### T56.1. Test VFS helper and convention
+
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` now ships a thin `Vfs` (path → bytes).
+Done when this decision is recorded (D29), AGENTS.md notes the rule, `Vfs` covers write/read/len/paths, and at least one read/cmd/graph unit test uses it with no host temp dir.
+
+### T56.2. Migrate read/search unit tests to VFS
+
+Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
+Done when the pure path and size-gate tests need no host temp dir, and remaining disk tests are listed as follow-ups.
+
+### T56.3. Migrate cmd/setup path tests to VFS
+
+Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
+Done when new file-touching unit tests in setup/agents use `Vfs` (or document why a disk fixture remains), and one legacy test is migrated as a template.
+
+### T56.4. Optional walk/VFS adapter for search/tree
+
+If search/tree keep needing real walks, introduce a narrow trait (metadata + read bytes + list dir) with a `Vfs` impl so oversized-file and relative-path tests run without host disk.
+Done when search/tree unit tests for the size-cap and relative-path cases can run against `Vfs`, or the card closes with a measured reason to keep WalkBuilder-on-disk.
 
 
 ## Reference
@@ -165,6 +153,7 @@ Claim a `todo` row before work: set Status to `in progress` and Agent to `Provid
 | D26 | **One log with two readers:** a rotating text file and the `logs` table OTel exports. Bounded (`max_bytes` 1 MiB, `files` 5). | An unbounded log on a long-running proxy is a disk-full bug. |
 | D27 | **Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`.** Writing commands stay CLI-only. | The two surfaces plus CLI must not disagree about what a session is. |
 | D28 | **The agent-host contract is `rtok-agent-sdk`.** Installers go through it; host-specific code stays in `src/setup/<host>.rs`. | One write cycle, one plugin-offer body. |
+| D29 | **Unit tests prefer a virtual filesystem (`testutil::Vfs`) over host TempDir/std::fs.** Pure path/content/size logic must not require real disk; Windows/macOS quirks are simulated in Vfs. Migrate hottest suites first (read/search/cmd/setup) as T56.x — not a big-bang rewrite of e2e. | Hermetic tests; reproducible CI; path-case and spaced-path bugs (T55) need a simulated FS. |
 
 ### Architecture
 

@@ -194,6 +194,7 @@ native_max_bytes = 32768              # PreToolUse(Read) deny threshold; never b
 advice           = true               # false = never deny native Read
 allow_paths      = []                 # extra roots outside cwd
 search_max       = 50
+search_max_bytes = 1048576             # search skips files larger than this (T55.5)
 tree_depth       = 2
 
 [plugins.archive]

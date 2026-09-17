@@ -12,4 +12,4 @@ if errorlevel 1 (
   echo   ketch install listepo/rtok 1>&2
   exit /b 1
 )
-rtok mcp
+call rtok mcp

@@ -97,9 +97,6 @@ _rtok() {
             rtok,web)
                 cmd="rtok__subcmd__web"
                 ;;
-            rtok,wrap)
-                cmd="rtok__subcmd__wrap"
-                ;;
             rtok__subcmd__agents,help)
                 cmd="rtok__subcmd__agents__subcmd__help"
                 ;;
@@ -325,9 +322,6 @@ _rtok() {
             rtok__subcmd__help,web)
                 cmd="rtok__subcmd__help__subcmd__web"
                 ;;
-            rtok__subcmd__help,wrap)
-                cmd="rtok__subcmd__help__subcmd__wrap"
-                ;;
             rtok__subcmd__help__subcmd__agents,install)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__install"
                 ;;
@@ -455,7 +449,7 @@ _rtok() {
 
     case "${cmd}" in
         rtok)
-            opts="-h -V --config --help --version hook mcp proxy wrap web tui stats bench doctor info agents agent setup run filter expand completions man plugins config memory graph dashboard demon otel logs report help"
+            opts="-h -V --config --help --version hook mcp proxy web tui stats bench doctor info agents agent setup run filter expand completions man plugins config memory graph dashboard demon otel logs report help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1451,7 +1445,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help)
-            opts="hook mcp proxy wrap web tui stats bench doctor info agents setup run filter expand completions man plugins config memory graph dashboard demon otel logs report help"
+            opts="hook mcp proxy web tui stats bench doctor info agents setup run filter expand completions man plugins config memory graph dashboard demon otel logs report help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2164,20 +2158,6 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtok__subcmd__help__subcmd__wrap)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         rtok__subcmd__hook)
             opts="-h --host --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -2683,7 +2663,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__stats)
-            opts="-h --since --json --plugin --save-baseline --compare --calibrate --cache --config --help"
+            opts="-h --since --json --plugin --save-baseline --compare --calibrate --cache --price --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2757,24 +2737,6 @@ _rtok() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
-                --config)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtok__subcmd__wrap)
-            opts="-h --config --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
                 --config)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0

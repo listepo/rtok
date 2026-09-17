@@ -745,7 +745,8 @@ pub(crate) fn shell_quote_bin(bin: &str) -> String {
     if !bin.chars().any(|c| c.is_whitespace() || c == '"') {
         return bin.to_string();
     }
-    format!("\"{}\"", bin.replace('"', "\\\""))
+    // cmd.exe /C hook lines need `""` for an embedded quote; bash-style `\"` is wrong.
+    format!("\"{}\"", bin.replace('"', "\"\""))
 }
 
 /// Binary token for hook command lines (quoted when needed).
@@ -915,6 +916,22 @@ mod tests {
         assert!(quoted.contains("Ivan Tuhai"), "{quoted}");
         assert_eq!(unquote_bin(&quoted), spaced);
         assert!(is_rtok_bin(unquote_bin(&quoted)));
+    }
+
+    #[test]
+    fn shell_quote_bin_escapes_embedded_quotes_for_cmd() {
+        // cmd.exe needs `""` inside a double-quoted token; bash-style `\"` is wrong.
+        let bin = "C:\\Path With Spaces\\rtok\"x\".exe";
+        let quoted = shell_quote_bin(bin);
+        assert!(quoted.starts_with('"') && quoted.ends_with('"'), "{quoted}");
+        assert!(
+            quoted.contains("\"\""),
+            "expected cmd-style doubled quotes: {quoted}"
+        );
+        assert!(
+            !quoted.contains("\\\""),
+            "bash-style escape must not appear: {quoted}"
+        );
     }
 
     #[test]
