@@ -76,6 +76,7 @@ fn usage_block(value: &Value) -> Option<Usage> {
         value,
         &UsageFields {
             alt_parent: Some("response"),
+            container: "usage",
             input: "input_tokens",
             output: "output_tokens",
             cache_create: None,

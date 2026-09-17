@@ -90,6 +90,7 @@ fn usage_block(value: &Value) -> Option<Usage> {
         value,
         &UsageFields {
             alt_parent: None,
+            container: "usage",
             input: "prompt_tokens",
             output: "completion_tokens",
             cache_create: None,
