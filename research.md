@@ -561,3 +561,63 @@ Checked 27 claims + 19 repos. Refuted: JetBrains rtk post (rtk did not save; +7.
 - Does `ANTHROPIC_BASE_URL` really disable MCP tool search on your setup (deferred tools are visible in this session, so something enables it)? `rtok doctor` T1.4 answers it.
 - Does headroom's live-zone compression keep the prefix byte-stable across turns in your traffic? T5.5 cache-health report answers it before rtok compress replaces it.
 - Pricing for Fable 5.1 output tokens: the cost split above assumes p_out = 5 × p_in; adjust in `rtok stats --price` once known.
+
+## 9. Competitive gap review (2026-09-17)
+
+Method: five Haiku web-scan agents (rtk/headroom/caveman; MCP read+graph servers; memory and repo-map tools; host-native features; new 2026 entrants) and one Sonnet agent that inventoried rtok's own surface from code and config. Synthesis by Fable 5.1. Scan cost: ~470 K subagent tokens. Everything below is from READMEs, release notes and docs as of 2026-09-17 unless marked *measured*; vendor numbers are quoted as claims. Two scan results were discarded as wrong targets (an `engram` by AcidicSoil, an `OpenViking` mirror by LoicHmh) — the §4 rows for those two tools stand un-refreshed. `token-optimizer-mcp` (ooples, v7.0.0, TypeScript, 74 tools) is a different project from the `token-optimizer` hook pile in §4; both are listed.
+
+### 9.1 What moved since §4 (2026-09-01)
+
+| Tool | Then | Now (2026-09-17) | Source |
+|------|------|------------------|--------|
+| rtk | ~80 filters | v0.47.0 / 0.50.0-rc: 100+ filters (ctest, mvnd, spring-boot, liquibase, ssh, AWS, containers), Gemini `BeforeTool`, OpenCode/OpenClaw/Hermes adapters, Windows native hook; maintainers now say "cuts bash output, not necessarily the bill by 90 %" | github.com/rtk-ai/rtk/releases |
+| headroom | proxy + CCR | adds ASGI middleware, TS library, Codex WS fixes, hosted proxy; claims 21–57 % on own benchmarks, 20 % "for coding agents" | github.com/headroomlabs-ai/headroom/blob/main/CHANGELOG.md |
+| caveman | skill + proxy | v2.7.0: `caveman learn` (ranks token sinks from history), hosted proxy, per-request accounting; engine relicensed BSL-1.1 | github.com/JuliusBrussee/caveman/releases |
+| lean-ctx | 78 tools | v3.10.2: 30+ tools incl. `ctx_handoff`/`ctx_agent`, 10 read modes incl. `diff`/`density`, mode predictor learned from past sessions, ~13-token re-reads, still ~3.0 K fixed per-session overhead (own README) | github.com/yvgude/lean-ctx |
+| token-optimizer-mcp | — | v7.0.0: default switched from `enforce` to `assist`; publishes a randomized 16-task holdout: cheaper on 11/16, median 0.926× cost, quality 0.994 vs control (own bench) | github.com/ooples/token-optimizer-mcp/releases/tag/v7.0.0 |
+| codebase-memory-mcp | v0.7.0 | v0.10.0, LZ4 store, arXiv:2603.27277 (31 repos, 83 % answer quality, "99.2 % fewer tokens" on 5 queries) | github.com/DeusData/codebase-memory-mcp |
+| serena | — | v1.6.0 (2026-07-16), 40+ LSP languages; no token measurement | github.com/oraios/serena |
+| claude-mem | — | v13.25.1, 4 MCP tools, SQLite+FTS5+Chroma, cloud sync; one third-party "~10×" retrieval comparison (mindstudio.ai blog, not a bill delta) | github.com/thedotmack/claude-mem |
+| mem0 | — | v3.1.8; states its own overhead: 6.7–7.0 K tokens + ~1 s per add | github.com/mem0ai/mem0 |
+| New entrants | — | jCodeMunch-MCP (symbol retrieval, published 96.5 % vs grep-read bench, 2026-09-03); atlassian-labs/mcp-compressor (lossless wrapper that compresses *any* MCP server's results, levels low…max, 40–60 % claimed, no bench); Portkey/LiteLLM gateways ("tool description compression + allowlist", 18–28 % claimed); billion-context (prefix-cache-friendly reversible history compression proxy); tool-result-cache-rs / TVCACHE (content-hash tool-result caches) | URLs in the scan; all claims unverified |
+
+### 9.2 Host-native features that make third-party work redundant (docs, 2026-09-17)
+
+| Host | Native now | Effect on rtok |
+|------|-----------|----------------|
+| Claude Code | Tool Search defers MCP tools (~3 K tokens loaded per query instead of every schema); auto-memory `MEMORY.md` (v2.1.59+, on by default); `PreCompact` / `PostCompact` / `Setup` / `CwdChanged` / `FileChanged` / `PreModelSwitch` hooks; `promptCacheTtl`; images/PDFs auto-dropped near the limit | Description-token compression (Portkey-style) is not worth building — `doctor` already flags `mcp_tool_search_disabled`. Auto-memory overlaps `memory` recall on this host. Compaction hooks are a new surface rtok does not use (T58.2). |
+| Claude API | context editing (`clear_tool_uses`, `clear_thinking`), server-side compaction, memory tool (~2.5 K overhead), 1h cache TTL at 2× write, Fable/Mythos 5.1 cache read 0.025× | `archive` and context editing do the same job; T51.2 (emit native context editing) is the reconciliation. |
+| Cursor | `afterMCPExecution` fires after the tool response and before it enters context; `preCompact`; "Dynamic Context" (v3.11, claims 46.9 %, no method published) | A hook that can see an MCP result before context is the surface `PostToolUse` lacks on Claude Code — verify whether it may modify the result (unverified). |
+| Codex CLI | `PreCompact`/`PostCompact`, `SubagentStart/Stop`, hooks may call MCP tools | Same compaction surface as Claude Code. |
+| OpenCode | Two-phase compaction: non-destructive "marking" of old verbose tool outputs (trigger when >20 K freed, keeps newest 40 K), then LLM summary; `experimental.session.compacting` hook | Overlaps `archive` on this host; a pointer inside a marked result is harmless (fail open) but the saving is double-counted unless measured per host. |
+| Gemini CLI / Copilot CLI | context-compression hook before summarization; Copilot auto-compacts at 80 % and has `/context` | Same as above; `/context` is what `rtok doctor` prints. |
+
+### 9.3 Better / worse / missing, by category
+
+Grounded in §2 (this workload: tool results 2.83 M est. tokens, Bash 35 %, Read 15 %; assistant output 8.6 M tokens of which **96 % is tool input**, i.e. the code and `old_string`s the model writes; on Fable/Mythos 5.1 output is **39 %** of the bill).
+
+| Category | rtok better | rtok worse | Missing, and whether it is worth building |
+|----------|-------------|------------|-------------------------------------------|
+| Command output | lossless (`expand`), measured per family, one process ≤ 10 ms | 9 rules + 10 formatters vs rtk 100+ | Families: docker/kubectl/gh/aws/ctest/mvn/gradle/dotnet — **T50.1**, choose by transcript counts, not by rtk's list. |
+| Reads | 4 modes, sha256 dedup, root guard, 143 desc tokens for 11 tools; no banner | lean-ctx: `diff` mode; token-optimizer: delta reads; lean-ctx re-read 13 tokens (rtok's "unchanged since" line is comparable) | **Delta since last read**: rtok already keeps the sha256 and archive id of the previous read, so a changed file can return a unified diff against that archive instead of 9.5–17 K tokens again — **T58.1**. |
+| Model output (the code it writes) | typed `yagni` ladder 14/14 on fixtures; modes inside the 800-token budget | nothing targets the 96 % tool-input share; every `Edit` re-emits `old_string` verbatim | **Anchored patch tool**: serena `replace_symbol_body` and lean-ctx `ctx_patch` (line + hash) let the model send only the new text; the `old_string` bytes are pure output-token waste. Measure the share first — **T58.3**, then build gated on it — **T58.4**. On Fable/Mythos this is the only lever on the largest cost slice. |
+| Injection / compaction | byte-stable 800-token budget; progressive-disclosure memory | after auto-compact the summary replaces history: modes, nudges and memory-recall lines are gone until the next session; archive pointers in dropped results are unreachable unless the id survives | Use the new `PreCompact`/`PostCompact` events: re-inject the SessionStart budget after compaction; write one memory note with the archive ids alive at compaction — **T58.2**. |
+| Foreign MCP results | old ones shrink in the proxy live zone like any `tool_result` | fresh results of other servers pass whole (atlassian mcp-compressor wraps any server) | Not worth it on this workload: MCP results were 15 K of 2.83 M (§2). Idea I-44. |
+| Tool descriptions | 11 tools / ~143 tokens; `doctor` prices every server | — | Portkey-style description compression is redundant with Tool Search deferral. Idea I-45, parked. |
+| Memory | agent-written, FTS5, no model calls, titles-first | claude-mem/mem0 have vectors (P29 landed hash-embed; no ONNX); Claude Code auto-memory is free on that host | `doctor` should say when auto-memory makes rtok recall a duplicate injection. Idea I-47. |
+| Code graph | 4 tools / 94 tokens, SQLite only, hook ≤ 10 ms | reference recall 0.351 vs LSP-grade (serena, codebase-memory-mcp hybrid LSP) | Already T52.5 / T30.2 (LSP optional). jCodeMunch's measured 96.5 % vs grep-read is the same claim class as `graph`; no new task. |
+| Learning from history | `stats`, `report` rules (D24), `doctor --instructions` | caveman `learn`, lean-ctx mode predictor, context-budget plugin rank *sinks* and *recommend* | `report` already renders recommendations; a per-file / per-command sink ranking is idea I-48 until `stats` shows a sink the existing rows do not name. |
+| Sub-agents | — | lean-ctx `ctx_handoff`/`ctx_agent`; theme "sub-agent isolation" | Agent results were 23 K of 2.83 M here (§2): not a lever. Idea I-46, parked with the number. |
+| Gateways / caches | 4 wires, usage capture, semantic cache off (P31: 0 hits at 0.99) | — | Nothing to add; bifrost/Portkey/LiteLLM are routing products. |
+| Hosts | 11 hosts with a reversible installer; per-host `support()` table | rtk/caveman list 30+ hosts (Windsurf/Cline/Aider/Qwen/OpenClaw/Hermes) | T48.8 (VS Code) is the only one with a measured user; the rest wait for a request. |
+
+### 9.4 Ranking of the gaps by expected effect on this workload
+
+Estimates, not measurements — each task's first step is the measurement that replaces the estimate.
+
+1. **Anchored patch (T58.3 → T58.4).** Output is 39 % of the Fable/Mythos bill and 96 % of output is tool input. If `old_string` is even a fifth of Edit payloads, that is the largest unaddressed slice in this file. Measured first.
+2. **Delta reads (T58.1).** Read is 15 % of tool-result tokens and the top-8 single results are all Reads; the dedup already handles unchanged re-reads, so the win is the changed-file re-read after an Edit — count it from transcripts before building.
+3. **Compaction hooks (T58.2).** Cheap (one hook event, existing injection code); the effect is keeping the measured mode savings alive after compaction instead of losing them for the rest of a long session.
+4. **Filter families (T50.1).** Real but small: JetBrains measured rtk at +7.6 % to 0 % on the bill; keep lossless and evidence-driven.
+
+Promoted: I-41 → T58.1, I-42 → T58.2, I-43 → T58.3/T58.4. Not promoted: I-44 foreign-MCP compression, I-45 description compression, I-46 handoff, I-47 doctor overlap audit, I-48 sink ranking — each with the number that parks it in `ideas.md`.

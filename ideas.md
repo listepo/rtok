@@ -45,6 +45,8 @@ that v0.1 does not schedule.
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
 | I-40 | code read 2026-09-17 (second pass) | `read` | `display_rel` canonicalizes `cwd` once per hit/row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory; `search`/`tree` should canonicalize once per call and pass the base down. | MCP path, off the ≤ 10 ms hook budget; no measured latency complaint yet. Fold into the next touch of `search.rs`/`tree.rs` rather than its own task. |
+| I-41 | lean-ctx `diff` read mode; token-optimizer-mcp delta reads (`research.md` §9.3) | `read` | **promoted T58.1** — a re-read of a file that changed since the last read returns a unified diff against the archived previous read (the sha256 dedup already stores that id) instead of the whole file; full fallback when the diff is not smaller. | Read is 15 % of tool-result tokens (§2) but the changed-file re-read share is unmeasured; T58.1 step 1 counts it before building. |
+| I-43 | lean-ctx `ctx_patch` (line + hash anchors); serena `replace_symbol_body` (`research.md` §9.3) | `read` | **promoted T58.3 / T58.4** — an MCP `patch` tool anchored on `(path, line range, file sha)` so the model sends only the new text; every `Edit` today re-emits `old_string` verbatim, which is pure output-token waste on the 96 %-tool-input output slice. | Share of `old_string` in assistant output is unmeasured; T58.3 measures, T58.4 is gated on ≥ 10 %. |
 
 ### `guard`
 
@@ -56,6 +58,8 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-44 | atlassian-labs/mcp-compressor; headroom MCP wrapper (`research.md` §9.1) | `archive` / `proxy` | Wrap foreign MCP servers (`rtok mcp --wrap <server cmd>`) so their fresh results are shortened losslessly (`expand <id>`) the way `cmd`/`read` results already are; old results already shrink in the proxy live zone. | Foreign MCP results were 15 K of 2.83 M tool-result tokens on the measured workload (§2). Revisit when a `stats` row shows a foreign server above 5 %. |
+| I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Claude Code Tool Search already defers MCP schemas and `doctor` flags `mcp_tool_search_disabled`; a rewrite changes what the model reads and the cached prefix once per session. Redundant on the main host; no measured host without deferral. |
 
 ### `memory` / `graph`
 
@@ -67,6 +71,10 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-42 | Claude Code / Codex `PreCompact`+`PostCompact`, Cursor `preCompact`, Gemini compression hook (`research.md` §9.2) | `inject` / hosts | **promoted T58.2** — re-emit the SessionStart injection after compaction and leave one `memory` note with the archive ids alive at compaction, so modes, nudges, recall and `expand` survive the summary. | Number of compactions per session is unmeasured; T58.2 counts them from transcripts and verifies each host's event names first. |
+| I-46 | lean-ctx `ctx_handoff` / `ctx_agent`; "sub-agent context isolation" theme (`research.md` §9.3) | hosts | A `handoff` MCP tool that packs the archive ids, memory notes and open files of the session into one budgeted digest for a sub-agent. | Agent tool results were 23 K of 2.83 M tokens on the measured workload (§2); nothing to save until a workload shows sub-agents above 5 %. |
+| I-47 | Claude Code auto-memory (v2.1.59+), OpenCode two-phase compaction, Cursor "Dynamic Context" (`research.md` §9.2) | `doctor` | `doctor` names the host-native feature that duplicates a rtok surface on this host (auto-memory vs `memory` recall injection, native tool-output pruning vs `archive`) and suggests the config switch, so a saving is not counted twice. | Advice only; needs a per-host Measurement of the overlap first (archive rows on OpenCode with pruning on vs off). |
+| I-48 | caveman `learn`; context-budget plugin; lean-ctx mode predictor (`research.md` §9.3) | `report` | Rank token sinks per file path and per command over the session history (top-N by bytes with the rtok switch that would have shortened each) as a `report` rule. | `stats` already has per-family and per-tool rows and `report` renders D24 rules; add the ranking only when a real sink is missed by the existing rows. |
 
 ---
 
@@ -127,6 +135,9 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-35 | T48.1 | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/in | 2026-09-17 |
 | I-36 | T48.2 | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM cont | 2026-09-17 |
 | I-38 | T57.1 | Flag-aware `guard` read-only classes: writer markers (`>`, `-delete`, `sed -i`, `tail -f`, pipe into a writer) take the mutating path; new read-only stems only with transcript counts. | 2026-09-17 |
+| I-41 | T58.1 | `read` delta since last read: unified diff against the archived previous read; full fallback. | 2026-09-17 |
+| I-42 | T58.2 | Compaction hooks: re-inject the SessionStart budget after `PostCompact`, one memory note with live archive ids at `PreCompact`. | 2026-09-17 |
+| I-43 | T58.3 / T58.4 | Measure the `old_string` share of assistant output, then an anchored MCP `patch` tool gated on it. | 2026-09-17 |
 | I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
 
 | ID | Became | Date |

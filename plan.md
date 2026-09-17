@@ -19,7 +19,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.8 | todo | P2 | 2 | 0% | |
 | T55.9 | todo | P3 | 2 | 0% | |
 | T55.10 | todo | P3 | 1 | 0% | |
-| T55.11 | todo | P2 | 3 | 0% | |
+| T55.11 | in progress | P2 | 3 | 20% | ZCode / GLM-5.3 |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
 | T55.14 | todo | P3 | 1 | 0% | |
@@ -31,6 +31,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T56.4 | done | P3 | 2 | 100% | |
 | T56.5 | in progress | P2 | 2 | 80% | |
 | T57.1 | todo | P3 | 3 | 0% | |
+| T58.1 | todo | P2 | 3 | 0% | |
+| T58.2 | todo | P2 | 3 | 0% | |
+| T58.3 | todo | P1 | 2 | 0% | |
+| T58.4 | todo | P2 | 4 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -179,6 +183,41 @@ Done when:
 3. Unit tests in `src/plugins/guard/mod.rs`: `sed -n` keyed and `sed -i` mutating; `find -delete` mutating; `cat a > b` mutating; `tail -f` never keyed; `cat a | grep b` keyed; `ls | xargs rm` mutating; and the false-deny Check: `ls` → `find . -delete` → `ls` is allowed.
 4. `guard` deny Measurements (`kind = guard`) on the hook e2e fixture before and after, so the change in deny count is a measured row, not a claim. Off-by-default is not needed: the change only removes wrong denies and adds keyed repeats that already carry a retrievable archive.
 Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the tests do not pin two behaviors at once.
+
+### T58.1. `read` delta since last read
+
+From the competitive gap review (`research.md` §9.3, §9.4 item 2; idea I-41; precedent: lean-ctx `diff` read mode, token-optimizer-mcp delta reads). Read is 15 % of tool-result tokens on the measured workload and the top single results are Reads. The sha256 dedup already answers an unchanged re-read with one line; a re-read of a file that changed since (typically after an Edit) still returns the whole file. The previous read's archive id is already stored, so a unified diff against it is the lossless short form.
+Done when:
+1. Evidence first: over real transcripts (`measure::stats::collect`) count Read calls of a path already read in the same session with an Edit/Write to that path in between, and their bytes; record in `research.md` §2 with date and command. Below 3 % of Read bytes → close the card with the number and no code.
+2. MCP `read` (and the PreToolUse advice for native Read) answers such a re-read with a unified diff against the archived previous content plus that archive id; full content when the diff is not below `read.delta_max_ratio` (default 0.6) of the file or the previous archive is gone. Lossless: `expand <id>` of the new result returns the full file.
+3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
+4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
+
+### T58.2. Compaction hooks: re-inject after `PostCompact`, note at `PreCompact`
+
+From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). Claude Code and Codex emit `PreCompact`/`PostCompact`, Cursor `preCompact`, Gemini CLI a compression hook. After auto-compaction the summary replaces the history: the SessionStart injection (modes, nudges, memory recall) and every archive pointer inside dropped tool results are gone for the rest of the session, so the measured mode savings stop and `expand` ids become unreachable.
+Done when:
+1. Each host's event names and payload verified against its current hooks doc (links in `src/agents/<host>/README.md` `## Docs`) and recorded here; hosts without such an event are untouched. Compactions per session counted from transcripts (`stats`) and recorded in `research.md` as the denominator for any later claim.
+2. `rtok hook post-compact` emits the same bytes as the SessionStart injection (800-token budget, byte-stable); hook e2e fixture asserts byte equality; fail open, ≤ 10 ms.
+3. `rtok hook pre-compact` writes one `memory` note `compaction <session> <n>` listing the archive ids referenced by this session's live tool results (from the store, not the transcript), capped by the budget, no note when there are none; `mem_search compaction` after the summary returns them.
+4. `agents install` registers both events for hosts that have them; `tests/agents_doc.rs` table regenerated with `RTOK_BLESS=1`; ≤ 3 files per commit, split in two if needed (hook first, installer second).
+
+### T58.3. Measure the `old_string` share of assistant output
+
+From the competitive gap review (`research.md` §9.3, §9.4 item 1; idea I-43). §2 shows assistant output is 8.6 M tokens, 96 % of it tool input, and on Fable/Mythos 5.1 output is 39 % of the bill. Every `Edit` re-emits `old_string` verbatim and nobody has measured what that costs. The number decides T58.4.
+Done when:
+1. `rtok stats` (the transcripts path `measure::stats::collect` already parses) adds rows: Edit/MultiEdit calls, sum of `old_string` bytes, sum of `new_string` bytes, share of all tool-input bytes and of total assistant output; per host where the edit tool name differs (verify Cursor/Codex names before adding them).
+2. Unit test on a fixture transcript with two Edit calls; the measured numbers land in `research.md` §2 with date and command.
+3. The card closes with a decision line: T58.4 proceeds only if `old_string` is ≥ 10 % of assistant output on the measured workload; otherwise T58.4 leaves the plan for `ideas.md` with the number.
+
+### T58.4. MCP `patch` tool: anchored edits without `old_string`
+
+Gated on T58.3. Precedent: lean-ctx `ctx_patch` (line + hash anchors), serena `replace_symbol_body` (`research.md` §9.3). The model sends `(path, start, end, new_text, base_sha)`; `base_sha` is the file sha256 the sha256 dedup already computes, printed in `read` results so the anchor costs no extra tokens. No per-line hashes: a stale sha is a conflict.
+Done when:
+1. MCP tool `patch` with one or more ops per call applied bottom-up; stale `base_sha` → `CONFLICT` with a re-read hint and nothing written; out-of-range → error; CRLF and trailing-newline state preserved. Description ≤ 60 tokens (`doctor` prices it).
+2. Lossless: the replaced span is archived and `expand <id>` returns it (manual undo).
+3. `Measurement` rows `plugin = read`, `kind = patch`, before = replaced-span bytes + new text (what `Edit` would have emitted), after = request bytes.
+4. Vfs unit tests: single replace; two ops bottom-up; stale sha; out-of-range; CRLF. PreToolUse(Edit) advice names `patch` only when the file was read through rtok in this session; the tool is documented next to `read` with the T58.3 number.
 
 ## Reference
 
