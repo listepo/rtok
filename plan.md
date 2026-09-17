@@ -7,7 +7,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T49.2 | todo | P2 | 4 | 0% | |
+| T49.2 | in progress | P2 | 4 | 0% | Claude Code / Fable 5.1 |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
 | T51.1 | in progress | P3 | 5 | 5% | OpenCode / Muse Spark 1.3 |
@@ -33,9 +33,17 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
-| T58.3 | todo | P1 | 2 | 0% | |
-| T58.4 | todo | P2 | 4 | 0% | |
+| T58.3 | in progress | P1 | 2 | 0% | Claude Code / Fable 5.1 |
+| T58.4 | in progress | P2 | 4 | 0% | Claude Code / Fable 5.1 |
 | T58.5 | todo | P3 | 3 | 0% | |
+| T59.1 | todo | P3 | 2 | 0% | |
+| T59.2 | todo | P3 | 1 | 0% | |
+| T59.3 | todo | P3 | 2 | 0% | |
+| T59.4 | in progress | P3 | 4 | 0% | Claude Code / Fable 5.1 |
+| T59.5 | todo | P3 | 3 | 0% | |
+| T59.6 | todo | P3 | 3 | 0% | |
+| T59.7 | todo | P3 | 2 | 0% | |
+| T59.8 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -46,6 +54,7 @@ Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok
 
 From I-03. `measure` reads Claude Code JSONL only; the other hosts reach the `usage` table only when they go through `rtok proxy`, so their sessions without the proxy are invisible to `stats`, the TUI and the dashboard.
 Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, OpenCode `opencode.db`, Cursor where it exposes token counts) is read by one reader per host behind the existing `measure` ingest, rows carry the host slug, re-ingest is idempotent, and each reader has a fixture test. A host without token counts is documented as unsupported, not estimated.
+Execution plan (Claude Code / Fable 5.1): (1) survey the three stores on this machine (`~/.codex/sessions`, OpenCode's SQLite, Cursor's state dir) and record the schema that carries usage per host in the card — a host without per-turn token counts stops here as "unsupported"; (2) `src/measure/hosts/{codex,opencode}.rs` behind one `HostReader` fn signature `read(dir) -> Vec<UsageRow>` reusing the `usage` table writer `proxy` already uses, host slug column already present; idempotency by `(host, session_id, turn)` unique key; (3) `rtok stats --host <slug>` filter and the host column in the api table; (4) fixture per host under `tests/fixtures/hosts/`; (5) `docs/measure` page rows. One commit per host, ≤ 3 files each.
 
 ### T50.1. More `cmd` filter families
 
@@ -209,16 +218,72 @@ Done when:
 1. `rtok stats` (the transcripts path `measure::stats::collect` already parses) adds rows: Edit/MultiEdit calls, sum of `old_string` bytes, sum of `new_string` bytes, share of all tool-input bytes and of total assistant output; per host where the edit tool name differs (verify Cursor/Codex names before adding them).
 2. Unit test on a fixture transcript with two Edit calls; the measured numbers land in `research.md` §2 with date and command.
 3. The card closes with a decision line: T58.4 proceeds only if `old_string` is ≥ 10 % of assistant output on the measured workload; otherwise T58.4 leaves the plan for `ideas.md` with the number.
+Execution plan (Claude Code / Fable 5.1): `src/measure/stats.rs` only — `Report` gains an `edits: EditRow { calls, old_bytes, new_bytes, tool_input_bytes, output_tokens }`; `fold_session` sums `old_string`/`new_string` over `Edit`, `MultiEdit.edits[]`, `apply_patch`/`edit_file`-style names verified per host, and `serde_json::to_string(&u.input).len()` over every tool_use; `to_table` prints one `edit` line with the two shares (share of tool-input bytes; est. tokens vs `usage_output`); unit test on a two-Edit fixture next to `ctt_and_tool_totals_on_mini_session`; run on the real transcripts dir, paste the row into `research.md` §2 with the date and command.
 
 ### T58.4. MCP `patch` tool: anchored edits without `old_string`
 
-Gated on T58.3. Precedent: lean-ctx `ctx_patch` (line + hash anchors), serena `replace_symbol_body` (`research.md` §9.3). The model sends `(path, start, end, new_text, base_sha)`; `base_sha` is the file sha256 the sha256 dedup already computes, printed in `read` results so the anchor costs no extra tokens. No per-line hashes: a stale sha is a conflict.
+Gated on T58.3 (both claimed together: T58.3 is the blocker). Precedent: lean-ctx `ctx_patch` (line + hash anchors), serena `replace_symbol_body` (`research.md` §9.3). The model sends `(path, start, end, new_text, base_sha)`; `base_sha` is the file sha256 the sha256 dedup already computes, printed in `read` results so the anchor costs no extra tokens. No per-line hashes: a stale sha is a conflict.
 Done when:
 1. MCP tool `patch` with one or more ops per call applied bottom-up; stale `base_sha` → `CONFLICT` with a re-read hint and nothing written; out-of-range → error; CRLF and trailing-newline state preserved. Description ≤ 60 tokens (`doctor` prices it).
 2. Lossless: the replaced span is archived and `expand <id>` returns it (manual undo).
 3. `Measurement` rows `plugin = read`, `kind = patch`, before = replaced-span bytes + new text (what `Edit` would have emitted), after = request bytes.
 4. Vfs unit tests: single replace; two ops bottom-up; stale sha; out-of-range; CRLF. PreToolUse(Edit) advice names `patch` only when the file was read through rtok in this session; the tool is documented next to `read` with the T58.3 number.
+Execution plan (Claude Code / Fable 5.1): (1) `src/plugins/read/patch.rs` — `apply(fs, path, ops, base_sha) -> Result<Applied>` on `ReadFs` (T56.5) so the Vfs tests need no disk; ops sorted descending, sha check before any write, CRLF/trailing-newline preserved; (2) `read` result prints `sha <hex>` once (already computed by the dedup) — a byte change on the read output, so the golden fixtures are re-blessed in the same commit; (3) MCP tool `patch` in `mcp.rs` (description ≤ 60 tokens, `doctor` check) calling `patch::apply`, archiving the pre-image via `Archive`, recording `Measurement { plugin = read, kind = patch }`; (4) PreToolUse(Edit) advice line in `read/hook.rs` when the path is in `read_cache`; (5) the bench from step 5 as `tests/patch_bench.rs` (ignored by default, prints the three totals). Commits: patch.rs + tests; sha line + golden; MCP tool + advice; bench + docs.
 5. Better than the precedents, measured: lean-ctx pays for its anchors on every `anchored` read (a hash per line) and serena needs an LSP; rtok's anchor is the one sha the read already prints. Bench: the same ten edits from a fixture transcript replayed as `Edit` (`old_string` + `new_string` bytes), as lean-ctx `ctx_read(anchored)` + `ctx_patch` (read + request bytes, tool installed locally), and as rtok `read` + `patch`; the three totals go into `research.md` §2 and the docs page. The tool ships only if rtok's total is the smallest.
+
+### T59.1. Per-stem interactive table for `skip_wrap`
+
+From I-39. `skip_wrap` treats any `-i` / `--interactive` token as interactive, so `ffmpeg -i in.mp4`, `curl -i`, `ssh -i key` are never wrapped: their output is neither archived nor filtered, and for `ffmpeg` and `curl` that is most of the family's bytes. A wrong "non-interactive" verdict wraps a prompt-waiting command and hangs the tool call, so the table is per stem, not per flag.
+Done when:
+1. Evidence: count of unwrapped Bash calls by stem and bytes (`stats` over transcripts, the T57.1 path) in `research.md`; stems whose `-i` is a real REPL flag (`python`, `node`, `psql`, `sqlite3`, `irb`, `bash`, `sh`, `zsh`, `docker exec/run`, `kubectl exec`) stay interactive.
+2. `skip_wrap` consults the stem first: `-i` means interactive only for the REPL stems above and `--interactive` anywhere; every other stem is wrapped. Table lives next to `never_wrap` and is overridable in config.
+3. Unit tests: `ffmpeg -i x` wrapped, `ssh -i key host` wrapped, `python -i` skipped, `docker run -i` skipped, `--interactive` always skipped; hook e2e: `curl -i` produces a `Measurement`.
+
+### T59.2. Canonicalize `cwd` once per `search` / `tree` call
+
+From I-40. `display_rel` canonicalizes `cwd` per hit or row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory.
+Done when `search` and `tree` canonicalize once per call and pass the base down, `display_rel` takes the canonical base, existing tests pass unchanged, and a Vfs unit test asserts one canonicalization per call (counter on the adapter).
+
+### T59.3. Batch the cold `graph` index in one transaction per N files
+
+From I-30 (codebase-memory-mcp: Linux kernel in 3 min). Measured 2026-09-04: 3 000 files cold 27.2 s, warm 0.053 s; the cold path is paid once per repo, so it was parked.
+Done when the cold index writes symbols and edges in one Diesel transaction per 200 files instead of per file, the T8.4 cold bench on the same fixture is re-run and recorded in `research.md` next to the old number, the warm path and the ≤ 10 ms hook stay untouched, and the change is reverted if the cold time does not drop by a third.
+
+### T59.4. Lossless MCP wrapper for foreign servers
+
+From I-44 (atlassian-labs/mcp-compressor; headroom MCP wrapper; `research.md` §9.1). `rtok mcp --wrap -- <server cmd>` spawns the server, proxies stdio JSON-RPC, and shortens `tools/call` results the way `cmd` results are shortened today: raw archived, `expand <id>` trailer, a `Measurement { plugin = "mcp", kind = "wrap", family = <server>/<tool> }` per call. Descriptions, `tools/list`, prompts and resources pass through untouched; the wrapped server keeps its name.
+Done when:
+1. Evidence first: `stats` over transcripts ranks foreign MCP servers by result bytes (§2 measured 15 K of 2.83 M for this workload); the card records the number and the wrapper stays off by default until a server above 5 % is measured — the code still lands behind `--wrap`.
+2. Framing handled for both MCP stdio transports (newline-delimited JSON and `Content-Length` headers); a malformed frame is forwarded byte-for-byte (fail open); server exit code propagated; no third-party MCP crate beyond what `mcp.rs` already uses.
+3. Only `result.content[].text` of `tools/call` responses is shortened, by the `cmd` rule engine with a `[mcp]` default rule (`Rule::default()` semantics) and per-`server/tool` overrides in `rules/default.toml`; `isError` results are never shortened.
+4. Tests: an in-process fake server (Vfs-free, stdio pipes) with a 3 000-line result → shortened result carries the trailer and `expand <id>` returns the raw text; `tools/list` byte-identical; header-framed and newline-framed fixtures; `isError` untouched. Docs: one section on the MCP docs page with the measured row.
+Execution plan (Claude Code / Fable 5.1): (1) `src/mcp/wrap.rs` — frame reader/writer for both transports, child spawn, pass-through loop; (2) result shortening via `plugins::cmd::rules` + `Archive` + `Measurement`; (3) `mcp --wrap` clap flag in `mcp.rs`; (4) tests in `tests/mcp_wrap.rs` with a fake server binary from `assert_cmd::cargo_bin` or a `sh` script; (5) `stats` server ranking row; (6) docs. Three commits: framing + pass-through, shortening + tests, stats + docs.
+
+### T59.5. Byte-stable `tools[]` description rewrite in the proxy
+
+From I-45 (Portkey / LiteLLM "tool description compression + allowlist", 18–28 % claimed, unverified). Redundant on Claude Code with Tool Search deferral (`doctor` flags `mcp_tool_search_disabled`); a host without deferral pays every schema on every turn at cache-read price.
+Done when:
+1. Evidence: `doctor` already prices descriptions per server; a `stats` row shows description tokens × turns per session for a host without deferral, recorded in `research.md`. Below 3 % of session input, the card closes with the number.
+2. Proxy option `proxy.tools_rewrite = { max_description_tokens = N, allow = [..], deny = [..] }`, off by default: descriptions truncated at a sentence boundary to N tokens (the tokenizer `measure` uses), tools outside `allow` or inside `deny` dropped from `tools[]`; the rewrite is deterministic so the cached prefix changes once per session, and `input_schema` is never touched.
+3. `Measurement { plugin = "proxy", kind = "tools_rewrite" }` per request with before/after description bytes; wire tests for Anthropic and OpenAI Chat request shapes; a tool the model then calls that was dropped by `deny` is forwarded unchanged (the proxy never blocks a call).
+
+### T59.6. `handoff` MCP tool for sub-agents
+
+From I-46 (lean-ctx `ctx_handoff` / `ctx_agent`). Agent tool results were 23 K of 2.83 M tokens on the measured workload (§2), so this ships only with a number.
+Done when:
+1. Evidence: `stats` splits Agent/Task tool inputs and results per session; the card records the share, and closes with the number if sub-agents are below 5 % of tokens.
+2. `handoff(budget_tokens)` returns one budgeted digest: the session's memory notes (titles first), archive ids of live tool results with tool and bytes (T58.2 field), touched paths, and the last N user prompts (`checkpoint::extract` reused, not copied); deterministic order; the digest itself is archived and carries an `expand <id>`.
+3. Description ≤ 40 tokens; Vfs unit test on a fixture store; docs next to the memory tools.
+
+### T59.7. `doctor` names host-native features that duplicate a rtok surface
+
+From I-47 (Claude Code auto-memory v2.1.59+, OpenCode two-phase compaction, Cursor "Dynamic Context"). A saving counted by rtok and by the host is counted twice.
+Done when `doctor` has three checks — Claude Code auto-memory on while `memory` recall injection is on; OpenCode with `archive` on (native marking prunes old tool outputs too); Cursor Dynamic Context with `archive` on — each printing the config key that turns the rtok side off, each with a fixture test, and the `docs/doctor` page lists them. No measurement claim: the checks say "duplicate", not "saves N".
+
+### T59.8. Token-sink ranking in `report`
+
+From I-48 (caveman `learn`, context-budget plugin). `stats` has per-family and per-tool rows and `report` renders the D24 rules; what is missing is "which ten paths and commands cost the most, and which rtok switch would have shortened each".
+Done when `report` gains one rule that prints the top-10 sinks by bytes over the session window (file path for Read/read, first stem for Bash/cmd, server/tool for MCP), each with the switch that applies (`read.default_mode = map`, a `[stem]` rule, `--wrap`, or "none: already shortened"), sourced from `Measurement` rows only, with a fixture test and a line on the report docs page.
 
 ## Reference
 
