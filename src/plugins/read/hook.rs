@@ -10,7 +10,7 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     if !cfg.advice || ev.tool_name != "Read" {
         return None;
     }
-    let path = ev.tool_input.get("file_path")?.as_str()?;
+    let path = super::path_arg(ev.tool_input)?;
     let len = std::fs::metadata(path).ok()?.len();
     if len <= cfg.native_max_bytes {
         return None;
@@ -185,6 +185,24 @@ mod tests {
             PreToolDecision::Deny { reason } => assert!(reason.contains("rtok read"), "{reason}"),
             other => panic!("{other:?}"),
         }
+    }
+
+    /// T55.13: Copilot's adapted `Read` carries `path`, not `file_path`; the large-file
+    /// advice must still deny.
+    #[test]
+    fn copilot_path_key_gets_the_read_advice() {
+        let cx = cx("copilot-path");
+        let dir = cx.config.core.archive_dir.parent().unwrap().to_path_buf();
+        let p = dir.join("copilot-big.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let input = json!({"path": p.to_str().unwrap()});
+        match pre_tool(&ev(&input), &Ctx::new(&cx)) {
+            Some(PreToolDecision::Deny { reason }) => {
+                assert!(reason.contains("rtok read"), "{reason}")
+            }
+            other => panic!("{other:?}"),
+        }
+        let _ = fs::remove_file(&p);
     }
 
     #[test]

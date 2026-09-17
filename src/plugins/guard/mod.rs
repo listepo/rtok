@@ -116,8 +116,14 @@ fn native_redirect(tool: &str, cx: &Ctx) -> Option<PreToolDecision> {
 
 fn cache_key(tool: &str, input: &Value) -> Option<String> {
     match tool {
+        // Claude Code sends `file_path`; Copilot's `read_file`/`view` are adapted to the
+        // tool name `Read` but keep their own input key `path` — either names the file.
         "Read" => {
-            let p = input.get("file_path")?.as_str()?.trim();
+            let p = input
+                .get("file_path")
+                .or_else(|| input.get("path"))?
+                .as_str()?
+                .trim();
             (!p.is_empty()).then(|| format!("read:{p}"))
         }
         "Bash" => {
@@ -407,6 +413,41 @@ mod tests {
         let cx = crate::plugin::Runtime::open(c, "grep-noread").unwrap();
         assert!(g.pre_tool(&pre("Grep"), &Ctx::new(&cx)).is_none());
         assert!(g.pre_tool(&pre("Glob"), &Ctx::new(&cx)).is_none());
+    }
+
+    /// T55.13: Copilot's adapted `Read` keeps its own input key `path`; the deny must
+    /// fire for it exactly as it does for Claude Code's `file_path`.
+    #[test]
+    fn copilot_path_key_dedups_like_file_path() {
+        let cx = setup();
+        let g = Guard;
+        let resp = json!({"content": "fn main() {}"});
+        for key in ["path", "file_path"] {
+            let input = json!({ key: "/Users/dev/proj/src/main.rs" });
+            assert!(
+                g.post_tool(
+                    &PostToolUse {
+                        tool_name: "Read",
+                        tool_input: &input,
+                        tool_response: &resp,
+                    },
+                    &Ctx::new(&cx),
+                )
+                .is_none()
+            );
+            match g.pre_tool(
+                &PreToolUse {
+                    tool_name: "Read",
+                    tool_input: &input,
+                },
+                &Ctx::new(&cx),
+            ) {
+                Some(PreToolDecision::Deny { reason }) => {
+                    assert!(reason.contains("rtok expand "), "{key}: {reason}")
+                }
+                other => panic!("{key}: {other:?}"),
+            }
+        }
     }
 
     #[test]

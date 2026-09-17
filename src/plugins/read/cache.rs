@@ -43,12 +43,7 @@ pub fn invalidate(ev: &PostToolUse<'_>, cx: &Ctx) {
     if ev.tool_name != "Edit" && ev.tool_name != "Write" {
         return;
     }
-    let Some(path) = ev
-        .tool_input
-        .get("file_path")
-        .or_else(|| ev.tool_input.get("path"))
-        .and_then(|v| v.as_str())
-    else {
+    let Some(path) = super::path_arg(ev.tool_input) else {
         return;
     };
     let _ = cx.clear_read_cache(path);

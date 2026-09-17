@@ -21,7 +21,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.10 | todo | P3 | 1 | 0% | |
 | T55.11 | todo | P2 | 3 | 0% | |
 | T55.12 | todo | P2 | 2 | 0% | |
-| T55.13 | todo | P3 | 1 | 0% | |
+| T55.13 | done | P3 | 1 | 100% | |
 | T55.14 | todo | P3 | 1 | 0% | |
 | T55.15 | todo | P3 | 2 | 0% | |
 | T55.16 | todo | P3 | 1 | 0% | |
@@ -124,11 +124,6 @@ Done when expanding an id freezes the decisions that actually point at it — ei
 
 From review 2026-09-17, second pass (code read — not reproducible on macOS). `run::wrap_quote` (`src/plugins/cmd/run.rs:18-24`) emits PowerShell `''` escaping on Windows, and `cmd/hook.rs:45` rewrites the Bash command to `rtok run -- 'echo it''s fine'`. Claude Code on Windows executes the Bash tool through Git Bash (POSIX sh), where `'echo it''s fine'` concatenates to the single argv `echo its fine`: the apostrophe is silently dropped and the command the model asked for is not the command that runs (fail-open violation, no error anywhere). T55.4 weighed PowerShell and cmd.exe but not the POSIX host.
 Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-but-wrong — the minimal fix mirrors the heredoc skip: on `cfg!(windows)`, `skip_wrap` also returns true for any command containing an apostrophe (nothing is wrapped, output stays whole; compression loss is the safe direction) — with pure tests `windows_apostrophe_commands_stay_unwrapped` and a parse-simulation `ps_quoting_does_not_round_trip_under_sh` proving the current form is lossy, plus the existing `wrap_keeps_apostrophe_host_safe` updated to the new contract.
-
-### T55.13. Copilot `Read` events use `path`, guard and read-advice match `file_path` only
-
-From review 2026-09-17, second pass (reproduced). `hooks::types::adapt_copilot` maps `view`/`read_file` to tool name `Read` but leaves the Copilot input key `path` (the fixture in `types.rs` shows `toolArgs: {"path": "a.rs"}`). `guard::cache_key` (`src/plugins/guard/mod.rs:120`) and `read::hook::pre_tool` (`src/plugins/read/hook.rs:13`) read `tool_input["file_path"]` only, so on the Copilot host the re-read deny and the large-file advice never fire; `cache::invalidate` already accepts both keys, so the codebase is inconsistent. Repro: `post_tool` + `pre_tool` with `{"path": p}` returns no deny where the `{"file_path": p}` twin denies.
-Done when one shared helper (or the two lookups) accepts `file_path` **or** `path` in `guard::cache_key` and `read::hook::pre_tool`, with tests `copilot_path_key_dedups_like_file_path` (guard deny fires for `path`) and `copilot_path_key_gets_the_read_advice` (deny over `native_max_bytes`), and the existing `file_path` tests unchanged.
 
 ### T55.14. Semantic-cache key drops tool_result content
 
@@ -307,7 +302,7 @@ Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/
 
 - **T55.11 (P2)** — `expand` never freezes the owning session's pointer: every expand caller runs under session `expand` / `mcp-<pid>`, decisions belong to the proxy session; expand rate stays 0, toon attribution dead. Reproduced.
 - **T55.12 (P2)** — Windows `wrap_quote` `''` quoting is wrong under Git Bash (Claude Code's Windows shell): apostrophes silently dropped from the rewritten command. Code read.
-- **T55.13 (P3)** — Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
+- ~~**T55.13 (P3)**~~ — done: Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
 - **T55.14 (P3)** — semantic-cache key ignores tool_result text; two requests differing only in tool results hash identically and are both eligible under defaults. Reproduced.
 - **T55.15 (P3)** — `live_blobs` overwrites image/document `source.data` / `image_url.url` with pointer text → invalid request when the flag is on. Reproduced.
 - **T55.16 (P3)** — guard deny reads the full archived body (and estimates over it) on the ≤ 10 ms PreToolUse path. Code read.

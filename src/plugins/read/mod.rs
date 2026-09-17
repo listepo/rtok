@@ -6,7 +6,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use rtok_plugin_sdk::{
     Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
@@ -73,6 +73,15 @@ impl Plugin for Read {
 pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<String> {
     let cwd = std::env::current_dir()?;
     read_with(cx, &fs::HostFs, &cwd, path, mode, range)
+}
+
+/// The file a Read/Edit/Write input names: Claude Code's `file_path`, or Copilot's
+/// `path` (`read_file`/`view` are adapted to the tool name `Read` but keep their key).
+pub(crate) fn path_arg(input: &Value) -> Option<&str> {
+    input
+        .get("file_path")
+        .or_else(|| input.get("path"))
+        .and_then(Value::as_str)
 }
 
 /// `read` over an arbitrary [`fs::ReadFs`] (host disk or [`crate::testutil::Vfs`]).

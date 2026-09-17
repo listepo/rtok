@@ -13,7 +13,6 @@
 - T55.10. One `cmd_stem`
 - T55.11. `expand` never freezes the owning session's pointer
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
-- T55.13. Copilot `Read` events use `path`, guard/read-advice match `file_path` only
 - T55.14. Semantic-cache key drops tool_result content
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T55.16. Guard deny loads the whole archive on the PreToolUse hot path
