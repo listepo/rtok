@@ -321,7 +321,7 @@ fn find_skill(name: &str) -> Option<String> {
 
 /// `~/.claude/skills/<name>/SKILL.md`, joined by components so Windows never
 /// sees a single path segment with embedded slashes.
-fn skill_md_path(home: &Path, name: &str) -> std::path::PathBuf {
+pub(crate) fn skill_md_path(home: &Path, name: &str) -> std::path::PathBuf {
     home.join(".claude")
         .join("skills")
         .join(name)

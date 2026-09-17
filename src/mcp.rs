@@ -24,7 +24,7 @@ use crate::tokens::Class;
 fn expand_def() -> ToolDef {
     ToolDef {
         name: "expand",
-        description: "Return archived payload by id; optional lines a-b and grep.",
+        description: "Return archived payload by id; optional lines a-b and regex grep (hits as N:line).",
         input_schema: json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"string"},"grep":{"type":"string"}},"required":["id"]}),
     }
 }

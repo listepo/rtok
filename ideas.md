@@ -63,6 +63,9 @@ that v0.1 does not schedule.
 | I-51 | `research.md` §10.3 (2): one 248 KB skill body stays in every later request of its session | `archive` live zone | **promoted T61.2** — Extend the live-zone matcher to skill-body user messages older than N turns: pointer + `expand <id>`, same path as old tool results. | Gate on I-49: how many requests carry a skill body. |
 | I-44 | atlassian-labs/mcp-compressor; headroom MCP wrapper (`research.md` §9.1) | `archive` / `proxy` | **promoted T59.4** — Wrap foreign MCP servers (`rtok mcp --wrap <server cmd>`) so their fresh results are shortened losslessly (`expand <id>`) the way `cmd`/`read` results already are; old results already shrink in the proxy live zone. | Foreign MCP results were 15 K of 2.83 M tool-result tokens on the measured workload (§2). Revisit when a `stats` row shows a foreign server above 5 %. |
 | I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | **promoted T59.5** — Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Claude Code Tool Search already defers MCP schemas and `doctor` flags `mcp_tool_search_disabled`; a rewrite changes what the model reads and the cached prefix once per session. Redundant on the main host; no measured host without deferral. |
+| I-53 | recursive-llm `re.search` over an externalised context (`research.md` §12) | `expand` (`cmd` / `archive`) | **promoted T66.1** — `--grep` as a regex whose hits print `N:line`, so `--lines a-b` can follow a hit instead of a full expand. | Promoted 2026-09-18 on the creator's request. |
+| I-54 | recursive-llm slice around a hit (`research.md` §12) | `expand` | **promoted T66.2** — `--context N` returns hit ± N numbered lines in one call; two calls cost a turn each in the context-token-turns metric. | Promoted 2026-09-18; lands after T66.1. |
+| I-55 | recursive-llm `RunBudget` (hard cap on calls, soft on tokens / cost, wall clock) (`research.md` §12) | `guard` / `report` | A per-session budget that warns or denies when est. tokens or `stats --price` cost cross a cap. | Not a saving lever for a tool that is not the agent loop; hosts auto-compact and `report` already prices sessions. Parked until a workload shows runaway sessions. |
 
 ### `memory` / `graph`
 
@@ -161,3 +164,5 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | (config file for every flag) | D12 / P12 | 2026-09-01 |
 | (ORM + action store) | D13 / P13 | 2026-09-01 |
 | (`guard` / `toon` numbered tasks) | T2.6 / T11.7 | 2026-09-02 |
+| I-53 | T66.1 | `expand --grep` as a regex with `N:line` hits (recursive-llm search-then-slice). | 2026-09-18 |
+| I-54 | T66.2 | `expand --context N` around grep hits. | 2026-09-18 |

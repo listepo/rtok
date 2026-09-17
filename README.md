@@ -174,7 +174,8 @@ one command away:
 ```bash
 rtok expand 7f3a91                    # the whole thing
 rtok expand 7f3a91 --lines 120-180    # just that range
-rtok expand 7f3a91 --grep "panicked"  # just the matches
+rtok expand 7f3a91 --grep "panicked"  # just the matches, as N:line (regex)
+rtok expand 7f3a91 --lines 210-230    # then the lines around hit 214
 ```
 
 With the hooks installed this happens on its own: `PreToolUse` rewrites the agent's Bash

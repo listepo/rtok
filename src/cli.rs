@@ -157,7 +157,7 @@ enum Cmd {
         /// Inclusive 1-based range `a-b`
         #[arg(long)]
         lines: Option<String>,
-        /// Substring filter
+        /// Regex filter (literal when it does not compile); hits print as `N:line`
         #[arg(long)]
         grep: Option<String>,
     },

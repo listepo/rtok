@@ -6,6 +6,8 @@ use rtok_plugin_sdk::{
 };
 use serde_json::Value;
 
+mod skill;
+
 pub struct Guard;
 
 impl Plugin for Guard {
@@ -26,6 +28,9 @@ impl Plugin for Guard {
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
+        if ev.tool_name == "Skill" {
+            return skill::digest(ev, cx);
+        }
         if let Some(d) = native_redirect(ev.tool_name, cx) {
             return Some(d);
         }
