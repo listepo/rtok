@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.5 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark |
 | T48.6 | todo | P2 | 3 | 0% | |
 | T48.8 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
@@ -23,13 +22,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
-
-### T48.5. Windsurf host
-
-From I-17. Windsurf (Codeium) stores MCP servers in `~/.codeium/windsurf/mcp_config.json` and ships Cascade hooks; neither is installed by rtok today.
-Done when the current Windsurf docs are verified and linked, `rtok agents install windsurf` registers `rtok mcp` and, if the hook protocol can carry `rtok hook` (or a mapped `--host windsurf` payload like T46.3), the hooks; remove keeps foreign entries; the host joins the install/remove/list e2e matrix, config, docs and `README.md` host lists.
-
-Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https://docs.windsurf.com/windsurf/cascade/mcp (`~/.codeium/windsurf/mcp_config.json`, `mcpServers.<name>` `{command, args}`, no `type` for stdio), hooks https://docs.windsurf.com/windsurf/cascade/hooks (`~/.codeium/windsurf/hooks.json`, 12 Cascade events as `agent_action_name`/`tool_info` stdin — not Claude-shaped, and no `--host windsurf` mapping exists, so hooks stay `no` with that reason, like T46.3 scoped the mapping to its own task). Files: `src/agents/windsurf/{mod.rs,README.md}` (new; MCP-only via SDK `register_server`/`unregister_server`, single Desktop variant), `src/agents/mod.rs` registry + HOSTS + `host("windsurf").is_none` fix, `src/config/mod.rs` (`[setup.windsurf] config_path`, finish expand, path leaves), `config/default.toml`, `docs/config.md`, `src/cli.rs` host help (2 lines), `README.md` host list, `site/content/docs/commands.md`, `tests/trycmd/config-show.stdout`, `tests/agents_install.rs` matrix + `notahost` unknown-host rename, `tests/agent_remove.rs` windsurf test, `tests/common/agents.rs` write_cfg. Unit tests in mod.rs: dry_run names file/touches nothing, apply idempotent, remove keeps foreign, second remove no changes. Verify: `mise exec -- cargo fmt/clippy/nextest` for agents/config/e2e scope (full `just check` may fail on concurrent agents' uncommitted work — report, don't fix).
 
 ### T48.6. Zed host
 

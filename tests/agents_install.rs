@@ -39,6 +39,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".copilot/hooks/rtok.json")),
         ),
         ("aider", vec!["--proxy"], Some(home.join(".aider.conf.yml"))),
+        (
+            "windsurf",
+            vec![],
+            Some(home.join(".codeium/windsurf/mcp_config.json")),
+        ),
     ]
 }
 
@@ -280,11 +285,11 @@ fn an_unknown_host_is_refused_before_any_backup() {
     let cfg = write_cfg(&home);
     let settings = home.join(".claude/settings.json");
     fs::write(&settings, "{}").unwrap();
-    let out = raw(&["agents", "install", "windsurf"], &cfg, &home);
+    let out = raw(&["agents", "install", "notahost"], &cfg, &home);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
-    assert!(err.contains("unknown host: windsurf"), "{err}");
-    let out = raw(&["agents", "remove", "windsurf"], &cfg, &home);
+    assert!(err.contains("unknown host: notahost"), "{err}");
+    let out = raw(&["agents", "remove", "notahost"], &cfg, &home);
     assert!(!out.status.success());
     assert!(
         backups(&settings).is_empty(),

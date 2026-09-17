@@ -341,6 +341,7 @@ section! {
         kimi: SetupKimi = SetupKimi::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
         aider: SetupAider = SetupAider::default(),
+        windsurf: SetupWindsurf = SetupWindsurf::default(),
     }
 }
 
@@ -387,6 +388,11 @@ section! {
 section! {
     /// `[setup.aider]` — `.aider.conf.yml` carries `openai-api-base` (T48.7).
     SetupAider { config_path: PathBuf = p("~/.aider.conf.yml") }
+}
+
+section! {
+    /// `[setup.windsurf]` — Cascade's `mcp_config.json` (T48.5).
+    SetupWindsurf { config_path: PathBuf = p("~/.codeium/windsurf/mcp_config.json") }
 }
 
 section! {
@@ -808,6 +814,7 @@ impl Config {
             &mut self.setup.kimi.config_path,
             &mut self.setup.copilot.dir,
             &mut self.setup.aider.config_path,
+            &mut self.setup.windsurf.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
@@ -1023,6 +1030,7 @@ mod tests {
             &cfg.setup.kimi.config_path,
             &cfg.setup.copilot.dir,
             &cfg.setup.aider.config_path,
+            &cfg.setup.windsurf.config_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,

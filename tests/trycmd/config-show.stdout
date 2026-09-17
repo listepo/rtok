@@ -136,6 +136,7 @@ setup.modes = []
 setup.opencode.config_path = ~/.config/opencode/opencode.json
 setup.pi.extensions_path = ~/.pi/agent/extensions
 setup.proxy = false
+setup.windsurf.config_path = ~/.codeium/windsurf/mcp_config.json
 setup.yes = false
 setup.zcode.config_path = ~/.zcode/cli/config.json
 stats.baseline = 

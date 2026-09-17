@@ -277,6 +277,24 @@ fn aider_remove_strips_only_ours_and_keeps_comments_and_foreign() {
 }
 
 #[test]
+fn windsurf_remove_keeps_foreign_servers() {
+    let home = tmp("windsurf");
+    let cfg = write_cfg(&home);
+    let path = home.join(".codeium/windsurf/mcp_config.json");
+    fs::write(&path, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+
+    rtok(&["agents", "install", "windsurf"], &cfg, &home);
+    assert!(json(&path)["mcpServers"]["rtok"].is_object());
+
+    rtok(&["agents", "remove", "windsurf"], &cfg, &home);
+    let servers = json(&path);
+    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+    let again = rtok(&["agents", "remove", "windsurf"], &cfg, &home);
+    assert!(again.contains("no changes"), "second remove: {again}");
+}
+
+#[test]
 fn setup_copies_the_config_before_it_writes() {
     let home = tmp("bak");
     let cfg = write_cfg(&home);

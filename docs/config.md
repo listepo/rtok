@@ -209,6 +209,8 @@ config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
 dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
 [setup.aider]
 config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--proxy)
+[setup.windsurf]
+config_path   = "~/.codeium/windsurf/mcp_config.json"
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
