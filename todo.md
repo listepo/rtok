@@ -1,3 +1,2 @@
-- T45.2. Proxy cache hits and errors keep usage rows
 - T45.5. Gates cover tests, webui and examples
 - T45.6. Extra hook/expand/guard/read/toon coverage
