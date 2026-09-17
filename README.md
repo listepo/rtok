@@ -58,6 +58,9 @@ rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
 rtok man | man -l -                                  # or save as manpath/rtok.1
 ```
 
+A shorter path (install → doctor → hooks) is also in
+[`docs/getting-started.md`](docs/getting-started.md).
+
 ## Start with Claude Code
 
 Install rtok's eight hooks and MCP entry. The installer backs up the settings file before
@@ -83,9 +86,24 @@ rtok doctor
 8 additions
 ```
 
-Each app gets one block: its kind and name (`CLI: Claude Code`, `Desktop: Cursor`), where it is installed and its version, the config files touched, and the state of every rtok module — `✓ installed`, `✗ not installed (--flag)`, `− not supported: why` for `hooks`, `mcp`, `proxy` and `plugin` — then rtok's own plugins split the same way (`installed` / `not installed` / `not supported`) from the surfaces each one declares, `(off)` for a disabled one. `claude` covers both Claude Code and Claude Desktop (MCP only, in `claude_desktop_config.json`). A second run of the same command says `already installed` instead of repeating a diff. `rtok agents list` prints the same blocks without writing anything; `rtok doctor` lists the modules for every host under `agents`.
+Each app gets one block: kind and name (`CLI: Claude Code`, `Desktop: Cursor`),
+install path and version, config files touched, and the state of every rtok
+module (`hooks`, `mcp`, `proxy`, `plugin`) as `✓ installed`,
+`✗ not installed (--flag)`, or `− not supported: why`. rtok's own plugins are
+listed the same way from the surfaces each one declares (`(off)` when disabled).
 
-`rtok agents remove claude` takes it all back out: hook entries, the MCP registration and the proxy variable. Both commands copy every file they touch to `<name>.bak-<ts>` beside it first; a run that changes nothing leaves no copy, and a copy with the same content is never taken twice. After a write, each requested module is read back and a module that did not land is reported as a warning, as is an `rtok` that is not on PATH.
+`claude` covers both Claude Code and Claude Desktop (Desktop is MCP only, in
+`claude_desktop_config.json`). A second run of the same command says
+`already installed` instead of repeating a diff. `rtok agents list` prints the
+same blocks without writing; `rtok doctor` lists modules for every host under
+`agents`.
+
+`rtok agents remove claude` takes it all back out: hook entries, MCP
+registration, and the proxy variable. Both install and remove copy every file
+they touch to `<name>.bak-<ts>` beside it first; a no-op run leaves no copy,
+and identical content is never backed up twice. After a write, each requested
+module is read back — a module that did not land is a warning, as is an
+`rtok` that is not on `PATH`.
 
 Run the proxy separately when you want provider usage rows and archive compression:
 
