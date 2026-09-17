@@ -57,12 +57,14 @@ impl Plugin for Inject {
 
 const TERSE: &str = include_str!("../../../modes/terse.md");
 const YAGNI: &str = include_str!("../../../modes/yagni.md");
+const NUDGES: &str = include_str!("../../../modes/nudges.md");
 
 /// Resolve canonical mode names and their compatibility aliases to embedded markdown.
 fn builtin(name: &str) -> Option<&'static str> {
     match name {
         "terse" | "cave" => Some(TERSE),
         "yagni" | "pony" => Some(YAGNI),
+        "nudges" => Some(NUDGES),
         _ => None,
     }
 }
@@ -192,6 +194,57 @@ mod tests {
             "two emitted + one dropped line"
         );
         assert_eq!(cx.store.measurement_count("inject").unwrap(), 2);
+    }
+
+    /// T53.1: the opt-in nudge set is data (D7) inside the mode budget (≤250),
+    /// appears once in SessionStart output, byte-stable across runs, and never
+    /// in UserPromptSubmit output.
+    #[test]
+    fn session_start_has_nudges_once_and_stable() {
+        let dir = std::env::temp_dir().join("rtok-t531-nudges");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes = vec!["nudges".into()];
+        let start = serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "t531",
+            "source": "startup"
+        });
+        let mut run = || {
+            let mut out = Vec::new();
+            crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, &cfg);
+            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            v["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let (once, twice) = (run(), run());
+        assert_eq!(once, twice, "nudge bytes must be stable");
+        assert_eq!(once.matches("# nudges").count(), 1, "{once}");
+        let cx = crate::plugin::Runtime::in_memory("t531").unwrap();
+        let n = cx.estimate(NUDGES, Class::Prose);
+        assert!(n <= 250, "nudges is {n} tokens");
+        let mut out = Vec::new();
+        let prompt = serde_json::json!({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "t531",
+            "prompt": "hi"
+        });
+        crate::hooks::run(
+            "UserPromptSubmit",
+            prompt.to_string().as_bytes(),
+            &mut out,
+            &cfg,
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let ctx = v
+            .pointer("/hookSpecificOutput/additionalContext")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        assert!(!ctx.contains("# nudges"), "{ctx}");
     }
 
     #[test]

@@ -2,7 +2,9 @@
 
 use serde_json::Value;
 
-use super::wire::{ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup};
+use super::wire::{
+    BlobRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup,
+};
 
 pub static ANTHROPIC: Anthropic = Anthropic;
 
@@ -67,6 +69,43 @@ impl ToolResults for Anthropic {
             }
         }
         results
+    }
+
+    /// Shrinkable non-result payloads (T51.1): user text blocks and base64
+    /// `image` / `document` sources. `tool_result` blocks belong to `archive`'s
+    /// result pass and are skipped here.
+    fn live_blobs<'a>(&self, req: &'a mut Value) -> Vec<BlobRef<'a>> {
+        let Some((messages, total)) = turn_setup(req, "messages") else {
+            return Vec::new();
+        };
+        let mut seen = 0;
+        let mut out = Vec::new();
+        for message in messages {
+            if message["role"] != "user" {
+                continue;
+            }
+            seen += 1;
+            let turn = total - seen;
+            let Some(blocks) = message.get_mut("content").and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for block in blocks {
+                if block["type"] == "tool_result" {
+                    continue;
+                }
+                let content = match block["type"].as_str() {
+                    Some("text") => block.get_mut("text"),
+                    Some("image") | Some("document") => {
+                        block.get_mut("source").and_then(|s| s.get_mut("data"))
+                    }
+                    _ => None,
+                };
+                if let Some(content) = content {
+                    out.push(BlobRef { content, turn });
+                }
+            }
+        }
+        out
     }
 }
 

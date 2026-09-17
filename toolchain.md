@@ -53,6 +53,8 @@ Project programs and direct packages from the manifests.
 | rmcp | local | https://crates.io/crates/rmcp | Rust dependency |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | rustix | local | https://crates.io/crates/rustix | Rust dependency |
+| rustls | local | https://crates.io/crates/rustls | Preconfigured webpki TLS client config (T53.3) |
+| rustls-pemfile | local | https://crates.io/crates/rustls-pemfile | `SSL_CERT_FILE` bundle parsing (T53.3) |
 | serde | local | https://crates.io/crates/serde | Serialization |
 | serde_json | local | https://crates.io/crates/serde_json | JSON |
 | sha2 | local | https://crates.io/crates/sha2 | Rust dependency |
@@ -74,3 +76,4 @@ Project programs and direct packages from the manifests.
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
 | watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
+| webpki-roots | local | https://crates.io/crates/webpki-roots | Mozilla roots without the platform verifier (T53.3) |

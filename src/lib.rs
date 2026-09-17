@@ -36,6 +36,7 @@ pub mod store;
 /// Test helpers, also for the integration tests under `tests/`; not part of the public API.
 #[doc(hidden)]
 pub mod testutil;
+pub mod tls;
 pub mod tokens;
 pub mod tui;
 pub mod web;

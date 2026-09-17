@@ -2,7 +2,9 @@
 
 use serde_json::{Map, Value};
 
-use super::wire::{ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup};
+use super::wire::{
+    BlobRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup,
+};
 
 pub static OPENAI_CHAT: OpenAiChat = OpenAiChat;
 
@@ -40,6 +42,41 @@ impl ToolResults for OpenAiChat {
             results.push(ToolResultRef { id, content, turn });
         }
         results
+    }
+
+    /// Shrinkable non-result payloads (T51.1): user message text — whole strings
+    /// and `text` / `image_url` parts. `role: "tool"` messages belong to `archive`'s
+    /// result pass and are skipped here.
+    fn live_blobs<'a>(&self, req: &'a mut Value) -> Vec<BlobRef<'a>> {
+        let Some((messages, total)) = turn_setup(req, "messages") else {
+            return Vec::new();
+        };
+        let mut seen = 0;
+        let mut out = Vec::new();
+        for message in messages {
+            if message["role"] != "user" {
+                continue;
+            }
+            seen += 1;
+            let turn = total - seen;
+            if message.get("content").is_some_and(Value::is_string) {
+                let content = message.get_mut("content").expect("string checked above");
+                out.push(BlobRef { content, turn });
+            } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut)
+            {
+                for part in parts {
+                    let content = match part["type"].as_str() {
+                        Some("text") => part.get_mut("text"),
+                        Some("image_url") => part.get_mut("image_url").and_then(|u| u.get_mut("url")),
+                        _ => None,
+                    };
+                    if let Some(content) = content {
+                        out.push(BlobRef { content, turn });
+                    }
+                }
+            }
+        }
+        out
     }
 }
 

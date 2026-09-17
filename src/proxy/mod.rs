@@ -100,6 +100,10 @@ impl ProxyState {
         let client = Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(budget)
+            // T53.3: webpki roots instead of reqwest's platform verifier
+            // (Security.framework costs ~1.3–1.5 ms of dyld time per hook
+            // spawn); corporate CAs arrive via `SSL_CERT_FILE` (see `tls`).
+            .use_preconfigured_tls(crate::tls::preconfigured()?)
             .build()
             .context("reqwest client")?;
         // Host agent: the `[hook] host` setting (T5.1 says `core.host`, which T12 removed —

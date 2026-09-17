@@ -17,7 +17,8 @@
 use serde_json::Value;
 
 use rtok_plugin_sdk::{
-    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef, WireRequest,
+    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef,
+    WireRequest,
 };
 
 pub struct Archive;
@@ -43,7 +44,9 @@ impl Plugin for Archive {
         if cx.config::<crate::config::Proxy>("proxy").mode != "compress" {
             return Vec::new();
         }
-        rewrite(req.tool_results(), cx)
+        let mut out = rewrite(req.tool_results(), cx);
+        out.extend(rewrite_blobs(req.live_blobs(), cx));
+        out
     }
 }
 
@@ -66,23 +69,48 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     let mut out: Vec<Measurement> = outside_live_zone(results, cx)
         .filter_map(|r| rewrite_block(&r.id, r.content, r.turn, cx))
         .collect();
-    if out.is_empty() {
-        return out;
+    record_run(&mut out, cx);
+    out
+}
+
+/// Shrink large non-result payloads inside the live zone (T51.1): nested JSON dumps
+/// and `data:` blobs in user content blocks. Off by default (`live_blobs`) until a
+/// bench shows cost per passed task does not rise. Eligible from turn 2 up — the
+/// proxy invariant, not `keep_turns`: these blocks are re-sent whole every turn, so
+/// anything older than the working edge is fair game once it is big and byte-stable.
+pub fn rewrite_blobs(blobs: Vec<BlobRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
+    if !cx
+        .plugin_config::<crate::config::Archive>("archive")
+        .live_blobs
+    {
+        return Vec::new();
     }
-    // Ground truth for `stats`: est. tokens before/after, nested under the API request.
+    let mut out: Vec<Measurement> = blobs
+        .into_iter()
+        .filter(|b| b.turn >= 2)
+        .filter_map(|b| rewrite_blob(b.content, cx))
+        .collect();
+    record_run(&mut out, cx);
+    out
+}
+
+/// Ground truth for `stats`: est. tokens before/after, nested under the API request.
+fn record_run(out: &mut Vec<Measurement>, cx: &Ctx) {
+    if out.is_empty() {
+        return;
+    }
     match cx.record_plugin_run("proxy", "archive") {
         Ok(id) => {
             let before = out.iter().map(|m| i64::from(m.est_before)).sum();
             let after = out.iter().map(|m| i64::from(m.est_after)).sum();
             let _ = cx.record_tokens(id, Some("archive"), "before", "estimate", before);
             let _ = cx.record_tokens(id, Some("archive"), "after", "estimate", after);
-            for m in &mut out {
+            for m in &mut *out {
                 m.call_id = Some(id);
             }
         }
         Err(e) => cx.log("error", "plugin", "archive", &format!("plugin_run: {e}")),
     }
-    out
 }
 
 /// Decide for one block: reuse the persisted pointer, skip an expanded or small block, or
@@ -153,6 +181,86 @@ fn rewrite_block(
     };
     *content = Value::String(live);
     Some(m)
+}
+
+/// Decide for one live-zone blob: reuse the persisted pointer, skip an expanded,
+/// small or non-blob string, or archive it now. Decisions key on `blob:{sha256}`,
+/// so identical bytes map to byte-identical pointers on every turn (the prompt
+/// cache holds) and `expand` recovers the original. Any store error leaves the
+/// block alone (fail open).
+fn rewrite_blob(content: &mut Value, cx: &Ctx) -> Option<Measurement> {
+    let text = content.as_str()?.to_owned();
+    if !is_blob_candidate(&text) {
+        return None;
+    }
+    let a = cx.plugin_config::<crate::config::Archive>("archive");
+    let est = cx.estimate(&text, Class::Json);
+    if est < a.min_tokens {
+        return None;
+    }
+    let key = format!("blob:{}", crate::store::hex_sha256(text.as_bytes()));
+    let (archive_id, live) = match cx.archive_decision(&key) {
+        Ok(Some(d)) if d.expanded => return None,
+        Ok(Some(d)) if d.pointer.starts_with(crate::plugins::toon::PREFIX) => return None,
+        Ok(Some(d)) => (d.archive_id, d.pointer),
+        Ok(None) => {
+            let archive_id = cx
+                .put_archive(text.as_bytes())
+                .map_err(|e| cx.log("error", "plugin", "archive", &format!("put: {e}")))
+                .ok()?;
+            let live = pointer(
+                &text,
+                &archive_id,
+                est,
+                a.head_lines as usize,
+                a.tail_lines as usize,
+            );
+            cx.put_archive_decision(&key, &archive_id, &live)
+                .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
+                .ok()?;
+            (archive_id, live)
+        }
+        Err(e) => {
+            cx.log("error", "plugin", "archive", &format!("decision: {e}"));
+            return None;
+        }
+    };
+    let m = Measurement {
+        plugin: "archive",
+        kind: "live_blob",
+        before_bytes: text.len() as u64,
+        after_bytes: live.len() as u64,
+        est_before: est,
+        est_after: cx.estimate(&live, Class::Json),
+        ref_id: Some(archive_id),
+        call_id: None,
+    };
+    *content = Value::String(live);
+    Some(m)
+}
+
+/// A shrink candidate (T51.1): a `data:` URI, a bare base64 run (image/document
+/// payloads travel without the prefix), or text that parses as JSON. Plain prose
+/// and code stay — the model is working with them, and guessing wrong would hide
+/// live context behind a pointer.
+fn is_blob_candidate(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("data:") {
+        return true;
+    }
+    match trimmed.as_bytes().first() {
+        Some(b'{') | Some(b'[') => serde_json::from_str::<Value>(trimmed).is_ok(),
+        _ => is_base64_run(trimmed),
+    }
+}
+
+/// Long whitespace-free base64 alphabet runs are binary payloads, not prose.
+/// The 4 KiB floor keeps hashes and short ids out; `min_tokens` still gates.
+fn is_base64_run(text: &str) -> bool {
+    text.len() > 4096
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
 }
 
 /// The text of a tool-result content: a string, or text blocks joined by newlines.
@@ -296,6 +404,32 @@ mod tests {
                 turn: total - index - 1,
             })
             .collect()
+    }
+
+    fn brews<'a>(values: &'a mut [Value]) -> Vec<BlobRef<'a>> {
+        let total = values.len();
+        values
+            .iter_mut()
+            .enumerate()
+            .map(|(index, content)| BlobRef {
+                content,
+                turn: total - index - 1,
+            })
+            .collect()
+    }
+
+    fn brewed_cx(name: &str) -> crate::plugin::Runtime {
+        let mut cx = cx(name);
+        cx.config.plugins.archive.live_blobs = true;
+        cx
+    }
+
+    /// Six kilobytes of stable JSON, the T51.1 live-zone payload.
+    fn dump(tag: &str) -> String {
+        let items: Vec<String> = (1..=200)
+            .map(|i| format!(r#"{{"id":{i},"name":"{tag}-item-{i}","ok":true}}"#))
+            .collect();
+        format!("[{}]", items.join(","))
     }
 
     #[test]
@@ -588,5 +722,94 @@ mod tests {
             l1,
             "[tier L1: 3 lines · lossless extract]\nL1: a\nL2: b\nL3: c"
         );
+    }
+
+    /// Off by default: the same blobs pass through untouched until the bench
+    /// (T51.1 gate) says otherwise.
+    #[test]
+    fn live_blobs_stay_whole_while_the_flag_is_off() {
+        let cx = cx("blobs-off");
+        let mut values: Vec<Value> = (1..=6).map(|_| Value::String(dump("d"))).collect();
+        let ms = rewrite_blobs(brews(&mut values), &Ctx::new(&cx));
+        assert!(ms.is_empty());
+        assert!(values.iter().all(|v| v.as_str().unwrap().starts_with('[')));
+        assert_eq!(cx.store.measurement_count("archive").unwrap(), 0);
+    }
+
+    /// Stable JSON dumps shrink identically on every replay; the last two turns
+    /// stay live; prose, code and small JSON pass through.
+    #[test]
+    fn live_blobs_shrink_stably_outside_the_working_edge() {
+        let cx = brewed_cx("blobs-on");
+        let json = dump("j");
+        let code = "fn main() {\n    println!(\"hi\");\n}\n".repeat(200);
+        let prose = "just some words ".repeat(600);
+        assert!(code.len() > 4000 && prose.len() > 4000);
+        let mut values: Vec<Value> = vec![
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(code.clone()),
+            Value::String(prose.clone()),
+        ];
+        let ms = rewrite_blobs(brews(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 4, "turns 5,4,3,2 shrink; turns 1,0 stay");
+        assert!(ms.iter().all(|m| m.kind == "live_blob"));
+        for v in values.iter().take(4) {
+            let s = v.as_str().unwrap();
+            assert!(s.starts_with("[archived ") && s.contains("expand("), "{s:.80}");
+        }
+        assert_eq!(values[4], Value::String(code), "code is not a dump");
+        assert_eq!(values[5], Value::String(prose), "prose is not a dump");
+        let first = values.clone();
+        let mut second: Vec<Value> = vec![
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(json.clone()),
+            Value::String(code),
+            Value::String(prose),
+        ];
+        rewrite_blobs(brews(&mut second), &Ctx::new(&cx));
+        assert_eq!(first, second, "same bytes in → byte-identical pointers out");
+        // Lossless: the archived original is the dump, byte for byte.
+        let id = ms[0].ref_id.clone().unwrap();
+        let back = crate::plugin::Ctx::new(&cx).get_archive(&id).unwrap().expect("archived");
+        assert_eq!(String::from_utf8(back).unwrap(), json);
+    }
+
+    /// `data:` URIs and bare base64 runs shrink; an expanded blob stays original.
+    #[test]
+    fn live_blobs_cover_data_uris_and_base64_and_expands() {
+        let cx = brewed_cx("blobs-data");
+        let uri = format!("data:image/png;base64,{}", "aB3dE5g7".repeat(900));
+        let bare = "aB3dE5g7".repeat(900);
+        let mut values: Vec<Value> = vec![
+            Value::String(uri.clone()),
+            Value::String(bare.clone()),
+            Value::String("small".into()),
+            Value::String(uri.clone()),
+            Value::String("live-one".into()),
+            Value::String("live-two".into()),
+        ];
+        let ms = rewrite_blobs(brews(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 2, "two stable blobs at turns 5,4");
+        assert!(values[0].as_str().unwrap().starts_with("[archived "));
+        assert!(values[1].as_str().unwrap().starts_with("[archived "));
+        assert_eq!(values[2], Value::String("small".into()), "under min_tokens");
+        let id = ms[0].ref_id.clone().unwrap();
+        assert_eq!(cx.store.mark_expanded("s", &id).unwrap(), 1);
+        let mut again: Vec<Value> = vec![
+            Value::String(uri),
+            Value::String(bare),
+            Value::String("small".into()),
+            Value::String("x".into()),
+            Value::String("y".into()),
+            Value::String("z".into()),
+        ];
+        let ms2 = rewrite_blobs(brews(&mut again), &Ctx::new(&cx));
+        assert_eq!(ms2.len(), 1, "the expanded blob stays original");
+        assert!(again[0].as_str().unwrap().starts_with("data:"));
     }
 }

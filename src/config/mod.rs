@@ -535,6 +535,10 @@ section! {
         /// Behaviour spec: OpenViking (AGPL-3.0); rtok does not vendor, link, or subprocess it
         /// (D6). Gates native implementation in T33.2.
         tiers: bool = false,
+        /// Opt-in live-zone blob shrinking (T51.1): nested JSON dumps and `data:` blobs
+        /// in user content blocks (never tool results, system, tools, or the last two
+        /// turns). Default off until a bench shows cost per passed task does not rise.
+        live_blobs: bool = false,
     }
 }
 

@@ -16,11 +16,28 @@ pub struct ToolResultRef<'a> {
     pub turn: usize,
 }
 
+/// One shrinkable non-result payload in the live zone: a nested JSON dump or a
+/// `data:` blob inside a user content block (plan T51.1). Unlike [`ToolResultRef`]
+/// there is no provider-stable id, so a plugin keys its decision by content hash —
+/// which is also what keeps the rewrite byte-stable across turns.
+pub struct BlobRef<'a> {
+    /// The mutable string payload. Rewrite it in place.
+    pub content: &'a mut Value,
+    /// How many user turns follow this block.
+    pub turn: usize,
+}
+
 /// The one thing [`WireRequest`] needs from a provider dialect. The host implements it;
 /// a plugin never names it.
 pub trait ToolResults: Send + Sync {
     /// Every mutable tool-result payload in `req`, with its id and turn distance.
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>>;
+
+    /// Large non-result payloads a proxy pass may shrink losslessly (T51.1).
+    /// Empty by default; wires with user content blocks override it.
+    fn live_blobs<'a>(&self, _req: &'a mut Value) -> Vec<BlobRef<'a>> {
+        Vec::new()
+    }
 }
 
 /// A provider request, seen through the wire that owns it.
@@ -41,5 +58,10 @@ impl<'a> WireRequest<'a> {
     /// Every tool result in the request, mutable.
     pub fn tool_results(&mut self) -> Vec<ToolResultRef<'_>> {
         self.wire.tool_results(self.body)
+    }
+
+    /// Every shrinkable non-result payload in the request, mutable.
+    pub fn live_blobs(&mut self) -> Vec<BlobRef<'_>> {
+        self.wire.live_blobs(self.body)
     }
 }

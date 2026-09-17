@@ -6,7 +6,7 @@ use serde_json::Value;
 
 // The plugin-visible half of the wire is the published contract (D25); the provider
 // dialects that implement it stay here.
-pub use rtok_plugin_sdk::{ToolResultRef, ToolResults, WireRequest};
+pub use rtok_plugin_sdk::{BlobRef, ToolResultRef, ToolResults, WireRequest};
 
 use super::anthropic::ANTHROPIC;
 use super::gemini::GEMINI;

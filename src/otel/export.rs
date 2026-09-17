@@ -143,6 +143,8 @@ async fn flush_into(cx: &Runtime, ep: &Endpoint, rep: &mut Report) -> Result<()>
         .timeout(Duration::from_secs(u64::from(
             cx.config.otel.flush_secs.max(1),
         )))
+        // T53.3: same webpki roots as the proxy (see `tls`).
+        .use_preconfigured_tls(crate::tls::preconfigured()?)
         .build()?;
     let res = resource(cx);
 
