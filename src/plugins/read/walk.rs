@@ -3,6 +3,7 @@
 //! Production `search` / `tree` keep `ignore::WalkBuilder` on the host disk (gitignore).
 //! Unit paths that only need dir metadata, list, and read use [`WalkFs`] + [`walk`] so they
 //! do not touch TempDir. Prefer extending [`crate::testutil::Vfs`] over a new crate.
+//! [`super::fs::HostFs`] also implements [`WalkFs`] as a stub for a later prod swap (T56.5).
 
 use regex::Regex;
 
@@ -44,6 +45,37 @@ impl WalkFs for crate::testutil::Vfs {
 
     fn list_dir(&self, path: &str) -> Vec<String> {
         crate::testutil::Vfs::list_dir(self, path)
+    }
+}
+
+/// Host disk [`WalkFs`] stub — production search/tree still use `WalkBuilder` (gitignore).
+impl WalkFs for super::fs::HostFs {
+    fn meta(&self, path: &str) -> Option<EntryMeta> {
+        let meta = std::fs::metadata(path).ok()?;
+        Some(EntryMeta {
+            len: meta.len(),
+            is_file: meta.is_file(),
+            is_dir: meta.is_dir(),
+        })
+    }
+
+    fn read_bytes(&self, path: &str) -> Option<Vec<u8>> {
+        std::fs::read(path).ok()
+    }
+
+    fn list_dir(&self, path: &str) -> Vec<String> {
+        let dir = if path.is_empty() { "." } else { path };
+        let mut names = Vec::new();
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return names;
+        };
+        for ent in rd.flatten() {
+            if let Some(name) = ent.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+        names.sort();
+        names
     }
 }
 
@@ -219,5 +251,21 @@ mod tests {
         assert!(rows.iter().any(|r| r.starts_with("a ")), "{rows:?}");
         assert!(rows.iter().any(|r| r.starts_with("a/f.txt 1")), "{rows:?}");
         assert!(rows.iter().all(|r| !r.contains("nest/")), "{rows:?}");
+    }
+
+    /// HostFs WalkFs stub smoke (prod still on WalkBuilder; T56.5).
+    #[test]
+    fn host_fs_walk_lists_temp_file() {
+        let dir = crate::testutil::tmp_dir("walk-host");
+        let file = dir.join("only.txt");
+        std::fs::write(&file, b"hi").unwrap();
+        let root = dir.to_string_lossy().to_string();
+        let entries = walk(&super::super::fs::HostFs, &root, Some(1));
+        let names: Vec<_> = entries
+            .iter()
+            .filter_map(|e| e.path.rsplit('/').next())
+            .collect();
+        assert!(names.contains(&"only.txt"), "{names:?}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

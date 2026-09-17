@@ -41,9 +41,11 @@ pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
 
 /// In-memory path → bytes map for unit tests that must not touch the host disk (D29 / T56).
 /// Prefer this over `tmp_dir` when the code under test only needs path/content/size.
+/// Optional symlinks (`link` → `target`) let `ReadFs` / resolve twins cover escape cases.
 #[derive(Default, Clone, Debug)]
 pub struct Vfs {
     files: std::collections::BTreeMap<String, Vec<u8>>,
+    symlinks: std::collections::BTreeMap<String, String>,
 }
 
 impl Vfs {
@@ -53,6 +55,28 @@ impl Vfs {
 
     pub fn write(&mut self, path: impl Into<String>, bytes: impl AsRef<[u8]>) {
         self.files.insert(path.into(), bytes.as_ref().to_vec());
+    }
+
+    /// Record a symlink `link` → `target` (forward-slash keys). Used by ReadFs canonicalize.
+    pub fn symlink(&mut self, link: impl Into<String>, target: impl Into<String>) {
+        self.symlinks.insert(link.into(), target.into());
+    }
+
+    /// Target of a recorded symlink, if any.
+    pub fn symlink_target(&self, path: &str) -> Option<&str> {
+        self.symlinks.get(path).map(String::as_str)
+    }
+
+    /// Follow recorded symlinks (bounded) to the final key used for file reads.
+    pub fn resolve_key(&self, path: &str) -> String {
+        let mut key = path.to_string();
+        for _ in 0..32 {
+            match self.symlinks.get(&key) {
+                Some(next) => key = next.clone(),
+                None => break,
+            }
+        }
+        key
     }
 
     pub fn read(&self, path: &str) -> Option<&[u8]> {
@@ -68,7 +92,7 @@ impl Vfs {
     }
 
     pub fn exists(&self, path: &str) -> bool {
-        self.files.contains_key(path)
+        self.files.contains_key(path) || self.symlinks.contains_key(path)
     }
 
     /// UTF-8 body, or `None` if missing / not UTF-8.
@@ -128,8 +152,9 @@ impl Vfs {
     }
 
     /// File and/or directory metadata for `path`. Directories are inferred from prefixes.
+    /// A recorded symlink counts as a file entry (len 0) so canonicalize can see it.
     pub fn meta(&self, path: &str) -> Option<VfsMeta> {
-        let is_file = self.files.contains_key(path);
+        let is_file = self.files.contains_key(path) || self.symlinks.contains_key(path);
         let is_dir = !self.list_dir(path).is_empty();
         if !is_file && !is_dir {
             return None;
@@ -159,6 +184,17 @@ mod tests {
         assert!(a.is_dir() && b.is_dir());
         let (c, dir) = super::config("paths");
         assert!(c.core.db_path.starts_with(&dir) && c.log.path.starts_with(&dir));
+    }
+
+    #[test]
+    fn vfs_symlink_resolve_key_and_exists() {
+        let mut v = super::Vfs::new();
+        v.write("/outside/secret", b"x");
+        v.symlink("cwd/escape", "/outside/secret");
+        assert!(v.exists("cwd/escape"));
+        assert_eq!(v.symlink_target("cwd/escape"), Some("/outside/secret"));
+        assert_eq!(v.resolve_key("cwd/escape"), "/outside/secret");
+        assert!(v.meta("cwd/escape").is_some_and(|m| m.is_file));
     }
 
     #[test]

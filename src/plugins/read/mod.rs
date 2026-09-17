@@ -14,6 +14,7 @@ use rtok_plugin_sdk::{
 };
 
 pub mod cache;
+pub mod fs;
 pub mod hook;
 pub(crate) mod outline;
 pub mod search;
@@ -71,9 +72,21 @@ impl Plugin for Read {
 
 pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<String> {
     let cwd = std::env::current_dir()?;
+    read_with(cx, &fs::HostFs, &cwd, path, mode, range)
+}
+
+/// `read` over an arbitrary [`fs::ReadFs`] (host disk or [`crate::testutil::Vfs`]).
+pub(crate) fn read_with(
+    cx: &Ctx,
+    fs: &impl fs::ReadFs,
+    cwd: &Path,
+    path: &str,
+    mode: &str,
+    range: Option<&str>,
+) -> Result<String> {
     let cfg = cx.plugin_config::<crate::config::Read>("read");
-    let abs = resolve(&cwd, Path::new(path), &cfg.allow_paths)?;
-    let raw = std::fs::read_to_string(&abs)?;
+    let abs = resolve_with(fs, cwd, Path::new(path), &cfg.allow_paths)?;
+    let raw = fs.read_to_string(&abs)?;
     let mode = if mode.is_empty() {
         cfg.default_mode.as_str()
     } else {
@@ -105,12 +118,22 @@ pub fn read(cx: &Ctx, path: &str, mode: &str, range: Option<&str>) -> Result<Str
 }
 
 pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
+    resolve_with(&fs::HostFs, cwd, path, extra)
+}
+
+/// Resolve + allow-check using [`fs::ReadFs::canonicalize`] (symlink follow on host / Vfs).
+pub(crate) fn resolve_with(
+    fs: &impl fs::ReadFs,
+    cwd: &Path,
+    path: &Path,
+    extra: &[PathBuf],
+) -> Result<PathBuf> {
     // Canonicalise roots first. Relative paths are then joined onto the
     // canonical cwd so a missing file (canonicalize fails) still shares the
     // same case as the root `under` compares against.
     let roots: Vec<PathBuf> = std::iter::once(cwd.to_path_buf())
         .chain(extra.iter().cloned())
-        .map(|r| dunce::canonicalize(&r).unwrap_or(r))
+        .map(|r| fs.canonicalize(&r).unwrap_or(r))
         .collect();
     let abs = if path.is_absolute() {
         normalize(Path::new("/"), path)
@@ -118,7 +141,7 @@ pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<Path
         normalize(&roots[0], path)
     };
     // Lexical allow, then (when the path exists) reject symlink escapes past the root.
-    let check = dunce::canonicalize(&abs).unwrap_or_else(|_| abs.clone());
+    let check = fs.canonicalize(&abs).unwrap_or_else(|| abs.clone());
     if roots.iter().any(|r| under(&check, r)) {
         return Ok(abs);
     }
@@ -208,7 +231,7 @@ pub(crate) mod tests {
         (crate::plugin::Runtime::open(c, name).unwrap(), dir)
     }
 
-    // Full `read()` needs host fs + Runtime until a reader trait (T56.4); pure twin above uses Vfs.
+    // Disk e2e kept; Vfs twins below call `read_with` / `resolve_with` (T56.5 ReadFs).
     #[test]
     fn three_lines_are_numbered() {
         let (cx, dir) = cx("three");
@@ -470,6 +493,121 @@ pub(crate) mod tests {
         vfs.write("My Docs/notes.txt", b"one\ntwo\n");
         let out = numbered_from_vfs(vfs.read_str("My Docs/notes.txt").unwrap(), Some("1-2"));
         assert_eq!(out, "1:one\n2:two");
+    }
+
+    /// T56.5: full `read_with` on Vfs — disk `three_lines_are_numbered` twin (kept).
+    #[test]
+    fn three_lines_are_numbered_via_read_fs_vfs() {
+        let (mut c, dir) = crate::testutil::config("three-vfs");
+        c.plugins.read.allow_paths = vec![PathBuf::from("ws")];
+        let cx = crate::plugin::Runtime::open(c, "three-vfs").unwrap();
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("ws/a.txt", b"alpha\nbeta\ngamma\n");
+        let out = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None).unwrap();
+        assert_eq!(out, "1:alpha\n2:beta\n3:gamma");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.5: range grammar through `read_with` + Vfs (disk twin kept).
+    #[test]
+    fn range_applies_via_read_fs_vfs() {
+        let (mut c, dir) = crate::testutil::config("range-vfs");
+        c.plugins.read.allow_paths = vec![PathBuf::from("ws")];
+        let cx = crate::plugin::Runtime::open(c, "range-vfs").unwrap();
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("ws/r.txt", b"a\nb\nc\nd\n");
+        let ctx = Ctx::new(&cx);
+        assert_eq!(
+            read_with(&ctx, &vfs, Path::new("ws"), "r.txt", "full", Some("2-3")).unwrap(),
+            "2:b\n3:c"
+        );
+        assert_eq!(
+            read_with(&ctx, &vfs, Path::new("ws"), "r.txt", "lines", Some("3")).unwrap(),
+            "3:c\n4:d"
+        );
+        assert_eq!(
+            read_with(&ctx, &vfs, Path::new("ws"), "r.txt", "lines", Some("-1")).unwrap(),
+            "1:a"
+        );
+        assert!(read_with(&ctx, &vfs, Path::new("ws"), "r.txt", "lines", Some("x-y")).is_err());
+        assert!(read_with(&ctx, &vfs, Path::new("ws"), "r.txt", "full", Some("3-2")).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.5: cap + archive id through `read_with` + Vfs (disk twin kept).
+    #[test]
+    fn hundred_kb_is_capped_via_read_fs_vfs() {
+        let (mut c, dir) = crate::testutil::config("big-vfs");
+        c.plugins.read.allow_paths = vec![PathBuf::from("ws")];
+        let cx = crate::plugin::Runtime::open(c, "big-vfs").unwrap();
+        let max = cx.config.plugins.read.max_chars as usize;
+        let mut vfs = crate::testutil::Vfs::new();
+        let blob = "x".repeat(100 * 1024);
+        vfs.write("ws/big.txt", blob.as_bytes());
+        let out = read_with(
+            &Ctx::new(&cx),
+            &vfs,
+            Path::new("ws"),
+            "big.txt",
+            "full",
+            None,
+        )
+        .unwrap();
+        assert!(out.contains("archived"), "{out}");
+        assert!(
+            out.chars().count() <= max,
+            "cap includes marker: {}/{}",
+            out.chars().count(),
+            max
+        );
+        assert!(out.chars().count() < blob.len(), "capped");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[rstest]
+    #[case(500)]
+    #[case(200)]
+    fn cap_includes_marker_via_read_fs_vfs(#[case] max_chars: u32) {
+        let (mut c, dir) = crate::testutil::config("cap-marker-vfs");
+        c.plugins.read.allow_paths = vec![PathBuf::from("ws")];
+        c.plugins.read.max_chars = max_chars;
+        let cx = crate::plugin::Runtime::open(c, "cap-marker-vfs").unwrap();
+        let blob = "abcdefghij".repeat(200);
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("ws/cap.txt", blob.as_bytes());
+        let expected = format!("1:{blob}");
+        let out = read_with(
+            &Ctx::new(&cx),
+            &vfs,
+            Path::new("ws"),
+            "cap.txt",
+            "full",
+            None,
+        )
+        .unwrap();
+        let max = max_chars as usize;
+        assert!(
+            out.chars().count() <= max,
+            "output {} chars exceeds max {}",
+            out.chars().count(),
+            max
+        );
+        let id = archive_id(&out);
+        let archived = String::from_utf8(cx.store.get_archive(id, None).unwrap().unwrap()).unwrap();
+        assert_eq!(archived, expected);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.5: symlink escape via `resolve_with` + Vfs (disk twin kept).
+    #[test]
+    fn symlink_escape_via_read_fs_vfs() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("/outside/secret", b"secret\n");
+        vfs.symlink("ws/escape", "/outside/secret");
+        let err = resolve_with(&vfs, Path::new("ws"), Path::new("escape"), &[])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("outside cwd"), "{err}");
     }
 
     #[test]
