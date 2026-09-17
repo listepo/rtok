@@ -313,7 +313,7 @@ deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP s
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
-checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
+checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
 
 [plugins.memory.embed]

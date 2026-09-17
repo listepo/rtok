@@ -11,6 +11,10 @@ pub struct Checkpoint {
     pub prompts: Vec<String>,
     pub paths: Vec<String>,
     pub errors: Vec<String>,
+    /// Skills the host injected before compaction, `(name, body bytes)` per invocation
+    /// (plan T62.2): the body is gone after compaction and the model must know what it
+    /// had, not re-invoke everything.
+    pub skills: Vec<(String, u64)>,
 }
 
 impl Checkpoint {
@@ -20,6 +24,16 @@ impl Checkpoint {
             s.push_str("- ");
             s.push_str(p);
             s.push('\n');
+        }
+        if !self.skills.is_empty() {
+            let list: Vec<String> = self
+                .skills
+                .iter()
+                .map(|(n, b)| format!("{n} ({:.1} KB)", *b as f64 / 1024.0))
+                .collect();
+            s.push_str("skills loaded before compaction: ");
+            s.push_str(&list.join(", "));
+            s.push_str(" — re-invoke only what the next step needs\n");
         }
         for p in &self.paths {
             s.push_str("path ");
@@ -41,6 +55,7 @@ pub fn extract(jsonl: &str) -> Checkpoint {
     let mut prompts = Vec::new();
     let mut paths = BTreeSet::new();
     let mut errors = VecDeque::new();
+    let mut skills = Vec::new();
     for line in jsonl.lines() {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             continue;
@@ -55,7 +70,9 @@ pub fn extract(jsonl: &str) -> Checkpoint {
                 errors.push_back(s.chars().take(200).collect());
             }
         });
-        if let Some(p) = user_prompt(&v) {
+        if let Some(s) = skill_body(&v) {
+            skills.push(s);
+        } else if let Some(p) = user_prompt(&v) {
             prompts.push(p);
         }
     }
@@ -66,13 +83,46 @@ pub fn extract(jsonl: &str) -> Checkpoint {
         prompts,
         paths: paths.into_iter().collect(),
         errors: errors.into(),
+        skills,
     }
+}
+
+/// A skill body the host injected: a `user` record flagged `isMeta` with a
+/// `sourceToolUseID` whose text opens with `Base directory for this skill: <dir>`
+/// (Claude Code, checked 2026-09-17). The name is the directory's last component so a
+/// plugin skill and a user skill resolve the same way; the size is the injected text.
+fn skill_body(v: &Value) -> Option<(String, u64)> {
+    if v.get("type").and_then(Value::as_str) != Some("user")
+        || v.get("isMeta").and_then(Value::as_bool) != Some(true)
+        || v.get("sourceToolUseID").is_none()
+    {
+        return None;
+    }
+    let text = user_text(v)?;
+    let dir = text
+        .lines()
+        .next()?
+        .strip_prefix("Base directory for this skill: ")?
+        .trim_end_matches(['/', '\\']);
+    let name = dir.rsplit(['/', '\\']).next().filter(|n| !n.is_empty())?;
+    Some((name.to_string(), text.len() as u64))
 }
 
 fn user_prompt(v: &Value) -> Option<String> {
     if v.get("type").and_then(Value::as_str) != Some("user") {
         return None;
     }
+    let raw = user_text(v)?;
+    let t = raw.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.chars().take(300).collect())
+    }
+}
+
+/// Text blocks of a user record joined by newlines; `None` when there are none.
+fn user_text(v: &Value) -> Option<String> {
     let c = v.pointer("/message/content")?;
     let raw = match c {
         Value::String(s) => s.clone(),
@@ -88,12 +138,7 @@ fn user_prompt(v: &Value) -> Option<String> {
             .join("\n"),
         _ => return None,
     };
-    let t = raw.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.chars().take(300).collect())
-    }
+    Some(raw)
 }
 
 fn walk(v: &Value, paths: &mut BTreeSet<String>, text: &mut impl FnMut(&str)) {
@@ -198,6 +243,35 @@ mod tests {
         // Another session compacting against the same store gets nothing of t25's.
         let other = restore("t25-other", &mut out);
         assert!(!other.contains("src/a.rs"), "{other}");
+    }
+
+    /// The injected body is a skill, never a prompt: it lands on the skills line with
+    /// its size, and the prompt list keeps only what the human typed.
+    #[test]
+    fn injected_skill_bodies_are_listed_not_quoted() {
+        let body = "Base directory for this skill: /home/u/.claude/skills/slint\n\n# Slint\n"
+            .to_string()
+            + &"x".repeat(5000);
+        let lines = [
+            r#"{"type":"user","message":{"content":"make it blue"}}"#.to_string(),
+            serde_json::json!({"type":"user","isMeta":true,"sourceToolUseID":"toolu_1","message":{"content":[{"type":"text","text":body}]}}).to_string(),
+            serde_json::json!({"type":"user","isMeta":true,"sourceToolUseID":"toolu_2","message":{"content":[{"type":"text","text":"Base directory for this skill: C:\\u\\.claude\\plugins\\cache\\p\\1.0\\skills\\ponytail\n\n# P"}]}}).to_string(),
+            // `isMeta` without a source tool is a plain meta prompt, not a skill.
+            r#"{"type":"user","isMeta":true,"message":{"content":"Base directory for this skill: /x/y"}}"#.to_string(),
+        ]
+        .join("\n");
+        let cp = extract(&lines);
+        assert_eq!(cp.skills.len(), 2, "{:?}", cp.skills);
+        assert_eq!(cp.skills[0].0, "slint");
+        assert_eq!(cp.skills[0].1, body.len() as u64);
+        assert_eq!(cp.skills[1].0, "ponytail");
+        assert_eq!(
+            cp.prompts,
+            ["make it blue", "Base directory for this skill: /x/y"]
+        );
+        let text = cp.render();
+        assert!(text.contains("skills loaded before compaction: slint (5.0 KB), ponytail (0.1 KB) — re-invoke only what the next step needs\n"), "{text}");
+        assert!(!text.contains("xxxx"), "{text}");
     }
 
     #[test]
