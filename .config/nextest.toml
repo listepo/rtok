@@ -1,0 +1,7 @@
+# Windows CI previously hung forever in `cargo nextest` after the wasm LNK stubs
+# landed (run 35225713659 job windows: nextest still in_progress after >2h;
+# earlier Windows jobs failed at link in ~5m and never reached the suite).
+# Mark slow at 60s; kill after 3 periods so a stuck wait_with_output/test is named
+# in the log instead of holding the runner until the GHA 6h ceiling.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 3 }
