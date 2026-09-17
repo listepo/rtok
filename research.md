@@ -623,3 +623,95 @@ Estimates, not measurements — each task's first step is the measurement that r
 4. **Filter families (T50.1, then T58.5).** Real but small: JetBrains measured rtk at +7.6 % to 0 % on the bill, and rtok's default rule already caps every stem; the win is the error line that the positional cut drops. Data first (TOML rules), Rust only for table and grouped outputs.
 
 Promoted: I-41 → T58.1, I-42 → T58.2, I-43 → T58.3 (measured; T58.4 dropped with the number). Not promoted: I-44 foreign-MCP compression, I-45 description compression, I-46 handoff, I-47 doctor overlap audit, I-48 sink ranking — each with the number that parks it in `ideas.md`.
+
+## 10. Skill loading: where the tokens go (2026-09-17)
+
+Question from the creator: how to spend fewer tokens and requests on loading skills (the
+`SKILL.md` folders every host now reads). Sources: host docs (10.1, Haiku web survey), and
+three dated measurements on this machine (10.2). Estimates are bytes/4 unless a row says
+otherwise.
+
+### 10.1 How each host loads a skill
+
+| Host | Where | At session start | On invocation | Knobs that shrink the listing |
+| --- | --- | --- | --- | --- |
+| Claude Code | `~/.claude/skills/<n>/SKILL.md`, `.claude/skills/`, `<plugin>/skills/` (listed as `/plugin:skill`) | name + description of every listed skill in the system prompt (docs: "~100 tokens per skill") | the whole `SKILL.md` body; `references/`, `scripts/`, `assets/` only when the model reads them (script output enters context, script code does not) | `disable-model-invocation: true` (only `/name` by a human), project-scoped skills, plugin enable/disable |
+| Cursor | `.cursor/skills/`, `.agents/skills/`, user equivalents | name + description | body on demand, resources lazily | `paths:` globs scope a skill to matching files; `disable-model-invocation` |
+| OpenCode | `.opencode/skills/`, `~/.config/opencode/skills/`, Claude paths | Agent Skills standard (not documented in detail) | body on demand | `opencode.json` permission `allow` / `deny` / `ask` per skill pattern |
+| Copilot CLI / VS Code | `.github/skills/`, `.agents/skills/`, `~/.copilot/skills/` | metadata for discovery | body when relevant or on `/name` | not documented |
+| Gemini CLI | `~/.gemini/skills/`, `.gemini/skills/`, `.agents/skills/`, extensions | metadata only | `activate_skill` tool loads the body | `/skills disable <n>` per session; precedence built-in > extension > user > workspace |
+| Codex / ChatGPT | `.agents/skills/`, plugins | not documented | not documented | not documented |
+
+Docs: https://code.claude.com/docs/en/skills, https://cursor.com/docs/skills,
+https://opencode.ai/docs/skills/, https://docs.github.com/en/copilot/concepts/agents/about-agent-skills,
+https://geminicli.com/docs/cli/skills/, https://agentskills.io (spec: description ≤ 1024
+chars, body ≤ 500 lines recommended). Every host does the same two-level load: a listing
+that rides in every request, and a body that lands once per invocation and then stays in
+the conversation for every later request of that session.
+
+### 10.2 Measured on this machine
+
+| What (date, command) | Result |
+| --- | --- |
+| Skills on disk (2026-09-17, `skillscan` over `~/.claude/{skills,plugins}`, `~/.codex/skills`, `~/.cursor/skills`, `~/.config/opencode`, `~/.copilot`, `~/.agents`) | 243 `SKILL.md`, 1,452,088 B (≈ 363 K tokens) of bodies; description median 200 chars; largest bodies 19–33 KB (`skill-creator`, `m5-onboard`, `skill-development`, `monitor-ci`, `imagegen`). Most of the 195 plugin-cache copies are marketplace clones, not installed. |
+| What Claude Code actually lists (2026-09-17, `enabled.py` over `installed_plugins.json` + `~/.claude/skills`) | 25 user skills (2,888 description chars) + 41 skills from 5 enabled plugins (9,948 chars; claude-mem 18, claude-obsidian 15, ponytail 6, engram 1, slint 1) = 66 listed skills, 12,836 description chars ≈ 3.2 K tokens of descriptions, ≈ 4–5 K tokens with names and paths, in the system prompt of every request. Body bytes of the listed set: 214,605 (plugins) + user skills — loaded only on invocation. |
+| Invocations (30 d to 2026-09-17, 890 transcripts, 81 sessions) | 26 `Skill` tool calls, 8 distinct skills (`slint` 8, `artifact-design` 7, `update-config` 4, `claude-api` 3, four × 1); 12 of 81 sessions (15 %) invoked any skill; 8 direct `Read`s of a `SKILL.md`; 115 slash-command messages (`<command-name>`), median 143 B — negligible. |
+| Where the body lands (2026-09-17, `skillinj.py` over 173 transcripts in `~/.claude/projects`) | The `Skill` tool_result is 22 B (`Launching skill: <n>`); the body arrives as the **next user message** (`Base directory for this skill: …`): 17 bodies, median 8,863 B (≈ 2.2 K tokens), max 248,175 B (`update-config`, ≈ 62 K tokens in one message). `rtok stats` counts tool results, so it sees 2.5 KB where ≈ 150 KB entered. |
+
+### 10.3 Where the cost is, ranked for this workload
+
+1. **The listing, every request.** ≈ 4–5 K tokens of the cached prefix per request. At the
+   measured 97.5 % cache-hit rate (§2, `rtok stats --since 30d`) it is mostly cache-read,
+   but every change to the listed set — a plugin auto-update (`lastUpdated` 2026-09-15 on
+   the installed plugins), a new user skill, an edited description — rewrites the whole
+   prefix once per open session. Two levers: fewer listed skills, shorter descriptions.
+2. **Bodies with a heavy tail.** Invocation is rare (26 in 30 d) but one body of 248 KB
+   costs more than the listing does in 50 requests, and it stays in the session's context
+   for every later request. A body over ~8 KB is almost always documentation pasted into
+   `SKILL.md` instead of a `references/` file the model reads only when needed.
+3. **Resources loaded through `Read`** are ordinary tool results: rtok's `read` plugin
+   (dedup, modes) and the archive live zone already apply. Skill bodies do not pass through
+   any rtok surface today: they are not tool results and not hook output.
+4. **Requests** are not the cost: a skill invocation is one tool call inside the turn, and
+   the listing adds zero requests. The only request-shaped waste is a `Read` of a
+   `SKILL.md` the host would have injected anyway (8 in 30 d).
+
+### 10.4 Techniques, with the lever each pulls
+
+| Technique | Lever | Evidence / limit |
+| --- | --- | --- |
+| Description ≤ 120 chars, one sentence: what it does and when to pick it | listing | median here is 200 chars; a 120-char cap on 66 skills is ≈ −1.3 K tokens per request, byte-stable once set |
+| `disable-model-invocation: true` for skills only a human runs (setup, onboarding, release checklists) | listing | Claude Code and Cursor document it; the skill keeps working as `/name` |
+| Project-level skills for project-only knowledge; user-level only for cross-project ones | listing | Claude Code lists project skills only inside that project; Cursor `paths:` scopes further |
+| Enable plugins per project, not globally | listing | 41 of the 66 listed skills here come from 5 plugins; a plugin unused in a repo still lists all its skills there |
+| Body ≤ 2 K tokens: hub `SKILL.md` + `references/*.md` read on demand; scripts in `scripts/` (only their output enters context) | body | the 248 KB `update-config` body is the ceiling case; agentskills.io recommends ≤ 500 lines |
+| One skill per task family, not per sub-step | listing + body | fewer lines in the listing; the body loads once instead of three times |
+| Do not restate `CLAUDE.md` in a skill | body | `CLAUDE.md` is already in every request; a skill that repeats it pays twice |
+| Pin plugin versions / update in one batch | cache | each listing change is a full prefix rewrite for every open session |
+| Measure before trimming | all | `rtok stats` cannot see skill bodies today (10.2); I-49 makes them a row |
+
+### 10.5 What rtok can add (ideas I-49–I-52)
+
+- **I-49 `stats` skill row.** Count the user message that follows a `Skill` tool_use (marker
+  `Base directory for this skill:` or the `/plugin:skill` header) as a `skill` family: calls,
+  bytes, mean, p95, per skill name. Without it the 150 KB measured above is invisible.
+- **I-50 `doctor` skill audit.** For every skill the host lists: description chars, body
+  bytes, invocations in the window; flag descriptions > 200 chars, bodies > 8 KB, skills
+  never invoked in 30 d, and skills that duplicate a rtok surface (T59.7 already does the
+  host-feature half). Output is advice, never an edit.
+- **I-51 live-zone shrink for skill bodies.** The `archive` live zone already replaces old
+  tool results with an `expand <id>` pointer; the same matcher on a skill-body user message
+  older than N turns would drop the 248 KB case to a pointer for the rest of the session.
+  Gate: measure how many requests carry a skill body (I-49 first).
+- **I-52 rtok's own skill (the creator's request).** Design constraint from this section:
+  description ≤ 120 chars, body ≤ 2 KB hub pointing at `docs/`, `disable-model-invocation`
+  off (the model must pick it), installed and removed by `rtok agents install/remove`
+  together with the host plugin, one per host that supports the format (10.1).
+
+### 10.6 Open questions
+
+- Claude Code's "~100 tokens per skill" is the docs' figure; measured descriptions here
+  average 194 chars ≈ 49 tokens, so the per-skill overhead beyond the description (name,
+  path, framing) is unknown until a captured system prompt is measured through the proxy.
+- Whether hosts other than Claude Code and Cursor honour `disable-model-invocation` in the
+  listing is not documented (10.1).

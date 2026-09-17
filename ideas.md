@@ -32,6 +32,8 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-49 | `research.md` §10.2: the `Skill` tool_result is 22 B and the body lands as the next user message (median 8.9 KB, max 248 KB) | `measure` (`stats`) | A `skill` family in `stats`: the user message after a `Skill` tool_use counted per skill name — calls, bytes, mean, p95 — so skill bodies stop being invisible. | Measured 2026-09-17; not in the plan until the creator promotes it. |
+| I-50 | `research.md` §10.4; T59.7 (host-feature overlap) | `doctor` | Skill audit: every listed skill with description chars, body bytes, invocations in the window; flags descriptions > 200 chars, bodies > 8 KB, never-invoked skills, and suggests `disable-model-invocation` / project scope. Advice only. | Needs I-49 for the invocation column. |
 | I-01 | token-optimizer dashboard; rtk `gain`; headroom `savings` | TUI (`measure`) | **promoted P15** — ratatui `rtok tui` (not HTML); per-plugin, per-day CTT dashboard. | T1.2 done; promoted 2026-09-02 → P15 T15.1–T15.9, D17. |
 
 ### `cmd`
@@ -58,6 +60,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-51 | `research.md` §10.3 (2): one 248 KB skill body stays in every later request of its session | `archive` live zone | Extend the live-zone matcher to skill-body user messages older than N turns: pointer + `expand <id>`, same path as old tool results. | Gate on I-49: how many requests carry a skill body. |
 | I-44 | atlassian-labs/mcp-compressor; headroom MCP wrapper (`research.md` §9.1) | `archive` / `proxy` | **promoted T59.4** — Wrap foreign MCP servers (`rtok mcp --wrap <server cmd>`) so their fresh results are shortened losslessly (`expand <id>`) the way `cmd`/`read` results already are; old results already shrink in the proxy live zone. | Foreign MCP results were 15 K of 2.83 M tool-result tokens on the measured workload (§2). Revisit when a `stats` row shows a foreign server above 5 %. |
 | I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | **promoted T59.5** — Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Claude Code Tool Search already defers MCP schemas and `doctor` flags `mcp_tool_search_disabled`; a rewrite changes what the model reads and the cached prefix once per session. Redundant on the main host; no measured host without deferral. |
 
@@ -71,6 +74,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-52 | Creator request 2026-09-17; `research.md` §10.5 | hosts (`agents install`) | rtok's own skill per host: description ≤ 120 chars, ≤ 2 KB hub body pointing at `docs/`, installed and removed with the host plugin by `rtok agents install/remove`. | Awaiting the creator's go on scope (one skill or one per surface). |
 | I-42 | Claude Code / Codex `PreCompact`+`PostCompact`, Cursor `preCompact`, Gemini compression hook (`research.md` §9.2) | `inject` / hosts | **promoted T58.2** — the T2.5 checkpoint (prompts, paths, errors; modes re-injected on `source = compact`) exists only on Claude Code and carries no archive ids; register the compaction events on the other hosts and add the live archive ids to the checkpoint so `expand` survives the summary everywhere. | Number of compactions per session is unmeasured; T58.2 counts them from transcripts and verifies each host's event names first. |
 | I-46 | lean-ctx `ctx_handoff` / `ctx_agent`; "sub-agent context isolation" theme (`research.md` §9.3) | hosts | **promoted T59.6** — A `handoff` MCP tool that packs the archive ids, memory notes and open files of the session into one budgeted digest for a sub-agent. | Agent tool results were 23 K of 2.83 M tokens on the measured workload (§2); nothing to save until a workload shows sub-agents above 5 %. |
 | I-47 | Claude Code auto-memory (v2.1.59+), OpenCode two-phase compaction, Cursor "Dynamic Context" (`research.md` §9.2) | `doctor` | **promoted T59.7** — `doctor` names the host-native feature that duplicates a rtok surface on this host (auto-memory vs `memory` recall injection, native tool-output pruning vs `archive`) and suggests the config switch, so a saving is not counted twice. | Advice only; needs a per-host Measurement of the overlap first (archive rows on OpenCode with pruning on vs off). |
