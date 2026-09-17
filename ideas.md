@@ -38,11 +38,13 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-39 | code read 2026-09-17 (second pass) | `cmd` | `skip_wrap` treats any `-i`/`--interactive` token as interactive, so `ffmpeg -i in.mp4 …`, `curl -i`, `ssh -i key` are never wrapped and their output is never archived/filtered — for `ffmpeg` and `curl` that is the bulk of the family's bytes. A per-stem flag table (interactive only for shells/REPLs: `python`, `node`, `psql`, `sqlite3`, `irb`, …) would recover them; pick stems from `rtok discover`-style counts over real transcripts. | Safe direction today (fail open, just uncompressed). No measured unwrapped-byte share yet; a wrong "non-interactive" verdict wraps a prompt-waiting command and hangs the tool call, so the table needs a per-stem hang Check. |
 
 ### `read`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
+| I-40 | code read 2026-09-17 (second pass) | `read` | `display_rel` canonicalizes `cwd` once per hit/row (`dunce::canonicalize` = syscalls), so a `tree` of N rows pays N canonicalizations of the same directory; `search`/`tree` should canonicalize once per call and pass the base down. | MCP path, off the ≤ 10 ms hook budget; no measured latency complaint yet. Fold into the next touch of `search.rs`/`tree.rs` rather than its own task. |
 
 ### `guard`
 

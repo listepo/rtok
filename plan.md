@@ -19,6 +19,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.8 | todo | P2 | 2 | 0% | |
 | T55.9 | todo | P3 | 2 | 0% | |
 | T55.10 | todo | P3 | 1 | 0% | |
+| T55.11 | todo | P2 | 3 | 0% | |
+| T55.12 | todo | P2 | 2 | 0% | |
+| T55.13 | todo | P3 | 1 | 0% | |
+| T55.14 | todo | P3 | 1 | 0% | |
+| T55.15 | todo | P3 | 2 | 0% | |
+| T55.16 | todo | P3 | 1 | 0% | |
 | T56.1 | done | P2 | 2 | 100% | |
 | T56.2 | in progress | P2 | 3 | 95% | |
 | T56.3 | in progress | P2 | 3 | 85% | |
@@ -108,6 +114,36 @@ Done when the key keeps the effective `cd` target (normalized spacing, quotes ha
 
 From review 2026-09-17 (code read, no fix). The "basename, split on `/` and `\`, drop `.exe` case-insensitively" helper exists three times: `plugins::cmd::formatters::cmd_stem`, `measure::stats::bash_family` (inline), `agents::is_rtok_bin` (inline). `bash_family` cannot call the `cmd` one because `measure` builds without the `cmd` feature (`just build-min`).
 Done when one `pub(crate) fn cmd_stem` lives in a feature-free module (e.g. `src/util.rs` or `src/agents/mod.rs`), the other two call it, behavior is unchanged, and `cmd_stem_strips_windows_path_and_exe` plus the `bash_family_*` and `is_rtok_bin` tests still pass under `just check` and `just build-min`.
+
+### T55.11. `expand` never freezes the owning session's pointer
+
+From review 2026-09-17, second pass (reproduced). `store::mark_expanded` (T45.3) updates `archive_decisions … WHERE session = ? AND archive_id = ?`, but every `expand` caller runs under a session that owns no decisions: CLI `rtok expand <id>` opens `Runtime::open(cfg, "expand")` (`src/expand.rs:122`) and MCP `expand` opens `mcp-<pid>` (`src/mcp.rs:110`), while the decisions belong to the proxy session (`metadata.user_id` / `x-rtok-session` / body sha). So `mark_expanded` always touches 0 rows: the pointer is rewritten again on every later request (the doc claim in `src/expand.rs:8-11` — "the owning plugin sends the original from the next request on" — is false end-to-end), `live_zone_pointer` never matches so every expand Measurement is attributed to `archive` (never `toon`), and `archive_decision_counts`'s expanded count stays 0 — the expand-rate honesty metric reads 0 % forever. Repro (scratch test, run and deleted 2026-09-17): put a decision under session `proxy-sess`, call `expand::fetch` through a `Runtime` with session `expand`, then `archive_decision("proxy-sess", …).expanded` is still `false`.
+Done when expanding an id freezes the decisions that actually point at it — either `mark_expanded` drops the session filter (one `expand` freezes every session following that pointer; cross-session blast radius stated in the card) or expand learns the owning session — with tests `cli_expand_freezes_the_owning_sessions_pointer` (decisions rows flipped) and `expand_measurement_attributes_toon_pointers` (`live_zone_pointer` without a session), and `tests/proxy.rs` extended: after `rtok expand <id>`, the next forwarded request carries the original block, not the pointer.
+
+### T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
+
+From review 2026-09-17, second pass (code read — not reproducible on macOS). `run::wrap_quote` (`src/plugins/cmd/run.rs:18-24`) emits PowerShell `''` escaping on Windows, and `cmd/hook.rs:45` rewrites the Bash command to `rtok run -- 'echo it''s fine'`. Claude Code on Windows executes the Bash tool through Git Bash (POSIX sh), where `'echo it''s fine'` concatenates to the single argv `echo its fine`: the apostrophe is silently dropped and the command the model asked for is not the command that runs (fail-open violation, no error anywhere). T55.4 weighed PowerShell and cmd.exe but not the POSIX host.
+Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-but-wrong — the minimal fix mirrors the heredoc skip: on `cfg!(windows)`, `skip_wrap` also returns true for any command containing an apostrophe (nothing is wrapped, output stays whole; compression loss is the safe direction) — with pure tests `windows_apostrophe_commands_stay_unwrapped` and a parse-simulation `ps_quoting_does_not_round_trip_under_sh` proving the current form is lossy, plus the existing `wrap_keeps_apostrophe_host_safe` updated to the new contract.
+
+### T55.13. Copilot `Read` events use `path`, guard and read-advice match `file_path` only
+
+From review 2026-09-17, second pass (reproduced). `hooks::types::adapt_copilot` maps `view`/`read_file` to tool name `Read` but leaves the Copilot input key `path` (the fixture in `types.rs` shows `toolArgs: {"path": "a.rs"}`). `guard::cache_key` (`src/plugins/guard/mod.rs:120`) and `read::hook::pre_tool` (`src/plugins/read/hook.rs:13`) read `tool_input["file_path"]` only, so on the Copilot host the re-read deny and the large-file advice never fire; `cache::invalidate` already accepts both keys, so the codebase is inconsistent. Repro: `post_tool` + `pre_tool` with `{"path": p}` returns no deny where the `{"file_path": p}` twin denies.
+Done when one shared helper (or the two lookups) accepts `file_path` **or** `path` in `guard::cache_key` and `read::hook::pre_tool`, with tests `copilot_path_key_dedups_like_file_path` (guard deny fires for `path`) and `copilot_path_key_gets_the_read_advice` (deny over `native_max_bytes`), and the existing `file_path` tests unchanged.
+
+### T55.14. Semantic-cache key drops tool_result content
+
+From review 2026-09-17, second pass (reproduced). `semantic_cache::messages_text`/`content_text` (`src/proxy/semantic_cache.rs:318-347`) keep only `text` fields, so a `tool_result` block contributes nothing to `CachePrompt` — neither to the direct hash nor to `scope_hash`. Two requests that differ only in tool-result text hash identically: repro shows `canonical_hash` byte-equal for `content: "tests passed: 200 ok"` vs `content: "tests FAILED: 1 broken"`, both `eligible` under default config (one user message, no tools, not streaming). Under today's defaults (`max_messages = 1`, direct tier) the collision needs a same-shape retry with a changed tool result; the moment an operator relaxes `max_messages` (the config comment itself cites bifrost's 3), any two agent runs sharing a prompt but not tool outputs serve each other's cached answer. I-23's "a hit can be a wrong answer" does not cover a key that ignores the request's own data.
+Done when `content_text` folds tool_result block text into the prompt (tool_use ids + result text; images contribute their sha256), with tests `tool_result_text_joins_the_cache_key` (the two bodies above hash differently), `tool_use_ids_join_the_cache_key`, and the existing `only_near_identical_prompts_clear_the_threshold` family unchanged.
+
+### T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
+
+From review 2026-09-17, second pass (reproduced, flag off by default). `Anthropic::live_blobs` (`src/proxy/anthropic.rs:96-105`) yields `source.data` of `image`/`document` blocks and `OpenAiChat::live_blobs` yields `image_url.url` (`src/proxy/openai_chat.rs:65-70`); `archive::rewrite_blob` then overwrites that field with pointer text. Repro: after `rewrite_blobs`, `source.data` reads `[archived 7da78e9924c6: 1 lines · 3200 tokens · expand(7da…)]` — not base64, so the moment `[plugins.archive] live_blobs = true` is switched on, every request carrying an old image is rejected by the API (400), which is not fail-open. Text blocks carrying `data:` URIs are the case T51.1 actually wants.
+Done when binary-bearing fields are never rewritten in place: `live_blobs` yields text blocks (and `data:` URIs inside text) only, or the rewrite replaces the whole block with a `text` pointer block; tests `image_source_data_is_never_rewritten` and `openai_image_url_is_never_rewritten` assert the fields stay byte-identical through `rewrite_blobs`, and the existing `live_blobs_*` suite still passes.
+
+### T55.16. Guard deny loads the whole archive on the PreToolUse hot path
+
+From review 2026-09-17, second pass (code read). `guard::pre_tool` (`src/plugins/guard/mod.rs:45-50`) calls `cx.get_archive(&id)` and estimates tokens over the full body just to fill the denial Measurement — on the ≤ 10 ms hook path, for an archive that can be megabytes (`cmd` archives raw stdout). The `archive` row already stores `bytes`; retrievability needs an existence check, not the body.
+Done when the deny path touches only metadata (row `bytes` + file existence; the estimate derived from size, or the Measurement reduced to what a size-based estimate supports), with the existing guard tests green and a new `deny_does_not_read_the_archive_body` (poison/absent body file still denies or fails open without reading megabytes — assert via a huge archive and the latency harness or by construction).
 
 ### T56.1. Test VFS helper and convention
 
@@ -264,6 +300,17 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 - Guard false denies — T55.8 (P2), T55.9; flag-aware read-only classes promoted from I-38 as T57.1.
 - Test VFS migration — D29 / T56.x (`Vfs` helper in #49).
 - T48.3 still todo: Cursor plugin mcp.json still bare `rtok mcp`.
+
+### Second pass (2026-09-17, later the same day)
+
+Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/cache/hook/search), archive, proxy (mod/wire/anthropic/openai_chat/semantic_cache), expand, store (archive/decisions/read_cache paths), mcp session handling. Four findings reproduced with a scratch integration test (written, run, deleted — `cargo nextest run --test zz_review_repro` → 4 failed exactly as predicted); two filed from code read. No code fixes in this pass — findings tracked as T55.11–T55.16, propositions as I-39/I-40.
+
+- **T55.11 (P2)** — `expand` never freezes the owning session's pointer: every expand caller runs under session `expand` / `mcp-<pid>`, decisions belong to the proxy session; expand rate stays 0, toon attribution dead. Reproduced.
+- **T55.12 (P2)** — Windows `wrap_quote` `''` quoting is wrong under Git Bash (Claude Code's Windows shell): apostrophes silently dropped from the rewritten command. Code read.
+- **T55.13 (P3)** — Copilot `Read` inputs use `path`; `guard::cache_key` and `read::hook` match `file_path` only → dedup and advice never fire on that host. Reproduced.
+- **T55.14 (P3)** — semantic-cache key ignores tool_result text; two requests differing only in tool results hash identically and are both eligible under defaults. Reproduced.
+- **T55.15 (P3)** — `live_blobs` overwrites image/document `source.data` / `image_url.url` with pointer text → invalid request when the flag is on. Reproduced.
+- **T55.16 (P3)** — guard deny reads the full archived body (and estimates over it) on the ≤ 10 ms PreToolUse path. Code read.
 
 ### Out of scope this pass
 
