@@ -804,8 +804,8 @@ forbids answering before searching the context. Library only: no CLI, no MCP, no
 | RLM feature | rtok today | Gap | Task |
 | --- | --- | --- | --- |
 | Context outside the prompt, a pointer with its size in the prompt | `cmd` trailer `[rtok <id> · N lines]`, `archive` live-zone pointer with head/tail and est. tokens, `read` cap | same shape | — |
-| `re.search` over the context | `expand --grep` is a substring match that prints bare lines | a hit has no position, so nothing can follow but a full expand | T66.1 |
-| Slice around a hit (`context[i-500:i+500]`) | `expand --lines a-b` | with T66.1 it takes two calls; every call is a turn that re-reads the prompt | T66.2 |
+| `re.search` over the context | `expand --grep` is a substring match that prints bare lines | a hit has no position, so nothing can follow but a full expand | T67.1 |
+| Slice around a hit (`context[i-500:i+500]`) | `expand --lines a-b` | with T67.1 it takes two calls; every call is a turn that re-reads the prompt | T67.2 |
 | Child model on a slice (`rlm_query`) | the host's Agent tool plus `expand <id>`; `handoff` (T59.6) parked at 23 K of 2.83 M | nothing on rtok's side — rtok is not the agent loop; RLM's accuracy-up / tokens-down result is the reason to re-measure the sub-agent share when T59.6 reopens | — |
 | `RunBudget` hard/soft caps on calls, tokens, cost, time | none; hosts auto-compact; `stats --price`, `report` | not a saving lever for a tool outside the loop; parked as I-55 | — |
 | "Search before you answer" system prompt | `inject` modes and T53.1 nudges; the T62.1 skill digest tells the model to `expand --grep <heading>` | none | — |

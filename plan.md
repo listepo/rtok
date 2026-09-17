@@ -59,8 +59,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T65.2 | todo | P3 | 3 | 0% | |
 | T65.3 | todo | P3 | 1 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
-| T66.1 | in progress | P2 | 2 | 0% | Claude Code / Fable 5.1 |
-| T66.2 | todo | P3 | 2 | 0% | |
+| T66.1 | in progress | P3 | 2 | 0% | Claude Code / Fable 5.1 |
+| T66.2 | in progress | P3 | 1 | 0% | Claude Code / Fable 5.1 |
+| T67.1 | in progress | P2 | 2 | 0% | Claude Code / Fable 5.1 |
+| T67.2 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -371,15 +373,27 @@ Done when a rule may set `collapse_columns = true` (on in `Rule::default()` if t
 From `research.md` §11. sqz's safe mode passes stack traces and secrets through whole. rtok keeps single lines matching `BUILTIN_KEEP` (`error`, `panic`, `traceback`) but the head/tail cut in `rules::apply` drops the frames under them, which is the part the model needs; secrets are deliberately not redacted (`ten_families_and_aws_key_unredacted`) and stay so.
 Done when `rules::apply` detects a trace block — Python `Traceback (most recent call last):` to the next non-indented line, Rust `thread '…' panicked at` plus a following `stack backtrace:` block, JS `Error:` with `    at ` frames, Go `goroutine N [` frames, Java `Exception in thread` with `\tat` frames — and keeps the whole block in the output regardless of `head`/`tail`, only the block's own length counting against `max_lines`; a fixture per language shows the frames survive a 40-line cap; the trailer still names the archive id.
 
-### T66.1. `expand --grep` is a regex with numbered hits
+### T66.1. `mem_save` updates a note in place: project + kind + title is the topic key
+
+From the engram gap review (`research.md` §12, 2026-09-18). engram's `topic_key` upserts the observation for the same `project + scope + topic_key` and bumps a revision counter, so an evolving decision stays one row; rtok's `mem_save` always inserts, so re-saving "auth model" after a change leaves two rows with the same title, and SessionStart recall (5 titles) shows the stale one beside the new one. Zero-LLM, no schema change: the title already is the stable key.
+Done when `mem_save` with an existing `(project, kind, title)` updates that row's body and `ts` instead of inserting (FTS triggers and the embedding upsert already key by id), returns `{"id", "updated": true}`, an identical re-save is a no-op update, checkpoints keep using `insert_note` (kind `checkpoint:<session>` is per session and `latest_note` orders by id), the tool description says so in one clause, and a unit test saves the same title twice and asserts one row, the new body, and the same id on `mem_search`.
+Execution plan: `Store::upsert_note` (select id by project/kind/title, `UPDATE` or `INSERT`) in `src/store/mod.rs`; `plugins::memory::mem_save` returns `(id, updated)`; `mcp.rs` reports it; README/AGENTS lines. Verify: fmt, clippy `-D warnings`, `nextest -p rtok memory`, e2e `memory_save_then_search`.
+
+### T66.2. `rtok memory export`: the JSONL that `memory import` reads
+
+From the engram gap review (`research.md` §12). engram's Git Sync exports memories as portable chunks a second machine imports; rtok has `memory import <file.jsonl>` (T6.3) and no way to produce that file from its own store, so notes cannot move between machines or be backed up outside `rtok.db`.
+Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,project}` per line for every note except `checkpoint:*` rows (session-local), in id order, and an export piped into `import` on a fresh store inserts every row and a second pass skips them all (round-trip test on three notes plus one checkpoint); the CLI table in `README.md` and the plugin README name it.
+Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
+
+### T67.1. `expand --grep` is a regex with numbered hits
 
 From I-53 (`research.md` §12, recursive-llm). The RLM loop is search → slice: the model regex-searches the externalised context and pulls only the span around a hit. `expand --grep` today is a substring match that prints bare lines, so a hit has no position and `--lines a-b` cannot follow; the model's only way to see the context around a match is a full expand, which is the expand-rate cost `report` flags.
 Done when `grep` (CLI `--grep`, MCP `expand.grep`) compiles as a regex through the `regex` crate `search` already uses (a pattern that does not compile is matched literally, never an error the model has to retry), every hit prints as `N:line` with its 1-based line number in the archived payload (absolute inside a `--lines` range, the format of `read` mode `lines`), output without `grep` is byte-identical to today, `slice_lines` stays the one range helper shared with `read`; unit test on a four-line fixture (regex hit, literal fallback, numbering inside a range, no-grep unchanged); tool description still ≤ `mcp.max_description_tokens`; README and the `docs/config.md` row updated.
 Execution plan (Claude Code / Fable 5.1): `src/expand.rs` (`filter_lines` → `Vec<String>`, generic `slice_lines` / `cap_lines`, one test), `src/mcp.rs` description, `src/cli.rs` flag doc, README, `docs/config.md`. Verify: fmt, clippy `-D warnings`, `nextest -p rtok expand mcp`.
 
-### T66.2. `expand --context N` around grep hits
+### T67.2. `expand --context N` around grep hits
 
-From I-54 (`research.md` §12). After T66.1 the model needs two calls to see the lines around a hit (grep, then `--lines`); in rtok's metric every extra call is a turn that re-reads the whole prompt, so one call that returns hit ± N lines is cheaper than two smaller ones.
+From I-54 (`research.md` §12). After T67.1 the model needs two calls to see the lines around a hit (grep, then `--lines`); in rtok's metric every extra call is a turn that re-reads the whole prompt, so one call that returns hit ± N lines is cheaper than two smaller ones.
 Done when `expand` takes `context` (CLI `--context N`, MCP `expand.context`, default 0 = today's output) and, with `grep`, prints each hit with N numbered lines before and after it, overlapping windows merged, windows separated by `--`, still under `expand.max_lines`; without `grep` the flag is ignored; per call like `--grep` (no config key; the `config_coverage` allow-list and the `docs/config.md` row name it); a test with two hits whose windows overlap and one at the file edge; the README example gains the one-call form.
 
 ## Reference
