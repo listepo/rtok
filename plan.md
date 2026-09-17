@@ -24,6 +24,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T56.3 | in progress | P2 | 3 | 85% | |
 | T56.4 | done | P3 | 2 | 100% | |
 | T56.5 | in progress | P2 | 2 | 80% | |
+| T57.1 | todo | P3 | 3 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -136,6 +137,18 @@ Post-T56.4 leftover: drive full `read()` resolve/content (line numbering, caps, 
 **In progress** — `plugins::read::fs::{ReadFs, HostFs}` + `read_with` / `resolve_with`; production `read`/`resolve` use `HostFs`. Vfs gains optional symlinks. Disk tests kept; Vfs twins for three-lines / range / caps / symlink. `HostFs: WalkFs` stub + smoke test (cfg test). **Follow-up (not this PR):** swap production `search`/`tree` from `ignore::WalkBuilder` to `WalkFs`+`HostFs` only if gitignore parity is measured and the swap stays small — do not rewrite for its own sake.
 
 
+### T57.1. Flag-aware `guard` read-only classes
+
+From I-38 (promoted 2026-09-17). `guard::read_only` decides which Bash calls get a dedup key from a fixed stem list (`ls cat head tail grep rg find tree wc` plus `git status|log|diff|show|branch`). It ignores flags, redirections and pipes, so it errs both ways:
+- **Writers keyed as read-only** (correctness): `find . -name x -delete`, `cat a > b`, `grep x > out`, `ls | xargs rm`, `tail -f log` are keyed, so they never reach the "mutating Bash clears every `bash` key" arm; a following repeat of `ls` or `cat b` is denied with a stale archive (fail-open violation, same family as T55.8).
+- **Repeats never keyed** (missed savings): `sed -n 1,40p f`, `jq . f`, `awk '{print $1}' f`, `git rev-parse HEAD`, `cargo metadata`, `wc -l` under a pipe.
+Done when:
+1. Evidence first: stem and flag counts over real transcripts (`[stats] transcripts_dir`, the `measure::stats::collect` path `doctor` already uses) for Bash calls that repeat inside `window_turns`, recorded in `research.md` with the date and command; stems are added or removed only with a count behind them.
+2. `read_only` becomes flag-aware: a command is keyed only if its first stem is read-only **and** it has no writer marker — `>` / `>>` redirection, `| tee`, a pipe into a non-read-only stem, `find … -delete` / `-exec`, `sed -i` / `--in-place`, `tail -f`. Any command with a writer marker takes the mutating path and clears the `bash` keys. New read-only stems come from step 1 (expected: `sed` without `-i`, `jq`, `awk`, `git rev-parse`, `cargo metadata`). Parsing stays first-word + marker scan; no shell grammar (`cmd/AGENTS.md`).
+3. Unit tests in `src/plugins/guard/mod.rs`: `sed -n` keyed and `sed -i` mutating; `find -delete` mutating; `cat a > b` mutating; `tail -f` never keyed; `cat a | grep b` keyed; `ls | xargs rm` mutating; and the false-deny Check: `ls` → `find . -delete` → `ls` is allowed.
+4. `guard` deny Measurements (`kind = guard`) on the hook e2e fixture before and after, so the change in deny count is a measured row, not a claim. Off-by-default is not needed: the change only removes wrong denies and adds keyed repeats that already carry a retrievable archive.
+Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the tests do not pin two behaviors at once.
+
 ## Reference
 
 Historical phase notes (P0–P39) live in `done.md`. Companion evidence: `research.md`, `architecture.md`. Per-plugin plan: `roadmap.md`. Unapproved propositions: `ideas.md`.
@@ -239,14 +252,16 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 
 ### Nits
 
-1. **T55.7 — `strip_prefix_cd` and quoted spaced paths** (still open).
+1. ~~**T55.7**~~ — done (`skip_word`; quoted `cd` paths bucket by family).
 2. **`expand::parse_range` when start > line count** — empty slice quietly; optional clamp.
 3. **`guard::strip_wrap`** — updated in #49 for PowerShell `''`.
+4. **T55.8 / T55.9 / T55.10** — filed from the T55.7 code read: guard `read:` keys survive a mutating Bash, guard Bash key cwd-blind, three copies of `cmd_stem`.
 
 ### Residual still open (called out before)
 
 - T55.1–T55.6 closed by #49.
-- PATH / single-quote parsers — rtok: T55.7; larger residual in ketch.
+- PATH / single-quote parsers — rtok: T55.7 closed; larger residual in ketch.
+- Guard false denies — T55.8 (P2), T55.9; flag-aware read-only classes promoted from I-38 as T57.1.
 - Test VFS migration — D29 / T56.x (`Vfs` helper in #49).
 - T48.3 still todo: Cursor plugin mcp.json still bare `rtok mcp`.
 

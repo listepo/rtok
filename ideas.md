@@ -48,7 +48,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-38 | token-optimizer refetch_guard; code read 2026-09-17 | `guard` | `read_only` is a fixed stem list (`ls cat head tail grep rg find tree wc` + five `git` verbs). Flag-aware classes would key more repeats (`sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`) and stop keying writers that share a stem (`find -delete`, `tail -f`, `cat > f`). Pick the stems from `rtok discover`-style counts over real transcripts. | No measured deny-rate gap yet; T55.8/T55.9 correctness first. A wrong "read-only" verdict denies a call whose output changed (fail-open violation), so this needs a false-deny Check. |
+| I-38 | token-optimizer refetch_guard; code read 2026-09-17 | `guard` | **promoted T57.1** — `read_only` is a fixed stem list (`ls cat head tail grep rg find tree wc` + five `git` verbs). Flag-aware classes would key more repeats (`sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`) and stop keying writers that share a stem (`find -delete`, `tail -f`, `cat > f`). Pick the stems from `rtok discover`-style counts over real transcripts. | No measured deny-rate gap yet; T55.8/T55.9 correctness first. A wrong "read-only" verdict denies a call whose output changed (fail-open violation), so this needs a false-deny Check. |
 
 ### `archive` / `proxy`
 
@@ -124,6 +124,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-32 | T53.3 | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook | 2026-09-17 |
 | I-35 | T48.1 | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/in | 2026-09-17 |
 | I-36 | T48.2 | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM cont | 2026-09-17 |
+| I-38 | T57.1 | Flag-aware `guard` read-only classes: writer markers (`>`, `-delete`, `sed -i`, `tail -f`, pipe into a writer) take the mutating path; new read-only stems only with transcript counts. | 2026-09-17 |
 | I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
 
 | ID | Became | Date |
