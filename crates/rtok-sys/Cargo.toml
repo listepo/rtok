@@ -7,7 +7,7 @@ description = "OS shims that need unsafe on Windows (process + flock)"
 license = "MIT"
 
 [dependencies]
-fs4 = "0.13"
+fs4 = "1.1"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process", "fs"] }
