@@ -66,6 +66,35 @@ impl Vfs {
     pub fn paths(&self) -> impl Iterator<Item = String> + '_ {
         self.files.keys().cloned()
     }
+
+    pub fn exists(&self, path: &str) -> bool {
+        self.files.contains_key(path)
+    }
+
+    /// UTF-8 body, or `None` if missing / not UTF-8.
+    pub fn read_str(&self, path: &str) -> Option<&str> {
+        self.read(path).and_then(|b| std::str::from_utf8(b).ok())
+    }
+
+    /// Paths under `prefix/` (or exact `prefix`), sorted — for drop-in / tree fixtures.
+    pub fn paths_under(&self, prefix: &str) -> Vec<String> {
+        let mut out: Vec<String> = if prefix.is_empty() {
+            self.files.keys().cloned().collect()
+        } else {
+            let with_sep = if prefix.ends_with('/') {
+                prefix.to_string()
+            } else {
+                format!("{prefix}/")
+            };
+            self.files
+                .keys()
+                .filter(|p| *p == prefix || p.starts_with(&with_sep))
+                .cloned()
+                .collect()
+        };
+        out.sort();
+        out
+    }
 }
 
 #[cfg(test)]
@@ -84,7 +113,15 @@ mod tests {
         let mut v = super::Vfs::new();
         v.write("a.txt", b"hi");
         assert_eq!(v.read("a.txt"), Some(b"hi".as_slice()));
+        assert_eq!(v.read_str("a.txt"), Some("hi"));
         assert_eq!(v.len("a.txt"), Some(2));
+        assert!(v.exists("a.txt"));
         assert_eq!(v.paths().collect::<Vec<_>>(), vec!["a.txt".to_string()]);
+        v.write("rules.d/b.toml", b"x");
+        v.write("rules.d/a.toml", b"y");
+        assert_eq!(
+            v.paths_under("rules.d"),
+            vec!["rules.d/a.toml".to_string(), "rules.d/b.toml".to_string()]
+        );
     }
 }
