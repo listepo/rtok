@@ -14,7 +14,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.2 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T50.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
 | T51.1 | todo | P3 | 5 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
@@ -69,17 +68,6 @@ Execution plan (G3): 1) config: `[plugins.cmd] rules_dir` (default `~/.rtok/rule
 
 From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
 Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
-
-### T50.4. Optional deny of native Grep and Glob
-
-From I-08. lean-ctx denies the host's Grep/Glob to force its own tools; rtok's MCP `search`/`tree` are cheaper but the model still reaches for the native tools.
-Done when `rtok doctor` reports the share of Read-class tokens spent in Grep/Glob, and an opt-in `guard` rule (off by default) denies them in PreToolUse with a pointer to `search`/`tree`, fails open when the MCP server is not installed, and is covered by hook tests. Default stays off unless the doctor numbers justify it.
-
-Execution plan (T50.4, OpenCode / Muse Spark 1.3):
-1. `src/config/mod.rs` + `config/default.toml` + `docs/config.md`: `[plugins.guard] deny_grep_glob = false` (opt-in; no CLI flag).
-2. `src/doctor.rs`: `read-share` line from `stats::collect` over `cfg.stats.transcripts_dir` — (grep+glob est_tokens)/(read+grep+glob); `no data` when empty/missing (fail open). Unit test with synthetic JSONL transcripts + no-data test.
-3. `src/plugins/guard/mod.rs`: PreToolUse denies `Grep`→`search`, `Glob`→`tree` only when the knob is on AND the read plugin is enabled (fail open = search/tree unavailable); records `guard/native_deny` zero-delta Measurement (countable, claims no saving). Unit tests (default off, on-denies with pointer, read-disabled allows) + hook e2e via `tests/fixtures/hooks/pre_tool_grep.json` + binary stdin with the knob on/off.
-4. Verify in isolated worktree: fmt, clippy `-D warnings`, nextest (guard, doctor, commands_e2e, config_coverage), single-feature build.
 
 ### T51.1. Compress JSON and code inside the live zone
 

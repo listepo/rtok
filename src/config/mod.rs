@@ -567,6 +567,10 @@ section! {
     Guard {
         enabled: bool = true,
         window_turns: u32 = 8,
+        /// Opt-in (T50.4): deny native `Grep`/`Glob` in PreToolUse and point at
+        /// MCP `search`/`tree`. Off by default; also stays silent while the
+        /// `read` plugin is disabled (no `search`/`tree` to point at).
+        deny_grep_glob: bool = false,
     }
 }
 

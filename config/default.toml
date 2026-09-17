@@ -223,6 +223,7 @@ modes         = []                    # same as [setup].modes; setup writes here
 [plugins.guard]
 enabled      = true
 window_turns = 8
+deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP search/tree (T50.4)
 
 [plugins.memory]
 enabled        = true

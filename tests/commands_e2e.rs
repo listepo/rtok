@@ -59,6 +59,60 @@ fn hook_pre_tool_bash_exits_0_with_json() {
     let _ = fs::remove_dir_all(&home);
 }
 
+/// T50.4: native Grep/Glob pass through by default; with
+/// `RTOK_PLUGINS_GUARD_DENY_GREP_GLOB=true` the hook exits 0 with a deny
+/// naming the MCP replacement (`search` for Grep, `tree` for Glob).
+#[test]
+fn hook_grep_glob_deny_is_opt_in() {
+    for (fixture, tool, pointer) in [
+        (
+            include_bytes!("fixtures/hooks/pre_tool_grep.json").as_slice(),
+            "Grep",
+            "search",
+        ),
+        (
+            include_bytes!("fixtures/hooks/pre_tool_glob.json").as_slice(),
+            "Glob",
+            "tree",
+        ),
+    ] {
+        // Default: no deny.
+        let home = tmp("native-off");
+        let stdout = hook("PreToolUse", fixture, &home);
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_ne!(
+            v.pointer("/hookSpecificOutput/permissionDecision")
+                .and_then(|x| x.as_str()),
+            Some("deny"),
+            "{tool} must pass by default: {stdout}"
+        );
+        let _ = fs::remove_dir_all(&home);
+        // Opt-in: deny with a pointer, still exit 0 (fail open at the process).
+        let home = tmp("native-on");
+        let out = cmd(&["hook", "PreToolUse"], &home)
+            .env("RTOK_PLUGINS_GUARD_DENY_GREP_GLOB", "true")
+            .write_stdin(fixture)
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(
+            v.pointer("/hookSpecificOutput/permissionDecision")
+                .and_then(|x| x.as_str()),
+            Some("deny"),
+            "{tool} must deny when opted in: {stdout}"
+        );
+        let reason = v
+            .pointer("/hookSpecificOutput/permissionDecisionReason")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        assert!(reason.contains(pointer), "{tool}: {reason}");
+        let _ = fs::remove_dir_all(&home);
+    }
+}
+
 #[test]
 fn hook_session_start_exits_0_with_json() {
     let home = tmp("start");

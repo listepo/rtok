@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+## T50.4 — Optional deny of native Grep and Glob
+
+**T50.4 Optional deny of native Grep and Glob** · P3, 2/5 · `src/plugins/guard/mod.rs`, `src/doctor.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/commands_e2e.rs`, `tests/fixtures/hooks/pre_tool_{grep,glob}.json`, `src/hooks/types.rs`, `src/report/{ai,pdf}.rs`, `tests/trycmd/config-show.stdout`
+
+From I-08. `[plugins.guard] deny_grep_glob = false` (opt-in, no CLI flag). PreToolUse denies native `Grep`→`search` and `Glob`→`tree` with a pointer reason, only while the `read` plugin is enabled (fail open: no `search`/`tree` to point at; the knob is per-host opt-in so a host without `rtok mcp` never turns it on, and the hook path does no filesystem reads). Each deny records a zero-delta `guard/native_deny` Measurement (countable deny rate, claims no saving per D3). `rtok doctor` prints `read-share grep+glob x% of read-class tokens (read, grep, glob)` from `stats::collect` over `[stats] transcripts_dir`, or `read-share no data` on empty/missing transcripts. Default stays off: my 30 d transcripts show ~5.7 M Read tokens vs ~0 Grep/Glob, so the numbers do not justify it.
+
+Check: guard unit test (default off, on-denies with pointer, other tools untouched, zero-delta row, read-disabled allows); doctor unit tests (synthetic JSONL → 44.4%, empty dir → no data); hook e2e `hook_grep_glob_deny_is_opt_in` via binary stdin with the knob off/on; `every_fixture_round_trips_unchanged` now covers 9 fixtures.
+
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolated worktree at e2e43a8 + this task's hunks: `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean; lib 524/524; `commands_e2e` 13/13; `cli_trycmd` + `report_ai` + `report_pdf` green; `web` + `stats_model` green; binary `rtok doctor` on fixture transcripts prints 33.3% and `no data` on a missing dir; `cargo build --no-default-features --features measure` green. The one `surface_parity` failure there names HEAD's `wrap` (T51.4 landed without its EXEMPT row — fails without this task's changes).
+
+Deviation: 11 files (over the 3-file guideline) — the repo's own gates force the spread: `default_toml_is_the_defaults` (default.toml), `config_coverage` leaf rule (docs row per convention), `config-show` snapshot, fixture-count assertion (types.rs), two `Report` struct literals (ai/pdf), plus the two hook fixtures. No new dependency.
+
 ## T50.2 — User filter drop-in directory and schema
 
 **T50.2 User filter drop-in directory and schema** · P3, 2/5 · `src/plugins/cmd/rules.rs`, `src/config/mod.rs`, `src/config/validate.rs`, `src/cli.rs`, `config/default.toml`, `docs/config.md`, `docs/cmd-rules.md` (new), `site/content/docs/reference/_content.gotmpl`, `tests/cmd_rules.rs` (new), `tests/trycmd/config-show.stdout`

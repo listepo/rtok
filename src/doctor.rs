@@ -32,6 +32,9 @@ pub struct Report {
     pub mcp_tool_search_disabled: bool,
     pub bash_max_output_length: Option<String>,
     pub auto_compact_window: Option<String>,
+    /// Read-class token share from the transcripts (`None` = no data, fail open).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_share: Option<ReadShare>,
     /// The instruction audit (T7.2): `Some` only when `[doctor] instructions` ran — an audit
     /// that found nothing still prints its section header, as it always did.
     pub instructions: Option<Instructions>,
@@ -66,6 +69,17 @@ pub struct InstructionRow {
     pub tokens: u32,
     pub path: String,
     pub warn: bool,
+}
+
+/// Share of Read-class transcript tokens spent in native Grep/Glob (T50.4):
+/// `(grep + glob) / (read + grep + glob)` by estimated tokens. `None` when the
+/// transcripts hold no Read-class results — the default stays off on no data.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReadShare {
+    pub read_tokens: u64,
+    pub grep_tokens: u64,
+    pub glob_tokens: u64,
+    pub share: f64,
 }
 
 impl Report {
@@ -104,6 +118,16 @@ impl Report {
             "autoCompactWindow {}\n",
             self.auto_compact_window.as_deref().unwrap_or("(unset)")
         ));
+        match &self.read_share {
+            Some(s) => out.push_str(&format!(
+                "read-share grep+glob {:.1}% of read-class tokens (read {}, grep {}, glob {})\n",
+                s.share * 100.0,
+                s.read_tokens,
+                s.grep_tokens,
+                s.glob_tokens
+            )),
+            None => out.push_str("read-share no data\n"),
+        };
         out.push_str("agents\n");
         for a in &self.agents {
             out.push_str(&format!("  {} ({})\n", a.host, a.kind));
@@ -174,6 +198,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .as_ref()
             .and_then(|s| s.get("autoCompactWindow"))
             .map(|v| v.to_string()),
+        read_share: read_share(cfg),
         instructions: cfg
             .doctor
             .instructions
@@ -510,6 +535,28 @@ fn nonempty(s: Option<String>) -> Option<String> {
     s.filter(|v| !v.is_empty())
 }
 
+/// T50.4: `(grep + glob) / (read + grep + glob)` over transcript result bytes
+/// (`stats::collect`, same 4 chars/token). `None` on any error, on files older
+/// than `[stats] since`, or when no Read-class tool ran — doctor stays fail-open
+/// and the deny stays off on no data.
+fn read_share(cfg: &Config) -> Option<ReadShare> {
+    let since = crate::measure::stats::parse_since(&cfg.stats.since).ok()?;
+    let rep = crate::measure::stats::Replay::from_cfg(cfg);
+    let r = crate::measure::stats::collect(&cfg.stats.transcripts_dir, since, "", rep).ok()?;
+    let tok = |name: &str| r.tools.get(name).map(|row| row.est_tokens).unwrap_or(0);
+    let (read, grep, glob) = (tok("Read"), tok("Grep"), tok("Glob"));
+    let denom = read + grep + glob;
+    if denom == 0 {
+        return None;
+    }
+    Some(ReadShare {
+        read_tokens: read,
+        grep_tokens: grep,
+        glob_tokens: glob,
+        share: (grep + glob) as f64 / denom as f64,
+    })
+}
+
 /// The `ANTHROPIC_BASE_URL` a Claude Code session sees: `settings.json` `env` wins over the
 /// shell, and empty means unset. The proxy chain and the tool-search warning read it in
 /// opposite orders, so `env` `""` plus a settings URL showed a chain and no warning.
@@ -727,6 +774,55 @@ mod tests {
             .filter(|l| l.starts_with("  ") && l.contains("tokens"))
             .count();
         assert!(n >= 4, "{s}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T50.4: one session with Read (40 B), Grep (20 B) and Glob (12 B) results
+    /// reports grep+glob 8/18 = 44.4% of read-class tokens; an empty transcripts
+    /// dir reports `no data` instead of 0%.
+    #[test]
+    fn read_share_reports_grep_glob_fraction() {
+        let dir = std::env::temp_dir().join(format!("rtok-t504-doc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pair = |mid: &str, uid: &str, name: &str, rid: &str, body: &str| {
+            format!(
+                "{{\"type\":\"assistant\",\"message\":{{\"id\":\"{mid}\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"{uid}\",\"name\":\"{name}\",\"input\":{{}}}}]}}}}\n\
+                 {{\"type\":\"user\",\"message\":{{\"id\":\"{rid}\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"{uid}\",\"content\":\"{body}\"}}]}}}}\n"
+            )
+        };
+        std::fs::write(
+            dir.join("s.jsonl"),
+            pair("a1", "u-read", "Read", "r1", &"R".repeat(40))
+                + &pair("a2", "u-grep", "Grep", "r2", &"G".repeat(20))
+                + &pair("a3", "u-glob", "Glob", "r3", &"g".repeat(12)),
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg.stats.transcripts_dir = dir.clone();
+        let s = page(&cfg).unwrap().to_text();
+        assert!(
+            s.contains("read-share grep+glob 44.4% of read-class tokens (read 10, grep 5, glob 3)"),
+            "{s}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_share_without_transcripts_is_no_data() {
+        let dir = std::env::temp_dir().join(format!("rtok-t504-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg.stats.transcripts_dir = dir.clone();
+        let s = page(&cfg).unwrap().to_text();
+        assert!(s.contains("read-share no data"), "{s}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

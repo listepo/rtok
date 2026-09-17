@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn every_fixture_round_trips_unchanged() {
         let fx = fixtures();
-        assert_eq!(fx.len(), 7, "expected 7 event fixtures");
+        assert_eq!(fx.len(), 9, "expected 9 event fixtures");
         for (name, original) in fx {
             let parsed: HookInput = serde_json::from_value(original.clone()).unwrap();
             let back = serde_json::to_value(&parsed).unwrap();

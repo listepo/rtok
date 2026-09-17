@@ -26,6 +26,9 @@ impl Plugin for Guard {
     }
 
     fn pre_tool(&self, ev: &PreToolUse, cx: &Ctx) -> Option<PreToolDecision> {
+        if let Some(d) = native_redirect(ev.tool_name, cx) {
+            return Some(d);
+        }
         let key = cache_key(ev.tool_name, ev.tool_input)?;
         let (id, ts) = cx.get_read_cache(&key).ok().flatten()?;
         let id = id?;
@@ -74,6 +77,41 @@ impl Plugin for Guard {
         }
         None
     }
+}
+
+/// T50.4: opt-in deny of native `Grep`/`Glob` pointing at MCP `search`/`tree`.
+/// Fail open: off by default, and silent while the `read` plugin is disabled
+/// (no `search`/`tree` to point at). The knob is per-host opt-in, so a host
+/// without `rtok mcp` never turns it on; the hook path does no filesystem
+/// reads to check the host config, the read-plugin flag is the guard.
+fn native_redirect(tool: &str, cx: &Ctx) -> Option<PreToolDecision> {
+    let target = match tool {
+        "Grep" => "search",
+        "Glob" => "tree",
+        _ => return None,
+    };
+    if !cx
+        .plugin_config::<crate::config::Guard>("guard")
+        .deny_grep_glob
+    {
+        return None;
+    }
+    if !cx.plugin_config::<crate::config::Read>("read").enabled {
+        return None;
+    }
+    let reason = format!("native {tool} is disabled here; use rtok {target} (MCP) instead");
+    // Countable but claims no saving: the denied output was never seen (D3).
+    let _ = cx.record(&Measurement {
+        plugin: "guard",
+        kind: "native_deny",
+        before_bytes: 0,
+        after_bytes: 0,
+        est_before: 0,
+        est_after: 0,
+        ref_id: None,
+        call_id: None,
+    });
+    Some(PreToolDecision::Deny { reason })
 }
 
 fn cache_key(tool: &str, input: &Value) -> Option<String> {
@@ -318,6 +356,51 @@ mod tests {
             tool_input: &path,
         };
         assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+    }
+
+    /// T50.4: off by default, Grep points at `search` and Glob at `tree` when on,
+    /// and a disabled `read` plugin fails open (no MCP tools to point at).
+    #[test]
+    fn native_grep_glob_deny_is_opt_in_and_points_at_mcp() {
+        let g = Guard;
+        let empty = json!({});
+        let pre = |tool: &'static str| PreToolUse {
+            tool_name: tool,
+            tool_input: &empty,
+        };
+        // Default config: the knob is off, everything passes through.
+        let cx = setup();
+        assert!(g.pre_tool(&pre("Grep"), &Ctx::new(&cx)).is_none());
+        assert!(g.pre_tool(&pre("Glob"), &Ctx::new(&cx)).is_none());
+        // Knob on: Grep and Glob deny naming their MCP replacement.
+        let (mut c, _dir) = crate::testutil::config("grep-glob");
+        c.plugins.guard.deny_grep_glob = true;
+        let cx = crate::plugin::Runtime::open(c, "grep-glob").unwrap();
+        match g.pre_tool(&pre("Grep"), &Ctx::new(&cx)) {
+            Some(PreToolDecision::Deny { reason }) => {
+                assert!(reason.contains("search"), "{reason}")
+            }
+            other => panic!("{other:?}"),
+        }
+        match g.pre_tool(&pre("Glob"), &Ctx::new(&cx)) {
+            Some(PreToolDecision::Deny { reason }) => assert!(reason.contains("tree"), "{reason}"),
+            other => panic!("{other:?}"),
+        }
+        // Other tools are untouched, and the deny is counted without claiming bytes.
+        assert!(g.pre_tool(&pre("Read"), &Ctx::new(&cx)).is_none());
+        let rows = cx.store.list_measurements("guard").unwrap();
+        assert!(
+            rows.iter()
+                .any(|r| r.kind == "native_deny" && r.before_bytes == 0 && r.after_bytes == 0),
+            "{rows:?}"
+        );
+        // Read plugin disabled: no search/tree to point at, so allow (fail open).
+        let (mut c, _dir) = crate::testutil::config("grep-noread");
+        c.plugins.guard.deny_grep_glob = true;
+        c.plugins.read.enabled = false;
+        let cx = crate::plugin::Runtime::open(c, "grep-noread").unwrap();
+        assert!(g.pre_tool(&pre("Grep"), &Ctx::new(&cx)).is_none());
+        assert!(g.pre_tool(&pre("Glob"), &Ctx::new(&cx)).is_none());
     }
 
     #[test]

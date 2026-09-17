@@ -6,7 +6,6 @@
 - T50.1. More `cmd` filter families
 - T50.2. User filter drop-in directory and schema (in progress)
 - T50.3. Extra `read` modes
-- T50.4. Optional deny of native Grep and Glob
 - T51.1. Compress JSON and code inside the live zone
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
