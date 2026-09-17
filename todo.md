@@ -9,7 +9,6 @@
 - T53.4. `just otel-check` against real backends
 - T55.8. Guard `read:` keys survive a mutating Bash
 - T55.9. Guard Bash key is cwd-blind
-- T55.10. One `cmd_stem`
 - T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
 - T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 - T56.2. Migrate read/search unit tests to VFS
@@ -21,7 +20,6 @@
 - T58.2. Compaction checkpoint on every host, with archive ids
 - T58.5. `cmd` formatters for structured families
 - T59.1. Per-stem interactive table for `skip_wrap`
-- T59.2. Canonicalize `cwd` once per `search` / `tree` call
 - T59.3. Batch the cold `graph` index in one transaction per N files
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
 - T59.6. `handoff` MCP tool for sub-agents
