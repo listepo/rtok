@@ -15,7 +15,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.9 | todo | P3 | 2 | 0% | |
+| T55.9 | in progress | P3 | 2 | 0% | ZCode / GLM-5.3-Flash |
 | T55.11 | done | P2 | 3 | 100% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.13 | done | P3 | 1 | 100% | |
@@ -37,6 +37,15 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.7 | todo | P3 | 2 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
+| T60.1 | todo | P2 | 3 | 0% | |
+| T60.2 | todo | P3 | 1 | 0% | |
+| T60.3 | todo | P3 | 3 | 0% | |
+| T60.4 | todo | P3 | 4 | 0% | |
+| T60.5 | todo | P2 | 3 | 0% | |
+| T60.6 | todo | P2 | 2 | 0% | |
+| T60.7 | todo | P3 | 2 | 0% | |
+| T60.8 | todo | P3 | 1 | 0% | |
+| T60.9 | todo | P3 | 1 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -226,6 +235,51 @@ Done when `doctor` has three checks — Claude Code auto-memory on while `memory
 
 From I-48 (caveman `learn`, context-budget plugin). `stats` has per-family and per-tool rows and `report` renders the D24 rules; what is missing is "which ten paths and commands cost the most, and which rtok switch would have shortened each".
 Done when `report` gains one rule that prints the top-10 sinks by bytes over the session window (file path for Read/read, first stem for Bash/cmd, server/tool for MCP), each with the switch that applies (`read.default_mode = map`, a `[stem]` rule, `--wrap`, or "none: already shortened"), sourced from `Measurement` rows only, with a fixture test and a line on the report docs page.
+
+### T60.1. `--json` on every reading command
+
+Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
+Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
+
+### T60.2. `--help` goldens for every subcommand
+
+Survey 2026-09-17: trycmd covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands; a doc-comment edit on any other subcommand (T59.4 changed the `mcp` line) is caught only by the top-level `help` golden.
+Done when one trycmd case runs `rtok <cmd> --help` for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`), the goldens are blessed once, and `README.md`'s command table is checked against the same list by the existing README test so a command cannot be added without a row.
+
+### T60.3. Per-session drill-down on `tui` and `web`
+
+`SessionTotals` carries `project`, `api`, `started_at`, `last_activity`, `ended_at` (survey 2026-09-17, `src/web/model.rs`) and neither surface shows them; the Sessions page is a list on both, so "what did this session cost and which calls made it" needs the CLI.
+Done when Enter on a Sessions row (TUI) and a click (web) open a detail pane with those fields, the API row, and the session's calls filtered from the same snapshot; both surfaces read the same `model` accessor (D23: one model, two renderings), `tests/surface_parity.rs` asserts the detail exists on both, and a TUI `TestBackend` test plus a Slint e2e case cover the selection.
+
+### T60.4. Archive `expand` on `tui` and `web`
+
+Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
+Done when a Calls row with an archive id opens the payload in a scrollable pane — `e` on the TUI, a button on the web — through `expand::fetch` with `--lines`/`--grep` parity (a `/` filter on the TUI, a filter box on the web); the web path is one inbound WebSocket request `{"expand": id}` answered with the payload, capped by `[expand] max_lines` like the CLI; fetching a live-zone pointer freezes it exactly as the CLI does (same function, no second path); tests: TUI `TestBackend` on a fixture store, `tests/web.rs` request/response, and `surface_parity` lists the page on both.
+
+### T60.5. Plugin toggle on the web Plugins page
+
+The TUI Plugins tab toggles `plugins.<id>.enabled` through `config set`; the web page renders the same rows read-only and `src/web/mod.rs` has no inbound WebSocket message at all (survey 2026-09-17) — a D23 defect.
+Done when the web Plugins page has the same toggle, sent as one inbound WebSocket message `{"set": {"key": "plugins.<id>.enabled", "value": bool}}` handled by the same `config set` function the TUI and CLI use (keys limited to that allow-list; anything else is refused with a message frame), the next snapshot reflects it, `tests/web.rs` covers accept and refuse, and the Slint e2e test clicks the toggle.
+
+### T60.6. Error and connection states on `web` and `tui`
+
+A store that fails to open renders an empty web page, and a dropped WebSocket leaves the last frame on screen with no hint (survey 2026-09-17, `src/web/mod.rs`, `crates/rtok-webui`); the TUI shows a doctor failure string but no store error line.
+Done when the snapshot carries an `error: Option<String>` the model fills when the store or doctor fails, both surfaces render it as a banner instead of empty pages, the web client reconnects with capped backoff and shows "reconnecting" until the next frame, and `tests/web.rs` plus a TUI `TestBackend` test cover the unreadable-store case (a `Vfs`-style fixture: point `db_path` at a directory).
+
+### T60.7. WASM bundle size gate
+
+`crates/rtok-webui/pkg/rtok_webui_bg.wasm` is 10,560,601 bytes (`ls -l`, 2026-09-17), served uncompressed from `rtok web`; no release profile, `lto` or `wasm-opt` is set for the crate.
+Done when the webui release profile sets `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `just web` runs `wasm-opt -Oz` when it is on PATH (fail open to the unoptimised file otherwise, with a line), `rtok web` serves the file with `Content-Encoding` negotiation for a pre-compressed `.wasm.br`/`.wasm.gz` when present, a test asserts the served size is under a number set from the measured result of this task, and the before/after bytes go into `research.md` with the date and command.
+
+### T60.8. TUI help overlay and manual refresh
+
+Key bindings live in the footer only and differ per page (survey 2026-09-17, `src/tui/app.rs`); there is no way to refresh before the tick.
+Done when `?` toggles an overlay listing the global and per-page keys generated from the same table the key handler matches on (one source, no hand-written list), `r` refreshes the snapshot immediately, the footer names `?`, and `app.rs`/`view.rs` tests cover the overlay and the refresh.
+
+### T60.9. Web theme toggle
+
+`app.slint` has a dark-mode icon (`crates/rtok-webui/ui/app.slint:288`, survey 2026-09-17) but no toggle and no `prefers-color-scheme` read; the UI is dark-only.
+Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it, the choice persists in `localStorage`, every colour comes from one palette struct (no literals in components), and the Slint e2e test flips the theme.
 
 ## Reference
 
