@@ -46,6 +46,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.7 | todo | P3 | 2 | 0% | |
 | T60.8 | todo | P3 | 1 | 0% | |
 | T60.9 | todo | P3 | 1 | 0% | |
+| T60.10 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -285,6 +286,11 @@ Done when `?` toggles an overlay listing the global and per-page keys generated 
 
 `app.slint` has a dark-mode icon (`crates/rtok-webui/ui/app.slint:288`, survey 2026-09-17) but no toggle and no `prefers-color-scheme` read; the UI is dark-only.
 Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it, the choice persists in `localStorage`, every colour comes from one palette struct (no literals in components), and the Slint e2e test flips the theme.
+
+### T60.10. Sessions tab in the TUI is a static paragraph
+
+Checked 2026-09-17 (`src/tui/view.rs:72,366`, `src/tui/app.rs`): the Sessions page renders `render::sessions_table` as one `Paragraph` — no cursor, no scroll, no selection, no keys, no live-only filter — while Plugins and Calls have row state in `app.rs`, `↑/↓`, and a detail toggle. A store with more sessions than the terminal has lines shows only the top of the table. The `placeholder()` fallback at `view.rs:75` still exists for an unknown page although every `model::pages()` entry now has a body.
+Done when Sessions has the same row model as Calls: a `sessions` cursor in `app.rs`, `↑/↓` moving it with the table scrolling to keep it visible, the selected row marked like the Calls row, `l` toggling the live-only filter the CLI exposes as a flag (`sessions_table(rows, all, now)` already takes it), the footer naming the keys; the `placeholder()` fallback is deleted and an unknown page is a `surface_parity` failure instead; `app.rs` and `view.rs` `TestBackend` tests cover cursor, scroll on a 200-row snapshot and the filter. T60.3 builds its detail pane on this cursor.
 
 ## Reference
 

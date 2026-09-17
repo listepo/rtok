@@ -34,3 +34,4 @@
 - T60.7. WASM bundle size gate
 - T60.8. TUI help overlay and manual refresh
 - T60.9. Web theme toggle
+- T60.10. Sessions tab in the TUI is a static paragraph
