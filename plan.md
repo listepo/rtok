@@ -61,7 +61,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T65.4 | todo | P2 | 2 | 0% | |
 | T66.1 | in progress | P3 | 2 | 0% | Claude Code / Fable 5.1 |
 | T66.2 | in progress | P3 | 1 | 0% | Claude Code / Fable 5.1 |
-| T67.1 | in progress | P2 | 2 | 0% | Claude Code / Fable 5.1 |
 | T67.2 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
@@ -384,12 +383,6 @@ Execution plan: `Store::upsert_note` (select id by project/kind/title, `UPDATE` 
 From the engram gap review (`research.md` §12). engram's Git Sync exports memories as portable chunks a second machine imports; rtok has `memory import <file.jsonl>` (T6.3) and no way to produce that file from its own store, so notes cannot move between machines or be backed up outside `rtok.db`.
 Done when `rtok memory export [--project <name>]` prints one `{kind,title,body,project}` per line for every note except `checkpoint:*` rows (session-local), in id order, and an export piped into `import` on a fresh store inserts every row and a second pass skips them all (round-trip test on three notes plus one checkpoint); the CLI table in `README.md` and the plugin README name it.
 Execution plan: `Store::list_notes(project)` in `src/store/mod.rs`; `plugins/memory/export.rs` writes JSONL to a `Write`; `MemoryCmd::Export` in `cli.rs`; docs rows. Verify: fmt, clippy, `nextest -p rtok memory`.
-
-### T67.1. `expand --grep` is a regex with numbered hits
-
-From I-53 (`research.md` §12, recursive-llm). The RLM loop is search → slice: the model regex-searches the externalised context and pulls only the span around a hit. `expand --grep` today is a substring match that prints bare lines, so a hit has no position and `--lines a-b` cannot follow; the model's only way to see the context around a match is a full expand, which is the expand-rate cost `report` flags.
-Done when `grep` (CLI `--grep`, MCP `expand.grep`) compiles as a regex through the `regex` crate `search` already uses (a pattern that does not compile is matched literally, never an error the model has to retry), every hit prints as `N:line` with its 1-based line number in the archived payload (absolute inside a `--lines` range, the format of `read` mode `lines`), output without `grep` is byte-identical to today, `slice_lines` stays the one range helper shared with `read`; unit test on a four-line fixture (regex hit, literal fallback, numbering inside a range, no-grep unchanged); tool description still ≤ `mcp.max_description_tokens`; README and the `docs/config.md` row updated.
-Execution plan (Claude Code / Fable 5.1): `src/expand.rs` (`filter_lines` → `Vec<String>`, generic `slice_lines` / `cap_lines`, one test), `src/mcp.rs` description, `src/cli.rs` flag doc, README, `docs/config.md`. Verify: fmt, clippy `-D warnings`, `nextest -p rtok expand mcp`.
 
 ### T67.2. `expand --context N` around grep hits
 

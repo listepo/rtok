@@ -1,5 +1,18 @@
 # rtok — completed tasks
 
+### T67.1. `expand --grep` is a regex with numbered hits
+
+From I-53 (`research.md` §12, recursive-llm). The RLM loop is search → slice: the model regex-searches the externalised context and pulls only the span around a hit. `expand --grep` today is a substring match that prints bare lines, so a hit has no position and `--lines a-b` cannot follow; the model's only way to see the context around a match is a full expand, which is the expand-rate cost `report` flags.
+Done when `grep` (CLI `--grep`, MCP `expand.grep`) compiles as a regex through the `regex` crate `search` already uses (a pattern that does not compile is matched literally, never an error the model has to retry), every hit prints as `N:line` with its 1-based line number in the archived payload (absolute inside a `--lines` range, the format of `read` mode `lines`), output without `grep` is byte-identical to today, `slice_lines` stays the one range helper shared with `read`; unit test on a four-line fixture (regex hit, literal fallback, numbering inside a range, no-grep unchanged); tool description still ≤ `mcp.max_description_tokens`; README and the `docs/config.md` row updated.
+Execution plan (Claude Code / Fable 5.1): `src/expand.rs` (`filter_lines` → `Vec<String>`, generic `slice_lines` / `cap_lines`, one test), `src/mcp.rs` description, `src/cli.rs` flag doc, README, `docs/config.md`. Verify: fmt, clippy `-D warnings`, `nextest -p rtok expand mcp`.
+
+**Result (2026-09-18).** `filter_lines` now returns `Vec<String>`: it numbers every line as it splits (`enumerate` before any range), applies `--lines` through the shared `slice_lines` (made generic, still the one helper `read` uses), then filters with a `Regex`; a pattern that does not compile is retried as `regex::escape`d literal, so the model never gets an error it has to guess its way out of. Hits print `N:line` with the number the line has in the archived payload, absolute inside a `--lines` range, which is the format `read` mode `lines` already uses. Without `grep` the output is byte-identical to before (bare lines), so `cmd`, `archive` and the MCP `expand` trailers are unchanged. `cap_lines` is generic over the element type. Description updated on the MCP tool (still under `mcp.max_description_tokens = 60`), the clap flag doc, the README example and the `docs/config.md` row.
+
+Deviation: the commit is not its own `T67.1:` commit. Another agent ran `git add … && git commit` against the shared working tree while these hunks were staged, so the code landed inside `1e513d3` ("T62.1: guard digests oversized skill bodies on PreToolUse(Skill)"). The history was left alone rather than rewritten under other agents' worktrees. The same race deleted the memory agent's T66.1/T66.2 cards from `plan.md`; `3e3fa91` restored them and renumbered these tasks from T66 to T67.
+
+Check: `cargo nextest run -p rtok` with the expand/mcp filter — 64 passed, including the new `grep_is_regex_numbered_by_archive_line_and_falls_back_to_literal` (regex hit, literal fallback on `[E0308`, numbering inside a range, no-grep unchanged) and `descriptions_at_most_60_tokens`. `cargo fmt` and `clippy -D warnings` clean. Three `agents install cursor` tests failed in that run with empty stdout/stderr and exit 1; the host had 1.5 GiB free while other agents were building. Re-run after freeing the scratch worktree: 3 passed.
+
+---
 ## T62.2 — Compaction checkpoint lists the skills loaded so far
 
 From `research.md` §10.7–10.8 and T2.5 / T58.2. After auto-compaction the skill bodies are gone and nothing tells the model which skills it had loaded; it either re-invokes all of them (248 KB again) or none.

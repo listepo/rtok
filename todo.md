@@ -48,5 +48,4 @@
 - T65.4. Never cut a stack trace
 - T66.1. `mem_save` updates a note in place: project + kind + title is the topic key
 - T66.2. `rtok memory export`: the JSONL that `memory import` reads
-- T67.1. `expand --grep` is a regex with numbered hits
 - T67.2. `expand --context N` around grep hits
