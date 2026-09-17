@@ -20,7 +20,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T56.1 | done | P2 | 2 | 100% | |
 | T56.2 | in progress | P2 | 3 | 85% | |
 | T56.3 | in progress | P2 | 3 | 85% | |
-| T56.4 | done | P3 | 2 | 100% | |
+| T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -103,7 +103,7 @@ Done when `strip_prefix_cd` accepts single- and double-quoted path segments (mal
 ### T56.2. Migrate read/search unit tests to VFS
 
 Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
-**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. WalkBuilder e2e disk fixtures **kept** with Vfs rewrite twins: `search_and_tree_skip_git_dir_from_vfs`, `tree_paths_stay_relative_from_vfs`, `search_paths_stay_relative_from_vfs`, `search_skips_files_over_search_max_bytes_from_vfs` (`.git` skip + tree rows helpers). T56.4 walk adapter landed (dir metadata / list + read). Remaining outside T56.4: full `read()` Runtime→trait (`three_lines_are_numbered`, caps, symlink).
+**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. WalkBuilder e2e disk fixtures **kept** with Vfs rewrite twins: `search_and_tree_skip_git_dir_from_vfs`, `tree_paths_stay_relative_from_vfs`, `search_paths_stay_relative_from_vfs`, `search_skips_files_over_search_max_bytes_from_vfs` (`.git` skip + tree rows helpers). Remaining for T56.4 walk adapter: full WalkBuilder-on-`Vfs` (dir metadata / real walk), full `read()` Runtime tests (`three_lines_are_numbered`, caps, symlink).
 
 ### T56.3. Migrate cmd/setup path tests to VFS
 
@@ -114,7 +114,6 @@ Quoting tests are already pure strings; setup/agent install tests that write hoo
 
 If search/tree keep needing real walks, introduce a narrow trait (metadata + read bytes + list dir) with a `Vfs` impl so oversized-file and relative-path tests run without host disk.
 Done when search/tree unit tests for the size-cap and relative-path cases can run against `Vfs`, or the card closes with a measured reason to keep WalkBuilder-on-disk.
-**Done** — `plugins::read::walk::{WalkFs, walk, search_hits, tree_rows}` + `Vfs::{list_dir, meta}` (dirs inferred). Production `search`/`tree` keep host `WalkBuilder` (gitignore); disk e2e kept. Size-cap / relative-path / skip-`.git` twins run on the adapter. Leftover (not this card): full `read()` Runtime→trait migration.
 
 
 ## Reference

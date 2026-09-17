@@ -95,59 +95,6 @@ impl Vfs {
         out.sort();
         out
     }
-
-    /// Immediate child names under `dir` (files and inferred directories), sorted.
-    /// Empty `dir` lists the Vfs root. Used by the T56.4 walk adapter.
-    pub fn list_dir(&self, dir: &str) -> Vec<String> {
-        let prefix = if dir.is_empty() {
-            String::new()
-        } else if dir.ends_with('/') {
-            dir.to_string()
-        } else {
-            format!("{dir}/")
-        };
-        let mut names = std::collections::BTreeSet::new();
-        for path in self.files.keys() {
-            let rest = if prefix.is_empty() {
-                path.as_str()
-            } else if let Some(r) = path.strip_prefix(&prefix) {
-                r
-            } else {
-                continue;
-            };
-            if rest.is_empty() {
-                continue;
-            }
-            if let Some(name) = rest.split('/').next() {
-                if !name.is_empty() {
-                    names.insert(name.to_string());
-                }
-            }
-        }
-        names.into_iter().collect()
-    }
-
-    /// File and/or directory metadata for `path`. Directories are inferred from prefixes.
-    pub fn meta(&self, path: &str) -> Option<VfsMeta> {
-        let is_file = self.files.contains_key(path);
-        let is_dir = !self.list_dir(path).is_empty();
-        if !is_file && !is_dir {
-            return None;
-        }
-        Some(VfsMeta {
-            len: self.files.get(path).map(|b| b.len() as u64).unwrap_or(0),
-            is_file,
-            is_dir,
-        })
-    }
-}
-
-/// Metadata returned by [`Vfs::meta`] (T56.4 walk adapter).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct VfsMeta {
-    pub len: u64,
-    pub is_file: bool,
-    pub is_dir: bool,
 }
 
 #[cfg(test)]
@@ -211,23 +158,5 @@ mod tests {
         v.write("a.txt", b"hello");
         assert_eq!(v.read_str("a.txt"), Some("hello"));
         assert_eq!(v.len("a.txt"), Some(5));
-    }
-
-    #[test]
-    fn vfs_list_dir_and_meta_infer_directories() {
-        let mut v = super::Vfs::new();
-        v.write("nest/a/f.txt", b"x");
-        v.write("nest/hit.rs", b"y");
-        assert_eq!(v.list_dir(""), vec!["nest".to_string()]);
-        assert_eq!(
-            v.list_dir("nest"),
-            vec!["a".to_string(), "hit.rs".to_string()]
-        );
-        assert_eq!(v.list_dir("nest/a"), vec!["f.txt".to_string()]);
-        let nest = v.meta("nest").unwrap();
-        assert!(nest.is_dir && !nest.is_file && nest.len == 0);
-        let hit = v.meta("nest/hit.rs").unwrap();
-        assert!(hit.is_file && !hit.is_dir && hit.len == 1);
-        assert!(v.meta("missing").is_none());
     }
 }
