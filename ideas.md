@@ -44,6 +44,12 @@ that v0.1 does not schedule.
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
 
+### `guard`
+
+| ID | Inspired by | Area | Proposition | Why it is not in the plan |
+|----|-------------|------|-------------|---------------------------|
+| I-38 | token-optimizer refetch_guard; code read 2026-09-17 | `guard` | `read_only` is a fixed stem list (`ls cat head tail grep rg find tree wc` + five `git` verbs). Flag-aware classes would key more repeats (`sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`) and stop keying writers that share a stem (`find -delete`, `tail -f`, `cat > f`). Pick the stems from `rtok discover`-style counts over real transcripts. | No measured deny-rate gap yet; T55.8/T55.9 correctness first. A wrong "read-only" verdict denies a call whose output changed (fail-open violation), so this needs a false-deny Check. |
+
 ### `archive` / `proxy`
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
