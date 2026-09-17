@@ -8,7 +8,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T48.5 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark |
 | T48.6 | todo | P2 | 3 | 0% | |
-| T48.7 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T48.8 | todo | P2 | 3 | 0% | |
 | T49.1 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
@@ -39,13 +38,6 @@ Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https:/
 
 From I-17. Zed configures MCP as `context_servers` in `~/.config/zed/settings.json` (JSON with comments) and has no shell hook events; its agent can also use external agents over ACP.
 Done when `rtok agents install zed` adds `context_servers.rtok` without destroying comments or foreign servers, the support table says hooks/proxy/plugin `no` with the reason, remove restores the file, and the host joins the e2e matrix, config and docs.
-
-### T48.7. aider host
-
-From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where `openai-api-base` / `anthropic-api-base` (or the env vars) can point it at `rtok proxy`, which is the only rtok surface it can use.
-Done when `rtok agents install aider --proxy` writes the base URL key into the YAML config without losing comments (reuse an installed YAML-preserving approach or a line edit; no new dependency without approval), the support table explains why hooks and mcp are `no`, remove strips only rtok's key, and the host joins the e2e matrix and docs.
-
-Execution plan (G3): 1) `src/agents/aider/{mod.rs,README.md}` — line-edit `openai-api-base` (only base-url key aider documents; no `anthropic-api-base` in options reference) preserving comments, idempotent, fail-open on unparsable YAML shape (leave file, error); `support`: proxy `Flag(--proxy)`, hooks/mcp/plugin `No` with reasons; 2) wire `HOSTS`/`host()`, `[setup.aider] config_path` default `~/.aider.conf.yml` (config/default.toml + mod.rs + docs/config.md row, D12); 3) e2e matrix (`tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`) + README host line; verify `cargo fmt/clippy/nextest` + `just check`.
 
 ### T48.8. VS Code Copilot Chat host
 

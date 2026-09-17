@@ -1,6 +1,5 @@
 - T48.5. Windsurf host
 - T48.6. Zed host
-- T48.7. aider host (in progress)
 - T48.8. VS Code Copilot Chat host
 - T49.1. `rtok stats --price`
 - T49.2. Ingest Codex, OpenCode and Cursor session logs

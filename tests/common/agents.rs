@@ -52,7 +52,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
              [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\
-             [setup.copilot]\ndir = \"{h}/.copilot\"\n"
+             [setup.copilot]\ndir = \"{h}/.copilot\"\n\
+             [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n"
         ),
     )
     .unwrap();

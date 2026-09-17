@@ -7,6 +7,7 @@
 //! and why the rest cannot be taken; a unit test keeps the README and `support()` in step.
 //! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
+pub mod aider;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
@@ -26,7 +27,7 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot",
+    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot", "aider",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -43,6 +44,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "zcode" => Some(&zcode::Zcode),
         "kimi" => Some(&kimi::Kimi),
         "copilot" => Some(&copilot::Copilot),
+        "aider" => Some(&aider::Aider),
         _ => None,
     }
 }

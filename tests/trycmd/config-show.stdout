@@ -121,6 +121,7 @@ report.budget_tokens = 8000
 report.format = md
 report.out = 
 report.since = 30d
+setup.aider.config_path = ~/.aider.conf.yml
 setup.backup = true
 setup.claude.settings_path = ~/.claude/settings.json
 setup.codex.config_path = ~/.codex/config.toml

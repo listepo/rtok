@@ -1,5 +1,17 @@
 # rtok — completed tasks
 
+## T48.7 — aider host
+
+**T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
+
+From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where a base URL can point it at `rtok proxy`, which is the only rtok surface it can use.
+
+Do: `rtok agents install aider --proxy` writes `openai-api-base: http://<bind>:<port>/v1` into `~/.aider.conf.yml` (`[setup.aider] config_path`) with a line edit, so comments and foreign keys survive — no YAML crate, no new dependency. Correction to the card: there is no `anthropic-api-base` in aider's options reference (only `--openai-api-base`; verified against the fetched options page 2026-09-17) — Anthropic models reach the same URL with an `openai/` model prefix, and the README says so. Support: proxy ``--proxy``, hooks/mcp/plugin `no` with reasons. Remove strips only `openai-api-base` lines pointing at this proxy (exact URL or loopback+our-port); a foreign base URL stays, and remove on a foreign value is `no changes`. Install without `--proxy` is `no changes` (flag-gated like codex proxy). `installed()` reads the key back for the e2e matrix. Unreadable file is an error, never an overwrite.
+Check: unit tests in `mod.rs` (dry-run shows one key + revert and touches nothing; apply idempotent, keeps comments/foreign keys; quoted value + trailing comment keep shape; commented `# openai-api-base` untouched; foreign-URL remove is no-op; non-UTF-8 refused with file untouched); `agents_install` matrix + `agent_remove` entries; README parity (`Reachable: measure, archive, proxy, toon, compress`); `## Docs` links re-verified 2026-09-17.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean worktree at 77af448 + these files: `cargo nextest run --lib agents:: config::` 124 passed; `--test agent_remove` 11 passed (incl. the new aider test); `--test agents_install` 22/23 — the aider legs pass, the 1 failure is pre-existing `remove_twice` on opencode (fails identically without these changes; a real opencode 1.18.29 on PATH); `--test host_docs --test config_coverage --test cli_trycmd` pass; `cargo fmt --check` and `cargo clippy --workspace --all-targets --all-features -D warnings` clean. Full `just check` is not green in the main tree (other agents' concurrent uncommitted WIP breaks the build); untouched by this task.
+Deviation: none; verified in a clean worktree at 77af448 + these files (main tree holds other agents' uncommitted work).
+
 ## T51.4 — `rtok wrap -- <agent>`
 
 **T51.4 `rtok wrap -- <agent>`** · P3, 2/5 · `src/proxy/cli.rs`, `src/cli.rs`, `tests/wrap.rs` (new), `tests/trycmd/help.stdout`

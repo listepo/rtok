@@ -268,6 +268,7 @@ section! {
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
+        aider: SetupAider = SetupAider::default(),
     }
 }
 
@@ -309,6 +310,11 @@ section! {
 section! {
     /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
     SetupCopilot { dir: PathBuf = p("~/.copilot") }
+}
+
+section! {
+    /// `[setup.aider]` — `.aider.conf.yml` carries `openai-api-base` (T48.7).
+    SetupAider { config_path: PathBuf = p("~/.aider.conf.yml") }
 }
 
 section! {
@@ -729,6 +735,7 @@ impl Config {
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
             &mut self.setup.copilot.dir,
+            &mut self.setup.aider.config_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
@@ -943,6 +950,7 @@ mod tests {
             &cfg.setup.zcode.config_path,
             &cfg.setup.kimi.config_path,
             &cfg.setup.copilot.dir,
+            &cfg.setup.aider.config_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
