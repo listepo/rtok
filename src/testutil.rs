@@ -39,6 +39,35 @@ pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
     (Runtime::open(c, tag).unwrap(), dir)
 }
 
+/// In-memory path → bytes map for unit tests that must not touch the host disk (D29 / T56).
+/// Prefer this over `tmp_dir` when the code under test only needs path/content/size.
+#[derive(Default, Clone, Debug)]
+pub struct Vfs {
+    files: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl Vfs {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&mut self, path: impl Into<String>, bytes: impl AsRef<[u8]>) {
+        self.files.insert(path.into(), bytes.as_ref().to_vec());
+    }
+
+    pub fn read(&self, path: &str) -> Option<&[u8]> {
+        self.files.get(path).map(Vec::as_slice)
+    }
+
+    pub fn len(&self, path: &str) -> Option<u64> {
+        self.files.get(path).map(|b| b.len() as u64)
+    }
+
+    pub fn paths(&self) -> impl Iterator<Item = String> + '_ {
+        self.files.keys().cloned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -48,5 +77,14 @@ mod tests {
         assert!(a.is_dir() && b.is_dir());
         let (c, dir) = super::config("paths");
         assert!(c.core.db_path.starts_with(&dir) && c.log.path.starts_with(&dir));
+    }
+
+    #[test]
+    fn vfs_round_trips_bytes_and_len() {
+        let mut v = super::Vfs::new();
+        v.write("a.txt", b"hi");
+        assert_eq!(v.read("a.txt"), Some(b"hi".as_slice()));
+        assert_eq!(v.len("a.txt"), Some(2));
+        assert_eq!(v.paths().collect::<Vec<_>>(), vec!["a.txt".to_string()]);
     }
 }

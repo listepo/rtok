@@ -62,12 +62,13 @@ impl ToolResults for OpenAiChat {
             if message.get("content").is_some_and(Value::is_string) {
                 let content = message.get_mut("content").expect("string checked above");
                 out.push(BlobRef { content, turn });
-            } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut)
-            {
+            } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) {
                 for part in parts {
                     let content = match part["type"].as_str() {
                         Some("text") => part.get_mut("text"),
-                        Some("image_url") => part.get_mut("image_url").and_then(|u| u.get_mut("url")),
+                        Some("image_url") => {
+                            part.get_mut("image_url").and_then(|u| u.get_mut("url"))
+                        }
                         _ => None,
                     };
                     if let Some(content) = content {

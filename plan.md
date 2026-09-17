@@ -16,6 +16,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
+| T55.7 | todo | P3 | 1 | 0% | |
+| T56.1 | todo | P2 | 2 | 0% | |
+| T56.2 | todo | P2 | 3 | 0% | |
+| T56.3 | todo | P2 | 3 | 0% | |
+| T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -85,6 +90,32 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
 
+### T55.7. Stats `strip_prefix_cd` and quoted paths
+
+From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine.
+Done when `strip_prefix_cd` accepts single- and double-quoted path segments (malformed quotes fail-open), with unit tests for spaced quoted paths.
+
+### T56.1. Test VFS helper and convention
+
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` now ships a thin `Vfs` (path → bytes).
+Done when this decision is recorded (D29), AGENTS.md notes the rule, `Vfs` covers write/read/len/paths, and at least one read/cmd/graph unit test uses it with no host temp dir.
+
+### T56.2. Migrate read/search unit tests to VFS
+
+Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
+Done when the pure path and size-gate tests need no host temp dir, and remaining disk tests are listed as follow-ups.
+
+### T56.3. Migrate cmd/setup path tests to VFS
+
+Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
+Done when new file-touching unit tests in setup/agents use `Vfs` (or document why a disk fixture remains), and one legacy test is migrated as a template.
+
+### T56.4. Optional walk/VFS adapter for search/tree
+
+If search/tree keep needing real walks, introduce a narrow trait (metadata + read bytes + list dir) with a `Vfs` impl so oversized-file and relative-path tests run without host disk.
+Done when search/tree unit tests for the size-cap and relative-path cases can run against `Vfs`, or the card closes with a measured reason to keep WalkBuilder-on-disk.
+
+
 ## Reference
 
 Historical phase notes (P0–P39) live in `done.md`. Companion evidence: `research.md`, `architecture.md`. Per-plugin plan: `roadmap.md`. Unapproved propositions: `ideas.md`.
@@ -122,6 +153,7 @@ Claim a `todo` row before work: set Status to `in progress` and Agent to `Provid
 | D26 | **One log with two readers:** a rotating text file and the `logs` table OTel exports. Bounded (`max_bytes` 1 MiB, `files` 5). | An unbounded log on a long-running proxy is a disk-full bug. |
 | D27 | **Anything a command prints, or the store keeps, is a page on `rtok web` and `rtok tui`.** Writing commands stay CLI-only. | The two surfaces plus CLI must not disagree about what a session is. |
 | D28 | **The agent-host contract is `rtok-agent-sdk`.** Installers go through it; host-specific code stays in `src/setup/<host>.rs`. | One write cycle, one plugin-offer body. |
+| D29 | **Unit tests prefer a virtual filesystem (`testutil::Vfs`) over host TempDir/std::fs.** Pure path/content/size logic must not require real disk; Windows/macOS quirks are simulated in Vfs. Migrate hottest suites first (read/search/cmd/setup) as T56.x — not a big-bang rewrite of e2e. | Hermetic tests; reproducible CI; path-case and spaced-path bugs (T55) need a simulated FS. |
 
 ### Architecture
 

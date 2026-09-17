@@ -61,11 +61,55 @@ fn pick(root: &Path) -> Result<(&'static str, &'static [&'static str])> {
     )
 }
 
+fn percent_encode_path(s: &str) -> String {
+    // RFC 8089 / URI path: encode spaces and other non-unreserved octets; keep `/` and
+    // Windows drive `C:` intact so rust-analyzer still accepts the URI.
+    let mut out = String::with_capacity(s.len());
+    for (i, seg) in s.split('/').enumerate() {
+        if i > 0 {
+            out.push('/');
+        }
+        if seg.len() == 2 && seg.as_bytes().get(1) == Some(&b':') {
+            out.push_str(seg);
+            continue;
+        }
+        for b in seg.bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                    out.push(b as char)
+                }
+                _ => out.push_str(&format!("%{b:02X}")),
+            }
+        }
+    }
+    out
+}
+
+fn percent_decode_path(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let h = (bytes[i + 1] as char).to_digit(16);
+            let l = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (h, l) {
+                out.push(((h << 4) | l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn file_uri(p: &Path) -> String {
     // LSP wants RFC 8089 `file:///C:/…` on Windows. `.display()` keeps
     // backslashes and omits the third slash, which rust-analyzer rejects.
     let path = dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    let s = path.to_string_lossy().replace('\\', "/");
+    let s = percent_encode_path(&path.to_string_lossy().replace('\\', "/"));
     if s.starts_with('/') {
         format!("file://{s}")
     } else {
@@ -74,7 +118,7 @@ fn file_uri(p: &Path) -> String {
 }
 
 fn path_from_file_uri(uri: &str) -> PathBuf {
-    let rest = uri.strip_prefix("file://").unwrap_or(uri);
+    let rest = percent_decode_path(uri.strip_prefix("file://").unwrap_or(uri));
     // `file:///C:/Users/…` → `C:/Users/…`; `file:///home/…` keeps the root slash.
     if cfg!(windows) {
         let trimmed = rest.trim_start_matches('/');
@@ -745,5 +789,23 @@ mod uri_tests {
     fn path_from_file_uri_strips_slash_before_drive() {
         let p = path_from_file_uri("file:///C:/Users/x");
         assert_eq!(p, PathBuf::from(r"C:\Users\x"));
+    }
+
+    #[test]
+    fn file_uri_encodes_spaces() {
+        // Pure encode/decode — no host TempDir (VFS / T56).
+        let encoded = super::percent_encode_path("C:/Users/Ivan Tuhai/proj/a.rs");
+        assert!(encoded.contains("%20"), "{encoded}");
+        assert!(!encoded.contains(' '), "{encoded}");
+        assert!(encoded.starts_with("C:"), "{encoded}");
+        let uri = format!("file:///{encoded}");
+        let round = path_from_file_uri(&uri);
+        assert!(round.to_string_lossy().contains("Ivan Tuhai"), "{round:?}");
+    }
+
+    #[test]
+    fn path_from_file_uri_decodes_percent20() {
+        let p = path_from_file_uri("file:///tmp/My%20Docs/a.rs");
+        assert_eq!(p, PathBuf::from("/tmp/My Docs/a.rs"));
     }
 }

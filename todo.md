@@ -8,3 +8,8 @@
 - T53.1. Coaching nudges under an A/B
 - T53.3. Hook start without Security.framework (in progress)
 - T53.4. `just otel-check` against real backends
+- T55.7. Stats `strip_prefix_cd` and quoted paths
+- T56.1. Test VFS helper and convention
+- T56.2. Migrate read/search unit tests to VFS
+- T56.3. Migrate cmd/setup path tests to VFS
+- T56.4. Optional walk/VFS adapter for search/tree

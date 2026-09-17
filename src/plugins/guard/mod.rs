@@ -156,7 +156,13 @@ fn norm_cmd(s: &str) -> String {
 fn strip_wrap(s: &str) -> String {
     let s = s.strip_prefix("rtok run -- ").unwrap_or(s);
     if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
-        s[1..s.len() - 1].replace("'\"'\"'", "'")
+        let inner = &s[1..s.len() - 1];
+        // POSIX sh_quote embedding, or PowerShell doubled single-quotes (T55.4).
+        if inner.contains("'\"'\"'") {
+            inner.replace("'\"'\"'", "'")
+        } else {
+            inner.replace("''", "'")
+        }
     } else {
         s.to_string()
     }

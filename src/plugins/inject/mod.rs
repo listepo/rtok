@@ -212,7 +212,7 @@ mod tests {
             "session_id": "t531",
             "source": "startup"
         });
-        let mut run = || {
+        let run = || {
             let mut out = Vec::new();
             crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, &cfg);
             let v: serde_json::Value = serde_json::from_slice(&out).unwrap();

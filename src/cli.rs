@@ -485,8 +485,7 @@ pub fn run() -> Result<()> {
                     // (`--config` wins when both are given). `layers::load`
                     // creates nothing, so a read-only check stays read-only.
                     let layer = config_file.as_deref().or(Some(&path));
-                    let cfg = crate::config::layers::load(&home, layer, None)
-                        .unwrap_or_default();
+                    let cfg = crate::config::layers::load(&home, layer, None).unwrap_or_default();
                     errs.extend(validate::rules_issues(
                         &cfg.plugins.cmd.rules,
                         &cfg.plugins.cmd.rules_dir,

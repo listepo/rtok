@@ -12,3 +12,4 @@ report/jscpd-report.json
 # Agent worktrees must not be indexed by graph walk
 .worktrees/
 .claude/
+.rtok/rtok.db

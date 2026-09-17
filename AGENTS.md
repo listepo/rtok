@@ -30,3 +30,7 @@
 **Parent rules.** If a directory above this repository contains an `AGENTS.md` or `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
 
 Keep this file under 350 tokens; it is loaded into every session.
+
+## Testing
+
+Prefer `crate::testutil::Vfs` (in-memory path → bytes) over host `TempDir` for unit tests that only need path/content/size. See plan D29 / T56.

@@ -517,6 +517,8 @@ section! {
         advice: bool = true,
         allow_paths: Vec<PathBuf> = Vec::new(),
         search_max: u32 = 50,
+        /// Max bytes `search` will read from one file (T55.5). Larger files are skipped.
+        search_max_bytes: u64 = 1_048_576,
         tree_depth: u32 = 2,
         /// Deprecated compatibility key; grammars are Cargo features now, so this is ignored.
         languages: Vec<String> = Vec::new(),
