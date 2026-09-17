@@ -13,6 +13,9 @@ use rmcp::model::{
 };
 use serde_json::{Value, json};
 
+#[cfg(feature = "cmd")]
+pub mod wrap;
+
 use crate::config::Config;
 use crate::plugin::{Runtime, ToolDef};
 use crate::plugins::Registry;

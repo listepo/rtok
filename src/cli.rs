@@ -35,8 +35,12 @@ enum Cmd {
         #[arg(long)]
         host: Option<String>,
     },
-    /// Serve MCP tools over stdio
-    Mcp,
+    /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
+    Mcp {
+        /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
+        #[arg(last = true)]
+        wrap: Vec<String>,
+    },
     /// Local API proxy for ANTHROPIC_BASE_URL
     Proxy {
         /// Override `[proxy] port`
@@ -728,9 +732,16 @@ pub fn run() -> Result<()> {
             let _ = io::stdin().read_to_string(&mut buf);
             print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));
         }
-        Cmd::Mcp => {
+        Cmd::Mcp { wrap } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            crate::mcp::run(&cfg)?;
+            if wrap.is_empty() {
+                crate::mcp::run(&cfg)?;
+            } else {
+                #[cfg(feature = "cmd")]
+                std::process::exit(crate::mcp::wrap::run(&cfg, &wrap)?);
+                #[cfg(not(feature = "cmd"))]
+                bail!("rtok mcp -- <server>: the wrapper needs the `cmd` feature");
+            }
         }
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
