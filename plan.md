@@ -241,3 +241,24 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 ### Out of scope this pass
 
 Concurrent agent WIP on local `main` (stashed as `preserve-other-agents-wip-before-docs-review-bugs-plan`). Half-finished T48–T53 cards on that WIP were not judged as shipped bugs.
+
+
+---
+
+## Note 2026-09-17 — testing library candidates
+
+Shared catalog: [`listepo/rust.md`](../../rust.md) → *Testing candidates*.
+Catalog only — no blanket `Cargo.toml` adds (Working agreement: justify each dep).
+
+Fits for rtok (1–3):
+
+1. `vfs` (crates.io) — evaluate against in-house T56 `src/testutil.rs` `Vfs`
+   before adopting; mandate stays "prefer VFS over host TempDir".
+2. `mockall` — trait mocks for provider / plugin host seams when hand fakes
+   get noisy (`httpmock` stays for HTTP).
+3. `tokio-test` — async unit helpers beyond `#[tokio::test]` where time/task
+   control matters.
+
+Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
+`trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
+`testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
