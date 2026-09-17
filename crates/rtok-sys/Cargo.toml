@@ -13,7 +13,7 @@ fs4 = "0.13"
 rustix = { version = "1", features = ["process", "fs"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
