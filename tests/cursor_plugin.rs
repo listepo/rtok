@@ -100,17 +100,58 @@ fn d21_no_duplicate_call_paths() {
     let mcp: Value =
         serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
     let rtok = &mcp["mcpServers"]["rtok"];
-    assert_eq!(rtok["command"], "rtok", "{mcp}");
-    assert_eq!(rtok["args"], serde_json::json!(["mcp"]), "{mcp}");
+    assert_eq!(rtok["type"], "stdio", "{mcp}");
+    assert_eq!(rtok["command"], "./scripts/mcp.cmd", "{mcp}");
 }
 
 #[test]
-fn d21_mcp_json_invokes_rtok_directly() {
+fn d21_mcp_json_invokes_launcher_not_rtok_directly() {
     let mcp: Value =
         serde_json::from_str(&fs::read_to_string(root().join("mcp.json")).unwrap()).unwrap();
+    assert_eq!(
+        mcp["$schema"], "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        "Agent Plugins spec: closed mcp.json with a $schema"
+    );
     let rtok = &mcp["mcpServers"]["rtok"];
-    assert_eq!(rtok["command"], "rtok", "cross-platform: no sh wrapper");
-    assert_eq!(rtok["args"], serde_json::json!(["mcp"]));
+    assert_eq!(
+        rtok["type"], "stdio",
+        "Agent Plugins spec: one stdio server"
+    );
+    assert_eq!(
+        rtok["command"], "./scripts/mcp.cmd",
+        "one launcher Cursor resolves: plugin-relative token, ketch hint when rtok is missing"
+    );
+    assert!(
+        rtok.get("args").is_none(),
+        "the launcher takes no args: {rtok}"
+    );
+    // The one launcher runs on unix too: a sh preamble execs the sibling mcp.sh.
+    let launcher = root().join("scripts/mcp.cmd");
+    let head = fs::read_to_string(&launcher).unwrap();
+    let show = launcher.display();
+    assert!(head.starts_with("#!/bin/sh\n"), "{show}");
+    assert!(head.contains("mcp.sh"), "{show}");
+}
+
+#[cfg(unix)]
+#[test]
+fn d21_bundle_launcher_names_ketch_when_rtok_missing() {
+    let launcher = root().join("scripts/mcp.cmd");
+    let out = Command::new(&launcher)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("mcp.cmd");
+    assert!(
+        !out.status.success(),
+        "missing rtok must fail the MCP start"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("ketch install listepo/rtok"),
+        "want ketch install, got {err}"
+    );
+    assert!(err.contains("rtok is not installed"), "{err}");
 }
 
 #[cfg(unix)]

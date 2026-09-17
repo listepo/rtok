@@ -1,5 +1,16 @@
 # rtok — completed tasks
 
+## T48.3 — Cursor plugin MCP goes through the ketch-hint launcher
+
+**T48.3 Cursor plugin MCP goes through the ketch-hint launcher** · P1, 2/5 · `plugins/cursor/mcp.json`, `plugins/cursor/scripts/mcp.cmd`, `tests/cursor_plugin.rs`
+
+From I-37. The bundle `mcp.json` ran `rtok mcp` directly, so the ketch-hint launchers never ran and a missing binary was a silent MCP failure; it also lacked the Agent Plugins `$schema`/`type`.
+Do: `mcp.json` is now closed-spec-conformant (`$schema` `mcp.schema.json`, one server `type: "stdio"`) with `command` `./scripts/mcp.cmd` — one launcher Cursor resolves (single plugin-relative token per spec §7.2.1; the spec explicitly allows a client interpreter for `.cmd` on Windows). `mcp.cmd` gained a 2-line sh preamble (`#!/bin/sh` + `exec` sibling `mcp.sh`) +x, so the same file runs on macOS/Linux (verified: direct kernel exec, missing-rtok → ketch hint exit 1) and Windows (cmd skips the preamble as noise, runs the unchanged batch body). Root `plugin.json` already conforms (closed-schema fields `$schema`/name/version/description only), so it stays — no drop, no README reason owed.
+Check: `d21_mcp_json_invokes_launcher_not_rtok_directly` (`$schema`, `type`, launcher path, no args), `d21_no_duplicate_call_paths` (launcher + still no read/search duplication), new unix `d21_bundle_launcher_names_ketch_when_rtok_missing` (execs the bundle launcher with rtok missing → ketch hint).
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean-worktree run at 77af448 + these 3 files: `cargo nextest run --test cursor_plugin` 10 passed; `cargo fmt --check` clean; `cargo clippy --test cursor_plugin -D warnings` clean. Full `just check` not run (workspace-wide; main tree holds other agents' uncommitted work).
+Deviation: 3 files; bundle README line `mcp.json — mcpServers.rtok → rtok mcp` now routes via the launcher — one-line doc touch deferred to keep the 3-file limit. The plain-install `~/.cursor/mcp.json` entry (`register_mcp`, bare `rtok`) is unchanged: out of this card's scope (plugin bundle only).
+
 ## T48.4 — DeepSeek Harness host
 
 **T48.4 DeepSeek Harness host** · P2, 4/5 · `plan.md`, `todo.md`, `done.md` (no code: the card's escape clause)

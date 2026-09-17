@@ -6,8 +6,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.3 | todo | P1 | 2 | 0% | |
-| T48.5 | todo | P2 | 3 | 0% | |
+| T48.5 | in progress | P2 | 3 | 0% | OpenCode / Muse Spark |
 | T48.6 | todo | P2 | 3 | 0% | |
 | T48.7 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T48.8 | todo | P2 | 3 | 0% | |
@@ -25,21 +24,18 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
 | T52.4 | in progress | P3 | 2 | 10% | OpenCode / Muse Spark 1.3 |
-| T52.5 | todo | P3 | 3 | 0% | |
+| T52.5 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.1 | todo | P3 | 3 | 0% | |
 | T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
 
-### T48.3. Cursor plugin MCP goes through the ketch-hint launcher
-
-From I-37. `plugins/cursor/mcp.json` runs `rtok mcp` directly, so `scripts/mcp.sh` / `scripts/mcp.cmd`, which print `ketch install listepo/rtok` when `rtok` is missing, never run: in Cursor a missing binary is a silent MCP failure. The root `plugin.json` claims the Agent Plugins spec, which also wants `$schema` and `type: "stdio"` per server.
-Done when Cursor starts the MCP server through the launcher on macOS, Linux and Windows (a per-OS command or one launcher Cursor resolves), `tests/cursor_plugin.rs` asserts that path and the missing-rtok hint, and the root `plugin.json` either conforms to the spec (`$schema`, `type`) or is dropped with the reason in the README.
-
 ### T48.5. Windsurf host
 
 From I-17. Windsurf (Codeium) stores MCP servers in `~/.codeium/windsurf/mcp_config.json` and ships Cascade hooks; neither is installed by rtok today.
 Done when the current Windsurf docs are verified and linked, `rtok agents install windsurf` registers `rtok mcp` and, if the hook protocol can carry `rtok hook` (or a mapped `--host windsurf` payload like T46.3), the hooks; remove keeps foreign entries; the host joins the install/remove/list e2e matrix, config, docs and `README.md` host lists.
+
+Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https://docs.windsurf.com/windsurf/cascade/mcp (`~/.codeium/windsurf/mcp_config.json`, `mcpServers.<name>` `{command, args}`, no `type` for stdio), hooks https://docs.windsurf.com/windsurf/cascade/hooks (`~/.codeium/windsurf/hooks.json`, 12 Cascade events as `agent_action_name`/`tool_info` stdin — not Claude-shaped, and no `--host windsurf` mapping exists, so hooks stay `no` with that reason, like T46.3 scoped the mapping to its own task). Files: `src/agents/windsurf/{mod.rs,README.md}` (new; MCP-only via SDK `register_server`/`unregister_server`, single Desktop variant), `src/agents/mod.rs` registry + HOSTS + `host("windsurf").is_none` fix, `src/config/mod.rs` (`[setup.windsurf] config_path`, finish expand, path leaves), `config/default.toml`, `docs/config.md`, `src/cli.rs` host help (2 lines), `README.md` host list, `site/content/docs/commands.md`, `tests/trycmd/config-show.stdout`, `tests/agents_install.rs` matrix + `notahost` unknown-host rename, `tests/agent_remove.rs` windsurf test, `tests/common/agents.rs` write_cfg. Unit tests in mod.rs: dry_run names file/touches nothing, apply idempotent, remove keeps foreign, second remove no changes. Verify: `mise exec -- cargo fmt/clippy/nextest` for agents/config/e2e scope (full `just check` may fail on concurrent agents' uncommitted work — report, don't fix).
 
 ### T48.6. Zed host
 
@@ -144,6 +140,13 @@ Execution plan (T52.4, OpenCode / Muse Spark 1.3):
 
 From I-31. Reference recall was 0.351 (T8.8), and 65 of 74 misses were type positions and `scoped_identifier` calls, which the grammars' tag queries do not emit.
 Done when rtok ships its own extra tags query for Rust (then TS) covering those two constructs, T8.8's recall measurement is rerun and recorded in `research.md`, and `callers` tests include both constructs.
+
+Execution plan (T52.5, OpenCode / Muse Spark 1.3):
+1. `src/plugins/read/outline.rs`: `RUST_TYPE_REF` extra query (bare `type_identifier` + `scoped_type_identifier` name/path as `@reference.type`) appended to the Rust tags config; `TS_SCOPED_CALL` extra query (`call_expression` with `identifier` and `member_expression` property as `@reference.call`) appended to the TS/TSX configs. No new crate (queries are data).
+2. `src/plugins/graph/index.rs`: extractor fingerprint hashes the two new query strings (stale rows re-index, T35.5); `scoped()` drops def-line self-refs (same name+line as a def) and cross-kind duplicates (a `type` ref where a non-`type` ref of the same name+line+scope exists, e.g. `impl` items).
+3. `tests/graph_truth.rs`: constructs fixture gains type-position (`Vec<OnlyTyped>`, param type) and TS member-call cases; `OnlyTyped` flips to hit; `callers` asserts both constructs group under the enclosing fn.
+4. `research.md` §2: re-record T8.8 recall after the change (was refs 32/105 recall 0.305).
+5. Verify: `graph_contract.rs` byte-exact (fixtures have no type ids), `mise exec -- cargo fmt`, clippy `-D warnings`, nextest incl. `graph_truth`; `just check`. Files: outline.rs, index.rs, tests/graph_truth.rs, research.md (+ PLAN.md Known-misses note).
 
 ### T53.1. Coaching nudges under an A/B
 
