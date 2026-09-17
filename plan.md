@@ -17,9 +17,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
-| T56.1 | todo | P2 | 2 | 0% | |
-| T56.2 | todo | P2 | 3 | 0% | |
-| T56.3 | todo | P2 | 3 | 0% | |
+| T56.1 | done | P2 | 2 | 100% | |
+| T56.2 | in progress | P2 | 3 | 60% | |
+| T56.3 | in progress | P2 | 3 | 50% | |
 | T56.4 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
@@ -97,18 +97,18 @@ Done when `strip_prefix_cd` accepts single- and double-quoted path segments (mal
 
 ### T56.1. Test VFS helper and convention
 
-**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` now ships a thin `Vfs` (path → bytes).
-Done when this decision is recorded (D29), AGENTS.md notes the rule, `Vfs` covers write/read/len/paths, and at least one read/cmd/graph unit test uses it with no host temp dir.
+**All tests must prefer a virtual filesystem** over host `TempDir` / raw `std::fs` as the primary approach. Goal: unit tests run against an in-memory FS so they do not depend on real disk layout, and Windows/macOS path quirks (case fold, spaced profiles) can be simulated. `src/testutil.rs` ships `Vfs` (path → bytes) with `write` / `read` / `read_str` / `len` / `exists` / `paths` / `paths_under`.
+**Done** — D29 recorded, AGENTS.md notes the rule, Vfs covers the API above, and read (`search_max_bytes_gate_uses_vfs_sizes`), cmd (`Settings::from_vfs` rules tests), and graph (`file_uri_encodes_spaces`) unit tests use it with no host temp dir.
 
 ### T56.2. Migrate read/search unit tests to VFS
 
 Hottest filesystem tests first: `display_rel` / search size-gate logic should use `Vfs` or pure `Path` values. WalkBuilder-backed integration may stay on disk until a walk adapter exists (T56.4).
-Done when the pure path and size-gate tests need no host temp dir, and remaining disk tests are listed as follow-ups.
+**In progress** — pure `display_rel` + Vfs size-gate/regex hits + Vfs line-numbering/range twins landed. Remaining disk follow-ups (T56.4): `search_paths_stay_relative_*`, `search_and_tree_skip_git_dir`, `search_skips_files_over_search_max_bytes` (WalkBuilder e2e), `tree_paths_*`, full `read()` Runtime tests (`three_lines_are_numbered`, caps, symlink).
 
 ### T56.3. Migrate cmd/setup path tests to VFS
 
 Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-Done when new file-touching unit tests in setup/agents use `Vfs` (or document why a disk fixture remains), and one legacy test is migrated as a template.
+**In progress** — `Settings::from_vfs` + migrated `user_rules_*`, `drop_ins_merge_*`, `a_broken_drop_in_*`. Still on disk: `issues_in_names_every_malformed_file` (path strings in errors), agent install / setup hook writers (template next).
 
 ### T56.4. Optional walk/VFS adapter for search/tree
 
