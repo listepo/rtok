@@ -163,6 +163,11 @@ section! {
         openai_upstream: String = s("https://api.openai.com"),
         timeout_s: u64 = 600,
         include_usage: bool = true,
+        /// Opt-in Anthropic server-side context editing (T51.2): add
+        /// `context_management.edits: [{type: "clear_tool_uses_20250919"}]` plus the
+        /// `context-management-2025-06-27` beta header on `/v1/messages` requests that
+        /// do not already carry the field. Other wires are unaffected.
+        context_management: bool = false,
         dry_run: bool = false,
     }
 }

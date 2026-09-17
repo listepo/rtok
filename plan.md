@@ -16,7 +16,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T50.3 | todo | P3 | 3 | 0% | |
 | T50.4 | todo | P3 | 2 | 0% | |
 | T51.1 | todo | P3 | 5 | 0% | |
-| T51.2 | todo | P3 | 3 | 0% | |
 | T51.3 | todo | P3 | 4 | 0% | |
 | T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
@@ -78,10 +77,7 @@ Done when `rtok doctor` reports the share of Read-class tokens spent in Grep/Glo
 From I-09. `archive` rewrites only old `tool_result`s; huge JSON dumps and `data:` blobs in other live-zone fields stay whole every turn.
 Done when a proxy-side pass shrinks such payloads losslessly (archived, `expand <id>`), only for content that is byte-stable across turns so the prompt cache holds, with a byte-stability test over a six-turn fixture on both wires and a `Measurement` row. Off by default until a bench shows cost per passed task does not rise.
 
-### T51.2. Anthropic native context editing
 
-From I-10. Anthropic can clear old tool uses server-side (`context_management`, `clear_tool_uses_*`), which competes with or complements `archive`.
-Done when `[proxy]` can add the context-management request fields for Anthropic Messages (opt-in), the proxy records which path shrank a request, `archive` skips turns the platform will clear, and a proxy test asserts the request body and the resulting usage rows. The README compares both paths with measured numbers.
 
 ### T51.3. Gemini wire in the proxy
 

@@ -108,6 +108,7 @@ plugins.toon.min_rows = 5
 plugins.wasm.dir = ~/.rtok/plugins
 plugins.wasm.enabled = false
 proxy.bind = 127.0.0.1
+proxy.context_management = false
 proxy.dry_run = false
 proxy.enabled = true
 proxy.include_usage = true

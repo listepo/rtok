@@ -86,6 +86,21 @@ rtok proxy --mode passthrough
 # In another shell, point the host at http://127.0.0.1:8790.
 ```
 
+Two ways to shrink old tool results on the Anthropic wire, measured on the same
+six-turn request (103 729 bytes upstream-bound; `tests/proxy.rs`
+`proxy_compress_rewrites_old_tool_results_identically` and
+`proxy_anthropic_context_edits_arm_platform_path`):
+
+| path | upstream body | local rows |
+| --- | --- | --- |
+| `archive` (`mode = "compress"`) | 70 837 B (−31.7 %) | 4 `archive` Measurements, one per rewritten block |
+| platform (`[proxy] context_management = true`) | 103 798 B (+69 B field) | 1 zero-delta `proxy/context_management` row naming the path; `archive` stands down (0 rows) |
+
+The platform's own clearing happens server-side and is not locally observable, so by
+D3 no saving is claimed for it — only the added field is measured. Keep `archive`
+where the platform cannot clear (the OpenAI wires); where both apply, the platform
+wins and `archive` skips those turns rather than shrinking twice.
+
 ## Examples
 
 ### Price the stack you already have

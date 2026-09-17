@@ -8,6 +8,31 @@ pub static ANTHROPIC: Anthropic = Anthropic;
 
 pub struct Anthropic;
 
+/// Beta enabling server-side context editing (T51.2,
+/// https://platform.claude.com/docs/en/build-with-claude/context-editing).
+pub const CONTEXT_BETA: &str = "context-management-2025-06-27";
+
+/// Opt-in server-side context editing (plan T51.2): add the default
+/// `clear_tool_uses` edit when `enabled` and the caller set no
+/// `context_management` of their own. Never overwrites, never reshapes —
+/// returns whether `body` changed.
+pub fn apply_context_edits(body: &mut Value, enabled: bool) -> bool {
+    if !enabled {
+        return false;
+    }
+    let Some(object) = body.as_object_mut() else {
+        return false;
+    };
+    if object.contains_key("context_management") {
+        return false; // the caller already chose; respect it either way
+    }
+    object.insert(
+        "context_management".to_string(),
+        serde_json::json!({"edits": [{"type": "clear_tool_uses_20250919"}]}),
+    );
+    true
+}
+
 impl ToolResults for Anthropic {
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>> {
         let Some((messages, total)) = turn_setup(req, "messages") else {
@@ -124,5 +149,26 @@ mod tests {
                 output: 0
             })
         );
+    }
+
+    #[test]
+    fn context_edits_are_opt_in_and_never_overwrite() {
+        let mut off = json!({"model": "m"});
+        assert!(!apply_context_edits(&mut off, false));
+        assert_eq!(off, json!({"model": "m"}));
+
+        let mut on = json!({"model": "m"});
+        assert!(apply_context_edits(&mut on, true));
+        assert_eq!(
+            on["context_management"],
+            json!({"edits": [{"type": "clear_tool_uses_20250919"}]})
+        );
+
+        let mut own = json!({"context_management": {"edits": []}});
+        assert!(!apply_context_edits(&mut own, true));
+        assert_eq!(own, json!({"context_management": {"edits": []}}));
+
+        let mut scalar = json!("nope");
+        assert!(!apply_context_edits(&mut scalar, true));
     }
 }

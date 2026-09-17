@@ -866,6 +866,92 @@ async fn proxy_compress_archives_six_turns_on_each_wire() {
     }
 }
 
+// ── T51.2: Anthropic native context editing — opt-in platform path ──
+
+/// The platform path, armed: the proxy adds `context_management` + the beta header,
+/// records which path the request took, and `archive` stands down (no double-shrink).
+#[tokio::test]
+async fn proxy_anthropic_context_edits_arm_platform_path() {
+    let server = MockServer::start();
+    // Only answers when the beta header is present: a call through proves forwarding.
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/messages")
+            .header("anthropic-beta", "context-management-2025-06-27");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ANTHROPIC_MESSAGES_BODY);
+    });
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-t512-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.proxy.upstream = server.base_url();
+    cfg.proxy.mode = "compress".to_string();
+    cfg.proxy.context_management = true;
+    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr").to_string();
+    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
+
+    let resp = t51_post(&addr, t53_request()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        resp.bytes().await.expect("body").as_ref(),
+        ANTHROPIC_MESSAGES_BODY,
+        "response bytes match the fixture"
+    );
+    mock.assert();
+
+    let rows = t51_usage(&state.store, T53_SESSION).await;
+    assert_eq!(rows.len(), 1, "exactly one usage row");
+    assert_eq!(
+        (
+            rows[0].input,
+            rows[0].cache_create,
+            rows[0].cache_read,
+            rows[0].output
+        ),
+        (10, 0, 0, 2)
+    );
+    let sent = state
+        .store
+        .call_io_request(rows[0].call_id.expect("call id") as i32)
+        .expect("call_io")
+        .expect("request");
+    let body: serde_json::Value = serde_json::from_slice(&sent).expect("json");
+    assert_eq!(
+        body["context_management"],
+        serde_json::json!({"edits": [{"type": "clear_tool_uses_20250919"}]}),
+        "the platform-path field the proxy added"
+    );
+    assert!(
+        !String::from_utf8_lossy(&sent).contains("[archived "),
+        "archive stands down while the platform clears"
+    );
+    assert_eq!(
+        state
+            .store
+            .measurement_count("archive")
+            .expect("measurements"),
+        0
+    );
+    let kinds: Vec<String> = state
+        .store
+        .list_measurements("proxy")
+        .expect("measurements")
+        .into_iter()
+        .map(|r| r.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        ["context_management"],
+        "one row naming the path this request took"
+    );
+    task.abort();
+}
+
 // ── proxy/core.enabled=false → plain reverse proxy (listener stays up) ──
 
 // Global live ring is process-wide; parallel tests that clear()/assert it must serialize.

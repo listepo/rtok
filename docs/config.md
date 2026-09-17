@@ -112,6 +112,7 @@ upstream        = "https://api.anthropic.com"      # RTOK_UPSTREAM; chain behind
 openai_upstream = "https://api.openai.com"         # RTOK_OPENAI_UPSTREAM (D11)
 timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
+context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
 [web]                                 # rtok web (same data as rtok tui)

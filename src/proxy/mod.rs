@@ -46,7 +46,8 @@ use crate::config::Config;
 use crate::plugin::{Ctx, Runtime};
 use crate::plugins::Registry;
 use crate::store::Store;
-use wire::{Wire, WireRequest, api_of, join_upstream};
+use rtok_plugin_sdk::Measurement;
+use wire::{API_ANTHROPIC, Wire, WireRequest, api_of, join_upstream};
 
 pub mod anthropic;
 pub mod cli;
@@ -193,8 +194,8 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
     // Plain mode (`proxy.enabled` / `core.enabled` false): byte-identical forward, no
     // bookkeeping, compress, or request shaping. Listener stays up until process exit.
     let plain = state.plain();
-    let (request_body, recorded) = if plain {
-        (request_body, None)
+    let (request_body, recorded, context_armed) = if plain {
+        (request_body, None, false)
     } else {
         // Request bookkeeping (fail-open: a DB error logs and the request still goes through).
         let parsed = serde_json::from_slice::<Value>(&request_body).ok();
@@ -214,12 +215,20 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         } else {
             request_body
         };
-        // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`).
+        // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`;
+        // T51.2: Anthropic `context_management`).
         let request_body = match wire {
             Some(wire) => prepare(&state, wire, request_body),
             None => request_body,
         };
-        (request_body, recorded)
+        let (request_body, context_armed) = match wire {
+            Some(wire) => context_edits(&state, wire, request_body),
+            None => (request_body, false),
+        };
+        if context_armed && let Some(r) = recorded.as_ref() {
+            record_context_path(&state, r, &request_body);
+        }
+        (request_body, recorded, context_armed)
     };
 
     let sc = &state.cfg.plugins.proxy.semantic_cache;
@@ -257,6 +266,16 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         }
     }
     rb = rb.header(ACCEPT_ENCODING, "identity");
+    // The platform path needs its beta (T51.2) — unless the client already opted in,
+    // in which case appending a duplicate value is pointless.
+    if context_armed
+        && !headers.get_all("anthropic-beta").iter().any(|v| {
+            v.to_str()
+                .is_ok_and(|s| s.contains(anthropic::CONTEXT_BETA))
+        })
+    {
+        rb = rb.header("anthropic-beta", anthropic::CONTEXT_BETA);
+    }
     let upstream = match rb.body(request_body.clone()).send().await {
         Ok(r) => r,
         Err(e) => {
@@ -413,6 +432,52 @@ fn prepare(state: &ProxyState, wire: &'static dyn Wire, original: Bytes) -> Byte
     serde_json::to_vec(&body).map_or(original, Bytes::from)
 }
 
+/// The platform path (T51.2): on the Anthropic wire with `[proxy] context_management`,
+/// arm server-side clearing of old tool uses. Returns the body to forward and whether it
+/// was armed. Fail open like `prepare`: unparseable, unchanged, non-Anthropic, or
+/// disabled bodies go through exactly as they arrived.
+fn context_edits(state: &ProxyState, wire: &'static dyn Wire, original: Bytes) -> (Bytes, bool) {
+    if api_of(wire) != API_ANTHROPIC {
+        return (original, false);
+    }
+    let Ok(mut body) = serde_json::from_slice::<Value>(&original) else {
+        return (original, false);
+    };
+    if !anthropic::apply_context_edits(&mut body, state.cfg.proxy.context_management) {
+        return (original, false);
+    }
+    let bytes = serde_json::to_vec(&body).map_or(original, Bytes::from);
+    (bytes, true)
+}
+
+/// This request takes the platform path: the `context_management` field was added, so
+/// the clearing happens server-side. Record which path it took — a zero-delta row on the
+/// `semantic_cache_hit` precedent. The field adds bytes and the platform's saving is not
+/// locally observable, so no saving is claimed (D3).
+fn record_context_path(state: &ProxyState, r: &Recorded, request_body: &[u8]) {
+    let nbytes = request_body.len();
+    let est = (nbytes / 4).max(1) as u32;
+    let m = Measurement {
+        plugin: "proxy",
+        kind: "context_management",
+        before_bytes: nbytes as u64,
+        after_bytes: nbytes as u64,
+        est_before: est,
+        est_after: est,
+        ref_id: None,
+        call_id: Some(r.call_id),
+    };
+    if let Err(e) = state.store.insert_measurement(&r.session, &m) {
+        log(
+            state,
+            &r.session,
+            Some(r.call_id),
+            "error",
+            &format!("context path: {e:#}"),
+        );
+    }
+}
+
 fn compress(
     state: &ProxyState,
     wire: &'static dyn Wire,
@@ -437,10 +502,17 @@ fn compress(
         }
     };
     cx.call_id = Some(r.call_id);
+    // The platform path (T51.2): with context edits armed on the Anthropic wire the
+    // platform clears old tool uses server-side, so `archive` stands down for those
+    // turns — rewriting them first would only churn the cache and double-shrink.
+    let platform_clears = api_of(wire) == API_ANTHROPIC && state.cfg.proxy.context_management;
     let changed = {
         let mut changed = false;
         let mut request = WireRequest::new(wire, &mut body);
         for p in state.registry.enabled() {
+            if platform_clears && p.manifest().id == "archive" {
+                continue;
+            }
             for m in p.proxy_filter(&mut request, &Ctx::new(&cx)) {
                 changed = true;
                 if let Err(e) = cx.record(&m) {
