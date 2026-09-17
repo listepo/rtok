@@ -36,3 +36,6 @@
 - T61.1. `stats` counts injected skill bodies
 - T61.2. Archive skill bodies outside the live zone
 - T61.3. `doctor` skill audit
+- T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
+- T62.2. Compaction checkpoint lists the skills loaded so far
+- T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`

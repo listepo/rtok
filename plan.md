@@ -49,6 +49,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T61.1 | todo | P2 | 2 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T61.3 | todo | P3 | 2 | 0% | |
+| T62.1 | todo | P3 | 3 | 0% | |
+| T62.2 | todo | P3 | 2 | 0% | |
+| T62.3 | todo | P3 | 3 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -304,6 +307,22 @@ Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the prece
 
 From I-50 (`research.md` §10.4, §10.7); T59.7 covers the host-feature half of the overlap check. Nothing today tells the operator that 66 skills ride in every request or that one body is 248 KB.
 Done when `rtok doctor` prints a `skills` section for the current host: every skill the host lists (Claude Code: `~/.claude/skills`, project `.claude/skills`, enabled plugins from `installed_plugins.json`; other hosts: their documented roots from `research.md` §10.1), with description chars, body bytes, invocations in the last 30 d (from T61.1 when the store has them, `-` otherwise), and one flag per row where it applies — `desc > 200`, `body > 8 KB` (suggest `references/`), `never invoked` (suggest `disable-model-invocation` or project scope) — plus a one-line total (listed skills, description bytes ≈ tokens per request); advice only, no file is edited; `doctor --json` carries the same rows; unit test on a `Vfs` tree with three skills; `docs/` doctor page gains the section with the measured totals from this machine and the date.
+
+### T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
+
+From `research.md` §10.8. The body of a skill is injected after the `Skill` tool call; a `PreToolUse` hook on matcher `Skill` runs before that and may deny with a reason the model reads. A 248 KB body (`update-config`, measured 2026-09-17) then becomes a digest plus an `expand <id>` pointer instead of 62 K resident tokens.
+Done when `src/agents/claude/mod.rs` `ENTRIES` gains `("PreToolUse", "Skill")` (host table re-blessed with `RTOK_BLESS=1 tests/agents_doc.rs`), the `guard` plugin handles it behind `[plugins.guard] skills = false` (default off) with `skill_max_bytes = 8192`: resolve `tool_input.skill` to its `SKILL.md` through the existing `doctor::skill_md_path` (user skills) plus the plugin roots from `installed_plugins.json` for `/plugin:skill` names, read it, and when the body exceeds the cap and its frontmatter has none of `allowed-tools`, `model`, `context`, `agent` — archive the body, answer `deny` whose reason is the markdown map (every heading with its first non-empty line, produced by the `read` plugin's map mode for markdown, no second outliner) followed by `[rtok <id> · N lines · expand: rtok expand <id>]` and one sentence telling the model to `expand` a section by `--grep` or to re-invoke with `[plugins.guard] skills` off; anything else (small body, frontmatter keys, unresolved path, read error) is `allow` untouched; `Measurement { plugin = "guard", kind = "skill" }`; the hook stays under 10 ms on a 250 KB file (measured in the test) and fails open; tests: fixture skills of 3 lines, 3,000 lines, and one with `allowed-tools`; docs: the guard page and `docs/agents.md` note that a digested skill does not apply its frontmatter.
+
+### T62.2. Compaction checkpoint lists the skills loaded so far
+
+From `research.md` §10.7–10.8 and T2.5 / T58.2. After auto-compaction the skill bodies are gone and nothing tells the model which skills it had loaded; it either re-invokes all of them (248 KB again) or none.
+Done when the `PreCompact` checkpoint (`src/plugins/checkpoint.rs`, which already reads the transcript for prompts, paths and errors) also collects the loaded skills: `isMeta` user records with `sourceToolUseID`, joined to the `Skill` tool_use for the name (fallback: the last path component of the `Base directory for this skill:` line), with the body bytes; the restore text on `SessionStart` with `source == "compact"` gains one byte-stable line `Skills loaded before compaction: slint (4.8 KB), update-config (171 KB) — re-invoke only what the next step needs`, kept inside the injection budget (names truncated to the budget, never the line dropped); unit test on a fixture transcript with two invocations; a line on the checkpoint section of the docs. Lands on every host that registers `PreCompact` (T58.2 decides the others).
+
+### T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
+
+From `research.md` §10.8. `plugins/opencode/rtok.ts` already replaces bash output through `rtok filter` in `tool.execute.after`; if OpenCode delivers a skill body through a tool call, the same hook sees it.
+Step 1 (decides the task): verify against OpenCode's current docs and one real session log (`~/.local/share/opencode/opencode.db`, `part` rows) which tool carries a skill body and whether `tool.execute.after` receives its `output`; record the finding in the card. If skills are injected outside the tool path, close the task with that finding and no code.
+Done when (if step 1 passes) the plugin routes that tool's output through `rtok filter --cmd "skill <name>"` with a `[skill]` rule in `rules/default.toml` (head 30 / tail 5, keep headings), the cut is lossless — `filter` archives the raw body and prints the `expand <id>` trailer, adding an `--archive` flag to `filter` if it has none today (check first; one code path with `run`) — `rtok.test.ts` covers a 3,000-line body and a small one, `Measurement { plugin = "cmd", kind = "skill" }`, and `plugins/opencode/README.md` documents it with the verified docs link (`tests/host_docs.rs`).
 
 ## Reference
 

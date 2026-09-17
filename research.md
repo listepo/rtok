@@ -741,3 +741,21 @@ column shows skill bodies above 2 % of input tokens on a real window), advise in
 (T61.3). The 248 KB `update-config` body alone is ≈ 62 K tokens resident in every request of
 that session; at the measured 97.5 % cache hit it is cache-read, at each cache miss it is
 a full re-send.
+
+### 10.8 What the host plugins can do (2026-09-17)
+
+§10.7 said hooks never see the injection. They do not see it, but on two hosts a plugin
+can act before it or on its carrier, and on one host the compaction checkpoint can carry
+the fact that a skill was loaded. Checked against `src/agents/claude/mod.rs` (`ENTRIES`:
+`PreToolUse` on `Bash`/`Read`, `PostToolUse *`, `PreCompact`, `PostCompact`, `SessionStart`)
+and `plugins/opencode/rtok.ts` (`tool.execute.after` already rewrites bash output).
+
+| Host | Interception point | What rtok can do there | Task |
+| --- | --- | --- | --- |
+| Claude Code | `PreToolUse` with matcher `Skill` (`tool_input.skill = <name>`), fires before the body is injected; the hook may answer `permissionDecision: deny` with a reason the model reads | for a body over a byte cap: archive it, answer deny with a digest (headings + first line per section) and the `expand <id>` trailer — the model gets the map, not the 248 KB, and pulls sections on demand. Off by default: a denied skill does not apply its frontmatter (`allowed-tools`, `model`, `context`), so skills carrying those keys always pass | T62.1 |
+| Claude Code | `PreCompact` reads the transcript (T2.5 checkpoint already extracts prompts, paths, errors); the `isMeta` + `sourceToolUseID` records name the skills loaded so far | the restore line after compaction lists them with sizes so the model re-invokes only what the next step needs, instead of guessing which skill it had | T62.2 |
+| OpenCode | `tool.execute.after` (`plugins/opencode/rtok.ts`) receives every tool's output, including the tool that loads a skill if OpenCode delivers skills as a tool call | shorten the body the way bash output is shortened, with an archive id so the full text is one `expand` away | T62.3 (step 1 verifies the delivery path) |
+| Cursor, Codex, Copilot, Gemini | no hook fires on skill activation (Cursor hooks: shell, MCP, file read; Codex: none; Gemini: `activate_skill` is a tool, hooks not documented for it) | nothing on the plugin side; the proxy path (T61.2) is the only lever | — |
+
+`PostToolUse(Skill)` stays useless for this: it can only add context, and the body is
+already on its way. `UserPromptSubmit` carries the human prompt only.
