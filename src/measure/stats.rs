@@ -607,13 +607,7 @@ pub fn bash_family(cmd: &str) -> String {
     }
     let first = s.split_whitespace().next().unwrap_or("other");
     // Split `/` and `\` + strip `.exe` so Windows session logs still bucket by family.
-    let base = first.rsplit(['/', '\\']).next().unwrap_or(first);
-    let stem = if base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe") {
-        &base[..base.len() - 4]
-    } else {
-        base
-    };
-    stem.to_string()
+    crate::agents::cmd_stem(first).to_string()
 }
 
 fn strip_prefix_env(s: &str) -> Option<&str> {
