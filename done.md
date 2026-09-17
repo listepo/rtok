@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T48.4 — DeepSeek Harness host
+
+**T48.4 DeepSeek Harness host** · P2, 4/5 · `plan.md`, `todo.md`, `done.md` (no code: the card's escape clause)
+
+Do: verified the official sources (fetched 2026-09-17) and closed the card with evidence instead of code. DeepSeek Harness (`dsh`, https://github.com/deepseek-ai/deepseek-harness) is an open-source agent harness in developer preview — its README says "THERE WILL BE COMPATIBILITY-BREAKING CHANGES". It has no stable user-level config surface rtok could install into: models are configured through the Web UI Settings → Models form into `$DSH_HOME/settings.yaml` with keys in `$DSH_HOME/.credentials.yaml` (https://deepseek-harness.github.io/deepseek-harness/en/guide/providers); MCP servers attach as Cordis overlay YAML patches passed per-run as `dsh web --patch …` or merged by hand into `$DSH_HOME/cordis.patch.yml` ("do not copy over an existing file: it may already contain unrelated user patches"), as `@deepseek-ai/dsh-mcp-client` plugin rows (`serverName`/`transport`/`command`), not a server map rtok could merge into (https://deepseek-harness.github.io/deepseek-harness/en/guide/mcp-memory); no shell-hook event protocol `rtok hook` could serve is documented. Re-check when the harness leaves preview with a versioned config schema: then MCP is one `dsh-mcp-client` row (`serverName: rtok`, stdio `rtok mcp`) and providers already speak `anthropic-messages`, so the proxy is a base-URL away.
+Check: the card's escape clause ("If the harness has no stable config surface, the card closes with that evidence instead of code").
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: five official pages fetched and linked above (API docs agent-integration note, repo README, quickstart, providers, mcp-memory); no repo file besides the plan trio changed (`git status` clean apart from them).
+Deviation: none; evidence-close, no code, no new host in the registry, config, docs or e2e matrix.
+
 ## T48.2 — pi install hint reaches the model
 
 **T48.2 pi install hint reaches the model** · P1, 1/5 · `plugins/pi/extensions/rtok.ts`, `plugins/pi/tests/rtok.test.ts`, `plugins/pi/README.md`

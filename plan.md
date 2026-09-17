@@ -7,7 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.3 | todo | P1 | 2 | 0% | |
-| T48.4 | todo | P2 | 4 | 0% | |
 | T48.5 | todo | P2 | 3 | 0% | |
 | T48.6 | todo | P2 | 3 | 0% | |
 | T48.7 | in progress | P3 | 2 | 0% | OpenCode / Muse Spark 1.3 |
@@ -36,11 +35,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 From I-37. `plugins/cursor/mcp.json` runs `rtok mcp` directly, so `scripts/mcp.sh` / `scripts/mcp.cmd`, which print `ketch install listepo/rtok` when `rtok` is missing, never run: in Cursor a missing binary is a silent MCP failure. The root `plugin.json` claims the Agent Plugins spec, which also wants `$schema` and `type: "stdio"` per server.
 Done when Cursor starts the MCP server through the launcher on macOS, Linux and Windows (a per-OS command or one launcher Cursor resolves), `tests/cursor_plugin.rs` asserts that path and the missing-rtok hint, and the root `plugin.json` either conforms to the spec (`$schema`, `type`) or is dropped with the reason in the README.
-
-### T48.4. DeepSeek Harness host
-
-Deferred when ZCode, Kimi Code and Copilot landed (T46.x): DeepSeek Harness (`dsh`) was requested together with them, but its public sources were unverified and its config looked like YAML patches without a documented hook protocol. The note did not survive in `roadmap.md`, so it is restored here.
-Done when the official docs and config locations are verified and linked; `src/agents/deepseek/{mod.rs,README.md}` installs what the harness really supports (MCP, a base-URL proxy, hooks only if documented) with the support table, `## Docs`, `Reachable:` lines; `[setup.deepseek]` config, docs and the eight-host e2e matrix (`tests/agents_install.rs`, `tests/agent_remove.rs`) include it. If the harness has no stable config surface, the card closes with that evidence instead of code.
 
 ### T48.5. Windsurf host
 

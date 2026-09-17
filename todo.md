@@ -1,5 +1,4 @@
 - T48.3. Cursor plugin MCP goes through the ketch-hint launcher
-- T48.4. DeepSeek Harness host
 - T48.5. Windsurf host
 - T48.6. Zed host
 - T48.7. aider host (in progress)
