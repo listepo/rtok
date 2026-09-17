@@ -39,3 +39,4 @@
 - T62.1. Claude Code `PreToolUse(Skill)`: digest oversized skill bodies
 - T62.2. Compaction checkpoint lists the skills loaded so far
 - T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
+- T63.1. Skills page on `tui` and `web`
