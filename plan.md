@@ -46,6 +46,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.8 | todo | P3 | 1 | 0% | |
 | T60.9 | todo | P3 | 1 | 0% | |
 | T60.10 | todo | P3 | 2 | 0% | |
+| T61.1 | todo | P2 | 2 | 0% | |
+| T61.2 | todo | P3 | 3 | 0% | |
+| T61.3 | todo | P3 | 2 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -285,6 +288,22 @@ Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it
 
 Checked 2026-09-17 (`src/tui/view.rs:72,366`, `src/tui/app.rs`): the Sessions page renders `render::sessions_table` as one `Paragraph` — no cursor, no scroll, no selection, no keys, no live-only filter — while Plugins and Calls have row state in `app.rs`, `↑/↓`, and a detail toggle. A store with more sessions than the terminal has lines shows only the top of the table. The `placeholder()` fallback at `view.rs:75` still exists for an unknown page although every `model::pages()` entry now has a body.
 Done when Sessions has the same row model as Calls: a `sessions` cursor in `app.rs`, `↑/↓` moving it with the table scrolling to keep it visible, the selected row marked like the Calls row, `l` toggling the live-only filter the CLI exposes as a flag (`sessions_table(rows, all, now)` already takes it), the footer naming the keys; the `placeholder()` fallback is deleted and an unknown page is a `surface_parity` failure instead; `app.rs` and `view.rs` `TestBackend` tests cover cursor, scroll on a 200-row snapshot and the filter. T60.3 builds its detail pane on this cursor.
+
+### T61.1. `stats` counts injected skill bodies
+
+From I-49 (`research.md` §10.2, §10.7). The `Skill` tool_result is 22 B; the body lands as a separate `isMeta` user record joined to the tool_use by `sourceToolUseID` (measured 2026-09-17: median 8,863 B, max 248,175 B), and `stats` sees only the 22 B.
+Done when `measure::jsonl` keeps `isMeta` user records with a `sourceToolUseID` as `Injected { tool_use_id, bytes, turn }`, `stats` folds them into a `skill` family keyed by the `Skill` tool_use's `input.skill` — calls, bytes, mean, p95, est. tokens, and `resident` = bytes × the number of later API requests in that session (what the context actually carried) — printed as one table under `mcp` and present in `--json`; unit test on a fixture transcript with one 3-line and one 3,000-line body; `stats_model` golden re-blessed in the same commit; the measured row from this machine goes into `research.md` §10.2 with the command.
+
+### T61.2. Archive skill bodies outside the live zone
+
+From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
+Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
+Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
+
+### T61.3. `doctor` skill audit
+
+From I-50 (`research.md` §10.4, §10.7); T59.7 covers the host-feature half of the overlap check. Nothing today tells the operator that 66 skills ride in every request or that one body is 248 KB.
+Done when `rtok doctor` prints a `skills` section for the current host: every skill the host lists (Claude Code: `~/.claude/skills`, project `.claude/skills`, enabled plugins from `installed_plugins.json`; other hosts: their documented roots from `research.md` §10.1), with description chars, body bytes, invocations in the last 30 d (from T61.1 when the store has them, `-` otherwise), and one flag per row where it applies — `desc > 200`, `body > 8 KB` (suggest `references/`), `never invoked` (suggest `disable-model-invocation` or project scope) — plus a one-line total (listed skills, description bytes ≈ tokens per request); advice only, no file is edited; `doctor --json` carries the same rows; unit test on a `Vfs` tree with three skills; `docs/` doctor page gains the section with the measured totals from this machine and the date.
 
 ## Reference
 

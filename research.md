@@ -715,3 +715,29 @@ the conversation for every later request of that session.
   path, framing) is unknown until a captured system prompt is measured through the proxy.
 - Whether hosts other than Claude Code and Cursor honour `disable-model-invocation` in the
   listing is not documented (10.1).
+
+### 10.7 Working around the blind spot (2026-09-17)
+
+Two facts fix it. In the transcript the injected body is its own record: `type: "user"`,
+`isMeta: true`, `turnCompanion: true`, `sourceToolUseID: <id of the Skill tool_use>`, text
+`Base directory for this skill: <path>\n\n<SKILL.md body>` (`skillrec.py`, 2026-09-17,
+two invocations checked). On the wire it is a plain user text block that follows the
+`tool_result` `Launching skill: <name>` of that same `tool_use_id`, and it is re-sent whole
+in every later request of the session. Three surfaces can act, in this order:
+
+| Surface | What it can do | Limit |
+| --- | --- | --- |
+| `stats` (transcripts) | Count the body exactly: join the `isMeta` record to its `Skill` tool_use through `sourceToolUseID`; family `skill`, one row per skill name, bytes + est. tokens, and a "resident" column = bytes × later requests of the session (what the model actually paid for). | Claude Code only; other hosts' transcripts are not read (T49.2). |
+| `proxy` / `archive` | Shrink the body outside the live zone the way old tool results are shrunk: key = the preceding `Launching skill` `tool_use_id` (byte-stable pointer), archive the body once, replace it with `[archived <id>: skill <name> · N lines · expand(<id>)]`. Lossless: `expand <id>`, or the model re-invokes the skill. The `keep_turns` boundary already decides "old". | Only when the proxy is in the chain (`ANTHROPIC_BASE_URL`); hooks never see the body (`UserPromptSubmit` carries the human prompt only, `PostToolUse(Skill)` fires before the injection). |
+| `doctor` (advice) | Prevent at the source: list what the host lists, flag description > 200 chars, body > 8 KB, never invoked in 30 d, and say which lever applies (`references/`, `disable-model-invocation`, project scope). | Advice only — rtok never edits a user's skills. |
+
+What does not work: a hook cannot intercept or rewrite the injection (it is not a tool
+result, and PostToolUse can only add context); the MCP surface never sees it; a compaction
+checkpoint (T2.5) does not carry skill bodies, so after auto-compaction the body is gone
+and the model re-invokes — which is the cheap outcome, not a loss.
+
+Order: measure first (T61.1), shrink behind the measurement (T61.2, gate: the `resident`
+column shows skill bodies above 2 % of input tokens on a real window), advise in parallel
+(T61.3). The 248 KB `update-config` body alone is ≈ 62 K tokens resident in every request of
+that session; at the measured 97.5 % cache hit it is cache-read, at each cache miss it is
+a full re-send.

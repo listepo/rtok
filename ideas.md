@@ -32,8 +32,8 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-49 | `research.md` §10.2: the `Skill` tool_result is 22 B and the body lands as the next user message (median 8.9 KB, max 248 KB) | `measure` (`stats`) | A `skill` family in `stats`: the user message after a `Skill` tool_use counted per skill name — calls, bytes, mean, p95 — so skill bodies stop being invisible. | Measured 2026-09-17; not in the plan until the creator promotes it. |
-| I-50 | `research.md` §10.4; T59.7 (host-feature overlap) | `doctor` | Skill audit: every listed skill with description chars, body bytes, invocations in the window; flags descriptions > 200 chars, bodies > 8 KB, never-invoked skills, and suggests `disable-model-invocation` / project scope. Advice only. | Needs I-49 for the invocation column. |
+| I-49 | `research.md` §10.2: the `Skill` tool_result is 22 B and the body lands as the next user message (median 8.9 KB, max 248 KB) | `measure` (`stats`) | **promoted T61.1** — A `skill` family in `stats`: the user message after a `Skill` tool_use counted per skill name — calls, bytes, mean, p95 — so skill bodies stop being invisible. | Measured 2026-09-17; not in the plan until the creator promotes it. |
+| I-50 | `research.md` §10.4; T59.7 (host-feature overlap) | `doctor` | **promoted T61.3** — Skill audit: every listed skill with description chars, body bytes, invocations in the window; flags descriptions > 200 chars, bodies > 8 KB, never-invoked skills, and suggests `disable-model-invocation` / project scope. Advice only. | Needs I-49 for the invocation column. |
 | I-01 | token-optimizer dashboard; rtk `gain`; headroom `savings` | TUI (`measure`) | **promoted P15** — ratatui `rtok tui` (not HTML); per-plugin, per-day CTT dashboard. | T1.2 done; promoted 2026-09-02 → P15 T15.1–T15.9, D17. |
 
 ### `cmd`
@@ -60,7 +60,7 @@ that v0.1 does not schedule.
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-51 | `research.md` §10.3 (2): one 248 KB skill body stays in every later request of its session | `archive` live zone | Extend the live-zone matcher to skill-body user messages older than N turns: pointer + `expand <id>`, same path as old tool results. | Gate on I-49: how many requests carry a skill body. |
+| I-51 | `research.md` §10.3 (2): one 248 KB skill body stays in every later request of its session | `archive` live zone | **promoted T61.2** — Extend the live-zone matcher to skill-body user messages older than N turns: pointer + `expand <id>`, same path as old tool results. | Gate on I-49: how many requests carry a skill body. |
 | I-44 | atlassian-labs/mcp-compressor; headroom MCP wrapper (`research.md` §9.1) | `archive` / `proxy` | **promoted T59.4** — Wrap foreign MCP servers (`rtok mcp --wrap <server cmd>`) so their fresh results are shortened losslessly (`expand <id>`) the way `cmd`/`read` results already are; old results already shrink in the proxy live zone. | Foreign MCP results were 15 K of 2.83 M tool-result tokens on the measured workload (§2). Revisit when a `stats` row shows a foreign server above 5 %. |
 | I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | **promoted T59.5** — Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Claude Code Tool Search already defers MCP schemas and `doctor` flags `mcp_tool_search_disabled`; a rewrite changes what the model reads and the cached prefix once per session. Redundant on the main host; no measured host without deferral. |
 
@@ -150,6 +150,9 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-46 | T59.6 | `handoff` MCP tool: budgeted digest for sub-agents, behind evidence. | 2026-09-17 |
 | I-47 | T59.7 | `doctor` names host-native features that duplicate a rtok surface. | 2026-09-17 |
 | I-48 | T59.8 | Token-sink ranking rule in `report`. | 2026-09-17 |
+| I-49 | T61.1 | `stats` counts injected skill bodies (`isMeta` + `sourceToolUseID`). | 2026-09-17 |
+| I-50 | T61.3 | `doctor` skill audit: listing cost, oversized bodies, never-invoked skills. | 2026-09-17 |
+| I-51 | T61.2 | Archive skill bodies outside the live zone, gated on T61.1. | 2026-09-17 |
 | I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
 
 | ID | Became | Date |

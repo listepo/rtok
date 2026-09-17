@@ -33,3 +33,6 @@
 - T60.8. TUI help overlay and manual refresh
 - T60.9. Web theme toggle
 - T60.10. Sessions tab in the TUI is a static paragraph
+- T61.1. `stats` counts injected skill bodies
+- T61.2. Archive skill bodies outside the live zone
+- T61.3. `doctor` skill audit
