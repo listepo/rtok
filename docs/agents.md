@@ -34,3 +34,5 @@ The table is generated from the host code (`src/agents/<host>/mod.rs` and the pl
 ```bash
 RTOK_BLESS=1 mise exec -- cargo test --test agents_doc
 ```
+
+Claude Code also gets a `PreToolUse` hook on `Skill` (T62.1). It is inert until `[plugins.guard] skills = true`; then a `SKILL.md` over `skill_max_bytes` is archived and the call is denied with the file's heading map and an `rtok expand <id>` pointer. A skill digested this way does not apply its frontmatter, so skills carrying `allowed-tools`, `model`, `context` or `agent` always load whole.
