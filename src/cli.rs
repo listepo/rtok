@@ -9,7 +9,7 @@ use crate::config::validate;
 use crate::demon::Service;
 use crate::web::model;
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 /// `0.1.0 (1a2b3c4d5)` — the sha comes from `build.rs` (T10.4).
 pub(crate) const VERSION: &str =
@@ -93,6 +93,9 @@ enum Cmd {
         /// Cache health per session from proxy usage rows: busts and their cause
         #[arg(long)]
         cache: bool,
+        /// Show per-model USD costs from `[stats.prices]` (`--price`)
+        #[arg(long)]
+        price: bool,
     },
     /// A/B benchmark of host configurations
     Bench {
@@ -154,6 +157,13 @@ enum Cmd {
         #[arg(long)]
         grep: Option<String>,
     },
+    /// Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+    Completions {
+        /// Shell to complete for
+        shell: clap_complete::Shell,
+    },
+    /// Print the man page (roff) to stdout
+    Man,
     /// List plugins: id, enabled, surfaces
     Plugins,
     /// The one config file
@@ -293,6 +303,8 @@ enum GraphCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// List unreferenced private definitions (skips pub, trait impls, tests, macros)
+    Dead { path: Option<PathBuf> },
 }
 
 #[derive(Subcommand)]
@@ -326,7 +338,7 @@ enum SessionsCmd {
 
 #[derive(clap::Args)]
 struct RemoveArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`)
     host: String,
     /// Print what would be removed and exit
     #[arg(long)]
@@ -336,7 +348,7 @@ struct RemoveArgs {
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
 #[derive(clap::Args)]
 struct SetupArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`)
     host: String,
     /// Print the planned edits and exit
     #[arg(long)]
@@ -467,7 +479,18 @@ pub fn run() -> Result<()> {
                 }
                 ConfigCmd::Validate { path } => {
                     let path = path.unwrap_or(user);
-                    let errs = validate::issues(&path)?;
+                    let mut errs = validate::issues(&path)?;
+                    // The filter drop-ins are deployment state, not part of the
+                    // file: read them through the same file as the user layer
+                    // (`--config` wins when both are given). `layers::load`
+                    // creates nothing, so a read-only check stays read-only.
+                    let layer = config_file.as_deref().or(Some(&path));
+                    let cfg = crate::config::layers::load(&home, layer, None)
+                        .unwrap_or_default();
+                    errs.extend(validate::rules_issues(
+                        &cfg.plugins.cmd.rules,
+                        &cfg.plugins.cmd.rules_dir,
+                    ));
                     if errs.is_empty() {
                         println!("ok {}", path.display());
                     } else {
@@ -511,10 +534,11 @@ pub fn run() -> Result<()> {
             compare,
             calibrate,
             cache,
+            price,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
-                stats_flags(since, json, plugin.clone(), compare.clone()),
+                stats_flags(since, json, plugin.clone(), compare.clone(), price),
             )?;
             if calibrate {
                 println!("{}", crate::tokens::calibrate_or_skip(&cfg));
@@ -713,6 +737,13 @@ pub fn run() -> Result<()> {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
         }
+        Cmd::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "rtok", &mut io::stdout());
+        }
+        Cmd::Man => {
+            clap_mangen::Man::new(Cli::command()).render(&mut io::stdout())?;
+        }
         #[cfg(feature = "memory")]
         Cmd::Memory { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
@@ -728,20 +759,30 @@ pub fn run() -> Result<()> {
         #[cfg(feature = "graph")]
         Cmd::Graph { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let GraphCmd::Index { path, dry_run } = action;
             let cx = crate::plugin::Runtime::open(cfg, "graph")?;
-            let root = path.unwrap_or(std::env::current_dir()?);
-            let pb = crate::render::spinner("indexing");
-            let r = crate::plugins::graph::index::run_with(
-                &crate::plugin::Ctx::new(&cx),
-                &root,
-                dry_run,
-                &pb,
-            )?;
-            println!(
-                "indexed {} files · {} rows · {} skipped · {} read",
-                r.indexed, r.inserted, r.skipped, r.read
-            );
+            match action {
+                GraphCmd::Index { path, dry_run } => {
+                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let pb = crate::render::spinner("indexing");
+                    let r = crate::plugins::graph::index::run_with(
+                        &crate::plugin::Ctx::new(&cx),
+                        &root,
+                        dry_run,
+                        &pb,
+                    )?;
+                    println!(
+                        "indexed {} files · {} rows · {} skipped · {} read",
+                        r.indexed, r.inserted, r.skipped, r.read
+                    );
+                }
+                GraphCmd::Dead { path } => {
+                    let root = path.unwrap_or(std::env::current_dir()?);
+                    print!(
+                        "{}",
+                        crate::plugins::graph::dead(&crate::plugin::Ctx::new(&cx), &root)?
+                    );
+                }
+            }
         }
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
@@ -841,6 +882,7 @@ fn stats_flags(
     json: bool,
     plugin: Option<String>,
     compare: Option<String>,
+    price: bool,
 ) -> Option<figment::value::Dict> {
     use figment::value::{Dict, Value};
     let mut stats = Dict::new();
@@ -855,6 +897,9 @@ fn stats_flags(
     }
     if let Some(c) = compare {
         stats.insert("baseline".into(), Value::from(c));
+    }
+    if price {
+        stats.insert("price".into(), Value::from(true));
     }
     if stats.is_empty() {
         return None;

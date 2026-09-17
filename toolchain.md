@@ -27,6 +27,8 @@ Project programs and direct packages from the manifests.
 | assert_cmd | local | https://crates.io/crates/assert_cmd | CLI e2e tests |
 | axum | local | https://crates.io/crates/axum | Rust dependency |
 | clap | local | https://crates.io/crates/clap | CLI |
+| clap_complete | local | https://crates.io/crates/clap_complete | `rtok completions` shell scripts (T53.2) |
+| clap_mangen | local | https://crates.io/crates/clap_mangen | `rtok man` roff page (T53.2) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | dialoguer | local | https://crates.io/crates/dialoguer | Rust dependency |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |

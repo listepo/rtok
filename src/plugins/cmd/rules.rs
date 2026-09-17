@@ -24,7 +24,11 @@ pub struct Settings {
 
 impl Settings {
     pub fn from_config(cfg: &crate::config::Config) -> Self {
-        Self::load(&cfg.plugins.cmd.rules, cfg.plugins.cmd.fail_tail_lines)
+        Self::load(
+            &cfg.plugins.cmd.rules,
+            Some(&cfg.plugins.cmd.rules_dir),
+            cfg.plugins.cmd.fail_tail_lines,
+        )
     }
 
     /// Built-in defaults only (golden tests and fail-open paths without config).
@@ -35,17 +39,35 @@ impl Settings {
         }
     }
 
-    fn load(rules_path: &std::path::Path, fail_tail_lines: u32) -> Self {
-        let user = if rules_path.is_file() {
-            std::fs::read_to_string(rules_path)
-                .map(|s| parse(&s))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+    fn load(
+        rules_path: &std::path::Path,
+        rules_dir: Option<&std::path::Path>,
+        fail_tail_lines: u32,
+    ) -> Self {
+        let mut rules = defaults();
+        // One user file, then every `rules.d/*.toml` in name order; a later file
+        // wins per `match_cmd` through the same `merge_rules`.
+        if let Some(user) = read_rules_file(rules_path) {
+            rules = merge_rules(rules, user);
+        }
+        if let Some(dir) = rules_dir
+            && let Ok(rd) = std::fs::read_dir(dir)
+        {
+            let mut files: Vec<std::path::PathBuf> = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+                .collect();
+            files.sort();
+            for path in files {
+                if let Some(dropin) = read_rules_file(&path) {
+                    rules = merge_rules(rules, dropin);
+                }
+            }
+        }
         Self {
             fail_tail_lines: fail_tail_lines.max(1) as usize,
-            rules: merge_rules(defaults(), user),
+            rules,
         }
     }
 
@@ -67,6 +89,109 @@ fn merge_rules(mut base: Vec<Rule>, user: Vec<Rule>) -> Vec<Rule> {
         }
     }
     base
+}
+
+/// Read one rules file, strictly: a missing file is no rules, and a malformed
+/// one is no rules too (fail open — `rtok config validate` is what reports it).
+fn read_rules_file(path: &std::path::Path) -> Option<Vec<Rule>> {
+    if !path.is_file() {
+        return None;
+    }
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| parse_strict(&s).ok())
+}
+
+/// Parse one rules file strictly for `rtok config validate` (T50.2): TOML
+/// syntax, table-only top level, known fields only, right types. The runtime
+/// [`read_rules_file`] uses the same parser and skips the file on any error.
+pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
+    let doc = s
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let mut out = Vec::new();
+    for (k, v) in doc.iter() {
+        let Some(t) = v.as_table() else {
+            return Err(format!("[{k}]: expected table"));
+        };
+        let num = |key: &str, dflt: u32| -> Result<u32, String> {
+            match t.get(key) {
+                None => Ok(dflt),
+                Some(i) => i
+                    .as_integer()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or_else(|| format!("[{k}].{key}: expected integer ≥ 0")),
+            }
+        };
+        let strs = |key: &str| -> Result<Vec<String>, String> {
+            match t.get(key) {
+                None => Ok(Vec::new()),
+                Some(a) => a
+                    .as_array()
+                    .ok_or_else(|| format!("[{k}].{key}: expected array of strings"))?
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .ok_or_else(|| format!("[{k}].{key}: expected array of strings"))
+                    })
+                    .collect(),
+            }
+        };
+        for (field, _) in t.iter() {
+            match field {
+                "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" => {}
+                _ => return Err(format!("[{k}].{field}: unknown field")),
+            }
+        }
+        out.push(Rule {
+            match_cmd: k.to_string(),
+            max_lines: num("max_lines", 40)?,
+            head: num("head", 10)?,
+            tail: num("tail", 10)?,
+            drop: strs("drop")?,
+            keep: strs("keep")?,
+            dedupe: match t.get("dedupe") {
+                None => true,
+                Some(v) => v
+                    .as_bool()
+                    .ok_or_else(|| format!("[{k}].dedupe: expected bool"))?,
+            },
+        });
+    }
+    Ok(out)
+}
+
+/// Malformed rules files among the single `rules` file (when present) and every
+/// `rules.d/*.toml`, as `path: reason` lines for `rtok config validate` (T50.2).
+/// A missing file or dir is not an error — both default to built-ins.
+pub fn issues_in(rules_path: &std::path::Path, rules_dir: &std::path::Path) -> Vec<String> {
+    let mut errs = Vec::new();
+    let mut files = Vec::new();
+    if rules_path.is_file() {
+        files.push(rules_path.to_path_buf());
+    }
+    if let Ok(rd) = std::fs::read_dir(rules_dir) {
+        let mut dropins: Vec<std::path::PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+            .collect();
+        dropins.sort();
+        files.extend(dropins);
+    }
+    for path in files {
+        match std::fs::read_to_string(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => errs.push(format!("{}: cannot read ({e})", path.display())),
+            Ok(s) => {
+                if let Err(e) = parse_strict(&s) {
+                    errs.push(format!("{}: {e}", path.display()));
+                }
+            }
+        }
+    }
+    errs
 }
 
 impl Default for Rule {
@@ -347,7 +472,7 @@ mod tests {
             "[echo]\nmax_lines = 2\nhead = 1\ntail = 1\ndedupe = false\n",
         )
         .unwrap();
-        let s = Settings::load(&path, 80);
+        let s = Settings::load(&path, None, 80);
         let body = (0..10)
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
@@ -368,8 +493,92 @@ mod tests {
             "[grep]\nmax_lines = 5\nhead = 2\ntail = 2\ndedupe = false\n",
         )
         .unwrap();
-        let s = Settings::load(&path, 80);
+        let s = Settings::load(&path, None, 80);
         assert_eq!(s.pick("grep").max_lines, 5);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn dropin(dir: &std::path::Path, name: &str, body: &str) {
+        fs::write(dir.join(name), body).unwrap();
+    }
+
+    /// Drop-ins merge after the single user file in name order: `b.toml` wins
+    /// over both the file and `a.toml`, and a new family is appended.
+    #[test]
+    fn drop_ins_merge_in_name_order_after_the_user_file() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-d-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let dropins = dir.join("rules.d");
+        fs::create_dir_all(&dropins).unwrap();
+        let file = dir.join("rules.toml");
+        fs::write(&file, "[grep]\nmax_lines = 5\n").unwrap();
+        dropin(&dropins, "b.toml", "[grep]\nmax_lines = 7\n");
+        dropin(
+            &dropins,
+            "a.toml",
+            "[grep]\nmax_lines = 6\n[pytest]\nmax_lines = 9\n",
+        );
+        dropin(&dropins, "skip.txt", "[grep]\nmax_lines = 1\n");
+        let s = Settings::load(&file, Some(&dropins), 80);
+        assert_eq!(s.pick("grep").max_lines, 7, "b.toml wins in name order");
+        assert_eq!(s.pick("pytest").max_lines, 9, "new families append");
+        assert_eq!(s.pick("cat").max_lines, 80, "untouched defaults stay");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A malformed drop-in is skipped, fail open: the good files still apply
+    /// and the builtin underneath is untouched.
+    #[test]
+    fn a_broken_drop_in_is_skipped_fail_open() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-bad-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let dropins = dir.join("rules.d");
+        fs::create_dir_all(&dropins).unwrap();
+        dropin(&dropins, "bad.toml", "[grep\nmax_lines = \n");
+        dropin(&dropins, "good.toml", "[grep]\nmax_lines = 7\n");
+        let missing = dir.join("no-such-rules.toml");
+        let s = Settings::load(&missing, Some(&dropins), 80);
+        assert_eq!(s.pick("grep").max_lines, 7);
+        // A missing dir is built-ins, not an error.
+        let s = Settings::load(&missing, Some(&dir.join("no-such-d")), 80);
+        assert_eq!(s.pick("grep").max_lines, 40);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strict_rejects_syntax_types_and_unknown_fields() {
+        assert!(parse_strict("[grep]\nmax_lines = 5\n").is_ok());
+        assert!(parse_strict("").is_ok());
+        let bad_syntax = parse_strict("[grep\nmax_lines = \n").unwrap_err();
+        assert!(bad_syntax.contains("line"), "{bad_syntax}");
+        for (body, want) in [
+            ("[grep]\nmax_lines = \"many\"\n", "max_lines"),
+            ("[grep]\nmax_lines = -1\n", "max_lines"),
+            ("[grep]\ndrop = \"x\"\n", "drop"),
+            ("[grep]\ndrop = [1]\n", "drop"),
+            ("[grep]\ndedupe = \"yes\"\n", "dedupe"),
+            ("[grep]\nnope = 1\n", "nope"),
+            ("title = \"x\"\n", "title"),
+        ] {
+            let err = parse_strict(body).unwrap_err();
+            assert!(err.contains(want), "{body} → {err}");
+        }
+    }
+
+    #[test]
+    fn issues_in_names_every_malformed_file() {
+        let dir = std::env::temp_dir().join(format!("rtok-rules-iss-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let dropins = dir.join("rules.d");
+        fs::create_dir_all(&dropins).unwrap();
+        dropin(&dropins, "bad.toml", "[grep]\nmax_lines = \"many\"\n");
+        dropin(&dropins, "good.toml", "[echo]\nmax_lines = 2\n");
+        let errs = issues_in(&dir.join("no-such-rules.toml"), &dropins);
+        assert_eq!(errs.len(), 1, "{errs:?}");
+        assert!(errs[0].contains("bad.toml"), "{errs:?}");
+        assert!(errs[0].contains("max_lines"), "{errs:?}");
+        // Missing file and dir report nothing.
+        assert!(issues_in(&dir.join("nope.toml"), &dir.join("nope-d")).is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -313,6 +313,14 @@ pub trait Symbols {
         name: &str,
         depth: u32,
     ) -> Result<Vec<(u32, String, String)>>;
+
+    /// Definitions with no same-name reference under `root`: `(path, name, kind, line)`
+    /// (T52.4). Name-based, like `callers`: a shared name keeps every same-named
+    /// definition live. Callers filter pub, trait impls, tests and macros from these.
+    fn symbol_dead_candidates(&self, root: &str) -> Result<Vec<(String, String, String, i32)>> {
+        let _ = root;
+        Ok(Vec::new())
+    }
 }
 
 // The tests for what a host owes a plugin live beside `testing::MemoryHost`, the host this

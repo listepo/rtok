@@ -110,8 +110,10 @@ port            = 8790
 mode            = "passthrough"       # passthrough | compress
 upstream        = "https://api.anthropic.com"      # RTOK_UPSTREAM; chain behind another proxy for A/B
 openai_upstream = "https://api.openai.com"         # RTOK_OPENAI_UPSTREAM (D11)
+gemini_upstream = "https://generativelanguage.googleapis.com"  # RTOK_GEMINI_UPSTREAM (T51.3)
 timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
+context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
 [web]                                 # rtok web (same data as rtok tui)
@@ -129,6 +131,33 @@ plugin          = ""                  # "" = all         (--plugin <id>)
 transcripts_dir = "~/.claude/projects"
 calibrate_samples = 30                # per class        (--calibrate)
 baseline        = ""                  # default name for --compare; "" = none
+price           = false               # show per-model USD costs (--price)
+# USD per MTok rows for --price (T49.1). Sources, fetched 2026-09-17:
+# Anthropic claude-sonnet-5 / claude-haiku-4-5: https://platform.claude.com/docs/en/about-claude/pricing
+# (input / 5m cache write / cache read / output). OpenAI gpt-5 / gpt-5-mini:
+# https://platform.openai.com/docs/pricing (short-context input / cached input /
+# output; no separate write price, so cache_write = input). Models without a row
+# print `-`, never a guess; add dated rows of your own the same way.
+[stats.prices."claude-sonnet-5"]
+input = 2.0
+cache_write = 2.5
+cache_read = 0.2
+output = 10.0
+[stats.prices."claude-haiku-4-5"]
+input = 1.0
+cache_write = 1.25
+cache_read = 0.1
+output = 5.0
+[stats.prices."gpt-5"]
+input = 1.25
+cache_write = 1.25
+cache_read = 0.125
+output = 10.0
+[stats.prices."gpt-5-mini"]
+input = 0.25
+cache_write = 0.25
+cache_read = 0.025
+output = 2.0
 
 [report]                              # rtok report (D24: renders the operator model, computes nothing)
 format = "md"                         # md; html (T22.2), pdf (T22.3), --ai (T22.4)
@@ -179,6 +208,10 @@ config_path   = "~/.zcode/cli/config.json"
 config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
 [setup.copilot]
 dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
+[setup.aider]
+config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--proxy)
+[setup.windsurf]
+config_path   = "~/.codeium/windsurf/mcp_config.json"
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
@@ -205,6 +238,7 @@ enabled  = true
 rewrite  = true                       # PreToolUse(Bash) → `rtok run -- …`
 shell    = ""                         # "" = $SHELL
 rules    = "~/.rtok/rules.toml"       # extra filter rules; missing → built-in rules/default.toml
+rules_dir = "~/.rtok/rules.d"         # drop-ins: every *.toml merges after rules in name order (T50.2)
 trailer_min_lines = 40                # add `[rtok <id> · N lines · expand …]` above this
 fail_tail_lines   = 80                # non-zero exit → last N lines verbatim
 never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&`, -i are always skipped
@@ -268,6 +302,7 @@ modes         = []                    # same as [setup].modes; setup writes here
 [plugins.guard]
 enabled      = true
 window_turns = 8
+deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP search/tree (T50.4)
 
 [plugins.memory]
 enabled        = true
@@ -304,6 +339,17 @@ dir     = "~/.rtok/plugins"          # scan one level for *.wasm; D6 — this re
 ```
 
 
+### Stats prices (`[stats.prices]`)
+
+`rtok stats --price` prices the proxy `usage` rows in USD: each leg at its
+`$` per MTok row, `cost` their sum, `saved` what the cache reads saved versus
+uncached input price — the only saving computable from the `usage` rows alone.
+A model without a row prints `-` for both dollar columns (its token counts
+still print); add a dated row of your own rather than guessing. The shipped
+rows were read off the providers' pricing pages on 2026-09-17 (sources in
+`config/default.toml`); re-check them when your bill disagrees. `stats.price`
+defaults the `--price` display on (`RTOK_STATS_PRICE=true` works too).
+
 ### WASM plugin host (`[plugins.wasm]`)
 
 Out-of-tree `.wasm` plugins (P32, decision D6). This repo writes every catalogue plugin from
@@ -333,7 +379,7 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `tui` | `--tab`, `--tick-secs` | `tui.tab`, `tui.tick_secs` |
-| `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`) |
+| `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache`, `--price` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`), `stats.price` (`stats.prices.*` are data) |
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |

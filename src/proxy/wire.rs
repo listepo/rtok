@@ -9,6 +9,7 @@ use serde_json::Value;
 pub use rtok_plugin_sdk::{ToolResultRef, ToolResults, WireRequest};
 
 use super::anthropic::ANTHROPIC;
+use super::gemini::GEMINI;
 use super::openai_chat::OPENAI_CHAT;
 use super::openai_responses::OPENAI_RESPONSES;
 
@@ -16,6 +17,8 @@ use super::openai_responses::OPENAI_RESPONSES;
 pub const ANTHROPIC_PROVIDER: &str = "anthropic";
 /// Provider slug shared by both OpenAI wires.
 pub const OPENAI_PROVIDER: &str = "openai";
+/// Provider slug for the Gemini wire.
+pub const GEMINI_PROVIDER: &str = "gemini";
 
 /// `usage.api` value for Anthropic Messages.
 pub const API_ANTHROPIC: &str = "anthropic";
@@ -23,6 +26,8 @@ pub const API_ANTHROPIC: &str = "anthropic";
 pub const API_OPENAI_CHAT: &str = "openai_chat";
 /// `usage.api` value for the Responses API.
 pub const API_OPENAI_RESPONSES: &str = "openai_responses";
+/// `usage.api` value for Gemini `generateContent` / `streamGenerateContent`.
+pub const API_GEMINI: &str = "gemini";
 
 fn wire_ids(wire: &dyn Wire) -> (&'static str, &'static str) {
     if std::ptr::eq(wire, &ANTHROPIC as &dyn Wire) {
@@ -31,6 +36,8 @@ fn wire_ids(wire: &dyn Wire) -> (&'static str, &'static str) {
         (OPENAI_PROVIDER, API_OPENAI_CHAT)
     } else if std::ptr::eq(wire, &OPENAI_RESPONSES as &dyn Wire) {
         (OPENAI_PROVIDER, API_OPENAI_RESPONSES)
+    } else if std::ptr::eq(wire, &GEMINI as &dyn Wire) {
+        (GEMINI_PROVIDER, API_GEMINI)
     } else {
         unreachable!("unknown wire")
     }
@@ -49,8 +56,18 @@ pub trait Wire: ToolResults {
 
     /// Provider session identity, when the body carries one. Defaults to the `user`
     /// field both OpenAI wires use; Anthropic overrides for `metadata.user_id`.
+    /// Gemini carries none — the header-or-hash fallback in `session_for` applies.
     fn session_id<'a>(&self, body: &'a Value) -> Option<&'a str> {
         str_field(body, "user")
+    }
+
+    /// Model slug for the request's dimension row. Defaults to the body's `model`
+    /// field (Anthropic, both OpenAI wires); Gemini overrides — its model travels
+    /// in the request path, not the body.
+    fn model(&self, _path: &str, body: Option<&Value>) -> Option<String> {
+        body.and_then(|v| v.get("model"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
     }
 
     /// Usage from a complete JSON response body.
@@ -136,7 +153,8 @@ pub fn join_upstream(base: &str, path: &str, query: Option<&str>) -> Result<Stri
 
 /// The wire matching `path`, if this build understands it.
 pub fn for_path(path: &str) -> Option<&'static dyn Wire> {
-    const WIRES: [&(dyn Wire + 'static); 3] = [&ANTHROPIC, &OPENAI_CHAT, &OPENAI_RESPONSES];
+    const WIRES: [&(dyn Wire + 'static); 4] =
+        [&ANTHROPIC, &OPENAI_CHAT, &OPENAI_RESPONSES, &GEMINI];
     WIRES.into_iter().find(|wire| wire.matches(path))
 }
 
@@ -180,7 +198,7 @@ pub(super) fn int_field(usage: &Value, name: &str) -> i64 {
     v.as_f64().map(|n| n as i64).unwrap_or(0)
 }
 
-/// Field names one wire's usage block needs to build a [`Usage`] — the three wires'
+/// Field names one wire's usage block needs to build a [`Usage`] — the four wires'
 /// `usage_block` functions differed only in where the object sits and which keys it
 /// reads, so this is the one place that walk lives. `alt_parent` covers Anthropic's
 /// `message.usage` and Responses' `response.usage` aliases; `cache_read_details` covers
@@ -189,6 +207,9 @@ pub(super) fn int_field(usage: &Value, name: &str) -> i64 {
 /// here rather than being papered over with a fake field name.
 pub(super) struct UsageFields {
     pub alt_parent: Option<&'static str>,
+    /// The object holding the counters: `usage` everywhere except Gemini's
+    /// `usageMetadata`. One field rather than a fourth `usage_block` copy.
+    pub container: &'static str,
     pub input: &'static str,
     pub output: &'static str,
     pub cache_create: Option<&'static str>,
@@ -197,15 +218,15 @@ pub(super) struct UsageFields {
 }
 
 /// Find `value`'s usage object (optionally nested under `fields.alt_parent`) and read it
-/// through `fields`. Shared by all three wires' `usage_block`.
+/// through `fields`. Shared by all four wires' `usage_block`.
 pub(super) fn find_usage(value: &Value, fields: &UsageFields) -> Option<Usage> {
     let usage = value
-        .get("usage")
+        .get(fields.container)
         .or_else(|| {
             fields
                 .alt_parent
                 .and_then(|parent| value.get(parent))
-                .and_then(|parent| parent.get("usage"))
+                .and_then(|parent| parent.get(fields.container))
         })
         .filter(|usage| usage.is_object())?;
     let cache_read = match fields.cache_read_details {
@@ -277,6 +298,16 @@ mod tests {
             ("/v1/messages", ANTHROPIC_PROVIDER, API_ANTHROPIC),
             ("/v1/chat/completions", OPENAI_PROVIDER, API_OPENAI_CHAT),
             ("/v1/responses", OPENAI_PROVIDER, API_OPENAI_RESPONSES),
+            (
+                "/v1beta/models/gemini-2.0-flash:generateContent",
+                GEMINI_PROVIDER,
+                API_GEMINI,
+            ),
+            (
+                "/v1beta/models/gemini-2.0-flash:streamGenerateContent",
+                GEMINI_PROVIDER,
+                API_GEMINI,
+            ),
         ];
         for (path, provider, api) in cases {
             let wire = for_path(path).expect("wire");

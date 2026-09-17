@@ -1,5 +1,207 @@
 # rtok — completed tasks
 
+## T50.4 — Optional deny of native Grep and Glob
+
+**T50.4 Optional deny of native Grep and Glob** · P3, 2/5 · `src/plugins/guard/mod.rs`, `src/doctor.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/commands_e2e.rs`, `tests/fixtures/hooks/pre_tool_{grep,glob}.json`, `src/hooks/types.rs`, `src/report/{ai,pdf}.rs`, `tests/trycmd/config-show.stdout`
+
+From I-08. `[plugins.guard] deny_grep_glob = false` (opt-in, no CLI flag). PreToolUse denies native `Grep`→`search` and `Glob`→`tree` with a pointer reason, only while the `read` plugin is enabled (fail open: no `search`/`tree` to point at; the knob is per-host opt-in so a host without `rtok mcp` never turns it on, and the hook path does no filesystem reads). Each deny records a zero-delta `guard/native_deny` Measurement (countable deny rate, claims no saving per D3). `rtok doctor` prints `read-share grep+glob x% of read-class tokens (read, grep, glob)` from `stats::collect` over `[stats] transcripts_dir`, or `read-share no data` on empty/missing transcripts. Default stays off: my 30 d transcripts show ~5.7 M Read tokens vs ~0 Grep/Glob, so the numbers do not justify it.
+
+Check: guard unit test (default off, on-denies with pointer, other tools untouched, zero-delta row, read-disabled allows); doctor unit tests (synthetic JSONL → 44.4%, empty dir → no data); hook e2e `hook_grep_glob_deny_is_opt_in` via binary stdin with the knob off/on; `every_fixture_round_trips_unchanged` now covers 9 fixtures.
+
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolated worktree at e2e43a8 + this task's hunks: `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean; lib 524/524; `commands_e2e` 13/13; `cli_trycmd` + `report_ai` + `report_pdf` green; `web` + `stats_model` green; binary `rtok doctor` on fixture transcripts prints 33.3% and `no data` on a missing dir; `cargo build --no-default-features --features measure` green. The one `surface_parity` failure there names HEAD's `wrap` (T51.4 landed without its EXEMPT row — fails without this task's changes).
+
+Deviation: 11 files (over the 3-file guideline) — the repo's own gates force the spread: `default_toml_is_the_defaults` (default.toml), `config_coverage` leaf rule (docs row per convention), `config-show` snapshot, fixture-count assertion (types.rs), two `Report` struct literals (ai/pdf), plus the two hook fixtures. No new dependency.
+
+## T50.2 — User filter drop-in directory and schema
+
+**T50.2 User filter drop-in directory and schema** · P3, 2/5 · `src/plugins/cmd/rules.rs`, `src/config/mod.rs`, `src/config/validate.rs`, `src/cli.rs`, `config/default.toml`, `docs/config.md`, `docs/cmd-rules.md` (new), `site/content/docs/reference/_content.gotmpl`, `tests/cmd_rules.rs` (new), `tests/trycmd/config-show.stdout`
+
+From I-06. Users can already override rules through one user rules file, but there is no `rules.d/*.toml` drop-in, no published schema and no example, so writing a filter means reading `src/plugins/cmd/rules.rs`.
+
+Do: `[plugins.cmd] rules_dir` (default `~/.rtok/rules.d`) joins the single `rules` file; `Settings::load` merges built-ins < user file < sorted `rules.d/*.toml`, later files winning per `match_cmd` through the existing `merge_rules`. Both layers now parse strictly (`parse_strict`: TOML syntax, table-only top level, known fields, right types) and a malformed file is skipped whole at runtime (fail open — previously a bad value fell back per-field). `rtok config validate` additionally reports malformed rules files (single file when present + every drop-in; missing paths are not errors) via feature-gated `validate::rules_issues`, reading the dirs through the validated file as the user layer with a loader that creates nothing. `docs/cmd-rules.md` documents every field with defaults, merge order, fail-open semantics and a worked pytest example; site reference row added. D12: `rules_dir` key + docs row, no new flag.
+Check: unit tests (drop-ins merge in name order after the file, broken drop-in skipped + missing dir is built-ins, strict rejects syntax/wrong-type/unknown-field, `issues_in` names the file); `tests/cmd_rules.rs` e2e (`config validate` fails naming the file then passes once fixed; `filter --stdin` proves the drop-in wins and a broken sibling does not stop it); `config_coverage`, `cli_trycmd` (config-show row), `filter` green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean worktree at ae54cbf + these files: `cargo nextest run --workspace --no-fail-fast` 743 passed, 1 failed — the pre-existing opencode `remove_twice` env failure (real opencode 1.18.29 on PATH; fails identically without these changes); lib `plugins::cmd` + `config` 94 passed (incl. 4 new rules tests); `cmd_rules`/`filter`/`cli_trycmd`/`config_coverage` 6/6; min-feature build (`--no-default-features --features measure`) green; `cargo fmt --check` and `cargo clippy --workspace --all-targets --all-features -D warnings` clean; `hugo --source site` builds with the new `cmd-rules` page. Full `just check` is not green in the main tree (other agents' concurrent uncommitted WIP); untouched by this task.
+Deviation: none; no new dependency.
+
+## T52.1 — Query language over the graph index
+
+**T52.1 Query language over the graph index** · P3, 3/5 · `src/plugins/graph/mod.rs`, `src/plugins/graph/lsp.rs`, `tests/graph_contract.rs`, `src/plugins/graph/README.md`, `research.md`
+
+From I-14. `graph` answers `symbol`, `callers`, `impact` and `outline`; composite questions (callers of X inside path Y of kind Z) take several calls.
+
+Do: measured 172 transcripts in `~/.claude/projects/*/*.jsonl` (2026-09-17, 157 sessions with tool calls): 615 `ctx_search` calls, 610 carrying a path scope; 252 search→search refinement chains in 33 sessions; 528 search→read chains in 46 sessions; 41/98 shell `rg` calls with a path arg — verdict GO. Optional `path` (substring) on `symbol`/`callers`/`impact` plus optional `kind` (exact) on `symbol`, on the existing tools (no new tool, no new required schema fields); a `Filter` rows check threads through the tags path and the LSP backend with the same semantics (`impact` walks the full graph, filters reported lines). Old 3-arg `symbol`/`callers`/`impact` stay as thin wrappers, so benches, `watch.rs` and `graph_lsp_gate.rs` need no churn. Empty answers name the scope (`no definition of b of kind struct`); unfiltered answers stay byte-exact (T8.9). Surface after: 4 tools, 94 description tokens (was 62; bar ≤ 150, each description ≤ 60).
+Check: 4 new unit tests in `mod.rs` (path keeps one file, kind picks struct over function, callers/impact keep one subtree incl. empty-scope messages) + `tests/graph_contract.rs::filters_narrow_to_one_subtree` (MCP stdio e2e through the binary, hermetic tmp home); existing contract byte-exact assertions unchanged and green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo nextest run -p rtok --lib plugins::graph` 47 passed; `--test graph_contract` 4/4; `--test graph_lsp_gate --test graph_bench --test graph_truth` 10 passed; `mcp::descriptions_at_most_60_tokens` green; `cargo clippy -p rtok --lib --tests --all-features` clean; `rustfmt --check` on the three files clean. One mid-task contract run showed 2 failures from concurrent agents' mid-edit tree breakage (transient `src/plugins/cmd/rules.rs` compile error); green on rerun after the tree settled. Full `just check` stays red on concurrent WIP — reported, not fixed.
+
+Deviation: compat wrappers (3×3 lines) instead of a signature churn across benches/watch/gate tests; code in 3 files, docs (`README.md` surfaces row, `research.md` §2 table) alongside.
+
+## T51.3 — Gemini wire in the proxy
+
+**T51.3 Gemini wire in the proxy** · P3, 4/5 · `src/proxy/gemini.rs` (new), `src/proxy/wire.rs`, `src/proxy/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/proxy.rs`, `tests/fixtures/proxy/gemini_generate_{body,stream}.json` (new), `tests/trycmd/config-show.stdout`
+
+From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
+
+Do: `src/proxy/gemini.rs` implements `Wire` — matches `:generateContent`/`:streamGenerateContent` path suffixes; `contents` tool results keyed by `functionResponse.name` (the API carries no stable call id; rewritten payload is `response` so the name stays visible); `usageMetadata` counters (`promptTokenCount` in, `cachedContentTokenCount` cached-read, `candidatesTokenCount` out; body object or end-scanned array, SSE events); `provider_total = input + output` (prompt already contains cached); model slug parsed from the path (the body carries none) via a new defaulted `Wire::model()`. Routes to new `[proxy] gemini_upstream` (default `https://generativelanguage.googleapis.com`; env `RTOK_PROXY_GEMINI_UPSTREAM`; no CLI flag). Shared `UsageFields` gains the `container` key (`usage` vs `usageMetadata`) instead of a fourth usage-walk copy.
+Check: `tests/proxy.rs::proxy_gemini_body_records_usage_with_cached_tokens_and_path_model` + `proxy_gemini_stream_is_byte_identical_and_records_usage` (mock on `gemini_upstream` only, Anthropic upstream dead; counters, cached tokens, model slug, `api = "gemini"`, byte-identical SSE, `calls`/`call_io`/`tokens` rows) plus `gemini.rs` unit tests (matches, path model, name-keyed results, body/array/SSE usage).
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo test --test proxy` 26 passed incl. 2 new; `cargo test --lib gemini` 5 passed, `wire` 4 passed; `--test wrap/config_coverage` + `cli_trycmd` help/version/bench/config-show green (`completions-bash` fails on T53.2's uncommitted work); `fmt --check`, `build-min`, `jscpd` green. A temporary public-API mirror (since deleted) caught and fixed one real bug while lib-test was uncompilable on others' edits (path model accepted action-less paths).
+
+Deviation: 10 files (wire + shared helper + config/docs + 2 fixtures + tests + snapshot); no new dependency.
+
+## T53.2 — Shell completions and man page
+
+**T53.2 Shell completions and man page** · P3, 1/5 · `Cargo.toml`, `Cargo.lock`, `src/cli.rs`, `tests/completions.rs`, `tests/surface_parity.rs`, `tests/trycmd/completions-bash.toml`, `tests/trycmd/completions-bash.stdout`, `tests/trycmd/help.stdout`, `README.md`, `toolchain.md`
+
+From I-20. `rtok` has a large clap surface but no completions or man page.
+
+Do: `rtok completions <shell>` prints bash/zsh/fish/powershell completions via `clap_complete::generate`, `rtok man` prints the roff page via `clap_mangen::Man` — both generated from `Cli::command()`, so they stay byte-exact with the CLI surface. The shell is a positional `ValueEnum` (no long flag), so no D12 config key and no `config_coverage` ALLOW change; both commands are classified in `surface_parity.rs` EXEMPT as helpers (D27 gate). Workspace `rust.md` already listed both crates — no change there.
+Check: `tests/trycmd/completions-bash.toml` + blessed `.stdout` (one shell), `tests/completions.rs` (assert_cmd: every shell renders non-empty output naming the binary, unknown shell refused, `man` carries `.TH`/rtok/completions markers — no `man` snapshot, the page embeds the git-sha version), regenerated `help.stdout`, README install snippet.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolation worktree at 7d1e2a1 + own files only — `cargo fmt --check` green; `cargo clippy --workspace --all-targets --all-features --exclude rtok-wasm-demo-guest -- -D warnings` green; `cargo nextest run --test completions --test cli_trycmd --test surface_parity --test config_coverage` 9 passed. Full `just check` on main stays red on concurrent agents' in-progress work (graph test arity errors, windsurf unused import, transient mid-edit lib breakage) — reported, left for the owners.
+
+Deviation: ~100 hand-written LOC but 10 files (the D27 gate, both snapshots and the docs each demand their file); `completions-bash.stdout` is 2796 generated lines, not counted. Includes the 4-line rustfmt normalization of the `wrap` EXEMPT entry — HEAD was not fmt-clean there, and without it no commit can pass `fmt --check`.
+
+## T48.5 — Windsurf host
+
+**T48.5 Windsurf host** · P2, 3/5 · `src/agents/windsurf/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
+Do: `rtok agents install windsurf` registers `rtok mcp` in Cascade's `~/.codeium/windsurf/mcp_config.json` (`[setup.windsurf] config_path`) as `mcpServers.rtok = {command, args}` with no `type` field, the stdio shape the Windsurf MCP docs show, through the SDK's `register_server`/`unregister_server`; foreign servers survive. One Desktop variant (app bundles macOS + Windows, no CLI binary claimed). Hooks are `no`: Cascade hooks (`~/.codeium/windsurf/hooks.json`, twelve `agent_action_name`/`tool_info` events) are a different contract from `hook_event_name`/`tool_name`, so `rtok hook` needs a `--host windsurf` payload mapping first (T46.3 is the pattern) — the card's hook condition is evaluated and documented, not silently skipped. Proxy and plugin are `no` (no documented base-URL setting; no local plugin dir — rules/memories live in `.windsurf/`). README carries the module table, `Reachable:`/`Not reachable:` lines and `## Docs` with the two verified doc links (MCP, hooks, fetched 2026-09-17). The e2e matrix gains windsurf; the unknown-host probe is renamed `windsurf` → `notahost`.
+Check: `agents::windsurf::tests::dry_run_names_the_file_and_creates_nothing`; `apply_is_idempotent_and_remove_keeps_foreign` (no `type` field, second apply `no changes`, remove keeps `foreign`, second remove `no changes`); `readme_tables_match_support`; `config::tests` path leaves + `default_toml_is_the_defaults`; `tests/agent_remove.rs::windsurf_remove_keeps_foreign_servers`; `tests/agents_install.rs` matrix + `an_unknown_host_is_refused_before_any_backup`; `host_docs`, `config_coverage`, `agents_doc` (blessed), `cli_trycmd`.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: `cargo test --lib -- agents:: config::` 126 passed; `agent_remove` 12 passed; `agents_install` 8 passed + 1 pre-existing failure (`remove_twice…` on opencode Desktop: install skips it as not-found, remove still applies as `— no changes` — untouched by this task, needs its owner); `host_docs`, `config_coverage`, `agents_doc`, `cli_trycmd` green; `cargo clippy --lib --all-features -- -D warnings` clean; rustfmt clean. `just check` not green in this tree (concurrent agents' WIP broke `src/proxy/cli.rs` and graph mid-verification; verified with those files at HEAD via temporary stashes, all restored/dropped without loss). Not verified on a live install: the Windsurf app bundle paths.
+Deviation: registry + config + docs + e2e by construction (T46.4 precedent); `src/cli.rs` host help also names `aider` (landed without updating it).
+
+## T49.1 — `rtok stats --price`
+
+**T49.1 `rtok stats --price`** · P2, 3/5 · `src/measure/stats.rs`, `src/store/mod.rs`, `src/config/mod.rs`, `src/config/validate.rs`, `src/cli.rs`, `src/web/model.rs`, `config/default.toml`, `docs/config.md`, `tests/stats_price.rs` (new), `tests/trycmd/stats-price.{toml,stdout,stderr}` (new) + fixture config, `tests/trycmd/config-show.stdout`
+
+From I-02. `rtok stats` reports tokens but not money, so a saving cannot be compared with a model's cost; cache reads are priced very differently from input (research.md §8).
+
+Do: `[stats] price=false` plus `[stats.prices."<model>"]` (USD per MTok: input, cache_write, cache_read, output) with four shipped rows dated 2026-09-17 — Anthropic Sonnet 5 (2.0/2.5/0.2/10.0) and Haiku 4.5 (1.0/1.25/0.1/5.0) from platform.claude.com/docs/en/about-claude/pricing, OpenAI gpt-5 (1.25/1.25/0.125/10.0) and gpt-5-mini (0.25/0.25/0.025/2.0) from platform.openai.com/docs/pricing (no separate write price there, so cache_write = input). `rtok stats --price` attaches per-model costs from the same proxy `usage` rows (new `Store::usage_by_model`): cost = Σtok/1e6×rate, saved = cache_read×(input−read)/1e6 — the only saving computable from usage alone. Models without a row print `-` for both dollar columns (token counts still print), stay out of the totals, and are named. Costs attach only when the flag is set, so default table/JSON output is byte-identical. `config validate` exempts the open-ended `stats.prices` subtree (bench.configs precedent); every new key has its default.toml row, docs row and flag mapping (D12).
+Check: unit tests on the arithmetic (`row_cost` legs/saving/rounding, `attach_costs` priced+unknown+NULL-model on an in-memory store); `tests/stats_price.rs` fixture-ledger e2e (table totals $14.70 / saved $15.30, `-` rows, JSON cost object, plain `stats` mentions no costs); hermetic trycmd `stats-price` snapshot (empty ledger); `stats_model.rs` goldens unchanged; `config_coverage`, `host_docs`, `cli_trycmd` green.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean worktree at e2e43a8 + these files: `cargo nextest run --workspace` 705 passed, 2 failed — both pre-existing (opencode `remove_twice`: real opencode 1.18.29 on PATH, fails identically without these changes; `surface_parity` on T51.4's `wrap` command, fails on clean HEAD too); `stats_price` 3/3; `stats_model` goldens unchanged; lib price unit tests pass; `cli_trycmd`, `config_coverage`, `host_docs` green; `cargo fmt --check` and `cargo clippy --workspace --all-targets --all-features -D warnings` clean. Full `just check` is not green in the main tree (other agents' concurrent uncommitted WIP breaks the build); untouched by this task.
+Deviation: none; no new dependency.
+
+## T51.2 — Anthropic native context editing
+
+**T51.2 Anthropic native context editing** · P3, 3/5 · `src/proxy/anthropic.rs`, `src/proxy/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `tests/proxy.rs`, `tests/trycmd/config-show.stdout`, `README.md`
+
+From I-10. Anthropic can clear old tool uses server-side (`context_management`, `clear_tool_uses_*`), which competes with or complements `archive`.
+
+Do: `[proxy] context_management = false` (opt-in; env `RTOK_PROXY_CONTEXT_MANAGEMENT`; no CLI flag) arms server-side clearing on Anthropic Messages only — the proxy adds `context_management.edits: [{type: clear_tool_uses_20250919}]` plus the `context-management-2025-06-27` beta header (API shape verified against the platform docs 2026-09-17), never overwriting a caller-set field, in both proxy modes. Each armed request records a zero-delta `proxy/context_management` Measurement naming the path (semantic-cache precedent; the platform's saving is not locally observable so none is claimed, D3). `archive` stands down on armed Anthropic requests (no double-shrink, no cache churn). No `Wire` trait change.
+Check: `tests/proxy.rs::proxy_anthropic_context_edits_arm_platform_path` (mock upstream matches the beta header; body carries the field; old turns unrewritten; 0 archive rows; 1 path row; 1 usage row) plus `anthropic.rs::context_edits_are_opt_in_and_never_overwrite`.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo test --test proxy` 24 passed; `--test wrap/cli_trycmd/config_coverage` green; `--lib proxy/config` green; `fmt --check`, `build-min`, `jscpd` (exit 0) green. README compares both paths on the same six-turn request: archive 103 729 → 70 837 B with 4 Measurements; platform 103 729 → 103 798 B (+69 B field) with 1 path row.
+
+Deviation: 8 files / ~240 LOC (card needs config + docs per D12, a proxy test, and the README comparison). `just check` clippy stays red on another agent's untracked `src/agents/windsurf/mod.rs` (`unused import std::fs`), left for its owner.
+
+## T54.1 — Agents support table in docs
+
+**T54.1 Agents support table in docs** · P2, 2/5 · `docs/agents.md`, `tests/agents_doc.rs`, `site/content/docs/reference/_content.gotmpl`, `AGENTS.md`
+
+Creator request: one documentation table of every agent app (CLI / Desktop), whether rtok links a plugin into it, and which rtok features reach it; agents must keep it current.
+
+Do: `docs/agents.md` holds the table between `agents-table` markers: host, app, kind, the four install modules (hooks, MCP, proxy, plugin as `yes`, flag or `—`) and the catalogue plugins reached. `tests/agents_doc.rs` builds the same table from `HOSTS`, `Agent::variants`, `Agent::support`, `agents::reaches` and the plugin registry, and fails with the regenerate command when the doc is stale; `RTOK_BLESS=1` rewrites it. Site reference page `Agents`. AGENTS.md D21 line tells agents to regenerate after any host or surface change.
+
+Check: `cargo test --test agents_doc` passes; editing one cell makes it fail with "host table is stale"; `RTOK_BLESS=1` restores it. Table includes aider (T48.7).
+
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+
+Evidence: `just check` in a clean worktree at ef6c6ff: 693 passed, 2 failed, 2 skipped; both failures reproduce at HEAD without this change (`surface_parity` unclassified `wrap` from T51.4; `agents_install` `remove_twice_says_no_changes_and_the_second_takes_no_backup` for OpenCode). `agents_doc` and `host_docs` pass after rebase on 0dfcad1.
+
+Deviation: 4 files. Claimed and closed in one commit without a plan.md row, because plan.md and done.md held other agents' uncommitted edits; only this entry is staged in done.md.
+
+## T52.4 — Dead code report
+
+**T52.4 Dead code report** · P3, 2/5 · `src/store/symbols.rs`, `src/plugins/graph/mod.rs`, `src/cli.rs`, `src/plugin.rs`, `crates/rtok-plugin-sdk/src/host.rs`, `tests/surface_parity.rs`
+
+From I-29. `Store::symbol_dead_candidates` lists defs with no same-name ref row under the root (one `NOT EXISTS` query, name-based like `callers`); `graph::dead` filters to actionable dead code — skips `macro` kind, `main`, test paths (`tests/`, `test_`/`_test`), `pub` lines, `#[test]`/`#[cfg(test)]` fns, methods inside trait/`impl X for Y` ranges and any `impl` target type (the tags query records no ref for a trait impl's type, so `S` in `impl T for S` would otherwise read as dead; one tree-sitter parse per `.rs` file, no new dependency); `rtok graph dead [path]` prints `path:line kind name` through the existing cap (one `graph/cap` Measurement per call, empty report is `no dead code in <root>`). MCP surface stays four tools (name-stability rule); `surface_parity` classifies `graph dead` as on-demand reading with no snapshot page yet, like `stats`.
+
+Check: `plugins::graph::tests::dead_lists_only_the_private_orphan` (fixture repo: pub fn, used private fn, trait + trait-impl method + impl-target struct, `macro_rules!`, `#[test]` fn, `tests/` file, `main` — only the orphan is listed); e2e `rtok graph dead` on a fixture repo prints one line and `rtok stats --plugin graph` shows the `cap` row; `graph_contract`/`graph_truth` byte-exact.
+
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: isolated worktrees with this task's hunks only. At 77af448: `cargo fmt --check` clean; `cargo clippy --all-targets -- -D warnings` clean; 43/43 `plugins::graph` lib tests; `graph_contract` + `graph_truth` 6/6; `surface_parity` 4/4; full nextest 694 passed / 2 failed / 2 skipped (both failures pre-existing on clean HEAD: `agents_install remove_twice…` opencode backup, plus the `surface_parity` row this commit adds); `cargo build --no-default-features --features measure` green. Re-verified at 0dfcad1: fmt/clippy clean, 43/43 graph, contract+truth green, `graph dead` classified; the one `surface_parity` failure there names HEAD's `wrap` (T51.4 landed without its EXEMPT row — not this task's command).
+
+Deviation: 6 files / 228 insertions (over the 200 LOC / 3-file guideline) — D25 forces the SDK trait seam (`Symbols::symbol_dead_candidates` with an empty default so out-of-tree hosts keep compiling, plus the `Runtime` delegation) beside the store query, the filter, the CLI and the parity row; no way to add a store-backed capability in fewer files without breaking the plugin contract. No new dependency (tree-sitter + tree-sitter-rust already behind the `read` feature `graph` requires).
+
+## T48.7 — aider host
+
+**T48.7 aider host** · P3, 2/5 · `src/agents/aider/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `README.md`, `site/content/docs/commands.md`, `tests/agents_install.rs`, `tests/agent_remove.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
+
+From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where a base URL can point it at `rtok proxy`, which is the only rtok surface it can use.
+
+Do: `rtok agents install aider --proxy` writes `openai-api-base: http://<bind>:<port>/v1` into `~/.aider.conf.yml` (`[setup.aider] config_path`) with a line edit, so comments and foreign keys survive — no YAML crate, no new dependency. Correction to the card: there is no `anthropic-api-base` in aider's options reference (only `--openai-api-base`; verified against the fetched options page 2026-09-17) — Anthropic models reach the same URL with an `openai/` model prefix, and the README says so. Support: proxy ``--proxy``, hooks/mcp/plugin `no` with reasons. Remove strips only `openai-api-base` lines pointing at this proxy (exact URL or loopback+our-port); a foreign base URL stays, and remove on a foreign value is `no changes`. Install without `--proxy` is `no changes` (flag-gated like codex proxy). `installed()` reads the key back for the e2e matrix. Unreadable file is an error, never an overwrite.
+Check: unit tests in `mod.rs` (dry-run shows one key + revert and touches nothing; apply idempotent, keeps comments/foreign keys; quoted value + trailing comment keep shape; commented `# openai-api-base` untouched; foreign-URL remove is no-op; non-UTF-8 refused with file untouched); `agents_install` matrix + `agent_remove` entries; README parity (`Reachable: measure, archive, proxy, toon, compress`); `## Docs` links re-verified 2026-09-17.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean worktree at 77af448 + these files: `cargo nextest run --lib agents:: config::` 124 passed; `--test agent_remove` 11 passed (incl. the new aider test); `--test agents_install` 22/23 — the aider legs pass, the 1 failure is pre-existing `remove_twice` on opencode (fails identically without these changes; a real opencode 1.18.29 on PATH); `--test host_docs --test config_coverage --test cli_trycmd` pass; `cargo fmt --check` and `cargo clippy --workspace --all-targets --all-features -D warnings` clean. Full `just check` is not green in the main tree (other agents' concurrent uncommitted WIP breaks the build); untouched by this task.
+Deviation: none; verified in a clean worktree at 77af448 + these files (main tree holds other agents' uncommitted work).
+
+## T51.4 — `rtok wrap -- <agent>`
+
+**T51.4 `rtok wrap -- <agent>`** · P3, 2/5 · `src/proxy/cli.rs`, `src/cli.rs`, `tests/wrap.rs` (new), `tests/trycmd/help.stdout`
+
+From I-12. Pointing a host at the proxy means editing its config; for a one-off run it is simpler to set `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` for one process.
+
+Do: `rtok wrap -- <cmd> [args]` ensures the proxy answers `/health` (hand-rolled TCP GET, no new dep — reqwest has no blocking feature), starting it in-process on a background thread with its own runtime when down; execs the child with both base URLs from the same helpers the installers write, inherits stdio, prints nothing itself, and exits with the child's code (signal death → 128+signo; terminal signals already reach the child via the shared foreground pgroup, so no signal crate). Fail open: an unstartable proxy runs the command with the operator's own environment. No long flags, so no new config keys (T12.4 walk skips positionals).
+Check: `tests/wrap.rs` — fake agent (`sh -c` / `cmd /c`) echoes both URLs with byte-exact silent stdout, `exit 3` → 3, and the ensured proxy records one `usage` row plus `calls`/`call_io`/`tokens` rows against the Anthropic body fixture.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+
+Evidence: `cargo test --test wrap` 3 passed; `cargo nextest run --test wrap --test proxy --test config_coverage` green; `help.toml` trycmd passes with the new `wrap` line; `cargo fmt --check` clean.
+
+Deviation: the 129-line `src/proxy/cli.rs` bulk landed inside G1 `2b8c266` (T48.3), swept from the shared dirty tree in pre-fix form — HEAD did not compile (E0382 moved `cfg`, missing `anyhow::Context`, two clippy lints). This commit adds the `src/cli.rs` wiring, those fixes, the tests and the help snapshot instead of re-committing the swept lines. Files: 3 source/test + 1 snapshot line. `just check` clippy stays red on another agent's untracked `src/agents/windsurf/mod.rs` (`unused import std::fs`), and `config-show`/`agents_install` trycmd cases fail on other agents' uncommitted host/config WIP — both unrelated to this task and left for their owners.
+
+## T52.5 — Type-position and scoped-call references
+
+**T52.5 Type-position and scoped-call references** · P3, 3/5 · `src/plugins/read/outline.rs`, `src/plugins/graph/index.rs`, `tests/graph_truth.rs`, `tests/graph_lsp_gate.rs`, `research.md`, `src/plugins/graph/PLAN.md`, `docs/lsp.md`
+
+Do: rtok's own extra tags queries appended to the grammar queries (no new crate — queries are data). `RUST_EXTRA_REF`: bare `type_identifier`, `scoped_type_identifier` path, and both `scoped_identifier` arms so every `a::b` segment (`plugin` in `crate::plugin::Surface::Mcp`, `Registry` in `Registry::new(..)`, `store`/`Store` in `use …`) counts as a reference; `self`/`crate`/`super` never match (own node types). `TS_CALL_TYPE_REF`: plain/member/nested-member calls, member constructions, bare `type_identifier` (generic args the `type_annotation` arm misses), namespace modules. No post-filter needed: tree-sitter-tags keeps one tag per node with the earlier pattern winning, and rtok's extras come last (verified: no doubles, no def-line self-refs on the constructs fixture). Extractor fingerprint hashes both strings (stale roots re-index, T35.5).
+Check: `reference_capture_matches_the_known_misses` (OnlyTyped/Recv/outer/middle/leaf + TS rows flip to hit; macro bodies stay missed), new `new_constructs_group_under_the_enclosing_definition` (Rust groups under `user`, TS at file level — the upstream TS query has no `function_declaration` defs, noted as follow-up), `tags_backend_hits_onlytyped_type_position` + new `tags_backend_misses_macro_body` (the old P30 gate pin is a tags hit now; macro bodies are the discriminating fixture), `graph_contract` byte-exact, lib graph/outline/store 46 green, `plugins_e2e` + `import_index_e2e` green, min-feature build green, fmt/clippy clean on touched files.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: T8.8 rescore `cargo test -p rtok --test graph_truth` — defs 40/40 (1.000/1.000), refs 96/105 recall 0.914 (was 32/105, 0.305), overall 136/145 = 0.938; all 9 remaining misses are macro-body call sites (opaque `token_tree`, query-unreachable ceiling); recorded in `research.md` §2. Regression floor in the test raised 0.30 → 0.85.
+Deviation: 7 files (≤3) — the behavior change flips a P30 gate pin, so the gate test, its `docs/lsp.md` line and the `PLAN.md` Known-misses/P30 notes move in the same commit; `plan.md`/`todo.md`/`done.md` moves are bookkeeping.
+
+## T48.3 — Cursor plugin MCP goes through the ketch-hint launcher
+
+**T48.3 Cursor plugin MCP goes through the ketch-hint launcher** · P1, 2/5 · `plugins/cursor/mcp.json`, `plugins/cursor/scripts/mcp.cmd`, `tests/cursor_plugin.rs`
+
+From I-37. The bundle `mcp.json` ran `rtok mcp` directly, so the ketch-hint launchers never ran and a missing binary was a silent MCP failure; it also lacked the Agent Plugins `$schema`/`type`.
+Do: `mcp.json` is now closed-spec-conformant (`$schema` `mcp.schema.json`, one server `type: "stdio"`) with `command` `./scripts/mcp.cmd` — one launcher Cursor resolves (single plugin-relative token per spec §7.2.1; the spec explicitly allows a client interpreter for `.cmd` on Windows). `mcp.cmd` gained a 2-line sh preamble (`#!/bin/sh` + `exec` sibling `mcp.sh`) +x, so the same file runs on macOS/Linux (verified: direct kernel exec, missing-rtok → ketch hint exit 1) and Windows (cmd skips the preamble as noise, runs the unchanged batch body). Root `plugin.json` already conforms (closed-schema fields `$schema`/name/version/description only), so it stays — no drop, no README reason owed.
+Check: `d21_mcp_json_invokes_launcher_not_rtok_directly` (`$schema`, `type`, launcher path, no args), `d21_no_duplicate_call_paths` (launcher + still no read/search duplication), new unix `d21_bundle_launcher_names_ketch_when_rtok_missing` (execs the bundle launcher with rtok missing → ketch hint).
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: clean-worktree run at 77af448 + these 3 files: `cargo nextest run --test cursor_plugin` 10 passed; `cargo fmt --check` clean; `cargo clippy --test cursor_plugin -D warnings` clean. Full `just check` not run (workspace-wide; main tree holds other agents' uncommitted work).
+Deviation: 3 files; bundle README line `mcp.json — mcpServers.rtok → rtok mcp` now routes via the launcher — one-line doc touch deferred to keep the 3-file limit. The plain-install `~/.cursor/mcp.json` entry (`register_mcp`, bare `rtok`) is unchanged: out of this card's scope (plugin bundle only).
+
+## T48.4 — DeepSeek Harness host
+
+**T48.4 DeepSeek Harness host** · P2, 4/5 · `plan.md`, `todo.md`, `done.md` (no code: the card's escape clause)
+
+Do: verified the official sources (fetched 2026-09-17) and closed the card with evidence instead of code. DeepSeek Harness (`dsh`, https://github.com/deepseek-ai/deepseek-harness) is an open-source agent harness in developer preview — its README says "THERE WILL BE COMPATIBILITY-BREAKING CHANGES". It has no stable user-level config surface rtok could install into: models are configured through the Web UI Settings → Models form into `$DSH_HOME/settings.yaml` with keys in `$DSH_HOME/.credentials.yaml` (https://deepseek-harness.github.io/deepseek-harness/en/guide/providers); MCP servers attach as Cordis overlay YAML patches passed per-run as `dsh web --patch …` or merged by hand into `$DSH_HOME/cordis.patch.yml` ("do not copy over an existing file: it may already contain unrelated user patches"), as `@deepseek-ai/dsh-mcp-client` plugin rows (`serverName`/`transport`/`command`), not a server map rtok could merge into (https://deepseek-harness.github.io/deepseek-harness/en/guide/mcp-memory); no shell-hook event protocol `rtok hook` could serve is documented. Re-check when the harness leaves preview with a versioned config schema: then MCP is one `dsh-mcp-client` row (`serverName: rtok`, stdio `rtok mcp`) and providers already speak `anthropic-messages`, so the proxy is a base-URL away.
+Check: the card's escape clause ("If the harness has no stable config surface, the card closes with that evidence instead of code").
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: five official pages fetched and linked above (API docs agent-integration note, repo README, quickstart, providers, mcp-memory); no repo file besides the plan trio changed (`git status` clean apart from them).
+Deviation: none; evidence-close, no code, no new host in the registry, config, docs or e2e matrix.
+
+## T48.2 — pi install hint reaches the model
+
+**T48.2 pi install hint reaches the model** · P1, 1/5 · `plugins/pi/extensions/rtok.ts`, `plugins/pi/tests/rtok.test.ts`, `plugins/pi/README.md`
+
+From I-36. `pi.appendEntry` is TUI-only (pi docs: "do NOT participate in LLM context"), so the missing-rtok ketch hint never reached the model.
+
+Do: the extension now calls `pi.sendMessage({customType: "rtok-missing", content: KETCH_HINT, display: true})` once per session (module guard flag; falls back to `appendEntry` only when `sendMessage` is missing for old pi). Fail-open holds: the bash command still runs unchanged.
+Check: `plugins/pi/tests/rtok.test.ts` asserts one `sendMessage` with the ketch hint, once per session across two calls, zero `appendEntry` when `sendMessage` exists, plus the fallback case; `plugins/pi/README.md` states the `sendMessage` path.
+Status: done 2026-09-17 · Model: OpenCode / Muse Spark 1.3
+Evidence: `node --test plugins/pi/tests/rtok.test.ts` 6 passed; `cargo nextest run --test pi_plugin` 5 passed. `just check` not green in this tree: `cargo clippy --all-features` fails on uncommitted concurrent work (`src/plugins/graph/mod.rs` T52.4 `symbol_dead_candidates` errors), untouched by this task; `cargo fmt --check` shows the same pre-existing diff.
+Deviation: none; 3 files, ≤200 LOC.
+
 ## T48.1 — pi loads the rtok extension from its linked directory
 
 **T48.1 pi loads the rtok extension from its linked directory** · P0, 2/5 · `plugins/pi/tests/load.test.ts`, `tests/pi_plugin.rs`, `plugins/pi/README.md`

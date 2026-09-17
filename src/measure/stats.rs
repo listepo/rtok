@@ -50,6 +50,10 @@ pub struct Report {
     pub archive_candidates: u64,
     #[serde(default)]
     pub api: BTreeMap<String, ApiRow>,
+    /// `Some` only for `rtok stats --price`: the default report is byte-identical
+    /// with and without the price table (T49.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<CostReport>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -59,6 +63,32 @@ pub struct ApiRow {
     pub cache_read: i64,
     pub output: i64,
     pub hit: f64,
+}
+
+/// One model's USD costs (`rtok stats --price`, T49.1). `cost`/`saved` are
+/// `None` for models without a `[stats.prices]` entry: their token counts still
+/// print, but no dollar figure is guessed.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct CostRow {
+    pub input: i64,
+    pub cache_create: i64,
+    pub cache_read: i64,
+    pub output: i64,
+    /// USD at the model's `$` per MTok row.
+    pub cost: Option<f64>,
+    /// USD the cache reads saved versus uncached input price.
+    pub saved: Option<f64>,
+}
+
+/// USD costs over the proxy `usage` rows (`rtok stats --price`, T49.1). Models
+/// without a `[stats.prices]` entry are named in `unknown` and priced nowhere —
+/// never by guess.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct CostReport {
+    pub models: BTreeMap<String, CostRow>,
+    pub unknown: Vec<String>,
+    pub total_cost: f64,
+    pub total_saved: f64,
 }
 
 /// The `[plugins.archive]` knobs the replay needs, so `collect` stays usable without a `Config`.
@@ -140,6 +170,9 @@ impl Report {
                 "archive replay (estimate) ctt {} → {}  -{pct:.1}%  over {} results\n",
                 self.ctt_total, self.ctt_archive, self.archive_candidates
             ));
+        }
+        if let Some(cost) = &self.cost {
+            s.push_str(&cost.to_table());
         }
         s.push_str(&format_section("tool", &self.tools));
         s.push_str(&format_section("bash", &self.bash_families));
@@ -225,6 +258,121 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// USD for one model's counters at its `$` per MTok row: `(cost, saved)`.
+/// `saved` is what the cache reads saved versus uncached input price — the only
+/// saving computable from the `usage` rows alone (T49.1). Dust below a tenth of
+/// a microdollar rounds away so JSON goldens stay exact.
+pub fn row_cost(
+    input: i64,
+    cache_create: i64,
+    cache_read: i64,
+    output: i64,
+    price: &crate::config::ModelPrice,
+) -> (f64, f64) {
+    let leg = |n: i64, rate: f64| n as f64 / 1e6 * rate;
+    let cost = leg(input, price.input)
+        + leg(cache_create, price.cache_write)
+        + leg(cache_read, price.cache_read)
+        + leg(output, price.output);
+    let saved = leg(cache_read, (price.input - price.cache_read).max(0.0));
+    let round = |v: f64| (v * 1e6).round() / 1e6;
+    (round(cost), round(saved))
+}
+
+/// Price the store's per-model `usage` into `report.cost` (`rtok stats --price`,
+/// T49.1). Models without a `[stats.prices]` entry land in `unknown` and stay
+/// out of the totals.
+pub fn attach_costs(
+    report: &mut Report,
+    store: &Store,
+    prices: &BTreeMap<String, crate::config::ModelPrice>,
+) -> Result<()> {
+    let mut costs = CostReport::default();
+    for row in store.usage_by_model()? {
+        let priced = prices.get(&row.model).map(|price| {
+            row_cost(
+                row.input,
+                row.cache_create,
+                row.cache_read,
+                row.output,
+                price,
+            )
+        });
+        if priced.is_none() {
+            costs.unknown.push(row.model.clone());
+        }
+        let (cost, saved) = priced.unzip();
+        costs.total_cost += cost.unwrap_or(0.0);
+        costs.total_saved += saved.unwrap_or(0.0);
+        costs.models.insert(
+            row.model,
+            CostRow {
+                input: row.input,
+                cache_create: row.cache_create,
+                cache_read: row.cache_read,
+                output: row.output,
+                cost,
+                saved,
+            },
+        );
+    }
+    costs.unknown.sort();
+    costs.unknown.dedup();
+    let round = |v: f64| (v * 1e6).round() / 1e6;
+    costs.total_cost = round(costs.total_cost);
+    costs.total_saved = round(costs.total_saved);
+    report.cost = Some(costs);
+    Ok(())
+}
+
+impl CostReport {
+    fn to_table(&self) -> String {
+        let mut s = String::from("cost (USD at [stats.prices] $/MTok; `-` = no price row)\n");
+        if self.models.is_empty() && self.unknown.is_empty() {
+            s.push_str("  no usage rows\n");
+            return s;
+        }
+        let cols = [
+            Col::left(24),
+            Col::right(12),
+            Col::right(12),
+            Col::right(12),
+            Col::right(12),
+            Col::right(10),
+            Col::right(10),
+        ];
+        let mut rows = vec![vec![
+            "model".into(),
+            "input".into(),
+            "cache_create".into(),
+            "cache_read".into(),
+            "output".into(),
+            "cost".into(),
+            "saved".into(),
+        ]];
+        for (model, r) in &self.models {
+            let money = |v: Option<f64>| v.map_or_else(|| "-".into(), |v| format!("{v:.2}"));
+            rows.push(vec![
+                model.clone(),
+                r.input.to_string(),
+                r.cache_create.to_string(),
+                r.cache_read.to_string(),
+                r.output.to_string(),
+                money(r.cost),
+                money(r.saved),
+            ]);
+        }
+        s.push_str(&table(&cols, &rows));
+        s.push_str(&format!(
+            "cost total ${:.2} (cache reads saved ${:.2}; {} model(s) without a price)\n",
+            self.total_cost,
+            self.total_saved,
+            self.unknown.len()
+        ));
+        s
+    }
 }
 
 pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Result<Report> {
@@ -460,6 +608,85 @@ mod tests {
     #[test]
     fn since_60d_parses() {
         assert_eq!(parse_since("60d").unwrap(), Duration::from_secs(60 * 86400));
+    }
+
+    #[test]
+    fn price_arithmetic_costs_legs_and_cache_saving() {
+        let p = crate::config::ModelPrice {
+            input: 2.0,
+            cache_write: 2.5,
+            cache_read: 0.2,
+            output: 10.0,
+        };
+        assert_eq!(
+            row_cost(2_000_000, 400_000, 8_000_000, 500_000, &p),
+            (11.6, 14.4)
+        );
+        assert_eq!(row_cost(0, 0, 0, 0, &p), (0.0, 0.0));
+        // A read price above input never yields a negative saving.
+        let p = crate::config::ModelPrice {
+            input: 1.0,
+            cache_write: 1.0,
+            cache_read: 2.0,
+            output: 1.0,
+        };
+        assert_eq!(row_cost(0, 0, 1_000_000, 0, &p), (2.0, 0.0));
+    }
+
+    #[test]
+    fn attach_costs_prices_known_and_dashes_unknown() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s1", None, None, None, Some("proxy"))
+            .unwrap();
+        let id = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        store
+            .insert_usage(
+                "s1",
+                Some("claude-sonnet-5"),
+                "anthropic",
+                2_000_000,
+                400_000,
+                8_000_000,
+                500_000,
+                id,
+            )
+            .unwrap();
+        store
+            .insert_usage("s1", Some("mystery-1"), "anthropic", 30, 0, 0, 1, id)
+            .unwrap();
+        store
+            .insert_usage("s1", None, "anthropic", 7, 0, 0, 0, id)
+            .unwrap();
+        let mut report = Report::default();
+        attach_costs(
+            &mut report,
+            &store,
+            &crate::config::Config::default().stats.prices,
+        )
+        .unwrap();
+        let cost = report.cost.unwrap();
+        assert_eq!(cost.total_cost, 11.6);
+        assert_eq!(cost.total_saved, 14.4);
+        assert_eq!(cost.unknown, ["mystery-1", "unknown"]);
+        let m = &cost.models["mystery-1"];
+        assert_eq!(m.input, 30);
+        assert_eq!((m.cost, m.saved), (None, None));
+        assert_eq!(cost.models["claude-sonnet-5"].cost, Some(11.6));
+        let table = cost.to_table();
+        assert!(table.contains("11.60"), "{table}");
+        assert!(table.contains("mystery-1"), "{table}");
     }
 
     /// A window wider than the calendar is a typo, not a wrapped duration: the multiply

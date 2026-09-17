@@ -7,6 +7,7 @@
 //! and why the rest cannot be taken; a unit test keeps the README and `support()` in step.
 //! `rtok agents list` and `rtok doctor` read the same files back through the same contract.
 
+pub mod aider;
 pub mod claude;
 pub mod codex;
 pub mod copilot;
@@ -14,6 +15,7 @@ pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 pub mod pi;
+pub mod windsurf;
 pub mod zcode;
 
 use std::path::{Path, PathBuf};
@@ -26,7 +28,7 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot",
+    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot", "aider", "windsurf",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -43,6 +45,8 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "zcode" => Some(&zcode::Zcode),
         "kimi" => Some(&kimi::Kimi),
         "copilot" => Some(&copilot::Copilot),
+        "windsurf" => Some(&windsurf::Windsurf),
+        "aider" => Some(&aider::Aider),
         _ => None,
     }
 }
@@ -1098,7 +1102,7 @@ mod tests {
         assert_eq!(kinds("opencode"), [Kind::Cli, Kind::Desktop]);
         assert_eq!(kinds("claude"), [Kind::Cli, Kind::Desktop]);
         assert_eq!(kinds("codex"), [Kind::Cli]);
-        assert!(host("windsurf").is_none());
+        assert!(host("notahost").is_none());
         assert!(resolve(&["claude".into(), "nope".into()]).is_err());
     }
 
@@ -1114,6 +1118,7 @@ mod tests {
             "CLI: OpenCode",
             "Desktop: OpenCode Desktop",
             "CLI: pi",
+            "Desktop: Windsurf",
         ] {
             assert!(
                 out.contains(&format!("{head}\n")) || out.contains(&format!("{head} — ")),

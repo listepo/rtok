@@ -118,8 +118,25 @@ fn assign(doc: &mut DocumentMut, key: &str, value: TomlValue) -> Result<()> {
     bail!("empty key");
 }
 
+/// Malformed `cmd` filter rules for `rtok config validate` (T50.2): the single
+/// `rules` file when present, plus every `rules.d/*.toml`. Without the `cmd`
+/// feature there is nothing to check.
+pub fn rules_issues(rules: &Path, rules_dir: &Path) -> Vec<String> {
+    #[cfg(feature = "cmd")]
+    {
+        crate::plugins::cmd::rules::issues_in(rules, rules_dir)
+    }
+    #[cfg(not(feature = "cmd"))]
+    {
+        let _ = (rules, rules_dir);
+        Vec::new()
+    }
+}
+
 fn is_open(dotted: &str) -> bool {
-    dotted == "bench.configs"
+    // `bench.configs` is a free-form name → path map; `stats.prices` is keyed by
+    // provider model id, which no schema can enumerate — both skip value checks.
+    dotted == "bench.configs" || dotted == "stats.prices"
 }
 
 fn line_of(src: &str, span: Option<std::ops::Range<usize>>) -> usize {

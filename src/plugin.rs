@@ -394,6 +394,10 @@ impl Symbols for Runtime {
     ) -> Result<Vec<(u32, String, String)>> {
         self.store.symbol_impact(root, name, depth)
     }
+
+    fn symbol_dead_candidates(&self, root: &str) -> Result<Vec<(String, String, String, i32)>> {
+        self.store.symbol_dead_candidates(root)
+    }
 }
 
 #[cfg(test)]

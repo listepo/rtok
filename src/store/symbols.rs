@@ -343,6 +343,39 @@ impl Store {
         Ok(self.symbol_refs(root, name)?.len() as i64)
     }
 
+    /// T52.4: definitions with no same-name reference row under `root`,
+    /// as `(path, name, kind, line)`. Name-based, like `callers`: a shared
+    /// name keeps every same-named definition live. Callers filter pub,
+    /// trait impls, tests and macros from this candidate set.
+    pub fn symbol_dead_candidates(&self, root: &str) -> Result<Vec<(String, String, String, i32)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Text)]
+            name: String,
+            #[diesel(sql_type = Text)]
+            kind: String,
+            #[diesel(sql_type = Integer)]
+            line: i32,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.path AS path, d.name AS name, d.kind AS kind, d.line AS line
+             FROM symbols d
+             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
+               AND NOT EXISTS (SELECT 1 FROM symbols r
+                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0)
+             ORDER BY d.path, d.line",
+        )
+        .bind::<Text, _>(root)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.path, r.name, r.kind, r.line))
+            .collect())
+    }
+
     /// Callers of `name` out to `depth`, each `(path, scope)` at its first depth (T8.13).
     pub fn symbol_impact(
         &self,

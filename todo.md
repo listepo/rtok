@@ -1,26 +1,18 @@
-- T48.2. pi install hint reaches the model
-- T48.3. Cursor plugin MCP goes through the ketch-hint launcher
-- T48.4. DeepSeek Harness host
-- T48.5. Windsurf host
 - T48.6. Zed host
-- T48.7. aider host
 - T48.8. VS Code Copilot Chat host
-- T49.1. `rtok stats --price`
 - T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
-- T50.2. User filter drop-in directory and schema
 - T50.3. Extra `read` modes
-- T50.4. Optional deny of native Grep and Glob
 - T51.1. Compress JSON and code inside the live zone
-- T51.2. Anthropic native context editing
-- T51.3. Gemini wire in the proxy
-- T51.4. `rtok wrap -- <agent>`
-- T52.1. Query language over the graph index
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
-- T52.4. Dead code report
-- T52.5. Type-position and scoped-call references
 - T53.1. Coaching nudges under an A/B
-- T53.2. Shell completions and man page
 - T53.3. Hook start without Security.framework
 - T53.4. `just otel-check` against real backends
+- T55.1. Case-insensitive `display_rel` on Windows
+- T55.2. Case-insensitive `never_wrap` stem match
+- T55.3. Percent-encode spaces in graph `file_uri`
+- T55.4. Host-shell-safe wrap quoting (Cursor/PowerShell)
+- T55.5. Cap bytes before `search`/`tree` `read_to_string`
+- T55.6. Windows `mcp.cmd` must `call` a `.cmd` shim
+- T55.7. Stats `strip_prefix_cd` and quoted paths

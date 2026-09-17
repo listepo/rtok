@@ -161,3 +161,57 @@ fn edited_and_deleted_files_are_reflected() {
     );
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// T52.1: optional `path` / `kind` args narrow `symbol`, `callers` and
+/// `impact` to one subtree in one call; no-arg calls stay byte-exact (above).
+#[test]
+fn filters_narrow_to_one_subtree() {
+    let home = tmp("filter");
+    let a = repo(&home, "a");
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "symbol",
+            serde_json::json!({"name": "b", "path": "chain"})
+        ),
+        "chain.rs:4 function\nfn b() {\n    c();\n}\n"
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "symbol",
+            serde_json::json!({"name": "b", "kind": "function"})
+        ),
+        "chain.rs:4 function\nfn b() {\n    c();\n}\n"
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "symbol",
+            serde_json::json!({"name": "b", "kind": "struct"})
+        ),
+        "no definition of b of kind struct"
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "callers",
+            serde_json::json!({"name": "c", "path": "other"})
+        ),
+        "other.rs  d ×2 (L2)\n"
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "impact",
+            serde_json::json!({"name": "c", "depth": 2, "path": "other"})
+        ),
+        "1  other.rs  d\n"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}

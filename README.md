@@ -50,6 +50,14 @@ mise exec -- cargo install --path .
 rtok --version
 ```
 
+Shell completions and the man page are generated from the same clap tree as
+`--help`, so they never drift from the CLI surface:
+
+```bash
+rtok completions bash > ~/.bash_completion.d/rtok   # or zsh, fish, powershell
+rtok man | man -l -                                  # or save as manpath/rtok.1
+```
+
 ## Start with Claude Code
 
 Install rtok's eight hooks and MCP entry. The installer backs up the settings file before
@@ -85,6 +93,21 @@ Run the proxy separately when you want provider usage rows and archive compressi
 rtok proxy --mode passthrough
 # In another shell, point the host at http://127.0.0.1:8790.
 ```
+
+Two ways to shrink old tool results on the Anthropic wire, measured on the same
+six-turn request (103 729 bytes upstream-bound; `tests/proxy.rs`
+`proxy_compress_rewrites_old_tool_results_identically` and
+`proxy_anthropic_context_edits_arm_platform_path`):
+
+| path | upstream body | local rows |
+| --- | --- | --- |
+| `archive` (`mode = "compress"`) | 70 837 B (−31.7 %) | 4 `archive` Measurements, one per rewritten block |
+| platform (`[proxy] context_management = true`) | 103 798 B (+69 B field) | 1 zero-delta `proxy/context_management` row naming the path; `archive` stands down (0 rows) |
+
+The platform's own clearing happens server-side and is not locally observable, so by
+D3 no saving is claimed for it — only the added field is measured. Keep `archive`
+where the platform cannot clear (the OpenAI wires); where both apply, the platform
+wins and `archive` skips those turns rather than shrinking twice.
 
 ## Examples
 
@@ -239,7 +262,7 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 |---|---|
 | `rtok agents install claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
 | `rtok agents remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
-| `rtok agents install cursor` / `codex` / `opencode` / `pi` / `zcode` / `kimi` / `copilot` | register the other supported host integrations |
+| `rtok agents install cursor` / `codex` / `opencode` / `pi` / `zcode` / `kimi` / `copilot` / `aider --proxy` / `windsurf` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok proxy` | capture API usage; optionally archive older tool results |

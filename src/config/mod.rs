@@ -161,8 +161,14 @@ section! {
         mode: String = s("passthrough"),
         upstream: String = s("https://api.anthropic.com"),
         openai_upstream: String = s("https://api.openai.com"),
+        gemini_upstream: String = s("https://generativelanguage.googleapis.com"),
         timeout_s: u64 = 600,
         include_usage: bool = true,
+        /// Opt-in Anthropic server-side context editing (T51.2): add
+        /// `context_management.edits: [{type: "clear_tool_uses_20250919"}]` plus the
+        /// `context-management-2025-06-27` beta header on `/v1/messages` requests that
+        /// do not already carry the field. Other wires are unaffected.
+        context_management: bool = false,
         dry_run: bool = false,
     }
 }
@@ -207,7 +213,74 @@ section! {
         transcripts_dir: PathBuf = p("~/.claude/projects"),
         calibrate_samples: u32 = 30,
         baseline: String = String::new(),
+        /// Show per-model USD costs from `prices` (`rtok stats --price`, T49.1).
+        price: bool = false,
+        /// USD per MTok per model id (`rtok stats --price`, T49.1). A `usage` row
+        /// whose model has no entry here is listed with `-`, never priced by guess.
+        prices: BTreeMap<String, ModelPrice> = default_stats_prices(),
     }
+}
+
+section! {
+    /// One `[stats.prices."<model>"]` row — USD per MTok (T49.1). `cache_write` is
+    /// the 5-minute cache-creation price; providers without a separate write price
+    /// repeat `input`.
+    ModelPrice {
+        input: f64 = 0.0,
+        cache_write: f64 = 0.0,
+        cache_read: f64 = 0.0,
+        output: f64 = 0.0,
+    }
+}
+
+/// The shipped `[stats.prices]` rows (T49.1). Sources, fetched 2026-09-17:
+/// Anthropic `claude-sonnet-5` / `claude-haiku-4-5` from
+/// https://platform.claude.com/docs/en/about-claude/pricing (input / 5m write /
+/// read / output per MTok); OpenAI `gpt-5` / `gpt-5-mini` from
+/// https://platform.openai.com/docs/pricing (short-context input / cached input /
+/// output; no separate write price, so `cache_write = input`).
+fn default_stats_prices() -> BTreeMap<String, ModelPrice> {
+    [
+        (
+            "claude-sonnet-5",
+            ModelPrice {
+                input: 2.0,
+                cache_write: 2.5,
+                cache_read: 0.2,
+                output: 10.0,
+            },
+        ),
+        (
+            "claude-haiku-4-5",
+            ModelPrice {
+                input: 1.0,
+                cache_write: 1.25,
+                cache_read: 0.1,
+                output: 5.0,
+            },
+        ),
+        (
+            "gpt-5",
+            ModelPrice {
+                input: 1.25,
+                cache_write: 1.25,
+                cache_read: 0.125,
+                output: 10.0,
+            },
+        ),
+        (
+            "gpt-5-mini",
+            ModelPrice {
+                input: 0.25,
+                cache_write: 0.25,
+                cache_read: 0.025,
+                output: 2.0,
+            },
+        ),
+    ]
+    .into_iter()
+    .map(|(k, v)| (s(k), v))
+    .collect()
 }
 
 section! {
@@ -268,6 +341,8 @@ section! {
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
+        aider: SetupAider = SetupAider::default(),
+        windsurf: SetupWindsurf = SetupWindsurf::default(),
     }
 }
 
@@ -309,6 +384,16 @@ section! {
 section! {
     /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
     SetupCopilot { dir: PathBuf = p("~/.copilot") }
+}
+
+section! {
+    /// `[setup.aider]` — `.aider.conf.yml` carries `openai-api-base` (T48.7).
+    SetupAider { config_path: PathBuf = p("~/.aider.conf.yml") }
+}
+
+section! {
+    /// `[setup.windsurf]` — Cascade's `mcp_config.json` (T48.5).
+    SetupWindsurf { config_path: PathBuf = p("~/.codeium/windsurf/mcp_config.json") }
 }
 
 section! {
@@ -408,6 +493,8 @@ section! {
         rewrite: bool = true,
         shell: String = String::new(),
         rules: PathBuf = p("~/.rtok/rules.toml"),
+        /// Drop-in dir: every `*.toml` merges after `rules` in name order (T50.2).
+        rules_dir: PathBuf = p("~/.rtok/rules.d"),
         trailer_min_lines: u32 = 40,
         fail_tail_lines: u32 = 80,
         never_wrap: Vec<String> = strs(&["rtok", "sudo"]),
@@ -482,6 +569,10 @@ section! {
     Guard {
         enabled: bool = true,
         window_turns: u32 = 8,
+        /// Opt-in (T50.4): deny native `Grep`/`Glob` in PreToolUse and point at
+        /// MCP `search`/`tree`. Off by default; also stays silent while the
+        /// `read` plugin is disabled (no `search`/`tree` to point at).
+        deny_grep_glob: bool = false,
     }
 }
 
@@ -729,7 +820,10 @@ impl Config {
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
             &mut self.setup.copilot.dir,
+            &mut self.setup.aider.config_path,
+            &mut self.setup.windsurf.config_path,
             &mut self.plugins.cmd.rules,
+            &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
         ] {
@@ -943,7 +1037,10 @@ mod tests {
             &cfg.setup.zcode.config_path,
             &cfg.setup.kimi.config_path,
             &cfg.setup.copilot.dir,
+            &cfg.setup.aider.config_path,
+            &cfg.setup.windsurf.config_path,
             &cfg.plugins.cmd.rules,
+            &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
         ];

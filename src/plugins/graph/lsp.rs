@@ -427,12 +427,17 @@ fn body(root: &Path, path: &str, line: i32, end_line: i32, budget: usize) -> Str
     super::body_lines(&src, line, end_line, budget)
 }
 
-pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str, filter: &super::Filter) -> Result<String> {
     let t0 = Instant::now();
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
     with_session(root, |s| {
         if wait_def(s, name)?.is_none() {
-            return finish(cx, "symbol", t0, format!("no definition of {name}"));
+            return finish(
+                cx,
+                "symbol",
+                t0,
+                format!("no definition of {name}{}", filter.scope_note()),
+            );
         }
         let r = s.request("workspace/symbol", json!({"query": name}))?;
         let mut out = String::new();
@@ -444,22 +449,30 @@ pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
                 let Some(d) = pick_def(&json!([it]), name, &s.root) else {
                     continue;
                 };
+                if !filter.path_ok(&d.path) || !filter.kind_ok(kind_name(d.kind)) {
+                    continue;
+                }
                 out.push_str(&format!("{}:{} {}\n", d.path, d.line, kind_name(d.kind)));
                 out.push_str(&body(&s.root, &d.path, d.line, d.end_line, budget));
             }
         }
         if out.is_empty() {
-            out = format!("no definition of {name}");
+            out = format!("no definition of {name}{}", filter.scope_note());
         }
         finish(cx, "symbol", t0, out)
     })
 }
 
-pub(crate) fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
+pub(crate) fn callers(cx: &Ctx, root: &Path, name: &str, filter: &super::Filter) -> Result<String> {
     let t0 = Instant::now();
     with_session(root, |s| {
         let Some(d) = wait_def(s, name)? else {
-            return finish(cx, "callers", t0, format!("no references to {name}"));
+            return finish(
+                cx,
+                "callers",
+                t0,
+                format!("no references to {name}{}", filter.scope_note()),
+            );
         };
         s.did_open(&d.uri)?;
         let refs = s.request(
@@ -498,10 +511,18 @@ pub(crate) fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
             }
         }
         if groups.is_empty() {
-            return finish(cx, "callers", t0, format!("no references to {name}"));
+            return finish(
+                cx,
+                "callers",
+                t0,
+                format!("no references to {name}{}", filter.scope_note()),
+            );
         }
         let mut out = String::new();
         for ((path, scope), (n, line)) in groups {
+            if !filter.path_ok(&path) {
+                continue;
+            }
             let scope = if scope.is_empty() {
                 String::new()
             } else {
@@ -509,15 +530,29 @@ pub(crate) fn callers(cx: &Ctx, root: &Path, name: &str) -> Result<String> {
             };
             out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
         }
+        if out.is_empty() {
+            out = format!("no references to {name}{}", filter.scope_note());
+        }
         finish(cx, "callers", t0, out)
     })
 }
 
-pub(crate) fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
+pub(crate) fn impact(
+    cx: &Ctx,
+    root: &Path,
+    name: &str,
+    depth: u32,
+    filter: &super::Filter,
+) -> Result<String> {
     let t0 = Instant::now();
     with_session(root, |s| {
         let Some(d) = wait_def(s, name)? else {
-            return finish(cx, "impact", t0, format!("nothing reaches {name}"));
+            return finish(
+                cx,
+                "impact",
+                t0,
+                format!("nothing reaches {name}{}", filter.scope_note()),
+            );
         };
         s.did_open(&d.uri)?;
         let items = s.request(
@@ -538,6 +573,9 @@ pub(crate) fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<St
                         continue;
                     }
                     let path = rel(&s.root, from["uri"].as_str().unwrap_or(""));
+                    if !filter.path_ok(&path) {
+                        continue;
+                    }
                     if nm.is_empty() {
                         out.push_str(&format!("{dpth}  {path}  (file)\n"));
                     } else {
@@ -552,7 +590,7 @@ pub(crate) fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<St
             }
         }
         if out.is_empty() {
-            out = format!("nothing reaches {name}");
+            out = format!("nothing reaches {name}{}", filter.scope_note());
         }
         finish(cx, "impact", t0, out)
     })

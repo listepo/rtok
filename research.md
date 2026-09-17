@@ -54,6 +54,24 @@ Release build. The 3 000-file repo is generated, each file one function calling 
 The fourth clause — fewer tool calls per multi-file task on the P9 set — is not measured, so
 the gate is open. `callers("estimate")` on this repo fell from 1 959 bytes at v0.1 to 793.
 
+### `graph` composite-query chains (T52.1, 2026-09-17)
+
+Dated command: three ad-hoc scans over all 172 transcripts in
+`~/.claude/projects/*/*.jsonl` (157 sessions with tool calls; transcripts
+predate the `graph` tools, so the chains are `ctx_search`/shell-`rg` shaped).
+
+| Measurement | Value |
+|-------------|-------|
+| `ctx_search` calls | 615, of which 610 carry a path scope |
+| Search→search refinement chains (≤3 calls apart) | 252, in 33 sessions |
+| Search→read chains (≤5 calls apart) | 528, in 46 sessions |
+| Shell `rg` calls with a path arg | 41 of 98 |
+
+Verdict: GO — "X inside path Y" is the measured composite, so `symbol` /
+`callers` / `impact` grew optional `path` (substring) args and `symbol` an
+optional `kind` (exact) arg on the existing tools — no new tool. Surface after:
+4 tools, 94 description tokens (still ≤ 150; each description ≤ 60).
+
 Cost split with p_out = 5 × p_in (input-token equivalents):
 
 | Component | Standard cache read 0.1× | Fable/Mythos 5.1 read 0.025× |

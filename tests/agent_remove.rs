@@ -235,6 +235,66 @@ fn copilot_remove_deletes_hooks_file_and_keeps_foreign_servers() {
 }
 
 #[test]
+fn aider_remove_strips_only_ours_and_keeps_comments_and_foreign() {
+    let home = tmp("aider");
+    let cfg = write_cfg(&home);
+    let path = home.join(".aider.conf.yml");
+    fs::write(
+        &path,
+        "# mine\nmodel: openai/gpt-4o\nopenai-api-base: https://foreign.example/v1\n",
+    )
+    .unwrap();
+
+    // A foreign base URL is not ours: remove reports no changes and keeps it.
+    let none = rtok(&["agents", "remove", "aider"], &cfg, &home);
+    assert!(none.contains("no changes"), "{none}");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("https://foreign.example/v1"),
+        "foreign base URL stays"
+    );
+
+    rtok(&["agents", "install", "aider", "--proxy"], &cfg, &home);
+    let installed = fs::read_to_string(&path).unwrap();
+    assert!(
+        installed.contains("openai-api-base: http://"),
+        "{installed}"
+    );
+    assert!(installed.contains("8790/v1"), "{installed}");
+    assert!(
+        installed.contains("# mine"),
+        "comments survive: {installed}"
+    );
+
+    rtok(&["agents", "remove", "aider"], &cfg, &home);
+    let left = fs::read_to_string(&path).unwrap();
+    assert!(!left.contains("openai-api-base:"), "{left}");
+    assert!(left.contains("# mine"), "comments survive: {left}");
+    assert!(left.contains("model: openai/gpt-4o"), "{left}");
+    let again = rtok(&["agents", "remove", "aider"], &cfg, &home);
+    assert!(again.contains("no changes"), "second remove: {again}");
+}
+
+#[test]
+fn windsurf_remove_keeps_foreign_servers() {
+    let home = tmp("windsurf");
+    let cfg = write_cfg(&home);
+    let path = home.join(".codeium/windsurf/mcp_config.json");
+    fs::write(&path, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+
+    rtok(&["agents", "install", "windsurf"], &cfg, &home);
+    assert!(json(&path)["mcpServers"]["rtok"].is_object());
+
+    rtok(&["agents", "remove", "windsurf"], &cfg, &home);
+    let servers = json(&path);
+    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+    let again = rtok(&["agents", "remove", "windsurf"], &cfg, &home);
+    assert!(again.contains("no changes"), "second remove: {again}");
+}
+
+#[test]
 fn setup_copies_the_config_before_it_writes() {
     let home = tmp("bak");
     let cfg = write_cfg(&home);

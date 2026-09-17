@@ -6,30 +6,15 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.2 | todo | P1 | 1 | 0% | |
-| T48.3 | todo | P1 | 2 | 0% | |
-| T48.4 | todo | P2 | 4 | 0% | |
-| T48.5 | todo | P2 | 3 | 0% | |
-| T48.6 | todo | P2 | 3 | 0% | |
-| T48.7 | todo | P3 | 2 | 0% | |
+| T48.6 | in progress | P2 | 3 | 70% | Cursor / grok 4.6 |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T49.1 | todo | P2 | 3 | 0% | |
 | T49.2 | todo | P2 | 4 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
-| T50.2 | todo | P3 | 2 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T50.4 | todo | P3 | 2 | 0% | |
 | T51.1 | todo | P3 | 5 | 0% | |
-| T51.2 | todo | P3 | 3 | 0% | |
-| T51.3 | todo | P3 | 4 | 0% | |
-| T51.4 | todo | P3 | 2 | 0% | |
-| T52.1 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 0% | |
-| T52.4 | todo | P3 | 2 | 0% | |
-| T52.5 | todo | P3 | 3 | 0% | |
 | T53.1 | todo | P3 | 3 | 0% | |
-| T53.2 | todo | P3 | 1 | 0% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.1 | todo | P1 | 2 | 0% | |
@@ -40,45 +25,17 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T55.6 | todo | P2 | 1 | 0% | |
 | T55.7 | todo | P3 | 1 | 0% | |
 
-### T48.2. pi install hint reaches the model
-
-From I-36. `plugins/pi/extensions/rtok.ts` reports a missing `rtok` with `pi.appendEntry`, which pi documents as not part of the LLM context, so the model never learns why bash output is unfiltered or how to fix it (D21 asks the plugin to say "install with ketch"). Fail-open already holds.
-Done when the hint goes through the call pi documents as reaching the model (`pi.sendMessage` or the current equivalent), still once per session, the unit test (`plugins/pi/tests/rtok.test.ts`) asserts that call, and the pi README says so.
-
-### T48.3. Cursor plugin MCP goes through the ketch-hint launcher
-
-From I-37. `plugins/cursor/mcp.json` runs `rtok mcp` directly, so `scripts/mcp.sh` / `scripts/mcp.cmd`, which print `ketch install listepo/rtok` when `rtok` is missing, never run: in Cursor a missing binary is a silent MCP failure. The root `plugin.json` claims the Agent Plugins spec, which also wants `$schema` and `type: "stdio"` per server.
-Done when Cursor starts the MCP server through the launcher on macOS, Linux and Windows (a per-OS command or one launcher Cursor resolves), `tests/cursor_plugin.rs` asserts that path and the missing-rtok hint, and the root `plugin.json` either conforms to the spec (`$schema`, `type`) or is dropped with the reason in the README.
-
-### T48.4. DeepSeek Harness host
-
-Deferred when ZCode, Kimi Code and Copilot landed (T46.x): DeepSeek Harness (`dsh`) was requested together with them, but its public sources were unverified and its config looked like YAML patches without a documented hook protocol. The note did not survive in `roadmap.md`, so it is restored here.
-Done when the official docs and config locations are verified and linked; `src/agents/deepseek/{mod.rs,README.md}` installs what the harness really supports (MCP, a base-URL proxy, hooks only if documented) with the support table, `## Docs`, `Reachable:` lines; `[setup.deepseek]` config, docs and the eight-host e2e matrix (`tests/agents_install.rs`, `tests/agent_remove.rs`) include it. If the harness has no stable config surface, the card closes with that evidence instead of code.
-
-### T48.5. Windsurf host
-
-From I-17. Windsurf (Codeium) stores MCP servers in `~/.codeium/windsurf/mcp_config.json` and ships Cascade hooks; neither is installed by rtok today.
-Done when the current Windsurf docs are verified and linked, `rtok agents install windsurf` registers `rtok mcp` and, if the hook protocol can carry `rtok hook` (or a mapped `--host windsurf` payload like T46.3), the hooks; remove keeps foreign entries; the host joins the install/remove/list e2e matrix, config, docs and `README.md` host lists.
-
 ### T48.6. Zed host
 
 From I-17. Zed configures MCP as `context_servers` in `~/.config/zed/settings.json` (JSON with comments) and has no shell hook events; its agent can also use external agents over ACP.
 Done when `rtok agents install zed` adds `context_servers.rtok` without destroying comments or foreign servers, the support table says hooks/proxy/plugin `no` with the reason, remove restores the file, and the host joins the e2e matrix, config and docs.
 
-### T48.7. aider host
-
-From I-17. aider has no MCP and no hooks, but reads `~/.aider.conf.yml` / `.env`, where `openai-api-base` / `anthropic-api-base` (or the env vars) can point it at `rtok proxy`, which is the only rtok surface it can use.
-Done when `rtok agents install aider --proxy` writes the base URL key into the YAML config without losing comments (reuse an installed YAML-preserving approach or a line edit; no new dependency without approval), the support table explains why hooks and mcp are `no`, remove strips only rtok's key, and the host joins the e2e matrix and docs.
+Execution plan (OpenCode / Muse Spark): docs verified 2026-09-17 — MCP https://zed.dev/docs/assistant/model-context-protocol (`context_servers` in the settings file, `{command, args, env}` local shape; Zed-configured servers are also forwarded to external agents over ACP), models https://zed.dev/docs/ai/models (hosted models or own API keys — no base-URL proxy surface, so proxy stays `no`), extensions https://zed.dev/docs/extensions/mcp-extensions (marketplace WASM extensions, no linkable plugin dir). `edit_json` (serde_json) fails on `//` comments, and no JSONC crate may be added without approval, so `src/agents/zed/mod.rs` does a comment-aware textual edit: strip comments only to validate/parse, locate `context_servers` and `rtok` spans with a string/comment-aware scanner, insert/replace/excise surgically. Files: `src/agents/zed/{mod.rs,README.md}` (new; CLI `zed` + Desktop variants sharing one file, `shared()`), registry + HOSTS, `[setup.zed] config_path` (config/mod.rs, default.toml, docs/config.md), cli help, README, commands.md, blessed agents table, config-show.stdout, agents_install matrix, agent_remove zed test (seeded with comments), common write_cfg. Unit tests: dry_run touches nothing, apply into missing/commented file + idempotent, remove keeps foreign + comments (comment-only object left in place), second remove no changes, malformed file errors without writing. Verify: fmt/clippy/test for agents/config/e2e scope (full `just check` may fail on concurrent WIP — report).
 
 ### T48.8. VS Code Copilot Chat host
 
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
-
-### T49.1. `rtok stats --price`
-
-From I-02. `rtok stats` reports tokens but not money, so a saving cannot be compared with a model's cost; cache reads are priced very differently from input (research.md §8).
-Done when a price table (per model: input, cache write, cache read, output per MTok) lives in config with defaults that cite a dated source, `rtok stats --price` adds cost columns and a saved-cost total computed from the same `usage` rows, unknown models show `-` instead of a guess, and a trycmd snapshot plus a unit test on the arithmetic cover it.
 
 ### T49.2. Ingest Codex, OpenCode and Cursor session logs
 
@@ -90,45 +47,28 @@ Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, Op
 From I-05. `rules/default.toml` covers grep, rg, sed, cat, make, curl, npm, pnpm, node on top of the built-in cargo/git/test/ls rules; python, pytest, pip, go, docker, kubectl, gh and friends pass through unfiltered.
 Done when the families are chosen by `rtok discover`-style counts from real transcripts (the evidence goes into `research.md`), each new rule has a fixture with before/after bytes and keeps failures and the `expand <id>` trailer, and `Measurement` rows show the saving per family.
 
-### T50.2. User filter drop-in directory and schema
-
-From I-06. Users can already override rules through one user rules file, but there is no `rules.d/*.toml` drop-in, no published schema and no example, so writing a filter means reading `src/plugins/cmd/rules.rs`.
-Done when every `*.toml` in a configured rules dir is merged after the defaults in name order, a malformed file is reported by `rtok config validate` and skipped at runtime (fail open), `docs/cmd-rules.md` documents every field with a worked example (and a site row), and tests cover merge order and a broken file.
-
 ### T50.3. Extra `read` modes
 
 From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
 Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
-
-### T50.4. Optional deny of native Grep and Glob
-
-From I-08. lean-ctx denies the host's Grep/Glob to force its own tools; rtok's MCP `search`/`tree` are cheaper but the model still reaches for the native tools.
-Done when `rtok doctor` reports the share of Read-class tokens spent in Grep/Glob, and an opt-in `guard` rule (off by default) denies them in PreToolUse with a pointer to `search`/`tree`, fails open when the MCP server is not installed, and is covered by hook tests. Default stays off unless the doctor numbers justify it.
 
 ### T51.1. Compress JSON and code inside the live zone
 
 From I-09. `archive` rewrites only old `tool_result`s; huge JSON dumps and `data:` blobs in other live-zone fields stay whole every turn.
 Done when a proxy-side pass shrinks such payloads losslessly (archived, `expand <id>`), only for content that is byte-stable across turns so the prompt cache holds, with a byte-stability test over a six-turn fixture on both wires and a `Measurement` row. Off by default until a bench shows cost per passed task does not rise.
 
-### T51.2. Anthropic native context editing
-
-From I-10. Anthropic can clear old tool uses server-side (`context_management`, `clear_tool_uses_*`), which competes with or complements `archive`.
-Done when `[proxy]` can add the context-management request fields for Anthropic Messages (opt-in), the proxy records which path shrank a request, `archive` skips turns the platform will clear, and a proxy test asserts the request body and the resulting usage rows. The README compares both paths with measured numbers.
-
 ### T51.3. Gemini wire in the proxy
 
 From I-11. The proxy speaks Anthropic Messages and OpenAI Chat/Responses; Gemini `generateContent` / `streamGenerateContent` hosts cannot use rtok's proxy.
 Done when `src/proxy/gemini.rs` implements the `Wire` adapter (usage, cached tokens, streaming passthrough byte-identical), routes by path, records usage rows like the other wires, and has body and stream tests against a mock upstream.
 
-### T51.4. `rtok wrap -- <agent>`
-
-From I-12. Pointing a host at the proxy means editing its config; for a one-off run it is simpler to set `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` for one process.
-Done when `rtok wrap -- <cmd> [args]` ensures the proxy is running (via `demon` or in-process), execs the command with both base URLs set, forwards the exit code and signals, prints nothing on the happy path, and has an integration test with a fake agent that echoes its env.
-
-### T52.1. Query language over the graph index
-
-From I-14. `graph` answers `symbol`, `callers`, `impact` and `outline`; composite questions (callers of X inside path Y of kind Z) take several calls.
-Done when a measured transcript shows such chains, and a small filter syntax on an existing tool (not a fourth tool, to keep description tokens flat) answers them from the `symbols` edges with tests; otherwise the card closes with the evidence.
+Execution plan (OpenCode / Muse Spark 1.3; shapes verified against ai.google.dev REST docs 2026-09-17: `POST /v1beta/models/{m}:{generateContent,streamGenerateContent}` (SSE via `alt=sse`), request `contents[{role:user|model, parts[{text|functionCall|functionResponse:{name,response}}]}]`, response `usageMetadata{promptTokenCount,cachedContentTokenCount,candidatesTokenCount,totalTokenCount}` in body / final stream chunk; function parts carry no stable call id — key archive decisions by `functionResponse.name`):
+1. `src/proxy/gemini.rs` (new): `matches` on `:generateContent`/`:streamGenerateContent` suffix; `provider()="gemini"`; `tool_results` over `contents` (user-role turns; `functionResponse` parts, content=`response` so the name stays visible); `usage_block` over `usageMetadata` (object or array-scanned-from-end for non-SSE streams); `provider_total=input+output` (prompt already contains cached); `model()` parsed from the path (body carries none).
+2. `src/proxy/wire.rs`: `GEMINI_PROVIDER`/`API_GEMINI` consts, `wire_ids` arm, `WIRES` entry; defaulted `Wire::model(path, body)` (body `model`, as today) overridden by Gemini.
+3. `src/proxy/mod.rs`: `pub mod gemini`, `ProxyState.gemini_upstream`, `upstream_for` arm; `record()` uses `wire.model()`.
+4. Config: `[proxy] gemini_upstream` (mod.rs + default.toml + docs/config.md + config-show.snapshot; env `RTOK_PROXY_GEMINI_UPSTREAM` free).
+5. `tests/proxy.rs` + 2 fixtures: mock upstream on `gemini_upstream` only (Anthropic upstream dead → proves routing); body test asserts counters incl. cached + model slug; stream test asserts byte-identical passthrough + merged usage.
+6. Verify: fmt, clippy, targeted nextest, build-min. ~7 files — deviation noted (wire + config + fixtures + tests).
 
 ### T52.2. More grammars and compressed index payloads
 
@@ -140,25 +80,10 @@ Done when each added grammar is an optional feature (dependency reasons in the c
 From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
 Done when a P7-style A/B shows the map lowers cost per passed task; the map is ranked by reference count from `symbols`, fits a share of the D5 budget alongside `memory`, is byte-stable across turns, and is off by default until that A/B passes.
 
-### T52.4. Dead code report
-
-From I-29. Definitions with zero reference sites are cheap to list once edges exist, but pub API, trait impls and macros make naive output noisy.
-Done when `impact` (or `rtok graph dead`) lists unreferenced private definitions, excludes pub items, trait impls, tests and macro-generated symbols, and a fixture repo test asserts no false positives on those classes.
-
-### T52.5. Type-position and scoped-call references
-
-From I-31. Reference recall was 0.351 (T8.8), and 65 of 74 misses were type positions and `scoped_identifier` calls, which the grammars' tag queries do not emit.
-Done when rtok ships its own extra tags query for Rust (then TS) covering those two constructs, T8.8's recall measurement is rerun and recorded in `research.md`, and `callers` tests include both constructs.
-
 ### T53.1. Coaching nudges under an A/B
 
 From I-18. Short nudges ("do not re-read", "use expand") may cut waste, but they are re-read every turn and dilute instructions.
 Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 budget and byte-stable, and a P7-style A/B on the bench shows it does not raise cost per passed task; without that result it stays off.
-
-### T53.2. Shell completions and man page
-
-From I-20. `rtok` has a large clap surface but no completions or man page.
-Done when `rtok completions <shell>` prints bash/zsh/fish/powershell completions and `rtok man` (or a build step) produces the man page, a trycmd snapshot covers one shell, and the README shows installation. Needs creator approval for `clap_complete` and `clap_mangen` before code.
 
 ### T53.3. Hook start without Security.framework
 
@@ -169,7 +94,6 @@ Done when the creator picks the trade-off (webpki roots with `use_preconfigured_
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
-
 
 ### T55.1. Case-insensitive `display_rel` on Windows
 
@@ -205,6 +129,7 @@ Done when the script uses `call rtok mcp` (or launches the `.exe` directly), and
 
 From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine. Residual PATH/single-quote debt remains larger in ketch than rtok.
 Done when `strip_prefix_cd` accepts single- and double-quoted path segments (and rejects malformed quotes fail-open), with unit tests for spaced quoted paths.
+
 
 ## Reference
 
@@ -287,7 +212,6 @@ Plugin catalogue (v0.1). Every plugin is native Rust written from scratch here (
 - Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12).
 - No plugin shells out to, links, imports from, or reads the data of a third-party tool (D6).
 - Every new plugin obeys D21.
-
 ---
 
 ## Review 2026-09-17 — bug hunt (post #37–#47)
