@@ -211,6 +211,8 @@ section! {
         format: String = s("table"),
         plugin: String = String::new(),
         transcripts_dir: PathBuf = p("~/.claude/projects"),
+        /// Codex CLI session logs, read as one more `api` row (T49.2).
+        codex_dir: PathBuf = p("~/.codex/sessions"),
         calibrate_samples: u32 = 30,
         baseline: String = String::new(),
         /// Show per-model USD costs from `prices` (`rtok stats --price`, T49.1).
@@ -819,6 +821,7 @@ impl Config {
             &mut self.log.path,
             &mut self.demon.state_dir,
             &mut self.stats.transcripts_dir,
+            &mut self.stats.codex_dir,
             &mut self.report.out,
             &mut self.bench.tasks,
             &mut self.doctor.settings_path,

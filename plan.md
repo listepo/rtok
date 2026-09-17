@@ -7,7 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T49.2 | in progress | P2 | 4 | 0% | Claude Code / Fable 5.1 |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
 | T51.1 | in progress | P3 | 5 | 5% | OpenCode / Muse Spark 1.3 |
@@ -16,7 +15,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.8 | todo | P2 | 2 | 0% | |
+| T55.8 | in progress | P2 | 2 | 60% | ZCode / GLM-5.3 |
 | T55.9 | todo | P3 | 2 | 0% | |
 | T55.10 | todo | P3 | 1 | 0% | |
 | T55.11 | done | P2 | 3 | 100% | |
@@ -47,12 +46,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
-
-### T49.2. Ingest Codex, OpenCode and Cursor session logs
-
-From I-03. `measure` reads Claude Code JSONL only; the other hosts reach the `usage` table only when they go through `rtok proxy`, so their sessions without the proxy are invisible to `stats`, the TUI and the dashboard.
-Done when each host's local session store (Codex `~/.codex/sessions/*.jsonl`, OpenCode `opencode.db`, Cursor where it exposes token counts) is read by one reader per host behind the existing `measure` ingest, rows carry the host slug, re-ingest is idempotent, and each reader has a fixture test. A host without token counts is documented as unsupported, not estimated.
-Execution plan (Claude Code / Fable 5.1): (1) survey the three stores on this machine (`~/.codex/sessions`, OpenCode's SQLite, Cursor's state dir) and record the schema that carries usage per host in the card — a host without per-turn token counts stops here as "unsupported"; (2) `src/measure/hosts/{codex,opencode}.rs` behind one `HostReader` fn signature `read(dir) -> Vec<UsageRow>` reusing the `usage` table writer `proxy` already uses, host slug column already present; idempotency by `(host, session_id, turn)` unique key; (3) `rtok stats --host <slug>` filter and the host column in the api table; (4) fixture per host under `tests/fixtures/hosts/`; (5) `docs/measure` page rows. One commit per host, ≤ 3 files each.
 
 ### T50.1. More `cmd` filter families
 

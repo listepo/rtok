@@ -147,6 +147,7 @@ setup.zcode.config_path = ~/.zcode/cli/config.json
 setup.zed.config_path = ~/.config/zed/settings.json
 stats.baseline = 
 stats.calibrate_samples = 30
+stats.codex_dir = ~/.codex/sessions
 stats.format = table
 stats.plugin = 
 stats.price = false

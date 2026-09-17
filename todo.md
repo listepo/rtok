@@ -1,5 +1,4 @@
 - T48.8. VS Code Copilot Chat host
-- T49.2. Ingest Codex, OpenCode and Cursor session logs
 - T50.1. More `cmd` filter families
 - T50.3. Extra `read` modes
 - T51.1. Compress JSON and code inside the live zone

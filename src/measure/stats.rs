@@ -292,6 +292,17 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// Codex CLI sessions as one more `api` row (T49.2), read from `dir` with the same `since`
+/// window as the Claude Code transcripts. Absent dir or no `token_count` line → no row.
+pub fn attach_codex(report: &mut Report, dir: &Path, since: Duration) {
+    let cutoff = SystemTime::now()
+        .checked_sub(since)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    if let Some(row) = super::codex::collect(dir, cutoff) {
+        report.api.insert("codex".into(), row);
+    }
+}
+
 /// USD for one model's counters at its `$` per MTok row: `(cost, saved)`.
 /// `saved` is what the cache reads saved versus uncached input price — the only
 /// saving computable from the `usage` rows alone (T49.1). Dust below a tenth of
@@ -413,34 +424,13 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         .unwrap_or(SystemTime::UNIX_EPOCH);
     let mut report = Report::default();
     let mut finals = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else {
+    for p in super::codex::jsonl_paths(dir, cutoff) {
+        // One unreadable transcript is one malformed entry, not the end of the report.
+        let Ok(parsed) = jsonl::parse_path(&p) else {
+            report.malformed += 1;
             continue;
         };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-                continue;
-            }
-            if p.extension().and_then(|s| s.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let meta = e.metadata().ok();
-            let mtime = meta
-                .and_then(|m| m.modified().ok())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            if mtime < cutoff {
-                continue;
-            }
-            // One unreadable transcript is one malformed entry, not the end of the report.
-            let Ok(parsed) = jsonl::parse_path(&p) else {
-                report.malformed += 1;
-                continue;
-            };
-            fold_session(&parsed, plugin, replay, &mut report, &mut finals);
-        }
+        fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
