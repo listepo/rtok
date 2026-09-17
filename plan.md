@@ -16,6 +16,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | in progress | P3 | 3 | 10% | OpenCode / Muse Spark 1.3 |
 | T53.3 | in progress | P3 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T53.4 | todo | P3 | 2 | 0% | |
+| T55.1 | todo | P1 | 2 | 0% | |
+| T55.2 | todo | P1 | 1 | 0% | |
+| T55.3 | todo | P1 | 2 | 0% | |
+| T55.4 | todo | P2 | 2 | 0% | |
+| T55.5 | todo | P2 | 2 | 0% | |
+| T55.6 | todo | P2 | 1 | 0% | |
+| T55.7 | todo | P3 | 1 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -84,6 +91,42 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
+
+### T55.1. Case-insensitive `display_rel` on Windows
+
+From review 2026-09-17. `src/plugins/read/search.rs` `display_rel` still uses case-sensitive `Path::strip_prefix`, while `src/plugins/read/mod.rs` `under` / `under_ascii_case_insensitive` already treat Windows paths as case-insensitive. When canonicalize and the walk path disagree only in ASCII case (common under `allow_paths` or mixed-case cwd), every search/tree hit stays absolute.
+Done when `display_rel` strips with the same ASCII-case rule as `under` on Windows, a unit test covers mixed-case cwd vs canonical root, and Unix behaviour stays unchanged.
+
+### T55.2. Case-insensitive `never_wrap` stem match
+
+From review 2026-09-17. `src/plugins/cmd/hook.rs` `skip_wrap` compares `never_wrap` entries with `==` against `formatters::cmd_stem`, which preserves case. Default config lists `sudo` / `rtok`; Windows `SUDO.EXE` / `Sudo.exe` stem to `SUDO` / `Sudo` and still get wrapped. `run::shell_kind` already lowercases stems.
+Done when the match is ASCII-case-insensitive (same as shell stem checks), tests cover `Sudo.exe` and `RTOK.EXE`, and defaults keep working on Unix.
+
+### T55.3. Percent-encode spaces in graph `file_uri`
+
+From review 2026-09-17. `src/plugins/graph/lsp.rs` `file_uri` builds `file:///C:/Users/...` with forward slashes but does not percent-encode spaces or other URI-reserved characters. Windows profiles like `C:\Users\Ivan Tuhai\...` produce illegal LSP URIs that rust-analyzer can reject; `path_from_file_uri` also does not decode `%20`.
+Done when `file_uri` emits RFC 8089-safe encoding (at least spaces and non-ASCII), round-trip tests cover a spaced path on Windows, and Unix paths with spaces are encoded too.
+
+### T55.4. Host-shell-safe wrap quoting (Cursor/PowerShell)
+
+From review 2026-09-17. `cmd/hook.rs` always rewrites with `run::sh_quote` (POSIX single quotes / `'"'"'` embedding). Cursor `beforeShellExecution` on Windows often runs under PowerShell; an original command that contains `'` becomes `rtok run -- '…'"'"'…'` and PowerShell misparses it. `agents::shell_quote_bin` also escapes embedded `"` as `\"` (bash-style), which is wrong for `cmd.exe` hook lines (need `""`).
+Done when wrap quoting matches the host shell (or uses one form proven safe for Bash, PowerShell, and cmd for the rewrite Cursor/Claude execute), and tests cover an apostrophe in the wrapped command plus a spaced absolute `rtok` path on Windows.
+
+### T55.5. Cap bytes before `search`/`tree` `read_to_string`
+
+From review 2026-09-17. `src/plugins/read/search.rs` calls `fs::read_to_string` on every walked file with no size gate. A multi-GB blob under cwd (or a sparse/log file) can spike MCP memory and latency; binary skip only happens after the read fails UTF-8. `read` already has `native_max_bytes` for the PreToolUse gate.
+Done when search/tree skip or truncate files over a configured byte cap (reuse or mirror a `plugins.read` key), document the key, and a test with an oversized file does not load it whole.
+
+### T55.6. Windows `mcp.cmd` must `call` a `.cmd` shim
+
+From review 2026-09-17. `plugins/cursor/scripts/mcp.cmd` ends with bare `rtok mcp`. If `rtok` resolves to a `.cmd`/`.bat` shim (ketch/npm-style), cmd.exe returns after the shim and never keeps the MCP stdio session. Same class of bug as doctor’s Windows MCP spawn (fixed earlier with `cmd /C`).
+Done when the script uses `call rtok mcp` (or launches the `.exe` directly), and the missing-rtok ketch hint path still exits non-zero with the install text.
+
+### T55.7. Stats `strip_prefix_cd` and quoted paths
+
+From review 2026-09-17. `src/measure/stats.rs` `strip_prefix_cd` splits the path on the first whitespace, so `cd 'My Documents' && git status` / `cd "C:\Program Files\…" && …` does not strip cleanly and family bucketing mis-attributes. `strip_prefix_env` already understands quotes; `guard::strip_cd_and` finds `&&` and is fine. Residual PATH/single-quote debt remains larger in ketch than rtok.
+Done when `strip_prefix_cd` accepts single- and double-quoted path segments (and rejects malformed quotes fail-open), with unit tests for spaced quoted paths.
+
 
 ## Reference
 
@@ -166,3 +209,40 @@ Plugin catalogue (v0.1). Every plugin is native Rust written from scratch here (
 - Every new CLI flag gets a key in `config/default.toml` and a row in `docs/config.md` in the same commit (D12).
 - No plugin shells out to, links, imports from, or reads the data of a third-party tool (D6).
 - Every new plugin obeys D21.
+---
+
+## Review 2026-09-17 — bug hunt (post #37–#47)
+
+Scope: `origin/main` after cross-platform agent fixes #37–#47. Local WIP from other agents was stashed (`preserve-other-agents-wip-before-docs-review-bugs-plan`) and not reviewed. No code fixes in this pass — findings tracked as T55.x.
+
+### Blockers
+
+None for the macOS/Linux happy path on current main. Windows correctness gaps below are P1.
+
+### Should fix
+
+1. **T55.1 — `display_rel` case-sensitive `strip_prefix` (Windows residual).** `src/plugins/read/search.rs` vs case-insensitive `under` in `read/mod.rs`. Absolute search/tree paths when only case differs.
+2. **T55.2 — `never_wrap` case-sensitive stem.** `src/plugins/cmd/hook.rs` `skip_wrap`: `SUDO.EXE` still wrapped despite default `sudo`.
+3. **T55.3 — `file_uri` lacks percent-encoding.** `src/plugins/graph/lsp.rs`: spaced Windows user dirs → invalid LSP URIs.
+4. **T55.4 — POSIX-only wrap quotes on PowerShell/cmd hosts.** `cmd/hook.rs` + `agents::shell_quote_bin`.
+5. **T55.5 — unbounded `read_to_string` in search/tree.** Memory/latency footgun on huge files.
+6. **T55.6 — `plugins/cursor/scripts/mcp.cmd` bare `rtok mcp`.** Need `call` for `.cmd` shims.
+
+### Nits
+
+1. **T55.7 — `measure/stats.rs` `strip_prefix_cd` and quoted spaced paths.** Family stats only; guard path OK.
+2. **`expand::parse_range` when start > line count** returns `(a, n)` with `a > n`; `slice_lines` yields empty quietly (no crash). Optional: clamp or error.
+3. **`guard::strip_wrap` only unwraps POSIX single quotes.** Safe while hook uses `sh_quote`; revisit with T55.4 if wrap gains double quotes.
+
+### Residual still open (called out before)
+
+- **search `display_rel` case-sensitive strip (Windows)** — still open → T55.1.
+- **PATH / single-quote parsers** — rtok: T55.7 (+ env strip already quotes). Larger residual remains in **ketch** (not this repo).
+- **MCP / setup / plugins / cmd / read / write**
+  - **T48.3 still todo:** `plugins/cursor/mcp.json` still points at bare `command: rtok` / `args: ["mcp"]`, so the ketch-hint `scripts/mcp.sh|mcp.cmd` launchers are never used when Cursor loads the linked plugin. Scripts exist and are tested in isolation; wiring is the gap.
+  - Cursor plugin hooks also use bare `rtok hook …` (PATH-dependent); install path for `~/.cursor/mcp.json` via `agents install` does use `rtok_command()` (absolute on Windows PATH miss) — OK for non-plugin MCP.
+  - cmd/read Windows stems, read `under` case fold, agent atomic replace readonly, expand range validation: covered by #37–#47; do not re-open.
+
+### Out of scope this pass
+
+Concurrent agent WIP on local `main` (stashed as `preserve-other-agents-wip-before-docs-review-bugs-plan`). Half-finished T48–T53 cards on that WIP were not judged as shipped bugs.
