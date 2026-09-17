@@ -147,6 +147,94 @@ fn pi_remove_unlinks_the_extension() {
 }
 
 #[test]
+fn zcode_remove_keeps_foreign_events_and_servers() {
+    let home = tmp("zcode");
+    let cfg = write_cfg(&home);
+    let path = home.join(".zcode/cli/config.json");
+    fs::write(
+        &path,
+        r#"{"hooks":{"events":{"Stop":[{"hooks":[{"type":"command","command":"echo other"}]}]}},"mcp":{"servers":{"foreign":{"command":"x"}}}}"#,
+    )
+    .unwrap();
+
+    rtok(&["agents", "install", "zcode"], &cfg, &home);
+    let installed = fs::read_to_string(&path).unwrap();
+    assert!(installed.contains("hook PreToolUse"), "{installed}");
+    assert!(json(&path)["mcp"]["servers"]["rtok"].is_object());
+
+    rtok(&["agents", "remove", "zcode"], &cfg, &home);
+    let left = json(&path);
+    assert!(
+        !left.to_string().contains(" hook "),
+        "every hook goes: {left}"
+    );
+    assert!(left["mcp"]["servers"]["rtok"].is_null(), "{left}");
+    assert!(left["mcp"]["servers"]["foreign"].is_object(), "{left}");
+    assert_eq!(
+        left["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],
+        "echo other"
+    );
+    let again = rtok(&["agents", "remove", "zcode"], &cfg, &home);
+    assert!(again.contains("no changes"), "{again}");
+}
+
+#[test]
+fn kimi_remove_keeps_comments_and_foreign_hooks() {
+    let home = tmp("kimi");
+    let cfg = write_cfg(&home);
+    let path = home.join(".kimi-code/config.toml");
+    let mcp = home.join(".kimi-code/mcp.json");
+    fs::write(
+        &path,
+        "# mine\n[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
+    )
+    .unwrap();
+    fs::write(&mcp, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+
+    rtok(&["agents", "install", "kimi"], &cfg, &home);
+    assert!(fs::read_to_string(&path).unwrap().contains("rtok"));
+    assert!(json(&mcp)["mcpServers"]["rtok"].is_object());
+
+    rtok(&["agents", "remove", "kimi"], &cfg, &home);
+    let left = fs::read_to_string(&path).unwrap();
+    assert!(!left.contains("rtok"), "every hook goes: {left}");
+    assert!(left.contains("# mine"), "comments survive: {left}");
+    assert!(left.contains("echo other"), "foreign hook stays: {left}");
+    let servers = json(&mcp);
+    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+    let again = rtok(&["agents", "remove", "kimi"], &cfg, &home);
+    assert!(again.contains("no changes"), "{again}");
+}
+
+#[test]
+fn copilot_remove_deletes_hooks_file_and_keeps_foreign_servers() {
+    let home = tmp("copilot");
+    let cfg = write_cfg(&home);
+    let hooks = home.join(".copilot/hooks/rtok.json");
+    let foreign_hooks = home.join(".copilot/hooks/other.json");
+    let mcp = home.join(".copilot/mcp-config.json");
+    fs::write(&foreign_hooks, r#"{"version":1,"hooks":{}}"#).unwrap();
+    fs::write(&mcp, r#"{"mcpServers":{"foreign":{"command":"x"}}}"#).unwrap();
+
+    rtok(&["agents", "install", "copilot"], &cfg, &home);
+    assert_eq!(json(&hooks)["version"], 1);
+    assert!(json(&mcp)["mcpServers"]["rtok"].is_object());
+
+    let out = rtok(&["agents", "remove", "copilot"], &cfg, &home);
+    assert!(!hooks.exists(), "rtok's own hooks file goes: {out}");
+    let bak = backups(&hooks);
+    assert_eq!(bak.len(), 1, "the deleted file is copied first: {bak:?}");
+    assert_eq!(json(&bak[0])["version"], 1);
+    assert!(foreign_hooks.exists(), "another hooks file stays");
+    let servers = json(&mcp);
+    assert!(servers["mcpServers"]["rtok"].is_null(), "{servers}");
+    assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
+    let again = rtok(&["agents", "remove", "copilot"], &cfg, &home);
+    assert!(again.contains("no changes"), "{again}");
+}
+
+#[test]
 fn setup_copies_the_config_before_it_writes() {
     let home = tmp("bak");
     let cfg = write_cfg(&home);

@@ -11,7 +11,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T45.3 | in progress | P1 | 3 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.5 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
 | T45.6 | in progress | P2 | 2 | 0% | OpenCode / Muse Spark 1.3 |
-| T47.2 | todo | P1 | 2 | 0% | |
 | T47.3 | todo | P1 | 3 | 0% | |
 
 ### T45.1. OTel flush survives a traces error
@@ -38,11 +37,6 @@ Plan: `.jscpd.json` (extend scope, keep gate green), `examples/mcp_tool.rs` (rec
 
 Nine new cases in `tests/extra_cover.rs` (new file, no existing file touched): hook fail-open on garbage/empty stdin, `expand` unknown-id with `--lines`, 11-row `plugins` listing, PreToolUse rewrite + deny-wins merge, guard deny naming an expandable id, read cap marker within `max_chars`, toon comma-cell round-trip.
 Plan: verify `mise exec -- cargo test --test extra_cover` green (done 9/9), fix the `collapsible_if` lint at `src/hooks/mod.rs:47` left by T45.4, then commit the single new file. Verify: scoped tests + clippy on the new test target.
-
-### T47.2. Remove and list e2e for every host
-
-`tests/agents_install.rs` runs install twice over all eight hosts, but `tests/agent_remove.rs` covers only claude, cursor, codex, opencode and pi, and nothing drives `rtok agents list` per host. Done means every host in `HOSTS` has a remove case (install, assert the marker file, remove, assert the file keeps foreign entries and loses ours) and `list` shows each host with its installed modules after install and none after remove.
-Plan: `tests/agent_remove.rs` gains `zcode_remove_keeps_foreign_events_and_servers`, `kimi_remove_keeps_comments_and_foreign_hooks`, `copilot_remove_deletes_hooks_file_and_keeps_foreign_servers`; a table-driven `list_reports_installed_modules_per_host` in `tests/agents_install.rs` over `hosts()`. Verify: `mise exec -- cargo test -p rtok --test agent_remove --test agents_install`.
 
 ### T47.3. Unit and e2e tests for every host plugin
 

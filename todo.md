@@ -3,5 +3,4 @@
 - T45.3. Archive decisions scoped per session
 - T45.5. Gates cover tests, webui and examples
 - T45.6. Extra hook/expand/guard/read/toon coverage
-- T47.2. Remove and list e2e for every host
 - T47.3. Unit and e2e tests for every host plugin

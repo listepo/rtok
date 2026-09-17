@@ -4,7 +4,8 @@
 //! installed`; a second remove says `no changes`; `--dry-run` creates nothing and copies
 //! nothing; `agent` and `agents` print the same; `--cli` / `--desktop` pick the block; Claude
 //! Desktop installs MCP with the absolute binary under a temp home; an unknown host is refused
-//! before any backup; a missing `rtok` on PATH is a warning at the top of the output.
+//! before any backup; a missing `rtok` on PATH is a warning at the top of the output; `agents
+//! list` shows each host's modules installed after install and none after remove.
 
 mod common;
 
@@ -113,6 +114,52 @@ fn remove_twice_says_no_changes_and_the_second_takes_no_backup() {
             assert_eq!(backups(f).len(), 1, "{host}: {:?}", backups(f));
             assert!(!second.contains("backup "), "{host}: {second}");
         }
+    }
+}
+
+/// The `agents list` blocks (header line to the next blank line) whose header is `needle` or
+/// whose `config` line names it; the module rows are the two-space `✓` / `✗` / `−` lines.
+fn installed_modules(list: &str, needle: &str) -> Vec<String> {
+    let blocks: Vec<&str> = list
+        .split("\n\n")
+        .filter(|b| {
+            b.lines()
+                .any(|l| l == needle || (l.starts_with("  config") && l.contains(needle)))
+        })
+        .collect();
+    assert!(!blocks.is_empty(), "no block for {needle}: {list}");
+    blocks
+        .iter()
+        .flat_map(|b| b.lines())
+        .filter(|l| l.starts_with("  ✓"))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn list_reports_installed_modules_per_host() {
+    let home = tmp("list");
+    let cfg = write_cfg(&home);
+    let before = rtok(&["agents", "list"], &cfg, &home);
+    for (host, flags, file) in hosts(&home) {
+        let needle = file.map_or_else(
+            || "CLI: pi".to_string(), // pi edits no config file
+            |f| f.display().to_string(),
+        );
+        assert!(installed_modules(&before, &needle).is_empty(), "{host}");
+        rtok(&setup_args(host, &flags), &cfg, &home);
+        let after = rtok(&["agents", "list"], &cfg, &home);
+        assert!(
+            !installed_modules(&after, &needle).is_empty(),
+            "{host}: nothing shows installed after install:\n{after}"
+        );
+        rtok(&["agents", "remove", host], &cfg, &home);
+        let gone = rtok(&["agents", "list"], &cfg, &home);
+        assert_eq!(
+            installed_modules(&gone, &needle),
+            Vec::<String>::new(),
+            "{host}: still installed after remove"
+        );
     }
 }
 

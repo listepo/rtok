@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+## T47.2 — Remove and list e2e for every host
+
+**T47.2 Remove and list e2e for every host** · P1, 2/5 · `tests/agent_remove.rs`, `tests/agents_install.rs`
+Do: `tests/agent_remove.rs` covered claude, cursor, codex, opencode and pi; the three newer hosts get their own install → remove cases with foreign entries seeded first. ZCode: a foreign `hooks.events.Stop` chain and `mcp.servers.foreign` survive, every `hook` command and `mcp.servers.rtok` go. Kimi Code: the `# mine` comment and a foreign `[[hooks]]` table survive in `config.toml`, nothing named rtok is left, `mcp.json` keeps `foreign` and loses `rtok`. Copilot: `hooks/rtok.json` is deleted after one backup that still holds `version: 1`, a sibling `hooks/other.json` stays, `mcp-config.json` keeps `foreign`. Each ends with a second remove that says `no changes`. `tests/agents_install.rs` gains `list_reports_installed_modules_per_host`: over the eight-host matrix, `agents list` shows no `✓` module row before install, at least one after, none after remove, in the blocks whose `config` line names the host's file (pi, which edits no file, by its `CLI: pi` header).
+Check: `cargo test --test agent_remove --test agents_install`.
+Status: done 2026-09-17 · Model: Claude Code / Fable 5.1
+Evidence: `agent_remove` 10 passed, `agents_install` 9 passed; clippy `-D warnings` on rtok tests clean; fmt clean.
+
 ## T47.4 — Repair main after the swept snapshot commit
 
 **T47.4 Repair main after the swept snapshot commit** · P0, 3/5 · `src/store/mod.rs`, `AGENTS.md`, `src/agents/{claude,codex,cursor,pi}/README.md`, `src/plugins/graph/lsp.rs`, `tests/plugins_e2e.rs`, `src/mcp.rs`, `src/demon.rs`, `src/proxy/live.rs`, `src/tui/view.rs`, `src/web/model.rs`
