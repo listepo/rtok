@@ -53,6 +53,7 @@ plugins.archive.head_lines = 8
 plugins.archive.keep_turns = 4
 plugins.archive.live_blobs = false
 plugins.archive.min_tokens = 1500
+plugins.archive.skills = true
 plugins.archive.tail_lines = 4
 plugins.archive.tiers = false
 plugins.cmd.enabled = true
