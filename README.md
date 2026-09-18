@@ -323,7 +323,7 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 | `proxy` | API proxy | passes traffic through and captures usage |
 | `inject` | SessionStart, UserPromptSubmit | emits byte-stable context within a token budget |
 | `guard` | PreToolUse | prevents repeated reads and commands within a turn window |
-| `memory` | MCP, PreCompact | stores agent-written notes with progressive disclosure |
+| `memory` | MCP, PreCompact | stores agent-written notes with progressive disclosure; FTS5 plant-and-recall 20/20 (`research.md` §14) |
 | `graph` | MCP | indexes symbols and references with bounded responses |
 | `toon` | proxy, MCP | optionally encodes tabular JSON; disabled by default |
 
