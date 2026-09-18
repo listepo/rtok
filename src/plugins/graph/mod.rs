@@ -612,11 +612,23 @@ fn format_affected(hits: &BTreeSet<(String, String)>, json: bool) -> String {
 }
 
 /// T8.7 BFS (T8.14 baseline). T68.5 walks it from each changed file's definitions.
+/// `follow_imports` (default true, T68.6) takes one extra hop from an import row
+/// to that file's definitions.
 pub(crate) fn impact_bfs(
     cx: &Ctx,
     root: &str,
     name: &str,
     depth: u32,
+) -> Result<Vec<(u32, String, String)>> {
+    impact_bfs_follow(cx, root, name, depth, true)
+}
+
+pub(crate) fn impact_bfs_follow(
+    cx: &Ctx,
+    root: &str,
+    name: &str,
+    depth: u32,
+    follow_imports: bool,
 ) -> Result<Vec<(u32, String, String)>> {
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
     let mut frontier = vec![name.to_string()];
@@ -630,6 +642,14 @@ pub(crate) fn impact_bfs(
                 } else if seen.insert(scope.clone()) {
                     out.push((d, path, scope.clone()));
                     next.push(scope);
+                }
+            }
+            if follow_imports {
+                for (path, def) in cx.symbol_import_follow(root, from)? {
+                    if seen.insert(def.clone()) {
+                        out.push((d, path, def.clone()));
+                        next.push(def);
+                    }
                 }
             }
         }
@@ -1598,6 +1618,56 @@ mod tests {
         let out = affected(&Ctx::new(&cx), &dir, None, false, false).unwrap();
         assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
         assert!(!out.contains("test_other"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T68.6: a test that only `use`s the changed name is reached; imports are not refs.
+    #[test]
+    fn import_edge_reaches_import_only_test_and_is_not_a_reference() {
+        let (cx, dir) = cx("import-edge");
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(dir.join("lib.rs"), "fn add() {}\n").unwrap();
+        fs::write(
+            dir.join("tests/only.rs"),
+            "use crate::add;\nfn test_via_import() {}\n",
+        )
+        .unwrap();
+        let ctx = Ctx::new(&cx);
+        index::run(&ctx, &dir, false).unwrap();
+        let key = index::canon(&dir);
+        let names: Vec<_> = cx
+            .store
+            .symbol_imports(&key, "tests/only.rs")
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.contains(&"add".to_string()), "{names:?}");
+        let importers: Vec<_> = cx
+            .store
+            .symbol_importers(&key, "add")
+            .unwrap()
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(importers, vec!["tests/only.rs".to_string()]);
+        assert!(
+            cx.store.symbol_refs(&key, "add").unwrap().is_empty(),
+            "imports must not count as references"
+        );
+        let out = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, false).unwrap();
+        assert!(out.contains("tests/only.rs ← via test_via_import"), "{out}");
+        let mut cte = cx.store.symbol_impact(&key, "add", 1).unwrap();
+        let mut bfs = impact_bfs(&ctx, &key, "add", 1).unwrap();
+        cte.sort();
+        bfs.sort();
+        assert_eq!(cte, bfs, "query vs BFS with imports");
+        assert!(
+            impact_bfs_follow(&ctx, &key, "add", 1, false)
+                .unwrap()
+                .is_empty(),
+            "follow_imports=false must not walk the import"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }
