@@ -480,19 +480,30 @@ fn stop_hook_spawns_the_flush_and_stays_under_10ms() {
 }
 
 /// The hook path must not pay for an endpoint that never answers.
+///
+/// Measured against the same hook with no endpoint, not against a wall clock. nextest runs
+/// this beside the rest of the suite, so the absolute bar was really measuring how loaded
+/// the machine was: it failed at load avg 14–23 and on a two-core CI runner (p95 240 ms
+/// against a 200 ms debug bar) while passing on every idle box. A spawn that is slow for
+/// both configurations says nothing about the endpoint; only the gap does. Interleaved, so
+/// whatever else the machine is doing lands on both.
 #[test]
 fn hooks_stay_fast_with_an_unreachable_endpoint() {
-    let dir = home("slow");
-    let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
-    cfg.push_str("\n[otel]\nendpoint = \"http://127.0.0.1:9\"\nflush_secs = 5\n");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+    let dirs = [home("slow"), home("slow-baseline")];
+    for (dir, otel) in dirs.iter().zip([
+        "\n[otel]\nendpoint = \"http://127.0.0.1:9\"\nflush_secs = 5\n",
+        "",
+    ]) {
+        let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
+        cfg.push_str(otel);
+        std::fs::write(dir.join("config.toml"), cfg).unwrap();
+    }
     let payload = r#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#;
-    let once = || {
+    let once = |dir: &Path| {
         let start = std::time::Instant::now();
         let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
             .args(["hook", "Stop"])
-            .env("RTOK_HOME", &dir)
+            .env("RTOK_HOME", dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -510,22 +521,27 @@ fn hooks_stay_fast_with_an_unreachable_endpoint() {
         assert_eq!(out.stdout, b"{}");
         start.elapsed()
     };
-    once();
     let n = if cfg!(debug_assertions) { 20 } else { 100 };
-    let mut samples: Vec<_> = (0..n).map(|_| once()).collect();
-    samples.sort();
-    let p95 = common::p95(&samples);
-    let bar = if cfg!(debug_assertions) {
-        std::time::Duration::from_millis(200)
-    } else {
-        std::time::Duration::from_millis(10)
-    };
+    let mut samples = [Vec::with_capacity(n), Vec::with_capacity(n)];
+    once(&dirs[0]);
+    once(&dirs[1]);
+    for _ in 0..n {
+        for (i, dir) in dirs.iter().enumerate() {
+            samples[i].push(once(dir));
+        }
+    }
+    samples.iter_mut().for_each(|s| s.sort());
+    let (endpoint, baseline) = (common::p95(&samples[0]), common::p95(&samples[1]));
+    // A closed port refuses at once, so the unreachable endpoint may cost a connect
+    // attempt — never a timeout, and never the same order as the run itself.
+    let bar = baseline + baseline.max(std::time::Duration::from_millis(10));
     assert!(
-        p95 < bar,
-        "p95 {p95:?} not under {bar:?} (max {:?})",
-        samples[n - 1]
+        endpoint < bar,
+        "p95 {endpoint:?} with the endpoint vs {baseline:?} without it, bar {bar:?}"
     );
-    let _ = std::fs::remove_dir_all(&dir);
+    dirs.iter().for_each(|d| {
+        let _ = std::fs::remove_dir_all(d);
+    });
 }
 
 /// T16.7: the sums are whole-table aggregates — no watermark, repeated every flush.
