@@ -121,6 +121,9 @@ enum Cmd {
         /// Also run the instruction-file audit (T7.2)
         #[arg(long)]
         instructions: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
     },
     /// Version, effective paths, disk usage, error count and proxy status
     Info {
@@ -178,7 +181,11 @@ enum Cmd {
     /// Print the man page (roff) to stdout
     Man,
     /// List plugins: id, enabled, surfaces
-    Plugins,
+    Plugins {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// The one config file
     Config {
         #[command(subcommand)]
@@ -221,6 +228,9 @@ enum Cmd {
         /// Override `[log] lines`
         #[arg(long, global = true)]
         lines: Option<usize>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
     },
     /// The operator model as one document (D24): Markdown, HTML and PDF
     Report {
@@ -265,7 +275,12 @@ enum DemonCmd {
     /// Stop, then start
     Restart { service: Vec<Service> },
     /// State, pids, uptime, restarts and log path; every service when none is named
-    Status { service: Vec<Service> },
+    Status {
+        service: Vec<Service>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// SIGKILL instead of SIGTERM, and drop the state file
     Kill { service: Vec<Service> },
     /// The detached half; `demon start` runs this, you do not
@@ -278,7 +293,11 @@ enum OtelCmd {
     /// Post rows past the watermarks to the endpoint, once
     Flush,
     /// Endpoint, watermarks, pending rows, last exporter log line
-    Status,
+    Status {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -369,12 +388,19 @@ enum AgentCmd {
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
     Remove(RemoveArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
-    List,
+    List {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// What is running in this project: host, provider, model, tokens, start, run time
     Sessions {
         /// Also show sessions that have ended
         #[arg(long, global = true)]
         all: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
@@ -498,16 +524,21 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let config_file = cli.config.clone();
     match cli.cmd {
-        Cmd::Plugins => {
+        Cmd::Plugins { json } => {
             let config = Config::load_with(config_file.as_deref(), None)?;
             // The command renders the model's Plugins page (T15.11); the registry keeps
             // the same formatter for library users.
-            let rows: Vec<(&str, bool, Vec<&str>)> = crate::web::model::Model::new(&config, None)
-                .plugins()
-                .into_iter()
-                .map(|p| (p.id, p.enabled, p.surfaces))
-                .collect();
-            print!("{}", crate::render::plugins_table(&rows));
+            let store = crate::store::Store::open(&config.core.db_path).ok();
+            let pages = model::Model::new(&config, store.as_ref()).plugins();
+            if json {
+                print_json(&pages)?;
+            } else {
+                let rows: Vec<(&str, bool, Vec<&str>)> = pages
+                    .iter()
+                    .map(|p| (p.id, p.enabled, p.surfaces.clone()))
+                    .collect();
+                print!("{}", crate::render::plugins_table(&rows));
+            }
         }
         Cmd::Config { action } => {
             let home = Config::home_dir();
@@ -658,15 +689,20 @@ pub fn run() -> Result<()> {
             )?;
             print!("{}", crate::bench::run(&cfg)?);
         }
-        Cmd::Doctor { instructions } => {
+        Cmd::Doctor { instructions, json } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            print!("{}", model::doctor(&cfg)?.to_console());
+            let report = model::doctor(&cfg)?;
+            if json {
+                print_json(&report)?;
+            } else {
+                print!("{}", report.to_console());
+            }
         }
         Cmd::Info { json } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let info = crate::info::collect(&cfg, config_file.as_deref());
             if json {
-                println!("{}", serde_json::to_string_pretty(&info)?);
+                print_json(&info)?;
             } else {
                 print!("{}", info.to_text());
             }
@@ -712,15 +748,19 @@ pub fn run() -> Result<()> {
             AgentCmd::Remove(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
-            AgentCmd::List => {
+            AgentCmd::List { json } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
-                print!("{}", crate::agents::list(&cfg));
+                if json {
+                    print_json(&model::agents_list(&cfg))?;
+                } else {
+                    print!("{}", crate::agents::list(&cfg));
+                }
             }
             // The command renders the model's Sessions page (T25.2): newest first, live
             // only unless `--all`. `since = 0` because the default view's window is
             // liveness itself — a `started_at` floor could hide a session that began
             // before it and is still running, which is the row this command exists for.
-            AgentCmd::Sessions { all, action } => {
+            AgentCmd::Sessions { all, json, action } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
                 // T25.3: live repaint through T24.3's `watch_loop` — no second loop.
                 // The loop only writes characters (no raw mode, no alternate screen),
@@ -755,10 +795,18 @@ pub fn run() -> Result<()> {
                     return Ok(());
                 }
                 let rows = model::sessions(&cfg, 0)?;
-                print!(
-                    "{}",
-                    crate::render::sessions_table(&rows, all, crate::log::now() as i64)
-                );
+                if json {
+                    let rows: Vec<_> = rows
+                        .into_iter()
+                        .filter(|r| all || r.ended_at.is_none())
+                        .collect();
+                    print_json(&rows)?;
+                } else {
+                    print!(
+                        "{}",
+                        crate::render::sessions_table(&rows, all, crate::log::now() as i64)
+                    );
+                }
             }
         },
         Cmd::Setup(args) => {
@@ -914,9 +962,13 @@ pub fn run() -> Result<()> {
                 DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
                 DemonCmd::Stop { service } => crate::demon::stop(&cfg, &service, false)?,
                 DemonCmd::Restart { service } => crate::demon::restart(&cfg, c, &service)?,
-                DemonCmd::Status { service } => {
+                DemonCmd::Status { service, json } => {
                     let rows = model::Model::new(&cfg, None).demon(&service)?;
-                    print!("{}", crate::demon::table(&rows));
+                    if json {
+                        print_json(&rows)?;
+                    } else {
+                        print!("{}", crate::demon::table(&rows));
+                    }
                 }
                 DemonCmd::Kill { service } => crate::demon::stop(&cfg, &service, true)?,
                 DemonCmd::Supervise { service } => crate::demon::supervise(&cfg, c, service)?,
@@ -924,13 +976,26 @@ pub fn run() -> Result<()> {
         }
         Cmd::Otel { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let cx = crate::plugin::Runtime::open(cfg, "otel")?;
             match action {
-                OtelCmd::Flush => println!("{}", crate::otel::export::flush_blocking(&cx)),
-                OtelCmd::Status => print!("{}", crate::otel::export::status(&cx)?),
+                OtelCmd::Flush => {
+                    let cx = crate::plugin::Runtime::open(cfg, "otel")?;
+                    println!("{}", crate::otel::export::flush_blocking(&cx));
+                }
+                OtelCmd::Status { json } => {
+                    if json {
+                        print_json(&model::otel_status(&cfg)?)?;
+                    } else {
+                        let cx = crate::plugin::Runtime::open(cfg, "otel")?;
+                        print!("{}", crate::otel::export::status(&cx)?);
+                    }
+                }
             }
         }
-        Cmd::Logs { action, lines } => {
+        Cmd::Logs {
+            action,
+            lines,
+            json,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let out = match action {
                 // T24.3: runs until Ctrl-C. The loop only ever writes characters — no raw
@@ -946,6 +1011,10 @@ pub fn run() -> Result<()> {
                 None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
                 Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };
+            if json {
+                print_json(&model::Model::new(&cfg, None).log_lines(lines))?;
+                return Ok(());
+            }
             if out.is_empty() {
                 println!("no logs yet");
             } else {
@@ -1219,10 +1288,14 @@ fn report_flags(
     Some(flags)
 }
 
+fn print_json(value: &(impl serde::Serialize + ?Sized)) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
 fn show(rows: &[model::ConfigEntry], sources: bool, json: bool) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(rows)?);
-        return Ok(());
+        return print_json(rows);
     }
     for r in rows {
         if sources {
