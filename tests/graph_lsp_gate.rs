@@ -62,7 +62,9 @@ fn onlytyped_crate(dir: &std::path::Path) -> PathBuf {
 #[test]
 fn mcp_tool_names_are_unchanged() {
     let names: Vec<_> = Graph.mcp_tools().into_iter().map(|t| t.name).collect();
-    assert_eq!(names, ["symbol", "callers", "impact", "outline"]);
+    // T68.1 added `explore` as the fifth tool; the surface-token gate lives in
+    // `graph::tests::graph_surface_is_four_tools_under_150_tokens`.
+    assert_eq!(names, ["symbol", "callers", "impact", "outline", "explore"]);
 }
 
 /// Gate P30: `backend = "tags"` keeps the T8.9 contract bytes.
