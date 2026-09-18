@@ -423,4 +423,47 @@ mod tests {
         let inj = offer(&ctx).expect("capped ids");
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
     }
+
+    /// T70.6: pi/OpenCode plugins call the same PreCompact/SessionStart path as Claude,
+    /// so restore bytes match for the same store. T58.2 covers hook hosts only.
+    #[test]
+    fn pi_and_opencode_compact_restore_bytes_match_claude() {
+        let dir = std::env::temp_dir().join("rtok-t706-host-bytes");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes.clear();
+        let pre = serde_json::json!({
+            "hook_event_name":"PreCompact",
+            "session_id":"t706",
+            "transcript_path":dir.join("t.jsonl").to_str().unwrap(),
+            "trigger":"auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
+        let mut restore = |host: &str| {
+            cfg.hook.host = host.into();
+            let start = serde_json::json!({
+                "hook_event_name":"SessionStart",
+                "session_id":"t706",
+                "source":"compact"
+            });
+            let mut buf = Vec::new();
+            crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut buf, &cfg);
+            serde_json::from_slice::<serde_json::Value>(&buf).unwrap()["hookSpecificOutput"]
+                ["additionalContext"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
+        let claude = restore("claude");
+        let pi = restore("pi");
+        let opencode = restore("opencode");
+        assert!(!claude.is_empty(), "{claude}");
+        assert_eq!(claude, pi);
+        assert_eq!(claude, opencode);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
