@@ -52,6 +52,9 @@ _rtok() {
             rtok,graph)
                 cmd="rtok__subcmd__graph"
                 ;;
+            rtok,guard)
+                cmd="rtok__subcmd__guard"
+                ;;
             rtok,help)
                 cmd="rtok__subcmd__help"
                 ;;
@@ -274,6 +277,17 @@ _rtok() {
                 ;;
             rtok__subcmd__graph__subcmd__help,status)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__status"
+            rtok__subcmd__guard,check)
+                cmd="rtok__subcmd__guard__subcmd__check"
+                ;;
+            rtok__subcmd__guard,help)
+                cmd="rtok__subcmd__guard__subcmd__help"
+                ;;
+            rtok__subcmd__guard__subcmd__help,check)
+                cmd="rtok__subcmd__guard__subcmd__help__subcmd__check"
+                ;;
+            rtok__subcmd__guard__subcmd__help,help)
+                cmd="rtok__subcmd__guard__subcmd__help__subcmd__help"
                 ;;
             rtok__subcmd__help,agents)
                 cmd="rtok__subcmd__help__subcmd__agents"
@@ -307,6 +321,9 @@ _rtok() {
                 ;;
             rtok__subcmd__help,graph)
                 cmd="rtok__subcmd__help__subcmd__graph"
+                ;;
+            rtok__subcmd__help,guard)
+                cmd="rtok__subcmd__help__subcmd__guard"
                 ;;
             rtok__subcmd__help,help)
                 cmd="rtok__subcmd__help__subcmd__help"
@@ -423,6 +440,8 @@ _rtok() {
                 ;;
             rtok__subcmd__help__subcmd__graph,status)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__status"
+            rtok__subcmd__help__subcmd__guard,check)
+                cmd="rtok__subcmd__help__subcmd__guard__subcmd__check"
                 ;;
             rtok__subcmd__help__subcmd__logs,export)
                 cmd="rtok__subcmd__help__subcmd__logs__subcmd__export"
@@ -557,7 +576,7 @@ _rtok() {
 
     case "${cmd}" in
         rtok)
-            opts="-h -V --config --help --version hook mcp proxy web tui stats bench doctor info agents agent setup run filter expand archive completions man plugins config memory graph dashboard demon otel logs report help"
+            opts="-h -V --config --help --version hook mcp proxy web tui stats bench doctor info agents agent setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1697,6 +1716,9 @@ _rtok() {
         rtok__subcmd__graph__subcmd__status)
             opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+        rtok__subcmd__guard)
+            opts="-h --config --help check help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1712,8 +1734,84 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__guard__subcmd__check)
+            opts="-h --tool --json --session --host --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --tool)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --json)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --session)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --host)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__guard__subcmd__help)
+            opts="check help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__guard__subcmd__help__subcmd__check)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__guard__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__help)
-            opts="hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph dashboard demon otel logs report help"
+            opts="hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2176,6 +2274,21 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__status)
+        rtok__subcmd__help__subcmd__guard)
+            opts="check"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__guard__subcmd__check)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
