@@ -116,6 +116,12 @@ include_usage   = true                # OpenAI streaming: add stream_options.inc
 context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 
+[proxy.tools_rewrite]                 # T59.5; off: request bytes stay identical
+enabled = false
+max_description_tokens = 60           # 0 = no truncate; sentence boundary; estimator Class::Prose
+allow = []                            # empty = keep all names not in deny
+deny = []                             # drop these names from tools[]; later calls still forward
+
 [web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
