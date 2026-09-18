@@ -53,6 +53,7 @@ pub(crate) use crate::agents::cmd_stem;
 /// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
 const FORMATTER_STEMS: &[&str] = &[
     "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go", "docker", "kubectl",
+    "ps",
 ];
 
 /// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
@@ -97,6 +98,7 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
         ("docker", "ps") => docker_ps(output),
         ("kubectl", "get") => kubectl_get(output),
+        ("ps", "aux") => ps_aux(output),
         _ => None,
     }
 }
@@ -303,6 +305,43 @@ fn kubectl_get(output: &str) -> Option<String> {
     }
 }
 
+/// `ps aux`: one row per process. TTY/TIME padding is noise; PID plus the
+/// command basename (and its last arg when that is a distinct worker id) is the object.
+fn ps_aux(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let u = header.to_ascii_uppercase();
+    if !u.contains("PID") || !(u.contains("CMD") || u.contains("COMMAND")) {
+        return None;
+    }
+    let mut rows = Vec::new();
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let pid = fields.first()?;
+        if !pid.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let cmd = fields
+            .iter()
+            .copied()
+            .find(|t| t.starts_with('/') || t.starts_with("./"))
+            .or_else(|| fields.last().copied())
+            .unwrap_or("");
+        let base = cmd.rsplit('/').next().unwrap_or(cmd);
+        let tail = fields.last().copied().unwrap_or("");
+        if tail != base && tail != *pid {
+            rows.push(format!("{pid} {base} {tail}"));
+        } else {
+            rows.push(format!("{pid} {base}"));
+        }
+    }
+    if rows.is_empty() {
+        None
+    } else {
+        Some(rows.join("\n"))
+    }
+}
+
 fn keep(output: &str, needles: &[&str]) -> String {
     let lines: Vec<&str> = output
         .lines()
@@ -461,6 +500,7 @@ mod tests {
         for (file, argv0, prefix) in [
             ("docker_ps.in", ["docker", "ps"], "web-"),
             ("kubectl_get.in", ["kubectl", "get"], "web-deploy-"),
+            ("ps_aux.in", ["ps", "aux"], "worker-"),
         ] {
             let raw = fs::read_to_string(dir.join(file)).unwrap();
             let (_, exit, output) = parse_in(&raw);
@@ -481,10 +521,10 @@ mod tests {
                 rule_out.len()
             );
             for i in 0..40 {
-                let name = if prefix == "web-" {
-                    format!("web-{i:02}")
-                } else {
-                    format!("web-deploy-{i:02}-abcd")
+                let name = match prefix {
+                    "web-" => format!("web-{i:02}"),
+                    "web-deploy-" => format!("web-deploy-{i:02}-abcd"),
+                    _ => format!("worker-{i}"),
                 };
                 assert!(got.contains(&name), "{file} dropped {name}");
             }
@@ -513,5 +553,14 @@ mod tests {
         );
         assert_ne!(kind, "formatter", "{got}");
         assert!(got.contains("doesn't have a resource type"), "{got}");
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["ps", "aux"]),
+            "ps: invalid option -- z\n",
+            1,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("invalid option"), "{got}");
     }
 }
