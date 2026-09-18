@@ -352,7 +352,7 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
 }
 
 /// Bump when [`scoped`] changes (T35.5).
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 
 /// Hex sha256 of `INDEX_VERSION` and every query string [`outline::config`] compiles —
 /// tags **and** locals, because a language whose locals query changed produces different
@@ -366,25 +366,35 @@ fn extractor_fingerprint() -> String {
     {
         bytes.extend_from_slice(tree_sitter_dart::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_dart::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::DART_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-go")]
-    bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::GO_IMPORT.as_bytes());
+    }
     #[cfg(feature = "lang-js")]
     {
         bytes.extend_from_slice(tree_sitter_javascript::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_javascript::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::JS_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-python")]
-    bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::PYTHON_IMPORT.as_bytes());
+    }
     #[cfg(feature = "lang-rust")]
     {
         bytes.extend_from_slice(tree_sitter_rust::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(outline::RUST_SCOPED_CALL.as_bytes());
+        bytes.extend_from_slice(outline::RUST_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-ts")]
     {
         bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_typescript::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::JS_IMPORT.as_bytes());
     }
     store::hex_sha256(&bytes)
 }
@@ -400,7 +410,7 @@ fn scoped(hits: &[outline::TagHit]) -> Vec<Row> {
         .collect();
     hits.iter()
         .map(|h| {
-            let scope = if h.is_def {
+            let scope = if h.is_def || h.kind == "import" {
                 String::new()
             } else {
                 defs.iter()
