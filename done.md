@@ -1,5 +1,20 @@
 # rtok — completed tasks
 
+## T61.2 — Archive skill bodies outside the live zone
+
+From I-51 (`research.md` §10.7). A skill body is a user text block, not a tool result, so
+`archive::rewrite` never touched it and the body was re-sent on every later request.
+T61.1's `resident` column measured ≈ 96.8 MB over 30d — the 2 % gate is open.
+
+The wire yields `SkillRef { id, name, content, turn }` for a user text block that starts
+with `Base directory for this skill:` immediately after a `Launching skill:` result.
+`archive::rewrite_skills` (same store path as results, decision key `skill:{tool_use_id}`)
+replaces bodies outside `keep_turns` with
+`[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on replay,
+`Measurement { plugin = "archive", kind = "skill" }`. `expand <id>` returns the body.
+Default `[plugins.archive] skills = true` (fail-open lossless, unlike `live_blobs`);
+off with `skills = false`. Proxy test `proxy_compress_archives_skill_bodies_outside_keep_turns`.
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`

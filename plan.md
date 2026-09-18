@@ -31,7 +31,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.6 | todo | P2 | 2 | 0% | |
 | T60.7 | todo | P3 | 2 | 0% | |
 | T60.9 | todo | P3 | 2 | 0% | |
-| T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
 | T64.1 | todo | P3 | 3 | 0% | |
@@ -238,12 +237,6 @@ Done when the webui release profile sets `opt-level = "z"`, `lto = true`, `codeg
 
 `app.slint` has a dark-mode icon (`crates/rtok-webui/ui/app.slint:288`, survey 2026-09-17) but no toggle and no `prefers-color-scheme` read; the UI is dark-only.
 Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it, the choice persists in `localStorage`, every colour comes from one palette struct (no literals in components), and the Slint e2e test flips the theme.
-
-### T61.2. Archive skill bodies outside the live zone
-
-From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
-Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
-Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
 
 ### T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
 

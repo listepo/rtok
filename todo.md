@@ -27,7 +27,6 @@
 - T60.8. TUI help overlay and manual refresh
 - T60.9. Web theme toggle
 - T61.1. `stats` counts injected skill bodies
-- T61.2. Archive skill bodies outside the live zone
 - T61.3. `doctor` skill audit
 - T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
 - T63.1. Skills page on `tui` and `web`
