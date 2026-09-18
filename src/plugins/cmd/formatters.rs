@@ -16,7 +16,9 @@ pub fn compress(
     }
     let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if s.len() < output.len() {
+    let kind = if bin(&argv) == "skill" {
+        "skill"
+    } else if s.len() < output.len() {
         "rule"
     } else {
         "raw"
@@ -313,5 +315,26 @@ mod tests {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(family(&argv(&[r"C:\tools\git.exe", "status"])), "git");
         assert_eq!(family(&argv(&["cargo.exe", "test"])), "cargo");
+    }
+
+    #[test]
+    fn skill_rule_keeps_headings_and_names_kind() {
+        let settings = rules::Settings::builtin();
+        assert_eq!(settings.pick("skill").head, 30);
+        assert_eq!(settings.pick("skill").tail, 5);
+        let mut lines = vec!["# Title".to_string()];
+        lines.extend((0..60).map(|i| format!("body {i}")));
+        lines.push("## Middle".into());
+        lines.extend((60..120).map(|i| format!("body {i}")));
+        let body = lines.join("\n");
+        let (out, kind) = compress(&settings, &["skill".into(), "demo".into()], &body, 0, "id1");
+        assert_eq!(kind, "skill");
+        assert!(out.contains("# Title"), "{out}");
+        assert!(out.contains("## Middle"), "{out}");
+        assert!(out.len() < body.len(), "expected a cut");
+        let small = "# Tiny\nok\n";
+        let (s, k) = compress(&settings, &["skill".into()], small, 0, "id1");
+        assert_eq!(k, "skill");
+        assert!(s.contains("# Tiny"), "{s}");
     }
 }

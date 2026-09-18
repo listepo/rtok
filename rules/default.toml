@@ -71,3 +71,13 @@ tail = 16
 drop = []
 keep = ["Error|error"]
 dedupe = true
+
+[skill]
+max_lines = 80
+head = 30
+tail = 5
+drop = []
+keep = ["# "]
+dedupe = false
+collapse_columns = false
+
