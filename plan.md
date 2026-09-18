@@ -33,7 +33,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.5 | todo | P2 | 3 | 0% | |
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
-| T69.2 | todo | P3 | 3 | 0% | |
+| T69.2 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T69.3 | todo | P3 | 3 | 0% | |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
@@ -237,6 +237,11 @@ Done when:
 3. `[plugins.memory] half_life_days = 0` — 0 keeps today's id-desc order with byte-identical output; N > 0 scores `ln(1 + uses) × 0.5^(age_days / N)`, ties by id desc. Recall and search share one scoring function; search re-ranks the top `3 × limit` BM25 / RRF hits so FTS5 still does the retrieval. `NoteHit` gains `score` and `age_days` (graymatter's receipts), so the MCP result shows why a hit ranked. Decay ranks, never prunes (D4).
 4. Tests: a fixture of 20 notes where a 60-day-old note used 10× outranks a fresh unused one only when `half_life_days > 0`; `half_life_days = 0` reproduces the T6.2 recall bytes exactly; scoring is deterministic under a frozen clock.
 5. The default stays 0 until T69.3 shows a higher hit rate on the 100-session run without more recall bytes; the card records the numbers either way. `docs/config.md` row in the same commit (D12).
+
+**Execution plan**
+1. Evidence: installed `rtok memory` has no `status` (0.1.1). Count live notes per project with T69.4's `memory_note_aggs` query (`kind NOT LIKE 'checkpoint%'`). Record in `research.md` §14.
+2. If no project has more than `recall_titles` (5) live notes: close with the number, no ranking code.
+3. If some do: migration `uses`/`last_used`, `half_life_days = 0`, shared scorer, tests, `docs/config.md`.
 
 ### T69.3. Memory recall bench: planted, drifted, superseded facts
 
