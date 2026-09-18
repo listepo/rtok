@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+## T60.2 — trycmd goldens for every subcommand
+
+Survey 2026-09-17: trycmd (`tests/cli_trycmd.rs`, `tests/trycmd/*.toml`) covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands. The other 16 have behaviour tests but no byte-level snapshot of what the binary prints, so a wording, column or ordering change on `doctor`, `info`, `plugins`, `expand`, `report` and the rest lands unnoticed (T59.4 changed the `mcp` help line and only the top-level `help` golden caught it).
+Done when every subcommand has at least one trycmd case of its real output, hermetic the way `stats-price.toml` is (`inherit = false`, `RTOK_HOME` under `target/tmp/`, `--config tests/trycmd/input/<case>.toml`, fixture store or empty dirs), plus a `--help` case for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`). `web` and `tui` get `--help` only. Timestamps, ids, versions and absolute paths use trycmd `[..]` / `[EXE]`. One `tests/trycmd/README.md` line per case; the README command table is checked against the trycmd case list.
+
+Execution plan: (1) one `tests/trycmd/help-subcommands.trycmd` with `--help` for every subcommand and nested verb, plus `*.trycmd` in `cli_trycmd.rs` and a `tests/trycmd/README.md` index; (2) hermetic reading goldens (`inherit = false`, `[env.add]` HOME/RTOK_HOME under `target/tmp/`) for stats table/`--json`, `info --json`, doctor/plugins/agents/demon/otel/logs tables, `config init|path|get|validate|set`, `expand --lines/--grep`, completions zsh/fish/powershell, `man`, `report --format md`, `proxy --dry-run` — skip T60.1 `--json` duplicates; (3) stdin cases for `hook`, `mcp tools/list`, `filter --cmd`, `run -- echo`; (4) README command table vs trycmd case list, bless, close.
+
+**Result (2026-09-18).** Every visible clap command has a `--help` golden in `tests/trycmd/help-subcommands.trycmd`; `web`/`tui` stay help-only. Reading commands gained hermetic trycmd cases for stats table/`--json`, `info --json`, doctor/plugins tables, `config init|path|get|validate|set`, completions zsh/fish/powershell, `man`, agents list/sessions, demon/otel/logs tables, `report --format md`, `proxy --dry-run`, plus stdin cases for `hook SessionStart`, `mcp tools/list`, `filter --cmd`, `run -- /bin/echo`, and `expand --lines --grep`. T60.1 `--json` goldens were not duplicated. `tests/cli_trycmd.rs` walks clap and the README command table against the trycmd case list.
+
 ## T60.1 — `--json` on every reading command
 
 
