@@ -136,6 +136,11 @@ pub(crate) fn read_with(
     ) {
         return Ok(hit);
     }
+    // Raw file bytes (not the delta view): a same-session content-hash hit is a pointer.
+    if let Some(msg) = crate::plugin::identical_result(&**cx, "read", payload) {
+        let _ = cache::remember(cx, &key, payload);
+        return Ok(msg);
+    }
     let _ = cache::remember(cx, &key, payload);
     cap(cx, body)
 }

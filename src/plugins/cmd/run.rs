@@ -186,6 +186,12 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
             return Ok(code);
         }
     };
+    // Hash the raw bytes before archiving (T65.1): a same-session hit is a pointer, not
+    // the body. Fail open — lookup errors and short bodies print as today.
+    if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", &body) {
+        println!("{msg}");
+        return Ok(code);
+    }
     // The archive keeps the command's bytes, not the lossy `String` used to filter and
     // print them: `expand` must return what the command wrote, including invalid UTF-8.
     let id = match cx.put_archive(&body) {
@@ -251,6 +257,28 @@ mod tests {
         assert_eq!(files.len(), 1);
         let raw = fs::read(files[0].clone()).unwrap();
         assert_eq!(raw, b"a\nb\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn identical_output_from_different_commands_dedups() {
+        let (c, dir) = cfg("dedup-hash");
+        let payload = format!(
+            "{}
+",
+            "x".repeat(300)
+        );
+        assert_eq!(run(&c, &["printf".into(), payload.clone()]).unwrap(), 0);
+        let inner = format!("printf '%s\n' '{}'", "x".repeat(300));
+        assert_eq!(run(&c, &["sh".into(), "-c".into(), inner]).unwrap(), 0);
+        let store = crate::store::Store::open(&c.core.db_path).unwrap();
+        let rows = store.list_measurements("cmd").unwrap();
+        let dedup = rows.iter().filter(|r| r.kind == "dedup").count();
+        assert_eq!(dedup, 1, "{rows:?}");
+        assert!(
+            rows.iter()
+                .any(|r| r.kind == "dedup" && r.before_bytes > r.after_bytes)
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
