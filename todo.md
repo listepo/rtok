@@ -33,5 +33,4 @@
 - T70.4. Cursor plugin shortens MCP results the host launched
 - T70.5. `guard` on pi and OpenCode through the plugin
 - T70.6. Compaction on pi and OpenCode through the plugin
-- T71.1. `curl` / `wget` HTML pages as readable text
 - T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
