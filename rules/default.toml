@@ -145,6 +145,8 @@ head = 8
 tail = 16
 keep = ["error CS|error MSB|error NU|Build FAILED"]
 dedupe = true
+group = "diag"
+
 
 [tsc]
 max_lines = 40
@@ -197,4 +199,12 @@ max_lines = 40
 head = 10
 tail = 10
 group = "dir"
+dedupe = true
+
+[cargo]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error[|error:|warning:"]
+group = "diag"
 dedupe = true
