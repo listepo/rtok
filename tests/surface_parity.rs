@@ -41,7 +41,7 @@ fn web_pages(cfg: &Config) -> Vec<String> {
         .as_object()
         .expect("frame is an object")
         .keys()
-        .filter(|key| *key != "type") // the wire envelope, not a page
+        .filter(|key| *key != "type" && *key != "ref_ids") // envelope / T60.4 expand map, not pages
         .map(|key| {
             model::pages()
                 .iter()
@@ -145,6 +145,42 @@ fn expand_payload_exists_on_both_surfaces() {
     assert!(
         web.contains("on_expand_archive") && slint.contains("CallArchive"),
         "the web Calls page has an expand button and pane"
+    );
+}
+
+/// T63.1: both surfaces render the skills page from the same model accessor.
+#[test]
+fn skills_page_exists_on_both_surfaces() {
+    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
+    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
+    let app = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs"));
+    let web = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let slint = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    ));
+    assert!(
+        model.contains("pub fn skills_from"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        model.contains("(\"skills\", \"skills\")"),
+        "pages() offers skills"
+    );
+    assert!(
+        tui.contains("\"skills\" =>") && app.contains("skills_key"),
+        "the TUI renders the skills page"
+    );
+    assert!(
+        web.contains("skills_of") && slint.contains("page-id == \"skills\""),
+        "the web Skills page renders the same rows"
+    );
+    assert!(
+        slint.contains("never invoked only"),
+        "web filter matches TUI n"
     );
 }
 
