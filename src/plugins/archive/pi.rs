@@ -74,10 +74,7 @@ pub fn live_blobs(messages: &mut Value) -> Vec<BlobRef<'_>> {
         if message.get("content").is_some_and(Value::is_string) {
             let content = message.get_mut("content").expect("string checked above");
             out.push(BlobRef { content, turn });
-        } else if let Some(parts) = message
-            .get_mut("content")
-            .and_then(Value::as_array_mut)
-        {
+        } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) {
             for part in parts {
                 if part["type"].as_str() == Some("text")
                     && let Some(content) = part.get_mut("text")
@@ -95,7 +92,10 @@ pub fn live_blobs(messages: &mut Value) -> Vec<BlobRef<'_>> {
 /// stays one rule.
 fn split(messages: &mut Value) -> Option<(&mut Vec<Value>, usize)> {
     let entries = messages.as_array_mut()?;
-    let total = entries.iter().filter(|entry| entry["role"] == "user").count();
+    let total = entries
+        .iter()
+        .filter(|entry| entry["role"] == "user")
+        .count();
     Some((entries, total))
 }
 
@@ -115,6 +115,15 @@ pub fn rewrite_stdin(input: &[u8], cx: &Ctx) -> Result<Vec<u8>> {
     {
         return Ok(input.to_vec());
     }
+    // The shared rewrite replaces a payload with a plain pointer string; pi
+    // sessions carry text-block arrays, so remember which results were arrays
+    // and restore the shape afterwards (pi renders `content[].text`).
+    let was_array: Vec<bool> = messages
+        .as_array()
+        .expect("array checked above")
+        .iter()
+        .map(|m| m["role"] == "toolResult" && m["content"].is_array())
+        .collect();
     let mut ms = super::rewrite(tool_results(&mut messages), cx);
     ms.extend(super::rewrite_blobs(live_blobs(&mut messages), cx));
     if ms.is_empty() {
@@ -123,6 +132,14 @@ pub fn rewrite_stdin(input: &[u8], cx: &Ctx) -> Result<Vec<u8>> {
     for m in &ms {
         if let Err(e) = cx.record(m) {
             cx.log("error", "plugin", "archive", &format!("measurement: {e}"));
+        }
+    }
+    for (array_shape, message) in was_array
+        .into_iter()
+        .zip(messages.as_array_mut().expect("array checked above"))
+    {
+        if array_shape && let Some(pointer) = message["content"].as_str() {
+            message["content"] = serde_json::json!([{"type": "text", "text": pointer}]);
         }
     }
     Ok(serde_json::to_vec(&messages)?)
@@ -197,18 +214,23 @@ mod tests {
     }
 
     /// The card's Check: three replays byte-identical; a fourth call with one
-    /// new turn changes only the newly-aged block.
+    /// new turn changes only the newly-aged block. Every call records one
+    /// Measurement per pointer it serves — a replayed pointer is a saving on
+    /// that request too (context-token-turns, D3).
     #[test]
     fn rewrite_is_byte_stable_and_ages_one_block_per_turn() {
         let cx = cx("stable");
         let ctx = Ctx::new(&cx);
+        let count = || cx.store.measurement_count("archive").unwrap();
         let input = serde_json::to_vec(&pi_array(&["a", "b", "c", "d", "e"])).unwrap();
         let out1 = rewrite_stdin(&input, &ctx).unwrap();
         assert_ne!(out1, input, "the oldest result is outside keep_turns = 4");
+        assert_eq!(count(), 1, "one block archived on the first call");
         let out2 = rewrite_stdin(&out1, &ctx).unwrap();
         let out3 = rewrite_stdin(&out2, &ctx).unwrap();
         assert_eq!(out1, out2, "replay 2 byte-identical");
         assert_eq!(out2, out3, "replay 3 byte-identical");
+        assert_eq!(count(), 3, "each replay re-serves the persisted pointer");
 
         // One new turn arrives: only the newly-aged block (b) may change.
         let mut grown: Value = serde_json::from_slice(&out3).unwrap();
@@ -245,10 +267,12 @@ mod tests {
             .position(|m| m["toolCallId"] == "call_b")
             .unwrap();
         assert_eq!(changed, vec![b_pos], "only the newly-aged block changed");
-        assert!(after[a_pos]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .starts_with("[archived "));
+        assert!(
+            after[a_pos]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("[archived ")
+        );
         // Lossless: expand recovers the original bytes of every pointer.
         for tag in ["a", "b"] {
             let pos = after
@@ -269,9 +293,9 @@ mod tests {
             assert_eq!(String::from_utf8(back).unwrap(), big(tag));
         }
         assert_eq!(
-            cx.store.measurement_count("archive").unwrap(),
-            2,
-            "one measurement row per rewritten block, replays add none"
+            count(),
+            5,
+            "grown call serves two pointers: the persisted one and the newly-aged one"
         );
     }
 

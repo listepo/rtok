@@ -16,6 +16,7 @@ Commands:
   run          Execute a command, archive its raw output, print the filtered version
   filter       Filter text from stdin without executing
   expand       Print an archived payload
+  archive      The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
   completions  Print shell completions for `bash`, `zsh`, `fish` or `powershell`
   man          Print the man page (roff) to stdout
   plugins      List plugins: id, enabled, surfaces

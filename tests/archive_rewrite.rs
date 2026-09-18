@@ -84,7 +84,13 @@ fn result_text<'a>(v: &'a serde_json::Value, tag: &str) -> &'a str {
 }
 
 fn expand_id(pointer: &str) -> &str {
-    pointer.split("expand(").nth(1).unwrap().split(')').next().unwrap()
+    pointer
+        .split("expand(")
+        .nth(1)
+        .unwrap()
+        .split(')')
+        .next()
+        .unwrap()
 }
 
 #[test]
@@ -98,7 +104,7 @@ fn rewrite_shrinks_only_outside_keep_turns_expand_recovers_and_replays_stable() 
     let input = serde_json::to_vec(&pi_array(&["a", "b", "c"])).unwrap();
 
     let out1 = rtok(&home, &["archive", "rewrite", "--stdin"], &input);
-    assert_ne!(out1, input, "the oldest turn is rewritten");
+    assert_ne!(out1, input, "the two oldest turns are rewritten");
     let v1: serde_json::Value = serde_json::from_slice(&out1).unwrap();
     let rs = results(&v1);
     assert_eq!(rs.len(), 3);
@@ -107,8 +113,8 @@ fn rewrite_shrinks_only_outside_keep_turns_expand_recovers_and_replays_stable() 
         "turn 2 (oldest) carries the pointer"
     );
     assert!(
-        result_text(&v1, "b").starts_with("b line 1:"),
-        "turn 1 stays whole"
+        result_text(&v1, "b").starts_with("[archived "),
+        "turn 1 is outside keep_turns = 1, so it carries the pointer too"
     );
     assert!(
         result_text(&v1, "c").starts_with("c line 1:"),
@@ -146,10 +152,14 @@ fn rewrite_shrinks_only_outside_keep_turns_expand_recovers_and_replays_stable() 
     );
     assert!(
         result_text(&v4, "b").starts_with("[archived "),
+        "the persisted pointer survives the new turn"
+    );
+    assert!(
+        result_text(&v4, "c").starts_with("[archived "),
         "the newly-aged block is the only new pointer"
     );
     assert!(
-        result_text(&v4, "c").starts_with("c line 1:"),
+        result_text(&v4, "d").starts_with("d line 1:"),
         "the live edge stays whole"
     );
     let id_b = expand_id(result_text(&v4, "b")).to_string();

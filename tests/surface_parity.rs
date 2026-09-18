@@ -152,6 +152,10 @@ const EXEMPT: &[(&str, &str)] = &[
     // `wrap` (T51.4) joins EXEMPT when the clap command lands — not before.
     ("filter", "filters stdin without executing"),
     ("expand", "prints one archived payload"),
+    (
+        "archive rewrite",
+        "rewrites a pi `context` array on stdin to stdout (T70.2)",
+    ),
     // surfaces: renderers of the model, not pages of it (D23)
     ("web", "the web surface itself"),
     ("dashboard", "deprecated spelling of `rtok web`"),
