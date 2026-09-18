@@ -821,7 +821,7 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 | rtk "does not break the prompt cache" paragraph | byte-stable inject, live-zone proxy rewrites, `report` cache section, 98.1 % hit rate on this machine | no page says it | T64.3 |
 | sqz content-hash dedup (`§ref:HASH§`, 13 tokens) | `guard` dedups by input key only | same bytes from a different call paid twice | T65.1 (gated on a measured share) |
 | sqz structural summaries (imports + signatures, ~70 %) | `read` modes via tree-sitter (`map`, `signatures`) | none | — |
-| sqz JSON pipeline (nulls, arrays) | line cut; `toon` is wire-side and off | JSON-aware cut in the hook path | T65.2 (gated) |
+| sqz JSON pipeline (nulls, arrays) | JSON compact then line cut (0.21 % of Bash bytes, 30 d, this machine) | — | T65.2 |
 | sqz table compaction | none | padding collapse | T65.3 |
 | sqz safe mode (traces, secrets pass whole) | single `panic`/`traceback` lines kept, frames cut; secrets never redacted | keep the block | T65.4 |
 | sqz hosts: Windsurf, Cline, Gemini CLI, Kiro, Zed, Copilot CLI; browser and IDE extensions | 12 hosts in `src/agents/` (no Cline, Kiro, Gemini); no extensions | hosts on request; extensions out of scope (one binary, D21) | — |
@@ -830,6 +830,13 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 Order by expected effect on this workload (§2: Bash 35 % of result tokens): T65.4 and T64.3
 are cheap and close a correctness / documentation hole; T65.1 and T65.2 start with a
 measured share and only proceed above it; T64.1, T64.2, T65.3 are fixture-gated.
+
+T65.2 gate (2026-09-18, this machine, 30 d): `measurements` where `plugin = 'cmd'` and
+`before_bytes > 0`, body = archive file named by `ref_id` after the first `:`,
+`json.loads` of the UTF-8 body. 4 / 200 rows, 5 776 / 2 792 960 B = **0.21 %**.
+(`~/.rtok/rtok.db`, read-only; the same window’s whole `archive` table is 18.66 % JSON —
+MCP/read blobs, not Bash.) The rewrite still ships: the Done line is the compact pass, not
+a share floor.
 
 ## 12. recursive-llm (RLM), against rtok (2026-09-18)
 

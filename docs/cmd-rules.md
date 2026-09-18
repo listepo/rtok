@@ -41,6 +41,8 @@ lands as a `cmd` / `wrap` measurement with `ref_id = <server>/<tool>:<id>`.
 | `keep` | array of strings | `[]` | substrings that are never dropped and never cut by the cap; built-in keeps are `error`, `warning`, `panic`, `fail`, `traceback` |
 | `dedupe` | bool or `"normalized"` | true | `true` folds adjacent identical lines into `line (×N)`; `"normalized"` keys lines with timestamps, ids, pids and durations replaced by placeholders and folds non-adjacent matches into `line (×N, also lines k, l, …)` |
 | `group` | `"dir"` \| `"diag"` | off | `dir` rewrites path-per-line output as `dir/ (N files): a, b, c …`; `diag` rewrites coded diagnostics as `E0308 ×N: first message (file:line, …)`; runs before the head/tail cut (T64.1) |
+| `json_items` | integer ≥ 0 | 20 | JSON arrays keep this many elements; the rest is one `… +K more` (T65.2) |
+| `json_string` | integer ≥ 0 | 200 | JSON strings longer than this are cut with their character length (T65.2) |
 
 Any other field, a wrong type, or broken TOML is malformed. A non-zero exit
 ignores all of this: the last `[plugins.cmd] fail_tail_lines` lines (default
@@ -132,3 +134,22 @@ or coded-diagnostic streams, and the T50.1 `python` traceback does not shrink as
 | `eslint` | `diag` | 749 | 48 | 175 |
 | `cargo` (`check`) | `diag` | 749 | 34 | 178 |
 | `dotnet` | `diag` | 849 | 71 | 194 |
+
+## JSON (T65.2)
+
+A body that `serde_json` parses as an object or array is rewritten after grouping and
+before the head/tail cut: null / empty-string / empty-container fields dropped, arrays
+beyond `json_items` shown as `… +K more`, object keys kept, strings longer than
+`json_string` cut with their length, one line per top-level key. Unparseable bodies are
+untouched. Table formatters (`kubectl get`, `docker ps`) stand down when the body is JSON
+so `kubectl get -o json` reaches this pass. `toon` stays off the hook path. Raw bytes stay
+in the archive; a shortened result still carries the expand trailer.
+
+Measured on `tests/cmd_golden/{gh,aws,kubectl}_json.in` (`formatters::compress` vs a
+head/tail cut of the same pretty body; est tokens = bytes/4).
+
+| Source | raw B | line-cut B | compact B | est saved vs raw |
+| --- | ---: | ---: | ---: | ---: |
+| `gh pr list --json` | 10275 | 908 | 4530 | 1436 |
+| `aws ec2 describe-instances` | 19516 | 519 | 5890 | 3406 |
+| `kubectl get pods -o json` | 26271 | 353 | 8297 | 4493 |
