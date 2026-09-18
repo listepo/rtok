@@ -6,6 +6,9 @@
     ],
     "afterShellExecution": [
       { "command": "rtok hook PostToolUse --host cursor" }
+    ],
+    "postToolUse": [
+      { "command": "rtok hook PostToolUse --host cursor", "matcher": "MCP:" }
     ]
   }
 }
