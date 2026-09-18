@@ -15,5 +15,4 @@
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
 - T70.4. Cursor plugin shortens MCP results the host launched
-- T70.5. `guard` on pi and OpenCode through the plugin
 - T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
