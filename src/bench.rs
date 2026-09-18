@@ -456,6 +456,30 @@ mod tests {
     }
 
     #[test]
+    fn graph_dry_run_lists_each_question_on_both_arms() {
+        let mut c = cfg(true);
+        c.bench.suite = "graph".into();
+        c.bench.runs = 1;
+        let s = run(&c).unwrap();
+        assert!(s.lines().count() >= 20, "{s}");
+        assert!(s.contains("plugin rtok mcp 1"), "{s}");
+        assert!(s.contains("config-class mini-py native 1"), "{s}");
+    }
+
+    #[test]
+    fn graph_offline_table_names_the_metrics() {
+        let mut c = cfg(false);
+        c.bench.suite = "graph".into();
+        c.bench.runs = 1;
+        let s = run(&c).unwrap();
+        assert!(
+            s.contains("tools") && s.contains("resident") && s.contains("TOTAL"),
+            "{s}"
+        );
+        assert!(s.contains("0/1"), "{s}");
+    }
+
+    #[test]
     fn dry_run_lists_six_by_two_by_three() {
         let s = run(&cfg(true)).unwrap();
         let lines: Vec<_> = s.lines().collect();
