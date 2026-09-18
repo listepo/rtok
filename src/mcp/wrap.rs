@@ -161,21 +161,26 @@ fn take_call(pending: &Pending, frame: &[u8]) -> Option<String> {
 
 /// The response with every long text block archived and cut; `None` when nothing changed,
 /// the result is an error, or the frame is not a tool result.
-fn shorten(
+/// Cut `result.content[].text` blocks past the `[mcp]` cmd rule. Records `plugin`/`kind`.
+/// `false` when nothing changed (under the threshold, `isError`, or archive failed).
+pub fn shorten_result(
     cx: &Runtime,
     settings: &Settings,
     server: &str,
     tool: &str,
-    frame: &[u8],
-) -> Option<Vec<u8>> {
-    let mut v: Value = serde_json::from_slice(frame).ok()?;
-    let result = v.get_mut("result")?;
+    result: &mut Value,
+    plugin: &'static str,
+    kind: &'static str,
+) -> bool {
     if result.get("isError").and_then(Value::as_bool) == Some(true) {
-        return None;
+        return false;
     }
     let rule = settings.pick("mcp");
+    let Some(blocks) = result.get_mut("content").and_then(Value::as_array_mut) else {
+        return false;
+    };
     let mut changed = false;
-    for block in result.get_mut("content")?.as_array_mut()? {
+    for block in blocks {
         let Some(text) = block.get("text").and_then(Value::as_str) else {
             continue;
         };
@@ -192,8 +197,8 @@ fn shorten(
         }
         let printed = format!("{cut}\n[rtok {id} · {lines} lines · expand: rtok expand {id}]");
         let _ = cx.record(&Measurement {
-            plugin: "cmd",
-            kind: "wrap",
+            plugin,
+            kind,
             before_bytes: text.len() as u64,
             after_bytes: printed.len() as u64,
             est_before: cx.estimate(text, Class::Code),
@@ -204,6 +209,21 @@ fn shorten(
         block["text"] = Value::String(printed);
         changed = true;
     }
+    changed
+}
+
+fn shorten(
+    cx: &Runtime,
+    settings: &Settings,
+    server: &str,
+    tool: &str,
+    frame: &[u8],
+) -> Option<Vec<u8>> {
+    let mut v: Value = serde_json::from_slice(frame).ok()?;
+    let changed = {
+        let result = v.get_mut("result")?;
+        shorten_result(cx, settings, server, tool, result, "cmd", "wrap")
+    };
     changed.then(|| serde_json::to_vec(&v).ok()).flatten()
 }
 
@@ -252,5 +272,32 @@ mod tests {
             Some("grep")
         );
         assert_eq!(take_call(&pending, br#"{"id":7,"result":{}}"#), None);
+    }
+
+    #[test]
+    fn shorten_result_records_archive_mcp_above_threshold() {
+        let cx = crate::plugin::Runtime::in_memory("wrap-mcp").unwrap();
+        let settings = Settings::from_config(&cx.config);
+        let text: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+        let mut result = serde_json::json!({"content":[{"type":"text","text": text}]});
+        assert!(shorten_result(
+            &cx,
+            &settings,
+            "linear",
+            "list",
+            &mut result,
+            "archive",
+            "mcp"
+        ));
+        let printed = result["content"][0]["text"].as_str().unwrap();
+        assert!(printed.contains("expand: rtok expand "));
+        assert!(printed.len() < text.len());
+        let rows = cx.store.list_measurements("archive").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "mcp");
+        let mut small = serde_json::json!({"content":[{"type":"text","text":"hi\n"}]});
+        assert!(!shorten_result(
+            &cx, &settings, "linear", "list", &mut small, "archive", "mcp"
+        ));
     }
 }
