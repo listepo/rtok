@@ -331,6 +331,7 @@ prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked ti
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
 sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
+startup_recall = false                # T71.2 SessionStart startup checkpoint
 
 [plugins.memory.embed]
 enabled    = false                    # P29: FTS5-only when false; vector search is opt-in

@@ -182,6 +182,11 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
             let _ = cx.store.end_session(&cx.session, now);
+            if let Some(path) = input.transcript_path.as_deref() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = crate::plugins::checkpoint::save_session_end(path, &Ctx::new(cx));
+                }));
+            }
             HookOutput::default()
         }
         _ => HookOutput::default(),

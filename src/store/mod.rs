@@ -726,6 +726,25 @@ impl Store {
         q.load(&mut *conn).map_err(Into::into)
     }
 
+    pub fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        let mut q = notes::table
+            .filter(notes::kind.like(format!("{kind_prefix}%")))
+            .order(notes::id.desc())
+            .select(notes::body)
+            .into_boxed();
+        if let Some(p) = project {
+            q = q.filter(notes::project.eq(p));
+        } else {
+            q = q.filter(notes::project.is_null());
+        }
+        q.first(&mut *conn).optional().map_err(Into::into)
+    }
+
     /// Newest note body for `kind`, if any.
     pub fn latest_note(&self, kind: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;

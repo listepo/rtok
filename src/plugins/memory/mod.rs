@@ -55,7 +55,12 @@ impl Plugin for Memory {
         ]
     }
 
-    fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+    fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+        if ev.source == "startup" {
+            if let Some(h) = super::checkpoint::offer_session_handoff(cx) {
+                return Some(h);
+            }
+        }
         recall(cx)
     }
 

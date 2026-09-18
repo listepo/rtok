@@ -216,6 +216,14 @@ impl Notes for MemoryHost {
         Ok(None)
     }
 
+    fn latest_note_for_project(
+        &self,
+        _project: Option<&str>,
+        _kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     fn list_note_titles(&self, _project: Option<&str>, _limit: u32) -> Result<Vec<(i32, String)>> {
         Ok(Vec::new())
     }

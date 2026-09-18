@@ -643,6 +643,8 @@ section! {
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
         sync_tokens: u32 = 300,
+        /// Inject last session checkpoint at startup (T71.2); off by default.
+        startup_recall: bool = false,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }

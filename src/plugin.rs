@@ -365,6 +365,14 @@ impl Notes for Runtime {
         self.store.latest_note(kind)
     }
 
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        self.store.latest_note_for_project(project, kind_prefix)
+    }
+
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>> {
         self.store.list_note_titles(project, limit)
     }

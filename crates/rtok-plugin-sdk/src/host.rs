@@ -248,6 +248,13 @@ pub trait Notes {
     /// The body of the most recent note of `kind`.
     fn latest_note(&self, kind: &str) -> Result<Option<String>>;
 
+    /// Newest note body whose kind starts with `kind_prefix` for `project`.
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>>;
+
     /// The `limit` most recent `(id, title)` pairs, newest first.
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>>;
 

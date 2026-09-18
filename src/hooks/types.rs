@@ -50,6 +50,7 @@ impl HookInput {
     /// `beforeShellExecution` → Claude PreToolUse (`tool_name=Bash`, `tool_input.command`).
     /// `afterShellExecution` → Claude PostToolUse (+ `tool_response` from `output`/`stdout`).
     pub fn adapt_cursor(&mut self, event: &str) {
+        self.take_transcript_path_alias();
         if matches!(event, "afterMCPExecution") || self.hook_event_name == "afterMCPExecution" {
             self.hook_event_name = "AfterMCPExecution".into();
             if self.tool_name.is_none() {
@@ -163,6 +164,14 @@ impl HookInput {
 
     pub fn mcp_server_name(&self) -> Option<&str> {
         self.extra.get("mcp_server_name").and_then(|v| v.as_str())
+    }
+
+    pub fn take_transcript_path_alias(&mut self) {
+        if self.transcript_path.is_none()
+            && let Some(path) = self.extra.remove("transcriptPath").and_then(as_string)
+        {
+            self.transcript_path = Some(path);
+        }
     }
 
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
