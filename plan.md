@@ -43,7 +43,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.2 | todo | P3 | 2 | 0% | |
 | T68.3 | todo | P2 | 2 | 0% | |
 | T68.4 | todo | P3 | 2 | 0% | |
-| T68.5 | todo | P2 | 3 | 0% | |
+| T68.5 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.7 | todo | P3 | 2 | 0% | |
 | T68.8 | todo | P3 | 2 | 0% | |
@@ -308,6 +308,12 @@ Done when `impact` takes optional `to` (MCP field, CLI `--to`) and prints only t
 
 From the codegraph / graphify review. codegraph `affected` traces a diff to the test files it reaches so the agent runs those instead of the suite; rtok has `impact(name)` and `is_test_path`, and no path from "these files changed" to "run these tests", so `cargo test` / `pytest` output — the largest Bash family in `research.md` §2 — is paid for the whole suite.
 Done when `rtok graph affected [--since <ref> | --staged]` (CLI, `--json`) takes changed files from `git diff --name-only` (no libgit — `cmd` already shells out to git), their definitions from `symbol_defs`, `impact_bfs` to `depth` (default 3), and prints the reachable definitions whose file passes `is_test_path` as `test file ← via symbol` grouped by file, with the command to run them per language (`cargo test <name>`, `pytest path::name`, `go test -run`, `vitest path`); MCP `impact` accepts `path` alone (no `name`) with the same semantics; an empty result says `no indexed test reaches the change; run the suite`; `Measurement { kind = "affected" }` is written only when a transcript or T68.9 shows the subset actually ran (before = the suite's last measured bytes, after = the subset's), never on the print alone; test on a fixture repo with two tests, one reaching the change.
+
+Execution plan:
+1. Reuse `impact_bfs`, `symbol_defs` and `is_test_path`. Changed files from `git diff --name-only --relative -z` (no libgit; fail open to the empty message).
+2. `affected_from_paths` takes those files' definitions (`outline::tags` names, confirmed via `symbol_defs`), BFS to depth 3 (default), keeps reachable defs whose path passes `is_test_path`. Print `file ← via symbol` grouped by file plus the language command. No Measurement on print.
+3. CLI: `rtok graph affected [--since <ref> | --staged] [--json]`. MCP: existing `impact` with `path` and no `name` (D21 one call path).
+4. Fixture repo with two tests, one reaching the change; MCP contract for path-only `impact`.
 
 ### T68.6. Import edges in the index
 
