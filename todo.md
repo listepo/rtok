@@ -56,7 +56,6 @@
 - T70.1. pi extension shortens every tool result, not only bash
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
-- T70.4. Cursor plugin shortens MCP results the host launched
 - T70.5. `guard` on pi and OpenCode through the plugin
 - T70.6. Compaction on pi and OpenCode through the plugin
 - T70.7. Cursor: `inject` has no path in, and the host table says it does

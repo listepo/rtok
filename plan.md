@@ -56,7 +56,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
-| T70.4 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T70.5 | todo | P3 | 3 | 0% | |
 | T70.6 | todo | P3 | 3 | 0% | |
 | T70.7 | todo | P2 | 2 | 0% | |
@@ -399,29 +398,6 @@ Done when:
 3. Which tools: the measured-value set only — `read`, `search`, `tree`, `symbol`, `callers`, `expand`, `mem_search`, `mem_get` — with the total description budget at or under what `rtok doctor` prices for the same tools on an MCP host, recorded in the card. A tool that does not fit the budget is not registered.
 4. Off by default until step 1 and step 3 numbers are in: `[setup.pi] tools = false` (D12: config key + `docs/config.md` row in the same commit).
 5. Tests: `plugins/pi/tests/rtok.test.ts` registers against a fake `rtok` and asserts one call path per tool and fail-open on a missing binary; `src/agents/pi/README.md` module table and the reached set updated, host table re-blessed.
-
-### T70.4. Cursor plugin shortens MCP results the host launched
-
-From `research.md` §15.3. T59.4 landed `rtok mcp -- <server argv>`, which only wraps servers **rtok itself spawns**; a server Cursor launches from its own `mcp.json` is untouched, and foreign MCP results are the measured 27 % of tool-result bytes over 30 days (§2, lean-ctx). The scan of 2026-09-18 reports that Cursor's post-MCP hook may return replacement output, which is the only surface that reaches those results without re-launching the server under rtok.
-Done when:
-1. Step 1 (decides the task): verify against https://cursor.com/docs/agent/hooks which event carries an MCP result and whether its output may be replaced (the scan says yes for MCP and no for shell; `src/agents/cursor/mod.rs` writes only `beforeShellExecution` / `afterShellExecution` today, so the event names must be re-read, not assumed). Record the verified schema in the card. Not replaceable → close with the finding, and the wrapper stays the only path.
-2. `plugins/cursor/hooks/hooks.json` gains that event pointing at `rtok hook PostToolUse --host cursor`, and the existing hook path shortens the result through the same code `rtok mcp --wrap` uses (T59.4) — one implementation, lossless, `expand <id>` trailer.
-3. Never blocks and never changes a call: only the result text, only above the existing size threshold, fail open in ≤ 10 ms; results of rtok's own MCP server are skipped (they are already short).
-4. Tests: a hook e2e per result size on a fixture payload, `Measurement { plugin = "archive", kind = "mcp" }` rows, and `plugins/cursor/README.md` + `src/agents/cursor/README.md` updated with the verified docs link (`tests/host_docs.rs`); host table re-blessed.
-
-Verified 2026-09-18 against https://cursor.com/docs/agent/hooks:
-
-- `postToolUse` — input `tool_output` (JSON-stringified result). Output `updated_mcp_tool_output` (object) **replaces MCP tool output** seen by the model; `additional_context` injects text. Shell is not replaceable via this field.
-- `afterMCPExecution` — input `result_json`, `mcp_server_name`. **No documented output**; not a replacement surface.
-- `afterShellExecution` — input `output`. **No documented output**; shell is not replaceable (scan confirmed).
-
-Decision: register `postToolUse` → `rtok hook PostToolUse --host cursor` (matcher `MCP:`).
-
-Execution plan:
-1. Publish `shorten_result` from `src/mcp/wrap.rs` (T59.4 path); hook records `archive`/`mcp`.
-2. `adapt_cursor` maps `postToolUse.tool_output` → `tool_response`; emit top-level `updated_mcp_tool_output`.
-3. Skip `mcp_server_name == rtok` and tool `expand`; fail open; never rewrite the call.
-4. Installer + `hooks.json`; e2e small/large fixtures; host READMEs; bless table if it changes.
 
 ### T70.5. `guard` on pi and OpenCode through the plugin
 
