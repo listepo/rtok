@@ -1,5 +1,21 @@
 # rtok — completed tasks
 
+## T70.6 — Compaction on pi and OpenCode through the plugin
+
+From `research.md` §15.3; the plugin-side half of T58.2, which registers host **hook** events and therefore cannot reach pi or OpenCode. Both document a compaction event that owns the summary — pi's may supply it or cancel, OpenCode's may replace the prompt — which is stronger than Claude Code's checkpoint note (T2.5), where rtok writes a note and hopes the summary keeps it.
+Done when:
+1. Step 1: verify both events against current docs and one real session; record what each accepts back.
+2. Each plugin calls `rtok hook PreCompact --host <host>` (or the CLI equivalent) so the existing `checkpoint::save` runs unchanged — the checkpoint content, its budget and its archive ids (T58.2 step 2) are not re-implemented in TypeScript.
+3. Where the host accepts a summary, the plugin returns the rendered checkpoint **appended to** the host's own summary, never replacing it: rtok's checkpoint is prompts, paths, errors and ids, not a conversation summary, and replacing the summary would lose what the host knows.
+4. Restore: the next call injects the checkpoint the way `inject::session_start` does on `source = "compact"`, inside the same budget (D5).
+5. Tests per plugin for a compaction with and without rtok present (fail open), a Rust test that the injected bytes equal Claude Code's for the same store, and both READMEs updated with verified links; cross-reference T58.2 so the two cards do not both claim the host list.
+
+**Result (2026-09-18).** Commits on `t70.6` (not merged), stacked on `t58.2`. T58.2 owns Claude/Cursor/Codex/Copilot hook registration; this card owns only the pi and OpenCode plugins. `checkpoint::save` and compact restore are unchanged in TypeScript — plugins shell `rtok hook PreCompact --host <host>` and `PostCompact` / `SessionStart source=compact`.
+
+pi (docs 2026-09-18: https://pi.dev/docs/latest/compaction, https://pi.dev/docs/latest/extensions): `session_before_compact` returns `{ cancel: true }` or `{ compaction: { summary, … } }` which **replaces** the host summarizer. No append field. Real sessions on this machine (`~/.pi/agent/sessions`, jsonl version 3) have no `type: compaction` rows. Closed the summary-return half: the extension does not return `compaction.summary`. Save still runs; restore is the next `context` call.
+
+OpenCode (docs 2026-09-18: https://opencode.ai/docs/plugins/): `experimental.session.compacting` `output.context.push` appends to the default prompt; `output.prompt` replaces it. Real `opencode.db` messages have `mode=compaction`, `agent=compaction`, `summary=true`. Plugin appends the budgeted checkpoint to `context` and never sets `prompt`. Restore: next `experimental.chat.system.transform` injects PostCompact `additionalContext`. Missing rtok fails open on both hosts. `docs/agents.md` not re-blessed (reached set unchanged; inject still has no host hook path).
+
 ## T58.2 — Compaction checkpoint on every host, with archive ids
 
 From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). What exists (T2.5): on Claude Code `agents install` registers `PreCompact` and `PostCompact`; `checkpoint::save` stores the last 20 prompts, touched paths and 8 error lines as a memory note, and `inject::session_start` re-emits it (priority 9) plus the modes when `source == "compact"`. Two gaps remain. (a) No other host registers its compaction event — Codex (`PreCompact`/`PostCompact`), Cursor (`preCompact`), Gemini CLI (compression hook), Copilot CLI (auto-compact at 80 %) are listed in `research.md` §9.2 as of 2026-09-17, ZCode has none — so on those hosts the modes and the checkpoint vanish after the summary. (b) The checkpoint carries no archive ids, so `expand <id>` of a tool result that the summary dropped needs the id from a transcript the model no longer sees. Neither rtk, headroom nor caveman handle compaction at all (§9.3), so closing (a) and (b) is "better", not parity.
