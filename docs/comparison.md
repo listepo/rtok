@@ -157,9 +157,10 @@ so it is v0.2+ at the earliest.
 
 ### The platform itself — prompt caching, context editing, auto-compact
 
-Free, first-party, and the thing every tool above is really competing with. The author's
-cache hit rate is 98.1 %. The correct move is to align with it, not fight it: rtok's
-byte-stable injection and cache-preserving proxy rewrites exist for exactly this reason.
+Free, first-party, and the thing every tool above is really competing with. The measured
+hit rate and the per-surface story: [prompt-cache.md](prompt-cache.md). The
+correct move is to align with it, not fight it: rtok's byte-stable injection and
+cache-preserving proxy rewrites exist for exactly this reason.
 
 ## 3. Where rtok is different
 

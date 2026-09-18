@@ -281,6 +281,8 @@ sessions 0  lines 0  malformed 0
 usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 ```
 
+What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/prompt-cache.md).
+
 ## Commands
 
 | Command | Purpose |
