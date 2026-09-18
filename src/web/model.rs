@@ -1057,6 +1057,7 @@ fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
             kv("recall_titles", p.memory.recall_titles),
             kv("recall_tokens", p.memory.recall_tokens),
             kv("prompt_recall", p.memory.prompt_recall),
+            kv("sync_tokens", p.memory.sync_tokens),
         ],
         "graph" => vec![kv("max_tokens", p.graph.max_tokens)],
         "toon" => vec![kv("min_rows", p.toon.min_rows)],
