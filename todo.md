@@ -21,7 +21,6 @@
 - T61.3. `doctor` skill audit
 - T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
 - T63.1. Skills page on `tui` and `web`
-- T64.1. `cmd` grouping pass: files by directory, diagnostics by type
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.1. Content-hash dedup of tool output within a session
 - T65.2. `cmd` JSON output compaction

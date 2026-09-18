@@ -24,7 +24,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
-| T64.1 | todo | P3 | 3 | 0% | |
 | T65.1 | todo | P2 | 3 | 0% | |
 | T65.2 | todo | P3 | 3 | 0% | |
 | T68.5 | todo | P2 | 3 | 0% | |
@@ -166,10 +165,6 @@ Done when (if step 1 passes) the plugin routes that tool's output through `rtok 
 Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: which of the 66 listed skills (`research.md` §10.2, this machine) were ever invoked, which never, how many bytes each body is, and how much of the input a session carried as skill bodies. `rtok stats` gains the numbers in T61.1 and `doctor` the audit in T61.3; this task renders both on the same page.
 Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
 
-### T64.1. `cmd` grouping pass: files by directory, diagnostics by type
-
-From `research.md` §11 (rtk's four strategies, 2026-09-18). rtk groups similar items — files by directory, errors by type; rtok's rule engine (`src/plugins/cmd/rules.rs`) only keeps, drops, cuts by position and folds adjacent duplicates, and the `ls`/`find`/`tree` formatters just take the first 40 lines.
-Done when a rule may set `group = "dir"` (path-per-line output: `find`, `rg -l`, `git status` untracked, `ls -R`) or `group = "diag"` (diagnostics keyed by code or rule id: `cargo` `error[E…]`, `tsc` `TS…`, `eslint` rule, `pytest` exception class), the pass rewrites the lines as `dir/ (N files): a, b, c …` and `E0308 ×N: first message (file:line, …)` before the head/tail cut, stays lossless (raw output archived as today, `expand <id>` trailer), and a fixture per family in `tests/cmd_golden` records before/after bytes that beat the same rule without `group` — a family that does not win is not switched on. T58.5 keeps its per-family formatters; this is the generic pass a TOML rule turns on.
 
 ### T65.1. Content-hash dedup of tool output within a session
 
