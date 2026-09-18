@@ -414,6 +414,7 @@ mod tests {
                 read_share: None,
                 instructions: None,
                 skills: None,
+                overlaps: vec![],
                 agents: vec![],
             },
             recommendations: vec![

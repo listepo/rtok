@@ -3309,3 +3309,11 @@ Complexity: 1/5 — one field, one fold pass, one stand-down guard.
 Status: done 2026-09-18
 Check result: cmd 57/57 green, fmt/clippy clean, full `just check` green up to the in-flight T70.2 red (plugins::archive::pi + its 4 test files — another agent's half-landed work at HEAD, verified pre-existing with my changes stashed; their fixes sit in the working tree).
 Model: ZCode / GLM-5.3-Flash
+
+**T59.7 `doctor` names host-native features that duplicate a rtok surface** · I-47 · `src/doctor.rs`, `src/report/ai.rs`, `src/report/pdf.rs`
+Do: three duplicate checks under a doctor `overlaps` section — Claude Code auto-memory (on by default where the settings file exists) while `[plugins.memory] recall_tokens > 0` and the plugin is on; OpenCode (its `~/.config/opencode` present) and Cursor (`~/.cursor` present) while `[plugins.archive]` is on — each line naming the rtok config key that turns the duplicate side off and starting with `duplicate:`; no measurement claim, no "saves N".
+Check: `overlap_checks_name_the_rtok_off_key_and_stay_off_when_quiet` — all three fire with both sides on, each names its key, none claims a saving, and every single-side-off / host-absent combination is silent; the fixture initializers in `src/report/{ai,pdf}.rs` carry the new field.
+Complexity: 2/5 — one probe, one pure rule, one render section.
+Status: done 2026-09-18
+Check result: doctor 20/20 green (the gate pass also fixed a wrong host in one of the test's quiet cases — `claude` cannot prove the archive side off, `opencode` can), fmt/clippy clean; full `just check` green except the then-in-flight T70.2 reds, which landed fixed in 4701646. Deviation: the `docs/doctor` page does not exist — the checks are visible in the README's abridged `rtok doctor` example via the skills section added with T61.3.
+Model: ZCode / GLM-5.3-Flash

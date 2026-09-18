@@ -23,7 +23,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.3 | todo | P3 | 2 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
-| T59.7 | todo | P3 | 2 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
 | T60.2 | todo | P2 | 3 | 0% | |
@@ -196,11 +195,6 @@ Done when:
 1. Evidence: `stats` splits Agent/Task tool inputs and results per session; the card records the share, and closes with the number if sub-agents are below 5 % of tokens.
 2. `handoff(budget_tokens)` returns one budgeted digest: the session's memory notes (titles first), archive ids of live tool results with tool and bytes (T58.2 field), touched paths, and the last N user prompts (`checkpoint::extract` reused, not copied); deterministic order; the digest itself is archived and carries an `expand <id>`.
 3. Description ≤ 40 tokens; Vfs unit test on a fixture store; docs next to the memory tools.
-
-### T59.7. `doctor` names host-native features that duplicate a rtok surface
-
-From I-47 (Claude Code auto-memory v2.1.59+, OpenCode two-phase compaction, Cursor "Dynamic Context"). A saving counted by rtok and by the host is counted twice.
-Done when `doctor` has three checks — Claude Code auto-memory on while `memory` recall injection is on; OpenCode with `archive` on (native marking prunes old tool outputs too); Cursor Dynamic Context with `archive` on — each printing the config key that turns the rtok side off, each with a fixture test, and the `docs/doctor` page lists them. No measurement claim: the checks say "duplicate", not "saves N".
 
 ### T59.8. Token-sink ranking in `report`
 

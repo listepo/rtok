@@ -41,6 +41,11 @@ pub struct Report {
     /// The skills audit (T61.3): `Some` when the probe ran; an empty tree prints no section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<SkillsAudit>,
+    /// Host-native features that duplicate a running rtok surface (T59.7), each
+    /// naming the rtok config key that turns the duplicate side off. Advice: the
+    /// lines say "duplicate", never "saves N".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlaps: Vec<String>,
     /// Every host variant and the state of each rtok module in it, as `agent setup` prints.
     pub agents: Vec<AgentModules>,
 }
@@ -178,6 +183,12 @@ impl Report {
                 out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
             }
         }
+        if !self.overlaps.is_empty() {
+            out.push_str("overlaps\n");
+            for l in &self.overlaps {
+                out.push_str(&format!("  {l}\n"));
+            }
+        }
         if let Some(skills) = &self.skills
             && !skills.rows.is_empty()
         {
@@ -265,6 +276,11 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .instructions
             .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
         skills: skills_audit(cfg),
+        overlaps: overlap_lines(
+            cfg.plugin_enabled("archive", true),
+            cfg.plugin_enabled("memory", true) && cfg.plugins.memory.recall_tokens > 0,
+            &detected_hosts(settings.as_ref()),
+        ),
         // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
         agents: crate::agents::HOSTS
             .iter()
@@ -278,6 +294,49 @@ pub fn page(cfg: &Config) -> Result<Report> {
             })
             .collect(),
     })
+}
+
+/// Which hosts this machine runs (T59.7): Claude Code when the doctor's settings
+/// probe found the file, OpenCode and Cursor by their config dirs under $HOME.
+fn detected_hosts(settings: Option<&Value>) -> Vec<&'static str> {
+    let mut v = Vec::new();
+    if settings.is_some() {
+        v.push("claude");
+    }
+    let home = crate::config::env_user_home();
+    let has = |p: &str| home.as_ref().is_some_and(|h| h.join(p).exists());
+    if has(".config/opencode") {
+        v.push("opencode");
+    }
+    if has(".cursor") {
+        v.push("cursor");
+    }
+    v
+}
+
+/// T59.7: the duplicate checks. Each names the rtok config key that turns the
+/// rtok side off; none claims a saving.
+fn overlap_lines(archive_on: bool, memory_recall_on: bool, installed: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    if installed.contains(&"claude") && memory_recall_on {
+        out.push(
+            "duplicate: Claude Code auto-memory (on by default) and memory recall both carry              facts — rtok side: [plugins.memory] enabled = false"
+                .into(),
+        );
+    }
+    if archive_on && installed.contains(&"opencode") {
+        out.push(
+            "duplicate: OpenCode marks old tool outputs natively — rtok side:              [plugins.archive] enabled = false"
+                .into(),
+        );
+    }
+    if archive_on && installed.contains(&"cursor") {
+        out.push(
+            "duplicate: Cursor Dynamic Context prunes old context too — rtok side:              [plugins.archive] enabled = false"
+                .into(),
+        );
+    }
+    out
 }
 
 /// The skills audit probe (T61.3): the documented roots of every host on this
@@ -981,6 +1040,39 @@ mod tests {
         assert!(none.rows.iter().all(|r| !r.warn_never));
     }
 
+    /// T59.7: the three duplicate checks fire only when both sides are on, name
+    /// the rtok config key, and never claim a saving.
+    #[test]
+    fn overlap_checks_name_the_rtok_off_key_and_stay_off_when_quiet() {
+        let lines = overlap_lines(true, true, &["claude", "opencode", "cursor"]);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(
+            lines[0].contains("[plugins.memory] enabled = false"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[1].contains("[plugins.archive] enabled = false"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[2].contains("[plugins.archive] enabled = false"),
+            "{lines:?}"
+        );
+        for l in &lines {
+            assert!(l.starts_with("duplicate:"), "{l}");
+            assert!(!l.contains("saves"), "no measurement claim: {l}");
+        }
+        // Either side off, or the host absent, is no line.
+        assert!(overlap_lines(false, true, &["opencode"]).is_empty());
+        assert!(overlap_lines(true, false, &["claude"]).is_empty());
+        assert!(overlap_lines(true, true, &[]).is_empty());
+        // The report renders them under `overlaps`.
+        let mut r = report_fixture();
+        r.overlaps = overlap_lines(true, true, &["opencode"]);
+        let text = r.to_text();
+        assert!(text.contains("overlaps\n  duplicate: OpenCode"), "{text}");
+    }
+
     /// The doctor text carries the section with the header total and per-row flags.
     #[test]
     fn skills_audit_renders_a_section_with_flags() {
@@ -997,20 +1089,8 @@ mod tests {
                 warn_never: false,
             }],
         };
-        let r = Report {
-            hooks_total: 0,
-            hooks_by_event: BTreeMap::new(),
-            mcp: Vec::new(),
-            proxy: String::new(),
-            proxy_openai: String::new(),
-            mcp_tool_search_disabled: false,
-            bash_max_output_length: None,
-            auto_compact_window: None,
-            read_share: None,
-            instructions: None,
-            skills: Some(audit),
-            agents: Vec::new(),
-        };
+        let mut r = report_fixture();
+        r.skills = Some(audit);
         let text = r.to_text();
         assert!(
             text.contains("skills (1 listed, 205 desc bytes ≈ 51 tokens per request)"),
@@ -1022,6 +1102,25 @@ mod tests {
         );
         assert!(text.contains("WARN desc>200"), "{text}");
         assert!(text.contains("WARN body>8K (references/)"), "{text}");
+    }
+
+    /// A bare Report for the render tests.
+    fn report_fixture() -> Report {
+        Report {
+            hooks_total: 0,
+            hooks_by_event: BTreeMap::new(),
+            mcp: Vec::new(),
+            proxy: String::new(),
+            proxy_openai: String::new(),
+            mcp_tool_search_disabled: false,
+            bash_max_output_length: None,
+            auto_compact_window: None,
+            read_share: None,
+            instructions: None,
+            skills: None,
+            overlaps: Vec::new(),
+            agents: Vec::new(),
+        }
     }
 
     #[test]
