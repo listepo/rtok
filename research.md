@@ -57,6 +57,24 @@ T8.8 `tests/graph_truth.rs` `labelled_symbols_are_found` (2026-09-18, after): de
 1.000, precision 1.000; reference recall 0.305 (floor 0.30). Imports are `kind = import` and
 are excluded from `symbol_refs`.
 
+### `graph` extra grammars and index payload size (T52.2, 2026-09-18)
+
+This-repo debug `rtok graph index` into a fresh `RTOK_HOME` (172 tagged files, 35 231 symbol rows). The new grammars add no rows here — the tree has no Java/Kotlin/Swift/C#/Ruby/PHP sources.
+
+Command (2026-09-18): `RTOK_HOME=/tmp/t52.2-index-home rtok graph index <worktree>` then `stat`, `sqlite3` `dbstat` / `LENGTH(...)`, `gzip -n`.
+
+| | Bytes |
+|---|---|
+| `rtok.db` | 14 077 952 |
+| VACUUM copy | 13 402 112 |
+| `symbols` table pages | 7 503 872 |
+| `symbols` indexes | 6 356 992 |
+| Concatenated TEXT columns | 6 067 201 |
+| gzip -n of those columns (one stream) | 197 682 |
+| gzip -n of the whole db | 1 150 703 |
+
+Most TEXT bytes are `file_sha` (2 254 784) and `root` (1 972 936) repeated on every row. One-stream gzip looks like a 30× win because it shares a dictionary across 35 231 rows; per-row gzip would grow those short fields (64-byte sha + gzip header). Live payload compression is skipped.
+
 ### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04; surface re-measured 2026-09-18, T68.1)
 
 Release build. The 3 000-file repo is generated, each file one function calling two others.
