@@ -354,7 +354,13 @@ fn matches_pat(pats: &[String], low: &str) -> bool {
 }
 
 fn is_keep(low: &str, rule: &Rule) -> bool {
-    BUILTIN_KEEP.iter().any(|k| low.contains(k)) || matches_pat(&rule.keep, low)
+    BUILTIN_KEEP.iter().any(|k| low.contains(k))
+        || matches_pat(&rule.keep, low)
+        || match rule.group {
+            Group::Dir => low.contains(" files): "),
+            Group::Diag => low.contains(" ×") && low.contains(": "),
+            Group::Off => false,
+        }
 }
 
 fn is_drop(low: &str, rule: &Rule) -> bool {
@@ -1576,5 +1582,72 @@ mod tests {
         assert_eq!(errs.len(), 1, "{errs:?}");
         assert!(errs[0].contains("Ivan Tuhai"), "{errs:?}");
         assert!(errs[0].contains("max_lines"), "{errs:?}");
+    }
+
+    #[test]
+    fn parse_strict_reads_group_dir_and_diag() {
+        assert_eq!(parse_strict("[find]\ngroup = \"dir\"\n").unwrap()[0].group, Group::Dir);
+        assert_eq!(parse_strict("[tsc]\ngroup = \"diag\"\n").unwrap()[0].group, Group::Diag);
+        assert_eq!(parse_strict("[grep]\nmax_lines = 5\n").unwrap()[0].group, Group::Off);
+    }
+
+    fn uncut(group: Group) -> Rule {
+        Rule {
+            max_lines: 40,
+            head: 10,
+            tail: 10,
+            dedupe: false,
+            collapse_columns: false,
+            group,
+            ..Rule::default()
+        }
+    }
+
+    #[test]
+    fn group_dir_beats_the_same_rule_without_group() {
+        let body: String = (0..20)
+            .flat_map(|i| [format!("src/a{i}.rs"), format!("tests/t{i}.rs")])
+            .collect::<Vec<_>>()
+            .join("\n");
+        let s = settings(80);
+        let off = apply(&s, &body, 0, &uncut(Group::Off), "id");
+        let on = apply(&s, &body, 0, &uncut(Group::Dir), "id");
+        assert!(on.len() < off.len(), "{} vs {}\n{on}", on.len(), off.len());
+        assert!(on.contains("src/ (20 files): a0.rs, a1.rs, a2.rs …"), "{on}");
+        assert!(on.contains("tests/ (20 files): t0.rs, t1.rs, t2.rs …"), "{on}");
+        assert!(!on.contains("lines omitted"), "{on}");
+    }
+
+    #[test]
+    fn group_diag_beats_the_same_rule_without_group() {
+        let mut lines = Vec::new();
+        for i in 0..20 {
+            lines.push(format!(
+                "src/f{i}.ts({i},1): error TS2322: Type 'string' is not assignable to type 'number'."
+            ));
+            lines.push("error[E0308]: mismatched types".into());
+            lines.push(format!("  {i}:1  error  Unexpected var  no-var"));
+        }
+        let body = lines.join("\n");
+        let s = settings(80);
+        let off = apply(&s, &body, 0, &uncut(Group::Off), "id");
+        let on = apply(&s, &body, 0, &uncut(Group::Diag), "id");
+        assert!(on.len() < off.len(), "{} vs {}\n{on}", on.len(), off.len());
+        assert!(on.contains(
+            "TS2322 ×20: Type 'string' is not assignable to type 'number'. (src/f0.ts:0, src/f1.ts:1, src/f2.ts:2, …)"
+        ), "{on}");
+        assert!(on.contains("E0308 ×20: mismatched types"), "{on}");
+        assert!(on.contains("no-var ×20: Unexpected var (0:1, 1:1, 2:1, …)"), "{on}");
+    }
+
+    #[test]
+    fn group_diag_line_stays_pinned_through_the_cut() {
+        let mut lines: Vec<String> = (0..15).map(|i| format!("ok {i}")).collect();
+        lines.push("src/app.ts(10,5): error TS2322: Type 'string' is not assignable to type 'number'.".into());
+        lines.extend((15..45).map(|i| format!("ok {i}")));
+        let s = settings(80);
+        let out = apply(&s, &lines.join("\n"), 0, &uncut(Group::Diag), "arc");
+        assert!(out.contains("TS2322 ×1:"), "{out}");
+        assert!(out.contains("lines omitted (expand arc)"), "{out}");
     }
 }
