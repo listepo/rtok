@@ -195,6 +195,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ("memory pin", "flags a note row to lead recall (T69.1)"),
     ("memory unpin", "drops the recall lead flag (T69.1)"),
     ("memory revise", "replaces and retires note rows (T69.1)"),
+    (
+        "memory sync",
+        "writes a managed CLAUDE.md / AGENTS.md block (T69.6)",
+    ),
     ("graph index", "walks a tree and inserts symbol rows"),
     ("demon start", "starts the supervisor"),
     ("demon stop", "asks the supervisor and its child to exit"),
@@ -237,6 +241,14 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "graph dead",
         "reads the symbol index on demand; no snapshot page yet",
+    ),
+    (
+        "graph status",
+        "index health on demand (T68.3); no snapshot page yet",
+    ),
+    (
+        "graph impact",
+        "symbol impact on demand (T68.4); no snapshot page yet",
     ),
     (
         "config show",
