@@ -1205,13 +1205,11 @@ mod tests {
                 || (text.contains("cmd") && text.contains("inject") && text.contains("guard")),
             "{text}"
         );
-        // pi reaches the bash call path through its extension, nothing else.
+        // pi reaches bash through the extension (cli) and MCP-surface plugins
+        // through `pi.registerTool` (T70.3). Proxy still has no path in.
         assert!(reaches(&pi::Pi, Kind::Cli, &[Surface::Cli]));
-        assert!(!reaches(
-            &pi::Pi,
-            Kind::Cli,
-            &[Surface::Mcp, Surface::Proxy]
-        ));
+        assert!(reaches(&pi::Pi, Kind::Cli, &[Surface::Mcp]));
+        assert!(!reaches(&pi::Pi, Kind::Cli, &[Surface::Proxy]));
         assert!(reaches(&cursor::Cursor, Kind::Desktop, &[Surface::Mcp]));
     }
 
