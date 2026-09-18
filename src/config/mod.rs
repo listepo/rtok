@@ -346,6 +346,7 @@ section! {
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
+        vscode: SetupVscode = SetupVscode::default(),
     }
 }
 
@@ -402,6 +403,15 @@ section! {
 section! {
     /// `[setup.zed]` — Zed's `settings.json` carries `context_servers` (T48.6).
     SetupZed { config_path: PathBuf = p("~/.config/zed/settings.json") }
+}
+
+section! {
+    /// `[setup.vscode]` — user `mcp.json` for Code and Code - Insiders (T48.8).
+    /// Empty paths resolve per OS in the vscode host.
+    SetupVscode {
+        config_path: PathBuf = p(""),
+        insiders_path: PathBuf = p(""),
+    }
 }
 
 section! {
@@ -843,6 +853,8 @@ impl Config {
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
+            &mut self.setup.vscode.config_path,
+            &mut self.setup.vscode.insiders_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
@@ -1061,6 +1073,8 @@ mod tests {
             &cfg.setup.aider.config_path,
             &cfg.setup.windsurf.config_path,
             &cfg.setup.zed.config_path,
+            &cfg.setup.vscode.config_path,
+            &cfg.setup.vscode.insiders_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,

@@ -57,8 +57,19 @@ pub fn mcp_path(product: &str) -> PathBuf {
     user_dir(product).join("mcp.json")
 }
 
-fn paths() -> [PathBuf; 2] {
-    [mcp_path(CODE), mcp_path(INSIDERS)]
+fn paths(cfg: &Config) -> [PathBuf; 2] {
+    [
+        if cfg.setup.vscode.config_path.as_os_str().is_empty() {
+            mcp_path(CODE)
+        } else {
+            cfg.setup.vscode.config_path.clone()
+        },
+        if cfg.setup.vscode.insiders_path.as_os_str().is_empty() {
+            mcp_path(INSIDERS)
+        } else {
+            cfg.setup.vscode.insiders_path.clone()
+        },
+    ]
 }
 
 impl Agent for Vscode {
@@ -89,12 +100,15 @@ impl Agent for Vscode {
         }
     }
 
-    fn files(&self, _cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
-        paths().into()
+    fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
+        paths(cfg).into()
     }
 
-    fn installed(&self, _cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        if paths().iter().any(|p| super::read(p).contains("\"rtok\"")) {
+    fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
+        if paths(cfg)
+            .iter()
+            .any(|p| super::read(p).contains("\"rtok\""))
+        {
             vec!["mcp"]
         } else {
             Vec::new()
@@ -103,9 +117,9 @@ impl Agent for Vscode {
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         if mode == Mode::Remove {
-            paths().iter().map(|p| unregister_mcp(cfg, p)).collect()
+            paths(cfg).iter().map(|p| unregister_mcp(cfg, p)).collect()
         } else if cfg.setup.mcp {
-            paths().iter().map(|p| register_mcp(cfg, p)).collect()
+            paths(cfg).iter().map(|p| register_mcp(cfg, p)).collect()
         } else {
             Ok(vec![rtok_agent_sdk::NO_CHANGES.into()])
         }
