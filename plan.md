@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.5 | todo | P2 | 3 | 0% | |
 | T60.6 | todo | P2 | 2 | 0% | |
 | T60.7 | todo | P3 | 2 | 0% | |
-| T60.8 | todo | P3 | 1 | 0% | |
 | T60.9 | todo | P3 | 2 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
@@ -249,11 +248,6 @@ Done when the snapshot carries an `error: Option<String>` the model fills when t
 
 `crates/rtok-webui/pkg/rtok_webui_bg.wasm` is 10,560,601 bytes (`ls -l`, 2026-09-17), served uncompressed from `rtok web`; no release profile, `lto` or `wasm-opt` is set for the crate.
 Done when the webui release profile sets `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `just web` runs `wasm-opt -Oz` when it is on PATH (fail open to the unoptimised file otherwise, with a line), `rtok web` serves the file with `Content-Encoding` negotiation for a pre-compressed `.wasm.br`/`.wasm.gz` when present, a test asserts the served size is under a number set from the measured result of this task, and the before/after bytes go into `research.md` with the date and command.
-
-### T60.8. TUI help overlay and manual refresh
-
-Key bindings live in the footer only and differ per page (survey 2026-09-17, `src/tui/app.rs`); there is no way to refresh before the tick.
-Done when `?` toggles an overlay listing the global and per-page keys generated from the same table the key handler matches on (one source, no hand-written list), `r` refreshes the snapshot immediately, the footer names `?`, and `app.rs`/`view.rs` tests cover the overlay and the refresh.
 
 ### T60.9. Web theme toggle
 
