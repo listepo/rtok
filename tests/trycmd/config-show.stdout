@@ -90,6 +90,7 @@ plugins.memory.enabled = true
 plugins.memory.recall_titles = 5
 plugins.memory.recall_tokens = 200
 plugins.memory.search_limit = 5
+plugins.memory.startup_recall = false
 plugins.proxy.enabled = true
 plugins.proxy.semantic_cache.cache_by_model = true
 plugins.proxy.semantic_cache.cache_by_provider = true
