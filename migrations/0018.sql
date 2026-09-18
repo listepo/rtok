@@ -1,5 +1,5 @@
--- T69.6: sha256 of the last written <!-- rtok:memory --> block.
-CREATE TABLE IF NOT EXISTS memory_sync (
-    path TEXT PRIMARY KEY,
-    block_sha256 TEXT NOT NULL
+-- T69.6: last-written `rtok memory sync` block sha256 (hand-edit guard).
+CREATE TABLE IF NOT EXISTS kv (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
 );
