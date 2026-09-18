@@ -43,6 +43,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T70.6 | todo | P3 | 3 | 0% | |
 | T71.1 | todo | P3 | 3 | 0% | |
 | T71.2 | todo | P3 | 3 | 0% | |
+| T71.3 | in progress | P2 | 2 | 80% | Cursor / grok 4.6 |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -323,6 +324,22 @@ Done when:
 3. `[plugins.memory] startup_recall = false` (D12 row in the same commit): when `true`, `SessionStart` with `source = "startup"` offers the newest `session:*` note of the project at the checkpoint priority inside `checkpoint_tokens`, rendered by the same function as the compact restore, byte-stable for an unchanged store; `Measurement { plugin = "memory", kind = "handoff" }`.
 4. Hook e2e: end → note exists; start with the key off → bytes identical to today; on → the restore lines present and within budget; a second start → the same bytes.
 5. Stays off by default until a P7-style A/B (T53.1 shape) shows cost per passed task does not rise; the dry result is recorded on the card. Hosts other than Claude Code that register `SessionEnd` get it through the same dispatcher (`docs/agents.md` re-blessed if the reached set changes).
+
+### T71.3. rtok's own skill, installed with the host plugin
+
+From I-52. Nothing tells a model that `expand <id>`, `read` modes, `mem_search` or `symbol` exist unless the human writes it into `CLAUDE.md`; a skill is the host-native way.
+**Creator confirmed (2026-09-18): one hub skill per host, not one per surface.**
+Done when:
+1. `skills/rtok/SKILL.md` in the repo: description ≤ 120 chars, body ≤ 2 KB (a `tests/skill.rs` check on both), `disable-model-invocation` unset, body = when to use `expand`, `read` modes, `search` / `tree`, the memory and graph tools, each one line pointing at its `docs/` page — no second copy of the docs.
+2. `rtok agents install <host>` copies it into the host's documented skill root for every host whose format is in `research.md` §10.1 (Claude Code `~/.claude/skills/rtok/`; others per that table), `remove` deletes only that directory, both idempotent and byte-stable; hosts without a skill format are untouched. Through `rtok-agent-sdk` (D28), one write cycle with the plugin offer.
+3. `doctor`'s skill section (T61.3) lists it like any other skill; its description bytes on this machine go into `research.md` §10.2.
+4. `Vfs` tests: install, re-install (no change), remove (foreign skills kept); `tests/host_docs.rs` covers the skill-root doc link per host; `docs/agents.md` host table re-blessed if `support()` changes.
+
+Execution plan:
+1. One in-repo hub (`skills/rtok/SKILL.md`); install copies, does not generate per host.
+2. Reuse `SkillCopy` in the same `apply` as the plugin offer (no second installer).
+3. Skill hosts: claude, cursor, codex, opencode, copilot. Skip pi, zcode, kimi, aider, windsurf, zed; no gemini host.
+4. Convert install/reinstall/remove tests to `Vfs`; record hub description chars in `research.md` §10.2.
 
 ## Reference
 
