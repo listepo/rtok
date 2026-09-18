@@ -636,6 +636,7 @@ section! {
         prompt_recall: u32 = 0,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
+        sync_tokens: u32 = 300,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }
