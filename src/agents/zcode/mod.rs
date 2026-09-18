@@ -12,7 +12,7 @@ use anyhow::Result;
 use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::claude::{ENTRIES, desktop_command, insert_ours, strip_ours};
+use super::claude::{desktop_command, insert_ours, strip_ours};
 use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
@@ -29,9 +29,19 @@ static VARIANTS: [Variant; 1] = [Variant {
     ],
 }];
 
-/// The Claude entries ZCode documents: no PreCompact, PostCompact or SessionEnd events.
+/// The Claude entries ZCode documents, by name — no Skill matcher, no PreCompact,
+/// PostCompact or SessionEnd. A positional `&ENTRIES[..5]` let the T62.1 Skill insert
+/// silently swap SessionStart out of the installed set.
+const ZCODE_ENTRIES: &[(&str, &str)] = &[
+    ("PreToolUse", "Bash"),
+    ("PreToolUse", "Read"),
+    ("PostToolUse", "*"),
+    ("UserPromptSubmit", ""),
+    ("SessionStart", ""),
+];
+
 fn events() -> &'static [(&'static str, &'static str)] {
-    &ENTRIES[..5]
+    ZCODE_ENTRIES
 }
 
 const NAME: &str = "rtok";

@@ -218,11 +218,11 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_names_eight_tables_and_touches_nothing() {
+    fn dry_run_names_nine_tables_and_touches_nothing() {
         let (c, path) = cfg("dry", true);
         fs::write(&path, "# mine\n").unwrap();
         let out = run(&c, false).unwrap();
-        assert!(out.contains("8 additions"), "{out}");
+        assert!(out.contains("9 additions"), "{out}");
         assert!(out.contains("+ [[hooks]] PreToolUse Bash "), "{out}");
         assert_eq!(fs::read_to_string(&path).unwrap(), "# mine\n");
         assert!(!mcp_path(&c).exists());
@@ -237,14 +237,14 @@ mod tests {
             "# kimi config\nmodel = \"k2\"\n\n[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
         )
         .unwrap();
-        assert!(run(&c, false).unwrap().contains("8 additions"));
+        assert!(run(&c, false).unwrap().contains("9 additions"));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.starts_with("# kimi config\nmodel = \"k2\"\n"), "{raw}");
         assert!(raw.contains("command = \"echo other\""), "{raw}");
         let doc: DocumentMut = raw.parse().unwrap();
         let hooks = doc["hooks"].as_array_of_tables().unwrap();
-        assert_eq!(hooks.len(), 9);
+        assert_eq!(hooks.len(), 10);
         let bash = hooks
             .iter()
             .find(|t| t.get("matcher").and_then(Item::as_str) == Some("Bash"))
@@ -259,7 +259,7 @@ mod tests {
         );
         assert_eq!(Kimi.installed(&c, Kind::Cli), ["hooks"]);
 
-        assert_eq!(run(&c, true).unwrap(), "8 removed");
+        assert_eq!(run(&c, true).unwrap(), "9 removed");
         assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
         let raw = fs::read_to_string(&path).unwrap();
         assert!(raw.contains("echo other") && !raw.contains("rtok"), "{raw}");
@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_names_eight_tables_from_vfs() {
+    fn dry_run_names_nine_tables_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         let path = "config.toml";
         vfs.write(path, "# mine\n");
@@ -296,7 +296,7 @@ mod tests {
             let mut doc: DocumentMut = before.parse().unwrap();
             insert_ours(&mut doc, 5).unwrap()
         };
-        assert!(out.contains("8 additions"), "{out}");
+        assert!(out.contains("9 additions"), "{out}");
         assert!(out.contains("+ [[hooks]] PreToolUse Bash "), "{out}");
         assert_eq!(vfs.read_str(path).unwrap(), before);
     }
@@ -309,15 +309,15 @@ mod tests {
             path,
             "# kimi config\nmodel = \"k2\"\n\n[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n",
         );
-        assert!(hooks_roundtrip_vfs(&mut vfs, path, false, 5).contains("8 additions"));
+        assert!(hooks_roundtrip_vfs(&mut vfs, path, false, 5).contains("9 additions"));
         assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false, 5), NO_CHANGES);
         let raw = vfs.read_str(path).unwrap();
         assert!(raw.starts_with("# kimi config\nmodel = \"k2\"\n"), "{raw}");
         assert!(raw.contains("command = \"echo other\""), "{raw}");
         let doc: DocumentMut = raw.parse().unwrap();
         let hooks = doc["hooks"].as_array_of_tables().unwrap();
-        assert_eq!(hooks.len(), 9);
-        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, true, 5), "8 removed");
+        assert_eq!(hooks.len(), 10);
+        assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, true, 5), "9 removed");
         assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, true, 5), NO_CHANGES);
         let raw = vfs.read_str(path).unwrap();
         assert!(raw.contains("echo other") && !raw.contains("rtok"), "{raw}");
@@ -329,7 +329,7 @@ mod tests {
         let path = "Users/Ivan Tuhai/.kimi-code/config.toml";
         vfs.write(path, "# mine\n");
         let out = hooks_roundtrip_vfs(&mut vfs, path, false, 5);
-        assert!(out.contains("8 additions"), "{out}");
+        assert!(out.contains("9 additions"), "{out}");
         assert!(vfs.read_str(path).unwrap().contains("rtok hook"));
     }
 

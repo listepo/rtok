@@ -326,10 +326,10 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_empty_is_eight_additions() {
+    fn dry_run_empty_is_nine_additions() {
         let path = tmp("setup-dry");
         let report = run(&cfg(path.clone(), true), false).unwrap();
-        assert!(report.contains("8 additions"), "{report}");
+        assert!(report.contains("9 additions"), "{report}");
         assert!(
             report.contains("+ SessionEnd rtok hook SessionEnd"),
             "{report}"
@@ -363,7 +363,7 @@ mod tests {
         let path = tmp("setup-apply");
         fs::write(&path, r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#).unwrap();
         let first = run(&cfg(path.clone(), false), false).unwrap();
-        assert!(first.contains("8 additions"), "{first}");
+        assert!(first.contains("9 additions"), "{first}");
         assert_eq!(run(&cfg(path.clone(), false), false).unwrap(), NO_CHANGES);
         let rm = run(&cfg(path.clone(), false), true).unwrap();
         assert!(rm.contains("removed"), "{rm}");
@@ -460,7 +460,7 @@ mod tests {
             r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo other"}]}]}}"#,
         );
         let first = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(first.contains("8 additions"), "{first}");
+        assert!(first.contains("9 additions"), "{first}");
         assert_eq!(hooks_roundtrip_vfs(&mut vfs, path, false), NO_CHANGES);
         let rm = hooks_roundtrip_vfs(&mut vfs, path, true);
         assert!(rm.contains("removed"), "{rm}");
@@ -499,19 +499,19 @@ mod tests {
             let path = "settings.json";
             vfs.write(path, body);
             let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-            assert!(report.contains("8 additions"), "{body} → {report}");
+            assert!(report.contains("9 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(vfs.read_str(path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
     }
 
     #[test]
-    fn dry_run_empty_is_eight_additions_from_vfs() {
+    fn dry_run_empty_is_nine_additions_from_vfs() {
         let mut vfs = crate::testutil::Vfs::new();
         // Absent file → empty object; dry-run style: mutate report only, do not require prior write.
         let path = "Users/Ivan Tuhai/.claude/settings.json";
         let report = hooks_roundtrip_vfs(&mut vfs, path, false);
-        assert!(report.contains("8 additions"), "{report}");
+        assert!(report.contains("9 additions"), "{report}");
         assert!(
             report.contains("+ SessionEnd rtok hook SessionEnd"),
             "{report}"
@@ -533,7 +533,7 @@ mod tests {
             let path = tmp(&format!("setup-shape-{}", body.len()));
             fs::write(&path, body).unwrap();
             let report = run(&cfg(path.clone(), false), false).unwrap();
-            assert!(report.contains("8 additions"), "{body} → {report}");
+            assert!(report.contains("9 additions"), "{body} → {report}");
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
