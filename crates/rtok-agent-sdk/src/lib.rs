@@ -469,6 +469,38 @@ impl PluginLink<'_> {
     }
 }
 
+/// What [`SkillCopy::run`] will do given destination state. Pure so `Vfs` tests
+/// can drive the same decision as the installer without touching the host disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillPlan {
+    /// Copy the hub tree and write [`OWNED_MARKER`].
+    Copy,
+    /// Already installed, already gone, or a foreign tree on remove.
+    NoChanges,
+    /// Destination exists but is not an rtok-owned skill tree.
+    LeaveForeign,
+    /// Delete the owned skill directory.
+    Remove,
+}
+
+/// Decide install / reinstall / remove from destination flags only.
+pub fn skill_plan(remove: bool, dest_exists: bool, owned: bool) -> SkillPlan {
+    if remove {
+        return if owned {
+            SkillPlan::Remove
+        } else {
+            SkillPlan::NoChanges
+        };
+    }
+    if owned {
+        SkillPlan::NoChanges
+    } else if dest_exists {
+        SkillPlan::LeaveForeign
+    } else {
+        SkillPlan::Copy
+    }
+}
+
 /// Hub skill directory (`skills/rtok/`) copied into a host's documented skill root.
 ///
 /// Always an owned directory copy marked with [`OWNED_MARKER`]; foreign skill trees are
@@ -497,46 +529,34 @@ impl SkillCopy {
     /// Copy or remove the hub skill tree. Returns one report line; a dry run describes the
     /// change and touches nothing.
     pub fn run(&self, apply: &Apply, remove: bool) -> Result<String> {
-        if apply.dry_run {
-            if remove {
-                return Ok(if self.owned() {
-                    format!("- skill {}", self.dest_desc())
-                } else {
-                    NO_CHANGES.into()
-                });
-            }
-            if self.owned() {
-                return Ok(NO_CHANGES.into());
-            }
-            if self.dest.exists() {
-                return Ok(format!(
-                    "leave {} (not an rtok skill; remove by hand)",
-                    self.dest.display()
-                ));
-            }
-            return Ok(format!("+ skill → {}", self.dest_desc()));
-        }
-        if remove {
-            if !self.owned() {
-                return Ok(NO_CHANGES.into());
-            }
-            fs::remove_dir_all(&self.dest)?;
-            return Ok(format!("- skill {}", self.dest.display()));
-        }
-        if self.owned() {
-            return Ok(NO_CHANGES.into());
-        }
-        if self.dest.exists() {
-            return Ok(format!(
+        match skill_plan(remove, self.dest.exists(), self.owned()) {
+            SkillPlan::NoChanges => Ok(NO_CHANGES.into()),
+            SkillPlan::LeaveForeign => Ok(format!(
                 "leave {} (not an rtok skill; remove by hand)",
                 self.dest.display()
-            ));
+            )),
+            SkillPlan::Remove => {
+                let report = if apply.dry_run {
+                    format!("- skill {}", self.dest_desc())
+                } else {
+                    format!("- skill {}", self.dest.display())
+                };
+                if apply.writes(&report) {
+                    fs::remove_dir_all(&self.dest)?;
+                }
+                Ok(report)
+            }
+            SkillPlan::Copy => {
+                let report = format!("+ skill → {}", self.dest_desc());
+                if apply.writes(&report) {
+                    if let Some(dir) = self.dest.parent() {
+                        fs::create_dir_all(dir).ok();
+                    }
+                    copy_owned(&self.src, &self.dest)?;
+                }
+                Ok(report)
+            }
         }
-        if let Some(dir) = self.dest.parent() {
-            fs::create_dir_all(dir).ok();
-        }
-        copy_owned(&self.src, &self.dest)?;
-        Ok(format!("+ skill → {}", self.dest_desc()))
     }
 }
 
@@ -1031,6 +1051,17 @@ mod tests {
     }
 
     #[test]
+    fn skill_plan_covers_install_reinstall_remove_and_foreign() {
+        use SkillPlan::*;
+        assert_eq!(skill_plan(false, false, false), Copy);
+        assert_eq!(skill_plan(false, true, true), NoChanges);
+        assert_eq!(skill_plan(false, true, false), LeaveForeign);
+        assert_eq!(skill_plan(true, true, true), Remove);
+        assert_eq!(skill_plan(true, true, false), NoChanges);
+        assert_eq!(skill_plan(true, false, false), NoChanges);
+    }
+
+    #[test]
     fn skill_copy_install_reinstall_remove_keeps_foreign() {
         let dir = tmp("skill-copy");
         let src = dir.join("src");
@@ -1051,7 +1082,10 @@ mod tests {
         assert!(first.starts_with("+ skill"), "{first}");
         assert!(dest.join(OWNED_MARKER).is_file());
         assert_eq!(copy.run(&apply(), false).unwrap(), NO_CHANGES);
-        assert_eq!(copy.run(&apply(), true).unwrap(), format!("- skill {}", dest.display()));
+        assert_eq!(
+            copy.run(&apply(), true).unwrap(),
+            format!("- skill {}", dest.display())
+        );
         assert_eq!(copy.run(&apply(), true).unwrap(), NO_CHANGES);
         assert!(foreign.join("SKILL.md").is_file());
         let _ = fs::remove_dir_all(dir);
@@ -1075,7 +1109,10 @@ mod tests {
         .run(&apply(), false)
         .unwrap();
         assert!(out.contains("leave"), "{out}");
-        assert_eq!(fs::read_to_string(dest.join("SKILL.md")).unwrap(), "# foreign\n");
+        assert_eq!(
+            fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+            "# foreign\n"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }
