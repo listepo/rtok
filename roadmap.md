@@ -6,7 +6,7 @@ View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tas
 
 | Lane | Open rows in `plan.md` |
 |------|------------------------|
-| core / installers / tests | T48.8, T53.3, T53.4, T55.12, T56.2, T56.3, T56.5, T60.1, T60.2, T71.3 |
+| core / installers / tests | T53.3, T53.4, T55.12, T56.2, T56.3, T56.5, T60.1, T60.2, T71.3 |
 | `measure` / `report` / docs | T61.1, T59.8, T64.3, T71.4 |
 | `inject` | T52.3, T53.1, T58.2 |
 | `cmd` / `expand` | T50.1, T58.5, T59.1, T64.1, T64.2, T65.1, T65.2, T65.3, T65.4, T67.2, T71.1 |
