@@ -60,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T70.6 | todo | P3 | 3 | 0% | |
 | T70.7 | todo | P2 | 2 | 0% | |
 | T71.1 | todo | P3 | 3 | 0% | |
-| T71.2 | todo | P3 | 3 | 0% | |
 | T71.3 | todo | P3 | 2 | 0% | |
 | T71.4 | todo | P3 | 2 | 0% | |
 
@@ -436,16 +435,6 @@ Done when:
 2. Output keeps `<title>`, headings (`h1`–`h6` as `# …` lines) and text nodes in document order; `script`, `style`, `nav`, `footer`, `svg`, comments and tags are dropped; whitespace collapsed; entities decoded for the common set (`&amp; &lt; &gt; &quot; &#39; &nbsp;`); the `curl` progress and `HTTP/` status lines stay. A character scanner, no new dependency (an HTML parser crate needs creator approval and a one-line reason).
 3. Lossless: the raw page is archived as today and the `expand <id>` trailer is kept; the head/tail cut of the `[curl]` rule applies after the pass.
 4. `tests/cmd_golden` fixtures: one real page (saved, ≤ 100 KB), one JSON response (untouched), one error; `Measurement { plugin = "cmd", kind = "formatter" }` beats the `[curl]` rule on the page fixture or the formatter is not added; the cmd docs page family table cites the row.
-
-### T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
-
-From I-56 (engram `mem_context`, `research.md` §13; MemPalace Stop-hook checkpoint). T2.5 writes a checkpoint only at `PreCompact`, so a session that ends without compacting leaves nothing: on this machine ≥ 80 % of Claude sessions over 20 KB since 2026-09-14 ended with no note (96 sessions touched, 18 checkpoints — a rough mtime count, `ideas.md` I-56). `SessionEnd` is already registered and dispatched (`src/agents/claude/mod.rs`, unhandled), so the save is one call site. The injection half costs up to `checkpoint_tokens` on every startup, which is why it stays off until measured.
-Done when:
-1. Evidence: `stats` counts sessions with and without a checkpoint note (next to the T58.2 compaction count) and the number replaces the rough one in `research.md` §13 with date and command.
-2. `rtok hook SessionEnd` runs the existing `checkpoint::save` (same extractor and render as `PreCompact`, no second implementation) under kind `session:<session-id>` with the project from the hook cwd; hook ≤ 10 ms, fail open; nothing is injected by this half.
-3. `[plugins.memory] startup_recall = false` (D12 row in the same commit): when `true`, `SessionStart` with `source = "startup"` offers the newest `session:*` note of the project at the checkpoint priority inside `checkpoint_tokens`, rendered by the same function as the compact restore, byte-stable for an unchanged store; `Measurement { plugin = "memory", kind = "handoff" }`.
-4. Hook e2e: end → note exists; start with the key off → bytes identical to today; on → the restore lines present and within budget; a second start → the same bytes.
-5. Stays off by default until a P7-style A/B (T53.1 shape) shows cost per passed task does not rise; the dry result is recorded on the card. Hosts other than Claude Code that register `SessionEnd` get it through the same dispatcher (`docs/agents.md` re-blessed if the reached set changes).
 
 ### T71.3. rtok's own skill, installed with the host plugin
 
