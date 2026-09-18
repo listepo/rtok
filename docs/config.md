@@ -215,6 +215,9 @@ config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--
 config_path   = "~/.codeium/windsurf/mcp_config.json"
 [setup.zed]
 config_path   = "~/.config/zed/settings.json"
+[setup.vscode]
+config_path   = ""                         # empty: Code/User/mcp.json per OS
+insiders_path = ""                         # empty: Code - Insiders/User/mcp.json per OS
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
