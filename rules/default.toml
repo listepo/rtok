@@ -7,6 +7,8 @@ tail = 10
 drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
+group = "dir"
+
 
 [rg]
 max_lines = 40
@@ -15,6 +17,8 @@ tail = 10
 drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
+group = "dir"
+
 
 [sed]
 max_lines = 40
