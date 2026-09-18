@@ -645,6 +645,8 @@ section! {
         sync_tokens: u32 = 300,
         /// Inject last session checkpoint at startup (T71.2); off by default.
         startup_recall: bool = false,
+        /// Sub-agent handoff MCP tool (T59.6); off by default.
+        handoff: bool = false,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }

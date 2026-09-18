@@ -1,5 +1,6 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
+pub mod handoff;
 pub mod export;
 pub mod import;
 pub mod status;
@@ -52,6 +53,7 @@ impl Plugin for Memory {
                 description: "Retire (tombstone, never delete) or pin a note by id.",
                 input_schema: json!({"type":"object","properties":{"id":{"type":"integer"},"retire":{"type":"boolean"},"superseded_by":{"type":"integer"},"pinned":{"type":"boolean"}},"required":["id"]}),
             },
+            handoff::handoff_tool(),
         ]
     }
 

@@ -51,6 +51,10 @@ but the session-local `checkpoint:*` rows — so notes move between machines thr
 you commit or copy (T66.2). An export piped into `import` on a second store inserts each
 row once; a second import skips them all.
 
+## Handoff
+
+`handoff` is an off-by-default MCP tool (`[plugins.memory] handoff = false`) that returns a budgeted session digest for sub-agents (T59.6).
+
 ## Sync
 
 `rtok memory sync [--file CLAUDE.md|AGENTS.md] [--budget N] [--dry-run] [--remove] [--force]`

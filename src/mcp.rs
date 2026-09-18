@@ -236,6 +236,8 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "mem_get" => mem_get(cx, args),
         #[cfg(feature = "memory")]
         "mem_update" => mem_update(cx, args),
+        #[cfg(feature = "memory")]
+        "handoff" => handoff(cx, args),
         #[cfg(feature = "read")]
         "read" => read_file(cx, args),
         #[cfg(feature = "read")]
@@ -584,4 +586,14 @@ mod tests {
         assert_eq!(server.cx.store.count_calls().unwrap(), 0);
         let _ = fs::remove_dir_all(dir);
     }
+}
+
+
+#[cfg(feature = "memory")]
+fn handoff(cx: &Runtime, args: &Value) -> Result<String> {
+    let budget = args["budget_tokens"].as_u64().unwrap_or(800) as u32;
+    Ok(crate::plugins::memory::handoff::handoff(
+        &crate::plugin::Ctx::new(cx),
+        budget,
+    ))
 }
