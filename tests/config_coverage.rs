@@ -26,6 +26,7 @@ const ALLOW: &[&str] = &[
     "grep",    // expand filter; not a stored setting (T3.5)
     "context", // expand grep context window; per call like --grep (T67.2)
     "stdin",   // action: rtok filter reads stdin (T10.2)
+    "archive", // action: rtok filter --archive (T62.3)
     "tool",    // action: rtok guard check --tool (T70.5)
     "call",    // action: rtok mcp --call (T70.3)
     "session", // action: rtok guard check --session (T70.5)
