@@ -106,6 +106,12 @@ impl Store {
     /// `ALTER TABLE … ADD COLUMN`, so a run interrupted between the two used to leave a
     /// column added with no version row, and every later `Store::open` failed on
     /// `duplicate column name` — a store nothing could repair but deletion.
+    ///
+    /// The check and the apply share one `BEGIN EXCLUSIVE` for the same reason across
+    /// processes: hooks, the MCP server and the proxy all open this file, and on a fresh
+    /// store two of them landed in the gap between the `SELECT` and the `ALTER`, so the
+    /// loser died on `duplicate column name`. The read-only pre-check keeps the settled
+    /// case — every open after the first — off the write lock.
     pub fn migrate(&self) -> Result<usize> {
         let mut conn = self.lock()?;
         conn.batch_execute(
@@ -113,27 +119,37 @@ impl Store {
                 name TEXT PRIMARY KEY,
                 applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
         )?;
-        let mut applied = 0;
-        for (name, sql) in MIGRATIONS {
-            let rows: Vec<Count> =
-                sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
-                    .bind::<Text, _>(*name)
-                    .load(&mut *conn)?;
-            if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
-                continue;
-            }
-            conn.transaction::<_, anyhow::Error, _>(|conn| {
+        let done: Vec<Count> =
+            sql_query("SELECT COUNT(*) AS n FROM schema_migrations").load(&mut *conn)?;
+        if done.first().map(|r| r.n).unwrap_or(0) >= MIGRATIONS.len() as i64 {
+            return Ok(0);
+        }
+        // Only a fresh or upgraded store reaches here, and everything else opening it in the
+        // same moment queues behind this one transaction. `open`'s 1 s is the steady-state
+        // bound for a hook; one migration run plus that queue outlives it, and the losers
+        // came back "database is locked". Restored below, so the bound still holds after.
+        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        let applied = conn.exclusive_transaction::<_, anyhow::Error, _>(|conn| {
+            let mut applied = 0;
+            for (name, sql) in MIGRATIONS {
+                let rows: Vec<Count> =
+                    sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
+                        .bind::<Text, _>(*name)
+                        .load(&mut *conn)?;
+                if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
+                    continue;
+                }
                 conn.batch_execute(sql)
                     .with_context(|| format!("migration {name}"))?;
                 sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
                     .bind::<Text, _>(*name)
                     .execute(conn)?;
-                Ok(())
-            })
-            .with_context(|| format!("migration {name}"))?;
-            applied += 1;
-        }
-        Ok(applied)
+                applied += 1;
+            }
+            Ok(applied)
+        });
+        conn.batch_execute("PRAGMA busy_timeout = 1000;")?;
+        applied
     }
 
     /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
@@ -2041,6 +2057,28 @@ mod tests {
         .load(&mut *conn)
         .unwrap();
         assert_eq!(rows[0].n, 6);
+    }
+
+    /// Every surface opens the same file, so a fresh store is migrated by whichever of them
+    /// starts first — and the others start at the same moment. Each `Store::open` is its own
+    /// connection, so these threads race exactly as separate processes do: before the
+    /// exclusive transaction, the losers failed on `duplicate column name: mtime` (0007).
+    #[test]
+    fn concurrent_opens_of_a_fresh_store_all_migrate() {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("rtok.db");
+        let errs: Vec<String> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| s.spawn(|| Store::open(&path).map(|_| ()).map_err(|e| format!("{e:#}"))))
+                .collect();
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().unwrap().err())
+                .collect()
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(errs.is_empty(), "{errs:?}");
     }
 
     /// T69.1: a `rtok.db` of the previous schema (0001–0014, one note) migrates in place —
