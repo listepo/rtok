@@ -40,6 +40,10 @@ const ALLOW_KEYS: &[&str] = &[
     "graph.index.dry_run",
     // `memory export --project` narrows one dump; the store, not a setting, decides it.
     "memory.export.project",
+    // `memory retire/revise` (T69.1): one-shot lifecycle values on a single call, not settings.
+    "memory.retire.superseded_by",
+    "memory.revise.title",
+    "memory.revise.body",
 ];
 
 #[test]

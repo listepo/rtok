@@ -301,6 +301,27 @@ enum MemoryCmd {
         #[arg(long)]
         project: Option<String>,
     },
+    /// Retire a note: a tombstone — never recalled or searched, body kept (T69.1)
+    Retire {
+        id: i32,
+        /// The replacement note id this one is superseded by
+        #[arg(long)]
+        superseded_by: Option<i32>,
+    },
+    /// Pin a note so it leads SessionStart recall (T69.1)
+    Pin { id: i32 },
+    /// Drop a note back to newest-first recall order (T69.1)
+    Unpin { id: i32 },
+    /// Save a replacement (title, body) for a note and retire the old row (T69.1)
+    Revise {
+        id: i32,
+        /// The replacement title
+        #[arg(long)]
+        title: String,
+        /// The replacement body
+        #[arg(long)]
+        body: String,
+    },
 }
 
 #[cfg(feature = "graph")]
@@ -773,6 +794,36 @@ pub fn run() -> Result<()> {
                 MemoryCmd::Export { project } => {
                     let mut out = io::stdout().lock();
                     crate::plugins::memory::export::run(&cfg, project.as_deref(), &mut out)?;
+                }
+                MemoryCmd::Retire { id, superseded_by } => {
+                    let cx = crate::plugin::Runtime::open(cfg, "memory")?;
+                    println!(
+                        "{}",
+                        crate::plugins::memory::mem_update(&cx, id, true, superseded_by, None)?
+                    );
+                }
+                MemoryCmd::Pin { id } => {
+                    let cx = crate::plugin::Runtime::open(cfg, "memory")?;
+                    println!(
+                        "{}",
+                        crate::plugins::memory::mem_update(&cx, id, false, None, Some(true))?
+                    );
+                }
+                MemoryCmd::Unpin { id } => {
+                    let cx = crate::plugin::Runtime::open(cfg, "memory")?;
+                    println!(
+                        "{}",
+                        crate::plugins::memory::mem_update(&cx, id, false, None, Some(false))?
+                    );
+                }
+                MemoryCmd::Revise { id, title, body } => {
+                    let cx = crate::plugin::Runtime::open(cfg, "memory")?;
+                    let (new, retired) =
+                        crate::plugins::memory::mem_revise(&cx, id, &title, &body)?;
+                    match retired {
+                        Some(old) => println!("revised note {old} → {new}"),
+                        None => println!("updated note {new} in place"),
+                    }
                 }
             }
         }

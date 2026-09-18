@@ -42,6 +42,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0012.sql", include_str!("../../migrations/0012.sql")),
     ("0013.sql", include_str!("../../migrations/0013.sql")),
     ("0014.sql", include_str!("../../migrations/0014.sql")),
+    ("0015.sql", include_str!("../../migrations/0015.sql")),
 ];
 
 pub struct Store {
@@ -664,6 +665,10 @@ impl Store {
                 .set((
                     notes::body.eq(body),
                     notes::ts.eq(diesel::dsl::sql::<BigInt>("unixepoch()")),
+                    // An explicit re-save revives the topic: a retired tombstone does not
+                    // outlive the human/agent writing the note again (T69.1).
+                    notes::retired.eq(None::<i64>),
+                    notes::superseded_by.eq(None::<i32>),
                 ))
                 .execute(&mut *conn)?;
             return Ok((id, true));
@@ -704,7 +709,8 @@ impl Store {
     }
 
     /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
-    /// Newest note titles for SessionStart recall (T6.2). Never bodies.
+    /// Newest note titles for SessionStart recall (T6.2). Never bodies. Retired notes
+    /// never recall; pinned ones lead (then newest-first) and both orders are id-stable.
     pub fn list_note_titles(
         &self,
         project: Option<&str>,
@@ -713,7 +719,8 @@ impl Store {
         let mut conn = self.lock()?;
         let lim = i64::from(limit.max(1));
         let mut q = notes::table
-            .order(notes::id.desc())
+            .filter(notes::retired.is_null())
+            .order((notes::pinned.desc(), notes::id.desc()))
             .limit(lim)
             .select((notes::id, notes::title))
             .into_boxed();
@@ -721,6 +728,51 @@ impl Store {
             q = q.filter(notes::project.eq(p));
         }
         q.load(&mut *conn).map_err(Into::into)
+    }
+
+    /// One note's lifecycle row (T69.1): kind/project for a revise, the retired line and
+    /// pinned flag for `mem_get` / `mem_update`.
+    pub fn note_row(&self, id: i32) -> Result<Option<NoteRow>> {
+        let mut conn = self.lock()?;
+        notes::table
+            .find(id)
+            .select((
+                notes::id,
+                notes::project,
+                notes::kind,
+                notes::title,
+                notes::body,
+                notes::retired,
+                notes::superseded_by,
+                notes::pinned,
+            ))
+            .first::<NoteRow>(&mut *conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Retire `id` — a tombstone, not a delete (D4): recall and search skip the note,
+    /// `mem_get` keeps returning the body with a `retired` prefix. `superseded_by` names
+    /// the replacement note. Returns `false` for an unknown id.
+    pub fn retire_note(&self, id: i32, superseded_by: Option<i32>) -> Result<bool> {
+        let mut conn = self.lock()?;
+        let n = diesel::update(notes::table.find(id))
+            .set((
+                notes::retired.eq(diesel::dsl::sql::<Nullable<BigInt>>("unixepoch()")),
+                notes::superseded_by.eq(superseded_by),
+            ))
+            .execute(&mut *conn)?;
+        Ok(n == 1)
+    }
+
+    /// Pin or unpin `id`; pinned notes lead recall (T69.1). Returns `false` for an
+    /// unknown id.
+    pub fn set_note_pinned(&self, id: i32, pinned: bool) -> Result<bool> {
+        let mut conn = self.lock()?;
+        let n = diesel::update(notes::table.find(id))
+            .set(notes::pinned.eq(i32::from(pinned)))
+            .execute(&mut *conn)?;
+        Ok(n == 1)
     }
 
     /// All note bodies (for import dedupe, T6.3).
@@ -757,7 +809,7 @@ impl Store {
         let hits = sql_query(
             "SELECT n.id AS id, n.title AS title, substr(n.body, 1, 120) AS snippet
              FROM notes_fts f JOIN notes n ON n.id = f.rowid
-             WHERE notes_fts MATCH ?
+             WHERE notes_fts MATCH ? AND n.retired IS NULL
              ORDER BY bm25(notes_fts)
              LIMIT ?",
         )
@@ -1410,6 +1462,27 @@ struct NoteHitRow {
     snippet: String,
 }
 
+/// One `notes` row's lifecycle-relevant fields (T69.1): revise needs `kind`/`project`,
+/// `mem_get` prefixes retired rows, recall orders by `pinned`. Field order matches
+/// [`Store::note_row`]'s select.
+#[derive(Debug, Clone, Queryable)]
+pub struct NoteRow {
+    pub id: i32,
+    pub project: Option<String>,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub retired: Option<i64>,
+    pub superseded_by: Option<i32>,
+    pub pinned: i32,
+}
+
+impl NoteRow {
+    pub fn is_pinned(&self) -> bool {
+        self.pinned != 0
+    }
+}
+
 /// One `measurements` row for `stats --plugin`.
 #[derive(Debug, Queryable)]
 pub struct MeasRow {
@@ -1620,6 +1693,57 @@ mod tests {
         .load(&mut *conn)
         .unwrap();
         assert_eq!(rows[0].n, 6);
+    }
+
+    /// T69.1: a `rtok.db` of the previous schema (0001–0014, one note) migrates in place —
+    /// 0015 adds the lifecycle columns with live defaults and the note survives retiring.
+    #[test]
+    fn migration_0015_adds_lifecycle_columns_to_a_previous_schema_db() {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-0015-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("rtok.db");
+        {
+            let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
+            conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
+                .unwrap();
+            conn.batch_execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
+            )
+            .unwrap();
+            for (name, sql) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+                conn.batch_execute(sql).unwrap();
+                sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
+                    .bind::<Text, _>(*name)
+                    .execute(&mut conn)
+                    .unwrap();
+            }
+            sql_query(
+                "INSERT INTO notes (ts, kind, title, body)
+                 VALUES (1, 'note', 'old', 'before the lifecycle')",
+            )
+            .execute(&mut conn)
+            .unwrap();
+        }
+        let store = Store::open(&db).unwrap();
+        let row = store.note_row(1).unwrap().unwrap();
+        assert_eq!(
+            (
+                row.title.as_str(),
+                row.retired,
+                row.superseded_by,
+                row.pinned
+            ),
+            ("old", None, None, 0)
+        );
+        assert!(store.retire_note(1, None).unwrap());
+        assert!(
+            store.search_notes("before", 5).unwrap().is_empty(),
+            "retired note does not search"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -5,7 +5,7 @@ progressive disclosure.
 
 | | |
 |---|---|
-| Surfaces | MCP `mem_save`, `mem_search`, `mem_get`; PreCompact checkpoint; SessionStart recall |
+| Surfaces | MCP `mem_save`, `mem_search`, `mem_get`, `mem_update`; PreCompact checkpoint; SessionStart recall |
 | Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 
@@ -14,8 +14,22 @@ progressive disclosure.
 - `mem_save(kind, title, body, project?)` — project defaults to the git root name of cwd.
   The title is the topic key: a second save with the same project, kind and title updates
   that row (`{"id", "updated": true}`) instead of adding a stale twin to recall (T66.1).
+  An explicit re-save of a retired topic revives it (clears the tombstone).
 - `mem_search(query, limit=5)` — ids, titles, 120-char snippets ranked by FTS5 `bm25`.
-- `mem_get(id)` — full body.
+  Retired notes never appear.
+- `mem_get(id)` — full body. A retired note still returns its body, prefixed by one line
+  `retired <ts>[, superseded by <id>]`.
+- `mem_update(id, retire?, superseded_by?, pinned?)` — the lifecycle (T69.1): `retire`
+  tombstones the id (never deletes), `superseded_by` names the replacement, `pinned`
+  pins/unpins. The same operations run as `rtok memory retire|pin|unpin` and
+  `rtok memory revise <id> --title --body` (revise = save the replacement through the
+  `mem_save` path, then retire the old id naming it).
+
+## Lifecycle
+
+Retire, supersede, pin — never delete (D4). A retired note is skipped by recall and search
+but keeps its body readable through `mem_get`; pinned notes lead the SessionStart recall
+ahead of newest-first order; both orders are byte-stable for an unchanged store.
 
 ## Hooks
 

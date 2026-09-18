@@ -61,6 +61,9 @@ diesel::table! {
         kind -> Text,
         title -> Text,
         body -> Text,
+        retired -> Nullable<BigInt>,
+        superseded_by -> Nullable<Integer>,
+        pinned -> Integer,
     }
 }
 

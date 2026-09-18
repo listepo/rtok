@@ -63,6 +63,24 @@ fn web_serves_exactly_the_pages_the_model_offers() {
     );
 }
 
+/// T60.10: the TUI's page match has no placeholder fallback any more, so a model
+/// page without a TUI body names itself here. The check reads the match arms out of
+/// `src/tui/view.rs` — the same source-scan shape the WASM `PAGE_IDS` check uses.
+#[test]
+fn every_model_page_has_a_tui_body() {
+    let view = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tui/view.rs"),
+    )
+    .expect("src/tui/view.rs is readable");
+    for (page, _) in model::pages() {
+        assert!(
+            view.contains(&format!("\"{page}\" =>")),
+            "page `{page}` has no TUI body in src/tui/view.rs — the placeholder that used to \
+             hide the gap is gone (T60.10), so the page must render for real"
+        );
+    }
+}
+
 /// T19.4: the Slint WASM UI's tab bar is `model::pages()`, not a second list. The webui
 /// crate is outside the workspace (wasm toolchain), so this reads its `PAGE_IDS` from
 /// source — the same pin `rtok-webui`'s own `page_ids_cover_the_d23_set` holds locally.
@@ -165,6 +183,13 @@ const EXEMPT: &[(&str, &str)] = &[
     ("config set", "edits one key in the user file"),
     ("bench", "runs the A/B schedule and writes Measurement rows"),
     ("memory import", "inserts note rows"),
+    (
+        "memory retire",
+        "tombstones a note row; the Memory page renders the notes, not the verdict (T69.1)",
+    ),
+    ("memory pin", "flags a note row to lead recall (T69.1)"),
+    ("memory unpin", "drops the recall lead flag (T69.1)"),
+    ("memory revise", "replaces and retires note rows (T69.1)"),
     ("graph index", "walks a tree and inserts symbol rows"),
     ("demon start", "starts the supervisor"),
     ("demon stop", "asks the supervisor and its child to exit"),

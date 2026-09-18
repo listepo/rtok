@@ -234,6 +234,8 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "mem_search" => mem_search(cx, args),
         #[cfg(feature = "memory")]
         "mem_get" => mem_get(cx, args),
+        #[cfg(feature = "memory")]
+        "mem_update" => mem_update(cx, args),
         #[cfg(feature = "read")]
         "read" => read_file(cx, args),
         #[cfg(feature = "read")]
@@ -331,8 +333,22 @@ fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
         .as_i64()
         .and_then(|n| i32::try_from(n).ok())
         .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
-    crate::plugins::memory::mem_get(&crate::plugin::Ctx::new(cx), id)?
+    crate::plugins::memory::mem_get(cx, id)?
         .ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
+}
+
+#[cfg(feature = "memory")]
+fn mem_update(cx: &Runtime, args: &Value) -> Result<String> {
+    let id = args["id"]
+        .as_i64()
+        .and_then(|n| i32::try_from(n).ok())
+        .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
+    let retire = args["retire"].as_bool().unwrap_or(false);
+    let superseded_by = args["superseded_by"]
+        .as_i64()
+        .and_then(|n| i32::try_from(n).ok());
+    let pinned = args["pinned"].as_bool();
+    crate::plugins::memory::mem_update(cx, id, retire, superseded_by, pinned)
 }
 
 fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) -> Result<()> {

@@ -186,7 +186,7 @@ impl Store {
                     e.vector AS vector, e.dims AS dims
              FROM note_embeddings e
              JOIN notes n ON n.id = e.note_id
-             WHERE e.model = ? AND e.dims = ?",
+             WHERE e.model = ? AND e.dims = ? AND n.retired IS NULL",
         )
         .bind::<Text, _>(model_key(cfg))
         .bind::<Integer, _>(dims(cfg))
