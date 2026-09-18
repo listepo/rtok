@@ -16,7 +16,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.2 | todo | P2 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
-| T63.1 | todo | P3 | 3 | 0% | |
+| T63.1 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
@@ -111,6 +111,13 @@ Done when (if step 1 passes) the plugin routes that tool's output through `rtok 
 
 Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: which of the 66 listed skills (`research.md` §10.2, this machine) were ever invoked, which never, how many bytes each body is, and how much of the input a session carried as skill bodies. `rtok stats` gains the numbers in T61.1 and `doctor` the audit in T61.3; this task renders both on the same page.
 Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
+
+
+Execution plan:
+1. `model::skills_from` joins T61.3 listing with T61.1 resident/count; snapshot `skills` key; `pages()` gains `("skills", "skills")`.
+2. TUI tab: table + header, `↑/↓` / `n`; TestBackend three skills (one never).
+3. Web: same rows, checkbox filter; Slint e2e.
+4. `tests/surface_parity.rs` pins the page on both; close the card.
 
 
 
