@@ -407,6 +407,13 @@ Check: `rtok bench --suite graph --runs 1 --dry-run` prints 24 lines `{id} {repo
 
 **Live API clause remains open.** `RTOK_BENCH_LIVE` was not set; no `claude -p` spend. Dated live numbers are not in `research.md` / `docs/comparison.md`; those files record the suite and the dry-run command only.
 
+## T60.5 — Plugin toggle on the web Plugins page
+
+The TUI Plugins tab toggles `plugins.<id>.enabled` through `config set`; the web page renders the same rows read-only and `src/web/mod.rs` has no inbound WebSocket message at all (survey 2026-09-17) — a D23 defect.
+Done when the web Plugins page has the same toggle, sent as one inbound WebSocket message `{"set": {"key": "plugins.<id>.enabled", "value": bool}}` handled by the same `config set` function the TUI and CLI use (keys limited to that allow-list; anything else is refused with a message frame), the next snapshot reflects it, `tests/web.rs` covers accept and refuse, and the Slint e2e test clicks the toggle.
+
+**Result (2026-09-18).** Commits `e66e2e5` (inbound `/ws` `set` through `validate::set`) and `633fbd6` (Slint toggle + WASM send + e2e click). Allow-list is `plugins.<id>.enabled` where `id` is a catalogue plugin from `Registry::manifests` (D23: no second list); anything else, a non-bool `value`, or a `config set` error is a `{"type":"message","text":...}` frame. The next snapshot reloads Config so the Plugins rows match the file. `tests/web.rs` `ws_set_accepts_plugin_enabled` / `ws_set_refuses_other_keys` green; `plugin_toggle_click_sends_the_set` green under `SLINT_EMIT_DEBUG_INFO=1`.
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`

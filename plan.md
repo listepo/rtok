@@ -16,7 +16,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.2 | todo | P2 | 3 | 0% | |
 | T60.3 | todo | P3 | 3 | 0% | |
 | T60.4 | todo | P3 | 4 | 0% | |
-| T60.5 | todo | P2 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
@@ -107,10 +106,6 @@ Done when Enter on a Sessions row (TUI) and a click (web) open a detail pane wit
 Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
 Done when a Calls row with an archive id opens the payload in a scrollable pane — `e` on the TUI, a button on the web — through `expand::fetch` with `--lines`/`--grep` parity (a `/` filter on the TUI, a filter box on the web); the web path is one inbound WebSocket request `{"expand": id}` answered with the payload, capped by `[expand] max_lines` like the CLI; fetching a live-zone pointer freezes it exactly as the CLI does (same function, no second path); tests: TUI `TestBackend` on a fixture store, `tests/web.rs` request/response, and `surface_parity` lists the page on both.
 
-### T60.5. Plugin toggle on the web Plugins page
-
-The TUI Plugins tab toggles `plugins.<id>.enabled` through `config set`; the web page renders the same rows read-only and `src/web/mod.rs` has no inbound WebSocket message at all (survey 2026-09-17) — a D23 defect.
-Done when the web Plugins page has the same toggle, sent as one inbound WebSocket message `{"set": {"key": "plugins.<id>.enabled", "value": bool}}` handled by the same `config set` function the TUI and CLI use (keys limited to that allow-list; anything else is refused with a message frame), the next snapshot reflects it, `tests/web.rs` covers accept and refuse, and the Slint e2e test clicks the toggle.
 
 ### T61.2. Archive skill bodies outside the live zone
 

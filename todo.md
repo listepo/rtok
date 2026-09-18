@@ -10,7 +10,6 @@
 - T60.2. trycmd goldens for every subcommand
 - T60.3. Per-session drill-down on `tui` and `web`
 - T60.4. Archive `expand` on `tui` and `web`
-- T60.5. Plugin toggle on the web Plugins page
 - T60.8. TUI help overlay and manual refresh
 - T61.1. `stats` counts injected skill bodies
 - T61.2. Archive skill bodies outside the live zone
