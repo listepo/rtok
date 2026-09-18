@@ -181,6 +181,7 @@ one command away:
 rtok expand 7f3a91                    # the whole thing
 rtok expand 7f3a91 --lines 120-180    # just that range
 rtok expand 7f3a91 --grep "panicked"  # just the matches, as N:line (regex)
+rtok expand 7f3a91 --grep "panicked" --context 3  # matches with 3 lines around each, windows merged with --
 rtok expand 7f3a91 --lines 210-230    # then the lines around hit 214
 ```
 

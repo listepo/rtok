@@ -24,8 +24,8 @@ use crate::tokens::Class;
 fn expand_def() -> ToolDef {
     ToolDef {
         name: "expand",
-        description: "Return archived payload by id; optional lines a-b and regex grep (hits as N:line).",
-        input_schema: json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"string"},"grep":{"type":"string"}},"required":["id"]}),
+        description: "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
+        input_schema: json!({"type":"object","properties":{"id":{"type":"string"},"lines":{"type":"string"},"grep":{"type":"string"},"context":{"type":"integer"}},"required":["id"]}),
     }
 }
 
@@ -259,7 +259,13 @@ fn expand_text(cx: &Runtime, args: &Value) -> Result<String> {
         bail!("unknown archive id: {id}");
     };
     let text = String::from_utf8_lossy(&bytes);
-    let body = slice(&text, args["lines"].as_str(), args["grep"].as_str())?;
+    let context = args["context"].as_u64().map_or(0, |n| n as usize);
+    let body = slice(
+        &text,
+        args["lines"].as_str(),
+        args["grep"].as_str(),
+        context,
+    )?;
     Ok(cap_result(
         &body,
         id,
@@ -267,8 +273,8 @@ fn expand_text(cx: &Runtime, args: &Value) -> Result<String> {
     ))
 }
 
-fn slice(text: &str, lines: Option<&str>, grep: Option<&str>) -> Result<String> {
-    Ok(crate::expand::filter_lines(text, lines, grep)?.join("\n"))
+fn slice(text: &str, lines: Option<&str>, grep: Option<&str>, context: usize) -> Result<String> {
+    Ok(crate::expand::filter_lines(text, lines, grep, context)?.join("\n"))
 }
 
 fn cap_result(text: &str, id: &str, max: usize) -> String {
@@ -419,9 +425,29 @@ mod tests {
             .map(|n| format!("L{n}"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(slice(&text, Some("10"), None).unwrap(), "L10\nL11\nL12");
-        assert_eq!(slice(&text, Some("10-10"), None).unwrap(), "L10");
-        assert!(slice(&text, Some("wat"), None).is_err());
+        assert_eq!(slice(&text, Some("10"), None, 0).unwrap(), "L10\nL11\nL12");
+        assert_eq!(slice(&text, Some("10-10"), None, 0).unwrap(), "L10");
+        assert!(slice(&text, Some("wat"), None, 0).is_err());
+    }
+
+    /// T67.2: the MCP `expand` accepts `context` like the CLI `--context`, windows
+    /// merged with `--`, absolute numbers, under the same `max_result_chars` cap.
+    #[test]
+    fn expand_text_context_returns_merged_windows() {
+        let (cfg, dir) = tmp("mcp-ctx");
+        let cx = crate::plugin::Runtime::open(cfg, "mcp-ctx").unwrap();
+        let body = "a\nHIT\nb\nc\nd\ne\nHIT\nf\n";
+        let id = cx
+            .store
+            .put_archive("mcp", body.as_bytes(), &cx.config.core.archive_dir)
+            .unwrap();
+        let args = serde_json::json!({"id": id, "grep": "HIT", "context": 1});
+        let out = expand_text(&cx, &args).unwrap();
+        assert_eq!(out, "1:a\n2:HIT\n3:b\n--\n6:e\n7:HIT\n8:f");
+        // Without `context` the hits stay bare, as before.
+        let args = serde_json::json!({"id": id, "grep": "HIT"});
+        assert_eq!(expand_text(&cx, &args).unwrap(), "2:HIT\n7:HIT");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[rstest]

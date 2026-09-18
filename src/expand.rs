@@ -52,7 +52,17 @@ pub fn slice_lines<T>(lines: Vec<T>, a: usize, b: usize) -> Vec<T> {
 /// prints as `N:line`, numbered by its position in the archived payload, so a following
 /// `--lines a-b` can pull the context around a hit instead of the whole body — the
 /// search-then-slice loop of recursive-llm (`research.md` §12, T66.1).
-pub fn filter_lines(text: &str, lines: Option<&str>, grep: Option<&str>) -> Result<Vec<String>> {
+///
+/// `context` (T67.2, `--context N`, per call like `--grep`): with `grep`, print each hit
+/// with N lines on either side, windows that overlap or touch merged into one block and
+/// blocks separated by `--`. Numbers stay absolute; without `grep` it is ignored, and 0
+/// keeps the hits-only output.
+pub fn filter_lines(
+    text: &str,
+    lines: Option<&str>,
+    grep: Option<&str>,
+    context: usize,
+) -> Result<Vec<String>> {
     let mut out: Vec<(usize, &str)> = text.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
     if let Some(spec) = lines {
         let (a, b) = parse_range(spec, out.len())?;
@@ -62,11 +72,34 @@ pub fn filter_lines(text: &str, lines: Option<&str>, grep: Option<&str>) -> Resu
         return Ok(out.into_iter().map(|(_, l)| l.to_string()).collect());
     };
     let re = Regex::new(g).or_else(|_| Regex::new(&regex::escape(g)))?;
-    Ok(out
-        .into_iter()
-        .filter(|(_, l)| re.is_match(l))
-        .map(|(n, l)| format!("{n}:{l}"))
-        .collect())
+    if context == 0 {
+        return Ok(out
+            .into_iter()
+            .filter(|(_, l)| re.is_match(l))
+            .map(|(n, l)| format!("{n}:{l}"))
+            .collect());
+    }
+    // Inclusive `out`-index windows `[hit-N, hit+N]`, union of overlapping or adjacent.
+    let mut windows: Vec<(usize, usize)> = Vec::new();
+    for (i, (_, l)) in out.iter().enumerate() {
+        if !re.is_match(l) {
+            continue;
+        }
+        let lo = i.saturating_sub(context);
+        let hi = (i + context).min(out.len() - 1);
+        match windows.last_mut() {
+            Some(last) if lo <= last.1 + 1 => last.1 = last.1.max(hi),
+            _ => windows.push((lo, hi)),
+        }
+    }
+    let mut rendered: Vec<String> = Vec::new();
+    for (w, (lo, hi)) in windows.iter().enumerate() {
+        if w > 0 {
+            rendered.push("--".to_string());
+        }
+        rendered.extend(out[*lo..=*hi].iter().map(|(n, l)| format!("{n}:{l}")));
+    }
+    Ok(rendered)
 }
 
 /// Head and tail of `text` around `marker`, at most `max` chars in total. Shared by the
@@ -105,9 +138,10 @@ pub(crate) fn render_lines(
     id: &str,
     lines: Option<&str>,
     grep: Option<&str>,
+    context: usize,
     max_lines: u32,
 ) -> Result<String> {
-    let mut out = filter_lines(text, lines, grep)?;
+    let mut out = filter_lines(text, lines, grep, context)?;
     let omitted = cap_lines(&mut out, max_lines);
     let mut rendered = out.join("\n");
     if omitted > 0 {
@@ -120,8 +154,14 @@ pub(crate) fn render_lines(
 }
 
 /// Print the archived payload. `--lines a-b` is 1-based inclusive; `--grep` is a regex whose
-/// hits come back `N:`-numbered (see [`filter_lines`]).
-pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> Result<()> {
+/// hits come back `N:`-numbered (see [`filter_lines`]); `--context N` widens those hits.
+pub fn run(
+    cfg: &Config,
+    id: &str,
+    lines: Option<&str>,
+    grep: Option<&str>,
+    context: usize,
+) -> Result<()> {
     // Validate before fetch: fetching a live-zone pointer freezes it. A malformed
     // range must not mutate archive state even though no payload can be printed.
     if let Some(spec) = lines {
@@ -137,7 +177,7 @@ pub fn run(cfg: &Config, id: &str, lines: Option<&str>, grep: Option<&str>) -> R
         return Ok(());
     }
     let text = String::from_utf8_lossy(&bytes);
-    let rendered = render_lines(&text, id, lines, grep, max_lines)?;
+    let rendered = render_lines(&text, id, lines, grep, context, max_lines)?;
     if !rendered.is_empty() {
         println!("{rendered}");
     }
@@ -186,14 +226,14 @@ mod tests {
     #[test]
     fn malformed_range_is_rejected_before_archive_lookup() {
         let c = cfg("bad-range");
-        let err = run(&c, "no-such", Some("3-2"), None).unwrap_err();
+        let err = run(&c, "no-such", Some("3-2"), None, 0).unwrap_err();
         assert!(err.to_string().contains("invalid line range"), "{err}");
     }
 
     #[test]
     fn unknown_id_is_err() {
         let c = cfg("unknown");
-        let err = run(&c, "no-such", None, None).unwrap_err();
+        let err = run(&c, "no-such", None, None, 0).unwrap_err();
         assert!(err.to_string().contains("unknown archive id"), "{err}");
     }
 
@@ -212,7 +252,7 @@ mod tests {
             .unwrap();
         assert_eq!(got, b"hello\nworld\n");
         drop(cx);
-        run(&c, &id, None, None).unwrap();
+        run(&c, &id, None, None, 0).unwrap();
     }
 
     #[test]
@@ -242,7 +282,7 @@ mod tests {
             .unwrap();
         std::fs::remove_file(c.core.archive_dir.join(&id)).unwrap();
         drop(cx);
-        let err = run(&c, &id, None, None).unwrap_err();
+        let err = run(&c, &id, None, None, 0).unwrap_err();
         assert!(err.to_string().contains("unknown archive id"), "{err}");
     }
 
@@ -301,24 +341,98 @@ mod tests {
     fn grep_is_regex_numbered_by_archive_line_and_falls_back_to_literal() {
         let text = "alpha\nerror[E0308]: mismatched\nbeta\nerror[E0599]: no method\n";
         assert_eq!(
-            filter_lines(text, None, Some(r"error\[E0\d+\]")).unwrap(),
+            filter_lines(text, None, Some(r"error\[E0\d+\]"), 0).unwrap(),
             ["2:error[E0308]: mismatched", "4:error[E0599]: no method"]
         );
         // Numbers stay absolute inside a range.
         assert_eq!(
-            filter_lines(text, Some("3-4"), Some("error")).unwrap(),
+            filter_lines(text, Some("3-4"), Some("error"), 0).unwrap(),
             ["4:error[E0599]: no method"]
         );
         // An unclosed bracket is not a regex: match it literally, never error.
         assert_eq!(
-            filter_lines(text, None, Some("[E0308")).unwrap(),
+            filter_lines(text, None, Some("[E0308"), 0).unwrap(),
             ["2:error[E0308]: mismatched"]
         );
-        // Without grep the output is the bare lines, as before.
+        // Without grep the output is the bare lines, as before (context is ignored too).
         assert_eq!(
-            filter_lines(text, Some("1-2"), None).unwrap(),
+            filter_lines(text, Some("1-2"), None, 7).unwrap(),
             ["alpha", "error[E0308]: mismatched"]
         );
+    }
+
+    /// T67.2: `context N` widens each grep hit to `[hit-N, hit+N]` with absolute numbers;
+    /// windows that overlap or touch merge into one block and blocks separate on `--`.
+    #[test]
+    fn context_windows_merge_and_separate_on_dash_dash() {
+        let text = "a1\na2\nHIT\na4\na5\nb1\nHIT\nb3\nb4\nb5\n";
+        // Hits at lines 3 and 7, context 2: windows [1,5] and [5,9] overlap → one block.
+        assert_eq!(
+            filter_lines(text, None, Some("HIT"), 2).unwrap(),
+            [
+                "1:a1", "2:a2", "3:HIT", "4:a4", "5:a5", "6:b1", "7:HIT", "8:b3", "9:b4",
+            ]
+        );
+        // Hits at lines 2 and 9, context 1: a gap between the windows keeps both and the `--`.
+        let spread = "h1\nHIT\nx3\nx4\nx5\nx6\nx7\nx8\nHIT\n";
+        assert_eq!(
+            filter_lines(spread, None, Some("HIT"), 1).unwrap(),
+            ["1:h1", "2:HIT", "3:x3", "--", "8:x8", "9:HIT"]
+        );
+    }
+
+    /// A window at either edge clamps to the file instead of under- or overflowing.
+    #[test]
+    fn context_windows_clamp_at_the_file_edges() {
+        assert_eq!(
+            filter_lines("HIT\nb\n", None, Some("HIT"), 3).unwrap(),
+            ["1:HIT", "2:b"]
+        );
+        assert_eq!(
+            filter_lines("a\nHIT", None, Some("HIT"), 3).unwrap(),
+            ["1:a", "2:HIT"]
+        );
+    }
+
+    /// With `--lines` the windows are computed inside the slice but the numbers stay
+    /// absolute, matching how bare hits number today.
+    #[test]
+    fn context_inside_a_lines_range_keeps_absolute_numbers() {
+        let text = "l1\nl2\nhit\nl4\nl5\nl6\nhit\nl8\n";
+        assert_eq!(
+            filter_lines(text, Some("2-8"), Some("hit"), 1).unwrap(),
+            ["2:l2", "3:hit", "4:l4", "--", "6:l6", "7:hit", "8:l8"]
+        );
+    }
+
+    /// `context 0` (the default) is byte-identical to the old hits-only output, and the
+    /// joined output still answers to `[expand] max_lines` with its trailer.
+    #[test]
+    fn context_zero_is_the_old_output_and_max_lines_still_caps() {
+        let text: String = (1..=20)
+            .map(|n| {
+                if n == 10 || n == 16 {
+                    "hit".into()
+                } else {
+                    format!("l{n}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            filter_lines(&text, None, Some("hit"), 0).unwrap(),
+            ["10:hit", "16:hit"]
+        );
+        // Hits at 10 and 16, context 3: windows [7,13] and [13,19] merge to 13 lines.
+        let wide = filter_lines(&text, None, Some("hit"), 3).unwrap();
+        assert_eq!(wide.len(), 13);
+        assert!(wide.iter().all(|l| l != "--"));
+        let out = render_lines(&text, "arc123", None, Some("hit"), 3, 5).unwrap();
+        assert_eq!(
+            out.lines().filter(|l| !l.contains("lines omitted")).count(),
+            5
+        );
+        assert!(out.contains("8 lines omitted (expand arc123)"), "{out}");
     }
 
     #[test]
@@ -346,7 +460,7 @@ mod tests {
             .map(|n| format!("line{n}"))
             .collect::<Vec<_>>()
             .join("\n");
-        let out = render_lines(&text, "arc123", None, None, 100).unwrap();
+        let out = render_lines(&text, "arc123", None, None, 0, 100).unwrap();
         assert_eq!(
             out.lines().filter(|l| !l.contains("lines omitted")).count(),
             100

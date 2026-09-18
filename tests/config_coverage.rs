@@ -24,6 +24,7 @@ const ALLOW: &[&str] = &[
     "sources", // action: annotates `config show`; not a stored setting
     "lines",   // expand slice; not a stored setting (T3.5)
     "grep",    // expand filter; not a stored setting (T3.5)
+    "context", // expand grep context window; per call like --grep (T67.2)
     "stdin",   // action: rtok filter reads stdin (T10.2)
     "all",     // action: agent sessions also lists ended sessions (T25.2); not a setting
     "cli",     // action: agent setup variant filter (T37.0); not a setting

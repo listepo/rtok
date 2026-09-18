@@ -160,6 +160,9 @@ enum Cmd {
         /// Regex filter (literal when it does not compile); hits print as `N:line`
         #[arg(long)]
         grep: Option<String>,
+        /// With `--grep`: N lines around each hit, overlapping windows merged with `--`
+        #[arg(long)]
+        context: Option<u32>,
     },
     /// The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
     #[cfg(feature = "archive")]
@@ -790,9 +793,20 @@ pub fn run() -> Result<()> {
                 bail!("rtok mcp -- <server>: the wrapper needs the `cmd` feature");
             }
         }
-        Cmd::Expand { id, lines, grep } => {
+        Cmd::Expand {
+            id,
+            lines,
+            grep,
+            context,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
+            crate::expand::run(
+                &cfg,
+                &id,
+                lines.as_deref(),
+                grep.as_deref(),
+                context.map_or(0, |n| n as usize),
+            )?;
         }
         #[cfg(feature = "archive")]
         Cmd::Archive { action } => {
