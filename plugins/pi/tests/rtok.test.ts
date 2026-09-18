@@ -208,3 +208,45 @@ test("compaction without rtok fails open", async () => {
   assert.equal(await on.context({ messages: piArray(false) }), undefined);
 });
 
+const GUARD_DENY = `
+if (args.includes("guard")) {
+  process.stdout.write(JSON.stringify({allow:false, reason:"duplicate; rtok expand abc"}));
+} else {
+  process.stdout.write("x");
+}
+`;
+
+test("guard deny with a reason blocks the call", async () => {
+  const { on } = load(GUARD_DENY);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  const ret = await on.tool_call(event, { sessionId: "s1" });
+  assert.deepEqual(ret, { block: true, reason: "duplicate; rtok expand abc" });
+  assert.equal(event.input.command, "ls", "must not wrap a denied call");
+});
+
+test("guard allow still wraps bash", async () => {
+  const { on } = load(`
+    if (args.includes("guard")) process.stdout.write(JSON.stringify({allow:true}));
+    else process.stdout.write("x");
+  `);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.equal(event.input.command, "rtok run -- 'ls'");
+});
+
+test("guard deny without a reason fails open", async () => {
+  const { on } = load(`
+    if (args.includes("guard")) process.stdout.write(JSON.stringify({allow:false}));
+    else process.stdout.write("x");
+  `);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.equal(event.input.command, "rtok run -- 'ls'");
+});
+
+test("unparsable guard output fails open", async () => {
+  const { on } = load(filterPrints("x"));
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.match(event.input.command, /rtok run/);
+});

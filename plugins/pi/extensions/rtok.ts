@@ -32,11 +32,12 @@ function rtok(args, input, signal) {
       // Fail open (D1): any plugin error keeps the unmodified input/output.
       resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
     });
-    // execFile without a callback `input` option: feed stdin manually.
+    // execFile without a callback `input` option: feed stdin, then close it
+    // so a child that reads stdin (the test fake, `guard check`) cannot hang.
     if (input !== undefined) {
       child.stdin.write(input);
-      child.stdin.end();
     }
+    child.stdin.end();
   });
 }
 
@@ -60,16 +61,40 @@ export default function (pi) {
   let compactSession = "";
   // One call path: bash → `rtok run -- <command>`. Not a duplicate of any
   // MCP read/search: pi has no MCP, and the hook never touches other tools.
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", async (event, ctx) => {
+    const session = String(ctx?.sessionId ?? ctx?.sessionID ?? "");
+    const g = await rtok(
+      [
+        "guard",
+        "check",
+        "--tool",
+        String(event.toolName ?? ""),
+        "--json",
+        JSON.stringify(event.input ?? {}),
+        "--session",
+        session,
+        "--host",
+        "pi",
+      ],
+      undefined,
+      event?.signal,
+    );
+    if (g.missing) {
+      if (event.toolName === "bash") pi.appendEntry?.("system", KETCH_HINT);
+    } else {
+      try {
+        const v = JSON.parse(g.stdout);
+        if (v && v.allow === false && typeof v.reason === "string" && v.reason) {
+          return { block: true, reason: v.reason };
+        }
+      } catch {
+        // fail open: unparsable output allows the call
+      }
+    }
     if (event.toolName !== "bash") return;
     const command = event.input?.command;
     if (typeof command !== "string" || command.startsWith("rtok run -- ")) return;
-    // Probe install only: `rtok run` would execute the command before bash does.
-    const r = await rtok(["--version"]);
-    if (r.missing) {
-      hintMissing(pi);
-      return;
-    }
+    if (g.missing) return;
     const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
     event.input.command = `rtok run -- ${quoted}`;
   });
@@ -77,13 +102,26 @@ export default function (pi) {
   // Bash results: `rtok filter` compresses oversized output. File/search
   // tools pass `--cmd "<tool> <path-or-pattern>"` so the cmd family matches.
   // The trailer carries `expand <id>` for the full text. Small output passes through.
-  pi.on("tool_result", async (event) => {
-    const args = filterArgs(event);
-    if (!args) return;
+  pi.on("tool_result", async (event, ctx) => {
     const text = (event.content ?? [])
       .map((c) => (typeof c?.text === "string" ? c.text : ""))
       .join("\n");
-    if (!text) return;
+    const session = String(ctx?.sessionId ?? ctx?.sessionID ?? "");
+    const tool = claudeTool(event.toolName);
+    if (text && (tool === "Bash" || tool === "Read" || tool === "Edit" || tool === "Write")) {
+      await rtok(
+        ["hook", "PostToolUse", "--host", "pi"],
+        JSON.stringify({
+          hook_event_name: "PostToolUse",
+          session_id: session,
+          tool_name: tool,
+          tool_input: event.input ?? {},
+          tool_response: { stdout: text },
+        }),
+      );
+    }
+    const args = filterArgs(event);
+    if (!args || !text) return;
     const r = await rtok(args, text, undefined);
     if (r.missing) {
       hintMissing(pi);
@@ -162,6 +200,15 @@ export default function (pi) {
   // pi.registerProvider("anthropic", {
   //   baseUrl: "http://127.0.0.1:8790/v1",
   // });
+}
+
+function claudeTool(name) {
+  const l = String(name ?? "").toLowerCase();
+  if (l === "bash" || l.includes("shell") || l.includes("terminal")) return "Bash";
+  if (l.startsWith("read") || l.startsWith("view")) return "Read";
+  if (l === "edit") return "Edit";
+  if (l === "write") return "Write";
+  return String(name ?? "");
 }
 
 function additionalContext(stdout) {
