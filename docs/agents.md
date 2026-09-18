@@ -66,8 +66,8 @@ positions, surveyed 2026-09-18 (`research.md` §15):
 | Register a tool without MCP | `pi.registerTool` | — | — |
 
 Two consequences drive the open work in `plan.md`: on pi the whole `archive` live zone can run
-without a proxy (T70.2), and MCP results a host launched itself can be shortened where the
-plugin API allows it (T70.4) — neither is reachable from `rtok mcp`, `rtok hook` or `rtok proxy`.
+without a proxy (T70.2), and Cursor's `postToolUse` `updated_mcp_tool_output` (T70.4) shortens
+MCP results the host launched — neither is reachable from `rtok mcp`, `rtok hook` or `rtok proxy`.
 Codex, Claude Desktop, Windsurf, Zed, ZCode, Kimi and Copilot have no plugin directory, so the
 proxy stays their only path.
 
