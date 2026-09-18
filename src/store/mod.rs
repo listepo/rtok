@@ -783,8 +783,8 @@ impl Store {
         Ok((self.insert_note(project, kind, title, body)?, false))
     }
 
-    /// Every note but the session-local `checkpoint:*` rows, id order (`memory export`,
-    /// T66.2): `(project, kind, title, body)`.
+    /// Every note but the session-local `checkpoint:*` / `session:*` rows, id order
+    /// (`memory export`, T66.2 / T71.2): `(project, kind, title, body)`.
     #[allow(clippy::type_complexity)]
     pub fn list_notes(
         &self,
@@ -793,6 +793,7 @@ impl Store {
         let mut conn = self.lock()?;
         let mut q = notes::table
             .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"))
             .order(notes::id.asc())
             .select((notes::project, notes::kind, notes::title, notes::body))
             .into_boxed();
@@ -833,6 +834,44 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Session ids that already have a compaction (`checkpoint:<id>`) or handoff
+    /// (`session:<id>`) note. Suffixes only; a session with both kinds is one id.
+    pub fn checkpoint_session_ids(&self) -> Result<Vec<String>> {
+        let mut conn = self.lock()?;
+        let kinds: Vec<String> = notes::table
+            .filter(
+                notes::kind
+                    .like("checkpoint:%")
+                    .or(notes::kind.like("session:%")),
+            )
+            .select(notes::kind)
+            .load(&mut *conn)?;
+        Ok(kinds
+            .into_iter()
+            .filter_map(|k| {
+                k.strip_prefix("checkpoint:")
+                    .or_else(|| k.strip_prefix("session:"))
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_string)
+            })
+            .collect())
+    }
+
+    /// Newest `session:*` note body for `project` (`None` = unbound), id order.
+    pub fn latest_session_note(&self, project: Option<&str>) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        let mut q = notes::table
+            .filter(notes::kind.like("session:%"))
+            .order(notes::id.desc())
+            .select(notes::body)
+            .into_boxed();
+        q = match project {
+            Some(p) => q.filter(notes::project.eq(p)),
+            None => q.filter(notes::project.is_null()),
+        };
+        q.first(&mut *conn).optional().map_err(Into::into)
+    }
+
     /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
     /// Newest note titles for SessionStart recall (T6.2). Never bodies. Retired notes
     /// never recall; pinned ones lead (then newest-first) and both orders are id-stable.
@@ -845,6 +884,8 @@ impl Store {
         let lim = i64::from(limit.max(1));
         let mut q = notes::table
             .filter(notes::retired.is_null())
+            .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"))
             .order((notes::pinned.desc(), notes::id.desc()))
             .limit(lim)
             .select((notes::id, notes::title))

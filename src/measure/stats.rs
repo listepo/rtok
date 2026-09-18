@@ -33,6 +33,15 @@ pub struct Report {
     /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub compact: u64,
+    /// Transcript sessions that already have a `checkpoint:*` or `session:*` note (T71.2).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub checkpoint: u64,
+    /// Transcript sessions with no such note.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub no_checkpoint: u64,
+    /// File stems of counted sessions; matched against notes. Not in JSON.
+    #[serde(skip)]
+    session_stems: Vec<String>,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
@@ -234,8 +243,13 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  compact {}  lines {}  malformed {}\n",
-            self.sessions, self.compact, self.lines, self.malformed
+            "sessions {}  compact {}  checkpoint {}  no_checkpoint {}  lines {}  malformed {}\n",
+            self.sessions,
+            self.compact,
+            self.checkpoint,
+            self.no_checkpoint,
+            self.lines,
+            self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -543,6 +557,21 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// Match counted transcript stems to `checkpoint:<id>` / `session:<id>` notes (T71.2).
+pub fn attach_checkpoint_notes(report: &mut Report, store: &Store) -> Result<()> {
+    let ids: std::collections::BTreeSet<String> =
+        store.checkpoint_session_ids()?.into_iter().collect();
+    let mut with = 0u64;
+    for stem in &report.session_stems {
+        if ids.contains(stem) {
+            with += 1;
+        }
+    }
+    report.checkpoint = with;
+    report.no_checkpoint = report.sessions.saturating_sub(with);
+    Ok(())
+}
+
 /// Codex CLI sessions as one more `api` row (T49.2), read from `dir` with the same `since`
 /// window as the Claude Code transcripts. Absent dir or no `token_count` line → no row.
 pub fn attach_codex(report: &mut Report, dir: &Path, since: Duration) {
@@ -682,8 +711,12 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             continue;
         };
         report.compact += compact_events(&p);
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            report.session_stems.push(stem.to_string());
+        }
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
+    report.no_checkpoint = report.sessions;
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
     finish_rows(&mut report.mcp_groups);
@@ -1518,7 +1551,49 @@ mod tests {
         assert_eq!(r.sessions, 1);
         assert_eq!(r.compact, 1);
         assert!(
-            r.to_table().starts_with("sessions 1  compact 1  lines 3"),
+            r.to_table()
+                .starts_with("sessions 1  compact 1  checkpoint 0  no_checkpoint 1  lines 3"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checkpoint_notes_split_sessions_with_and_without() {
+        let dir = std::env::temp_dir().join(format!("rtok-stats-t712-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("has.jsonl"),
+            r#"{"type":"user","message":{"content":"a"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("miss.jsonl"),
+            r#"{"type":"user","message":{"content":"b"}}"#,
+        )
+        .unwrap();
+        let mut r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 2);
+        assert_eq!(r.checkpoint, 0);
+        assert_eq!(r.no_checkpoint, 2);
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_note(Some("rtok"), "checkpoint:has", "compact", "checkpoint\n")
+            .unwrap();
+        attach_checkpoint_notes(&mut r, &store).unwrap();
+        assert_eq!(r.checkpoint, 1);
+        assert_eq!(r.no_checkpoint, 1);
+        assert!(
+            r.to_table()
+                .starts_with("sessions 2  compact 0  checkpoint 1  no_checkpoint 1"),
             "{}",
             r.to_table()
         );
