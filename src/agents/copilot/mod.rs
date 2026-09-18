@@ -25,6 +25,7 @@ const EVENTS: &[(&str, &str)] = &[
     ("userPromptSubmitted", "UserPromptSubmit"),
     ("sessionStart", "SessionStart"),
     ("sessionEnd", "SessionEnd"),
+    ("preCompact", "PreCompact"),
 ];
 
 /// The CLI and the desktop app read the same `~/.copilot` files.
@@ -201,7 +202,7 @@ mod tests {
         let (c, dir) = cfg("dry", true);
         let out = run(&c, false).unwrap();
         assert!(
-            out.starts_with("+ ") && out.ends_with("(5 events)"),
+            out.starts_with("+ ") && out.ends_with("(6 events)"),
             "{out}"
         );
         assert!(!hooks_path(&c).exists());
@@ -210,14 +211,15 @@ mod tests {
     }
 
     #[test]
-    fn apply_writes_five_events_is_idempotent_and_remove_deletes() {
+    fn apply_writes_six_events_is_idempotent_and_remove_deletes() {
         let (c, dir) = cfg("apply", false);
         assert!(run(&c, false).unwrap().starts_with("+ "));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let doc: Value =
             serde_json::from_str(&fs::read_to_string(hooks_path(&c)).unwrap()).unwrap();
         assert_eq!(doc["version"], 1);
-        assert_eq!(doc["hooks"].as_object().unwrap().len(), 5);
+        assert_eq!(doc["hooks"].as_object().unwrap().len(), 6);
+        assert!(doc["hooks"].get("preCompact").is_some());
         let pre = &doc["hooks"]["preToolUse"][0];
         assert_eq!(pre["type"], "command");
         assert_eq!(pre["timeoutSec"], 5);
@@ -263,6 +265,28 @@ mod tests {
             Support::No(_)
         ));
         assert!(Copilot.shared());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pre_compact_writes_a_checkpoint_note() {
+        let (c, dir) = cfg("precompact", false);
+        let mut c = c;
+        c.hook.host = "copilot".into();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        let pre = serde_json::json!({
+            "sessionId": "cop-compact",
+            "trigger": "auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &c);
+        assert_eq!(out, b"{}");
+        let note = crate::store::Store::open(&c.core.db_path)
+            .unwrap()
+            .latest_note("checkpoint:cop-compact")
+            .unwrap();
+        assert!(note.is_some(), "preCompact must save a checkpoint");
         let _ = fs::remove_dir_all(dir);
     }
 }

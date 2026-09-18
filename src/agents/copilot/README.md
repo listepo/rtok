@@ -11,7 +11,7 @@ and the app as one shared host, as it does for Cursor.
 
 | Module | Support | Why |
 | --- | --- | --- |
-| hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd |
+| hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, preCompact |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp-config.json` as `{type: "local", command, args, tools: ["*"]}` (off with `[setup] mcp = false`) |
 | proxy | no | Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy |
 | plugin | no | Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link |
