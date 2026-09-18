@@ -1,0 +1,23 @@
+argv: cargo check
+exit: 0
+---
+error[E0308]: mismatched types in a0
+error[E0308]: mismatched types in a1
+error[E0308]: mismatched types in a2
+error[E0308]: mismatched types in a3
+error[E0308]: mismatched types in a4
+error[E0308]: mismatched types in a5
+error[E0308]: mismatched types in a6
+error[E0308]: mismatched types in a7
+error[E0308]: mismatched types in a8
+error[E0308]: mismatched types in a9
+error[E0308]: mismatched types in a10
+error[E0308]: mismatched types in a11
+error[E0308]: mismatched types in a12
+error[E0308]: mismatched types in a13
+error[E0308]: mismatched types in a14
+error[E0308]: mismatched types in a15
+error[E0308]: mismatched types in a16
+error[E0308]: mismatched types in a17
+error[E0308]: mismatched types in a18
+error[E0308]: mismatched types in a19
