@@ -1,7 +1,7 @@
-//! `rtok bench` A/B harness (plan T9.1).
+//! `rtok bench` A/B harness (plan T9.1, T68.9).
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -36,6 +36,12 @@ struct Acc {
 }
 
 pub fn run(cfg: &Config) -> Result<String> {
+    if cfg.bench.suite == "graph" {
+        return run_graph(cfg);
+    }
+    if !cfg.bench.suite.is_empty() {
+        bail!("unknown bench suite {:?}", cfg.bench.suite);
+    }
     let tasks = load_tasks(&cfg.bench.tasks)?;
     if tasks.len() != 6 {
         bail!("expected 6 tasks, got {}", tasks.len());
@@ -108,6 +114,149 @@ fn table(tasks: &[Task], cfg: &Config) -> String {
         ));
     }
     s
+}
+
+const GRAPH_ARMS: [&str; 2] = ["mcp", "native"];
+
+#[derive(Deserialize)]
+struct GraphFile {
+    repos: Vec<GraphRepo>,
+    questions: Vec<GraphQ>,
+}
+#[derive(Deserialize)]
+struct GraphRepo {
+    id: String,
+    path: String,
+}
+#[derive(Deserialize)]
+struct GraphQ {
+    id: String,
+    repo: String,
+    prompt: String,
+    expect: String,
+}
+
+fn graph_toml(cfg: &Config) -> PathBuf {
+    let t = &cfg.bench.tasks;
+    if t.file_name().is_some_and(|n| n == "graph.toml") {
+        t.clone()
+    } else {
+        t.parent().unwrap_or(Path::new("bench")).join("graph.toml")
+    }
+}
+
+fn load_graph(path: &Path) -> Result<GraphFile> {
+    let f = Figment::new()
+        .merge(Toml::file(path))
+        .extract::<GraphFile>()
+        .with_context(|| path.display().to_string())?;
+    if f.questions.len() < 10 {
+        bail!(
+            "graph suite needs ≥ 10 questions, got {}",
+            f.questions.len()
+        );
+    }
+    if f.repos.len() < 3 {
+        bail!("graph suite needs ≥ 3 repos, got {}", f.repos.len());
+    }
+    let ids: Vec<&str> = f.repos.iter().map(|r| r.id.as_str()).collect();
+    for q in &f.questions {
+        if !ids.contains(&q.repo.as_str()) {
+            bail!("question {} repo {} is not in [[repos]]", q.id, q.repo);
+        }
+        regex::Regex::new(&q.expect).with_context(|| format!("{} expect", q.id))?;
+    }
+    Ok(f)
+}
+
+fn run_graph(cfg: &Config) -> Result<String> {
+    let file = load_graph(&graph_toml(cfg))?;
+    if cfg.bench.dry_run {
+        let mut out = String::new();
+        for q in &file.questions {
+            for arm in GRAPH_ARMS {
+                for n in 1..=cfg.bench.runs {
+                    out.push_str(&format!("{} {} {arm} {n}\n", q.id, q.repo));
+                }
+            }
+        }
+        return Ok(out);
+    }
+    Ok(graph_table(&file, cfg))
+}
+
+fn graph_table(file: &GraphFile, cfg: &Config) -> String {
+    let mut s = String::from("id repo arm tools in out cache wall_ms cost resident pass\n");
+    let runs = cfg.bench.runs;
+    let mut tot = [(0u64, 0u64, 0u64, 0u64, 0u64, 0.0, 0u64, 0u32); 2];
+    for q in &file.questions {
+        let repo = file.repos.iter().find(|r| r.id == q.repo).unwrap();
+        let re = regex::Regex::new(&q.expect).expect("checked at load");
+        for (i, arm) in GRAPH_ARMS.iter().enumerate() {
+            let mut a = (0u64, 0u64, 0u64, 0u64, 0u64, 0.0, 0u64, 0u32);
+            for _ in 0..runs {
+                let u = graph_one(&q.prompt, Path::new(&repo.path), arm, cfg);
+                if re.is_match(&u.7) {
+                    a.7 += 1;
+                }
+                a.0 += u.0;
+                a.1 += u.1;
+                a.2 += u.2;
+                a.3 += u.3;
+                a.4 += u.4;
+                a.5 += u.5;
+                a.6 += u.6;
+            }
+            let n = runs.max(1) as f64;
+            s.push_str(&format!(
+                "{} {} {arm} {:.0} {:.0} {:.0} {:.0} {:.0} {:.4} {:.0} {}/{runs}\n",
+                q.id,
+                q.repo,
+                a.0 as f64 / n,
+                a.1 as f64 / n,
+                a.2 as f64 / n,
+                a.3 as f64 / n,
+                a.4 as f64 / n,
+                a.5 / n,
+                a.6 as f64 / n,
+                a.7
+            ));
+            tot[i].0 += a.0;
+            tot[i].1 += a.1;
+            tot[i].2 += a.2;
+            tot[i].3 += a.3;
+            tot[i].4 += a.4;
+            tot[i].5 += a.5;
+            tot[i].6 += a.6;
+            tot[i].7 += a.7;
+        }
+    }
+    let n = (file.questions.len() as u32 * runs).max(1) as f64;
+    for (i, arm) in GRAPH_ARMS.iter().enumerate() {
+        let a = tot[i];
+        s.push_str(&format!(
+            "TOTAL * {arm} {:.0} {:.0} {:.0} {:.0} {:.0} {:.4} {:.0} {}/{n:.0}\n",
+            a.0 as f64 / n,
+            a.1 as f64 / n,
+            a.2 as f64 / n,
+            a.3 as f64 / n,
+            a.4 as f64 / n,
+            a.5 / n,
+            a.6 as f64 / n,
+            a.7
+        ));
+    }
+    s
+}
+
+fn graph_one(
+    prompt: &str,
+    repo: &Path,
+    arm: &str,
+    cfg: &Config,
+) -> (u64, u64, u64, u64, u64, f64, u64, String) {
+    let _ = (prompt, repo, arm, cfg);
+    (0, 0, 0, 0, 0, 0.0, 0, String::new())
 }
 
 fn write_results(by: &BTreeMap<String, Acc>, tasks: usize, cfg: &Config) {
