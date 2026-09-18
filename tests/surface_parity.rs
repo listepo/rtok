@@ -251,6 +251,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "symbol impact on demand (T68.4); no snapshot page yet",
     ),
     (
+        "graph affected",
+        "reads the symbol index on demand; no snapshot page yet",
+    ),
+    (
         "config show",
         "renders model::config_entries; no snapshot page yet",
     ),
