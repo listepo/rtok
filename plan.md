@@ -14,7 +14,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
-| T58.5 | todo | P3 | 3 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
@@ -103,17 +102,6 @@ Done when:
 3. Per host, the compaction events verified against the current hooks doc (links in `src/agents/<host>/README.md` `## Docs`) and registered by `agents install` where they exist (Codex, Cursor, Gemini if a host, Copilot): the pre-event maps to `pre_compact`, the post-event to `session_start` with `source = "compact"`; hosts without the event are untouched. `tests/agents_doc.rs` regenerated with `RTOK_BLESS=1`. One commit per host if the 3-file limit needs it.
 4. Hook e2e per new host: pre-event → note exists; post-event → injection bytes equal Claude Code's for the same store; fail open, ≤ 10 ms.
 
-### T58.5. `cmd` formatters for structured families
-
-Families from T50.1 step 4 (fixture shows a TOML rule keeps bytes but drops table/grouped signal): `docker ps` (`tests/cmd_golden/docker_ps.in`), `kubectl get` (`kubectl_get.in`), `ps aux` (`ps_aux.in`).
-
-
-Follow-up of T50.1 step 4 (`research.md` §9.3, "Command output"). A TOML rule keeps lines by pattern and position; families whose signal is a table or a grouped diagnostic (expected: `docker ps` / `kubectl get` tables → one row per object; `tsc` / `eslint` → errors grouped by file with counts; `mvn` / `gradle` → the failing module and the last `BUILD` line; `git log`-like paged tools) need a formatter, like the existing cargo/git/pytest ones in `formatters.rs`.
-Done when:
-1. Only families named by T50.1 step 4, each with the fixture that showed the rule losing the signal.
-2. One formatter per family in `formatters.rs`, returning `None` on unrecognized output so the rule path stays the fallback; failures and the `expand <id>` trailer kept; golden fixtures before/after.
-3. `Measurement` rows `kind = formatter` per family beat the rule's row on the same fixture; the cmd docs page table cites them.
-4. ≤ 200 LOC per commit: split by family group (containers, TypeScript tooling, JVM) if needed.
 
 ### T59.5. Byte-stable `tools[]` description rewrite in the proxy
 
