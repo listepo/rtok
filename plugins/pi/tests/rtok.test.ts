@@ -127,3 +127,53 @@ test("context: spawn failure or garbage output keeps the array (fail open)", asy
   const garbage = load(filterPrints("not json {{{"));
   assert.equal(await garbage.on.context({ messages: piArray(true) }), undefined);
 });
+
+const CKPT = "checkpoint\n- edit the three files\n";
+const COMPACT = `
+if (args.includes("hook") && args.includes("PostCompact")) {
+  process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:${JSON.stringify(CKPT)}}}));
+} else if (args.includes("hook")) {
+  process.stdout.write("{}");
+} else if (args.includes("archive")) {
+  process.stdout.write(input);
+} else {
+  process.stdout.write("{}");
+}
+`;
+
+test("session_before_compact calls PreCompact --host pi and returns nothing", async () => {
+  const { on } = load(`
+    if (args.join(" ") !== "hook PreCompact --host pi") process.exit(9);
+    process.stdout.write("{}");
+  `);
+  const ret = await on.session_before_compact(
+    { reason: "threshold" },
+    { sessionId: "p1" },
+  );
+  assert.equal(ret, undefined, "must not replace the host summary");
+});
+
+test("after compact, the next context injects the checkpoint", async () => {
+  const { on } = load(COMPACT);
+  assert.equal(
+    await on.session_before_compact({ reason: "auto" }, { sessionId: "p1" }),
+    undefined,
+  );
+  await on.session_compact({}, { sessionId: "p1" });
+  const messages = piArray(false);
+  const out = await on.context({ messages });
+  assert.ok(out, "restore must return a replacement array");
+  assert.equal(out.messages.at(-1).content[0].text, CKPT);
+  assert.equal(await on.context({ messages: piArray(false) }), undefined, "once");
+});
+
+test("compaction without rtok fails open", async () => {
+  const { on } = load(null);
+  assert.equal(
+    await on.session_before_compact({ reason: "overflow" }, { sessionId: "p1" }),
+    undefined,
+  );
+  await on.session_compact({}, { sessionId: "p1" });
+  assert.equal(await on.context({ messages: piArray(false) }), undefined);
+});
+
