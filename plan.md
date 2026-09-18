@@ -9,7 +9,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T48.8 | todo | P2 | 3 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T51.1 | in progress | P3 | 5 | 60% | Claude Code / opus-5 |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 10% | |
 | T53.1 | todo | P3 | 3 | 10% | |
@@ -35,7 +34,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.7 | todo | P3 | 2 | 0% | |
 | T60.8 | todo | P3 | 1 | 0% | |
 | T60.9 | todo | P3 | 2 | 0% | |
-| T60.10 | todo | P3 | 2 | 0% | |
 | T61.1 | todo | P2 | 2 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T61.3 | todo | P3 | 2 | 0% | |
@@ -64,7 +62,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T69.5 | todo | P3 | 2 | 0% | |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
-| T70.2 | todo | P2 | 4 | 0% | |
+| T70.2 | in progress | P2 | 4 | 0% | Kimi Code |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
 | T70.5 | todo | P3 | 3 | 0% | |
@@ -94,21 +92,6 @@ Done when:
 
 From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
 Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
-
-### T51.1. Compress JSON and code inside the live zone
-
-From I-09. `archive` rewrites only old `tool_result`s; huge JSON dumps and `data:` blobs in other live-zone fields stay whole every turn.
-Done when a proxy-side pass shrinks such payloads losslessly (archived, `expand <id>`), only for content that is byte-stable across turns so the prompt cache holds, with a byte-stability test over a six-turn fixture on both wires and a `Measurement` row. Off by default until a bench shows cost per passed task does not rise.
-
-Execution plan (OpenCode / Muse Spark 1.3; scope from I-09: NON-`tool_result` content — nested JSON dumps + `data:` blobs in user content blocks; plain live-tail text/code stays (model is working with it; last-2-turns rule); Responses/Gemini deferred with default-empty, card's "both wires" = Anthropic + Chat):
-1. SDK `wire.rs` (additive, defaulted): `BlobRef { content, turn }` (no provider id — keyed by content hash) + `ToolResults::live_blobs(req)` (empty default) + `WireRequest::live_blobs()` passthrough.
-2. `Anthropic`/`OpenAiChat` `impl ToolResults`: override `live_blobs` — user blocks only, SKIP `tool_result` blocks (archive owns them), yield text/image-document base64 + big-JSON text strings with turn counting mirrored from `tool_results`.
-3. `archive/mod.rs`: `rewrite_blobs()` — `[plugins.archive] live_blobs = false` gate (default off: zero behavior change); eligible turn >= 2 (proxy invariant, not keep_turns); candidate = `data:`/base64 or JSON-parseable text over `min_tokens`; key `blob:{sha256}`, `pointer()` reuse with kind `live_blob`, expanded-skip, shared `record_run` tail with `rewrite()`.
-4. Config key in mod.rs + default.toml + docs/config.md + config-show snapshot (env free, no flag).
-5. `tests/proxy.rs`: six-turn inline requests (stable JSON blob in user turns) on Anthropic + Chat, compress mode — two identical POSTs byte-identical upstream; eligible turns pointered, turns 0-1 untouched, archive rows 0, `live_blob` Measurements present, `rtok expand <id>` recovers the original.
-6. Verify: fmt, clippy, targeted nextest, build-min, jscpd. ~10 files — deviation noted.
-
-Steps 1–4 landed in `d899760`; the unit suite in `archive/mod.rs` covers candidates, the off gate and expand. Remaining (Claude Code / opus-5): step 5 only — the proxy-level acceptance. Inline six-turn requests on Anthropic (`user` `text` blocks) and Chat (`user` string content), `live_blobs = true`, mode `compress`: two identical POSTs are byte-identical upstream, turns 0–1 stay whole, turns 2+ carry the pointer, every `archive` measurement is `kind = "live_blob"` (a blob-only fixture leaves the result pass with nothing to do), and `get_archive(ref_id)` returns the original blob bytes. `t51_server`/`openai_server` gain a shared builder so the flag can be set without a third copy of the setup. Image/document fields stay out of scope — T55.15 owns that bug.
 
 ### T52.2. More grammars and compressed index payloads
 
@@ -279,11 +262,6 @@ Done when `?` toggles an overlay listing the global and per-page keys generated 
 
 `app.slint` has a dark-mode icon (`crates/rtok-webui/ui/app.slint:288`, survey 2026-09-17) but no toggle and no `prefers-color-scheme` read; the UI is dark-only.
 Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it, the choice persists in `localStorage`, every colour comes from one palette struct (no literals in components), and the Slint e2e test flips the theme.
-
-### T60.10. Sessions tab in the TUI is a static paragraph
-
-Checked 2026-09-17 (`src/tui/view.rs:72,366`, `src/tui/app.rs`): the Sessions page renders `render::sessions_table` as one `Paragraph` — no cursor, no scroll, no selection, no keys, no live-only filter — while Plugins and Calls have row state in `app.rs`, `↑/↓`, and a detail toggle. A store with more sessions than the terminal has lines shows only the top of the table. The `placeholder()` fallback at `view.rs:75` still exists for an unknown page although every `model::pages()` entry now has a body.
-Done when Sessions has the same row model as Calls: a `sessions` cursor in `app.rs`, `↑/↓` moving it with the table scrolling to keep it visible, the selected row marked like the Calls row, `l` toggling the live-only filter the CLI exposes as a flag (`sessions_table(rows, all, now)` already takes it), the footer naming the keys; the `placeholder()` fallback is deleted and an unknown page is a `surface_parity` failure instead; `app.rs` and `view.rs` `TestBackend` tests cover cursor, scroll on a 200-row snapshot and the filter. T60.3 builds its detail pane on this cursor.
 
 ### T61.1. `stats` counts injected skill bodies
 

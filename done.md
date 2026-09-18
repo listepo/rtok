@@ -3253,3 +3253,19 @@ Complexity: 2/5 — two wire arms deleted, two repro tests.
 Status: done 2026-09-18
 Check result: archive filter 44/44 and proxy filter 72/72 green (new repro tests included); full `just check` green in the isolation worktree (HEAD + own files). clippy's `collapsible_if` on the new Chat arm fixed in the same pass.
 Model: ZCode / GLM-5.3-Flash
+
+**T60.10 Sessions tab in the TUI is a static paragraph** · T60.3 · `src/tui/app.rs`, `src/tui/view.rs`, `tests/surface_parity.rs`
+Do: Sessions gets the Calls row model — a `sessions` cursor (`↑/↓`, clamped to the visible rows), the selected row bold, `l` toggling the live-only filter, a derived scroll offset keeping the cursor row on screen, and a status line naming the keys. The `placeholder()` fallback is deleted; an unknown page is now a compile-time match error plus a `surface_parity` failure (`every_model_page_has_a_tui_body`).
+Check: `sessions_page_claims_its_keys_and_clamps_the_selection` (app), `sessions_tab_lists_rows_and_l_filters_live_only` + `sessions_tab_scrolls_to_keep_the_cursor_visible` (TestBackend, 200-row snapshot), `every_model_page_has_a_tui_body` (surface_parity).
+Complexity: 2/5 — one state struct, one page renderer, one parity test.
+Status: done 2026-09-18
+Check result: tui 31/31 green, surface_parity 5/5 green in the isolation worktree; fmt/clippy clean. Note: the surface_parity test rode into history inside the T69.1 commit (another agent committed the file while this card was in flight); the rest of this task is these two commits.
+Model: ZCode / GLM-5.3-Flash
+
+**T51.1 Compress JSON and code inside the live zone** · I-09 · `tests/proxy.rs`
+Do: the shrink pass itself landed in `d899760` (SDK `BlobRef` / `live_blobs`, the Anthropic and Chat wire arms, `archive::rewrite_blobs` behind `[plugins.archive] live_blobs = false`, `Measurement { kind = "live_blob" }`); what the card still owed was its acceptance at the proxy level rather than in unit tests. `proxy_compress_shrinks_live_blobs_on_both_wires` replays a six-turn request twice on Anthropic (`user` `text` blocks) and Chat (`user` string content), each turn carrying a 400-row JSON dump, and asserts the whole contract: the two upstream bodies are byte-identical, the request shrinks to under half its size, turns 2 and up carry `[archived …]`, the two working-edge turns stay whole, every `archive` measurement is `kind = "live_blob"` (a blob-only fixture leaves the result pass nothing to do), the four distinct blobs map to four archive ids, and each id reads back through `get_archive` as its original bytes. `t51_server` and `openai_server` now delegate to one `proxy_server(dir_tag, tune)` builder, which is what lets a case set `live_blobs = true` without a third copy of the setup.
+Check: `proxy_compress_shrinks_live_blobs_on_both_wires`, plus the existing `live_blobs_*` unit suite untouched.
+Complexity: 5/5 as carded — the remaining share was one test target.
+Status: done 2026-09-18
+Check result: isolation worktree at HEAD `454e4a5` + own files (main carried three other agents' in-flight compile errors in `doctor::Report` and `measure/stats.rs`): `nextest run -p rtok --lib --test proxy` **687/687 passed**, the new test among them, `cargo fmt --check` clean on the touched file. Image and document fields stayed out of scope; T55.15 owned and has since closed that bug, and this test was re-run green on top of it.
+Model: Claude Code / opus-5

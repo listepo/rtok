@@ -63,16 +63,18 @@ fn tab_bar(app: &App) -> Tabs<'_> {
         .highlight_style(Style::new().bold())
 }
 
-/// The selected page's body.
+/// The selected page's body. No catch-all: a page the model adds ahead of its TUI
+/// body breaks this match at compile time and fails `tests/surface_parity.rs`
+/// (T60.10 deleted the placeholder that used to hide the gap).
 fn render_page(frame: &mut Frame, app: &App, area: Rect) {
     match app.page() {
         "overview" => render_overview(frame, app, area),
         "plugins" => render_plugins(frame, app, area),
         "calls" => render_calls(frame, app, area),
-        "sessions" => frame.render_widget(sessions_text(app), area),
+        "sessions" => render_sessions(frame, app, area),
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
-        page => frame.render_widget(placeholder(page), area),
+        page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
 
@@ -361,23 +363,108 @@ fn time_of(ts: i64) -> String {
         .map_or_else(|| "-".into(), |(_, t)| t.to_string())
 }
 
-/// The model's Sessions page (T25.1 / D23): the same table `rtok agents sessions`
-/// prints, built from the snapshot so the TUI cannot disagree with the CLI.
-fn sessions_text(app: &App) -> Paragraph<'static> {
+/// The model's Sessions page (T25.1 / D23), now with the same row model as Calls
+/// (T60.10): a cursor (`↑/↓`), the selected row bold, `l` toggling the live-only
+/// filter the CLI exposes as a flag, and the table scrolled so the cursor row stays
+/// visible on a store taller than the terminal.
+fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
+    let live_only = app.sessions_live_only();
+    let rows: Vec<&crate::store::SessionTotals> = app
+        .snapshot()
+        .sessions
+        .iter()
+        .filter(|s| !live_only || s.ended_at.is_none())
+        .collect();
+    let [table, status] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
+    if rows.is_empty() {
+        let msg = if live_only {
+            "nothing is running"
+        } else {
+            "no sessions yet"
+        };
+        frame.render_widget(Paragraph::new(msg), table);
+        frame.render_widget(Paragraph::new(sessions_status_line(live_only)), status);
+        return;
+    }
+    let selected = app.sessions_selected();
+    // Derived scroll: the smallest offset that keeps the cursor row on screen —
+    // one body row per terminal line below the header, like the CLI table.
+    let visible = table.height.saturating_sub(2).max(1) as usize;
+    let offset = selected.saturating_sub(visible - 1);
+    let shown: Vec<_> = rows
+        .iter()
+        .skip(offset)
+        .take(visible)
+        .zip(offset..)
+        .map(|(s, i)| sessions_row(s, i == selected))
+        .collect();
+    frame.render_widget(sessions_table(shown), table);
+    frame.render_widget(Paragraph::new(sessions_status_line(live_only)), status);
+}
+
+fn sessions_row(s: &crate::store::SessionTotals, selected: bool) -> Row<'static> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    // `all = true`: the operator model carries every session; the CLI's default
-    // live-only filter is a flag, not a second page.
-    let text = crate::render::sessions_table(&app.snapshot().sessions, true, now);
-    Paragraph::new(text)
+    let run = match s.ended_at {
+        Some(end) => end - s.started_at,
+        None => now - s.started_at,
+    };
+    let row = Row::new([
+        s.host.clone().unwrap_or_else(|| "-".into()),
+        s.provider
+            .clone()
+            .or_else(|| s.api.clone())
+            .unwrap_or_else(|| "-".into()),
+        s.model.clone().unwrap_or_else(|| "-".into()),
+        s.input.to_string(),
+        s.output.to_string(),
+        s.cache_read.to_string(),
+        s.cache_create.to_string(),
+        crate::log::stamp(s.started_at.max(0) as u64),
+        crate::render::duration(run),
+    ]);
+    if selected {
+        row.style(Style::new().bold())
+    } else {
+        row
+    }
 }
 
-fn placeholder(page: &str) -> Paragraph<'static> {
-    Paragraph::new(format!(
-        "{page}: on the model and the wire; TUI body not landed yet"
-    ))
+fn sessions_table(rows: Vec<Row<'static>>) -> Table<'static> {
+    Table::new(
+        rows,
+        [
+            Constraint::Length(7),
+            Constraint::Length(9),
+            Constraint::Length(10),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(11),
+            Constraint::Min(6),
+        ],
+    )
+    .header(Row::new([
+        "agent",
+        "provider",
+        "model",
+        "input",
+        "output",
+        "cache_read",
+        "cache_create",
+        "started",
+        "run",
+    ]))
+}
+
+fn sessions_status_line(live_only: bool) -> String {
+    format!(
+        "↑/↓ select · l {}",
+        if live_only { "show all" } else { "live only" }
+    )
 }
 
 /// The model's Logs page (T15.7): the snapshot's log lines verbatim, newest first —
@@ -873,5 +960,72 @@ mod tests {
         let line = footer_line(&app);
         assert!(line.contains("q quit"), "line: {line}");
         assert!(line.contains("UTC"), "line: {line}");
+    }
+
+    /// A session total whose model column carries the marker — the row field the
+    /// sessions assertions grep on screen.
+    fn session_row(n: usize, ended: Option<i64>) -> crate::store::SessionTotals {
+        crate::store::SessionTotals {
+            id: format!("sess-{n}"),
+            host: Some("claude".into()),
+            project: None,
+            provider: None,
+            api: None,
+            model: Some(format!("m{n}")),
+            input: 0,
+            cache_create: 0,
+            cache_read: 0,
+            output: 0,
+            started_at: 0,
+            last_activity: 0,
+            ended_at: ended,
+        }
+    }
+
+    /// T60.10: the Sessions tab has the Calls row model — an empty state, both rows
+    /// listed, `l` narrowing to live-only and back.
+    #[test]
+    fn sessions_tab_lists_rows_and_l_filters_live_only() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        select(&mut app, "sessions");
+        assert!(screen(&app).contains("no sessions yet"), "the empty state");
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.sessions = vec![session_row(0, None), session_row(1, Some(9))];
+            snap
+        });
+        let rendered = screen(&app);
+        assert!(
+            rendered.contains("m0") && rendered.contains("m1"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("↑/↓ select"), "the status names the keys");
+        app.key(KeyCode::Char('l'), KeyModifiers::NONE);
+        let rendered = screen(&app);
+        assert!(rendered.contains("m0"), "the live row stays");
+        assert!(!rendered.contains("m1"), "the ended row is filtered off");
+        app.key(KeyCode::Char('l'), KeyModifiers::NONE);
+        assert!(screen(&app).contains("m1"), "l toggles the filter back");
+    }
+
+    /// T60.10: a store taller than the terminal scrolls to keep the cursor row on
+    /// screen — the last row of 200 is visible after walking all the way down.
+    #[test]
+    fn sessions_tab_scrolls_to_keep_the_cursor_visible() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        select(&mut app, "sessions");
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.sessions = (0..200).map(|n| session_row(n, None)).collect();
+            snap
+        });
+        for _ in 0..199 {
+            app.key(KeyCode::Down, KeyModifiers::NONE);
+        }
+        let screen = screen(&app);
+        assert!(screen.contains("m199"), "the cursor row is on screen");
+        assert!(!screen.contains("m0 "), "the top scrolled off");
     }
 }

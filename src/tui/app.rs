@@ -27,6 +27,9 @@ pub struct App {
     /// The Calls page's own state (T15.5): which row is selected and whether its detail
     /// pane is open.
     calls: CallsState,
+    /// The Sessions page's own state (T60.10): which row is selected and whether the
+    /// live-only filter is on.
+    sessions: SessionsState,
 }
 
 /// Selection and detail state of the Calls page (T15.5). The row list lives in the
@@ -35,6 +38,15 @@ pub struct App {
 struct CallsState {
     selected: usize,
     detail: bool,
+}
+
+/// Selection and filter state of the Sessions page (T60.10). The rows live in the
+/// snapshot (D23); this remembers the cursor and whether `l` narrowed the page to
+/// sessions that are still running.
+#[derive(Default)]
+struct SessionsState {
+    selected: usize,
+    live_only: bool,
 }
 
 impl App {
@@ -55,6 +67,7 @@ impl App {
             plugin_cursor: 0,
             plugin_status: String::new(),
             calls: CallsState::default(),
+            sessions: SessionsState::default(),
         }
     }
 
@@ -100,8 +113,26 @@ impl App {
         self.plugin_cursor = self
             .plugin_cursor
             .min(snapshot.plugins.len().saturating_sub(1));
+        self.sessions.selected = self
+            .sessions
+            .selected
+            .min(self.visible_sessions(&snapshot).saturating_sub(1));
         self.snapshot = snapshot;
         self.updated = crate::log::now();
+    }
+
+    /// How many rows the Sessions page shows right now (T60.10): the live-only
+    /// filter narrows the snapshot's list before the cursor is clamped against it.
+    fn visible_sessions(&self, snapshot: &Snapshot) -> usize {
+        if self.sessions.live_only {
+            snapshot
+                .sessions
+                .iter()
+                .filter(|s| s.ended_at.is_none())
+                .count()
+        } else {
+            snapshot.sessions.len()
+        }
     }
 
     /// The loop's tick: re-read the model through the config the App holds, so a
@@ -121,6 +152,44 @@ impl App {
     /// Whether the Calls page's detail pane is open (T15.5).
     pub fn calls_detail(&self) -> bool {
         self.calls.detail
+    }
+
+    /// The Sessions page's selected row (T60.10), clamped to the rows it shows —
+    /// the filtered list when `l` narrowed it, the snapshot's list otherwise.
+    pub fn sessions_selected(&self) -> usize {
+        self.sessions
+            .selected
+            .min(self.visible_sessions(&self.snapshot).saturating_sub(1))
+    }
+
+    /// Whether the Sessions page shows only sessions that are still running (T60.10).
+    pub fn sessions_live_only(&self) -> bool {
+        self.sessions.live_only
+    }
+
+    /// The Sessions page's keys (T60.10): `Up`/`Down` walk the visible rows, `l`
+    /// toggles the live-only filter. Returns `true` when the key was consumed.
+    fn sessions_key(&mut self, code: KeyCode) -> bool {
+        let last = self.visible_sessions(&self.snapshot).saturating_sub(1);
+        match code {
+            KeyCode::Up => {
+                self.sessions.selected = self.sessions.selected.saturating_sub(1);
+                true
+            }
+            KeyCode::Down => {
+                self.sessions.selected = (self.sessions.selected + 1).min(last);
+                true
+            }
+            KeyCode::Char('l') => {
+                self.sessions.live_only = !self.sessions.live_only;
+                self.sessions.selected = self
+                    .sessions
+                    .selected
+                    .min(self.visible_sessions(&self.snapshot).saturating_sub(1));
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The Calls page's keys (T15.5): `Up`/`Down` walk the rows, `Enter`/`z` expand the
@@ -146,13 +215,17 @@ impl App {
     }
 
     /// One key press; returns `true` when the loop should stop. `Left`/`Right` wrap,
-    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z` (T15.5); the Plugins
-    /// page claims the row keys (T15.4); everything else is the next page's to claim.
+    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z` (T15.5); the Sessions
+    /// page claims `Up`/`Down`/`l` (T60.10); the Plugins page claims the row keys
+    /// (T15.4); everything else is the next page's to claim.
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
         if mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
             return true;
         }
         if self.page() == "calls" && self.calls_key(code) {
+            return false;
+        }
+        if self.page() == "sessions" && self.sessions_key(code) {
             return false;
         }
         match code {
@@ -491,6 +564,73 @@ pub(super) mod tests {
 
         // The shell's keys still work on the Calls page.
         assert!(app.key(KeyCode::Char('q'), KeyModifiers::NONE), "q quits");
+    }
+
+    /// T60.10: the Sessions page claims `Up`/`Down`/`l` — the selection clamps to
+    /// the rows it shows (the filtered list under `l`), and the shell's keys keep
+    /// working on the same page.
+    #[test]
+    fn sessions_page_claims_its_keys_and_clamps_the_selection() {
+        let mut cfg = config();
+        cfg.tui.tab = "sessions".into();
+        let mut app = App::new(&cfg);
+        assert_eq!(app.page(), "sessions");
+        assert!(app.snapshot().sessions.is_empty(), "nothing seeded");
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        app.key(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.sessions_selected(), 0, "clamped on an empty page");
+        assert!(!app.sessions_live_only(), "the filter starts off");
+
+        // Two rows: the selection walks and clamps at both ends.
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.sessions = vec![session("a", None), session("b", None)];
+            snap
+        });
+        app.key(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.sessions_selected(), 0, "clamped at the top");
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.sessions_selected(), 1);
+        app.key(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.sessions_selected(), 1, "clamped at the last row");
+
+        // `l` narrows to live rows; the cursor re-clamps against the filtered list.
+        app.key(KeyCode::Char('l'), KeyModifiers::NONE);
+        assert!(app.sessions_live_only());
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            snap.sessions = vec![session("a", None), session("b", Some(9))];
+            snap
+        });
+        assert_eq!(
+            app.sessions_selected(),
+            0,
+            "one visible row under the live-only filter"
+        );
+        app.key(KeyCode::Char('l'), KeyModifiers::NONE);
+        assert!(!app.sessions_live_only(), "l toggles back");
+
+        // The shell's keys still work on the Sessions page.
+        assert!(app.key(KeyCode::Char('q'), KeyModifiers::NONE), "q quits");
+    }
+
+    /// A bare session total for the selection test — the view's tests seed real ones.
+    fn session(id: &str, ended: Option<i64>) -> crate::store::SessionTotals {
+        crate::store::SessionTotals {
+            id: id.into(),
+            host: None,
+            project: None,
+            provider: None,
+            api: None,
+            model: None,
+            input: 0,
+            cache_create: 0,
+            cache_read: 0,
+            output: 0,
+            started_at: 0,
+            last_activity: 0,
+            ended_at: ended,
+        }
     }
 
     /// A bare ledger row for the selection test — the view's tests seed real ones.
