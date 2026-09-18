@@ -155,7 +155,7 @@ impl HookInput {
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
         (self.hook_event_name == "PreCompact").then_some(PreCompact {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
-            transcript_path: self.transcript_path.as_deref()?,
+            transcript_path: self.transcript_path.as_deref().unwrap_or(""),
         })
     }
 }
