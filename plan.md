@@ -7,7 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T52.2 | todo | P3 | 3 | 0% | |
 | T53.1 | todo | P3 | 3 | 10% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
@@ -34,11 +33,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
 
-
-### T52.2. More grammars and compressed index payloads
-
-From I-16. Tags cover Rust, TS, JS, Python, Dart, C and Go. Java, Kotlin, Swift, C#, Ruby and PHP repos get no `symbol`/`outline`, and large indexes store plain text.
-Done when each added grammar is an optional feature (dependency reasons in the commit, creator approval for new crates) with a fixture test, and index payload compression is added only if a large repo's `rtok.db` size is measured before and after.
 
 ### T53.1. Coaching nudges under an A/B
 

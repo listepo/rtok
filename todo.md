@@ -1,5 +1,4 @@
 - T48.8. VS Code Copilot Chat host
-- T52.2. More grammars and compressed index payloads
 - T53.1. Coaching nudges under an A/B
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes

@@ -350,6 +350,13 @@ Done when:
 
 **Result (2026-09-18, `rtok stats --since 90d`, 959 sessions):** 593 native Read calls of a path already read in-session with Edit/Write/MultiEdit in between; 1.79 MB of 24.61 MB Read result bytes (**7.3 %**) — above the 3 % gate. Landed: `ReadDeltaRow` in `stats`; MCP `read` returns a unified diff (`similar` via `render::unified_diff`) against the archived previous raw file plus `previous <id>` / `expand <id>` of the full file; full fallback when the diff is not below `read.delta_max_ratio` (default 0.6) or the archive is gone; `read.delta = true` by default; PreToolUse advice on a cached large file after Edit points at `mode=diff`; Vfs tests cover unchanged / small / large / missing archive / CRLF; unchanged re-read ≤ 13 estimated tokens on the fixture.
 
+## T52.2 — More grammars and compressed index payloads
+
+From I-16. Tags cover Rust, TS, JS, Python, Dart, C and Go. Java, Kotlin, Swift, C#, Ruby and PHP repos get no `symbol`/`outline`, and large indexes store plain text.
+Done when each added grammar is an optional feature (dependency reasons in the commit, creator approval for new crates) with a fixture test, and index payload compression is added only if a large repo's `rtok.db` size is measured before and after.
+
+**Result (2026-09-18).** All six languages added as optional `lang-*` features on the `read` bundle (tree-sitter stays 0.25). Crates: `tree-sitter-java` 0.23.5, `tree-sitter-kotlin-ng` 1.1.0 (fwcd `tree-sitter-kotlin` 0.3.8 needs tree-sitter <0.23 — skipped), `tree-sitter-swift` 0.7.3 (its `LOCALS_QUERY` uses `@local.definition.import`, rejected by tree-sitter-tags 0.25 — tags only), `tree-sitter-c-sharp` 0.23.5 (`TAGS_QUERY` is `cfg(with_tags_query)`, so the tags string lives in rtok), `tree-sitter-ruby` 0.23.1, `tree-sitter-php` 0.24.2. `golden_per_language` covers each; extractor `INDEX_VERSION` 3. T8.8 `graph_truth` labelled_symbols_are_found: definition recall 1.000, reference recall 0.305 (floor 0.30). This-repo debug index 172 files / 35 231 rows, `rtok.db` 14 077 952 bytes; gzip of concatenated TEXT columns 197 682 bytes is a one-stream dictionary win, not a per-row one — live payload compression skipped (`research.md`). Workspace `rust.md` + `toolchain.md` updated with the crates.
+
 ## T52.3 — Ranked repo map at SessionStart
 
 From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
