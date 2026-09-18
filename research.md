@@ -564,8 +564,39 @@ platform. Security work forces Minimum even when `speculative` is set.
 |------|------------:|------:|-----|
 | `terse.md` | 162 | 679 | ≤ 250 |
 | `yagni.md` | 145 | 613 | ≤ 250 |
+| `nudges.md` | 114 | 476 | ≤ 250 |
 
 Aliases `cave`→`terse`, `pony`→`yagni` resolve to the same builtins at SessionStart.
+`nudges` has no alias; it is opt-in via `[plugins.inject] modes` (default `[]`).
+
+#### Coaching nudges A/B (T53.1, 2026-09-18)
+
+I-18: short nudges (do not re-read, use `expand`, outline-first, search before Grep) may
+cut waste, but they are re-read every turn. Data lives in `modes/nudges.md` (D7). Isolated
+store, `[plugins.memory] recall_titles = 0`. Command:
+
+```bash
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"t531","source":"startup"}' \
+  | rtok --config <tmp>/rtok.toml hook SessionStart
+```
+
+| arm | `[plugins.inject] modes` | SessionStart `additionalContext` bytes | est. tokens (prose 4.2) |
+|-----|--------------------------|---------------------------------------:|------------------------:|
+| off (default) | `[]` | 0 | 0 |
+| on | `["nudges"]` | 478 | 114 |
+
+On-arm bytes are identical across two consecutive runs. The same config's
+UserPromptSubmit `additionalContext` does not contain `# nudges`.
+
+`rtok bench` both arms without `RTOK_BENCH_LIVE` (live `claude -p` **not** run):
+
+| config | mean input | mean cache | mean output | mean cost USD | pass | live |
+|--------|------------|------------|-------------|---------------|------|------|
+| off | 0 | 0 | 0 | 0.0000 | 6/6 | false |
+| on | 0 | 0 | 0 | 0.0000 | 6/6 | false |
+
+Pass parity holds; cost is zeros. The live cost-per-passed-task gate stays open, so
+`nudges` stays **off** by default (`config/default.toml` `[plugins.inject] modes = []`).
 
 **Reading vs §4 vendor claims.** We still do **not** claim caveman's 65 % or ponytail's
 −54 % LOC against a live bill. This gate shows the native path wins the re-runnable
