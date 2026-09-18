@@ -177,6 +177,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
             HookOutput::default()
         }
         "SessionEnd" => {
+            #[cfg(feature = "inject")]
+            {
+                let path = input.transcript_path.as_deref().unwrap_or("");
+                let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                    let _ = crate::plugins::checkpoint::save_session(path, &Ctx::new(cx));
+                }));
+            }
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
