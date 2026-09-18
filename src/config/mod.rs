@@ -170,6 +170,17 @@ section! {
         /// do not already carry the field. Other wires are unaffected.
         context_management: bool = false,
         dry_run: bool = false,
+        /// Opt-in tool description rewrite (T59.5). `max_description_tokens = 0` keeps it off.
+        tools_rewrite: ToolsRewrite = ToolsRewrite::default(),
+    }
+}
+
+section! {
+    /// `[proxy.tools_rewrite]`
+    ToolsRewrite {
+        max_description_tokens: u32 = 0,
+        allow: Vec<String> = Vec::new(),
+        deny: Vec<String> = Vec::new(),
     }
 }
 

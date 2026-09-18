@@ -57,6 +57,7 @@ pub use live::LiveCall;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod semantic_cache;
+pub mod tools_rewrite;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
@@ -226,6 +227,18 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         };
         // Provider request shaping runs in both modes (T11.2: OpenAI `stream_options`;
         // T51.2: Anthropic `context_management`).
+        let request_body = if let Ok(mut body) = serde_json::from_slice::<Value>(&request_body) {
+            if let Some(m) = tools_rewrite::rewrite(
+                &mut body,
+                &state.cfg.proxy.tools_rewrite,
+                &state.cfg.estimator,
+            ) && let Some(r) = recorded.as_ref() {
+                let _ = state.store.insert_measurement(&r.session, &m);
+            }
+            serde_json::to_vec(&body).map_or(request_body, Bytes::from)
+        } else {
+            request_body
+        };
         let request_body = match wire {
             Some(wire) => prepare(&state, wire, request_body),
             None => request_body,
