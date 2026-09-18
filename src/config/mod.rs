@@ -151,6 +151,17 @@ section! {
 }
 
 section! {
+    /// `[proxy.tools_rewrite]` — opt-in `tools[]` description rewrite (T59.5). Off: bytes
+    /// identical. Empty `allow` keeps every tool not in `deny`. `input_schema` is never touched.
+    ToolsRewrite {
+        enabled: bool = false,
+        max_description_tokens: u32 = 60,
+        allow: Vec<String> = Vec::new(),
+        deny: Vec<String> = Vec::new(),
+    }
+}
+
+section! {
     /// `[proxy]` — the proxy server itself; the usage-capture plugin is `[plugins.proxy]`.
     Proxy {
         /// When false the HTTP listener stays up but every request is byte-forwarded with
@@ -170,7 +181,6 @@ section! {
         /// do not already carry the field. Other wires are unaffected.
         context_management: bool = false,
         dry_run: bool = false,
-        /// Opt-in tool description rewrite (T59.5). `max_description_tokens = 0` keeps it off.
         tools_rewrite: ToolsRewrite = ToolsRewrite::default(),
     }
 }
@@ -178,7 +188,9 @@ section! {
 section! {
     /// `[proxy.tools_rewrite]`
     ToolsRewrite {
-        max_description_tokens: u32 = 0,
+        /// Off by default so request bytes stay identical until an A/B (T59.5).
+        enabled: bool = false,
+        max_description_tokens: u32 = 60,
         allow: Vec<String> = Vec::new(),
         deny: Vec<String> = Vec::new(),
     }
@@ -1230,6 +1242,28 @@ mod tests {
         assert_eq!(cfg.estimator.prose, 4.2);
         assert!(!cfg.plugins.cmd.rewrite);
         assert!(cfg.plugins.cmd.enabled);
+    }
+
+    #[test]
+    fn tools_rewrite_defaults_overlay_and_unknown_key() {
+        let d = ToolsRewrite::default();
+        assert!(!d.enabled);
+        assert_eq!(d.max_description_tokens, 60);
+        assert!(d.allow.is_empty());
+        assert!(d.deny.is_empty());
+        let cfg: Config = parse(
+            "[proxy.tools_rewrite]
+enabled = true
+max_description_tokens = 40
+deny = [\"Bash\"]
+",
+        )
+        .unwrap();
+        assert!(cfg.proxy.tools_rewrite.enabled);
+        assert_eq!(cfg.proxy.tools_rewrite.max_description_tokens, 40);
+        assert_eq!(cfg.proxy.tools_rewrite.deny, ["Bash"]);
+        let err = parse("[proxy.tools_rewrite]\nbogus = true\n").unwrap_err();
+        assert!(err.to_string().contains("bogus"), "{err}");
     }
 
     #[test]
