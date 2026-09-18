@@ -36,7 +36,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T63.1 | todo | P3 | 3 | 0% | |
 | T64.1 | todo | P3 | 3 | 0% | |
 | T64.2 | todo | P3 | 2 | 0% | |
-| T64.3 | todo | P2 | 1 | 0% | |
 | T65.1 | todo | P2 | 3 | 0% | |
 | T65.2 | todo | P3 | 3 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
@@ -267,10 +266,6 @@ Done when a rule may set `group = "dir"` (path-per-line output: `find`, `rg -l`,
 From `research.md` §11. `rules::dedupe` folds consecutive identical lines to `line (×N)`; logs repeat the same line with a different timestamp, pid or request id and never fold, and a line that repeats after one other line never folds either.
 Done when `dedupe = "normalized"` (the current behaviour stays `dedupe = true`) keys a line with timestamps, hex ids, pids and durations replaced by placeholders, folds every later match into the first occurrence as `line (×N, also lines k, l, …)` keeping the first verbatim, and a fixture of 3,000 log lines (nginx access log, a `cargo test` run with 200 identical warnings, `kubectl logs`) shows the bytes saved against `dedupe = true`; unit tests for the key normaliser (no false merge of two different error codes). Ordering of the kept lines is unchanged so the head/tail cut still works.
 
-### T64.3. Prompt-cache FAQ with the measured hit rate per surface
-
-From `research.md` §11. rtk's README answers "does it break Claude's prompt cache" in one paragraph; rtok has the stronger story (byte-stable injection, live-zone proxy rewrites, `rtok report` cache section) and no page that says it.
-Done when a `docs/` FAQ section "Does rtok break the prompt cache?" states it per surface with a measured number each: the hook filters once and the host stores the result in its transcript (same shape as rtk — nothing on later turns changes), `inject` is byte-stable per turn (name the test), `archive`/`proxy` rewrite only outside `keep_turns` with byte-identical pointers (name the test and the cache hit rate before/after from `rtok report` on this machine, dated), and `guard` denials add no bytes; the README links the section and `docs/comparison.md` §"The platform itself" points at it instead of restating the number.
 
 ### T65.1. Content-hash dedup of tool output within a session
 
