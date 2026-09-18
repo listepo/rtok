@@ -53,7 +53,6 @@
 - T69.4. `rtok memory status` and the Memory page rows
 - T69.5. `remember:` prompts save a note; per-turn recall stays behind an A/B
 - T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
-- T70.1. pi extension shortens every tool result, not only bash
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
 - T70.4. Cursor plugin shortens MCP results the host launched
