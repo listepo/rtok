@@ -56,7 +56,6 @@
 - T70.5. `guard` on pi and OpenCode through the plugin
 - T70.6. Compaction on pi and OpenCode through the plugin
 - T70.7. Cursor: `inject` has no path in, and the host table says it does
-- T71.1. `curl` / `wget` HTML pages as readable text
 - T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
 - T71.3. rtok's own skill, installed with the host plugin
 - T71.4. Measure the per-skill listing overhead through the proxy

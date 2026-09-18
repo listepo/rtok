@@ -56,7 +56,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T70.5 | todo | P3 | 3 | 0% | |
 | T70.6 | todo | P3 | 3 | 0% | |
 | T70.7 | todo | P2 | 2 | 0% | |
-| T71.1 | todo | P3 | 3 | 0% | |
 | T71.2 | todo | P3 | 3 | 0% | |
 | T71.3 | todo | P3 | 2 | 0% | |
 | T71.4 | todo | P3 | 2 | 0% | |
@@ -403,16 +402,6 @@ Done when:
 2. If the events exist: `plugins/cursor/hooks/hooks.json` and `src/agents/cursor/mod.rs` register them onto `rtok hook SessionStart` / `rtok hook UserPromptSubmit --host cursor`, the injection is byte-stable and inside the existing budget, and a hook e2e asserts the same bytes Claude Code gets for the same store.
 3. If they do not exist: `inject` stops being claimed on Cursor — the surface claim is narrowed where `reaches` computes it, not patched in the markdown — and the card records the doc line that says so.
 4. Either way `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table, `src/agents/cursor/README.md` explains the outcome, and the same audit is run for every other host whose table claims a plugin no registered event can carry (one line per host in the card).
-
-### T71.1. `curl` / `wget` HTML pages as readable text
-
-From I-71 (tinyjuice `TokenJuice`, read 2026-09-18: HTML/RSS → text, 77.0 % smaller self-reported). The `[curl]` rule (`rules/default.toml`) cuts by position (head 10 / tail 10, keep `error|HTTP|curl:`), so a page fetched with `curl` or `wget -O-` keeps 20 lines of `<head>` boilerplate and drops the body text the model asked for. A TOML rule cannot do it (T50.1 is data only); it is one formatter in `formatters.rs`, the T58.5 shape.
-Gated on T50.1 step 1: proceeds only when the `stats` family table shows HTML bodies as a visible slice of the `curl` / `wget` family on this machine (≥ 1 % of Bash result bytes); otherwise the card leaves for `ideas.md` with the number.
-Done when:
-1. A `curl` / `wget` formatter detects `<html` or `<!doctype html` (case-insensitive) in the first KB and returns `None` otherwise, so the rule path stays the fallback for JSON, plain text and errors.
-2. Output keeps `<title>`, headings (`h1`–`h6` as `# …` lines) and text nodes in document order; `script`, `style`, `nav`, `footer`, `svg`, comments and tags are dropped; whitespace collapsed; entities decoded for the common set (`&amp; &lt; &gt; &quot; &#39; &nbsp;`); the `curl` progress and `HTTP/` status lines stay. A character scanner, no new dependency (an HTML parser crate needs creator approval and a one-line reason).
-3. Lossless: the raw page is archived as today and the `expand <id>` trailer is kept; the head/tail cut of the `[curl]` rule applies after the pass.
-4. `tests/cmd_golden` fixtures: one real page (saved, ≤ 100 KB), one JSON response (untouched), one error; `Measurement { plugin = "cmd", kind = "formatter" }` beats the `[curl]` rule on the page fixture or the formatter is not added; the cmd docs page family table cites the row.
 
 ### T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
 
