@@ -308,7 +308,11 @@ fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
         #[cfg(feature = "lang-kotlin")]
         "kt" | "kts" => compiled!(tree_sitter_kotlin_ng::LANGUAGE, KOTLIN_TAGS, ""),
         #[cfg(feature = "lang-swift")]
-        "swift" => compiled!(tree_sitter_swift::LANGUAGE, tree_sitter_swift::TAGS_QUERY, ""),
+        "swift" => compiled!(
+            tree_sitter_swift::LANGUAGE,
+            tree_sitter_swift::TAGS_QUERY,
+            ""
+        ),
         #[cfg(feature = "lang-csharp")]
         "cs" => compiled!(tree_sitter_c_sharp::LANGUAGE, CSHARP_TAGS, ""),
         #[cfg(feature = "lang-ruby")]
@@ -318,7 +322,11 @@ fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
             tree_sitter_ruby::LOCALS_QUERY
         ),
         #[cfg(feature = "lang-php")]
-        "php" => compiled!(tree_sitter_php::LANGUAGE_PHP, tree_sitter_php::TAGS_QUERY, ""),
+        "php" => compiled!(
+            tree_sitter_php::LANGUAGE_PHP,
+            tree_sitter_php::TAGS_QUERY,
+            ""
+        ),
         _ => None,
     }
 }
