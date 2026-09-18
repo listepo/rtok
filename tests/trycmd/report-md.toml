@@ -1,0 +1,337 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml report --format md"
+stdout = """
+# rtok report
+
+Window [..] → [..] (30d) · store [..]
+
+## Window
+
+| ledger | rows | covers |
+| --- | --- | --- |
+| calls | 0 of 0 | window (30d) |
+| measurements | 0 | whole ledger (no row times) |
+| usage | 0 | whole ledger (no row times) |
+
+**No rows in window.** The store has no rows to report.
+
+## Savings
+
+Estimated tokens from `Measurement` rows only: est_before − est_after, net — an `expand` row counts negative, because retrieval costs tokens. A `Measurement` row carries no turn count, so these are floors, not context-token-turns.
+
+No rows in window.
+
+## Calls
+
+Latency per surface, nearest-rank p50/p95 over the calls that recorded one.
+
+No rows in window.
+
+## Cache
+
+Prompt-cache busts by cause, from the proxy's `usage` rows (whole ledger).
+
+No rows in window.
+
+## Expand
+
+How often a live-zone pointer had to be expanded (`archive_decisions` rows, T5.4).
+
+No rows in window.
+
+## Config
+
+Every effective key with its origin — the `config show --sources` page.
+
+| key | value | source |
+| --- | --- | --- |
+| bench.configs.a | bench/configs/legacy.json | default |
+| bench.configs.b | bench/configs/rtok.json | default |
+| bench.dry_run | false | default |
+| bench.runs | 3 | default |
+| bench.tasks | bench/tasks.toml | default |
+| bench.timeout_s | 900 | default |
+| core.archive_dir | ~/.rtok/archive | default |
+| core.call_io_inline_bytes | 65536 | default |
+| core.db_path | ~/.rtok/rtok.db | default |
+| core.enabled | true | default |
+| core.retain_calls_days | 30 | default |
+| core.session_env | CLAUDE_SESSION_ID | default |
+| demon.backoff_ms | 1000 | default |
+| demon.healthy_ms | 10000 | default |
+| demon.max_backoff_ms | 30000 | default |
+| demon.poll_ms | 200 | default |
+| demon.services | [proxy] | default |
+| demon.state_dir | ~/.rtok/demon | default |
+| doctor.claude_json | ~/.claude.json | default |
+| doctor.instruction_warn_tokens | 1000 | default |
+| doctor.instructions | false | default |
+| doctor.mcp_json | .mcp.json | default |
+| doctor.mcp_timeout_ms | 15000 | default |
+| doctor.probe_timeout_ms | 500 | default |
+| doctor.settings_path | ~/.claude/settings.json | default |
+| estimator.cjk | 1 | default |
+| estimator.code | 3.5 | default |
+| estimator.json | 3 | default |
+| estimator.prose | 4.2 | default |
+| expand.max_lines | 0 | default |
+| expand.max_rate | 0.05 | default |
+| filter.cmd |  | default |
+| hook.fail_open | true | default |
+| hook.host | claude | default |
+| hook.max_ms | 10 | default |
+| log.files | 5 | default |
+| log.level | info | default |
+| log.lines | 200 | default |
+| log.max_bytes | 1048576 | default |
+| log.path | ~/.rtok/logs/rtok.log | default |
+| log.to_db | true | default |
+| mcp.max_description_tokens | 60 | default |
+| mcp.max_result_chars | 20000 | default |
+| mcp.tools | [] | default |
+| otel.content | true | default |
+| otel.content_bytes | 65536 | default |
+| otel.endpoint |  | default |
+| otel.flush_secs | 5 | default |
+| otel.headers |  | default |
+| otel.service_name | rtok | default |
+| plugins.archive.enabled | true | default |
+| plugins.archive.head_lines | 8 | default |
+| plugins.archive.keep_turns | 4 | default |
+| plugins.archive.live_blobs | false | default |
+| plugins.archive.min_tokens | 1500 | default |
+| plugins.archive.tail_lines | 4 | default |
+| plugins.archive.tiers | false | default |
+| plugins.cmd.enabled | true | default |
+| plugins.cmd.fail_tail_lines | 80 | default |
+| plugins.cmd.never_wrap | [rtok, sudo] | default |
+| plugins.cmd.rewrite | true | default |
+| plugins.cmd.rules | ~/.rtok/rules.toml | default |
+| plugins.cmd.rules_dir | ~/.rtok/rules.d | default |
+| plugins.cmd.shell |  | default |
+| plugins.cmd.trailer_min_lines | 40 | default |
+| plugins.compress.enabled | false | default |
+| plugins.graph.auto_index | true | default |
+| plugins.graph.backend | tags | default |
+| plugins.graph.body_lines | 40 | default |
+| plugins.graph.enabled | true | default |
+| plugins.graph.max_tokens | 2000 | default |
+| plugins.graph.watch | off | default |
+| plugins.guard.deny_grep_glob | false | default |
+| plugins.guard.enabled | true | default |
+| plugins.guard.skill_max_bytes | 8192 | default |
+| plugins.guard.skills | false | default |
+| plugins.guard.window_turns | 8 | default |
+| plugins.inject.budget_tokens | 800 | default |
+| plugins.inject.enabled | true | default |
+| plugins.inject.modes | [] | default |
+| plugins.inject.modes_dir | ~/.rtok/modes | default |
+| plugins.measure.enabled | true | default |
+| plugins.memory.checkpoint_tokens | 400 | default |
+| plugins.memory.embed.dimensions | 384 | default |
+| plugins.memory.embed.enabled | false | default |
+| plugins.memory.embed.hybrid | true | default |
+| plugins.memory.embed.model | all-MiniLM-L6-v2 | default |
+| plugins.memory.embed.provider | local | default |
+| plugins.memory.enabled | true | default |
+| plugins.memory.recall_titles | 5 | default |
+| plugins.memory.recall_tokens | 200 | default |
+| plugins.memory.search_limit | 5 | default |
+| plugins.proxy.enabled | true | default |
+| plugins.proxy.semantic_cache.cache_by_model | true | default |
+| plugins.proxy.semantic_cache.cache_by_provider | true | default |
+| plugins.proxy.semantic_cache.embed_backend | hash | default |
+| plugins.proxy.semantic_cache.enabled | false | default |
+| plugins.proxy.semantic_cache.max_messages | 1 | default |
+| plugins.proxy.semantic_cache.require_empty_tools | true | default |
+| plugins.proxy.semantic_cache.threshold | 0.99 | default |
+| plugins.proxy.semantic_cache.ttl_s | 300 | default |
+| plugins.read.advice | true | default |
+| plugins.read.allow_paths | [] | default |
+| plugins.read.default_mode | full | default |
+| plugins.read.enabled | true | default |
+| plugins.read.languages | [] | default |
+| plugins.read.max_chars | 20000 | default |
+| plugins.read.native_max_bytes | 32768 | default |
+| plugins.read.search_max | 50 | default |
+| plugins.read.search_max_bytes | 1048576 | default |
+| plugins.read.tree_depth | 2 | default |
+| plugins.toon.enabled | false | default |
+| plugins.toon.min_rows | 5 | default |
+| plugins.wasm.dir | ~/.rtok/plugins | default |
+| plugins.wasm.enabled | false | default |
+| proxy.bind | 127.0.0.1 | default |
+| proxy.context_management | false | default |
+| proxy.dry_run | false | default |
+| proxy.enabled | true | default |
+| proxy.gemini_upstream | https://generativelanguage.googleapis.com | default |
+| proxy.include_usage | true | default |
+| proxy.mode | passthrough | default |
+| proxy.openai_upstream | https://api.openai.com | default |
+| proxy.port | 8790 | default |
+| proxy.timeout_s | 600 | default |
+| proxy.upstream | https://api.anthropic.com | default |
+| report.ai | false | default |
+| report.budget_tokens | 8000 | default |
+| report.format | md | default |
+| report.out |  | default |
+| report.since | 30d | default |
+| setup.aider.config_path | ~/.aider.conf.yml | default |
+| setup.backup | true | default |
+| setup.claude.settings_path | ~/.claude/settings.json | default |
+| setup.codex.config_path | ~/.codex/config.toml | default |
+| setup.copilot.dir | ~/.copilot | default |
+| setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
+| setup.dry_run | false | default |
+| setup.hook_timeout_s | 5 | default |
+| setup.kimi.config_path | ~/.kimi-code/config.toml | default |
+| setup.mcp | true | default |
+| setup.modes | [] | default |
+| setup.opencode.config_path | ~/.config/opencode/opencode.json | default |
+| setup.pi.extensions_path | ~/.pi/agent/extensions | default |
+| setup.proxy | false | default |
+| setup.windsurf.config_path | ~/.codeium/windsurf/mcp_config.json | default |
+| setup.yes | false | default |
+| setup.zcode.config_path | ~/.zcode/cli/config.json | default |
+| setup.zed.config_path | ~/.config/zed/settings.json | default |
+| stats.baseline |  | default |
+| stats.calibrate_samples | 30 | default |
+| stats.codex_dir | ~/.codex/sessions | default |
+| stats.format | table | default |
+| stats.plugin |  | default |
+| stats.price | false | default |
+| stats.prices.claude-haiku-4-5.cache_read | 0.1 | default |
+| stats.prices.claude-haiku-4-5.cache_write | 1.25 | default |
+| stats.prices.claude-haiku-4-5.input | 1 | default |
+| stats.prices.claude-haiku-4-5.output | 5 | default |
+| stats.prices.claude-sonnet-5.cache_read | 0.2 | default |
+| stats.prices.claude-sonnet-5.cache_write | 2.5 | default |
+| stats.prices.claude-sonnet-5.input | 2 | default |
+| stats.prices.claude-sonnet-5.output | 10 | default |
+| stats.prices.gpt-5-mini.cache_read | 0.025 | default |
+| stats.prices.gpt-5-mini.cache_write | 0.25 | default |
+| stats.prices.gpt-5-mini.input | 0.25 | default |
+| stats.prices.gpt-5-mini.output | 2 | default |
+| stats.prices.gpt-5.cache_read | 0.125 | default |
+| stats.prices.gpt-5.cache_write | 1.25 | default |
+| stats.prices.gpt-5.input | 1.25 | default |
+| stats.prices.gpt-5.output | 10 | default |
+| stats.since | 30d | default |
+| stats.transcripts_dir | tests/trycmd/input/stats-price-tx | user |
+| tui.tab |  | default |
+| tui.tick_secs | 2 | default |
+| web.host | 127.0.0.1 | default |
+| web.port | 3333 | default |
+
+177 keys.
+
+## Doctor
+
+Live probes (the `rtok doctor` page), not store rows.
+
+```text
+hooks 0
+mcp
+  rtok ([..] tools, ~[..] desc tokens) [..]
+proxy 
+proxy openai 
+BASH_MAX_OUTPUT_LENGTH (unset)
+autoCompactWindow (unset)
+read-share no data
+agents
+  claude (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not installed (--proxy)
+    plugin  not supported: Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link
+  claude (desktop)
+    hooks   not supported: Claude Desktop has no hook events
+    mcp     not installed
+    proxy   not supported: Claude Desktop has no base-URL setting; its requests do not pass through the proxy
+    plugin  not supported: Claude Desktop loads MCP from claude_desktop_config.json; there is no plugin directory to link
+  cursor (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Cursor has no base-URL setting to point at the proxy
+    plugin  not installed (--yes)
+  cursor (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Cursor has no base-URL setting to point at the proxy
+    plugin  not installed (--yes)
+  codex (cli)
+    hooks   not supported: Codex has no shell hook events
+    mcp     not installed
+    proxy   not installed (--proxy)
+    plugin  not supported: Codex loads MCP from config.toml; there is no plugin directory to link
+  opencode (cli)
+    hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
+    mcp     not installed
+    proxy   not installed
+    plugin  not installed (--yes)
+  opencode (desktop)
+    hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
+    mcp     not installed
+    proxy   not installed
+    plugin  not installed (--yes)
+  pi (cli)
+    hooks   not supported: pi has no hook events; the extension owns the bash call path
+    mcp     not supported: pi philosophy is no MCP; the extension calls rtok run and rtok filter directly
+    proxy   not supported: pi provider base URLs live in its models config, which setup does not edit
+    plugin  not installed (--yes)
+  zcode (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them
+    plugin  not supported: ZCode plugins come from the Z.ai marketplace; there is no local plugin directory to link
+  kimi (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
+    plugin  not supported: Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link
+  copilot (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
+    plugin  not supported: Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link
+  copilot (desktop)
+    hooks   not supported: the GitHub Copilot app does not document hooks; the shared hooks/rtok.json is written for the CLI
+    mcp     not installed
+    proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
+    plugin  not supported: Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link
+  aider (cli)
+    hooks   not supported: aider has no hook events; it reads .aider.conf.yml and .env
+    mcp     not supported: aider has no MCP support
+    proxy   not installed (--proxy)
+    plugin  not supported: aider has no plugin directory to link
+  windsurf (desktop)
+    hooks   not supported: Cascade hooks speak agent_action_name/tool_info, not hook_event_name/tool_name; rtok hook has no --host windsurf mapping
+    mcp     not installed
+    proxy   not supported: Windsurf serves its own models; there is no documented base-URL setting to point at the proxy
+    plugin  not supported: Cascade has no local plugin directory to link; rules and memories live in .windsurf/
+  zed (cli)
+    hooks   not supported: Zed has no shell hook events; its agent runs tools itself and takes external agents over ACP
+    mcp     not installed
+    proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
+    plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
+  zed (desktop)
+    hooks   not supported: Zed has no shell hook events; its agent runs tools itself and takes external agents over ACP
+    mcp     not installed
+    proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
+    plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
+skills (1 listed, 154 desc bytes ≈ 38 tokens per request)
+  dry-refactoring project desc 154c body 2772B calls - WARN never invoked
+```
+
+## Recommendations
+
+No recommendations.
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-report-md"
+RTOK_HOME = "target/tmp/t60-2-report-md"
