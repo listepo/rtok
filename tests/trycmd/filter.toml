@@ -1,0 +1,19 @@
+bin.name = "rtok"
+args = "filter --cmd \"git status\""
+stdin = """
+On branch main
+Changes not staged for commit:
+	modified:   src/lib.rs
+"""
+stdout = """
+On branch main
+modified:   src/lib.rs"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-filter"
+RTOK_HOME = "target/tmp/t60-2-filter"
+SHELL = "/bin/sh"
