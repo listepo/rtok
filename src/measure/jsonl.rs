@@ -24,6 +24,16 @@ pub struct ToolResult {
     pub turn: u32,
 }
 
+/// T61.1: a skill body rides as an `isMeta` user record whose top-level
+/// `sourceToolUseID` keys it to the `Skill` tool_use — `stats` used to see only the
+/// 22-byte tool_result while the body (median 8.9 KB, max 248 KB) re-sent whole.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Injected {
+    pub tool_use_id: String,
+    pub bytes: u64,
+    pub turn: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Usage {
     pub input_tokens: u32,
@@ -42,6 +52,7 @@ pub struct Parsed {
     pub duplicates: u64,
     pub tool_uses: Vec<ToolUse>,
     pub tool_results: Vec<ToolResult>,
+    pub injected: Vec<Injected>,
     pub assistant_texts: Vec<String>,
     pub usages: Vec<Usage>,
     pub turns: u32,
@@ -92,6 +103,7 @@ pub fn parse_dir(dir: &Path) -> std::io::Result<Parsed> {
                 acc.turns += one.turns;
                 acc.tool_uses.extend(one.tool_uses);
                 acc.tool_results.extend(one.tool_results);
+                acc.injected.extend(one.injected);
                 acc.assistant_texts.extend(one.assistant_texts);
                 acc.usages.extend(one.usages);
             }
@@ -142,6 +154,17 @@ fn ingest(v: &Value, out: &mut Parsed) {
         out.duplicates += 1;
     }
     let turn = out.turns.saturating_sub(1);
+    if ty == "user"
+        && v.get("isMeta").and_then(Value::as_bool).unwrap_or(false)
+        && let Some(id) = v.get("sourceToolUseID").and_then(Value::as_str)
+        && !id.is_empty()
+    {
+        out.injected.push(Injected {
+            tool_use_id: id.to_string(),
+            bytes: flatten_content(msg.get("content")).len() as u64,
+            turn,
+        });
+    }
     if let Some(u) = usage_of(msg).or_else(|| usage_of(v))
         && is_turn
     {

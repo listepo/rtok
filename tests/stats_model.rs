@@ -227,6 +227,46 @@ fn stats_plugin_json_is_unchanged_on_a_fixture_store() {
     let _ = fs::remove_dir_all(&h);
 }
 
+/// T61.1: an `isMeta` record keyed by `sourceToolUseID` folds into a `skills`
+/// section — one row per skill, `resident` = body bytes × the API requests at or
+/// after the injection. The default goldens above stay byte-identical because the
+/// section is absent when no session injected a skill body.
+#[test]
+fn stats_renders_injected_skill_bodies() {
+    let h = home("skills");
+    let projects = h.join(".claude/projects/acme");
+    fs::create_dir_all(&projects).unwrap();
+    fs::write(
+        projects.join("sk.jsonl"),
+        concat!(
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"k1\",\"name\":\"Skill\",\"input\":{\"skill\":\"slint\",\"args\":\"\"}}],\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n",
+            "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"k1\",\"content\":\"ideas.md\"}]}}\n",
+            "{\"type\":\"user\",\"isMeta\":true,\"sourceToolUseID\":\"k1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"line one\\nline two\\nline three\\n\"}]}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"working\"}],\"usage\":{\"input_tokens\":200,\"cache_read_input_tokens\":40,\"output_tokens\":2}}}\n",
+        ),
+    )
+    .unwrap();
+    let table = rtok(&["stats"], &h);
+    assert!(table.contains("resident"), "the skills table: {table}");
+    assert!(table.contains("slint"), "one row per skill: {table}");
+    assert!(
+        table.contains("lines 4"),
+        "the isMeta record is one of the counted lines: {table}"
+    );
+    let js = rtok(&["stats", "--json"], &h);
+    for needle in [
+        "\"skills\"",
+        "\"slint\"",
+        "\"count\": 1",
+        "\"bytes\": 29",
+        "\"est_tokens\": 8",
+        "\"resident\": 29",
+    ] {
+        assert!(js.contains(needle), "`{needle}` missing from: {js}");
+    }
+    let _ = fs::remove_dir_all(&h);
+}
+
 #[test]
 fn stats_cache_table_is_unchanged_on_a_fixture_store() {
     let h = home("cache");

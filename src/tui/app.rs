@@ -9,6 +9,33 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use crate::config::{Config, validate};
 use crate::web::model::{self, Snapshot};
 
+/// The one key table (T60.8): the footer and the `?` overlay render from it, so the
+/// key hints are never hand-written twice. `(page, key, description)`; page `""` is
+/// global. The handler in [`App::key`] stays behavioural code; every hint the UI
+/// prints is generated from here.
+pub(crate) const KEYS: &[(&str, &str, &str)] = &[
+    ("", "q/Esc", "quit"),
+    ("", "Left/Right", "switch tab"),
+    ("", "1..9", "jump to tab"),
+    ("", "?", "help"),
+    ("", "r", "refresh now"),
+    ("plugins", "↑/↓", "move cursor"),
+    ("plugins", "Space/Enter", "toggle plugin"),
+    ("calls", "↑/↓", "move selection"),
+    ("calls", "Enter/z", "detail pane"),
+    ("sessions", "↑/↓", "move selection"),
+    ("sessions", "l", "live-only filter"),
+];
+
+/// The key rows for one page: globals first, then the page's own.
+pub(crate) fn keys_for(page: &str) -> Vec<(&'static str, &'static str)> {
+    KEYS
+        .iter()
+        .filter(|(p, _, _)| p.is_empty() || *p == page)
+        .map(|(_, k, d)| (*k, *d))
+        .collect()
+}
+
 /// The TUI's whole state. The tabs are [`model::pages`] by reference — there is no
 /// second list to let drift (D23); a page the model adds is a tab at the next `App::new`.
 pub struct App {
@@ -30,6 +57,8 @@ pub struct App {
     /// The Sessions page's own state (T60.10): which row is selected and whether the
     /// live-only filter is on.
     sessions: SessionsState,
+    /// Whether the `?` help overlay is up (T60.8).
+    help: bool,
 }
 
 /// Selection and detail state of the Calls page (T15.5). The row list lives in the
@@ -68,6 +97,7 @@ impl App {
             plugin_status: String::new(),
             calls: CallsState::default(),
             sessions: SessionsState::default(),
+            help: false,
         }
     }
 
@@ -167,6 +197,11 @@ impl App {
         self.sessions.live_only
     }
 
+    /// Whether the `?` help overlay is up (T60.8).
+    pub fn help_open(&self) -> bool {
+        self.help
+    }
+
     /// The Sessions page's keys (T60.10): `Up`/`Down` walk the visible rows, `l`
     /// toggles the live-only filter. Returns `true` when the key was consumed.
     fn sessions_key(&mut self, code: KeyCode) -> bool {
@@ -221,6 +256,16 @@ impl App {
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
         if mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
             return true;
+        }
+        // T60.8: `?` toggles the help overlay and `r` re-reads the model before the
+        // next tick; both are global.
+        if code == KeyCode::Char('?') {
+            self.help = !self.help;
+            return false;
+        }
+        if code == KeyCode::Char('r') {
+            self.tick();
+            return false;
         }
         if self.page() == "calls" && self.calls_key(code) {
             return false;
@@ -564,6 +609,40 @@ pub(super) mod tests {
 
         // The shell's keys still work on the Calls page.
         assert!(app.key(KeyCode::Char('q'), KeyModifiers::NONE), "q quits");
+    }
+
+    /// T60.8: `?` toggles the help overlay state and `r` re-reads the model — both
+    /// global, neither quits.
+    #[test]
+    fn question_mark_and_r_are_global() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        assert!(!app.help_open());
+        app.key(KeyCode::Char('?'), KeyModifiers::NONE);
+        assert!(app.help_open());
+        app.key(KeyCode::Char('?'), KeyModifiers::NONE);
+        assert!(!app.help_open(), "? toggles closed again");
+        let before = app.updated();
+        app.key(KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(app.updated() >= before, "the refresh restamped the tick");
+        assert!(!app.key(KeyCode::Char('r'), KeyModifiers::NONE), "r is not a quit");
+    }
+
+    /// T60.8: the KEYS table documents every page whose keys the handler claims —
+    /// the one-source check the footer and the overlay render from.
+    #[test]
+    fn keys_table_covers_the_row_state_pages() {
+        for page in ["plugins", "calls", "sessions"] {
+            assert!(
+                keys_for(page).len() >= 2 + keys_for("").len(),
+                "{page} documents its row keys"
+            );
+        }
+        assert_eq!(
+            keys_for("overview").len(),
+            keys_for("").len(),
+            "overview claims no row keys"
+        );
     }
 
     /// T60.10: the Sessions page claims `Up`/`Down`/`l` — the selection clamps to

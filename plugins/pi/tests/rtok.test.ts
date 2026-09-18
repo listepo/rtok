@@ -74,3 +74,56 @@ test("unchanged or empty filter output keeps the original", async () => {
     undefined,
   );
 });
+
+/** The `archive rewrite --stdin` fake: rewrites the first large toolResult to a pointer. */
+const ARCHIVE_REWRITES = `
+if (args.includes("archive")) {
+  const messages = JSON.parse(input);
+  for (const m of messages) {
+    if (m.role === "toolResult" && typeof m.content?.[0]?.text === "string" && m.content[0].text.length > 20) {
+      m.content = [{ type: "text", text: "[archived fake-id: 1 lines · 1 tokens · expand(fake-id)]" }];
+      break;
+    }
+  }
+  process.stdout.write(JSON.stringify(messages));
+} else {
+  process.stdout.write(input);
+}
+`;
+
+/** A pi `context` message array, real-session shape (toolResult / camelCase toolCallId). */
+function piArray(large: boolean) {
+  return [
+    { role: "user", content: [{ type: "text", text: "prompt" }] },
+    { role: "assistant", content: [{ type: "text", text: "working" }] },
+    {
+      role: "toolResult",
+      toolCallId: "call_1",
+      toolName: "bash",
+      content: [{ type: "text", text: large ? "line\n".repeat(200) : "small" }],
+      isError: false,
+    },
+  ];
+}
+
+test("context: a large message array comes back shortened with an expand pointer", async () => {
+  const { on } = load(ARCHIVE_REWRITES);
+  const out = await on.context({ messages: piArray(true) });
+  assert.ok(out, "the handler returns a replacement array");
+  const result = out.messages.find((m: any) => m.role === "toolResult");
+  assert.match(result.content[0].text, /\[archived fake-id/);
+  assert.match(result.content[0].text, /expand\(fake-id\)/);
+});
+
+test("context: an untouched array keeps pi's exact object", async () => {
+  const { on } = load(ARCHIVE_REWRITES);
+  // Small result: rtok echoes the input bytes, so the handler changes nothing.
+  assert.equal(await on.context({ messages: piArray(false) }), undefined);
+});
+
+test("context: spawn failure or garbage output keeps the array (fail open)", async () => {
+  const missing = load(null);
+  assert.equal(await missing.on.context({ messages: piArray(true) }), undefined);
+  const garbage = load(filterPrints("not json {{{"));
+  assert.equal(await garbage.on.context({ messages: piArray(true) }), undefined);
+});

@@ -38,6 +38,9 @@ pub struct Report {
     /// The instruction audit (T7.2): `Some` only when `[doctor] instructions` ran — an audit
     /// that found nothing still prints its section header, as it always did.
     pub instructions: Option<Instructions>,
+    /// The skills audit (T61.3): `Some` when the probe ran; an empty tree prints no section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<SkillsAudit>,
     /// Every host variant and the state of each rtok module in it, as `agent setup` prints.
     pub agents: Vec<AgentModules>,
 }
@@ -80,6 +83,33 @@ pub struct ReadShare {
     pub grep_tokens: u64,
     pub glob_tokens: u64,
     pub share: f64,
+}
+
+/// The skills audit (T61.3): what the host lists and what it costs the system
+/// prompt. Advice only — nothing here edits a file.
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillsAudit {
+    pub rows: Vec<SkillRow>,
+    /// Description bytes the listing rides with every request (≈ tokens/4).
+    pub desc_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillRow {
+    pub name: String,
+    /// `user`, `project`, or `plugin:<id>@<marketplace>`.
+    pub source: String,
+    pub desc_chars: usize,
+    pub body_bytes: u64,
+    /// Invocations in the last 30 d from the T61.1 fold; `None` = no data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocations: Option<u64>,
+    /// `description:` over the measured 200-char median.
+    pub warn_desc: bool,
+    /// Body over 8 KB — almost always a `references/` candidate.
+    pub warn_body: bool,
+    /// Listed but never invoked in the window (only when data exists).
+    pub warn_never: bool,
 }
 
 impl Report {
@@ -148,6 +178,37 @@ impl Report {
                 out.push_str(&format!("  duplicate `{sent}` in {}\n", names.join(", ")));
             }
         }
+        if let Some(skills) = &self.skills
+            && !skills.rows.is_empty()
+        {
+            out.push_str(&format!(
+                "skills ({} listed, {} desc bytes ≈ {} tokens per request)\n",
+                skills.rows.len(),
+                skills.desc_bytes,
+                skills.desc_bytes / 4
+            ));
+            for r in &skills.rows {
+                let mut flags = String::new();
+                if r.warn_desc {
+                    flags.push_str(" WARN desc>200");
+                }
+                if r.warn_body {
+                    flags.push_str(" WARN body>8K (references/)");
+                }
+                if r.warn_never {
+                    flags.push_str(" WARN never invoked");
+                }
+                out.push_str(&format!(
+                    "  {} {} desc {}c body {}B calls {}{}\n",
+                    r.name,
+                    r.source,
+                    r.desc_chars,
+                    r.body_bytes,
+                    r.invocations.map_or_else(|| "-".into(), |n| n.to_string()),
+                    flags
+                ));
+            }
+        }
         out
     }
 }
@@ -203,6 +264,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
             .doctor
             .instructions
             .then(|| instruction_audit(cfg, settings.as_ref(), claude.as_ref())),
+        skills: skills_audit(cfg),
         // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
         agents: crate::agents::HOSTS
             .iter()
@@ -216,6 +278,186 @@ pub fn page(cfg: &Config) -> Result<Report> {
             })
             .collect(),
     })
+}
+
+/// The skills audit probe (T61.3): the documented roots of every host on this
+/// machine (`research.md` §10.1), the enabled plugin skill dirs, and the T61.1
+/// invocation counts from the transcripts. Fail open: unreadable roots are skipped.
+fn skills_audit(cfg: &Config) -> Option<SkillsAudit> {
+    let home = &cfg.home;
+    let cwd = std::env::current_dir().ok()?;
+    let user = [
+        ".claude/skills",
+        ".codex/skills",
+        ".cursor/skills",
+        ".gemini/skills",
+        ".copilot/skills",
+    ]
+    .iter()
+    .map(|p| home.join(p).display().to_string())
+    .collect();
+    let project = [".claude/skills", ".agents/skills"]
+        .iter()
+        .map(|p| cwd.join(p).display().to_string())
+        .collect();
+    let roots = vec![
+        ("user".to_string(), user),
+        ("project".to_string(), project),
+        ("plugin".to_string(), plugin_skill_dirs(home)),
+    ];
+    let invocations = skill_invocations(cfg);
+    Some(audit_from(
+        &roots,
+        &|p| std::fs::read_to_string(p).ok(),
+        &|d| {
+            let mut out: Vec<String> = std::fs::read_dir(d)
+                .map(|rd| {
+                    rd.flatten()
+                        .filter(|e| e.path().is_dir())
+                        .map(|e| e.path().display().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            out.sort();
+            out
+        },
+        &invocations,
+    ))
+}
+
+/// `<installPath>/skills` of every enabled plugin entry (`installed_plugins.json`).
+fn plugin_skill_dirs(home: &Path) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(
+        &std::fs::read_to_string(home.join(".claude/plugins/installed_plugins.json"))
+            .unwrap_or_default(),
+    ) else {
+        return Vec::new();
+    };
+    let Some(plugins) = v.get("plugins").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (id, entries) in plugins {
+        for e in entries.as_array().into_iter().flatten() {
+            if let Some(p) = e.get("installPath").and_then(|v| v.as_str()) {
+                out.push(format!("{p}/skills [{id}]"));
+            }
+        }
+    }
+    out
+}
+
+/// Walk `roots` — `(source label, dirs whose one-level subdirs may hold a
+/// `SKILL.md`)` — through `read`/`subdirs` so tests drive a [`crate::testutil::Vfs`]
+/// the way production drives std::fs (D29). Sorted by body bytes, name, byte-stable.
+fn audit_from(
+    roots: &[(String, Vec<String>)],
+    read: &dyn Fn(&str) -> Option<String>,
+    subdirs: &dyn Fn(&str) -> Vec<String>,
+    invocations: &Option<std::collections::BTreeMap<String, u64>>,
+) -> SkillsAudit {
+    let mut rows: Vec<SkillRow> = Vec::new();
+    for (source, dirs) in roots {
+        for dir in dirs {
+            // A `[id]` suffix carries the plugin id into the source label.
+            let (dir, plugin) = match dir.split_once(" [") {
+                Some((d, id)) => (d, Some(format!("plugin:{}", id.trim_end_matches(']')))),
+                None => (dir.as_str(), None),
+            };
+            let source = plugin.as_deref().unwrap_or(source);
+            for sub in subdirs(dir) {
+                let Some(name) = sub.rsplit('/').next() else {
+                    continue;
+                };
+                let Some(md) = read(&format!("{sub}/SKILL.md")) else {
+                    continue;
+                };
+                rows.push(skill_row(name, source, &md, invocations));
+            }
+        }
+    }
+    rows.sort_by(|a, b| b.body_bytes.cmp(&a.body_bytes).then(a.name.cmp(&b.name)));
+    let desc_bytes = rows.iter().map(|r| r.desc_chars as u64).sum();
+    SkillsAudit { rows, desc_bytes }
+}
+
+/// One row: frontmatter `description:` length, body bytes, and the flags the
+/// measured §10.2 numbers justify.
+fn skill_row(
+    name: &str,
+    source: &str,
+    md: &str,
+    invocations: &Option<std::collections::BTreeMap<String, u64>>,
+) -> SkillRow {
+    let desc_chars = frontmatter_desc(md);
+    let body = frontmatter_body(md);
+    let body_bytes = body.len() as u64;
+    let calls = invocations.as_ref().and_then(|m| m.get(name).copied());
+    SkillRow {
+        name: name.to_string(),
+        source: source.to_string(),
+        desc_chars,
+        body_bytes,
+        invocations: calls,
+        warn_desc: desc_chars > 200,
+        warn_body: body_bytes > 8192,
+        warn_never: invocations.is_some() && calls.is_none(),
+    }
+}
+
+/// The `description:` value's char count from the frontmatter block, if any.
+fn frontmatter_desc(md: &str) -> usize {
+    let mut lines = md.lines();
+    if lines.next().is_none_or(|l| l.trim() != "---") {
+        return 0;
+    }
+    for l in lines {
+        let l = l.trim();
+        if l == "---" {
+            break;
+        }
+        if let Some(v) = l.strip_prefix("description:") {
+            return v.trim().trim_matches('"').chars().count();
+        }
+    }
+    0
+}
+
+/// The bytes after the closing `---` fence — the body the T61.3 flags measure.
+/// A missing or unclosed fence treats the whole file as the body (fail open).
+fn frontmatter_body(md: &str) -> &str {
+    let Some(rest) = md.strip_prefix("---\n") else {
+        return md;
+    };
+    match rest.find("\n---\n") {
+        Some(i) => &rest[i + "\n---\n".len()..],
+        None => md,
+    }
+}
+
+/// Invocations per skill over the last 30 d, counted the T61.1 way (the `Skill`
+/// tool_use's `input.skill`). `None` = no scan ran (tests, unreadable dir) — the
+/// `never invoked` flag then stays off (fail open), and never on the hook path.
+fn skill_invocations(cfg: &Config) -> Option<std::collections::BTreeMap<String, u64>> {
+    if cfg!(test) {
+        return None;
+    }
+    let cutoff =
+        std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(30 * 86400))?;
+    let mut out = std::collections::BTreeMap::new();
+    for p in crate::measure::codex::jsonl_paths(&cfg.stats.transcripts_dir, cutoff) {
+        let Ok(parsed) = crate::measure::jsonl::parse_path(&p) else {
+            continue;
+        };
+        for u in &parsed.tool_uses {
+            if u.name == "Skill"
+                && let Some(s) = u.input.get("skill").and_then(|v| v.as_str())
+            {
+                *out.entry(s.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+    Some(out)
 }
 
 const INJECTORS: &[&str] = &[
@@ -660,6 +902,121 @@ pub(crate) fn http_get(base: &str, path: &str, timeout: Duration) -> Option<Stri
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// T61.3: the audit walks a Vfs tree of three skills — one over 200 desc chars,
+    /// one over an 8 KB body, one never invoked — flags each, sorts by body bytes
+    /// and totals the description bytes (D29: no host disk for path/content tests).
+    #[test]
+    fn skills_audit_flags_the_measured_warns_on_a_vfs_tree() {
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write(
+            "home/.claude/skills/tiny/SKILL.md",
+            "---\ndescription: small\n---\nbody\n",
+        );
+        vfs.write(
+            "home/.claude/skills/wordy/SKILL.md",
+            format!("---\ndescription: {}\n---\nbody\n", "w".repeat(201)),
+        );
+        vfs.write(
+            "home/.claude/skills/big/SKILL.md",
+            format!("---\ndescription: fine\n---\n{}\n", "b".repeat(9000)),
+        );
+        vfs.write(
+            "home/.claude/plugins/cache/x/y/1.0/skills/plug/SKILL.md",
+            "---\ndescription: from a plugin\n---\nbody\n",
+        );
+        let read = |p: &str| vfs.read_str(p).map(str::to_string);
+        let subdirs = |d: &str| {
+            vfs.paths_under(d)
+                .iter()
+                .filter_map(|p| p.strip_suffix("/SKILL.md").map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let invocations = Some(std::collections::BTreeMap::from([(
+            "tiny".to_string(),
+            8u64,
+        )]));
+        let roots = vec![
+            ("user".to_string(), vec!["home/.claude/skills".to_string()]),
+            (
+                "plugin".to_string(),
+                vec!["home/.claude/plugins/cache/x/y/1.0/skills [x@market]".to_string()],
+            ),
+        ];
+        let audit = audit_from(&roots, &read, &subdirs, &invocations);
+        assert_eq!(
+            audit
+                .rows
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            ["big", "plug", "tiny", "wordy"],
+            "body bytes desc, name asc"
+        );
+        let wordy = audit.rows.iter().find(|r| r.name == "wordy").unwrap();
+        assert!(wordy.warn_desc, "{wordy:?}");
+        assert!(wordy.warn_never, "invocation data exists, count does not");
+        let big = audit.rows.iter().find(|r| r.name == "big").unwrap();
+        assert!(big.warn_body, "{big:?}");
+        let tiny = audit.rows.iter().find(|r| r.name == "tiny").unwrap();
+        assert_eq!(tiny.invocations, Some(8));
+        assert!(
+            !tiny.warn_never && !tiny.warn_body && !tiny.warn_desc,
+            "{tiny:?}"
+        );
+        let plug = audit.rows.iter().find(|r| r.name == "plug").unwrap();
+        assert_eq!(plug.source, "plugin:x@market", "{plug:?}");
+        assert_eq!(
+            audit.desc_bytes, 223,
+            "small=5, wordy=201, fine=4, `from a plugin`=13"
+        );
+        // No invocation data → the never-invoked flag stays off (fail open).
+        let none = audit_from(&roots, &read, &subdirs, &None);
+        assert!(none.rows.iter().all(|r| !r.warn_never));
+    }
+
+    /// The doctor text carries the section with the header total and per-row flags.
+    #[test]
+    fn skills_audit_renders_a_section_with_flags() {
+        let audit = SkillsAudit {
+            desc_bytes: 205,
+            rows: vec![SkillRow {
+                name: "update-config".into(),
+                source: "user".into(),
+                desc_chars: 205,
+                body_bytes: 248_175,
+                invocations: Some(4),
+                warn_desc: true,
+                warn_body: true,
+                warn_never: false,
+            }],
+        };
+        let r = Report {
+            hooks_total: 0,
+            hooks_by_event: BTreeMap::new(),
+            mcp: Vec::new(),
+            proxy: String::new(),
+            proxy_openai: String::new(),
+            mcp_tool_search_disabled: false,
+            bash_max_output_length: None,
+            auto_compact_window: None,
+            read_share: None,
+            instructions: None,
+            skills: Some(audit),
+            agents: Vec::new(),
+        };
+        let text = r.to_text();
+        assert!(
+            text.contains("skills (1 listed, 205 desc bytes ≈ 51 tokens per request)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("update-config user desc 205c body 248175B calls 4"),
+            "{text}"
+        );
+        assert!(text.contains("WARN desc>200"), "{text}");
+        assert!(text.contains("WARN body>8K (references/)"), "{text}");
+    }
 
     #[test]
     fn counts_nested_hook_commands() {

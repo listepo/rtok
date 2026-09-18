@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 /// Every `*.jsonl` under `dir` (recursive) modified at or after `cutoff`. Shared with the
-/// Claude Code transcript walk in `stats::collect`.
-pub(super) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
+/// Claude Code transcript walk in `stats::collect` and the doctor skills audit (T61.3).
+pub(crate) fn jsonl_paths(dir: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {

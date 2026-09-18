@@ -48,5 +48,6 @@ test("pi loads the linked rtok directory once", { skip: !pkg && "pi not installe
   assert.match(ext.path, /extensions[\\/]rtok[\\/]extensions[\\/]rtok\.ts$/);
   assert.ok(ext.handlers.has("tool_call"), "bash rewrite handler");
   assert.ok(ext.handlers.has("tool_result"), "bash filter handler");
+  assert.ok(ext.handlers.has("context"), "archive live-zone handler (T70.2)");
   fs.rmSync(tmp, { recursive: true, force: true });
 });

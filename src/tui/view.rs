@@ -11,14 +11,15 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph, Row, Sparkline, Table, Tabs};
+use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs};
 
-use super::app::App;
+use super::app::{App, keys_for};
 use crate::store::CallRow;
 use crate::web::model::{self, PluginPage};
 
-/// One screen: header · [alert] · tabs · body · footer.
-/// The alert row stays up for the whole disabled period (proxy/core enabled=false).
+/// One screen: header · [alert] · tabs · body · footer, with the `?` overlay on top
+/// when it is open (T60.8). The alert row stays up for the whole disabled period
+/// (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
     let alert = app.snapshot().usage.alerts.first().cloned();
     let [header, alert_area, tabs, body, footer] = Layout::vertical([
@@ -40,6 +41,34 @@ pub(super) fn draw(frame: &mut Frame, app: &App) {
     frame.render_widget(tab_bar(app), tabs);
     render_page(frame, app, body);
     frame.render_widget(Paragraph::new(footer_line(app)), footer);
+    if app.help_open() {
+        render_help(frame, app);
+    }
+}
+
+/// The `?` overlay (T60.8): the global keys plus the current page's, generated from
+/// [`super::app::keys_for`] — never a hand-written list.
+fn render_help(frame: &mut Frame, app: &App) {
+    let rows = keys_for(app.page());
+    let height = rows.len() as u16 + 2; // borders
+    let [_, mid, _] = Layout::vertical([
+        Constraint::Percentage(20),
+        Constraint::Length(height),
+        Constraint::Min(0),
+    ])
+    .areas(frame.area());
+    let lines: Vec<Line<'static>> = rows
+        .into_iter()
+        .map(|(k, d)| Line::from(format!("{k:14} {d}")))
+        .collect();
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("keys — {} (? closes)", app.page())),
+        ),
+        mid,
+    );
 }
 
 /// `rtok · <project> · <cols>x<rows>` — what, where, and the window it is in.
@@ -218,9 +247,14 @@ fn plugins_table(app: &App) -> Table<'static> {
 /// The Plugins tab's status line: the row keys, and the last toggle's outcome until
 /// the cursor moves.
 fn plugins_status_line(app: &App) -> String {
-    let keys = "↑/↓ select · Space toggle";
+    // T60.8: the hints are the KEYS table's plugin rows.
+    let keys = keys_for("plugins")
+        .iter()
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>()
+        .join(" · ");
     match app.plugin_status() {
-        "" => keys.to_string(),
+        "" => keys,
         status => format!("{keys} · {status}"),
     }
 }
@@ -461,10 +495,15 @@ fn sessions_table(rows: Vec<Row<'static>>) -> Table<'static> {
 }
 
 fn sessions_status_line(live_only: bool) -> String {
-    format!(
-        "↑/↓ select · l {}",
-        if live_only { "show all" } else { "live only" }
-    )
+    let mut keys = keys_for("sessions")
+        .iter()
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if live_only {
+        keys.push_str(" · l again shows all");
+    }
+    keys
 }
 
 /// The model's Logs page (T15.7): the snapshot's log lines verbatim, newest first —
@@ -482,10 +521,15 @@ fn logs_text(app: &App) -> Paragraph<'static> {
 
 /// Key hints and when the data last came off the model.
 fn footer_line(app: &App) -> String {
-    let tabs = app.tab_names().len();
     let stamp = crate::log::stamp(app.updated());
     let time = stamp.rsplit_once(' ').map_or("-", |(_, t)| t);
-    format!("q quit · Left/Right or 1..{tabs} switch tabs · updated {time} UTC")
+    // T60.8: the hints are the KEYS table's global rows, never hand-written text.
+    let hints = keys_for("")
+        .iter()
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>()
+        .join(" · ");
+    format!("{hints} · updated {time} UTC")
 }
 
 #[cfg(test)]
@@ -520,7 +564,7 @@ mod tests {
         for name in app.tab_names() {
             assert!(screen.contains(name), "tab {name} is on screen");
         }
-        assert!(screen.contains("q quit"));
+        assert!(screen.contains("q/Esc"), "the footer hints are generated (T60.8)");
         assert!(screen.contains("updated"));
         assert!(screen.contains("UTC"));
     }
@@ -622,7 +666,7 @@ mod tests {
         for plugin in &app.snapshot().plugins {
             assert!(first.contains(plugin.id), "{} is on screen", plugin.id);
         }
-        assert!(first.contains("Space toggle"), "the key hint");
+        assert!(first.contains("Space/Enter"), "the key hint comes from the KEYS table");
         assert!(
             first.contains("> measure"),
             "the cursor marks the first row"
@@ -958,7 +1002,8 @@ mod tests {
     fn footer_hints_the_keys_and_the_last_tick() {
         let app = App::new(&config());
         let line = footer_line(&app);
-        assert!(line.contains("q quit"), "line: {line}");
+        assert!(line.contains("q/Esc"), "line: {line}");
+        assert!(line.contains("?") && line.contains("r"), "the footer names the T60.8 keys: {line}");
         assert!(line.contains("UTC"), "line: {line}");
     }
 
@@ -1000,7 +1045,7 @@ mod tests {
             rendered.contains("m0") && rendered.contains("m1"),
             "{rendered}"
         );
-        assert!(rendered.contains("↑/↓ select"), "the status names the keys");
+        assert!(rendered.contains("↑/↓"), "the status comes from the KEYS table");
         app.key(KeyCode::Char('l'), KeyModifiers::NONE);
         let rendered = screen(&app);
         assert!(rendered.contains("m0"), "the live row stays");
@@ -1027,5 +1072,42 @@ mod tests {
         let screen = screen(&app);
         assert!(screen.contains("m199"), "the cursor row is on screen");
         assert!(!screen.contains("m0 "), "the top scrolled off");
+    }
+
+    /// T60.8: `?` opens the help overlay listing the global keys plus the current
+    /// page's, generated from the KEYS table; `?` again closes it.
+    #[test]
+    fn help_overlay_lists_the_keys_and_toggles() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        select(&mut app, "sessions");
+        let closed = screen(&app);
+        assert!(!closed.contains("keys —"), "closed until ?");
+        assert!(!closed.contains("live-only filter"), "{closed}");
+        app.key(KeyCode::Char('?'), KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(open.contains("keys — sessions"), "{open}");
+        // Globals and the page's own rows, off the one table.
+        assert!(open.contains("refresh now"), "{open}");
+        assert!(open.contains("live-only filter"), "{open}");
+        assert!(
+            !open.contains("toggle plugin"),
+            "another page's rows stay off: {open}"
+        );
+        app.key(KeyCode::Char('?'), KeyModifiers::NONE);
+        assert!(!screen(&app).contains("keys —"), "? closes the overlay");
+    }
+
+    /// T60.8: `r` re-reads the model immediately, before the next tick.
+    #[test]
+    fn r_refreshes_the_snapshot_immediately() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        let before = app.updated();
+        app.key(KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(app.updated() >= before, "the stamp moved");
+        assert_eq!(app.snapshot().plugins.len(), model::snapshot(&cfg).plugins.len());
+        // The shell's keys still work; `r` is not a quit.
+        assert!(!app.key(KeyCode::Char('r'), KeyModifiers::NONE));
     }
 }

@@ -803,6 +803,7 @@ mod tests {
                 auto_compact_window: None,
                 read_share: None,
                 instructions: None,
+                skills: None,
                 agents: vec![],
             },
             recommendations: vec![],

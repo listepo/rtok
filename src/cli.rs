@@ -161,6 +161,12 @@ enum Cmd {
         #[arg(long)]
         grep: Option<String>,
     },
+    /// The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
+    #[cfg(feature = "archive")]
+    Archive {
+        #[command(subcommand)]
+        action: ArchiveCmd,
+    },
     /// Print shell completions for `bash`, `zsh`, `fish` or `powershell`
     Completions {
         /// Shell to complete for
@@ -227,6 +233,20 @@ enum Cmd {
         /// Model-shaped rendering of the same document instead of `--format` (T22.4)
         #[arg(long)]
         ai: bool,
+    },
+}
+
+/// `rtok archive rewrite` — the pi `context` carrier (T70.2): the same live-zone
+/// rewrite the proxy runs, driven over a pi message array on stdin.
+#[cfg(feature = "archive")]
+#[derive(Subcommand)]
+enum ArchiveCmd {
+    /// Rewrite old tool results to archive pointers; message array JSON on stdin,
+    /// rewritten array on stdout (input bytes echoed when nothing is eligible)
+    Rewrite {
+        /// Read the message array from stdin (pi `context` event)
+        #[arg(long)]
+        stdin: bool,
     },
 }
 
@@ -773,6 +793,22 @@ pub fn run() -> Result<()> {
         Cmd::Expand { id, lines, grep } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             crate::expand::run(&cfg, &id, lines.as_deref(), grep.as_deref())?;
+        }
+        #[cfg(feature = "archive")]
+        Cmd::Archive { action } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            match action {
+                ArchiveCmd::Rewrite { stdin: _ } => {
+                    let cx = crate::plugin::Runtime::open(cfg, "archive-rewrite")?;
+                    let mut buf = Vec::new();
+                    let _ = io::stdin().read_to_end(&mut buf);
+                    let out = crate::plugins::archive::pi::rewrite_stdin(
+                        &buf,
+                        &crate::plugin::Ctx::new(&cx),
+                    )?;
+                    io::stdout().write_all(&out)?;
+                }
+            }
         }
         Cmd::Completions { shell } => {
             let mut cmd = Cli::command();

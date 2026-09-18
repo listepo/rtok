@@ -21,13 +21,16 @@ use rtok_plugin_sdk::{
     WireRequest,
 };
 
+pub mod pi;
+
 pub struct Archive;
 
 impl Plugin for Archive {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "archive",
-            surfaces: &[Surface::Proxy, Surface::Mcp],
+            // `cli`: `rtok archive rewrite --stdin` — the pi `context` carrier (T70.2).
+            surfaces: &[Surface::Proxy, Surface::Mcp, Surface::Cli],
             default_on: true,
         }
     }

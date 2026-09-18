@@ -58,6 +58,10 @@ pub struct Report {
     /// Absent from `--json` when no session edited anything, so the T15.11 goldens hold.
     #[serde(default, skip_serializing_if = "EditRow::is_empty")]
     pub edits: EditRow,
+    /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
+    /// name. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<BTreeMap<String, SkillRow>>,
 }
 
 /// What the model re-types to edit (plan T58.3). `old_string` is the span `Edit` and every
@@ -75,6 +79,20 @@ impl EditRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
+}
+
+/// T61.1: one skill's injected bodies — the `isMeta` user records keyed to that
+/// skill's `Skill` tool_use. `resident` is the number the context actually carried:
+/// body bytes × the API requests of the session that came after the injection.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillRow {
+    pub count: u64,
+    pub bytes: u64,
+    pub mean: u64,
+    pub p95: u64,
+    pub max: u64,
+    pub est_tokens: u64,
+    pub resident: u64,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -209,6 +227,9 @@ impl Report {
         s.push_str(&format_section("tool", &self.tools));
         s.push_str(&format_section("bash", &self.bash_families));
         s.push_str(&format_section("mcp", &self.mcp_groups));
+        if let Some(skills) = &self.skills {
+            s.push_str(&skills_section(skills));
+        }
         s
     }
 }
@@ -246,6 +267,44 @@ fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
             r.max.to_string(),
             r.est_tokens.to_string(),
             r.ctt.to_string(),
+        ]);
+    }
+    table(&cols, &out)
+}
+
+/// T61.1: the injected skill bodies, one row per skill, `resident` = the bytes the
+/// later API requests of the same session actually carried.
+fn skills_section(skills: &BTreeMap<String, SkillRow>) -> String {
+    let cols = [
+        Col::left(24),
+        Col::right(7),
+        Col::right(12),
+        Col::right(8),
+        Col::right(8),
+        Col::right(8),
+        Col::right(12),
+        Col::right(14),
+    ];
+    let mut out = vec![vec![
+        "skill".to_string(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "resident".into(),
+    ]];
+    for (name, r) in skills {
+        out.push(vec![
+            name.clone(),
+            r.count.to_string(),
+            r.bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.resident.to_string(),
         ]);
     }
     table(&cols, &out)
@@ -463,12 +522,18 @@ fn fold_session(
     let n = u64::from(parsed.turns);
     let mut id_name: BTreeMap<&str, &str> = BTreeMap::new();
     let mut id_family: BTreeMap<&str, String> = BTreeMap::new();
+    let mut id_skill: BTreeMap<&str, String> = BTreeMap::new();
     for u in &parsed.tool_uses {
         id_name.insert(u.id.as_str(), u.name.as_str());
         if u.name == "Bash"
             && let Some(cmd) = u.input.get("command").and_then(|v| v.as_str())
         {
             id_family.insert(u.id.as_str(), bash_family(cmd));
+        }
+        if u.name == "Skill"
+            && let Some(skill) = u.input.get("skill").and_then(|v| v.as_str())
+        {
+            id_skill.insert(u.id.as_str(), skill.to_string());
         }
         fold_edits(&mut report.edits, u);
     }
@@ -502,6 +567,7 @@ fn fold_session(
             add(&mut report.mcp_groups, grp, bytes, tokens, ctt);
         }
     }
+    fold_skills(parsed, &id_skill, report);
     for u in &parsed.usages {
         report.usage_input += u64::from(u.input_tokens);
         report.usage_cache_create += u64::from(u.cache_creation_input_tokens);
@@ -514,6 +580,33 @@ fn fold_session(
                 + u64::from(last.cache_creation_input_tokens)
                 + u64::from(last.cache_read_input_tokens),
         );
+    }
+}
+
+/// T61.1: fold the session's injected skill bodies into one row per skill, keyed by
+/// the `Skill` tool_use's `input.skill`. `resident` multiplies the body bytes by the
+/// API requests of this session at or after the injection turn — what the context
+/// actually carried.
+fn fold_skills(parsed: &Parsed, id_skill: &BTreeMap<&str, String>, report: &mut Report) {
+    if parsed.injected.is_empty() {
+        return;
+    }
+    let map = report.skills.get_or_insert_with(BTreeMap::new);
+    for inj in &parsed.injected {
+        let Some(name) = id_skill.get(inj.tool_use_id.as_str()) else {
+            continue;
+        };
+        let later = parsed.usages.iter().filter(|u| u.turn >= inj.turn).count() as u64;
+        let row = map.entry(name.clone()).or_default();
+        row.count += 1;
+        row.bytes += inj.bytes;
+        row.max = row.max.max(inj.bytes);
+        row.est_tokens += est_tokens(inj.bytes);
+        row.resident += inj.bytes.saturating_mul(later);
+    }
+    for row in map.values_mut() {
+        row.mean = row.bytes.checked_div(row.count).unwrap_or(0);
+        row.p95 = row.max;
     }
 }
 
@@ -809,6 +902,85 @@ mod tests {
         assert_eq!(bash.ctt, 8);
         assert_eq!(r.bash_families.get("sed").unwrap().count, 1);
         assert_eq!(r.usage_cache_read, 80);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level
+    /// `sourceToolUseID`; the fold keys them by the `Skill` tool_use's `input.skill`
+    /// and `resident` multiplies the body bytes by the API requests at or after the
+    /// injection turn. One 3-line and one 3,000-line body.
+    #[test]
+    fn skills_fold_injected_bodies_and_count_resident_requests() {
+        let dir = tempfile_dir();
+        let path = dir.join("sk.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        let tiny = "line one\nline two\nline three\n";
+        let huge: String = (0..3000).map(|i| format!("body line {i}\n")).collect();
+        let line = |v: serde_json::Value| v.to_string();
+        // Turn 0: the Skill tool_use. Turn 1: its 22-byte tool_result. Turn 2: the
+        // isMeta body — what every later request of the session re-carries.
+        for l in [
+            line(json!({"type":"assistant","message":{"id":"m1","content":[
+                {"type":"tool_use","id":"tu-s1","name":"Skill","input":{"skill":"tiny-skill","args":""}}]},
+                "usage":{"input_tokens":10,"output_tokens":1}})),
+            line(json!({"type":"user","message":{"content":[
+                {"type":"tool_result","tool_use_id":"tu-s1","content":"ideas.md"}]}})),
+            line(
+                json!({"type":"user","isMeta":true,"sourceToolUseID":"tu-s1",
+                "message":{"role":"user","content":[{"type":"text","text":tiny}]}}),
+            ),
+            line(
+                json!({"type":"assistant","message":{"id":"m2","content":[]},
+                "usage":{"input_tokens":100,"output_tokens":2}}),
+            ),
+            line(json!({"type":"assistant","message":{"id":"m3","content":[
+                {"type":"tool_use","id":"tu-s2","name":"Skill","input":{"skill":"huge-skill","args":""}}]},
+                "usage":{"input_tokens":110,"output_tokens":2}})),
+            line(
+                json!({"type":"user","isMeta":true,"sourceToolUseID":"tu-s2",
+                "message":{"role":"user","content":[{"type":"text","text":huge}]}}),
+            ),
+        ] {
+            writeln!(f, "{l}").unwrap();
+        }
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let skills = r.skills.as_ref().expect("skills folded");
+        let tiny_row = skills.get("tiny-skill").unwrap();
+        assert_eq!(tiny_row.count, 1);
+        assert_eq!(tiny_row.bytes, tiny.len() as u64);
+        assert_eq!(tiny_row.mean, tiny.len() as u64);
+        assert_eq!(tiny_row.p95, tiny_row.max);
+        assert_eq!(
+            tiny_row.resident,
+            tiny.len() as u64 * 2,
+            "the m2 and m3 requests carried it"
+        );
+        let huge_row = skills.get("huge-skill").unwrap();
+        assert_eq!(huge_row.count, 1);
+        assert_eq!(huge_row.bytes, huge.len() as u64);
+        assert_eq!(
+            huge_row.resident, 0,
+            "no API request rides after the last injection in this fixture"
+        );
+        // The 8-byte tool_result is all `tools` sees for Skill; the body lives in
+        // the skills fold now.
+        assert_eq!(
+            r.tools.get("Skill").unwrap().total_bytes,
+            "ideas.md".len() as u64
+        );
+        let table = r.to_table();
+        assert!(
+            table.contains("skill") && table.contains("resident"),
+            "{table}"
+        );
+        let js = r.to_json().unwrap();
+        assert!(js.contains("\"skills\""), "{js}");
         fs::remove_dir_all(&dir).ok();
     }
 

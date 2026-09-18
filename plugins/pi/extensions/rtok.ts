@@ -1,10 +1,12 @@
 // rtok pi extension (T10.6, D21): the single bash call path, no MCP.
 //
-// pi philosophy is no MCP: this extension does NOT register tools. It only
-// rewrites `bash` calls to `rtok run -- …` (archived, filtered, measured) and
-// compresses `bash` results through `rtok filter`, with an `expand <id>`
-// trailer that recovers the full output (lossless by default, D4).
-// Missing `rtok` fails open and names the ketch install (D21).
+// pi philosophy is no MCP: this extension does NOT register tools. It
+// rewrites `bash` calls to `rtok run -- …` (archived, filtered, measured),
+// compresses `bash` results through `rtok filter`, and shrinks the pi
+// `context` message array through `rtok archive rewrite` (T70.2) — the same
+// archive live zone the proxy runs, without a proxy. Every shortened payload
+// carries an `expand <id>` trailer (lossless by default, D4). Missing `rtok`
+// fails open and names the ketch install (D21).
 //
 // Optional proxy: uncomment the `registerProvider` block to route pi's
 // provider through `rtok proxy` (T11.5 pattern, `http://127.0.0.1:8790/v1`).
@@ -70,6 +72,24 @@ export default function (pi) {
     const out = r.stdout.trimEnd();
     if (out && out !== text.trimEnd()) {
       return { content: [{ type: "text", text: out }] };
+    }
+  });
+
+  // The archive live zone without a proxy (T70.2). pi fires `context` before
+  // every LLM call with the full message array (a deep copy) and sends the
+  // returned `{ messages }` — so the rewrite must be idempotent. It is:
+  // `rtok archive rewrite` persists each pointer decision and echoes the
+  // input bytes back when nothing is eligible, so "no change" is a cheap
+  // string compare and pi keeps the exact same array object.
+  pi.on("context", async (event) => {
+    if (!Array.isArray(event.messages)) return;
+    const input = JSON.stringify(event.messages);
+    const r = await rtok(["archive", "rewrite", "--stdin"], input, undefined);
+    if (r.missing || !r.stdout || r.stdout === input) return;
+    try {
+      return { messages: JSON.parse(r.stdout) };
+    } catch {
+      return; // fail open: unparseable output keeps the untouched array
     }
   });
 
