@@ -20,6 +20,44 @@ test("replaces bash output via the injected filter", async () => {
   assert.equal(output.output, "On branch main\nmodified:   src/lib.rs\n");
 });
 
+test("replaces skill output via the injected filter", async () => {
+  const plugin = await createPlugin((cmd, stdin) => {
+    assert.equal(cmd, "skill nx-workspace");
+    assert.match(stdin, /Nx Workspace/);
+    return "# Nx Workspace Exploration\n";
+  })();
+  const output = {
+    output: "<skill_content name=\"nx-workspace\">\n# Nx Workspace Exploration\nbody\n",
+  };
+  await plugin["tool.execute.after"](
+    { tool: "skill", args: { name: "nx-workspace" } },
+    output,
+  );
+  assert.equal(output.output, "# Nx Workspace Exploration\n");
+});
+
+test("filters a 3000-line skill body", async () => {
+  const body = Array.from({ length: 3000 }, (_, i) => `line ${i}`).join("\n");
+  const plugin = await createPlugin((cmd, stdin) => {
+    assert.equal(cmd, "skill demo");
+    assert.equal(stdin.split("\n").length, 3000);
+    return "head\n";
+  })();
+  const output = { output: body };
+  await plugin["tool.execute.after"]({ tool: "skill", args: { name: "demo" } }, output);
+  assert.equal(output.output, "head\n");
+});
+
+test("small skill body still goes through the filter", async () => {
+  const plugin = await createPlugin((cmd, stdin) => {
+    assert.equal(cmd, "skill tiny");
+    return stdin;
+  })();
+  const output = { output: "# Tiny\n" };
+  await plugin["tool.execute.after"]({ tool: "skill", args: { name: "tiny" } }, output);
+  assert.equal(output.output, "# Tiny\n");
+});
+
 test("leaves non-bash tools unchanged", async () => {
   const plugin = await createPlugin(() => {
     throw new Error("filter must not run");
@@ -35,6 +73,14 @@ test("filterStdin passes the command and stdin to `rtok filter`", () => {
       `process.stdout.write(input.toUpperCase());`,
   );
   assert.equal(filterStdin("git status", "on branch"), "ON BRANCH");
+});
+
+test("filterStdin archives skill stdin", () => {
+  fakeRtok(
+    `if (args.join(" ") !== "filter --stdin --cmd skill nx --archive") process.exit(9);\n` +
+      `process.stdout.write("cut");`,
+  );
+  assert.equal(filterStdin("skill nx", "body"), "cut");
 });
 
 test("filterStdin fails open on a non-zero exit", () => {
