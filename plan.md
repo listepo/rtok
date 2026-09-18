@@ -54,7 +54,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T69.5 | todo | P3 | 2 | 0% | |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
-| T70.3 | in progress | P3 | 4 | 0% | Cursor / grok 4.6 |
 | T70.4 | todo | P2 | 3 | 0% | |
 | T70.7 | todo | P2 | 2 | 0% | |
 | T71.1 | todo | P3 | 3 | 0% | |
@@ -377,23 +376,6 @@ Done when:
 3. Fail open exactly as today: a missing `rtok`, a spawn error, or empty stdout returns the original content; the ketch hint is printed once.
 4. `plugins/pi/tests/rtok.test.ts` covers a large read result (shortened, trailer present), a small one (byte-identical passthrough) and a spawn failure (original returned); `Measurement { plugin = "cmd", kind = "rule" }` rows appear per tool family.
 5. `plugins/pi/README.md` and `src/agents/pi/README.md` list the new call path and the reached plugins; `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table in `docs/agents.md` if the reached set changes.
-
-### T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
-
-From `research.md` §15.3. `src/agents/pi/README.md` records "Not reachable: read, archive, proxy, inject, guard, memory, graph, toon, compress" because pi's philosophy is no MCP. `pi.registerTool` is documented as pi's own tool registration, which is not MCP, so the MCP-surface plugins have a path in on pi after all. The cost is description tokens in every pi request, which is the thing D15 holds `graph` and `memory` to (4 tools / 94 tokens, 3 memory tools).
-Done when:
-1. Step 1 (decides the task): verify `pi.registerTool`'s signature and result shape against pi's current docs and one real session; confirm a registered tool's description rides the request the way an MCP tool's does, and measure the byte cost of the set. If registration is not available to an extension, close with the finding.
-2. One call path per capability (D21): the extension's registered tools are thin callers of the same `rtok mcp` tool implementations through a CLI shim (`rtok mcp --call <tool> --json <args>` or the existing subcommands), never a second implementation of `read` / `search` / `symbol` / `mem_search`.
-3. Which tools: the measured-value set only — `read`, `search`, `tree`, `symbol`, `callers`, `expand`, `mem_search`, `mem_get` — with the total description budget at or under what `rtok doctor` prices for the same tools on an MCP host, recorded in the card. A tool that does not fit the budget is not registered.
-4. Off by default until step 1 and step 3 numbers are in: `[setup.pi] tools = false` (D12: config key + `docs/config.md` row in the same commit).
-5. Tests: `plugins/pi/tests/rtok.test.ts` registers against a fake `rtok` and asserts one call path per tool and fail-open on a missing binary; `src/agents/pi/README.md` module table and the reached set updated, host table re-blessed.
-
-Execution plan:
-1. Step 1 (done): pi 0.85.1 docs + types + one SDK session. `pi.registerTool` is available to extensions at load. A tool registered with a plain JSON-schema `parameters` object appears in `session.getAllTools()` with its description, the same list built-in `read`/`bash` ride. Description budget for the measured set (estimator prose 4.2, same as `rtok doctor`): read 17, search 12, tree 12, symbol 30, callers 27, expand 22, mem_search 11, mem_get 7 = **138 tokens**. All eight fit; none dropped.
-2. Add `[setup.pi] tools = false` (D12).
-3. Add `rtok mcp --call <tool> --json <args>` as the one CLI shim over `mcp::invoke` (no `rtok read` / `rtok graph symbol` today).
-4. Extension: on `session_start`, if `rtok config get setup.pi.tools` is `true`, `registerTool` each of the eight as a thin `mcp --call` wrapper. Missing binary: do not register (fail open).
-5. Tests, README reached set, `plugin_surfaces` += Mcp, bless host table.
 
 ### T70.4. Cursor plugin shortens MCP results the host launched
 
