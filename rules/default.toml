@@ -176,3 +176,17 @@ head = 8
 tail = 16
 keep = ["CMake Error|error:|FAILED|Error"]
 dedupe = true
+
+[ls]
+max_lines = 40
+head = 10
+tail = 10
+group = "dir"
+dedupe = true
+
+[find]
+max_lines = 40
+head = 10
+tail = 10
+group = "dir"
+dedupe = true
