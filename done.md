@@ -3937,3 +3937,10 @@ Execution plan (T58.5, Cursor / grok 4.6): isolated worktree `t58.5` from `t50.1
 
 Shipped: `docker ps` 3147→1190 vs rule 1311, `kubectl get` 4542→1731 vs rule 1770, `ps aux` 2341→870 vs rule 990 (`kind = formatter`, one row per object). tsc/eslint/mvn/gradle formatters skipped (T50.1 rules already beat default on keep-error lines).
 
+**T70.4 Cursor plugin shortens MCP results the host launched** · T59.4 · `src/mcp/wrap.rs`, `src/hooks/{types,mod}.rs`, `src/agents/cursor/mod.rs`, `plugins/cursor/hooks/hooks.json`
+Do: Cursor `postToolUse` (verified 2026-09-18: input `tool_output`; output `updated_mcp_tool_output` replaces MCP results only; `afterMCPExecution` / `afterShellExecution` have no documented replacement) maps onto `rtok hook PostToolUse --host cursor`. Long MCP `content[].text` is shortened through T59.4 `shorten_result`, lossless `expand <id>` trailer, `Measurement { plugin = "archive", kind = "mcp" }`. Skip `mcp_server_name == rtok` and tool `expand`. Fail open; never rewrite the call.
+Check: `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`, `shorten_result_records_archive_mcp_above_threshold`, `post_tool_use_shortens_long_mcp_results_and_skips_small_and_rtok`; `tests/host_docs.rs` green; host table unchanged (no bless).
+Complexity: 3/5 — one wrap helper, Cursor field map, one replacement stdout shape.
+Status: done 2026-09-18
+Check result: wrap/hooks/cursor lib tests and `cursor_plugin` / `host_docs` / `agents_doc` / `mcp_wrap` green. `just check` red only on a pre-existing trycmd bash-completion snapshot (`--context` from T67.2), not this hook.
+Model: Cursor / grok 4.6
