@@ -168,7 +168,7 @@ impl HookInput {
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
         (self.hook_event_name == "PreCompact").then_some(PreCompact {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
-            transcript_path: self.transcript_path.as_deref()?,
+            transcript_path: self.transcript_path.as_deref().unwrap_or(""),
         })
     }
 }
@@ -189,6 +189,7 @@ fn cursor_event<'a>(cli: &'a str, stdin: &'a str) -> &'a str {
         "afterShellExecution" => "PostToolUse",
         "beforeShellExecution" => "PreToolUse",
         "afterMCPExecution" => "AfterMCPExecution",
+        "preCompact" => "PreCompact",
         other => other,
     }
 }
@@ -201,6 +202,7 @@ fn claude_event(name: &str) -> &str {
         "sessionStart" => "SessionStart",
         "sessionEnd" => "SessionEnd",
         "userPromptSubmitted" => "UserPromptSubmit",
+        "preCompact" => "PreCompact",
         other => other,
     }
 }

@@ -15,6 +15,8 @@ pub struct Checkpoint {
     /// (plan T62.2): the body is gone after compaction and the model must know what it
     /// had, not re-invoke everything.
     pub skills: Vec<(String, u64)>,
+    /// Live archive ids for this session (T58.2): `(id, tool, bytes)`.
+    pub ids: Vec<(String, String, u64)>,
 }
 
 impl Checkpoint {
@@ -39,6 +41,9 @@ impl Checkpoint {
             s.push_str("path ");
             s.push_str(p);
             s.push('\n');
+        }
+        for (id, tool, bytes) in &self.ids {
+            s.push_str(&format!("id {id} {tool} {bytes}\n"));
         }
         for e in &self.errors {
             s.push_str("err ");
@@ -84,6 +89,7 @@ pub fn extract(jsonl: &str) -> Checkpoint {
         paths: paths.into_iter().collect(),
         errors: errors.into(),
         skills,
+        ids: Vec::new(),
     }
 }
 
