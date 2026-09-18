@@ -39,7 +39,7 @@ harness = false
 default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon", "compress"]
 measure = []
 cmd = []
-read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go"]
+read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go", "lang-java", "lang-kotlin", "lang-swift", "lang-csharp", "lang-ruby", "lang-php"]
 archive = []
 proxy = []
 inject = []
@@ -59,6 +59,12 @@ lang-python = ["dep:tree-sitter-python"]
 lang-dart = ["dep:tree-sitter-dart"]
 lang-c = ["dep:tree-sitter-c"]
 lang-go = ["dep:tree-sitter-go"]
+lang-java = ["dep:tree-sitter-java"]
+lang-kotlin = ["dep:tree-sitter-kotlin-ng"]
+lang-swift = ["dep:tree-sitter-swift"]
+lang-csharp = ["dep:tree-sitter-c-sharp"]
+lang-ruby = ["dep:tree-sitter-ruby"]
+lang-php = ["dep:tree-sitter-php"]
 
 [lints.rust]
 # Hand-written `unsafe` is forbidden. rustc only reports `UserProvided` blocks —
@@ -121,6 +127,12 @@ tree-sitter-python = { version = "0.25", optional = true } # lang-python tags (T
 tree-sitter-c = { version = "0.24", optional = true } # lang-c tags (T4.3)
 tree-sitter-go = { version = "0.25", optional = true } # lang-go tags (T4.3)
 tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
+tree-sitter-java = { version = "0.23.5", optional = true } # lang-java tags (T52.2)
+tree-sitter-kotlin-ng = { version = "1.1.0", optional = true } # lang-kotlin tags (T52.2); fwcd 0.3.8 needs tree-sitter <0.23
+tree-sitter-swift = { version = "0.7.3", optional = true } # lang-swift tags (T52.2)
+tree-sitter-c-sharp = { version = "0.23.5", optional = true } # lang-csharp tags (T52.2)
+tree-sitter-ruby = { version = "0.23.1", optional = true } # lang-ruby tags (T52.2)
+tree-sitter-php = { version = "0.24.2", optional = true } # lang-php tags (T52.2)
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)
