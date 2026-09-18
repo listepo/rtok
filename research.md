@@ -323,6 +323,37 @@ for `proxy` and `otel` — an `ideas.md` entry (I-32), not a P17 task. Config lo
 store are already small; `WAL` costs 0.3 ms per short-lived process over `TRUNCATE`, kept
 because `mcp` and `proxy` write concurrently with hooks.
 
+**T53.3 (2026-09-18).** Decision D30: one binary, webpki Mozilla roots via
+`ClientBuilder::use_preconfigured_tls` — not a second hook binary. reqwest
+0.13.4's `rustls` feature still references `rustls_platform_verifier::Verifier::new`
+ungated under `__rustls`, so the verifier is never-called-but-linked.
+
+`otool -L` on release `rtok`, `cargo build --release --bin rtok`, this machine:
+
+| Binary | bytes | Security.framework |
+|---|---|---|
+| before (`533d68a`, pre-webpki) | 25,124,800 | linked (also CoreFoundation, CoreServices) |
+| after (HEAD `0731efd` + T53.3 crates already in tree) | 25,562,032 | linked (same dylib set) |
+
+`nm -u` on the after binary still lists `SecTrustCreateWithCertificates` and
+the other `SecTrust*` imports. Security.framework did **not** disappear.
+
+Hook spawn, n=200, nearest-rank p95, fresh `RTOK_HOME`, same spawn-to-exit
+harness as `tests/latency.rs`, sequential arms, 2026-09-18, 1-minute load 50
+(other agents compiling — not a P17 quiet run):
+
+| Event | before p50 / p95 | after p50 / p95 |
+|---|---|---|
+| `PreToolUse` | 34.14 / 79.71 ms | 32.91 / 80.82 ms |
+| `PostToolUse` | 28.99 / 66.47 ms | 47.33 / 92.60 ms |
+
+No dyld win, as expected while the frameworks stay linked. Absolute p95 is
+scheduler noise against the quiet P17 row (2026-09-07: Pre 5.79–6.94 ms, Post
+7.24–8.17 ms). `cargo test --release --test latency -- --nocapture --test-threads=1`
+on the after binary during the same compile storm: Pre p95 235 ms, Post 336 ms
+(gate fail; load, not the hook path). Corporate CAs: `SSL_CERT_FILE`
+(`docs/config.md`, TLS and corporate CAs).
+
 **Dev, `--features graph-lbug` (archived; feature removed P39).** The whole debug footprint was one C++ library. `lbug` builds
 `liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev
 defaults that is `CMAKE_BUILD_TYPE=Debug`, `-O0 -g`. `[profile.dev.package.lbug] opt-level = 2,
