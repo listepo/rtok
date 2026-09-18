@@ -564,7 +564,10 @@ mod tests {
         for name in app.tab_names() {
             assert!(screen.contains(name), "tab {name} is on screen");
         }
-        assert!(screen.contains("q/Esc"), "the footer hints are generated (T60.8)");
+        assert!(
+            screen.contains("q/Esc"),
+            "the footer hints are generated (T60.8)"
+        );
         assert!(screen.contains("updated"));
         assert!(screen.contains("UTC"));
     }
@@ -666,7 +669,10 @@ mod tests {
         for plugin in &app.snapshot().plugins {
             assert!(first.contains(plugin.id), "{} is on screen", plugin.id);
         }
-        assert!(first.contains("Space/Enter"), "the key hint comes from the KEYS table");
+        assert!(
+            first.contains("Space/Enter"),
+            "the key hint comes from the KEYS table"
+        );
         assert!(
             first.contains("> measure"),
             "the cursor marks the first row"
@@ -1003,7 +1009,10 @@ mod tests {
         let app = App::new(&config());
         let line = footer_line(&app);
         assert!(line.contains("q/Esc"), "line: {line}");
-        assert!(line.contains("?") && line.contains("r"), "the footer names the T60.8 keys: {line}");
+        assert!(
+            line.contains("?") && line.contains("r"),
+            "the footer names the T60.8 keys: {line}"
+        );
         assert!(line.contains("UTC"), "line: {line}");
     }
 
@@ -1045,7 +1054,10 @@ mod tests {
             rendered.contains("m0") && rendered.contains("m1"),
             "{rendered}"
         );
-        assert!(rendered.contains("↑/↓"), "the status comes from the KEYS table");
+        assert!(
+            rendered.contains("↑/↓"),
+            "the status comes from the KEYS table"
+        );
         app.key(KeyCode::Char('l'), KeyModifiers::NONE);
         let rendered = screen(&app);
         assert!(rendered.contains("m0"), "the live row stays");
@@ -1106,7 +1118,10 @@ mod tests {
         let before = app.updated();
         app.key(KeyCode::Char('r'), KeyModifiers::NONE);
         assert!(app.updated() >= before, "the stamp moved");
-        assert_eq!(app.snapshot().plugins.len(), model::snapshot(&cfg).plugins.len());
+        assert_eq!(
+            app.snapshot().plugins.len(),
+            model::snapshot(&cfg).plugins.len()
+        );
         // The shell's keys still work; `r` is not a quit.
         assert!(!app.key(KeyCode::Char('r'), KeyModifiers::NONE));
     }

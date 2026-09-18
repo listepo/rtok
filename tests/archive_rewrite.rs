@@ -84,7 +84,13 @@ fn result_text<'a>(v: &'a serde_json::Value, tag: &str) -> &'a str {
 }
 
 fn expand_id(pointer: &str) -> &str {
-    pointer.split("expand(").nth(1).unwrap().split(')').next().unwrap()
+    pointer
+        .split("expand(")
+        .nth(1)
+        .unwrap()
+        .split(')')
+        .next()
+        .unwrap()
 }
 
 #[test]

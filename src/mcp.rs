@@ -333,8 +333,7 @@ fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
         .as_i64()
         .and_then(|n| i32::try_from(n).ok())
         .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
-    crate::plugins::memory::mem_get(cx, id)?
-        .ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
+    crate::plugins::memory::mem_get(cx, id)?.ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
 }
 
 #[cfg(feature = "memory")]
