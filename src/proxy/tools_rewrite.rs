@@ -147,3 +147,92 @@ fn prefix_tokens(text: &str, max_tokens: u32, est: &Estimator) -> String {
     }
     prefix
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn cfg(max: u32, allow: &[&str], deny: &[&str]) -> ToolsRewrite {
+        ToolsRewrite {
+            enabled: true,
+            max_description_tokens: max,
+            allow: allow.iter().map(|s| (*s).to_string()).collect(),
+            deny: deny.iter().map(|s| (*s).to_string()).collect(),
+        }
+    }
+
+    fn est() -> Estimator {
+        Estimator::default()
+    }
+
+    #[test]
+    fn anthropic_truncates_description_not_schema() {
+        let schema = json!({"type": "object", "properties": {"command": {"type": "string"}}});
+        let mut body = json!({
+            "tools": [{
+                "name": "Bash",
+                "description": "Short one. This second sentence is far too long to keep under the cap.",
+                "input_schema": schema,
+            }],
+            "messages": [{"role": "user", "content": "hi"}],
+        });
+        let d = rewrite(&mut body, &cfg(5, &[], &[]), &est()).unwrap();
+        assert!(d.changed && d.after_bytes < d.before_bytes);
+        assert_eq!(body["tools"][0]["description"], "Short one.");
+        assert_eq!(body["tools"][0]["input_schema"], schema);
+        assert_eq!(body["messages"][0]["content"], "hi");
+        let again = body.clone();
+        rewrite(&mut body, &cfg(5, &[], &[]), &est()).unwrap();
+        assert_eq!(body, again);
+    }
+
+    #[test]
+    fn openai_chat_truncates_function_description_not_parameters() {
+        let params = json!({"type": "object", "properties": {"q": {"type": "string"}}});
+        let mut body = json!({
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "Short one. This second sentence is far too long to keep under the cap.",
+                    "parameters": params,
+                }
+            }],
+        });
+        let d = rewrite(&mut body, &cfg(5, &[], &[]), &est()).unwrap();
+        assert!(d.changed);
+        assert_eq!(body["tools"][0]["function"]["description"], "Short one.");
+        assert_eq!(body["tools"][0]["function"]["parameters"], params);
+    }
+
+    #[test]
+    fn deny_drops_tools_but_not_a_later_call() {
+        let mut body = json!({
+            "tools": [
+                {"name": "keep", "description": "Stay.", "input_schema": {"type": "object"}},
+                {"name": "drop_me", "description": "Gone.", "input_schema": {"type": "object"}},
+            ],
+            "messages": [{
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "t1", "name": "drop_me", "input": {}}],
+            }],
+        });
+        let d = rewrite(&mut body, &cfg(0, &[], &["drop_me"]), &est()).unwrap();
+        assert!(d.changed);
+        assert_eq!(body["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(body["tools"][0]["name"], "keep");
+        assert_eq!(body["messages"][0]["content"][0]["name"], "drop_me");
+    }
+
+    #[test]
+    fn off_or_missing_tools_is_a_no_op() {
+        let mut body = json!({"tools": [{"name": "Bash", "description": "Hi there."}]});
+        let mut off = cfg(5, &[], &[]);
+        off.enabled = false;
+        assert!(rewrite(&mut body, &off, &est()).is_none());
+        assert_eq!(body["tools"][0]["description"], "Hi there.");
+        let mut empty = json!({"messages": []});
+        assert!(rewrite(&mut empty, &cfg(5, &[], &[]), &est()).is_none());
+    }
+}
