@@ -52,6 +52,7 @@ export struct SessionRow {
     status: string,
     activity: string,
     summary: string,
+    detail: string,
 }
 
 component MetricCell inherits VerticalBox {
@@ -237,6 +238,8 @@ export component MainWindow inherits Window {
     out property <CallRow> selected-call: calls[call-cursor];
 
     in-out property <[SessionRow]> sessions;
+    in-out property <int> session-cursor: 0;
+    out property <SessionRow> selected-session: sessions[session-cursor];
     in property <string> doctor-text;
     in-out property <[string]> logs;
     in property <string> status: "connecting";
@@ -795,49 +798,77 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                if page-id == "sessions": ScrollView {
-                    VerticalBox {
-                        spacing: RtokTheme.space-2;
-                        max-width: content-max;
-                        Text {
-                            text: "sessions";
-                            color: RtokTheme.ink;
-                            font-size: title-size;
-                            font-weight: 700;
-                            font-family: "IBM Plex Mono";
+                if page-id == "sessions": HorizontalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        width: calls-list-w;
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "sessions";
+                                color: RtokTheme.ink;
+                                font-size: title-size;
+                                font-weight: 700;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if sessions.length == 0: Text {
+                                text: "no sessions yet";
+                                color: RtokTheme.ink-muted;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for s[i] in sessions: Rectangle {
+                                    height: 56px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == session-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        accessible-role: button;
+                                        accessible-label: "session " + s.id;
+                                        clicked => { session-cursor = i; }
+                                        VerticalBox {
+                                            padding-left: RtokTheme.space-2;
+                                            spacing: 0;
+                                            Text {
+                                                text: s.summary;
+                                                color: i == session-cursor ? RtokTheme.accent : RtokTheme.ink;
+                                                font-weight: 600;
+                                                font-size: body-size;
+                                                font-family: "IBM Plex Mono";
+                                            }
+                                            Text {
+                                                text: s.activity;
+                                                color: RtokTheme.ink-muted;
+                                                font-size: 11px;
+                                                font-family: "IBM Plex Mono";
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        if sessions.length == 0: Text {
-                            text: "no sessions yet";
-                            color: RtokTheme.ink-muted;
-                            font-family: "IBM Plex Mono";
-                        }
-                        for s in sessions: Rectangle {
-                            border-radius: RtokTheme.radius-md;
-                            background: RtokTheme.surface-1;
-                            border-width: 1px;
-                            border-color: RtokTheme.hairline;
-                            VerticalBox {
-                                padding: wide ? RtokTheme.space-3 : 10px;
-                                spacing: 2px;
-                                Text {
-                                    text: s.summary;
-                                    color: RtokTheme.ink;
-                                    font-weight: 600;
-                                    font-size: body-size;
-                                    font-family: "IBM Plex Mono";
-                                }
-                                Text {
-                                    text: s.activity;
-                                    color: RtokTheme.ink-muted;
-                                    font-size: 11px;
-                                    font-family: "IBM Plex Mono";
-                                }
-                                Text {
-                                    text: s.status;
-                                    color: RtokTheme.ink-muted;
-                                    font-size: 12px;
-                                    font-family: "IBM Plex Mono";
-                                }
+                    }
+                    ScrollView {
+                        horizontal-stretch: 1;
+                        VerticalBox {
+                            spacing: RtokTheme.space-2;
+                            max-width: content-max;
+                            Text {
+                                text: "detail";
+                                color: RtokTheme.ink-muted;
+                                font-size: 11px;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if sessions.length == 0: Text { text: ""; }
+                            if sessions.length > 0: Text {
+                                text: selected-session.detail;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
                             }
                         }
                     }

@@ -79,6 +79,7 @@ pub mod snapshot {
         pub status: String,
         pub activity: String,
         pub summary: String,
+        pub detail: String,
     }
 
     /// Parse a `/ws` snapshot JSON into the view the UI binds.
@@ -220,6 +221,7 @@ pub mod snapshot {
                     status: format!(
                         "in {input}  out {output}  cache+ {cache_create}  cache-r {cache_read}"
                     ),
+                    detail: session_detail(v, &id),
                     id,
                     host,
                     provider,
@@ -232,6 +234,58 @@ pub mod snapshot {
                 }
             })
             .collect()
+    }
+
+    /// Mirror of `model::session_detail`: this session's snapshot JSON row plus the
+    /// snapshot's calls filtered by that id. The WASM crate cannot call the rtok
+    /// accessor, so the filter is rebuilt from the same keys (T60.3 / D23).
+    fn session_detail(v: &Value, id: &str) -> String {
+        let Some(s) = v["sessions"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|s| s["id"].as_str() == Some(id)))
+        else {
+            return String::new();
+        };
+        let dash = |k: &str| opt_str(&s[k]).unwrap_or_else(|| "-".into());
+        let ended = s["ended_at"]
+            .as_i64()
+            .map(time_of)
+            .unwrap_or_else(|| "live".into());
+        let api = dash("api");
+        let mut lines = vec![
+            format!("project {} · api {api}", dash("project")),
+            format!(
+                "started {} · last {} · ended {ended}",
+                time_of(i64_of(&s["started_at"])),
+                time_of(i64_of(&s["last_activity"])),
+            ),
+            format!(
+                "usage ({api}) input {} cache create {} cache read {} output {}",
+                i64_of(&s["input"]),
+                i64_of(&s["cache_create"]),
+                i64_of(&s["cache_read"]),
+                i64_of(&s["output"]),
+            ),
+        ];
+        let calls: Vec<&Value> = v["calls"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|c| c["session"].as_str() == Some(id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        lines.push(format!("calls {}", calls.len()));
+        for c in calls {
+            lines.push(format!(
+                "{} {} {} {}",
+                time_of(i64_of(&c["ts"])),
+                str_of(&c["surface"]),
+                str_of(&c["kind"]),
+                opt_str(&c["name"]).unwrap_or_else(|| "-".into()),
+            ));
+        }
+        lines.join("\n")
     }
 
     fn logs_of(v: &Value) -> Vec<String> {
@@ -456,6 +510,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
             status: SharedString::from(s.status),
             activity: SharedString::from(s.activity),
             summary: SharedString::from(s.summary),
+            detail: SharedString::from(s.detail),
         })
         .collect();
     ui.set_sessions(ModelRc::from(Rc::new(VecModel::from(sessions))));
@@ -554,7 +609,7 @@ mod tests {
                           "est_before": 25, "est_after": 10, "rows": 1}
             }],
             "calls": [{
-                "id": 1, "ts": 3661, "session": "s", "surface": "proxy", "kind": "api_request",
+                "id": 1, "ts": 3661, "session": "a", "surface": "proxy", "kind": "api_request",
                 "plugin": null, "name": "/v1/messages", "parent_id": null, "ms": 12.5, "ok": 1,
                 "error": null, "host": "claude", "provider": "anthropic", "model": "x",
                 "api": "anthropic", "input": 10, "cache_create": 1, "cache_read": 2, "output": 3
@@ -594,6 +649,8 @@ mod tests {
         assert!(view.calls[0].detail.contains("anthropic"));
         assert_eq!(view.sessions.len(), 1);
         assert!(view.sessions[0].live);
+        assert!(view.sessions[0].detail.contains("project rtok"));
+        assert!(view.sessions[0].detail.contains("/v1/messages"));
         assert!(view.doctor_text.contains("hooks 3"));
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
