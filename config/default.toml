@@ -236,6 +236,7 @@ recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
+startup_recall = false                # SessionStart(startup) restores newest session:* note (T71.2); off until A/B
 
 [plugins.memory.embed]
 enabled    = false                    # P29: FTS5-only when false; vector search is opt-in

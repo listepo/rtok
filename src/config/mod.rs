@@ -614,6 +614,9 @@ section! {
         recall_tokens: u32 = 200,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
+        /// SessionStart `source = startup` restores the newest `session:*` note (T71.2). Off
+        /// until a P7-style A/B shows cost per passed task does not rise.
+        startup_recall: bool = false,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }

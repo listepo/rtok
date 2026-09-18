@@ -317,6 +317,7 @@ recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
+startup_recall = false                # SessionStart(startup): newest session:* note of the project, same budget as checkpoint_tokens (T71.2). Off until A/B.
 
 [plugins.memory.embed]
 enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
