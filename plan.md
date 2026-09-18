@@ -34,7 +34,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
 | T69.2 | todo | P3 | 3 | 0% | |
-| T69.3 | todo | P3 | 3 | 0% | |
+| T69.3 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
@@ -246,6 +246,8 @@ Done when:
 2. Reported per configuration — FTS5 default; `half_life_days = 30` (T69.2); `embed.enabled` hybrid (P29): hit rate of the target in `mem_search` top-`search_limit` for a query built from the fact's own words; superseded facts returned (the test asserts 0 after T69.1); SessionStart recall bytes per session against the "full injection" baseline (every live body of the project) — rtok's own version of graymatter's table.
 3. Numbers land in `research.md` §14 with the command and date and on the memory docs page; `README.md` / `docs/comparison.md` cite that row and never graymatter's. The gate for T69.2's default is written from this run.
 4. The generator and the expected hit rates are checked in; a change that lowers the hit rate on any row fails the test.
+
+Execution plan: `tests/memory_bench.rs` seeds an in-memory store (N=1/10/30/100 × K filler, 20 planted facts, 5 `mem_revise`). Measure FTS5 `mem_search` hit rate at `search_limit`; skip `half_life_days` (T69.2 shipped no scorer — N/A in §14); run P29 hybrid because `search_notes_hybrid` exists. Assert superseded returned = 0. Print SessionStart recall bytes vs full live-body injection. Lock floors; cite only those numbers in `research.md` §14, the memory page, `README.md`, `docs/comparison.md`. Do not touch hook handlers (T71.2 / T62.3) or CLI/sync (T69.6).
 
 ### T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
 
