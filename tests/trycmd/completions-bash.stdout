@@ -241,7 +241,9 @@ _rtok() {
             rtok__subcmd__demon__subcmd__help,supervise)
                 cmd="rtok__subcmd__demon__subcmd__help__subcmd__supervise"
                 ;;
+            rtok__subcmd__graph,affected)
             rtok__subcmd__graph,dead)
+                cmd="rtok__subcmd__graph__subcmd__affected"
                 cmd="rtok__subcmd__graph__subcmd__dead"
                 ;;
             rtok__subcmd__graph,help)
@@ -256,7 +258,9 @@ _rtok() {
             rtok__subcmd__graph,status)
                 cmd="rtok__subcmd__graph__subcmd__status"
                 ;;
+            rtok__subcmd__graph__subcmd__help,affected)
             rtok__subcmd__graph__subcmd__help,dead)
+                cmd="rtok__subcmd__graph__subcmd__help__subcmd__affected"
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__dead"
                 ;;
             rtok__subcmd__graph__subcmd__help,help)
@@ -406,7 +410,9 @@ _rtok() {
             rtok__subcmd__help__subcmd__demon,supervise)
                 cmd="rtok__subcmd__help__subcmd__demon__subcmd__supervise"
                 ;;
+            rtok__subcmd__help__subcmd__graph,affected)
             rtok__subcmd__help__subcmd__graph,dead)
+                cmd="rtok__subcmd__help__subcmd__graph__subcmd__affected"
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__dead"
                 ;;
             rtok__subcmd__help__subcmd__graph,impact)
@@ -1519,7 +1525,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph)
-            opts="-h --config --help index dead status impact help"
+            opts="-h --config --help index dead status impact affected help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1536,6 +1542,7 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__graph__subcmd__affected)
         rtok__subcmd__graph__subcmd__dead)
             opts="-h --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1555,7 +1562,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help)
-            opts="index dead status impact help"
+            opts="index dead status impact affected help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1568,6 +1575,7 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__graph__subcmd__help__subcmd__affected)
         rtok__subcmd__graph__subcmd__help__subcmd__dead)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -2107,7 +2115,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph)
-            opts="index dead status impact"
+            opts="index dead status impact affected"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2120,6 +2128,7 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__help__subcmd__graph__subcmd__affected)
         rtok__subcmd__help__subcmd__graph__subcmd__dead)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then

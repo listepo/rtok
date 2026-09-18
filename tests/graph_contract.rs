@@ -151,6 +151,58 @@ fn four_tools_byte_exact() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// T68.5: `impact` with `path` and no `name` lists tests that reach the file.
+#[test]
+fn impact_path_alone_lists_the_reaching_test() {
+    let home = tmp("affected");
+    let a = home.join("repo");
+    std::fs::create_dir_all(a.join("tests")).unwrap();
+    std::fs::write(
+        a.join("lib.rs"),
+        "fn add() {
+}
+",
+    )
+    .unwrap();
+    std::fs::write(
+        a.join("other.rs"),
+        "fn other() {
+}
+",
+    )
+    .unwrap();
+    std::fs::write(
+        a.join("tests/add.rs"),
+        "fn test_add() {
+    add();
+}
+",
+    )
+    .unwrap();
+    std::fs::write(
+        a.join("tests/other.rs"),
+        "fn test_other() {
+    other();
+}
+",
+    )
+    .unwrap();
+    let out = call(&home, &a, "impact", serde_json::json!({"path": "lib.rs"}));
+    assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
+    assert!(out.contains("cargo test test_add"), "{out}");
+    assert!(!out.contains("test_other"), "{out}");
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "impact",
+            serde_json::json!({"path": "missing.rs"})
+        ),
+        "no indexed test reaches the change; run the suite"
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 #[test]
 fn second_repo_leaves_the_first_intact() {
     let home = tmp("roots");
