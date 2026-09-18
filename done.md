@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+## T60.4 — Archive `expand` on `tui` and `web`
+
+Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
+Done when a Calls row with an archive id opens the payload in a scrollable pane — `e` on the TUI, a button on the web — through `expand::fetch` with `--lines`/`--grep` parity (a `/` filter on the TUI, a filter box on the web); the web path is one inbound WebSocket request `{"expand": id}` answered with the payload, capped by `[expand] max_lines` like the CLI; fetching a live-zone pointer freezes it exactly as the CLI does (same function, no second path); tests: TUI `TestBackend` on a fixture store, `tests/web.rs` request/response, and `surface_parity` lists the page on both.
+
+**Result (2026-09-18).** Accessor `model::expand_payload` calls `expand::fetch` then `render_lines` (`[expand] max_lines`). Snapshot `ref_ids` maps call id → archive id. TUI `e` opens a scrollable pane; `/` filters via `filter_lines`. Web inbound `{"expand": id}` answers `{type: expand, text}` without touching the T60.5 `set` allow-list; the Calls page has an expand button and filter box. Tests: `expand_payload_caps_greps_and_freezes_like_cli`, `e_opens_the_archive_pane_and_slash_filters_it`, `ws_expand_returns_payload_and_unknown_id`, `expand_payload_exists_on_both_surfaces`.
+
+
 ## T60.3 — Per-session drill-down on `tui` and `web`
 
 `SessionTotals` carries `project`, `api`, `started_at`, `last_activity`, `ended_at` (survey 2026-09-17, `src/web/model.rs`) and neither surface shows them; the Sessions page is a list on both, so "what did this session cost and which calls made it" needs the CLI.

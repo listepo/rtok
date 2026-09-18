@@ -19,7 +19,6 @@
 - T59.8. Token-sink ranking in `report`
 - T60.1. `--json` on every reading command
 - T60.2. trycmd goldens for every subcommand
-- T60.4. Archive `expand` on `tui` and `web`
 - T60.6. Error and connection states on `web` and `tui`
 - T60.7. WASM bundle size gate
 - T60.8. TUI help overlay and manual refresh

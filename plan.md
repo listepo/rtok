@@ -25,7 +25,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.8 | todo | P3 | 2 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
 | T60.2 | todo | P2 | 3 | 0% | |
-| T60.4 | in progress | P3 | 4 | 0% | Cursor / grok 4.6 |
 | T60.6 | todo | P2 | 2 | 0% | |
 | T60.7 | todo | P3 | 2 | 0% | |
 | T60.9 | todo | P3 | 2 | 0% | |
@@ -206,17 +205,6 @@ Done when every subcommand has at least one trycmd case of its real output, herm
 - Timestamps, ids, versions and absolute paths are matched with trycmd `[..]` / `[EXE]`, never frozen; a golden must not depend on the machine.
 - One `tests/trycmd/README.md` line per case saying what it pins; `README.md`'s command table is checked against the trycmd case list by the existing README test so a new command cannot land without a golden.
 Blessing: `TRYCMD=overwrite cargo nextest run -p rtok --test cli_trycmd`, reviewed by eye once, then committed. Split into ≤ 3-file commits: help cases; reading commands on the fixture store; stdin-driven commands (`hook`, `mcp`, `filter`, `run`).
-
-### T60.4. Archive `expand` on `tui` and `web`
-
-Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
-Done when a Calls row with an archive id opens the payload in a scrollable pane — `e` on the TUI, a button on the web — through `expand::fetch` with `--lines`/`--grep` parity (a `/` filter on the TUI, a filter box on the web); the web path is one inbound WebSocket request `{"expand": id}` answered with the payload, capped by `[expand] max_lines` like the CLI; fetching a live-zone pointer freezes it exactly as the CLI does (same function, no second path); tests: TUI `TestBackend` on a fixture store, `tests/web.rs` request/response, and `surface_parity` lists the page on both.
-
-Execution plan:
-1. Model accessor `expand_payload` calls `expand::fetch` + `render_lines` (`[expand] max_lines`); snapshot carries `ref_ids` from `call_io` / measurements so neither surface queries the store.
-2. TUI: `e` opens a scrollable pane; `/` filters through `filter_lines` (grep parity).
-3. Web: inbound `{"expand": id}` beside T60.5 `set` (allow-list unchanged); button + filter box; WASM does not grow a second fetch path.
-4. Tests: TUI TestBackend fixture store, `tests/web.rs` request/response, `surface_parity` pins the pane on both.
 
 ### T60.6. Error and connection states on `web` and `tui`
 
