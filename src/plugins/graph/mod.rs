@@ -1506,4 +1506,98 @@ mod tests {
         );
         let _ = fs::remove_dir_all(dir);
     }
+
+    fn affected_fixture(tag: &str) -> (crate::plugin::Runtime, PathBuf) {
+        let (cx, dir) = cx(tag);
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(
+            dir.join("lib.rs"),
+            "fn add() {
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("other.rs"),
+            "fn other() {
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("tests/add.rs"),
+            "fn test_add() {
+    add();
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("tests/other.rs"),
+            "fn test_other() {
+    other();
+}
+",
+        )
+        .unwrap();
+        (cx, dir)
+    }
+
+    /// T68.5: two tests, only the one that calls the changed symbol is listed.
+    #[test]
+    fn affected_two_tests_one_reaches_the_change() {
+        let (cx, dir) = affected_fixture("affected");
+        let ctx = Ctx::new(&cx);
+        let out = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, false).unwrap();
+        assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
+        assert!(out.contains("cargo test test_add"), "{out}");
+        assert!(!out.contains("test_other"), "{out}");
+        assert_eq!(cx.store.measurement_count("graph").unwrap(), 0);
+        let js = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, true).unwrap();
+        assert!(js.contains("tests/add.rs"), "{js}");
+        assert_eq!(
+            affected_from_paths(&ctx, &dir, &["nope.rs".into()], 3, false).unwrap(),
+            EMPTY_AFFECTED
+        );
+        assert_eq!(test_command("t.py", "n").as_deref(), Some("pytest t.py::n"));
+        assert_eq!(test_command("t.go", "N").as_deref(), Some("go test -run N"));
+        assert_eq!(test_command("t.ts", "n").as_deref(), Some("vitest t.ts"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T68.5: changed files come from `git diff --name-only`, not a library.
+    #[test]
+    fn affected_reads_git_diff_name_only() {
+        let (cx, dir) = affected_fixture("affected-git");
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .current_dir(&dir)
+                    .env("GIT_AUTHOR_NAME", "t")
+                    .env("GIT_AUTHOR_EMAIL", "t@t")
+                    .env("GIT_COMMITTER_NAME", "t")
+                    .env("GIT_COMMITTER_EMAIL", "t@t")
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success(),
+                "{args:?}"
+            );
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "init"]);
+        fs::write(
+            dir.join("lib.rs"),
+            "fn add() {
+    let _ = 1;
+}
+",
+        )
+        .unwrap();
+        let out = affected(&Ctx::new(&cx), &dir, None, false, false).unwrap();
+        assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
+        assert!(!out.contains("test_other"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
 }
