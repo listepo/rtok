@@ -3333,3 +3333,15 @@ Complexity: 1/5 — one page, one pointer, one link.
 Status: done 2026-09-18
 Check result: commit 869baa7. Page cites `hit=97.5%` overall and `95.2%` codex (`rtok stats`, 2026-09-18, commands quoted) and zero cache-bust rows from `rtok report`'s Cache section on this machine.
 Model: ZCode / GLM-5.3-Flash
+
+### T50.1. More `cmd` filter families
+
+From I-05; re-scoped by the competitive gap review (`research.md` §9.3, "Command output"). Today: formatters for cargo/git/pytest/jest/vitest/go test/ls/find/tree, nine TOML rules (`rules/default.toml`: grep, rg, sed, cat, make, curl, npm, pnpm, node), and `Rule::default()` (40 lines, head 10 / tail 10, dedupe) for every other stem — so docker, kubectl, gh, aws, pip, python, mvn, gradle, dotnet, tsc, eslint are capped, not passed through, but their error lines and summaries are cut by position, not by meaning. rtk ships 100+ per-command filters; the parity target is a per-family rule for every family that carries real bytes, each one measured. Rules are data, so this task adds TOML and fixtures, no Rust.
+Done when:
+1. Evidence first: `rtok stats` over real transcripts ranks Bash families by after-bytes where `Measurement.kind = rule` fell back to the default rule (`bash_families` split by kind; a `stats` column, not a new command); the top-20 land in `research.md` with date and command.
+2. One `[stem]` rule per family from that list (expected from rtk's list and §2: docker / docker compose, kubectl, gh, aws, pip / uv, python tracebacks, go build / vet, cmake / ctest, mvn / gradle, dotnet, tsc, eslint, brew / apt), each with `keep` patterns for its error and summary lines and a `tests/cmd_golden` fixture with before/after bytes that keeps failures and the `expand <id>` trailer.
+3. `Measurement` rows per family show the saving; the family table in the cmd docs page cites them. A family whose rule does not beat the default rule on its fixture is not added (the default already wins there).
+4. Families where a rule cannot keep the signal (structured tables, grouped diagnostics) are listed in the card for T58.5, with the fixture that shows why.
+
+Execution plan (T50.1, Cursor / composer 2.5): isolated worktree `t50.1`. (1) Add `filter` + `bash_default` columns to `rtok stats` from transcripts + `cmd` `Measurement` rows (`kind = rule`, default stem). (2) Record top-20 default-rule families in `research.md` (`rtok stats`, 2026-09-18). (3) Add `[stem]` rules + `tests/cmd_golden` fixtures where the rule beats `Rule::default()` on the fixture; cite `Measurement` rows in `docs/cmd-rules.md`. (4) List table/grouped families on T58.5 with fixtures. No Rust beyond the stats column.
+
