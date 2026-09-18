@@ -30,6 +30,9 @@ pub struct SizeRow {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Report {
     pub sessions: u64,
+    /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub compact: u64,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
@@ -127,6 +130,11 @@ impl RepeatRow {
     }
 }
 
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+}
+
 /// T61.1: one skill's injected bodies — the `isMeta` user records keyed to that
 /// skill's `Skill` tool_use. `resident` is the number the context actually carried:
 /// body bytes × the API requests of the session that came after the injection.
@@ -205,8 +213,8 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  lines {}  malformed {}\n",
-            self.sessions, self.lines, self.malformed
+            "sessions {}  compact {}  lines {}  malformed {}\n",
+            self.sessions, self.compact, self.lines, self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -636,6 +644,7 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             report.malformed += 1;
             continue;
         };
+        report.compact += compact_events(&p);
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
     finish_rows(&mut report.tools);
@@ -654,6 +663,22 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         finals[finals.len() / 2]
     };
     Ok(report)
+}
+
+/// One Claude Code / Codex compaction: a `system` line with `subtype=compact_boundary`.
+/// `isCompactSummary` rides the same event and is not counted again.
+fn compact_events(path: &Path) -> u64 {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    text.lines().filter(|line| is_compact_line(line)).count() as u64
+}
+
+fn is_compact_line(line: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return false;
+    };
+    v.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
 }
 
 fn fold_session(
@@ -1342,6 +1367,34 @@ mod tests {
         let pointer = est_tokens(51 + 51 + 64); // head line, tail line, pointer line
         assert_eq!(after, tokens * 2 + pointer * 3);
         assert!(after < tokens * 5);
+    }
+
+    #[test]
+    fn compact_boundary_counts_once_per_event() {
+        let dir = tempfile_dir();
+        std::fs::write(
+            dir.join("s.jsonl"),
+            r#"{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}
+{"type":"user","isCompactSummary":true,"message":{"content":"summary"}}
+{"type":"assistant","message":{"content":"ok"}}
+"#,
+        )
+        .unwrap();
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 1);
+        assert_eq!(r.compact, 1);
+        assert!(
+            r.to_table().starts_with("sessions 1  compact 1  lines 3"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
