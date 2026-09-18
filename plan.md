@@ -6,22 +6,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T53.1 | todo | P3 | 3 | 10% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 
 
-### T53.1. Coaching nudges under an A/B
-
-From I-18. Short nudges ("do not re-read", "use expand") may cut waste, but they are re-read every turn and dilute instructions.
-Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 budget and byte-stable, and a P7-style A/B on the bench shows it does not raise cost per passed task; without that result it stays off.
-
-Execution plan (T53.1, OpenCode / Muse Spark 1.3):
-1. `modes/nudges.md` (new, data per D7): re-read/expand/outline-first/search-before-Grep nudges, ≤250 tokens like terse/yagni.
-2. `src/plugins/inject/mod.rs`: `NUDGES` const + `builtin("nudges")` arm (same resolution as terse/yagni; opt-in via modes list, default off); test: ≤250 tok, SessionStart-once + byte-stable, absent from UserPromptSubmit.
-3. Evidence: hook SessionStart bytes on/off (measured), dry `rtok bench` both ways (pass parity; zeros without RTOK_BENCH_LIVE), recorded in `research.md`; live cost gate stays open → default off. No live bench (needs API spend + approval — not run).
-4. Verify in isolated worktree: fmt, clippy `-D warnings`, nextest (inject, hook e2e).
 
 ### T57.1. Flag-aware `guard` read-only classes
 

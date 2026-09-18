@@ -1,4 +1,3 @@
-- T53.1. Coaching nudges under an A/B
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
