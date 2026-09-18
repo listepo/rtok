@@ -32,7 +32,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.5 | todo | P2 | 3 | 0% | |
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
-| T69.2 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
@@ -217,16 +216,6 @@ Done when the extra queries capture `use` / `import` / `require` / `from … imp
 
 From the codegraph / graphify review. codegraph's number is the only measured one in the pair: median of 4 runs, 7 repos, Claude Opus 4.8 answering architecture questions with and without the graph — tool calls, wall time, tokens, cost — and it also reports the cost (80 % more retrieval context resident at session end). rtok's `docs/comparison.md` §5 still says no end-to-end win is demonstrated, and Gate P8b's task-set clause was never closable in code.
 Done when `rtok bench --suite graph` runs N fixed questions (≥ 10, three repos including this one, in `bench/graph.toml`) through the existing `claude -p` harness twice — rtok MCP on, rtok MCP off (native Read / Grep only) — and reports per question and in total: tool calls, tokens in / out / cache-read, wall time, cost via `stats --price`, resident context at the last turn, pass / fail against an expected-answer regex; `--dry-run` prints the schedule without spend; the live run needs the creator's go (API spend) and its result goes into `research.md` and `docs/comparison.md` §4 / §5 with the date and command; the vendor's 88 % / 62 % numbers are quoted there only next to rtok's own.
-
-### T69.2. Recall ranking: recency decay and use counts, off by default
-
-From the graymatter gap review (`research.md` §14). graymatter ranks recall by vector + keyword + recency with a deterministic 30-day half-life and per-signal "receipts"; facts fade without access and are never hard-deleted. rtok: SessionStart recall is the newest `recall_titles` (5) ids of the project; `mem_search` is bare BM25 (`search_notes`) or RRF over BM25 + hash-embed when `embed.enabled` — a note used in every session for a month drops out of recall the moment five newer notes exist, and a stale note ranks as high as a fresh one.
-Done when:
-1. Evidence first: `rtok memory status` (T69.4) on this machine — notes per project and how many projects hold more than `recall_titles` live notes — recorded in `research.md` §14. If no project does, the order never matters and the card closes with the number.
-2. A migration adds `notes.uses INTEGER NOT NULL DEFAULT 0` and `notes.last_used INTEGER NULL`; `mem_get` and every `mem_search` hit bump them; inclusion in a SessionStart recall does not (the hook path writes nothing per note, D13).
-3. `[plugins.memory] half_life_days = 0` — 0 keeps today's id-desc order with byte-identical output; N > 0 scores `ln(1 + uses) × 0.5^(age_days / N)`, ties by id desc. Recall and search share one scoring function; search re-ranks the top `3 × limit` BM25 / RRF hits so FTS5 still does the retrieval. `NoteHit` gains `score` and `age_days` (graymatter's receipts), so the MCP result shows why a hit ranked. Decay ranks, never prunes (D4).
-4. Tests: a fixture of 20 notes where a 60-day-old note used 10× outranks a fresh unused one only when `half_life_days > 0`; `half_life_days = 0` reproduces the T6.2 recall bytes exactly; scoring is deterministic under a frozen clock.
-5. The default stays 0 until T69.3 shows a higher hit rate on the 100-session run without more recall bytes; the card records the numbers either way. `docs/config.md` row in the same commit (D12).
 
 
 ### T70.1. pi extension shortens every tool result, not only bash
