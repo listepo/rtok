@@ -39,6 +39,7 @@ const ALLOW: &[&str] = &[
 const ALLOW_KEYS: &[&str] = &[
     "config.init.dry_run",
     "config.set.dry_run",
+    "guard.check.host", // overlay `[hook] host` on the plugin CLI path (T70.5)
     "memory.import.dry_run",
     "graph.index.dry_run",
     // `memory export --project` narrows one dump; the store, not a setting, decides it.
