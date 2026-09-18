@@ -23,6 +23,8 @@ pub(crate) const KEYS: &[(&str, &str, &str)] = &[
     ("plugins", "Space/Enter", "toggle plugin"),
     ("calls", "↑/↓", "move selection"),
     ("calls", "Enter/z", "detail pane"),
+    ("calls", "e", "expand archive"),
+    ("calls", "/", "filter expand"),
     ("sessions", "↑/↓", "move selection"),
     ("sessions", "Enter", "detail pane"),
     ("sessions", "l", "live-only filter"),
@@ -67,6 +69,18 @@ pub struct App {
 struct CallsState {
     selected: usize,
     detail: bool,
+    /// Open archive pane (T60.4), if `e` fetched a payload for this row.
+    expand: Option<ExpandPane>,
+}
+
+/// Fetched archive body for the Calls expand pane. `text` is already `[expand]
+/// max_lines`-capped; `/` filters it through `filter_lines` without re-fetching.
+struct ExpandPane {
+    id: String,
+    text: String,
+    filter: String,
+    filtering: bool,
+    scroll: u16,
 }
 
 /// Selection and filter state of the Sessions page (T60.10 / T60.3). The rows live
@@ -185,6 +199,27 @@ impl App {
         self.calls.detail
     }
 
+    /// Open expand pane (T60.4): archive id, rendered body (after `/` filter),
+    /// whether `/` is capturing keys, the filter string, and vertical scroll.
+    pub fn calls_expand(&self) -> Option<(&str, String, bool, &str, u16)> {
+        let pane = self.calls.expand.as_ref()?;
+        let text = if pane.filter.is_empty() {
+            pane.text.clone()
+        } else {
+            crate::expand::filter_lines(&pane.text, None, Some(&pane.filter), 0)
+                .ok()
+                .map(|v| v.join("\n"))
+                .unwrap_or_else(|| pane.text.clone())
+        };
+        Some((
+            pane.id.as_str(),
+            text,
+            pane.filtering,
+            pane.filter.as_str(),
+            pane.scroll,
+        ))
+    }
+
     /// The Sessions page's selected row (T60.10), clamped to the rows it shows —
     /// the filtered list when `l` narrowed it, the snapshot's list otherwise.
     pub fn sessions_selected(&self) -> usize {
@@ -242,6 +277,50 @@ impl App {
     /// selected one. Returns `true` when the key was consumed; the shell's keys
     /// (`q`, arrows, digits) are never reached here.
     fn calls_key(&mut self, code: KeyCode) -> bool {
+        let filtering = self
+            .calls
+            .expand
+            .as_ref()
+            .is_some_and(|pane| pane.filtering);
+        if filtering {
+            let pane = self.calls.expand.as_mut().expect("filtering implies pane");
+            match code {
+                KeyCode::Esc | KeyCode::Enter => pane.filtering = false,
+                KeyCode::Backspace => {
+                    pane.filter.pop();
+                }
+                KeyCode::Char(c) => pane.filter.push(c),
+                _ => {}
+            }
+            return true;
+        }
+        if self.calls.expand.is_some() {
+            match code {
+                KeyCode::Esc | KeyCode::Char('e') => {
+                    self.calls.expand = None;
+                    return true;
+                }
+                KeyCode::Char('/') => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.filtering = true;
+                    }
+                    return true;
+                }
+                KeyCode::Up => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.scroll = pane.scroll.saturating_sub(1);
+                    }
+                    return true;
+                }
+                KeyCode::Down => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.scroll = pane.scroll.saturating_add(1);
+                    }
+                    return true;
+                }
+                _ => {}
+            }
+        }
         let last = self.snapshot.calls.len().saturating_sub(1);
         match code {
             KeyCode::Up => {
@@ -256,12 +335,35 @@ impl App {
                 self.calls.detail = !self.calls.detail;
                 true
             }
+            KeyCode::Char('e') => {
+                self.open_expand();
+                true
+            }
             _ => false,
         }
     }
 
+    fn open_expand(&mut self) {
+        let Some(row) = self.snapshot.calls.get(self.calls_selected()) else {
+            return;
+        };
+        let Some(id) = self.snapshot.ref_ids.get(&row.id).cloned() else {
+            return;
+        };
+        let Some(text) = model::expand_payload(&self.cfg, &id, None) else {
+            return;
+        };
+        self.calls.expand = Some(ExpandPane {
+            id,
+            text,
+            filter: String::new(),
+            filtering: false,
+            scroll: 0,
+        });
+    }
+
     /// One key press; returns `true` when the loop should stop. `Left`/`Right` wrap,
-    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z` (T15.5); the Sessions
+    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z`/`e`/`/` (T15.5 / T60.4); the Sessions
     /// page claims `Up`/`Down`/`Enter`/`l` (T60.10 / T60.3); the Plugins page claims the row keys
     /// (T15.4); everything else is the next page's to claim.
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
