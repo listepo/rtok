@@ -11,10 +11,21 @@ pub fn compress(
     archive_id: &str,
 ) -> (String, &'static str) {
     let argv = family_argv(argv);
+    let rule = settings.pick(bin(&argv));
+    // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
+    // reach the compact pass instead of a NAME/STATUS parser.
+    if rules::is_json_body(output) {
+        let s = rules::apply(settings, output, exit, &rule, archive_id);
+        let kind = if s.len() < output.len() {
+            "rule"
+        } else {
+            "raw"
+        };
+        return (s, kind);
+    }
     if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
-    let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
     let kind = if s.len() < output.len() {
         "rule"
@@ -589,5 +600,50 @@ mod tests {
                 ungrouped.len()
             );
         }
+    }
+
+    #[test]
+    fn json_goldens_beat_the_line_cut_and_stand_down_from_table_formatters() {
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for (file, kept) in [
+            ("gh_json.in", "https://github.com/o/r/pull/20"),
+            ("aws_json.in", "i-00000013"),
+            ("kubectl_json.in", "web-deploy-19-abcd"),
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (argv, exit, output) = parse_in(&raw);
+            let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
+            assert_ne!(kind, "formatter", "{file} should skip table formatters");
+            assert!(
+                got.len() < output.len(),
+                "{file}: compact {} vs raw {}",
+                got.len(),
+                output.len()
+            );
+            assert!(got.contains("… +5 more"), "{file}: {got}");
+            assert!(
+                got.contains(kept),
+                "{file} dropped {kept} (line-cut keeps the opening):
+{got}"
+            );
+            let rule = settings.pick(bin(&family_argv(&argv)));
+            let head = rule.head.min(rule.max_lines) as usize;
+            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join("\n");
+            assert!(
+                !pretty_head.contains(kept),
+                "{file}: {kept} already in the pretty head — fixture too small"
+            );
+        }
+        let table = fs::read_to_string(dir.join("kubectl_get.in")).unwrap();
+        let (_, exit, output) = parse_in(&table);
+        let (_, kind) = compress(
+            &settings,
+            &["kubectl".into(), "get".into(), "pods".into()],
+            &output,
+            exit,
+            "deadbeef",
+        );
+        assert_eq!(kind, "formatter");
     }
 }
