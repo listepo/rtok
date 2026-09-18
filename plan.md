@@ -20,7 +20,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
 | T59.3 | todo | P3 | 2 | 0% | |
-| T59.5 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
@@ -171,20 +170,6 @@ Done when:
 
 From I-30 (codebase-memory-mcp: Linux kernel in 3 min). Measured 2026-09-04: 3 000 files cold 27.2 s, warm 0.053 s; the cold path is paid once per repo, so it was parked.
 Done when the cold index writes symbols and edges in one Diesel transaction per 200 files instead of per file, the T8.4 cold bench on the same fixture is re-run and recorded in `research.md` next to the old number, the warm path and the ≤ 10 ms hook stay untouched, and the change is reverted if the cold time does not drop by a third.
-
-### T59.5. Byte-stable `tools[]` description rewrite in the proxy
-
-From I-45 (Portkey / LiteLLM "tool description compression + allowlist", 18–28 % claimed, unverified). Redundant on Claude Code with Tool Search deferral (`doctor` flags `mcp_tool_search_disabled`); a host without deferral pays every schema on every turn at cache-read price.
-
-Execution plan:
-1. Evidence: `rtok doctor` (desc tokens/server) + `rtok stats --since 30d` (session input) + transcript turns; host without Tool Search = this machine's proxy (`mcp_tool_search_disabled`) or Codex.
-2. Record description tokens × turns / session input in `research.md` §2.
-3. Below 3 %: close with the number, no rewrite. At or above 3 %: `proxy.tools_rewrite` off by default.
-
-Done when:
-1. Evidence: `doctor` already prices descriptions per server; a `stats` row shows description tokens × turns per session for a host without deferral, recorded in `research.md`. Below 3 % of session input, the card closes with the number.
-2. Proxy option `proxy.tools_rewrite = { max_description_tokens = N, allow = [..], deny = [..] }`, off by default: descriptions truncated at a sentence boundary to N tokens (the tokenizer `measure` uses), tools outside `allow` or inside `deny` dropped from `tools[]`; the rewrite is deterministic so the cached prefix changes once per session, and `input_schema` is never touched.
-3. `Measurement { plugin = "proxy", kind = "tools_rewrite" }` per request with before/after description bytes; wire tests for Anthropic and OpenAI Chat request shapes; a tool the model then calls that was dropped by `deny` is forwarded unchanged (the proxy never blocks a call).
 
 ### T59.6. `handoff` MCP tool for sub-agents
 

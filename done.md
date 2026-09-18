@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+## T59.5 — Byte-stable `tools[]` description rewrite in the proxy
+
+From I-45 (Portkey / LiteLLM "tool description compression + allowlist", 18–28 % claimed, unverified). Redundant on Claude Code with Tool Search deferral (`doctor` flags `mcp_tool_search_disabled`); a host without deferral pays every schema on every turn at cache-read price.
+
+Done when:
+1. Evidence: `doctor` already prices descriptions per server; a `stats` row shows description tokens × turns per session for a host without deferral, recorded in `research.md`. Below 3 % of session input, the card closes with the number.
+2. Proxy option `proxy.tools_rewrite = { max_description_tokens = N, allow = [..], deny = [..] }`, off by default: descriptions truncated at a sentence boundary to N tokens (the tokenizer `measure` uses), tools outside `allow` or inside `deny` dropped from `tools[]`; the rewrite is deterministic so the cached prefix changes once per session, and `input_schema` is never touched.
+3. `Measurement { plugin = "proxy", kind = "tools_rewrite" }` per request with before/after description bytes; wire tests for Anthropic and OpenAI Chat request shapes; a tool the model then calls that was dropped by `deny` is forwarded unchanged (the proxy never blocks a call).
+
+**Result (2026-09-18).** Isolated worktree `.worktrees/T59.5` from `t61.2`. Evidence: `rtok doctor` MCP surface 8,951 description tokens across 11 servers; `mcp_tool_search likely disabled` (`ANTHROPIC_BASE_URL` set). Transcripts `~/.claude/projects/**/*.jsonl` mtime ≥ 30 d, unique `message.id` (same rule as `measure::jsonl`): 936 sessions, 40,402 API turns, session input 5.834 B → **6.2 %** of session input. Above the 3 % gate, so the rewrite shipped **off by default**.
+
+`[proxy.tools_rewrite]` (`enabled = false`, `max_description_tokens = 60`, empty `allow` = keep all not in `deny`). Descriptions truncate at a sentence boundary with `tokens::estimate` / `Class::Prose`; `input_schema` / `parameters` are never written. A `deny`d name leaves `tools[]` but a later `tool_use` / `tool_calls` entry is forwarded. `Measurement { plugin = "proxy", kind = "tools_rewrite" }` records description bytes. Tests: unit (Anthropic + OpenAI Chat) and `tests/proxy.rs` httpmock; T61.2 skill-archive proxy test still passes.
+
+
 ## T61.2 — Archive skill bodies outside the live zone
 
 From I-51 (`research.md` §10.7). A skill body is a user text block, not a tool result, so
