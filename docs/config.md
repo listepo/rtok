@@ -333,7 +333,7 @@ prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked ti
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
 sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
-startup_recall = false                # T71.2 SessionStart startup checkpoint
+startup_recall = false                # SessionStart(startup): newest session:* note of the project, same budget as checkpoint_tokens (T71.2). Off until A/B.
 handoff        = false                # T59.6 sub-agent digest MCP tool
 
 [plugins.memory.embed]
