@@ -12,7 +12,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 10% | |
 | T53.1 | todo | P3 | 3 | 10% | |
-| T53.3 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
@@ -83,13 +82,6 @@ Execution plan (T53.1, OpenCode / Muse Spark 1.3):
 2. `src/plugins/inject/mod.rs`: `NUDGES` const + `builtin("nudges")` arm (same resolution as terse/yagni; opt-in via modes list, default off); test: ≤250 tok, SessionStart-once + byte-stable, absent from UserPromptSubmit.
 3. Evidence: hook SessionStart bytes on/off (measured), dry `rtok bench` both ways (pass parity; zeros without RTOK_BENCH_LIVE), recorded in `research.md`; live cost gate stays open → default off. No live bench (needs API spend + approval — not run).
 4. Verify in isolated worktree: fmt, clippy `-D warnings`, nextest (inject, hook e2e).
-
-### T53.3. Hook start without Security.framework
-
-From I-32. On macOS the one binary links Security.framework and CoreFoundation for reqwest's platform verifier, costing about 1.3–1.5 ms of dyld time per hook spawn, as much as the hook's own work.
-Done when the creator picks the trade-off (webpki roots with `use_preconfigured_tls` and dead-stripped dylibs, versus a second tiny hook binary), the choice is recorded as a decision, and the hook p95 before/after is measured and stored in `research.md`. Corporate CA support must be documented either way.
-
-Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_preconfigured_tls`, single binary): verified in reqwest 0.13.4 source that feature removal cannot work — `rustls_platform_verifier::Verifier::new` is referenced ungated under `__rustls`, and 0.13 has no webpki-roots feature, so `__rustls`-only does not compile; the `rustls` feature stays and the verifier becomes never-called-but-linked (otool decides the fact). 1) `Cargo.toml` + `rustls 0.23` + `webpki-roots 1` + `rustls-pemfile 2` (one-line reason in commit), `toolchain.md` + workspace `rust.md` rows; 2) `src/tls.rs`: `preconfigured()` builds `rustls::ClientConfig` (aws-lc-rs provider) from Mozilla roots, extended with `SSL_CERT_FILE` PEM bundle when set (fail closed with context — curl parity); unit tests (roots non-empty, bundle loads, missing/empty errors); 3) `src/proxy/mod.rs` + `src/otel/export.rs`: both client builders add `.use_preconfigured_tls(...)` (one shared helper, no duplication); 4) `research.md` T53.3 section: decision record + otool before/after + release hook p95 before/after via `tests/latency.rs` serialized + binary size; 5) `docs/config.md` [proxy] corporate-CA paragraph. Verify in isolation worktree (HEAD + own files): fmt, clippy `-D warnings`, nextest (tls/proxy/otel scope); release latency + otool before/after. Commit own hunks only.
 
 ### T57.1. Flag-aware `guard` read-only classes
 
