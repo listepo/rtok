@@ -430,6 +430,47 @@ fn every_command_is_exempt_or_renders_a_page_of_the_model() {
     }
 }
 
+/// Table-printing readers must accept `--json` and serialize the model page (T60.1).
+const JSON_READERS: &[&str] = &[
+    "stats",
+    "info",
+    "config show",
+    "doctor",
+    "plugins",
+    "agents list",
+    "agents sessions",
+    "logs",
+    "demon status",
+    "otel status",
+];
+
+fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {
+    let mut cur = root;
+    for part in path.split(' ') {
+        cur = cur
+            .find_subcommand(part)
+            .unwrap_or_else(|| panic!("no command `{path}`"));
+    }
+    cur
+}
+
+#[test]
+fn reading_commands_accept_json() {
+    let root = Cli::command();
+    for path in JSON_READERS {
+        let ok = command_at(&root, path)
+            .get_arguments()
+            .any(|a| a.get_long() == Some("json"));
+        assert!(ok, "reading command `{path}` has no --json (T60.1)");
+    }
+    for (path, _) in COMMAND_PAGES {
+        assert!(
+            JSON_READERS.contains(path),
+            "reading command `{path}` renders a model page but is not gated for --json (T60.1)"
+        );
+    }
+}
+
 /// Emission order inside the instructions tail — `doctor::Report::to_text` and
 /// `snapshot::doctor_of` must share it (T36.15).
 const INSTRUCTION_TAIL: &[&str] = &["instructions", "tokens", "duplicate"];
