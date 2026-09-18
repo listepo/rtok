@@ -560,6 +560,22 @@ Done when:
 4. Hook e2e per new host: pre-event → note exists; post-event → injection bytes equal Claude Code's for the same store; fail open, ≤ 10 ms.
 
 **Result (2026-09-18).** Commits `6333958` `2d08e2a` `954a612` `ac50d96` `ac97b9c` `76e1d3c` on `t58.2` (not merged). `rtok stats` prints `sessions N  compact N` by counting transcript `subtype=compact_boundary` (30d: 923 sessions, 271 compacts, 75 sessions with at least one). T2.5 fixture checkpoint body is 144 B before archive-id lines (`checkpoint_tokens` = 400). `Checkpoint.ids` lists live `archive_decisions` newest first as `id <id> <tool> <bytes>`, capped by the existing budget. Hosts: Cursor `preCompact` → `pre_compact` (no post event); Copilot `preCompact` → `pre_compact` (no post); Codex `PreCompact`/`PostCompact` via `~/.codex/hooks.json`. Gemini is not a host. Kimi already installed both via Claude `ENTRIES` (docs confirm `PreCompact`/`PostCompact`) — left untouched. ZCode has none. pi/OpenCode stay with T70.6. `PreCompact` without `transcript_path` still saves (Cursor/Copilot). `docs/agents.md` blessed.
+
+## T48.8 — VS Code Copilot Chat host
+
+**T48.8 VS Code Copilot Chat host** · P2, 3/5 · `src/agents/vscode/{mod.rs,README.md}` (new), `src/agents/mod.rs`, `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, `docs/agents.md` (blessed), `src/cli.rs`, `README.md`, `tests/agents_install.rs`, `tests/common/agents.rs`, `tests/trycmd/config-show.stdout`
+
+From I-17. GitHub Copilot Chat in VS Code reads MCP from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir; T46.4 covered only the Copilot CLI and the desktop app.
+
+Do: `rtok agents install vscode` registers `servers.rtok = {type: "stdio", command, args: ["mcp"]}` in each edition's user `mcp.json` through the SDK `register_server`/`unregister_server` (key `servers` — not a copy of Copilot CLI `mcpServers`/`type: local`). User dir per OS: macOS `~/Library/Application Support/<Code|Code - Insiders>/User`, Windows `%APPDATA%/<product>/User`, else `~/.config/<product>/User`. `[setup.vscode] config_path` / `insiders_path` empty means those defaults. One Desktop variant (bins `code` / `code-insiders`). Hooks are `no`: VS Code documents Claude-format agent hooks (Preview; `.github/hooks/*.json`, user `~/.copilot/hooks`, stdin `hook_event_name` / `tool_name`) — that is not the Copilot CLI camelCase the T46.3 mapping serves, and `~/.copilot/hooks` is already the `copilot` host. Proxy and plugin are `no`. Foreign `servers` survive remove. Host table regenerated (`RTOK_BLESS=1` `tests/agents_doc.rs`).
+
+Check: `agents::vscode::tests::user_dir_resolves_code_and_insiders_per_os`; `dry_run_names_the_file_and_creates_nothing`; `apply_is_idempotent_and_remove_keeps_foreign`; `readme_tables_match_support`; `tests/agents_install.rs` matrix (install twice / remove twice); `host_docs`; `agents_doc`; `config_coverage`.
+
+Status: done 2026-09-18 · Model: Cursor / grok 4.6
+
+Evidence: isolated worktree `.worktrees/T48.8` on `t48.8` (not cherry-picked, not pushed). `cargo test --lib agents::vscode` 3/3; `--lib agents::tests::readme_tables_match_support` ok; `--test agents_install` 9/9; `--test host_docs` ok; `--test agents_doc` (blessed) ok; `--test config_coverage` ok. `just check` not run against the dirty main tree.
+
+Deviation: hooks not written (card condition: only if VS Code documents a hook file the T46.3 Copilot mapping can serve — it does not). No `plugins/vscode/` (plugin module is `no`). Commits split over the 3-file cap (host, install tests, config, docs, CLI/README, plan close).
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`

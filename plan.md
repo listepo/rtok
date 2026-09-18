@@ -6,16 +6,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T48.8 | todo | P2 | 3 | 0% | |
 | T53.1 | todo | P3 | 3 | 10% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
-
-### T48.8. VS Code Copilot Chat host
-
-From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
-Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
 
 
 ### T53.1. Coaching nudges under an A/B
