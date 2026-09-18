@@ -23,7 +23,6 @@
 - T63.1. Skills page on `tui` and `web`
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.1. Content-hash dedup of tool output within a session
-- T65.2. `cmd` JSON output compaction
 - T65.3. `cmd` column-padding collapse
 - T68.5. `affected`: which tests a change touches
 - T68.6. Import edges in the index

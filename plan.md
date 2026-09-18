@@ -25,7 +25,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
 | T65.1 | todo | P2 | 3 | 0% | |
-| T65.2 | todo | P3 | 3 | 0% | |
 | T68.5 | todo | P2 | 3 | 0% | |
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
@@ -172,11 +171,6 @@ From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before i
 Step 1 (gate): `stats` gains a `repeat` column — share of tool_result bytes whose SHA-256 (`sha2` is already a dependency, T13.3) equals an earlier result in the same session — measured over 30 d on this machine into `research.md` §11. Proceeds only above 1 % of result bytes; otherwise the card leaves for `ideas.md` with the number.
 Done when `cmd::run` and the `read` plugin hash the raw output before archiving, a hit in the same session returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` instead of the body (`Measurement { kind = "dedup" }`, before = body bytes), a miss archives as today, the lookup is one indexed query on the archive table (≤ 10 ms, fail open), and a test replays two different commands with identical output.
 
-### T65.2. `cmd` JSON output compaction
-
-From `research.md` §11. sqz strips nulls and flattens arrays in JSON output; rtok cuts `gh … --json`, `aws`, `kubectl -o json` and `curl` bodies by line position, which keeps the opening of the document and loses the keys the model asked for. `toon` (off) is the wire-side encoder and does not run in the hook path.
-Step 1 (gate): `stats` share of Bash result bytes whose body parses as JSON, 30 d, this machine, into `research.md` §11.
-Done when output that parses as JSON is rewritten before the line cut: null / empty-string / empty-container fields dropped, arrays beyond `json_items` (default 20) elements shown as `… +K more`, object keys kept, strings longer than `json_string` (default 200) cut with their length, one line per top-level key; lossless via the archived raw body and the trailer; a fixture per source (`gh pr list --json`, `aws ec2 describe-instances`, `kubectl get pods -o json`) records the bytes against the default rule; a body that does not parse is untouched.
 
 ### T68.5. `affected`: which tests a change touches
 
