@@ -639,7 +639,7 @@ Grounded in §2 (this workload: tool results 2.83 M est. tokens, Bash 35 %, Read
 
 | Category | rtok better | rtok worse | Missing, and whether it is worth building |
 |----------|-------------|------------|-------------------------------------------|
-| Command output | lossless (`expand`), measured per family, one process ≤ 10 ms; a default rule (40 lines, head/tail, dedupe) caps every stem, so nothing passes through whole | 9 TOML rules + 10 formatters keep signal by meaning; every other family (docker, kubectl, gh, aws, pip, mvn, gradle, dotnet, tsc, eslint) is cut by position, so its error lines can fall in the gap; rtk has 100+ per-command filters | Per-family rules chosen by measured after-bytes — **T50.1** (data only); formatters for table/grouped outputs — **T58.5**. |
+| Command output | lossless (`expand`), measured per family, one process ≤ 10 ms; a default rule (40 lines, head/tail, dedupe) caps every stem, so nothing passes through whole | 24 TOML rules + 10 formatters keep signal by meaning; every other family (docker, kubectl, gh, aws, pip, mvn, gradle, dotnet, tsc, eslint) is cut by position, so its error lines can fall in the gap; rtk has 100+ per-command filters | Per-family rules chosen by measured after-bytes — **T50.1** (data only); formatters for table/grouped outputs — **T58.5**. |
 | Reads | 4 modes, sha256 dedup, root guard, ~223 desc tokens for 12 tools (`rtok doctor`, 2026-09-18); no banner | lean-ctx: `diff` mode; token-optimizer: delta reads; lean-ctx re-read 13 tokens (rtok's "unchanged since" line is comparable) | **Delta since last read**: rtok already keeps the sha256 and archive id of the previous read, so a changed file can return a unified diff against that archive instead of 9.5–17 K tokens again — **T58.1**. |
 | Model output (the code it writes) | typed `yagni` ladder 14/14 on fixtures; modes inside the 800-token budget | nothing targets the 96 % tool-input share | **Measured 2026-09-17 (T58.3):** `old_string` is 3.8 % of tool-input bytes and ≈ 1.3 % of output tokens, so an anchored `patch` tool (serena `replace_symbol_body`, lean-ctx `ctx_patch`) would move at most ~1 % of the output slice; not built (I-43 keeps the number). The output lever that remains is fewer and smaller writes — modes (T53.1) and the read side. |
 | Injection / compaction | byte-stable 800-token budget; progressive-disclosure memory; on Claude Code a `PreCompact` checkpoint (prompts, paths, errors) and modes re-injected after the summary (T2.5) — rtk, headroom and caveman have nothing here | the checkpoint exists on Claude Code only (Codex, Cursor, Gemini, Copilot events are not registered); it carries no archive ids, so `expand` of a summarized-away result depends on the model remembering the id | Register the compaction events on every host that has them and add the live archive ids to the checkpoint — **T58.2**. |
@@ -814,7 +814,7 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 
 | Their feature | rtok today | Gap | Task |
 | --- | --- | --- | --- |
-| rtk smart filtering (noise, comments, boilerplate) | `keep`/`drop` patterns per rule, `BUILTIN_KEEP`, 10 formatters, raw archived first | Coverage, not mechanism: 9 rules + 10 formatters vs ~80 (rtk) / 45+ (sqz) | T50.1, T58.5 |
+| rtk smart filtering (noise, comments, boilerplate) | `keep`/`drop` patterns per rule, `BUILTIN_KEEP`, 10 formatters, raw archived first | Coverage, not mechanism: 24 rules + 10 formatters vs ~80 (rtk) / 45+ (sqz) | T50.1, T58.5 |
 | rtk grouping (files by directory, errors by type) | none — `ls`/`find`/`tree` take 40 lines | generic grouping pass | T64.1 |
 | rtk truncation | `max_lines`/`head`/`tail`, lossless (`expand <id>`) | rtok is ahead: rtk drops, rtok archives | — |
 | rtk / sqz dedup of repeated log lines | `dedupe` folds adjacent identical lines to `(×N)` | non-adjacent, timestamp-normalised | T64.2 |
@@ -1016,3 +1016,34 @@ Reading: two of the three constraints are host-plugin-shaped, and pi is the host
 gap is widest — it reaches two plugins today and its extension API is the most capable of
 the three. The proxy stays the only path on Codex, Claude Desktop, Windsurf, Zed, ZCode,
 Kimi and Copilot, which have neither a plugin directory nor the events.
+
+### T50.1 default-rule families (2026-09-18)
+
+Command: `rtok stats` on this machine (916 Claude Code sessions, `since` default). The `bash` table now has a `filter` column (`formatter` / `rule` / `default`). The `bash_default` table ranks stems where `cmd` `Measurement.kind = rule` still used `Rule::default()` (before the T50.1 rules landed), sorted by summed `after_bytes`.
+
+Top 20 `bash_default` stems by filtered after-bytes:
+
+| # | stem | `cmd` rule rows | after B |
+| --- | --- | ---: | ---: |
+| 1 | mise | 37 | 41,423 |
+| 2 | gh | 4 | 13,809 |
+| 3 | bash | 13 | 12,484 |
+| 4 | cd | 4 | 6,334 |
+| 5 | H=$(ls | 5 | 5,777 |
+| 6 | awk | 4 | 4,954 |
+| 7 | just | 2 | 4,018 |
+| 8 | df | 3 | 3,451 |
+| 9 | # | 3 | 3,094 |
+| 10 | for | 3 | 2,881 |
+| 11 | bv0thal3q.output; | 1 | 2,629 |
+| 12 | head | 4 | 2,643 |
+| 13 | lean-ctx | 2 | 1,552 |
+| 14 | mkdir | 1 | 2,435 |
+| 15 | sqlite3 | 20 | 8,556 |
+| 16 | printf | 1 | 493 |
+| 17 | if | 1 | 602 |
+| 18 | diff | 1 | 150 |
+| 19 | build.rs | 1 | 136 |
+| 20 | rmcp-3.2.0 | 1 | 101 |
+
+T50.1 added `[stem]` rules (and golden fixtures) for: `gh`, `pip`, `uv`, `python`, `python3`, `go`, `aws`, `mvn`, `gradle`, `dotnet`, `tsc`, `eslint`, `brew`, `apt`, `cmake`. Structured/table families deferred to T58.5: `docker ps` (`tests/cmd_golden/docker_ps`), `kubectl get` (`kubectl_get`), `ps aux` (`ps_aux`).
