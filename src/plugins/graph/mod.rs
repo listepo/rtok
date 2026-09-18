@@ -10,7 +10,7 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -77,8 +77,8 @@ impl Plugin for Graph {
             },
             ToolDef {
                 name: "impact",
-                description: "What breaks if a symbol changes: callers up to depth. Optional to: chains reaching it.",
-                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"to":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}},"required":["name"]}),
+                description: "What breaks if a symbol changes: callers up to depth. Optional to: chains reaching it. Empty name + path lists affected tests.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"to":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}}}),
             },
             ToolDef {
                 name: "outline",
@@ -199,14 +199,33 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     match name {
         "symbol" => symbol_filtered(cx, &root, arg("name"), &filter),
         "callers" => callers_filtered(cx, &root, arg("name"), &filter),
-        "impact" => impact_filtered(
-            cx,
-            &root,
-            arg("name"),
-            args["depth"].as_u64().unwrap_or(2) as u32,
-            &filter,
-            args["to"].as_str(),
-        ),
+        "impact" => {
+            let name = arg("name");
+            if name.is_empty() {
+                let path = arg("path");
+                let paths = if path.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![rel_of(&root, path)]
+                };
+                affected_from_paths(
+                    cx,
+                    &root,
+                    &paths,
+                    args["depth"].as_u64().unwrap_or(3) as u32,
+                    false,
+                )
+            } else {
+                impact_filtered(
+                    cx,
+                    &root,
+                    name,
+                    args["depth"].as_u64().unwrap_or(2) as u32,
+                    &filter,
+                    args["to"].as_str(),
+                )
+            }
+        }
         "outline" => outline(cx, arg("path")),
         "explore" => explore(cx, &root, arg("query"), &filter),
         _ => anyhow::bail!("unknown tool: {name}"),
@@ -548,10 +567,160 @@ fn collect_impls(
         collect_impls(child, src, out);
     }
 }
-/// T8.7 BFS, kept as the T8.14 baseline. Not used on the tool path after T8.13.
-#[cfg(test)]
+const EMPTY_AFFECTED: &str = "no indexed test reaches the change; run the suite";
+
+fn rel_of(root: &Path, path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let path = path.strip_prefix("./").unwrap_or(&path);
+    match (
+        dunce::canonicalize(root.join(path)),
+        dunce::canonicalize(root),
+    ) {
+        (Ok(abs), Ok(root)) => abs
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| path.to_string()),
+        _ => path.to_string(),
+    }
+}
+
+/// Tests that reach files changed in git (`git diff --name-only`). No Measurement.
+pub fn affected(
+    cx: &Ctx,
+    root: &Path,
+    since: Option<&str>,
+    staged: bool,
+    json: bool,
+) -> Result<String> {
+    affected_from_paths(cx, root, &git_changed_files(root, since, staged), 3, json)
+}
+
+pub(crate) fn affected_from_paths(
+    cx: &Ctx,
+    root: &Path,
+    paths: &[String],
+    depth: u32,
+    json: bool,
+) -> Result<String> {
+    index_for(cx, root)?;
+    let key = index::canon(root);
+    let mut hits = BTreeSet::new();
+    let mut starts = HashSet::new();
+    for raw in paths {
+        let rel = rel_of(root, raw);
+        for name in defs_in_path(cx, root, &key, &rel)? {
+            if is_test_path(&rel) {
+                hits.insert((rel.clone(), name.clone()));
+            }
+            starts.insert(name);
+        }
+    }
+    for name in &starts {
+        for (_, path, scope) in impact_bfs(cx, &key, name, depth)? {
+            if is_test_path(&path) {
+                let via = if scope.is_empty() {
+                    name.clone()
+                } else {
+                    scope
+                };
+                hits.insert((path, via));
+            }
+        }
+    }
+    Ok(format_affected(&hits, json))
+}
+
+fn defs_in_path(cx: &Ctx, root: &Path, key: &str, rel: &str) -> Result<Vec<String>> {
+    let abs = root.join(rel);
+    let src = std::fs::read_to_string(&abs).unwrap_or_default();
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for hit in crate::plugins::read::outline::tags(&abs, &src)? {
+        if hit.is_def
+            && seen.insert(hit.name.clone())
+            && cx
+                .symbol_defs(key, &hit.name)?
+                .iter()
+                .any(|(p, ..)| p == rel)
+        {
+            names.push(hit.name);
+        }
+    }
+    Ok(names)
+}
+
+fn git_changed_files(root: &Path, since: Option<&str>, staged: bool) -> Vec<String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(root)
+        .args(["diff", "--name-only", "--relative", "-z"]);
+    if staged {
+        cmd.arg("--cached");
+    }
+    if let Some(rev) = since {
+        cmd.arg(rev);
+    }
+    let Ok(out) = cmd.output() else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    out.stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| String::from_utf8(s.to_vec()).ok())
+        .collect()
+}
+
+fn test_command(path: &str, name: &str) -> Option<String> {
+    match Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+    {
+        "rs" => Some(format!("cargo test {name}")),
+        "py" => Some(format!("pytest {path}::{name}")),
+        "go" => Some(format!("go test -run {name}")),
+        "ts" | "tsx" | "js" | "mjs" | "cjs" | "jsx" => Some(format!("vitest {path}")),
+        _ => None,
+    }
+}
+
+fn format_affected(hits: &BTreeSet<(String, String)>, json: bool) -> String {
+    if json {
+        let tests: Vec<Value> = hits
+            .iter()
+            .map(|(file, symbol)| {
+                json!({
+                    "file": file,
+                    "symbol": symbol,
+                    "command": test_command(file, symbol),
+                })
+            })
+            .collect();
+        return if tests.is_empty() {
+            json!({"tests": [], "message": EMPTY_AFFECTED}).to_string()
+        } else {
+            json!({"tests": tests}).to_string()
+        };
+    }
+    if hits.is_empty() {
+        return EMPTY_AFFECTED.to_string();
+    }
+    let mut out = String::new();
+    for (file, symbol) in hits {
+        out.push_str(&format!("{file} ← via {symbol}\n"));
+        if let Some(cmd) = test_command(file, symbol) {
+            out.push_str(&format!("{cmd}\n"));
+        }
+    }
+    out
+}
+
+/// T8.7 BFS (T8.14 baseline). T68.5 walks it from each changed file's definitions.
 pub(crate) fn impact_bfs(
-    store: &crate::store::Store,
+    cx: &Ctx,
     root: &str,
     name: &str,
     depth: u32,
@@ -562,7 +731,7 @@ pub(crate) fn impact_bfs(
     for d in 1..=depth.clamp(1, 4) {
         let mut next = Vec::new();
         for from in &frontier {
-            for (path, scope, ..) in store.symbol_ref_groups(root, from)? {
+            for (path, scope, ..) in cx.symbol_ref_groups(root, from)? {
                 if scope.is_empty() {
                     out.push((d, path, String::new()));
                 } else if seen.insert(scope.clone()) {
@@ -1039,7 +1208,7 @@ mod tests {
         index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let key = index::canon(&dir);
         let mut cte: Vec<_> = cx.store.symbol_impact(&key, "sink", 4).unwrap();
-        let mut bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
+        let mut bfs = impact_bfs(&Ctx::new(&cx), &key, "sink", 4).unwrap();
         cte.sort();
         bfs.sort();
         assert!(!cte.is_empty(), "fan-out-10 must reach sink");
