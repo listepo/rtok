@@ -153,6 +153,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ("filter", "filters stdin without executing"),
     ("expand", "prints one archived payload"),
     (
+        "guard check",
+        "prints the plugins::guard allow/deny verdict (T70.5)",
+    ),
+    (
         "archive rewrite",
         "rewrites a pi `context` array on stdin to stdout (T70.2)",
     ),
