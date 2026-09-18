@@ -46,7 +46,6 @@
 - T68.6. Import edges in the index
 - T68.7. Mark ambiguous references
 - T68.8. Markdown outline shared by `outline`, `read map` and the skill digest
-- T68.9. With / without bench for the graph tools
 - T68.10. `[plugins.graph]` exclude, include and extension map
 - T69.2. Recall ranking: recency decay and use counts, off by default
 - T69.3. Memory recall bench: planted, drifted, superseded facts

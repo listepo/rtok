@@ -47,7 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.7 | todo | P3 | 2 | 0% | |
 | T68.8 | todo | P3 | 2 | 0% | |
-| T68.9 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T68.10 | todo | P3 | 2 | 0% | |
 | T69.2 | todo | P3 | 3 | 0% | |
 | T69.3 | todo | P3 | 3 | 0% | |
@@ -323,18 +322,6 @@ Done when `callers`, `impact` and T68.1 append ` ?` to a reference line whose na
 
 From the codegraph / graphify review. graphify indexes Markdown headings as nodes beside code. rtok's `outline` and `read` mode `map` return nothing for `.md`, and T62.1's execution plan writes a first heading outliner inside `guard/skill.rs` — a second one would be a duplicate the day `outline` gains it.
 Done when `plugins::read::outline` has one Markdown mode (`#` headings with their level and first non-empty body line, fenced code blocks skipped, line numbers as for code), `read` mode `map` and `outline` on `.md` / `.mdx` use it, T62.1's digest calls the same function (moved there if it landed first), no `tree-sitter-md` dependency (headings are a line scan), test on a three-heading fixture with a heading inside a fence, and the `read` docs page lists `.md` under `map`.
-
-### T68.9. With / without bench for the graph tools
-
-From the codegraph / graphify review. codegraph's number is the only measured one in the pair: median of 4 runs, 7 repos, Claude Opus 4.8 answering architecture questions with and without the graph — tool calls, wall time, tokens, cost — and it also reports the cost (80 % more retrieval context resident at session end). rtok's `docs/comparison.md` §5 still says no end-to-end win is demonstrated, and Gate P8b's task-set clause was never closable in code.
-Done when `rtok bench --suite graph` runs N fixed questions (≥ 10, three repos including this one, in `bench/graph.toml`) through the existing `claude -p` harness twice — rtok MCP on, rtok MCP off (native Read / Grep only) — and reports per question and in total: tool calls, tokens in / out / cache-read, wall time, cost via `stats --price`, resident context at the last turn, pass / fail against an expected-answer regex; `--dry-run` prints the schedule without spend; the live run needs the creator's go (API spend) and its result goes into `research.md` and `docs/comparison.md` §4 / §5 with the date and command; the vendor's 88 % / 62 % numbers are quoted there only next to rtok's own.
-
-Execution plan:
-1. Reuse `src/bench.rs` `claude -p` harness; add `--suite graph` (`bench.suite`).
-2. `bench/graph.toml`: ≥10 questions, three repos (this tree + two in-tree mini repos), `expect` regex each.
-3. Dry-run prints `{id} {repo} {mcp|native} {n}` with no spend. Live path (gated on `RTOK_BENCH_LIVE`): MCP on vs Read/Grep only; cost via `row_cost` (`stats --price`).
-4. Do not run the live API bench — that clause stays open. Docs note the suite and dry-run command; no vendor 88/62 without an rtok row.
-5. Unit + trycmd dry-run.
 
 ### T68.10. `[plugins.graph]` exclude, include and extension map
 
