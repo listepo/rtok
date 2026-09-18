@@ -11,7 +11,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T57.1 | todo | P3 | 3 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
-| T70.4 | todo | P2 | 3 | 0% | |
+| T70.4 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -71,6 +71,21 @@ Done when:
 2. `plugins/cursor/hooks/hooks.json` gains that event pointing at `rtok hook PostToolUse --host cursor`, and the existing hook path shortens the result through the same code `rtok mcp --wrap` uses (T59.4) — one implementation, lossless, `expand <id>` trailer.
 3. Never blocks and never changes a call: only the result text, only above the existing size threshold, fail open in ≤ 10 ms; results of rtok's own MCP server are skipped (they are already short).
 4. Tests: a hook e2e per result size on a fixture payload, `Measurement { plugin = "archive", kind = "mcp" }` rows, and `plugins/cursor/README.md` + `src/agents/cursor/README.md` updated with the verified docs link (`tests/host_docs.rs`); host table re-blessed.
+
+
+Verified 2026-09-18 against https://cursor.com/docs/agent/hooks:
+
+- `postToolUse` — input `tool_output` (JSON-stringified result). Output `updated_mcp_tool_output` (object) **replaces MCP tool output** seen by the model; `additional_context` injects text. Shell is not replaceable via this field.
+- `afterMCPExecution` — input `result_json`, `mcp_server_name`. **No documented output**; not a replacement surface.
+- `afterShellExecution` — input `output`. **No documented output**; shell is not replaceable (scan confirmed).
+
+Decision: register `postToolUse` → `rtok hook PostToolUse --host cursor` (matcher `MCP:`).
+
+Execution plan:
+1. Publish `shorten_result` from `src/mcp/wrap.rs` (T59.4 path); hook records `archive`/`mcp`.
+2. `adapt_cursor` maps `postToolUse.tool_output` → `tool_response`; emit top-level `updated_mcp_tool_output`.
+3. Skip `mcp_server_name == rtok` and tool `expand`; fail open; never rewrite the call.
+4. Installer + `hooks.json`; e2e small/large fixtures; host READMEs; bless table if it changes.
 
 
 
