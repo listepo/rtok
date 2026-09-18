@@ -51,11 +51,15 @@ but the session-local `checkpoint:*` rows — so notes move between machines thr
 you commit or copy (T66.2). An export piped into `import` on a second store inserts each
 row once; a second import skips them all.
 
+## Recall bench (T69.3)
+
+`cargo test --test memory_bench -- --nocapture` (2026-09-18). Seeded in-memory store, 20 planted facts, 5 revised. FTS5 and P29 hybrid both 20/20 at N=1/10/30/100; superseded returned 0. SessionStart recall is 95–100 bytes against 6 331–371 866 bytes of full live-body injection. `half_life_days` is N/A (T69.2 shipped no scorer). Numbers and the command live in `research.md` §14; never graymatter's 83 %.
+
 ## Tasks
 
 See `roadmap.md` § `memory`. Checks in `plan.md`.
 
-T6.1 notes API · T2.5 checkpoint · T6.2 recall · T6.3 import · T66.1 upsert · T66.2 export.
+T6.1 notes API · T2.5 checkpoint · T6.2 recall · T6.3 import · T66.1 upsert · T66.2 export · T69.1 lifecycle · T69.3 recall bench.
 
 ## Status
 
