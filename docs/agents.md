@@ -21,6 +21,8 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`pi`](https://github.com/listepo/rtok/blob/main/src/agents/pi/README.md) | pi | CLI | — | — | — | `--yes` | measure, cmd, archive |
 | [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
+| [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
+| [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code - Insiders | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | Copilot CLI | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | GitHub Copilot | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
 | [`aider`](https://github.com/listepo/rtok/blob/main/src/agents/aider/README.md) | aider | CLI | — | — | `--proxy` | — | measure, archive, proxy, toon (off), compress (off) |

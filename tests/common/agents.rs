@@ -35,6 +35,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".pi/agent",
         ".zcode/cli",
         ".kimi-code",
+        "Library/Application Support/Code/User",
+        "Library/Application Support/Code - Insiders/User",
         ".copilot/hooks",
         ".codeium/windsurf",
         ".config/zed",
@@ -54,6 +56,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
              [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\
+             [setup.vscode]\ncode_user_dir = \"{h}/Library/Application Support/Code/User\"\n\
+             insiders_user_dir = \"{h}/Library/Application Support/Code - Insiders/User\"\n\
              [setup.copilot]\ndir = \"{h}/.copilot\"\n\
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
