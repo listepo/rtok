@@ -16,11 +16,27 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
         return None;
     }
     if recently_edited(cx, path) {
+        if cfg.delta {
+            if let Some(id) = last_read_id(cx, path) {
+                return Some(PreToolDecision::Deny {
+                    reason: format!(
+                        "file changed since last read; use rtok read(mode=diff) vs {id:.8}"
+                    ),
+                });
+            }
+        }
         return None;
     }
     Some(PreToolDecision::Deny {
         reason: REASON.into(),
     })
+}
+
+/// Archive id of the last MCP `read` of this path (`mode=full`), if still cached.
+fn last_read_id(cx: &Ctx, path: &str) -> Option<String> {
+    let abs = dunce::canonicalize(path).ok()?;
+    let key = super::cache::key(abs.to_string_lossy().as_ref(), "full", None);
+    cx.get_read_cache(&key).ok().flatten()?.0
 }
 
 /// The edit window: the last 5 finished tool calls (PostToolUse rows).
@@ -131,6 +147,42 @@ mod tests {
             .unwrap();
         let input = json!({"file_path": path});
         assert!(pre_tool(&ev(&input), &Ctx::new(&cx)).is_none());
+    }
+
+    #[test]
+    fn edited_reread_advises_diff_when_cached() {
+        let cx = cx("delta-advice");
+        let dir = cx.config.core.archive_dir.parent().unwrap().to_path_buf();
+        let p = dir.join("delta.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let path = p.to_str().unwrap();
+        let abs = dunce::canonicalize(&p).unwrap();
+        let key = crate::plugins::read::cache::key(abs.to_str().unwrap(), "full", None);
+        let ctx = Ctx::new(&cx);
+        let id = ctx.put_archive(b"previous body").unwrap();
+        ctx.put_read_cache(&key, "h", Some(&id)).unwrap();
+        let edit = json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": path},
+        });
+        let hid = cx.record_call("hook", "hook", None).unwrap();
+        cx.store
+            .insert_call_io(
+                hid,
+                Some(&serde_json::to_vec(&edit).unwrap()),
+                None,
+                65536,
+                None,
+            )
+            .unwrap();
+        let input = json!({"file_path": path});
+        match pre_tool(&ev(&input), &Ctx::new(&cx)) {
+            Some(PreToolDecision::Deny { reason }) => {
+                assert!(reason.contains("mode=diff"), "{reason}");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     fn hook_row(cx: &crate::plugin::Runtime, body: serde_json::Value) {
