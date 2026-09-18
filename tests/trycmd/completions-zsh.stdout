@@ -1,0 +1,2487 @@
+#compdef rtok
+
+autoload -U is-at-least
+
+_rtok() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'-V[Print version]' /
+'--version[Print version]' /
+":: :_rtok_commands" /
+"*::: :->rtok" /
+&& ret=0
+    case $state in
+    (rtok)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-command-$line[1]:"
+        case $line[1] in
+            (hook)
+_arguments "${_arguments_options[@]}" : /
+'--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/`)]:HOST:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':event:_default' /
+&& ret=0
+;;
+(mcp)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::wrap -- Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`):_default' /
+&& ret=0
+;;
+(proxy)
+_arguments "${_arguments_options[@]}" : /
+'--port=[Override /`/[proxy/] port/`]:PORT:_default' /
+'--upstream=[Override /`/[proxy/] upstream/`]:UPSTREAM:_default' /
+'--mode=[Override /`/[proxy/] mode/` (/`passthrough/` | /`compress/`)]:MODE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print effective /`/[proxy/]/` settings and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(web)
+_arguments "${_arguments_options[@]}" : /
+'--host=[Override /`/[web/] host/`]:HOST:_default' /
+'--port=[Override /`/[web/] port/`]:PORT:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(tui)
+_arguments "${_arguments_options[@]}" : /
+'--tab=[Start on this tab (a page name both surfaces carry)]:TAB:_default' /
+'--tick-secs=[Model re-read cadence in seconds]:TICK_SECS:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(stats)
+_arguments "${_arguments_options[@]}" : /
+'--since=[How far back to read transcripts (/`60d/`, /`24h/`)]:SINCE:_default' /
+'--plugin=[Restrict to one tool or plugin id]:PLUGIN:_default' /
+'--save-baseline=[Write this report JSON to /`<home>/measurements/<name>.json/`]:NAME:_default' /
+'--compare=[Print deltas against a saved baseline]:NAME:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'--calibrate[Fit chars-per-token via count_tokens (skipped without an API key)]' /
+'--cache[Cache health per session from proxy usage rows/: busts and their cause]' /
+'--price[Show per-model USD costs from /`/[stats.prices/]/` (/`--price/`)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(bench)
+_arguments "${_arguments_options[@]}" : /
+'--tasks=[Task list TOML]:TASKS:_files' /
+'--runs=[Repeats per task × config]:RUNS:_default' /
+'--timeout=[Per-run timeout in seconds]:TIMEOUT:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the schedule and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(doctor)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--instructions[Also run the instruction-file audit (T7.2)]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(info)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the text lines]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(agents)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents_commands" /
+"*::: :->agents" /
+&& ret=0
+
+    case $state in
+    (agents)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : /
+'*--mode=[Enable prompt modes (/`terse,yagni/`)]:MODE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the planned edits and exit]' /
+'--remove[Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer /`rtok agents remove <host>/`]' /
+'--yes[Confirm destructive /`--replace/`]' /
+'--replace[Remove legacy token hooks and retarget the proxy]' /
+'--mcp[Register /`rtok mcp/` in the host MCP map]' /
+'--proxy[Set /`env.ANTHROPIC_BASE_URL/` to this proxy]' /
+'--cli[Only the CLI app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--desktop[Only the desktop app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print what would be removed and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(sessions)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--all[Also show sessions that have ended]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents__subcmd__sessions_commands" /
+"*::: :->sessions" /
+&& ret=0
+
+    case $state in
+    (sessions)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-sessions-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--all[Also show sessions that have ended]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__sessions__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-sessions-help-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(sessions)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help__subcmd__sessions_commands" /
+"*::: :->sessions" /
+&& ret=0
+
+    case $state in
+    (sessions)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-sessions-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(agent)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents_commands" /
+"*::: :->agents" /
+&& ret=0
+
+    case $state in
+    (agents)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : /
+'*--mode=[Enable prompt modes (/`terse,yagni/`)]:MODE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the planned edits and exit]' /
+'--remove[Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer /`rtok agents remove <host>/`]' /
+'--yes[Confirm destructive /`--replace/`]' /
+'--replace[Remove legacy token hooks and retarget the proxy]' /
+'--mcp[Register /`rtok mcp/` in the host MCP map]' /
+'--proxy[Set /`env.ANTHROPIC_BASE_URL/` to this proxy]' /
+'--cli[Only the CLI app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--desktop[Only the desktop app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print what would be removed and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(sessions)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--all[Also show sessions that have ended]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__agents__subcmd__sessions_commands" /
+"*::: :->sessions" /
+&& ret=0
+
+    case $state in
+    (sessions)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-sessions-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--all[Also show sessions that have ended]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__sessions__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-sessions-help-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(sessions)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__agents__subcmd__help__subcmd__sessions_commands" /
+"*::: :->sessions" /
+&& ret=0
+
+    case $state in
+    (sessions)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-agents-help-sessions-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(setup)
+_arguments "${_arguments_options[@]}" : /
+'*--mode=[Enable prompt modes (/`terse,yagni/`)]:MODE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the planned edits and exit]' /
+'--remove[Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer /`rtok agents remove <host>/`]' /
+'--yes[Confirm destructive /`--replace/`]' /
+'--replace[Remove legacy token hooks and retarget the proxy]' /
+'--mcp[Register /`rtok mcp/` in the host MCP map]' /
+'--proxy[Set /`env.ANTHROPIC_BASE_URL/` to this proxy]' /
+'--cli[Only the CLI app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--desktop[Only the desktop app (/`cursor/`//`opencode/` have CLI and desktop; default is all)]' /
+'--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+&& ret=0
+;;
+(run)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::command:_default' /
+&& ret=0
+;;
+(filter)
+_arguments "${_arguments_options[@]}" : /
+'--cmd=[Command family hint (/`git status/`, /`cargo test/`, …)]:CMD:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--stdin[Read the payload from stdin (OpenCode /`tool.execute.after/`)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(expand)
+_arguments "${_arguments_options[@]}" : /
+'--lines=[Inclusive 1-based range /`a-b/`]:LINES:_default' /
+'--grep=[Regex filter (literal when it does not compile); hits print as /`N/:line/`]:GREP:_default' /
+'--context=[With /`--grep/`/: N lines around each hit, overlapping windows merged with /`--/`]:CONTEXT:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':id:_default' /
+&& ret=0
+;;
+(archive)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__archive_commands" /
+"*::: :->archive" /
+&& ret=0
+
+    case $state in
+    (archive)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-archive-command-$line[1]:"
+        case $line[1] in
+            (rewrite)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--stdin[Read the message array from stdin (pi /`context/` event)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__archive__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-archive-help-command-$line[1]:"
+        case $line[1] in
+            (rewrite)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':shell -- Shell to complete for:(bash elvish fish powershell zsh)' /
+&& ret=0
+;;
+(man)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(plugins)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(config)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__config_commands" /
+"*::: :->config" /
+&& ret=0
+
+    case $state in
+    (config)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-config-command-$line[1]:"
+        case $line[1] in
+            (init)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--force[Overwrite an existing file]' /
+'--dry-run[Print the diff it would write and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(path)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--sources[Append /`(default|user|project|env|flag)/` from figment metadata]' /
+'--json[JSON array of /`{key,value,source}/`]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':key:_default' /
+&& ret=0
+;;
+(validate)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::path -- File to check (else the user config file):_files' /
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the diff it would write and exit]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':key:_default' /
+':value:_default' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__config__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-config-help-command-$line[1]:"
+        case $line[1] in
+            (init)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(path)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(validate)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(memory)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__memory_commands" /
+"*::: :->memory" /
+&& ret=0
+
+    case $state in
+    (memory)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-memory-command-$line[1]:"
+        case $line[1] in
+            (import)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Count what would be imported and write nothing]' /
+'-h[Print help]' /
+'--help[Print help]' /
+':file:_files' /
+&& ret=0
+;;
+(export)
+_arguments "${_arguments_options[@]}" : /
+'--project=[Only notes of this project]:PROJECT:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(retire)
+_arguments "${_arguments_options[@]}" : /
+'--superseded-by=[The replacement note id this one is superseded by]:SUPERSEDED_BY:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':id:_default' /
+&& ret=0
+;;
+(pin)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':id:_default' /
+&& ret=0
+;;
+(unpin)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':id:_default' /
+&& ret=0
+;;
+(revise)
+_arguments "${_arguments_options[@]}" : /
+'--title=[The replacement title]:TITLE:_default' /
+'--body=[The replacement body]:BODY:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':id:_default' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__memory__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-memory-help-command-$line[1]:"
+        case $line[1] in
+            (import)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(export)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(retire)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(pin)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(unpin)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(revise)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(graph)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__graph_commands" /
+"*::: :->graph" /
+&& ret=0
+
+    case $state in
+    (graph)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-graph-command-$line[1]:"
+        case $line[1] in
+            (index)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Report what would be indexed and write no rows]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::path:_files' /
+&& ret=0
+;;
+(dead)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::path:_files' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__graph__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-graph-help-command-$line[1]:"
+        case $line[1] in
+            (index)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(dead)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(dashboard)
+_arguments "${_arguments_options[@]}" : /
+'--host=[]:HOST:_default' /
+'--port=[]:PORT:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(demon)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__demon_commands" /
+"*::: :->demon" /
+&& ret=0
+
+    case $state in
+    (demon)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-demon-command-$line[1]:"
+        case $line[1] in
+            (start)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::service:(proxy mcp web)' /
+&& ret=0
+;;
+(stop)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::service:(proxy mcp web)' /
+&& ret=0
+;;
+(restart)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::service:(proxy mcp web)' /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::service:(proxy mcp web)' /
+&& ret=0
+;;
+(kill)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::service:(proxy mcp web)' /
+&& ret=0
+;;
+(supervise)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':service:(proxy mcp web)' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__demon__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-demon-help-command-$line[1]:"
+        case $line[1] in
+            (start)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(stop)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(restart)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(kill)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(supervise)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(otel)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__otel_commands" /
+"*::: :->otel" /
+&& ret=0
+
+    case $state in
+    (otel)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-otel-command-$line[1]:"
+        case $line[1] in
+            (flush)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__otel__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-otel-help-command-$line[1]:"
+        case $line[1] in
+            (flush)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(logs)
+_arguments "${_arguments_options[@]}" : /
+'--lines=[Override /`/[log/] lines/`]:LINES:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__logs_commands" /
+"*::: :->logs" /
+&& ret=0
+
+    case $state in
+    (logs)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-logs-command-$line[1]:"
+        case $line[1] in
+            (export)
+_arguments "${_arguments_options[@]}" : /
+'--lines=[Override /`/[log/] lines/`]:LINES:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(watch)
+_arguments "${_arguments_options[@]}" : /
+'--lines=[Override /`/[log/] lines/`]:LINES:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__logs__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-logs-help-command-$line[1]:"
+        case $line[1] in
+            (export)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(report)
+_arguments "${_arguments_options[@]}" : /
+'--format=[Output format]:FORMAT:(md html pdf)' /
+'--out=[Write to this path instead of stdout]:PATH:_files' /
+'--since=[How far back the report reads (/`30d/`, /`24h/`)]:SINCE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--ai[Model-shaped rendering of the same document instead of /`--format/` (T22.4)]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-command-$line[1]:"
+        case $line[1] in
+            (hook)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(mcp)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(proxy)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(web)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(tui)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(stats)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(bench)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(doctor)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(info)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(agents)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__agents_commands" /
+"*::: :->agents" /
+&& ret=0
+
+    case $state in
+    (agents)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-agents-command-$line[1]:"
+        case $line[1] in
+            (install)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(sessions)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__agents__subcmd__sessions_commands" /
+"*::: :->sessions" /
+&& ret=0
+
+    case $state in
+    (sessions)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-agents-sessions-command-$line[1]:"
+        case $line[1] in
+            (watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(setup)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(run)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(filter)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(expand)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(archive)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__archive_commands" /
+"*::: :->archive" /
+&& ret=0
+
+    case $state in
+    (archive)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-archive-command-$line[1]:"
+        case $line[1] in
+            (rewrite)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(man)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(plugins)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(config)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__config_commands" /
+"*::: :->config" /
+&& ret=0
+
+    case $state in
+    (config)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-config-command-$line[1]:"
+        case $line[1] in
+            (init)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(path)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(validate)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(set)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(memory)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__memory_commands" /
+"*::: :->memory" /
+&& ret=0
+
+    case $state in
+    (memory)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-memory-command-$line[1]:"
+        case $line[1] in
+            (import)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(export)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(retire)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(pin)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(unpin)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(revise)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(graph)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__graph_commands" /
+"*::: :->graph" /
+&& ret=0
+
+    case $state in
+    (graph)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-graph-command-$line[1]:"
+        case $line[1] in
+            (index)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(dead)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(dashboard)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(demon)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__demon_commands" /
+"*::: :->demon" /
+&& ret=0
+
+    case $state in
+    (demon)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-demon-command-$line[1]:"
+        case $line[1] in
+            (start)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(stop)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(restart)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(kill)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(supervise)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(otel)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__otel_commands" /
+"*::: :->otel" /
+&& ret=0
+
+    case $state in
+    (otel)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-otel-command-$line[1]:"
+        case $line[1] in
+            (flush)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(logs)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__logs_commands" /
+"*::: :->logs" /
+&& ret=0
+
+    case $state in
+    (logs)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-logs-command-$line[1]:"
+        case $line[1] in
+            (export)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(watch)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(report)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_rtok_commands] )) ||
+_rtok_commands() {
+    local commands; commands=(
+'hook:Claude Code hook entry point/: reads the event JSON on stdin, writes JSON to stdout' /
+'mcp:Serve MCP tools over stdio; /`-- <server argv>/` wraps a foreign server instead' /
+'proxy:Local API proxy for ANTHROPIC_BASE_URL' /
+'web:Local web UI over the same data as /`rtok tui/` (WebSocket API + Slint/WASM)' /
+'tui:Terminal UI over the same data as /`rtok web/` (D23/: one model, two renderings)' /
+'stats:Measurements from session logs and the proxy' /
+'bench:A/B benchmark of host configurations' /
+'doctor:Inspect hooks, MCP servers and the proxy chain' /
+'info:Version, effective paths, disk usage, error count and proxy status' /
+'agents:Agent hosts (/`rtok agents install|remove|list …/`)' /
+'agent:Agent hosts (/`rtok agents install|remove|list …/`)' /
+'setup:Deprecated spelling of /`rtok agents install <host>/`; still runs, still prints where to go' /
+'run:Execute a command, archive its raw output, print the filtered version' /
+'filter:Filter text from stdin without executing' /
+'expand:Print an archived payload' /
+'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
+'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
+'man:Print the man page (roff) to stdout' /
+'plugins:List plugins/: id, enabled, surfaces' /
+'config:The one config file' /
+'memory:Notes (/`mem_save/` / import / export)' /
+'graph:Symbol index (/`rtok graph index/`)' /
+'dashboard:Deprecated spelling of /`rtok web/`; still runs, still prints where to go' /
+'demon:Keep /`rtok proxy/` (or /`mcp/` / /`web/`) running in the background' /
+'otel:OpenTelemetry export (/`rtok otel flush | status/`)' /
+'logs:rtok'/''s own log (/`rtok logs/` prints, /`rtok logs export/` strips numbering and colour)' /
+'report:The operator model as one document (D24)/: Markdown, HTML and PDF' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents_commands] )) ||
+_rtok__subcmd__agents_commands() {
+    local commands; commands=(
+'install:Install hooks, MCP server and proxy into a host' /
+'remove:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'list:Every known app/: kind and name, path and version, config files, rtok modules' /
+'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__help_commands() {
+    local commands; commands=(
+'install:Install hooks, MCP server and proxy into a host' /
+'remove:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'list:Every known app/: kind and name, path and version, config files, rtok modules' /
+'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__install_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__list_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__remove_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__sessions_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__sessions_commands() {
+    local commands; commands=(
+'watch:Redraw the sessions table in place as sessions appear, end or spend' /
+    )
+    _describe -t commands 'rtok agents help sessions commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__help__subcmd__sessions__subcmd__watch_commands] )) ||
+_rtok__subcmd__agents__subcmd__help__subcmd__sessions__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents help sessions watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__install_commands] )) ||
+_rtok__subcmd__agents__subcmd__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__list_commands] )) ||
+_rtok__subcmd__agents__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__remove_commands] )) ||
+_rtok__subcmd__agents__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__sessions_commands] )) ||
+_rtok__subcmd__agents__subcmd__sessions_commands() {
+    local commands; commands=(
+'watch:Redraw the sessions table in place as sessions appear, end or spend' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents sessions commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__sessions__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__sessions__subcmd__help_commands() {
+    local commands; commands=(
+'watch:Redraw the sessions table in place as sessions appear, end or spend' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok agents sessions help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__sessions__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__agents__subcmd__sessions__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents sessions help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__sessions__subcmd__help__subcmd__watch_commands] )) ||
+_rtok__subcmd__agents__subcmd__sessions__subcmd__help__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents sessions help watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__agents__subcmd__sessions__subcmd__watch_commands] )) ||
+_rtok__subcmd__agents__subcmd__sessions__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok agents sessions watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__archive_commands] )) ||
+_rtok__subcmd__archive_commands() {
+    local commands; commands=(
+'rewrite:Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok archive commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__archive__subcmd__help_commands] )) ||
+_rtok__subcmd__archive__subcmd__help_commands() {
+    local commands; commands=(
+'rewrite:Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok archive help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__archive__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__archive__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok archive help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__archive__subcmd__help__subcmd__rewrite_commands] )) ||
+_rtok__subcmd__archive__subcmd__help__subcmd__rewrite_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok archive help rewrite commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__archive__subcmd__rewrite_commands] )) ||
+_rtok__subcmd__archive__subcmd__rewrite_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok archive rewrite commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__bench_commands] )) ||
+_rtok__subcmd__bench_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok bench commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__completions_commands] )) ||
+_rtok__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok completions commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config_commands] )) ||
+_rtok__subcmd__config_commands() {
+    local commands; commands=(
+'init:Write the annotated reference file to /`<home>/config.toml/`' /
+'path:Print the path of the config file' /
+'show:Print every effective key' /
+'get:Print one key'/''s effective value' /
+'validate:Reject unknown keys, wrong types, and out-of-range values' /
+'set:Edit one key in the user file, preserving comments' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok config commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__get_commands] )) ||
+_rtok__subcmd__config__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config get commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help_commands] )) ||
+_rtok__subcmd__config__subcmd__help_commands() {
+    local commands; commands=(
+'init:Write the annotated reference file to /`<home>/config.toml/`' /
+'path:Print the path of the config file' /
+'show:Print every effective key' /
+'get:Print one key'/''s effective value' /
+'validate:Reject unknown keys, wrong types, and out-of-range values' /
+'set:Edit one key in the user file, preserving comments' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok config help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__get_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help get commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__init_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help init commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__path_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__path_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help path commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__set_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help set commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__show_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help show commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__help__subcmd__validate_commands] )) ||
+_rtok__subcmd__config__subcmd__help__subcmd__validate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config help validate commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__init_commands] )) ||
+_rtok__subcmd__config__subcmd__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config init commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__path_commands] )) ||
+_rtok__subcmd__config__subcmd__path_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config path commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__set_commands] )) ||
+_rtok__subcmd__config__subcmd__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config set commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__show_commands] )) ||
+_rtok__subcmd__config__subcmd__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config show commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__config__subcmd__validate_commands] )) ||
+_rtok__subcmd__config__subcmd__validate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok config validate commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__dashboard_commands] )) ||
+_rtok__subcmd__dashboard_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok dashboard commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon_commands] )) ||
+_rtok__subcmd__demon_commands() {
+    local commands; commands=(
+'start:Detach a supervisor that restarts the service whenever it dies' /
+'stop:Ask the supervisor and its child to exit' /
+'restart:Stop, then start' /
+'status:State, pids, uptime, restarts and log path; every service when none is named' /
+'kill:SIGKILL instead of SIGTERM, and drop the state file' /
+'supervise:The detached half; /`demon start/` runs this, you do not' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok demon commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help_commands] )) ||
+_rtok__subcmd__demon__subcmd__help_commands() {
+    local commands; commands=(
+'start:Detach a supervisor that restarts the service whenever it dies' /
+'stop:Ask the supervisor and its child to exit' /
+'restart:Stop, then start' /
+'status:State, pids, uptime, restarts and log path; every service when none is named' /
+'kill:SIGKILL instead of SIGTERM, and drop the state file' /
+'supervise:The detached half; /`demon start/` runs this, you do not' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok demon help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__kill_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__kill_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help kill commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__restart_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__restart_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help restart commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__start_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__start_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help start commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__status_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__stop_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__stop_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help stop commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__help__subcmd__supervise_commands] )) ||
+_rtok__subcmd__demon__subcmd__help__subcmd__supervise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon help supervise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__kill_commands] )) ||
+_rtok__subcmd__demon__subcmd__kill_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon kill commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__restart_commands] )) ||
+_rtok__subcmd__demon__subcmd__restart_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon restart commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__start_commands] )) ||
+_rtok__subcmd__demon__subcmd__start_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon start commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__status_commands] )) ||
+_rtok__subcmd__demon__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__stop_commands] )) ||
+_rtok__subcmd__demon__subcmd__stop_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon stop commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__demon__subcmd__supervise_commands] )) ||
+_rtok__subcmd__demon__subcmd__supervise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok demon supervise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__doctor_commands] )) ||
+_rtok__subcmd__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok doctor commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__expand_commands] )) ||
+_rtok__subcmd__expand_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok expand commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__filter_commands] )) ||
+_rtok__subcmd__filter_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok filter commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph_commands] )) ||
+_rtok__subcmd__graph_commands() {
+    local commands; commands=(
+'index:Walk a tree and insert definitions + references' /
+'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok graph commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__dead_commands] )) ||
+_rtok__subcmd__graph__subcmd__dead_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph dead commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help_commands] )) ||
+_rtok__subcmd__graph__subcmd__help_commands() {
+    local commands; commands=(
+'index:Walk a tree and insert definitions + references' /
+'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok graph help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__dead_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__dead_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help dead commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__index_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__index_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__index_commands] )) ||
+_rtok__subcmd__graph__subcmd__index_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help_commands] )) ||
+_rtok__subcmd__help_commands() {
+    local commands; commands=(
+'hook:Claude Code hook entry point/: reads the event JSON on stdin, writes JSON to stdout' /
+'mcp:Serve MCP tools over stdio; /`-- <server argv>/` wraps a foreign server instead' /
+'proxy:Local API proxy for ANTHROPIC_BASE_URL' /
+'web:Local web UI over the same data as /`rtok tui/` (WebSocket API + Slint/WASM)' /
+'tui:Terminal UI over the same data as /`rtok web/` (D23/: one model, two renderings)' /
+'stats:Measurements from session logs and the proxy' /
+'bench:A/B benchmark of host configurations' /
+'doctor:Inspect hooks, MCP servers and the proxy chain' /
+'info:Version, effective paths, disk usage, error count and proxy status' /
+'agents:Agent hosts (/`rtok agents install|remove|list …/`)' /
+'setup:Deprecated spelling of /`rtok agents install <host>/`; still runs, still prints where to go' /
+'run:Execute a command, archive its raw output, print the filtered version' /
+'filter:Filter text from stdin without executing' /
+'expand:Print an archived payload' /
+'archive:The archive live zone (/`rtok archive rewrite/` — pi /`context/` carrier, T70.2)' /
+'completions:Print shell completions for /`bash/`, /`zsh/`, /`fish/` or /`powershell/`' /
+'man:Print the man page (roff) to stdout' /
+'plugins:List plugins/: id, enabled, surfaces' /
+'config:The one config file' /
+'memory:Notes (/`mem_save/` / import / export)' /
+'graph:Symbol index (/`rtok graph index/`)' /
+'dashboard:Deprecated spelling of /`rtok web/`; still runs, still prints where to go' /
+'demon:Keep /`rtok proxy/` (or /`mcp/` / /`web/`) running in the background' /
+'otel:OpenTelemetry export (/`rtok otel flush | status/`)' /
+'logs:rtok'/''s own log (/`rtok logs/` prints, /`rtok logs export/` strips numbering and colour)' /
+'report:The operator model as one document (D24)/: Markdown, HTML and PDF' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents_commands] )) ||
+_rtok__subcmd__help__subcmd__agents_commands() {
+    local commands; commands=(
+'install:Install hooks, MCP server and proxy into a host' /
+'remove:Take rtok back out of a host/: hooks, MCP entry, proxy variable, plugin link' /
+'list:Every known app/: kind and name, path and version, config files, rtok modules' /
+'sessions:What is running in this project/: host, provider, model, tokens, start, run time' /
+    )
+    _describe -t commands 'rtok help agents commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__install_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents install commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__list_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents list commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__remove_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents remove commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__sessions_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__sessions_commands() {
+    local commands; commands=(
+'watch:Redraw the sessions table in place as sessions appear, end or spend' /
+    )
+    _describe -t commands 'rtok help agents sessions commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__agents__subcmd__sessions__subcmd__watch_commands] )) ||
+_rtok__subcmd__help__subcmd__agents__subcmd__sessions__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help agents sessions watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__archive_commands] )) ||
+_rtok__subcmd__help__subcmd__archive_commands() {
+    local commands; commands=(
+'rewrite:Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)' /
+    )
+    _describe -t commands 'rtok help archive commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__archive__subcmd__rewrite_commands] )) ||
+_rtok__subcmd__help__subcmd__archive__subcmd__rewrite_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help archive rewrite commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__bench_commands] )) ||
+_rtok__subcmd__help__subcmd__bench_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help bench commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__completions_commands] )) ||
+_rtok__subcmd__help__subcmd__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help completions commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config_commands] )) ||
+_rtok__subcmd__help__subcmd__config_commands() {
+    local commands; commands=(
+'init:Write the annotated reference file to /`<home>/config.toml/`' /
+'path:Print the path of the config file' /
+'show:Print every effective key' /
+'get:Print one key'/''s effective value' /
+'validate:Reject unknown keys, wrong types, and out-of-range values' /
+'set:Edit one key in the user file, preserving comments' /
+    )
+    _describe -t commands 'rtok help config commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__get_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__get_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config get commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__init_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config init commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__path_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__path_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config path commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__set_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__set_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config set commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__show_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config show commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__config__subcmd__validate_commands] )) ||
+_rtok__subcmd__help__subcmd__config__subcmd__validate_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help config validate commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__dashboard_commands] )) ||
+_rtok__subcmd__help__subcmd__dashboard_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help dashboard commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon_commands] )) ||
+_rtok__subcmd__help__subcmd__demon_commands() {
+    local commands; commands=(
+'start:Detach a supervisor that restarts the service whenever it dies' /
+'stop:Ask the supervisor and its child to exit' /
+'restart:Stop, then start' /
+'status:State, pids, uptime, restarts and log path; every service when none is named' /
+'kill:SIGKILL instead of SIGTERM, and drop the state file' /
+'supervise:The detached half; /`demon start/` runs this, you do not' /
+    )
+    _describe -t commands 'rtok help demon commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__kill_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__kill_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon kill commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__restart_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__restart_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon restart commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__start_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__start_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon start commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__status_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__stop_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__stop_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon stop commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__demon__subcmd__supervise_commands] )) ||
+_rtok__subcmd__help__subcmd__demon__subcmd__supervise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help demon supervise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__doctor_commands] )) ||
+_rtok__subcmd__help__subcmd__doctor_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help doctor commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__expand_commands] )) ||
+_rtok__subcmd__help__subcmd__expand_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help expand commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__filter_commands] )) ||
+_rtok__subcmd__help__subcmd__filter_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help filter commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph_commands] )) ||
+_rtok__subcmd__help__subcmd__graph_commands() {
+    local commands; commands=(
+'index:Walk a tree and insert definitions + references' /
+'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+    )
+    _describe -t commands 'rtok help graph commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__dead_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__dead_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph dead commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__index_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__index_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__hook_commands] )) ||
+_rtok__subcmd__help__subcmd__hook_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help hook commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__info_commands] )) ||
+_rtok__subcmd__help__subcmd__info_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help info commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__logs_commands] )) ||
+_rtok__subcmd__help__subcmd__logs_commands() {
+    local commands; commands=(
+'export:Same selection, no numbering, no colour — for /`rtok logs export > my.log/`' /
+'watch:Print the last lines, then follow/: new lines arrive above the old, newest first' /
+    )
+    _describe -t commands 'rtok help logs commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__logs__subcmd__export_commands] )) ||
+_rtok__subcmd__help__subcmd__logs__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help logs export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__logs__subcmd__watch_commands] )) ||
+_rtok__subcmd__help__subcmd__logs__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help logs watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__man_commands] )) ||
+_rtok__subcmd__help__subcmd__man_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help man commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__mcp_commands] )) ||
+_rtok__subcmd__help__subcmd__mcp_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help mcp commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory_commands] )) ||
+_rtok__subcmd__help__subcmd__memory_commands() {
+    local commands; commands=(
+'import:Import /`{kind,title,body}/` JSONL; dedupe by body sha256' /
+'export:Print every note but session checkpoints as the JSONL /`import/` reads' /
+'retire:Retire a note/: a tombstone — never recalled or searched, body kept (T69.1)' /
+'pin:Pin a note so it leads SessionStart recall (T69.1)' /
+'unpin:Drop a note back to newest-first recall order (T69.1)' /
+'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+    )
+    _describe -t commands 'rtok help memory commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__export_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__import_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__import_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory import commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__pin_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__pin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory pin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__retire_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__retire_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory retire commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__revise_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__revise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory revise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__unpin_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__unpin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory unpin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__otel_commands] )) ||
+_rtok__subcmd__help__subcmd__otel_commands() {
+    local commands; commands=(
+'flush:Post rows past the watermarks to the endpoint, once' /
+'status:Endpoint, watermarks, pending rows, last exporter log line' /
+    )
+    _describe -t commands 'rtok help otel commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__otel__subcmd__flush_commands] )) ||
+_rtok__subcmd__help__subcmd__otel__subcmd__flush_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help otel flush commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__otel__subcmd__status_commands] )) ||
+_rtok__subcmd__help__subcmd__otel__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help otel status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__plugins_commands] )) ||
+_rtok__subcmd__help__subcmd__plugins_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help plugins commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__proxy_commands] )) ||
+_rtok__subcmd__help__subcmd__proxy_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help proxy commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__report_commands] )) ||
+_rtok__subcmd__help__subcmd__report_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help report commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__run_commands] )) ||
+_rtok__subcmd__help__subcmd__run_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help run commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__setup_commands] )) ||
+_rtok__subcmd__help__subcmd__setup_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help setup commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__stats_commands] )) ||
+_rtok__subcmd__help__subcmd__stats_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help stats commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__tui_commands] )) ||
+_rtok__subcmd__help__subcmd__tui_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help tui commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__web_commands] )) ||
+_rtok__subcmd__help__subcmd__web_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help web commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__hook_commands] )) ||
+_rtok__subcmd__hook_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok hook commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__info_commands] )) ||
+_rtok__subcmd__info_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok info commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs_commands] )) ||
+_rtok__subcmd__logs_commands() {
+    local commands; commands=(
+'export:Same selection, no numbering, no colour — for /`rtok logs export > my.log/`' /
+'watch:Print the last lines, then follow/: new lines arrive above the old, newest first' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok logs commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__export_commands] )) ||
+_rtok__subcmd__logs__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok logs export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__help_commands] )) ||
+_rtok__subcmd__logs__subcmd__help_commands() {
+    local commands; commands=(
+'export:Same selection, no numbering, no colour — for /`rtok logs export > my.log/`' /
+'watch:Print the last lines, then follow/: new lines arrive above the old, newest first' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok logs help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__help__subcmd__export_commands] )) ||
+_rtok__subcmd__logs__subcmd__help__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok logs help export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__logs__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok logs help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__help__subcmd__watch_commands] )) ||
+_rtok__subcmd__logs__subcmd__help__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok logs help watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__logs__subcmd__watch_commands] )) ||
+_rtok__subcmd__logs__subcmd__watch_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok logs watch commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__man_commands] )) ||
+_rtok__subcmd__man_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok man commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__mcp_commands] )) ||
+_rtok__subcmd__mcp_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok mcp commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory_commands] )) ||
+_rtok__subcmd__memory_commands() {
+    local commands; commands=(
+'import:Import /`{kind,title,body}/` JSONL; dedupe by body sha256' /
+'export:Print every note but session checkpoints as the JSONL /`import/` reads' /
+'retire:Retire a note/: a tombstone — never recalled or searched, body kept (T69.1)' /
+'pin:Pin a note so it leads SessionStart recall (T69.1)' /
+'unpin:Drop a note back to newest-first recall order (T69.1)' /
+'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok memory commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__export_commands] )) ||
+_rtok__subcmd__memory__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help_commands] )) ||
+_rtok__subcmd__memory__subcmd__help_commands() {
+    local commands; commands=(
+'import:Import /`{kind,title,body}/` JSONL; dedupe by body sha256' /
+'export:Print every note but session checkpoints as the JSONL /`import/` reads' /
+'retire:Retire a note/: a tombstone — never recalled or searched, body kept (T69.1)' /
+'pin:Pin a note so it leads SessionStart recall (T69.1)' /
+'unpin:Drop a note back to newest-first recall order (T69.1)' /
+'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok memory help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__export_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__export_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help export commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__import_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__import_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help import commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__pin_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__pin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help pin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__retire_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__retire_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help retire commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__revise_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__revise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help revise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__unpin_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__unpin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help unpin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__import_commands] )) ||
+_rtok__subcmd__memory__subcmd__import_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory import commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__pin_commands] )) ||
+_rtok__subcmd__memory__subcmd__pin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory pin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__retire_commands] )) ||
+_rtok__subcmd__memory__subcmd__retire_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory retire commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__revise_commands] )) ||
+_rtok__subcmd__memory__subcmd__revise_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory revise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__unpin_commands] )) ||
+_rtok__subcmd__memory__subcmd__unpin_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory unpin commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel_commands] )) ||
+_rtok__subcmd__otel_commands() {
+    local commands; commands=(
+'flush:Post rows past the watermarks to the endpoint, once' /
+'status:Endpoint, watermarks, pending rows, last exporter log line' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok otel commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__flush_commands] )) ||
+_rtok__subcmd__otel__subcmd__flush_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok otel flush commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__help_commands] )) ||
+_rtok__subcmd__otel__subcmd__help_commands() {
+    local commands; commands=(
+'flush:Post rows past the watermarks to the endpoint, once' /
+'status:Endpoint, watermarks, pending rows, last exporter log line' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok otel help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__help__subcmd__flush_commands] )) ||
+_rtok__subcmd__otel__subcmd__help__subcmd__flush_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok otel help flush commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__otel__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok otel help help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__help__subcmd__status_commands] )) ||
+_rtok__subcmd__otel__subcmd__help__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok otel help status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__otel__subcmd__status_commands] )) ||
+_rtok__subcmd__otel__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok otel status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__plugins_commands] )) ||
+_rtok__subcmd__plugins_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok plugins commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__proxy_commands] )) ||
+_rtok__subcmd__proxy_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok proxy commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__report_commands] )) ||
+_rtok__subcmd__report_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok report commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__run_commands] )) ||
+_rtok__subcmd__run_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok run commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__setup_commands] )) ||
+_rtok__subcmd__setup_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok setup commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__stats_commands] )) ||
+_rtok__subcmd__stats_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok stats commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__tui_commands] )) ||
+_rtok__subcmd__tui_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok tui commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__web_commands] )) ||
+_rtok__subcmd__web_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok web commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_rtok" ]; then
+    _rtok "$@"
+else
+    compdef _rtok rtok
+fi
