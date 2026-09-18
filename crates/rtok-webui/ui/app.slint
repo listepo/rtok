@@ -1,4 +1,4 @@
-import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ListView, ScrollView, LineEdit } from "std-widgets.slint";
 import { RtokTheme } from "theme.slint";
 
 // Bundled IBM Plex Mono (OFL) — weights 400 / 600 / 700
@@ -37,6 +37,39 @@ export struct CallRow {
     tokens: string,
     subtitle: string,
     detail: string,
+    ref-id: string,
+}
+
+component CallArchive inherits VerticalBox {
+    in property <string> ref-id;
+    in-out property <string> view;
+    in-out property <string> filter;
+    callback expand-archive(string);
+    callback filter-expand(string);
+    spacing: RtokTheme.space-2;
+    if ref-id != "": TouchArea {
+        accessible-role: button;
+        accessible-label: "expand " + ref-id;
+        clicked => { root.expand-archive(root.ref-id); }
+        Text {
+            text: "expand " + ref-id;
+            color: RtokTheme.accent;
+            font-family: "IBM Plex Mono";
+            font-size: 12px;
+        }
+    }
+    LineEdit {
+        placeholder-text: "filter";
+        text <=> root.filter;
+        edited => { root.filter-expand(self.text); }
+    }
+    Text {
+        text: root.view;
+        wrap: word-wrap;
+        color: RtokTheme.ink-muted;
+        font-family: "IBM Plex Mono";
+        font-size: 12px;
+    }
 }
 
 export struct SessionRow {
@@ -244,6 +277,11 @@ export component MainWindow inherits Window {
     in-out property <[string]> logs;
     in property <string> status: "connecting";
     callback toggle-plugin(string, bool);
+    callback expand-archive(string);
+    callback filter-expand(string);
+    in-out property <string> expand-text;
+    in-out property <string> expand-view;
+    in-out property <string> expand-filter;
 
     // --- Responsive shell derived from tracked window width ---
     // Use `changed width` (not a live binding to root.width) to avoid
@@ -713,12 +751,21 @@ export component MainWindow inherits Window {
                                 font-family: "IBM Plex Mono";
                             }
                             if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: Text {
-                                text: selected-call.detail;
-                                color: RtokTheme.ink-muted;
-                                wrap: word-wrap;
-                                font-size: body-size;
-                                font-family: "IBM Plex Mono";
+                            if calls.length > 0: VerticalBox {
+                                Text {
+                                    text: selected-call.detail;
+                                    color: RtokTheme.ink-muted;
+                                    wrap: word-wrap;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                CallArchive {
+                                    ref-id: selected-call.ref-id;
+                                    view <=> root.expand-view;
+                                    filter <=> root.expand-filter;
+                                    expand-archive(id) => { root.expand-archive(id); }
+                                    filter-expand(s) => { root.filter-expand(s); }
+                                }
                             }
                         }
                     }
@@ -787,12 +834,21 @@ export component MainWindow inherits Window {
                                 font-family: "IBM Plex Mono";
                             }
                             if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: Text {
-                                text: selected-call.detail;
-                                color: RtokTheme.ink-muted;
-                                wrap: word-wrap;
-                                font-size: body-size;
-                                font-family: "IBM Plex Mono";
+                            if calls.length > 0: VerticalBox {
+                                Text {
+                                    text: selected-call.detail;
+                                    color: RtokTheme.ink-muted;
+                                    wrap: word-wrap;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                CallArchive {
+                                    ref-id: selected-call.ref-id;
+                                    view <=> root.expand-view;
+                                    filter <=> root.expand-filter;
+                                    expand-archive(id) => { root.expand-archive(id); }
+                                    filter-expand(s) => { root.filter-expand(s); }
+                                }
                             }
                         }
                     }
