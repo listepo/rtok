@@ -10,7 +10,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
-| T52.3 | todo | P3 | 4 | 10% | |
 | T53.1 | todo | P3 | 3 | 10% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
@@ -86,13 +85,6 @@ Done when a measurement on those files shows which extra mode (imports-only, com
 
 From I-16. Tags cover Rust, TS, JS, Python, Dart, C and Go. Java, Kotlin, Swift, C#, Ruby and PHP repos get no `symbol`/`outline`, and large indexes store plain text.
 Done when each added grammar is an optional feature (dependency reasons in the commit, creator approval for new crates) with a fixture test, and index payload compression is added only if a large repo's `rtok.db` size is measured before and after.
-
-### T52.3. Ranked repo map at SessionStart
-
-From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
-Done when a P7-style A/B shows the map lowers cost per passed task; the map is ranked by reference count from `symbols`, fits a share of the D5 budget alongside `memory`, is byte-stable across turns, and is off by default until that A/B passes.
-
-Execution plan (OpenCode / Muse Spark 1.3): `bench` shells to `claude -p` (LLM-gated), so no A/B pass is obtainable in-task → implement OFF BY DEFAULT, record the outcome (stays off). One key `plugins.graph.map_tokens = 0` (0 = off; nonzero = token cap, the D5-budget share next to `memory.recall_tokens`); no indexing on the hook path (map reads existing rows only, empty index → no injection). `Store::symbol_top_refs(root, limit)`: names with ref counts + one def site, ORDER BY refs DESC, name ASC (byte-stable). `Graph::session_start` offers priority-1 `repo map` lines trimmed to the cap. Files: `src/plugins/graph/mod.rs`, `src/store/symbols.rs`, `src/config/mod.rs` + `config/default.toml` + `docs/config.md` (D12). Tests: ranked order, byte-stability, cap trim, off-by-default (no injection at 0), SessionStart hook e2e on/off. Measure map tokens on this repo for the record. Verify in isolation (main red on concurrent WIP).
 
 ### T53.1. Coaching nudges under an A/B
 

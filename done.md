@@ -1,5 +1,12 @@
 # rtok — completed tasks
 
+## T52.3 — Ranked repo map at SessionStart
+
+From I-28 (aider repo map). The most-referenced definitions could orient the model at session start.
+Done when a P7-style A/B shows the map lowers cost per passed task; the map is ranked by reference count from `symbols`, fits a share of the D5 budget alongside `memory`, is byte-stable across turns, and is off by default until that A/B passes.
+
+**Result (2026-09-18).** Live A/B was not run (`bench` shells to `claude -p`; no API spend). Default stays off: `plugins.graph.map_tokens = 0` (nonzero is the D5-budget share next to `memory.recall_tokens`). `Store::symbol_top_refs` ranks names by ref count with one def site (`ORDER BY refs DESC, name ASC`); import rows are not refs. `Graph::session_start` offers priority-1 `repo map` lines trimmed to the cap and does not index on the hook path (empty index → no injection). This-repo debug index (`RTOK_HOME=$(mktemp -d) rtok graph index <worktree>`): 172 files, 35 196 rows, 2 494 named defs; untrimmed map 28 894 prose tokens; `map_tokens = 200` keeps 23 lines / 195 tokens. Check: `top_refs_rank_by_count_then_name`, `top_refs_picks_first_def_site`, `repo_map_off_by_default_and_empty_index`, `repo_map_ranked_byte_stable_and_trimmed`, `graph_session_start_map_off_by_default_and_on_when_capped`.
+
 ## T68.6 — Import edges in the index
 
 From the codegraph / graphify review. Both tools store `imports` edges (codegraph resolves them to source files; graphify's `module_source`); rtok's rows are definitions and reference sites only, so a file that imports a module without calling a uniquely named symbol has no edge, and T68.5 cannot reach it. T52.5 already appends rtok's own tags queries to the grammar's, so this is query data plus one row kind.
