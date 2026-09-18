@@ -20,11 +20,37 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Assistant output | 8.6 M output tokens; text is 4 % of assistant content, 96 % is tool input (the code it writes) |
 | Read delta re-reads (T58.1, 2026-09-18, `rtok stats --since 90d`, 959 sessions) | 593 native `Read` calls of a path already read in the same session with an Edit/Write/MultiEdit of that path in between; 1.79 MB of 24.61 MB Read result bytes (**7.3 %**) — above the 3 % gate, so MCP `read` returns a unified diff against the archived previous content. |
 | Content-hash repeats (T65.1, 2026-09-18, `rtok stats --since 30d`, 924 sessions) | 6,649 later tool_results whose SHA-256 equalled an earlier result in the same session; 1.83 MB of 95.25 MB result bytes (**1.9 %**) — above the 1 % gate, so `cmd::run` and `read` return a pointer at the earlier archive instead of the body. |
+| Extra `read` modes (T50.3, 2026-09-18, this repo's 38–68 K char sources) | 11 Rust files, 534 894 B → tree-sitter comments-stripped 433 997 B (**18.9 %**, ~25 K est. tokens) with function/type bodies kept. imports-only is 0.1–2.1 % of each file and drops those bodies. `app.slint` (38 064 B, no grammar) stays `full`. |
 | Edit `old_string` (T58.3, 2026-09-17, `rtok stats --since 90d`, 925 sessions) | 5,990 Edit/MultiEdit calls; `old_string` 1.61 MB, `new_string` 3.60 MB; `old_string` = 3.8 % of tool-input bytes, ≈ 1.3 % of output tokens (bytes/4 against API output) — under the 10 % gate, so the anchored `patch` tool (T58.4) was not built. Caveat: this machine already routes many edits through lean-ctx `ctx_patch`, so the share is a lower bound for a plain-`Edit` workload. |
 | Foreign MCP results (T59.4, 2026-09-17, `rtok stats --since 30d`, 885 sessions) | `rtok stats --since 30d` (2026-09-17, 885 sessions), `mcp` table: lean-ctx 8,232 calls, 19.66 MB result bytes, mean 2.4 KB, p95 45.7 KB (≈ 4.9 M est. tokens) — ≈ 27 % of the 71.8 MB in the tool table; rtok 579 KB, engram 279 KB, t3-code 73 KB (mean 18 KB), Claude_Browser 45 KB. lean-ctx is above the 5 % gate, so the wrapper is justified for this workload; caveat: lean-ctx already compresses its own results, so the win is in the p95 tail, not the mean. |
 | Cache | read 1,367 M, creation 26.7 M, uncached input 42 K → 98.1 % hit rate |
 | Median final context | 167 K tokens per session |
 | rtk-wrapped commands visible in transcripts | 3 of 3,658 (the PreToolUse rewrite happens after the transcript records the call, so this under-counts) |
+
+
+### Extra `read` modes (T50.3, 2026-09-18)
+
+Dated command: tree-sitter comment-node strip (newlines kept) and import-kind bytes on this
+repo's files in the 38–68 K char Read-tail class (`research.md` §2), worktree `t50.3` based
+on `t65.1`, 2026-09-18. Estimator 4 chars/token.
+
+| File | full B | stripped B | save | bodies kept | imports remaining |
+|------|--------|------------|------|-------------|-------------------|
+| tests/proxy.rs | 59 352 | 54 433 | 8.3 % | yes | 0.4 % |
+| src/agents/mod.rs | 55 932 | 44 869 | 19.8 % | yes | 0.6 % |
+| src/config/mod.rs | 52 035 | 39 522 | 24.0 % | yes | 0.5 % |
+| src/plugins/graph/mod.rs | 51 030 | 41 104 | 19.5 % | yes | 0.7 % |
+| src/doctor.rs | 48 890 | 41 590 | 14.9 % | yes | 0.8 % |
+| src/measure/stats.rs | 48 369 | 41 227 | 14.8 % | yes | 0.8 % |
+| src/web/model.rs | 46 958 | 33 749 | 28.1 % | yes | 0.9 % |
+| src/cli.rs | 44 534 | 34 402 | 22.8 % | yes | 1.1 % |
+| src/tui/view.rs | 43 277 | 34 122 | 21.2 % | yes | 1.2 % |
+| src/proxy/mod.rs | 43 052 | 33 219 | 22.8 % | yes | 2.1 % |
+| src/plugins/cmd/rules.rs | 41 465 | 35 760 | 13.8 % | yes | 0.1 % |
+| crates/rtok-webui/ui/app.slint | 38 064 | 38 064 | 0 % (no grammar → `full`) | n/a | 0 % |
+| **11 Rust files** | **534 894** | **433 997** | **18.9 %** | **yes** | 0.1–2.1 % |
+
+Verdict: `mode=stripped` wins; imports-only skipped (loses the bodies a Read of these files is for).
 
 ### `graph` index accuracy (T8.8, 2026-09-04)
 
