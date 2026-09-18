@@ -16,7 +16,9 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
         return None;
     }
     if recently_edited(cx, path) {
-        if cfg.delta && let Some(id) = last_read_id(cx, path) {
+        if cfg.delta
+            && let Some(id) = last_read_id(cx, path)
+        {
             return Some(PreToolDecision::Deny {
                 reason: format!(
                     "file changed since last read; use rtok read(mode=diff) vs {id:.8}"
