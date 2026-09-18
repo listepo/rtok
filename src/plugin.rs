@@ -411,6 +411,18 @@ impl Symbols for Runtime {
     fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
         self.store.symbol_paths(root, from, to, depth)
     }
+
+    fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        self.store.symbol_imports(root, path)
+    }
+
+    fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        self.store.symbol_importers(root, module)
+    }
+
+    fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        self.store.symbol_import_follow(root, name)
+    }
 }
 
 #[cfg(test)]

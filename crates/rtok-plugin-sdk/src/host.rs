@@ -342,6 +342,24 @@ pub trait Symbols {
         let _ = (root, from, to, depth);
         Ok(Vec::new())
     }
+
+    /// T68.6: import rows of `path` as `(name, line)`.
+    fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, path);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: files that import `module` as `(path, line)`.
+    fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, module);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: definitions in files that import `name` (the extra impact hop).
+    fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        let _ = (root, name);
+        Ok(Vec::new())
+    }
 }
 
 // The tests for what a host owes a plugin live beside `testing::MemoryHost`, the host this
