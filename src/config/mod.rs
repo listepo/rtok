@@ -304,6 +304,8 @@ section! {
         runs: u32 = 3,
         dry_run: bool = false,
         timeout_s: u64 = 900,
+        /// `""` = T9.1 six tasks; `"graph"` = T68.9 with/without MCP.
+        suite: String = String::new(),
         /// `[bench.configs]` — free-form `name = settings file`, so not a fixed struct.
         configs: BTreeMap<String, PathBuf> = [
             (s("a"), p("bench/configs/legacy.json")),
