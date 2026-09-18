@@ -6,7 +6,6 @@
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
 - T59.6. `handoff` MCP tool for sub-agents
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
-- T60.2. trycmd goldens for every subcommand
 - T60.8. TUI help overlay and manual refresh
 - T61.1. `stats` counts injected skill bodies
 - T61.2. Archive skill bodies outside the live zone
