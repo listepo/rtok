@@ -1,0 +1,14 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml agents sessions"
+stdout = """
+agent provider model input output cache_read cache_create started run
+nothing is running
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-agents-sessions"
+RTOK_HOME = "target/tmp/t60-2-agents-sessions"
