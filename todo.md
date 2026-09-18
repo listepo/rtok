@@ -9,7 +9,6 @@
 - T61.1. `stats` counts injected skill bodies
 - T61.2. Archive skill bodies outside the live zone
 - T61.3. `doctor` skill audit
-- T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.3. `cmd` column-padding collapse
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
