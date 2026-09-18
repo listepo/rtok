@@ -886,10 +886,13 @@ pub fn run() -> Result<()> {
         #[cfg(feature = "cmd")]
         Cmd::Filter { stdin: _, cmd } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let hint = cmd.unwrap_or(cfg.filter.cmd);
+            let hint = cmd.unwrap_or_else(|| cfg.filter.cmd.clone());
             let mut buf = String::new();
             let _ = io::stdin().read_to_string(&mut buf);
-            print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));
+            print!(
+                "{}",
+                crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
+            );
         }
         Cmd::Mcp { wrap } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;

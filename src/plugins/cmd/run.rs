@@ -157,7 +157,12 @@ pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
 /// Whether the printed output needs the `expand` pointer. A line count above
 /// `trailer_min_lines` is the old rule; anything the filter shortened needs it too, however
 /// short the command was.
-fn needs_pointer(lines: u32, trailer_min_lines: u32, printed: usize, raw: usize) -> bool {
+pub(crate) fn needs_pointer(
+    lines: u32,
+    trailer_min_lines: u32,
+    printed: usize,
+    raw: usize,
+) -> bool {
     lines > trailer_min_lines || printed < raw
 }
 
