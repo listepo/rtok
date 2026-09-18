@@ -1711,3 +1711,107 @@ async fn proxy_compress_archives_skill_bodies_outside_keep_turns() {
     );
     task.abort();
 }
+
+// ── T59.5: opt-in tools[] description rewrite ──
+
+const T595_DESC: &str = "Short one. This second sentence is far too long to keep under the cap.";
+
+#[tokio::test]
+async fn proxy_tools_rewrite_anthropic_drops_denied_call_still_forwards() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = proxy_server("t595-a", |cfg| {
+        cfg.proxy.upstream = up.base_url();
+        cfg.proxy.tools_rewrite.enabled = true;
+        cfg.proxy.tools_rewrite.max_description_tokens = 5;
+        cfg.proxy.tools_rewrite.deny = vec!["drop_me".into()];
+    })
+    .await;
+    let body = serde_json::json!({
+        "model": T51_MODEL,
+        "max_tokens": 8,
+        "tools": [
+            {"name": "Bash", "description": T595_DESC, "input_schema": {"type": "object"}},
+            {"name": "drop_me", "description": "Gone.", "input_schema": {"type": "object"}},
+        ],
+        "messages": [
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "drop_me", "input": {}}]},
+            {"role": "user", "content": "hi"},
+        ],
+        "metadata": {"user_id": "sess-t595-a"},
+    });
+    let resp = t51_post(&addr, serde_json::to_vec(&body).unwrap()).await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let rows = t51_usage(&state.store, "sess-t595-a").await;
+    let sent: serde_json::Value = serde_json::from_slice(
+        &state
+            .store
+            .call_io_request(rows[0].call_id.expect("call") as i32)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(sent["tools"].as_array().unwrap().len(), 1);
+    assert_eq!(sent["tools"][0]["name"], "Bash");
+    assert_eq!(sent["tools"][0]["description"], "Short one.");
+    assert_eq!(
+        sent["tools"][0]["input_schema"],
+        serde_json::json!({"type": "object"})
+    );
+    assert_eq!(sent["messages"][0]["content"][0]["name"], "drop_me");
+    let kinds: Vec<_> = state
+        .store
+        .list_measurements("proxy")
+        .unwrap()
+        .into_iter()
+        .map(|m| m.kind)
+        .collect();
+    assert_eq!(kinds, ["tools_rewrite"]);
+    task.abort();
+}
+
+#[tokio::test]
+async fn proxy_tools_rewrite_openai_chat_truncates_function_description() {
+    let up = MockUpstream::openai_chat_body();
+    let (addr, state, task) = proxy_server("t595-o", |cfg| {
+        cfg.proxy.upstream = "http://127.0.0.1:1".into();
+        cfg.proxy.openai_upstream = up.base_url();
+        cfg.proxy.tools_rewrite.enabled = true;
+        cfg.proxy.tools_rewrite.max_description_tokens = 5;
+    })
+    .await;
+    let params = serde_json::json!({"type": "object"});
+    let resp = t112_post(
+        &addr,
+        serde_json::json!({
+            "model": T112_MODEL,
+            "user": "sess-t595-o",
+            "tools": [{
+                "type": "function",
+                "function": {"name": "search", "description": T595_DESC, "parameters": params},
+            }],
+            "messages": [{"role": "user", "content": "hi"}],
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    let rows = t51_usage(&state.store, "sess-t595-o").await;
+    let sent: serde_json::Value = serde_json::from_slice(
+        &state
+            .store
+            .call_io_request(rows[0].call_id.expect("call") as i32)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(sent["tools"][0]["function"]["description"], "Short one.");
+    assert_eq!(sent["tools"][0]["function"]["parameters"], params);
+    let kinds: Vec<_> = state
+        .store
+        .list_measurements("proxy")
+        .unwrap()
+        .into_iter()
+        .map(|m| m.kind)
+        .collect();
+    assert_eq!(kinds, ["tools_rewrite"]);
+    task.abort();
+}
