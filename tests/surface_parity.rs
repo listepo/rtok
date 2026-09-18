@@ -115,6 +115,39 @@ fn session_detail_exists_on_both_surfaces() {
     );
 }
 
+/// T60.4: both surfaces render archive expand from the same model accessor.
+#[test]
+fn expand_payload_exists_on_both_surfaces() {
+    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
+    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
+    let app = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs"));
+    let web = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let slint = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    ));
+    let inbound = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/mod.rs"));
+    assert!(
+        model.contains("pub fn expand_payload"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("expand_pane") && app.contains("open_expand"),
+        "the TUI opens model::expand_payload"
+    );
+    assert!(
+        inbound.contains(r#""expand""#) && inbound.contains("expand_payload"),
+        "web inbound answers expand through expand_payload"
+    );
+    assert!(
+        web.contains("on_expand_archive") && slint.contains("CallArchive"),
+        "the web Calls page has an expand button and pane"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
