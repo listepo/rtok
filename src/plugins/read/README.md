@@ -11,7 +11,7 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
 ## Tools
 
 - `read(path, mode=full|lines|map|signatures|diff|stripped, range?)` — numbered lines; `map` and
-  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go) or a
+  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go, Java, Kotlin, Swift, C#, Ruby, PHP) or a
   Markdown heading scan (`.md`, `.mdx`: level, line number, first body line; fenced blocks
   skipped); `stripped` drops comment nodes (same grammars; unknown language or parse fail → `full`);
   unknown language for `map`/`signatures` → first 60 lines + note. Output over 20 K chars → head/tail +
