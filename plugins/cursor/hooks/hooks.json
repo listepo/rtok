@@ -15,6 +15,11 @@
       {
         "command": "rtok hook SessionStart --host cursor"
       }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "rtok hook AfterMCPExecution --host cursor"
+      }
     ]
   }
 }

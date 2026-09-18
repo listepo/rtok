@@ -142,6 +142,9 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
 /// Cursor session/prompt hooks read a flat object: `{additional_context}`.
 pub fn cursor_output(out: &HookOutput) -> Vec<u8> {
     let mut o = serde_json::Map::new();
+    if let Some(mcp) = &out.updated_mcp_tool_output {
+        o.insert("updated_mcp_tool_output".into(), mcp.clone());
+    }
     if let Some(h) = &out.hook_specific_output {
         if let Some(c) = &h.additional_context {
             o.insert("additional_context".into(), c.as_str().into());
@@ -162,6 +165,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
+        "AfterMCPExecution" => after_mcp(input, cx),
         "SessionStart" | "UserPromptSubmit" | "PostCompact" => inject_event(input, cx, &registry),
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
@@ -199,6 +203,91 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     }
     bytes
 }
+
+#[cfg(not(feature = "cmd"))]
+fn after_mcp(_input: &HookInput, _cx: &Runtime) -> HookOutput {
+    HookOutput::default()
+}
+
+#[cfg(feature = "cmd")]
+fn after_mcp(input: &HookInput, cx: &Runtime) -> HookOutput {
+    if input.hook_event_name != "AfterMCPExecution" {
+        return HookOutput::default();
+    }
+    let server = input.mcp_server_name().unwrap_or("");
+    if server.eq_ignore_ascii_case("rtok") {
+        return HookOutput::default();
+    }
+    let tool = input.tool_name.as_deref().unwrap_or("mcp");
+    let raw = input
+        .tool_response
+        .as_ref()
+        .and_then(|v| v.as_str())
+        .or_else(|| input.extra.get("result_json").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    if raw.is_empty() {
+        return HookOutput::default();
+    }
+    let modified = shorten_mcp_result(cx, server, tool, raw);
+    modified.map(|m| HookOutput {
+        updated_mcp_tool_output: Some(serde_json::json!({"modified": m})),
+        ..HookOutput::default()
+    }).unwrap_or_default()
+}
+
+#[cfg(feature = "cmd")]
+fn shorten_mcp_result(cx: &Runtime, _server: &str, _tool: &str, result_json: &str) -> Option<String> {
+    use crate::plugins::cmd::rules::{self, Settings};
+    use serde_json::Value;
+    let mut v: Value = serde_json::from_str(result_json).ok()?;
+    let text = mcp_result_text(&v)?;
+    let max = cx.config.mcp.max_result_chars as usize;
+    if text.chars().count() <= max {
+        return None;
+    }
+    let id = rtok_plugin_sdk::Archive::put_archive(cx, text.as_bytes()).ok()?;
+    let settings = Settings::from_config(&cx.config);
+    let rule = settings.pick("mcp");
+    let cut = rules::apply(&settings, &text, 0, &rule, &id);
+    let printed = format!("{cut}\n[rtok {id} · expand: rtok expand {id}]");
+    set_mcp_result_text(&mut v, printed);
+    serde_json::to_string(&v).ok()
+}
+
+#[cfg(feature = "cmd")]
+fn mcp_result_text(v: &serde_json::Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(arr) = v.get("content").and_then(|c| c.as_array()) {
+        let mut parts = Vec::new();
+        for block in arr {
+            if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
+                parts.push(t);
+            }
+        }
+        if !parts.is_empty() {
+            return Some(parts.join("\n"));
+        }
+    }
+    None
+}
+
+#[cfg(feature = "cmd")]
+fn set_mcp_result_text(v: &mut serde_json::Value, text: String) {
+    if v.is_string() {
+        *v = serde_json::Value::String(text);
+        return;
+    }
+    if let Some(arr) = v.get_mut("content").and_then(|c| c.as_array_mut()) {
+        if let Some(first) = arr.first_mut() {
+            if first.get("text").is_some() {
+                first["text"] = serde_json::Value::String(text);
+            }
+        }
+    }
+}
+
 
 fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
     let Some(ev) = input.pre_tool() else {

@@ -50,6 +50,19 @@ impl HookInput {
     /// `beforeShellExecution` → Claude PreToolUse (`tool_name=Bash`, `tool_input.command`).
     /// `afterShellExecution` → Claude PostToolUse (+ `tool_response` from `output`/`stdout`).
     pub fn adapt_cursor(&mut self, event: &str) {
+        if matches!(event, "afterMCPExecution") || self.hook_event_name == "afterMCPExecution" {
+            self.hook_event_name = "AfterMCPExecution".into();
+            if self.tool_name.is_none() {
+                if let Some(n) = self.extra.get("tool_name").and_then(|v| v.as_str()) {
+                    self.tool_name = Some(n.to_string());
+                }
+            }
+            if self.tool_response.is_none() {
+                if let Some(r) = self.extra.get("result_json").and_then(|v| v.as_str()) {
+                    self.tool_response = Some(serde_json::Value::String(r.to_string()));
+                }
+            }
+        }
         if self.session_id.is_empty()
             && let Some(id) = self.extra.get("conversation_id").and_then(|v| v.as_str())
         {
@@ -148,6 +161,10 @@ impl HookInput {
         })
     }
 
+    pub fn mcp_server_name(&self) -> Option<&str> {
+        self.extra.get("mcp_server_name").and_then(|v| v.as_str())
+    }
+
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
         (self.hook_event_name == "PreCompact").then_some(PreCompact {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
@@ -171,6 +188,7 @@ fn cursor_event<'a>(cli: &'a str, stdin: &'a str) -> &'a str {
         "beforeSubmitPrompt" => "UserPromptSubmit",
         "afterShellExecution" => "PostToolUse",
         "beforeShellExecution" => "PreToolUse",
+        "afterMCPExecution" => "AfterMCPExecution",
         other => other,
     }
 }
@@ -221,6 +239,8 @@ pub struct HookOutput {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hook_specific_output: Option<HookSpecificOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_mcp_tool_output: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

@@ -11,7 +11,7 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 
 | Module | Support | Why |
 | --- | --- | --- |
-| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `sessionStart` → SessionStart; all `--host cursor` (injection via flat `additional_context`) |
+| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `sessionStart` → SessionStart, `afterMCPExecution` → AfterMCPExecution; all `--host cursor` (injection via flat `additional_context`) |
 | mcp | yes | `mcpServers.rtok` in `mcp.json`, or served by the linked plugin (then `mcp.json` is left alone: one MCP per store) |
 | plugin | `--yes` | the offer links `plugins/cursor` (hooks + MCP as one unit); without a terminal only `--yes` accepts |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
@@ -30,7 +30,7 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Plugins (manifest `.cursor-plugin/plugin.json`, local install `~/.cursor/plugins/local/<name>`): https://cursor.com/docs/plugins
 - Manifest reference (`hooks`, `mcpServers` fields): https://cursor.com/docs/reference/plugins
-- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`): https://cursor.com/docs/agent/hooks
+- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `afterMCPExecution`): https://cursor.com/docs/agent/hooks
 - MCP (`~/.cursor/mcp.json`, `mcpServers.<name>.command` / `args`): https://cursor.com/docs/context/mcp
 - Skills (`~/.cursor/skills/<name>/SKILL.md`): https://cursor.com/docs/skills
 - The linked bundle: `plugins/cursor/README.md`
