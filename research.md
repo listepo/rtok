@@ -869,14 +869,14 @@ Its claims: tokens per session against full-history injection ~80 → ~80 (1 ses
 ~630 → ~550 (10), ~1 880 → ~550 (30), ~6 960 → ~670 (100, "90 %"); a fact planted 96 sessions
 ago retrieved 83 % of the time; superseded facts returned 0 %. The baseline is "re-inject the
 whole history", which no coding host does, so the 90 % is not a bill delta; the two recall
-numbers are the useful ones, because rtok has none for `memory`.
+numbers are the useful ones. rtok's own plant-and-recall numbers are the T69.3 table below — never graymatter's 83 %.
 
 | Their feature | rtok today | Gap | Task |
 | --- | --- | --- | --- |
 | Hybrid recall: vector + keyword + recency, top-8, per-signal receipts | FTS5 BM25; optional hash-embed RRF (P29); SessionStart = newest 5 ids of the project; no recency, no receipts | ranking by age and use | T69.2 |
 | 30-day decay half-life; never hard-delete; pinned facts exempt | none: every note is live forever, no pin | lifecycle | T69.1 (pin, retire), T69.2 (decay) |
 | `revise` / `forget` as tombstones; corrections recorded | insert-only; the in-place update by title is the memory card "`mem_save` updates a note in place" | retire + supersede | T69.1 |
-| Benchmark: tokens/session vs full injection, plant-and-recall, superseded = 0 | none for `memory` (T8.8 exists for `graph`) | a recall-quality number | T69.3 |
+| Benchmark: tokens/session vs full injection, plant-and-recall, superseded = 0 | FTS5 and P29 hybrid 20/20 at N=1/10/30/100; superseded 0; SessionStart 100 B vs 371 866 B full injection at N=100 (`tests/memory_bench.rs`, 2026-09-18) | — | T69.3 |
 | Claude Code hooks: SessionStart facts + conventions; UserPromptSubmit top-3 + `remember:`; PreCompact checkpoint; SessionEnd checkpoint + consolidation; errors to `hooks.log`, never break the session | SessionStart titles (T6.2); PreCompact checkpoint (T2.5); fail open ≤ 10 ms; nothing on UserPromptSubmit; SessionEnd registered, unhandled | `remember:`; per-turn recall (A/B); SessionEnd | T69.5; I-56 (engram `mem_context`) |
 | `context-sync`: budgeted managed block in CLAUDE.md / AGENTS.md, hand-edit detection, backup | none (hook injection only; hosts without a SessionStart hook get no recall) | a sync command | T69.6 |
 | `status` / 4-tab `tui`: facts, KB, recall counts, health, weights | Memory page shows two config keys; no `memory status` | store rows on the page | T69.4 |
@@ -888,6 +888,21 @@ numbers are the useful ones, because rtok has none for `memory`.
 | Security: loopback + bearer on network surfaces; recalled facts fenced, never in the system prompt | `rtok mcp` is stdio; recall is `id title` lines in the hook's `additionalContext`, bodies only via `mem_get` | — | — |
 | Go library in three lines | `rtok-plugin-sdk` (D25) | — | — |
 
+### T69.3 memory recall bench (2026-09-18)
+
+`cargo test --test memory_bench -- --nocapture`. Seeded in-memory store: N sessions × 6 filler notes of realistic length, 20 planted facts at known offsets, 5 revised later (T69.1). Query = eight content words from the live body. `search_limit` = 5. No network, no LLM.
+
+`half_life_days = 30` is N/A: T69.2 closed without ranking code (0 live notes on that machine; no `uses` / `last_used` columns, no scorer). P29 hybrid (`embed.enabled`, hash-embed RRF) ran.
+
+| N | FTS5 hit | hybrid hit | superseded returned | SessionStart recall bytes | full live-body injection bytes |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 20/20 | 20/20 | 0 | 95 | 6 331 |
+| 10 | 20/20 | 20/20 | 0 | 95 | 39 566 |
+| 30 | 20/20 | 20/20 | 0 | 100 | 113 240 |
+| 100 | 20/20 | 20/20 | 0 | 100 | 371 866 |
+
+T69.2's default stays off: FTS5 already hits 20/20 at N=100 without extra recall bytes, and there is no scorer to turn on. Floors are the FTS5/hybrid columns in `tests/memory_bench.rs`; a drop fails the test.
+
 Where rtok is ahead: one ledger — `Measurement` rows plus proxy `usage` — where graymatter's
 numbers are its own bench; FTS5 in the same SQLite file as every other plugin (D8) and three
 memory tools inside the measured 12-tool / ~223-token surface (`docs/comparison.md` §2,
@@ -896,7 +911,7 @@ memory tools inside the measured 12-tool / ~223-token surface (`docs/comparison.
 where graymatter injects the top-K bodies.
 
 Order by expected effect: T69.1 first (a wrong fact recalled is worse than a missing one),
-T69.3 (the number Gate P6 lacks), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
+T69.3 (landed 2026-09-18: FTS5/hybrid 20/20, Gate P6 now has a floor), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
 T69.6 behind their gates.
 
 ## 15. What a host plugin can do that rtok's own surfaces cannot (2026-09-18)
