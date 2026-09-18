@@ -161,6 +161,8 @@ head = 8
 tail = 16
 keep = ["error|warning|✖|problems"]
 dedupe = true
+group = "diag"
+
 
 [brew]
 max_lines = 40
