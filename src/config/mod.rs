@@ -543,6 +543,9 @@ section! {
         /// in user content blocks (never tool results, system, tools, or the last two
         /// turns). Default off until a bench shows cost per passed task does not rise.
         live_blobs: bool = false,
+        /// Archive injected skill bodies outside `keep_turns` (T61.2). Default on:
+        /// fail-open lossless like tool-result archive. Off with `skills = false`.
+        skills: bool = true,
     }
 }
 

@@ -17,8 +17,8 @@
 use serde_json::Value;
 
 use rtok_plugin_sdk::{
-    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef,
-    WireRequest,
+    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, SkillRef, Surface,
+    ToolResultRef, WireRequest,
 };
 
 pub mod pi;
@@ -49,6 +49,7 @@ impl Plugin for Archive {
         }
         let mut out = rewrite(req.tool_results(), cx);
         out.extend(rewrite_blobs(req.live_blobs(), cx));
+        out.extend(rewrite_skills(req.skill_refs(), cx));
         out
     }
 }
@@ -74,6 +75,80 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
         .collect();
     record_run(&mut out, cx);
     out
+}
+
+/// Archive injected skill bodies the same way as old tool results (T61.2):
+/// persist once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`,
+/// keyed by `skill:{tool_use_id}` so the 22-byte `Launching skill:` result is not
+/// overwritten. Off with `[plugins.archive] skills = false`.
+pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
+    let a = cx.plugin_config::<crate::config::Archive>("archive");
+    if !a.skills {
+        return Vec::new();
+    }
+    let keep = a.keep_turns as usize;
+    let mut out: Vec<Measurement> = skills
+        .into_iter()
+        .filter(|s| s.turn >= keep)
+        .filter_map(|s| rewrite_skill(&s.id, &s.name, s.content, cx))
+        .collect();
+    record_run(&mut out, cx);
+    out
+}
+
+fn skill_pointer(text: &str, id: &str, name: &str) -> String {
+    let n = text.lines().count();
+    let short = &id[..id.len().min(12)];
+    format!("[archived {short}: skill {name} · {n} lines · expand({id})]")
+}
+
+fn rewrite_skill(
+    tool_use_id: &str,
+    name: &str,
+    content: &mut Value,
+    cx: &Ctx,
+) -> Option<Measurement> {
+    let text = content.as_str()?.to_owned();
+    if !text.starts_with("Base directory for this skill:") {
+        return None;
+    }
+    let a = cx.plugin_config::<crate::config::Archive>("archive");
+    let key = format!("skill:{tool_use_id}");
+    let (archive_id, live) = match cx.archive_decision(&key) {
+        Ok(Some(d)) if d.expanded => return None,
+        Ok(Some(d)) => (d.archive_id, d.pointer),
+        Ok(None) => {
+            let est = cx.estimate(&text, Class::Code);
+            if est < a.min_tokens {
+                return None;
+            }
+            let archive_id = cx
+                .put_archive(text.as_bytes())
+                .map_err(|e| cx.log("error", "plugin", "archive", &format!("put: {e}")))
+                .ok()?;
+            let live = skill_pointer(&text, &archive_id, name);
+            cx.put_archive_decision(&key, &archive_id, &live)
+                .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
+                .ok()?;
+            (archive_id, live)
+        }
+        Err(e) => {
+            cx.log("error", "plugin", "archive", &format!("decision: {e}"));
+            return None;
+        }
+    };
+    let m = Measurement {
+        plugin: "archive",
+        kind: "skill",
+        before_bytes: text.len() as u64,
+        after_bytes: live.len() as u64,
+        est_before: cx.estimate(&text, Class::Code),
+        est_after: cx.estimate(&live, Class::Code),
+        ref_id: Some(archive_id),
+        call_id: None,
+    };
+    *content = Value::String(live);
+    Some(m)
 }
 
 /// Shrink large non-result payloads inside the live zone (T51.1): nested JSON dumps
@@ -905,5 +980,70 @@ mod tests {
                 .unwrap()
                 .starts_with("[archived ")
         );
+    }
+
+    fn skill_text(name: &str) -> String {
+        format!(
+            "Base directory for this skill: /s/{name}\n\n# {name}\n{}",
+            big(name)
+        )
+    }
+
+    fn srefs<'a>(values: &'a mut [Value]) -> Vec<SkillRef<'a>> {
+        let total = values.len();
+        values
+            .iter_mut()
+            .enumerate()
+            .map(|(index, content)| SkillRef {
+                id: format!("tu-{}", index + 1),
+                name: "slint".into(),
+                content,
+                turn: total - index - 1,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn skill_bodies_archive_outside_keep_turns_stably() {
+        let mut cx = cx("skills-on");
+        cx.config.plugins.archive.keep_turns = 1;
+        let body = skill_text("slint");
+        let mut values: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();
+        let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 2, "turns 2 and 1 (keep_turns=1); turn 0 stays");
+        assert!(ms.iter().all(|m| m.kind == "skill"));
+        assert!(
+            values[0].as_str().unwrap().starts_with("[archived ")
+                && values[0].as_str().unwrap().contains("skill slint")
+        );
+        assert!(values[1].as_str().unwrap().starts_with("[archived "));
+        assert_eq!(
+            values[2],
+            Value::String(body.clone()),
+            "live edge stays whole"
+        );
+        let first = values.clone();
+        let mut again: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();
+        let ms2 = rewrite_skills(srefs(&mut again), &Ctx::new(&cx));
+        assert_eq!(first, again, "byte-identical pointers on replay");
+        assert_eq!(ms2[0].ref_id, ms[0].ref_id, "the body never re-archives");
+        let id = ms[0].ref_id.clone().unwrap();
+        let back = crate::plugin::Ctx::new(&cx)
+            .get_archive(&id)
+            .unwrap()
+            .expect("archived");
+        assert_eq!(String::from_utf8(back).unwrap(), body);
+    }
+
+    #[test]
+    fn skill_bodies_stay_whole_while_the_flag_is_off() {
+        let mut cx = cx("skills-off");
+        cx.config.plugins.archive.skills = false;
+        cx.config.plugins.archive.keep_turns = 0;
+        let body = skill_text("slint");
+        let mut values = vec![Value::String(body.clone())];
+        let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
+        assert!(ms.is_empty());
+        assert_eq!(values[0], Value::String(body));
     }
 }
