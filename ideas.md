@@ -66,7 +66,7 @@ that v0.1 does not schedule.
 | I-53 | recursive-llm `re.search` over an externalised context (`research.md` §12) | `expand` (`cmd` / `archive`) | **promoted T67.1** — `--grep` as a regex whose hits print `N:line`, so `--lines a-b` can follow a hit instead of a full expand. | Promoted 2026-09-18 on the creator's request. |
 | I-54 | recursive-llm slice around a hit (`research.md` §12) | `expand` | **promoted T67.2** — `--context N` returns hit ± N numbered lines in one call; two calls cost a turn each in the context-token-turns metric. | Promoted 2026-09-18; lands after T67.1. |
 | I-55 | recursive-llm `RunBudget` (hard cap on calls, soft on tokens / cost, wall clock) (`research.md` §12) | `guard` / `report` | A per-session budget that warns or denies when est. tokens or `stats --price` cost cross a cap. | Not a saving lever for a tool that is not the agent loop; hosts auto-compact and `report` already prices sessions. Parked until a workload shows runaway sessions. |
-| I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | **promoted T59.5** — Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Claude Code Tool Search already defers MCP schemas and `doctor` flags `mcp_tool_search_disabled`; a rewrite changes what the model reads and the cached prefix once per session. Redundant on the main host; no measured host without deferral. |
+| I-45 | Portkey / LiteLLM "tool description compression + allowlist" (18–28 % claimed, unverified) | `proxy` | **promoted T59.5** — Rewrite the request `tools[]` descriptions in the proxy (shorter text, allowlist per host) with a byte-stable rewrite per session. | Measured 2026-09-18: Tool Search off (`mcp_tool_search_disabled`); MCP desc tokens × turns = 6.2 % of session input. Above 3 % → rewrite ships, off by default. |
 
 ### `memory` / `graph`
 
@@ -171,7 +171,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-40 | T59.2 | Canonicalize `cwd` once per `search` / `tree` call instead of per row. | 2026-09-17 |
 | I-30 | T59.3 | Batch the cold `graph` index in one transaction per 200 files; re-run the T8.4 cold bench. | 2026-09-17 |
 | I-44 | T59.4 (done) | Lossless MCP wrapper landed as `rtok mcp -- <server argv>`; lean-ctx measured at ≈ 27 % of tool-result bytes over 30 d, above the 5 % gate. | 2026-09-17 |
-| I-45 | T59.5 | Byte-stable `tools[]` description rewrite in the proxy, off by default, behind evidence. | 2026-09-17 |
+| I-45 | T59.5 | Byte-stable `tools[]` description rewrite in the proxy, off by default; 6.2 % of session input (2026-09-18). | 2026-09-18 |
 | I-46 | T59.6 | `handoff` MCP tool: budgeted digest for sub-agents, behind evidence. | 2026-09-17 |
 | I-47 | T59.7 | `doctor` names host-native features that duplicate a rtok surface. | 2026-09-17 |
 | I-48 | T59.8 | Token-sink ranking rule in `report`. | 2026-09-17 |
