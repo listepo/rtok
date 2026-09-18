@@ -84,6 +84,37 @@ fn every_model_page_has_a_tui_body() {
 /// T19.4: the Slint WASM UI's tab bar is `model::pages()`, not a second list. The webui
 /// crate is outside the workspace (wasm toolchain), so this reads its `PAGE_IDS` from
 /// source — the same pin `rtok-webui`'s own `page_ids_cover_the_d23_set` holds locally.
+/// T60.3: both surfaces render session drill-down from the same model accessor.
+#[test]
+fn session_detail_exists_on_both_surfaces() {
+    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
+    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
+    let web = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let slint = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    ));
+    assert!(
+        model.contains("pub fn session_detail"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("model::session_detail"),
+        "the TUI renders model::session_detail"
+    );
+    assert!(
+        web.contains("fn session_detail"),
+        "the web UI rebuilds the same snapshot filter"
+    );
+    assert!(
+        slint.contains("selected-session.detail"),
+        "the web Sessions page has a detail pane"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
