@@ -123,8 +123,8 @@ archive replay (estimate) ctt 14 → 14  -0.0%  over 0 results
 tool                       count        bytes     mean      p95      max   est_tokens          ctt
 Bash                           1           13       13       13       13            4            8
 Read                           1           12       12       12       12            3            6
-bash                       count        bytes     mean      p95      max   est_tokens          ctt
-git                            1           13       13       13       13            4            8
+bash                     filter      count        bytes     mean      p95      max   est_tokens          ctt
+git                      formatter       1           13       13       13       13            4            8
 mcp                        count        bytes     mean      p95      max   est_tokens          ctt
 "
     );
@@ -171,6 +171,9 @@ fn stats_json_is_unchanged_on_a_fixture_store() {
       "est_tokens": 4,
       "ctt": 8
     }
+  },
+  "bash_filter": {
+    "git": "formatter"
   },
   "mcp_groups": {},
   "usage_input": 42,
