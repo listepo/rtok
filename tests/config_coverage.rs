@@ -39,12 +39,21 @@ const ALLOW_KEYS: &[&str] = &[
     "config.set.dry_run",
     "memory.import.dry_run",
     "graph.index.dry_run",
+    "graph.impact.depth",
+    "graph.impact.to",
     // `memory export --project` narrows one dump; the store, not a setting, decides it.
     "memory.export.project",
     // `memory retire/revise` (T69.1): one-shot lifecycle values on a single call, not settings.
     "memory.retire.superseded_by",
     "memory.revise.title",
     "memory.revise.body",
+    // `memory sync` (T69.6): per-call file/budget/dry-run; `sync_tokens` is the setting.
+    "memory.sync.file",
+    "memory.sync.budget",
+    "memory.sync.dry_run",
+    // `memory status` (T69.4): one-shot filters, not settings.
+    "memory.status.project",
+    "memory.status.since",
 ];
 
 #[test]

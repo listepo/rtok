@@ -345,6 +345,24 @@ enum MemoryCmd {
         #[arg(long)]
         body: String,
     },
+    /// Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)
+    Sync {
+        /// CLAUDE.md or AGENTS.md
+        #[arg(long, default_value = "CLAUDE.md")]
+        file: std::path::PathBuf,
+        /// Token budget; default `[plugins.memory] sync_tokens`
+        #[arg(long)]
+        budget: Option<u32>,
+        /// Print the unified diff and write nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Delete the managed block and nothing else
+        #[arg(long)]
+        remove: bool,
+        /// Overwrite a hand-edited block
+        #[arg(long)]
+        force: bool,
+    },
     /// Notes live/pinned/retired, recall and MCP call counts (T69.4)
     Status {
         /// Only notes of this project
@@ -902,6 +920,13 @@ pub fn run() -> Result<()> {
                         None => println!("updated note {new} in place"),
                     }
                 }
+                MemoryCmd::Sync {
+                    file,
+                    budget,
+                    dry_run,
+                    remove,
+                    force,
+                } => crate::plugins::memory::sync::run(&cfg, file, budget, dry_run, remove, force)?,
                 MemoryCmd::Status {
                     project,
                     since,
