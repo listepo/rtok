@@ -34,7 +34,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
 | T69.2 | todo | P3 | 3 | 0% | |
-| T69.3 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
@@ -237,17 +236,6 @@ Done when:
 3. `[plugins.memory] half_life_days = 0` — 0 keeps today's id-desc order with byte-identical output; N > 0 scores `ln(1 + uses) × 0.5^(age_days / N)`, ties by id desc. Recall and search share one scoring function; search re-ranks the top `3 × limit` BM25 / RRF hits so FTS5 still does the retrieval. `NoteHit` gains `score` and `age_days` (graymatter's receipts), so the MCP result shows why a hit ranked. Decay ranks, never prunes (D4).
 4. Tests: a fixture of 20 notes where a 60-day-old note used 10× outranks a fresh unused one only when `half_life_days > 0`; `half_life_days = 0` reproduces the T6.2 recall bytes exactly; scoring is deterministic under a frozen clock.
 5. The default stays 0 until T69.3 shows a higher hit rate on the 100-session run without more recall bytes; the card records the numbers either way. `docs/config.md` row in the same commit (D12).
-
-### T69.3. Memory recall bench: planted, drifted, superseded facts
-
-From the graymatter gap review (`research.md` §14). graymatter publishes a no-LLM benchmark (`go run ./benchmarks/token_count`, keyword embedder): tokens per session against full-history injection at 1 / 10 / 30 / 100 sessions, a fact planted 96 sessions ago retrieved 83 % of the time, superseded facts returned 0 % (its numbers, not re-measured). rtok's `memory` has no recall-quality number at all — `graph` has one (T8.8, 30 hand-labelled symbols) — and Gate P6 ("revert if recall is worse") has nothing to compare against. D3.
-Done when:
-1. `tests/memory_bench.rs` (`cargo test --test memory_bench -- --nocapture`, the `mode_bench` shape) builds an in-memory store from a seeded generator: N sessions (1, 10, 30, 100) × K notes of realistic length, 20 target facts planted at known session offsets, 5 of them revised later (T69.1); no network, no LLM.
-2. Reported per configuration — FTS5 default; `half_life_days = 30` (T69.2); `embed.enabled` hybrid (P29): hit rate of the target in `mem_search` top-`search_limit` for a query built from the fact's own words; superseded facts returned (the test asserts 0 after T69.1); SessionStart recall bytes per session against the "full injection" baseline (every live body of the project) — rtok's own version of graymatter's table.
-3. Numbers land in `research.md` §14 with the command and date and on the memory docs page; `README.md` / `docs/comparison.md` cite that row and never graymatter's. The gate for T69.2's default is written from this run.
-4. The generator and the expected hit rates are checked in; a change that lowers the hit rate on any row fails the test.
-
-Execution plan: `tests/memory_bench.rs` seeds an in-memory store (N=1/10/30/100 × K filler, 20 planted facts, 5 `mem_revise`). Measure FTS5 `mem_search` hit rate at `search_limit`; skip `half_life_days` (T69.2 shipped no scorer — N/A in §14); run P29 hybrid because `search_notes_hybrid` exists. Assert superseded returned = 0. Print SessionStart recall bytes vs full live-body injection. Lock floors; cite only those numbers in `research.md` §14, the memory page, `README.md`, `docs/comparison.md`. Do not touch hook handlers (T71.2 / T62.3) or CLI/sync (T69.6).
 
 ### T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
 
