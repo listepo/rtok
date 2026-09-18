@@ -19,7 +19,8 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use rtok_plugin_sdk::{
-    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
+    Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PostToolUse, SessionStart,
+    Surface, ToolDef,
 };
 
 pub mod index;
@@ -37,7 +38,7 @@ impl Plugin for Graph {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "graph",
-            surfaces: &[Surface::Mcp],
+            surfaces: &[Surface::Mcp, Surface::Hook],
             default_on: true,
         }
     }
@@ -58,6 +59,10 @@ impl Plugin for Graph {
             let _ = cx.mark_symbols_stale(&index::canon(Path::new(p)));
         }
         None
+    }
+
+    fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+        repo_map(cx)
     }
 
     fn mcp_tools(&self) -> Vec<ToolDef> {
@@ -851,6 +856,43 @@ impl ExploreParts for TagsExplore<'_> {
         let n = rows.len();
         Ok((impact_lines_text(&rows), n))
     }
+}
+
+/// T52.3: ranked repo map from existing `symbols` rows. `map_tokens = 0` is off;
+/// a missing index does not walk the tree (hook path).
+fn repo_map(cx: &Ctx) -> Option<Injection> {
+    let cap = cx.plugin_config::<crate::config::Graph>("graph").map_tokens;
+    if cap == 0 {
+        return None;
+    }
+    let cwd = cx
+        .cwd()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())?;
+    let rows = cx
+        .symbol_top_refs(&index::canon(&cwd), i64::from(cap))
+        .ok()?;
+    if rows.is_empty() {
+        return None;
+    }
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    lines.push("repo map".into());
+    for (name, refs, path, line) in &rows {
+        lines.push(format!("{name} {path}:{line} {refs}"));
+    }
+    let mut text = lines.join("\n");
+    while cx.estimate(&text, Class::Prose) > cap && lines.len() > 1 {
+        lines.pop();
+        text = lines.join("\n");
+    }
+    if lines.len() == 1 {
+        return None;
+    }
+    Some(Injection {
+        plugin: "graph",
+        text,
+        priority: 1,
+    })
 }
 
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
@@ -1667,6 +1709,94 @@ mod tests {
                 .unwrap()
                 .is_empty(),
             "follow_imports=false must not walk the import"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn seed_map(rt: &crate::plugin::Runtime, dir: &Path) {
+        let root = index::canon(dir);
+        rt.store
+            .replace_symbols(
+                &root,
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    ("hot".into(), "function".into(), 1, true, 1, String::new()),
+                    ("mid".into(), "function".into(), 2, true, 2, String::new()),
+                    ("cold".into(), "function".into(), 3, true, 3, String::new()),
+                    (
+                        "hot".into(),
+                        "function".into(),
+                        10,
+                        false,
+                        10,
+                        String::new(),
+                    ),
+                    (
+                        "hot".into(),
+                        "function".into(),
+                        11,
+                        false,
+                        11,
+                        String::new(),
+                    ),
+                    (
+                        "mid".into(),
+                        "function".into(),
+                        12,
+                        false,
+                        12,
+                        String::new(),
+                    ),
+                ],
+            )
+            .unwrap();
+    }
+
+    fn start(rt: &crate::plugin::Runtime) -> Option<Injection> {
+        Graph.session_start(&SessionStart { source: "startup" }, &Ctx::new(rt))
+    }
+
+    #[test]
+    fn repo_map_off_by_default_and_empty_index() {
+        let (mut rt, dir) = cx("map-off");
+        rt.cwd = Some(dir.to_string_lossy().into_owned());
+        seed_map(&rt, &dir);
+        assert!(start(&rt).is_none(), "map_tokens=0 must not inject");
+        rt.config.plugins.graph.map_tokens = 200;
+        let (empty, empty_dir) = cx("map-empty");
+        let mut empty = empty;
+        empty.config.plugins.graph.map_tokens = 200;
+        empty.cwd = Some(empty_dir.to_string_lossy().into_owned());
+        assert!(start(&empty).is_none(), "empty index must not inject");
+        let _ = fs::remove_dir_all(dir);
+        let _ = fs::remove_dir_all(empty_dir);
+    }
+
+    #[test]
+    fn repo_map_ranked_byte_stable_and_trimmed() {
+        let (mut rt, dir) = cx("map-on");
+        rt.cwd = Some(dir.to_string_lossy().into_owned());
+        rt.config.plugins.graph.map_tokens = 2000;
+        seed_map(&rt, &dir);
+        let a = start(&rt).expect("map on");
+        let b = start(&rt).expect("map on again");
+        assert_eq!(a, b);
+        assert_eq!(a.priority, 1);
+        let lines: Vec<_> = a.text.lines().collect();
+        assert_eq!(lines[0], "repo map");
+        assert!(lines[1].starts_with("hot a.rs:1 2"), "{lines:?}");
+        assert!(lines[2].starts_with("mid a.rs:2 1"), "{lines:?}");
+        assert!(lines[3].starts_with("cold a.rs:3 0"), "{lines:?}");
+        let full = rt.estimate(&a.text, Class::Prose);
+        rt.config.plugins.graph.map_tokens = full.saturating_sub(1).max(1);
+        let trimmed = start(&rt).expect("trimmed map");
+        assert!(
+            trimmed.text.lines().count() < a.text.lines().count(),
+            "cap must drop a line\nfull={}\ntrim={}",
+            a.text,
+            trimmed.text
         );
         let _ = fs::remove_dir_all(dir);
     }
