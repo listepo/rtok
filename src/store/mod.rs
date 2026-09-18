@@ -295,6 +295,58 @@ impl Store {
             .unwrap_or((None, None)))
     }
 
+    /// Archive ids a Calls row can expand (T60.4): spilled `call_io` body first,
+    /// else a `measurements.ref_id` on that call. One pair of queries for the
+    /// page, so the snapshot does not N+1 on a tick.
+    pub fn archive_ref_ids(
+        &self,
+        call_ids: &[i32],
+    ) -> Result<std::collections::BTreeMap<i32, String>> {
+        let mut out = std::collections::BTreeMap::new();
+        if call_ids.is_empty() {
+            return Ok(out);
+        }
+        let list = call_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut conn = self.lock()?;
+        #[derive(QueryableByName)]
+        struct Io {
+            #[diesel(sql_type = Integer)]
+            call_id: i32,
+            #[diesel(sql_type = Nullable<Text>)]
+            request_archive: Option<String>,
+            #[diesel(sql_type = Nullable<Text>)]
+            response_archive: Option<String>,
+        }
+        let io: Vec<Io> = sql_query(format!(
+            "SELECT call_id, request_archive, response_archive FROM call_io WHERE call_id IN ({list})"
+        ))
+        .load(&mut *conn)?;
+        for row in io {
+            if let Some(id) = row.response_archive.or(row.request_archive) {
+                out.insert(row.call_id, id);
+            }
+        }
+        #[derive(QueryableByName)]
+        struct Meas {
+            #[diesel(sql_type = Integer)]
+            call_id: i32,
+            #[diesel(sql_type = Text)]
+            ref_id: String,
+        }
+        let ms: Vec<Meas> = sql_query(format!(
+            "SELECT call_id, ref_id FROM measurements WHERE call_id IN ({list}) AND ref_id IS NOT NULL"
+        ))
+        .load(&mut *conn)?;
+        for row in ms {
+            out.entry(row.call_id).or_insert(row.ref_id);
+        }
+        Ok(out)
+    }
+
     pub fn token_phases(&self, call_id: i32) -> Result<Vec<String>> {
         let mut conn = self.lock()?;
         Ok(tokens::table
