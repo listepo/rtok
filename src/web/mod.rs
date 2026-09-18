@@ -8,7 +8,7 @@ pub mod model;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -22,17 +22,33 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
-use crate::config::Config;
+use crate::config::{Config, validate};
+use crate::plugins::Registry;
 
 const INDEX: &str = include_str!("index.html");
 
 pub struct DashState {
-    cfg: Config,
+    cfg: Mutex<Config>,
 }
 
 impl DashState {
     pub fn new(cfg: Config) -> Self {
-        Self { cfg }
+        Self {
+            cfg: Mutex::new(cfg),
+        }
+    }
+
+    /// One inbound `/ws` text frame (T60.5). `None` means ignore, or an accepted
+    /// `set` whose next snapshot carries the write. `Some` is a message frame
+    /// refusing a key outside `plugins.<id>.enabled`, a non-bool value, or a
+    /// `config set` error.
+    pub fn inbound(&self, text: &str) -> Option<String> {
+        inbound(self, text)
+    }
+
+    /// The snapshot frame `/ws` sends next, after any accepted `set`.
+    pub fn snapshot_json(&self) -> String {
+        frame(&self.cfg.lock().unwrap_or_else(|e| e.into_inner()))
     }
 }
 
@@ -81,10 +97,11 @@ async fn index() -> Html<&'static str> {
 }
 
 async fn health(State(state): State<Arc<DashState>>) -> Json<Value> {
+    let cfg = state.cfg.lock().unwrap_or_else(|e| e.into_inner());
     Json(json!({
         "ok": true,
-        "host": state.cfg.web.host,
-        "port": state.cfg.web.port,
+        "host": cfg.web.host,
+        "port": cfg.web.port,
     }))
 }
 
@@ -106,13 +123,21 @@ pub fn frame(cfg: &Config) -> String {
 
 async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
     loop {
-        if socket.send(Message::text(frame(&state.cfg))).await.is_err() {
+        let snap = frame(&state.cfg.lock().unwrap_or_else(|e| e.into_inner()));
+        if socket.send(Message::text(snap)).await.is_err() {
             break;
         }
         tokio::select! {
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Text(text))) => {
+                        if let Some(reply) = inbound(&state, text.as_str()) {
+                            if socket.send(Message::text(reply)).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
                     Some(Ok(_)) => {}
                     Some(Err(_)) => break,
                 }
@@ -120,4 +145,47 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
             _ = tokio::time::sleep(Duration::from_secs(2)) => {}
         }
     }
+}
+
+fn inbound(state: &DashState, text: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let set = v.get("set")?;
+    let key = set.get("key").and_then(Value::as_str).unwrap_or("");
+    let Some(value) = set.get("value").and_then(Value::as_bool) else {
+        return Some(message_frame("set.value must be a bool"));
+    };
+    let mut cfg = state.cfg.lock().unwrap_or_else(|e| e.into_inner());
+    if !allowlisted_plugin_enabled(&cfg, key) {
+        return Some(message_frame(&format!("refused key {key}")));
+    }
+    match validate::set(&cfg.home, key, &value.to_string(), false) {
+        Ok(_) => {
+            if let Ok(reloaded) = Config::load_from(&cfg.home) {
+                *cfg = reloaded;
+            }
+            None
+        }
+        Err(e) => Some(message_frame(&format!("config set {key}: {e:#}"))),
+    }
+}
+
+/// `plugins.<id>.enabled` for a catalogue id (D23: Registry, not a second list).
+fn allowlisted_plugin_enabled(cfg: &Config, key: &str) -> bool {
+    let Some(rest) = key.strip_prefix("plugins.") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix(".enabled") else {
+        return false;
+    };
+    if id.is_empty() || id.contains('.') {
+        return false;
+    }
+    Registry::new(cfg)
+        .manifests()
+        .iter()
+        .any(|(m, _)| m.id == id)
+}
+
+fn message_frame(text: &str) -> String {
+    json!({ "type": "message", "text": text }).to_string()
 }
