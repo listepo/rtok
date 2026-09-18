@@ -56,6 +56,8 @@ function filterArgs(event) {
 }
 
 export default function (pi) {
+  let restore = false;
+  let compactSession = "";
   // One call path: bash → `rtok run -- <command>`. Not a duplicate of any
   // MCP read/search: pi has no MCP, and the hook never touches other tools.
   pi.on("tool_call", async (event) => {
@@ -102,18 +104,73 @@ export default function (pi) {
   // string compare and pi keeps the exact same array object.
   pi.on("context", async (event) => {
     if (!Array.isArray(event.messages)) return;
+    let messages = event.messages;
     const input = JSON.stringify(event.messages);
     const r = await rtok(["archive", "rewrite", "--stdin"], input, undefined);
-    if (r.missing || !r.stdout || r.stdout === input) return;
-    try {
-      return { messages: JSON.parse(r.stdout) };
-    } catch {
-      return; // fail open: unparseable output keeps the untouched array
+    if (!r.missing && r.stdout && r.stdout !== input) {
+      try {
+        messages = JSON.parse(r.stdout);
+      } catch {
+        // fail open: unparseable output keeps the untouched array
+      }
     }
+    if (restore) {
+      restore = false;
+      const c = await rtok(
+        ["hook", "PostCompact", "--host", "pi"],
+        JSON.stringify({
+          hook_event_name: "PostCompact",
+          session_id: compactSession,
+        }),
+      );
+      const text = additionalContext(c.stdout);
+      if (text) {
+        messages = [
+          ...messages,
+          { role: "user", content: [{ type: "text", text }] },
+        ];
+      }
+    }
+    if (messages === event.messages) return;
+    return { messages };
+  });
+
+  // Compaction (T70.6): save via PreCompact, restore on the next `context`
+  // call. session_before_compact can only cancel or *replace* the host
+  // summary — rtok never returns `compaction.summary` (that would drop
+  // what pi knows). T58.2 owns hook hosts; this is the plugin path.
+  pi.on("session_before_compact", async (event, ctx) => {
+    compactSession = String(ctx?.sessionId ?? ctx?.sessionID ?? "");
+    const trigger = event?.reason === "manual" ? "manual" : "auto";
+    await rtok(
+      ["hook", "PreCompact", "--host", "pi"],
+      JSON.stringify({
+        hook_event_name: "PreCompact",
+        session_id: compactSession,
+        trigger,
+      }),
+      event?.signal,
+    );
+  });
+
+  pi.on("session_compact", async (_event, ctx) => {
+    compactSession = String(ctx?.sessionId ?? ctx?.sessionID ?? compactSession);
+    restore = true;
   });
 
   // Optional proxy (T11.5 pattern): route pi through `rtok proxy`.
   // pi.registerProvider("anthropic", {
   //   baseUrl: "http://127.0.0.1:8790/v1",
   // });
+}
+
+function additionalContext(stdout) {
+  try {
+    const v = JSON.parse(stdout);
+    return typeof v?.hookSpecificOutput?.additionalContext === "string"
+      ? v.hookSpecificOutput.additionalContext
+      : "";
+  } catch {
+    return "";
+  }
 }
