@@ -74,6 +74,32 @@ pub fn run(cfg: &Config) -> Result<()> {
     })
 }
 
+/// One-shot `tools/call` for hosts that cannot speak MCP (`rtok mcp --call`, T70.3).
+pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
+    let server = Server::new(cfg)?;
+    let plugin = server
+        .listed
+        .iter()
+        .find(|t| t.def.name == name)
+        .map(|t| t.plugin)
+        .unwrap_or("archive");
+    let args = if args.is_null() {
+        json!({})
+    } else {
+        args.clone()
+    };
+    let (text, ok) = match invoke(&server.cx, name, &args) {
+        Ok(t) => (t, true),
+        Err(e) => (e.to_string(), false),
+    };
+    let _ = record(&server.cx, plugin, name, &args, &text);
+    if ok {
+        Ok(text)
+    } else {
+        bail!("{text}")
+    }
+}
+
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
 const MAX_LINE: u64 = 8 << 20;
 
@@ -519,6 +545,22 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn one_shot_call_uses_the_same_invoke_as_tools_call() {
+        let (cfg, dir) = tmp("oneshot");
+        let err = call(&cfg, "nope", &json!({})).unwrap_err().to_string();
+        assert_eq!(err, "unknown tool: nope");
+        let server = Server::new(&cfg).unwrap();
+        let id = server
+            .cx
+            .store
+            .put_archive("mcp", b"payload", &cfg.core.archive_dir)
+            .unwrap();
+        let text = call(&cfg, "expand", &json!({"id": id})).unwrap();
+        assert_eq!(text, "payload");
         let _ = fs::remove_dir_all(dir);
     }
 
