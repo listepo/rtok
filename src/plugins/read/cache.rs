@@ -58,9 +58,20 @@ fn hex_sha256(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::plugins::read::read;
+    use crate::plugins::read::read_with;
     use crate::plugins::read::tests::cx;
     use serde_json::json;
     use std::fs;
+    use std::path::{Path, PathBuf};
+
+    /// T56.2: runtime + in-memory workspace for the dedup twins — the store stays real
+    /// (it is not a filesystem), only the read paths run on `Vfs` via `read_with`.
+    fn vfs_cx(name: &str) -> (crate::plugin::Runtime, crate::testutil::Vfs, PathBuf) {
+        let (mut c, dir) = crate::testutil::config(name);
+        c.plugins.read.allow_paths = vec![PathBuf::from("ws")];
+        let cx = crate::plugin::Runtime::open(c, name).unwrap();
+        (cx, crate::testutil::Vfs::new(), dir)
+    }
 
     #[test]
     fn two_identical_reads_second_is_short() {
@@ -108,6 +119,57 @@ mod tests {
             &Ctx::new(&cx),
         );
         let second = read(&Ctx::new(&cx), path, "full", None).unwrap();
+        assert!(second.contains("1:alpha"), "{second}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.2: identical re-read through `read_with` + Vfs is the short hit (disk twin kept).
+    #[test]
+    fn two_identical_reads_second_is_short_from_vfs() {
+        let (cx, mut vfs, dir) = vfs_cx("same-vfs");
+        vfs.write("ws/a.txt", b"alpha\nbeta\n");
+        let first =
+            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None).unwrap();
+        assert!(first.contains("1:alpha"), "{first}");
+        let second =
+            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None).unwrap();
+        assert!(second.len() < 80, "{second}");
+        assert!(second.contains("unchanged"), "{second}");
+        assert!(cx.store.measurement_count("read").unwrap() >= 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.2: an edited file between reads is the full body again (disk twin kept).
+    #[test]
+    fn edit_fixture_between_reads_is_full_from_vfs() {
+        let (cx, mut vfs, dir) = vfs_cx("edit-vfs");
+        vfs.write("ws/a.txt", b"alpha\n");
+        let _ = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None);
+        vfs.write("ws/a.txt", b"omega\n");
+        let second =
+            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None).unwrap();
+        assert!(second.contains("1:omega"), "{second}");
+        assert!(!second.contains("unchanged"), "{second}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T56.2: an `Edit` clears the hit under the same key `read_with` stored (disk twin kept).
+    #[test]
+    fn post_tool_edit_clears_hit_from_vfs() {
+        let (cx, mut vfs, dir) = vfs_cx("hook-vfs");
+        vfs.write("ws/a.txt", b"alpha\n");
+        let _ = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None);
+        let input = json!({"file_path": "ws/a.txt"});
+        invalidate(
+            &PostToolUse {
+                tool_name: "Edit",
+                tool_input: &input,
+                tool_response: &json!({}),
+            },
+            &Ctx::new(&cx),
+        );
+        let second =
+            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None).unwrap();
         assert!(second.contains("1:alpha"), "{second}");
         let _ = fs::remove_dir_all(dir);
     }
