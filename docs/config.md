@@ -212,6 +212,9 @@ extensions_path = "~/.pi/agent/extensions"
 config_path   = "~/.zcode/cli/config.json"
 [setup.kimi]
 config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
+[setup.vscode]
+code_user_dir = ""                   # empty = OS default Code user dir (T48.8)
+insiders_user_dir = ""               # empty = OS default Code - Insiders user dir
 [setup.copilot]
 dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
 [setup.aider]

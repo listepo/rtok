@@ -353,6 +353,7 @@ section! {
         pi: SetupPi = SetupPi::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
+        vscode: SetupVscode = SetupVscode::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
@@ -398,6 +399,14 @@ section! {
 section! {
     /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
     SetupCopilot { dir: PathBuf = p("~/.copilot") }
+}
+
+section! {
+    /// `[setup.vscode]` — profile `mcp.json` under Code / Code - Insiders user dirs (T48.8).
+    SetupVscode {
+        code_user_dir: PathBuf = PathBuf::new(),
+        insiders_user_dir: PathBuf = PathBuf::new(),
+    }
 }
 
 section! {
@@ -856,6 +865,8 @@ impl Config {
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
             &mut self.setup.copilot.dir,
+            &mut self.setup.vscode.code_user_dir,
+            &mut self.setup.vscode.insiders_user_dir,
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
