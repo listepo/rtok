@@ -14,7 +14,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.6 | todo | P3 | 3 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
 | T60.2 | todo | P2 | 3 | 0% | |
-| T60.3 | in progress | P3 | 3 | 10% | Cursor / grok 4.6 |
 | T60.4 | todo | P3 | 4 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
@@ -95,13 +94,6 @@ Done when every subcommand has at least one trycmd case of its real output, herm
 - Timestamps, ids, versions and absolute paths are matched with trycmd `[..]` / `[EXE]`, never frozen; a golden must not depend on the machine.
 - One `tests/trycmd/README.md` line per case saying what it pins; `README.md`'s command table is checked against the trycmd case list by the existing README test so a new command cannot land without a golden.
 Blessing: `TRYCMD=overwrite cargo nextest run -p rtok --test cli_trycmd`, reviewed by eye once, then committed. Split into ≤ 3-file commits: help cases; reading commands on the fixture store; stdin-driven commands (`hook`, `mcp`, `filter`, `run`).
-
-### T60.3. Per-session drill-down on `tui` and `web`
-
-`SessionTotals` carries `project`, `api`, `started_at`, `last_activity`, `ended_at` (survey 2026-09-17, `src/web/model.rs`) and neither surface shows them; the Sessions page is a list on both, so "what did this session cost and which calls made it" needs the CLI.
-Done when Enter on a Sessions row (TUI) and a click (web) open a detail pane with those fields, the API row, and the session's calls filtered from the same snapshot; both surfaces read the same `model` accessor (D23: one model, two renderings), `tests/surface_parity.rs` asserts the detail exists on both, and a TUI `TestBackend` test plus a Slint e2e case cover the selection.
-
-Execution plan: `model::session_detail(snapshot, id)` returns `(&SessionTotals, Vec<&CallRow>)` from the same snapshot (no second session type). TUI Enter and web click render project, api, started_at, last_activity, ended_at, the API usage row, and those calls. `tests/surface_parity.rs` pins the accessor on both surfaces; TUI TestBackend and Slint e2e cover selection.
 
 ### T60.4. Archive `expand` on `tui` and `web`
 

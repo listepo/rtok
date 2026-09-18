@@ -8,7 +8,6 @@
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
 - T60.1. `--json` on every reading command
 - T60.2. trycmd goldens for every subcommand
-- T60.3. Per-session drill-down on `tui` and `web`
 - T60.4. Archive `expand` on `tui` and `web`
 - T60.8. TUI help overlay and manual refresh
 - T61.1. `stats` counts injected skill bodies
