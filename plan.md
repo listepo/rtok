@@ -15,7 +15,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | todo | P3 | 3 | 10% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T55.12 | todo | P2 | 2 | 0% | |
 | T55.15 | todo | P3 | 2 | 0% | |
 | T56.5 | todo | P2 | 2 | 80% | |
 | T57.1 | todo | P3 | 3 | 0% | |
@@ -61,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T68.8 | todo | P3 | 2 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
 | T68.10 | todo | P3 | 2 | 0% | |
-| T69.1 | todo | P2 | 3 | 0% | |
 | T69.2 | todo | P3 | 3 | 0% | |
 | T69.3 | todo | P3 | 3 | 0% | |
 | T69.4 | todo | P3 | 2 | 0% | |
@@ -78,6 +76,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T71.2 | todo | P3 | 3 | 0% | |
 | T71.3 | todo | P3 | 2 | 0% | |
 | T71.4 | todo | P3 | 2 | 0% | |
+| T72.1 | in progress | P2 | 2 | 80% | Claude Code / opus-5 |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -147,11 +146,6 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker is missing, and it stays out of `just check`.
-
-### T55.12. Windows `wrap_quote` corrupts apostrophes under POSIX host shells
-
-From review 2026-09-17, second pass (code read — not reproducible on macOS). `run::wrap_quote` (`src/plugins/cmd/run.rs:18-24`) emits PowerShell `''` escaping on Windows, and `cmd/hook.rs:45` rewrites the Bash command to `rtok run -- 'echo it''s fine'`. Claude Code on Windows executes the Bash tool through Git Bash (POSIX sh), where `'echo it''s fine'` concatenates to the single argv `echo its fine`: the apostrophe is silently dropped and the command the model asked for is not the command that runs (fail-open violation, no error anywhere). T55.4 weighed PowerShell and cmd.exe but not the POSIX host.
-Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-but-wrong — the minimal fix mirrors the heredoc skip: on `cfg!(windows)`, `skip_wrap` also returns true for any command containing an apostrophe (nothing is wrapped, output stays whole; compression loss is the safe direction) — with pure tests `windows_apostrophe_commands_stay_unwrapped` and a parse-simulation `ps_quoting_does_not_round_trip_under_sh` proving the current form is lossy, plus the existing `wrap_keeps_apostrophe_host_safe` updated to the new contract.
 
 ### T55.15. `live_blobs` rewrites image/document payloads into invalid blocks
 
@@ -417,16 +411,6 @@ Done when `rtok bench --suite graph` runs N fixed questions (≥ 10, three repos
 From the codegraph / graphify review. codegraph's `codegraph.json` has `exclude` (gitignore-style), `include` (force gitignored source back in), `deprioritize` and `extensions` (`.tpl → php`); graphify has the same for its walker. rtok's walker is `ignore::WalkBuilder` with `.gitignore` only and a fixed extension → grammar table, so a vendored tree cannot be dropped, a gitignored generated source cannot be indexed, and projects with custom extensions get no rows.
 Done when `[plugins.graph]` gains `exclude = []`, `include = []` (both gitignore syntax, applied through `WalkBuilder` overrides — no hand-written matcher) and `extensions = {}` (`ext = "grammar"`, unknown grammar names rejected by `config validate`); the watcher applies the same three (`relevant()` / `absorb_event` share the matcher with the walker); `deprioritize` is not added (rtok ranks by reference count, T52.3); rows in `docs/config.md` and the config-show golden; a unit test on a `Vfs` tree with an excluded dir, an included gitignored file and a mapped extension; `rtok graph index` reports how many files each list changed.
 
-### T69.1. Note lifecycle: retire, supersede, pin — never delete
-
-From the graymatter gap review (`research.md` §14, 2026-09-18). graymatter's `revise` / `forget` / `pin` / `unpin`: a correction is a tombstone (the old fact stays on disk, is never recalled again, and the receipt names what replaced it); a pinned fact is exempt from decay and always recalled. rtok's `notes` table is insert-only — `mem_save`, `mem_search`, `mem_get`; the in-place update keyed by `project + kind + title` is the memory card "`mem_save` updates a note in place" — so a fact that turned out wrong under a different title stays in FTS5 and in the last-5 recall forever, and nothing keeps a convention on top of five newer notes. Lossless by default (D4) means a tombstone, never `DELETE`.
-Done when:
-1. A new migration (never an edit to `0001.sql`) adds `notes.retired INTEGER NULL` (unix ts), `notes.superseded_by INTEGER NULL`, `notes.pinned INTEGER NOT NULL DEFAULT 0`; existing rows stay live.
-2. One MCP tool `mem_update(id, retire?, superseded_by?, pinned?)` and the same operations as `rtok memory retire|pin|unpin <id>` and `rtok memory revise <id> --title --body` (revise = save the replacement through the in-place `mem_save` path, then retire the old id with `superseded_by`); one function per operation in `plugins/memory`, called by both the MCP and the CLI path (D21). The memory tool surface stays ≤ 60 description tokens (`rtok doctor` measures it).
-3. `list_note_titles`, `search_notes`, `search_notes_hybrid` and the SessionStart recall exclude retired rows; pinned rows come first in recall (id order), then the rest, inside `recall_tokens`. `mem_get` of a retired id still returns the body, prefixed by one line `retired <ts>[, superseded by <id>]`, so nothing is lost.
-4. Tests on the in-memory store: revise → `mem_search` for the old title's words returns the replacement only; retire → recall omits the id and `mem_get` returns the body with the retired line; 20 newer notes plus one pinned → the pinned id is first and the injection is byte-stable across two runs; the migration applies to a fixture `rtok.db` of the previous schema.
-5. Docs: memory plugin README / AGENTS invariants and the memory tool table in `README.md`. T69.3 measures the effect (superseded facts returned = 0). Covers ideas I-57 (engram `pinned`) and the MemPalace / tinymemory / engram-`supersedes` row (retire); both rows tick promoted.
-
 ### T69.2. Recall ranking: recency decay and use counts, off by default
 
 From the graymatter gap review (`research.md` §14). graymatter ranks recall by vector + keyword + recency with a deterministic 30-day half-life and per-signal "receipts"; facts fade without access and are never hard-deleted. rtok: SessionStart recall is the newest `recall_titles` (5) ids of the project; `mem_search` is bare BM25 (`search_notes`) or RRF over BM25 + hash-embed when `embed.enabled` — a note used in every session for a month drops out of recall the moment five newer notes exist, and a stale note ranks as high as a fresh one.
@@ -574,6 +558,13 @@ Done when:
 
 From `research.md` §10.6 (open question). The docs say "~100 tokens per skill"; the measured description here averages 194 chars ≈ 49 tokens, so the framing per listed skill (name, path, wrapper text) is unknown, and T61.3 / T63.1 total "description bytes ≈ tokens per request" without it.
 Done when one Claude Code request captured through `rtok proxy` on this machine (a `call_io` row under the inline cap, or the request body dumped behind `[proxy] dump_request_dir` — off by default, one key with its `docs/config.md` row, added only if no existing row holds the body) is measured: bytes of the skills block, bytes per listed skill beyond its description, count of listed skills; recorded in `research.md` §10.6 with date and command; T61.3's total and T63.1's header use the measured per-skill constant (one named const in `doctor`, dated) instead of the docs figure; the card closes with the number alone if an existing capture already answers it.
+
+### T72.1. Shorter dev build and test loop
+
+Asked for by the creator (2026-09-18): dev builds and tests take too long. The suite has 41 integration targets and `cargo nextest run` links every one of them before the first test runs, `nextest -E` filters only after that build, and the ~450 dependencies carry `line-tables-only` debug info that the linker copies into each of those binaries.
+Done when the inner loop stops paying for the whole suite on every edit: `just test-changed [rev]` maps the diff onto cargo target selection (`--lib`, `--test <name>`), dependencies build without debug info while workspace code keeps its line tables, and the before/after is measured on a quiet tree (artifact size and one rebuild of all test targets) rather than asserted. `just check` stays the gate and is unchanged.
+
+Execution plan (Claude Code / opus-5): `tools/test-changed.sh` (diff → target list; `RTOK_CHANGED` overrides the git query so the mapping is exercisable), `justfile` recipe, `Cargo.toml` `[profile.dev.package."*"] debug = false` + `build-override`, README note. Verify: the mapping on eight representative diffs, then `just check`.
 
 ## Reference
 

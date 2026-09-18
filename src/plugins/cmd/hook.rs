@@ -4,6 +4,14 @@ use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 use serde_json::json;
 
 fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
+    skip_wrap_host(cfg!(windows), cmd, never_wrap)
+}
+
+/// `windows` is a parameter so both host contracts stay tested on one toolchain
+/// (T55.12): a PowerShell `''` rewrite must never reach a POSIX shell, where
+/// `'echo it''s fine'` concatenates to `echo its fine` and silently drops the
+/// apostrophe — so any command containing `'` stays unwrapped there.
+fn skip_wrap_host(windows: bool, cmd: &str, never_wrap: &[String]) -> bool {
     let mut toks = cmd.split_whitespace();
     let first = toks.next().unwrap_or("");
     // Same stem rules as formatters::cmd_stem / run::shell_kind: Windows argv may
@@ -13,6 +21,13 @@ fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
         return true;
     }
     if cmd.contains("<<") {
+        return true;
+    }
+    // T55.12: the PowerShell `''` form is lossy if the rewritten command reaches a
+    // POSIX shell — Claude Code on Windows runs Bash through Git Bash, where
+    // `'echo it''s fine'` concatenates to `echo its fine`. Nothing containing an
+    // apostrophe is wrapped there; staying whole is the safe direction.
+    if windows && cmd.contains('\'') {
         return true;
     }
     if std::iter::once(first)
@@ -127,15 +142,94 @@ mod tests {
 
     #[test]
     fn wrap_keeps_apostrophe_host_safe() {
-        let d = decide("echo it's fine").unwrap();
-        let w = wrapped(&d);
-        assert!(w.starts_with("rtok run -- "), "{w}");
-        let q = &w["rtok run -- ".len()..];
-        assert_eq!(q, &super::super::run::wrap_quote("echo it's fine"));
-        // Must not contain the POSIX '"'"' embedding that PowerShell rejects.
-        if cfg!(windows) {
-            assert!(!q.contains("'\"'\"'"), "{q}");
-            assert_eq!(q, "'echo it''s fine'");
+        let cmd = "echo it's fine";
+        match decide(cmd) {
+            // Windows (T55.12): nothing is wrapped, so no PowerShell `''` form
+            // can reach a POSIX host shell. The host contracts are pinned by
+            // `windows_apostrophe_commands_stay_unwrapped`; here the wrapped
+            // POSIX path only has to round-trip through the real quoter.
+            None => {}
+            Some(d) => {
+                let w = wrapped(&d);
+                assert!(w.starts_with("rtok run -- "), "{w}");
+                let q = &w["rtok run -- ".len()..];
+                assert_eq!(q, &super::super::run::wrap_quote(cmd));
+            }
         }
+    }
+
+    #[test]
+    fn windows_apostrophe_commands_stay_unwrapped() {
+        assert!(skip_wrap_host(true, "echo it's fine", &[]));
+        assert!(skip_wrap_host(true, "git commit -m 'fix it'", &[]));
+        // The rule fires regardless of position; other skips still apply first.
+        assert!(skip_wrap_host(true, "jq '.' data.json", &[]));
+        // A POSIX host keeps wrapping apostrophe commands: sh quoting round-trips.
+        assert!(!skip_wrap_host(false, "echo it's fine", &[]));
+        assert!(!skip_wrap_host(false, "git commit -m 'fix it'", &[]));
+    }
+
+    /// Parse-simulation of the loss the fix removes: the PowerShell `''` form,
+    /// split as POSIX sh words, concatenates the adjacent quotes into one word
+    /// and the apostrophe is gone — the command that runs is not the command
+    /// the model asked for.
+    #[test]
+    fn ps_quoting_does_not_round_trip_under_sh() {
+        fn sh_words(input: &str) -> Vec<String> {
+            let mut words = Vec::new();
+            let mut word = String::new();
+            let mut in_word = false;
+            let mut chars = input.chars();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\'' => {
+                        in_word = true;
+                        for q in chars.by_ref() {
+                            if q == '\'' {
+                                break;
+                            }
+                            word.push(q);
+                        }
+                    }
+                    // A minimal double-quote pass so the POSIX `'"'"'` embedding
+                    // (an apostrophe inside `"'"`) parses the way sh reads it.
+                    '"' => {
+                        in_word = true;
+                        while let Some(q) = chars.next() {
+                            if q == '"' {
+                                break;
+                            }
+                            if q == '\\' {
+                                if let Some(esc) = chars.next() {
+                                    word.push(esc);
+                                }
+                            } else {
+                                word.push(q);
+                            }
+                        }
+                    }
+                    c if c.is_whitespace() => {
+                        if in_word {
+                            words.push(std::mem::take(&mut word));
+                            in_word = false;
+                        }
+                    }
+                    c => {
+                        in_word = true;
+                        word.push(c);
+                    }
+                }
+            }
+            if in_word {
+                words.push(word);
+            }
+            words
+        }
+        let cmd = "echo it's fine";
+        let ps_form = format!("'{}'", cmd.replace('\'', "''"));
+        assert_eq!(sh_words(&ps_form), ["echo its fine"]);
+        assert_ne!(sh_words(&ps_form), [cmd]);
+        // The POSIX form does round-trip, which is why only the Windows path skips.
+        assert_eq!(sh_words(&super::super::run::sh_quote(cmd)), [cmd]);
     }
 }

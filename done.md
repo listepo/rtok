@@ -3182,3 +3182,11 @@ Check: no host unit test writes hook files to real disk; the real-binary install
 Status: done 2026-09-18 (close-out; earlier halves landed unclaimed)
 Check result: audit closes the "more hosts (cursor/codex/…) if needed" remainder as not needed: `agents/*` unit tests carry zero host-disk writes — claude (7) and kimi (5) hold the Vfs hook-writer twins, every other host has no hook-writer unit tests on disk (their coverage is `tests/agents_install.rs`, a real-binary e2e matrix D29 keeps on disk; it ran green in the same worktree pass as T56.2). Cursor writes through the same `insert_ours`/`strip_ours` helpers the claude twins already cover, so a cursor twin would re-test covered code; codex TOML editing is e2e-covered. `cmd`: the `rules.rs` loader keeps its `*_from_vfs` twins; `run.rs`/`formatters.rs` tests exercise the real archive store and read `tests/cmd_golden` fixture files — repo data, not temp state, so Vfs adds nothing there. No code change in this close-out; evidence is the green 183/183 scope run above.
 Model: ZCode / GLM-5.3
+
+**T55.12 Windows `wrap_quote` corrupts apostrophes under POSIX host shells** · - · `src/plugins/cmd/hook.rs`
+Do: nothing containing `'` is wrapped on `cfg!(windows)` — the PowerShell `''` rewrite concatenated under Git Bash (Claude Code's Windows Bash shell) silently drops the apostrophe; mirrors the heredoc skip, compression loss is the safe direction.
+Check: pure tests `windows_apostrophe_commands_stay_unwrapped` (host-explicit `skip_wrap_host`, both host contracts pinned on one toolchain) and the parse-simulation `ps_quoting_does_not_round_trip_under_sh` (`'echo it''s fine'` splits to the single word `echo its fine`; the POSIX `'"'"'` embedding round-trips); `wrap_keeps_apostrophe_host_safe` updated to the new contract.
+Complexity: 2/5 — one skip rule plus a host-explicit refactor of `skip_wrap`.
+Status: done 2026-09-18
+Check result: `cargo nextest run -p rtok cmd` 54/54 green (the three tests above included); full `just check` green in the isolation worktree (HEAD + own files, never /tmp).
+Model: ZCode / GLM-5.3-Flash
