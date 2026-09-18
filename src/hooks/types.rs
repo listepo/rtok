@@ -179,9 +179,8 @@ fn claude_event(name: &str) -> &str {
     }
 }
 
-/// Copilot's tool names are its own (`bash`, `run_in_terminal`, `read_file`, `view`, …); the
-/// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
-fn copilot_tool_name(name: &str) -> String {
+/// Host tool names (`bash`, `read_file`, `edit`, …) to the Claude names `plugins::guard` matches.
+pub(crate) fn canonical_tool_name(name: &str) -> String {
     let l = name.to_ascii_lowercase();
     if ["bash", "shell", "terminal", "powershell"]
         .iter()
@@ -190,9 +189,19 @@ fn copilot_tool_name(name: &str) -> String {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
         "Read".into()
+    } else if l == "edit" {
+        "Edit".into()
+    } else if l == "write" {
+        "Write".into()
     } else {
         name.to_string()
     }
+}
+
+/// Copilot's tool names are its own (`bash`, `run_in_terminal`, `read_file`, `view`, …); the
+/// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
+fn copilot_tool_name(name: &str) -> String {
+    canonical_tool_name(name)
 }
 
 /// Hook stdout. `HookOutput::default()` serialises to `{}` (= no opinion, fail open).
