@@ -75,6 +75,10 @@ pub struct Report {
     /// same session. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
     pub repeat: RepeatRow,
+    /// T59.6: Claude Code `Agent` and Cursor/legacy `Task` inputs vs results.
+    /// Absent when no session used either, so the T15.11 goldens hold.
+    #[serde(default, skip_serializing_if = "AgentRow::is_empty")]
+    pub agents: AgentRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -130,9 +134,26 @@ impl RepeatRow {
     }
 }
 
+/// Sub-agent tools (T59.6): `Agent` (Claude Code) and `Task` (Cursor / older Claude Code).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRow {
+    pub sessions: u64,
+    pub agent_calls: u64,
+    pub agent_input_bytes: u64,
+    pub agent_result_bytes: u64,
+    pub task_calls: u64,
+    pub task_input_bytes: u64,
+    pub task_result_bytes: u64,
+}
+
+impl AgentRow {
+    fn is_empty(&self) -> bool {
+        self.agent_calls == 0 && self.task_calls == 0
+    }
+}
+
 fn is_zero(n: &u64) -> bool {
     *n == 0
-}
 }
 
 /// T61.1: one skill's injected bodies — the `isMeta` user records keyed to that
@@ -296,6 +317,22 @@ impl Report {
                 d.bytes,
                 d.result_bytes,
                 pct(d.bytes, d.result_bytes)
+            ));
+        }
+if !self.agents.is_empty() {
+            let a = &self.agents;
+            let sub_tokens = self.tools.get("Agent").map(|r| r.est_tokens).unwrap_or(0)
+                + self.tools.get("Task").map(|r| r.est_tokens).unwrap_or(0);
+            let tool_tokens: u64 = self.tools.values().map(|r| r.est_tokens).sum();
+            s.push_str(&format!(
+                "agent sessions {}  Agent in {} B out {} B  Task in {} B out {} B  result/tool_tokens {:.1}%  input/tool_input {:.1}%\n",
+                a.sessions,
+                a.agent_input_bytes,
+                a.agent_result_bytes,
+                a.task_input_bytes,
+                a.task_result_bytes,
+                pct(sub_tokens, tool_tokens),
+                pct(a.agent_input_bytes + a.task_input_bytes, self.edits.tool_input_bytes),
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
@@ -695,6 +732,7 @@ fn fold_session(
     let mut id_name: BTreeMap<&str, &str> = BTreeMap::new();
     let mut id_family: BTreeMap<&str, String> = BTreeMap::new();
     let mut id_skill: BTreeMap<&str, String> = BTreeMap::new();
+    let mut used_subagent = false;
     for u in &parsed.tool_uses {
         id_name.insert(u.id.as_str(), u.name.as_str());
         if u.name == "Bash"
@@ -708,6 +746,7 @@ fn fold_session(
             id_skill.insert(u.id.as_str(), skill.to_string());
         }
         fold_edits(&mut report.edits, u);
+        used_subagent |= fold_agent_input(&mut report.agents, u);
     }
     fold_read_delta(&mut report.read_delta, parsed);
     fold_repeat(&mut report.repeat, parsed);
@@ -716,6 +755,7 @@ fn fold_session(
             .get(r.tool_use_id.as_str())
             .copied()
             .unwrap_or("unknown");
+        fold_agent_result(&mut report.agents, name, r.content.len() as u64);
         if !plugin.is_empty() && plugin != name && !name.contains(plugin) {
             continue;
         }
@@ -740,6 +780,9 @@ fn fold_session(
         if let Some(grp) = mcp_group(name) {
             add(&mut report.mcp_groups, grp, bytes, tokens, ctt);
         }
+    }
+    if used_subagent {
+        report.agents.sessions += 1;
     }
     fold_skills(parsed, &id_skill, report);
     for u in &parsed.usages {
@@ -902,6 +945,32 @@ fn same_path(a: &str, b: &str) -> bool {
     let a = Path::new(a);
     let b = Path::new(b);
     a.ends_with(b) || b.ends_with(a)
+}
+
+/// T59.6: count `Agent` / `Task` tool_use bytes. Returns whether this call is a sub-agent.
+fn fold_agent_input(row: &mut AgentRow, u: &jsonl::ToolUse) -> bool {
+    let bytes = u.input.to_string().len() as u64;
+    match u.name.as_str() {
+        "Agent" => {
+            row.agent_calls += 1;
+            row.agent_input_bytes += bytes;
+            true
+        }
+        "Task" => {
+            row.task_calls += 1;
+            row.task_input_bytes += bytes;
+            true
+        }
+        _ => false,
+    }
+}
+
+fn fold_agent_result(row: &mut AgentRow, name: &str, bytes: u64) {
+    match name {
+        "Agent" => row.agent_result_bytes += bytes,
+        "Task" => row.task_result_bytes += bytes,
+        _ => {}
+    }
 }
 
 fn pct(part: u64, whole: u64) -> f64 {
@@ -1276,6 +1345,65 @@ mod tests {
         );
         // 20 B → 5 est. tokens of 30 output tokens.
         assert!(table.contains("old/output_tokens (est) 16.7%"), "{table}");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// T59.6: Agent and Task inputs vs results, counted per session (Bash-only session omitted).
+    #[test]
+    fn agents_split_agent_and_task_inputs_and_results_per_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-stats-agent-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, lines: &[serde_json::Value]| {
+            let mut f = fs::File::create(dir.join(name)).unwrap();
+            for line in lines {
+                writeln!(f, "{line}").unwrap();
+            }
+        };
+        let agent_in = json!({"prompt": "abcd"});
+        let task_in = json!({"prompt": "efghij"});
+        write(
+            "a.jsonl",
+            &[
+                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"a1","name":"Agent","input":agent_in}],"usage":{"input_tokens":1,"output_tokens":1}}}),
+                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"agent-out"}]}}),
+            ],
+        );
+        write(
+            "t.jsonl",
+            &[
+                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Task","input":task_in}],"usage":{"input_tokens":1,"output_tokens":1}}}),
+                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"task-output!"}]}}),
+            ],
+        );
+        write(
+            "b.jsonl",
+            &[
+                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":1,"output_tokens":1}}}),
+                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b1","content":"ok"}]}}),
+            ],
+        );
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let a = &r.agents;
+        assert_eq!(a.sessions, 2);
+        assert_eq!((a.agent_calls, a.task_calls), (1, 1));
+        assert_eq!(a.agent_input_bytes, agent_in.to_string().len() as u64);
+        assert_eq!(a.task_input_bytes, task_in.to_string().len() as u64);
+        assert_eq!((a.agent_result_bytes, a.task_result_bytes), (9, 12));
+        let table = r.to_table();
+        assert!(
+            table.contains("agent sessions 2  Agent in ") && table.contains(" Task in "),
+            "{table}"
+        );
+        assert!(table.contains("result/tool_tokens"), "{table}");
+        let js = r.to_json().unwrap();
+        assert!(js.contains("\"agents\""), "{js}");
         fs::remove_dir_all(&dir).ok();
     }
 
