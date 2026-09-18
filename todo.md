@@ -41,4 +41,3 @@
 - T70.6. Compaction on pi and OpenCode through the plugin
 - T71.1. `curl` / `wget` HTML pages as readable text
 - T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
-- T71.3. rtok's own skill, installed with the host plugin
