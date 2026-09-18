@@ -1,9 +1,18 @@
 name: ci
 
+# `push: [main]` stayed off deliberately (#72) — it is what arms `revert-on-failure`, which
+# pushes reverts to main on its own. `pull_request` is the gate the rest of the setup is
+# written against: `verify.yml` calls this "the gate ci.yml applies to every pull request",
+# `release-plz.yml` warns that a pull request opened with GITHUB_TOKEN "would be merged having
+# never run ci.yml", and `save-if` below skips the cache upload "on PRs". #72 meant to keep it
+# ("and pull_request where already present") but this workflow had none to keep, so nothing
+# gated anything: main reached a tree that did not compile, and the open dependabot pull
+# requests have never been checked.
 on:
+  pull_request:
   workflow_dispatch:
 
-# A newer push cancels the previous run for the same ref.
+# A newer commit on the same ref cancels the previous run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
