@@ -33,7 +33,6 @@
 - T64.1. `cmd` grouping pass: files by directory, diagnostics by type
 - T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
-- T65.1. Content-hash dedup of tool output within a session
 - T65.2. `cmd` JSON output compaction
 - T65.3. `cmd` column-padding collapse
 - T65.4. Never cut a stack trace
