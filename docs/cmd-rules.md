@@ -79,3 +79,29 @@ rtok config validate   # names rules.d/*.toml files that do not parse
 plus the single `rules` file and every `rules.d/*.toml` it resolves to. A
 reported file is skipped at runtime until fixed; everything else keeps
 filtering.
+
+## Families (T50.1)
+
+Measured on the golden fixtures in `tests/cmd_golden/` (`rtok filter --stdin`, `Rule` vs
+`Rule::default()` on the same body; est tokens = bytes/4). Table/grouped outputs are
+**not** listed here — they need formatters (**T58.5**).
+
+| Family | `keep` highlights | before B | after B | est saved |
+| --- | --- | ---: | ---: | ---: |
+| `gh` | `error`, `HTTP 4`, `gh:` | 325 | 277 | 12 |
+| `pip` | `ERROR`, `Could not` | 389 | 341 | 12 |
+| `uv` | `error`, `Failed` | 292 | 244 | 12 |
+| `python` / `python3` | `Traceback`, `Error` | 367 | 299 | 17 |
+| `go` | `error`, `panic`, `cannot` | 290 | 242 | 12 |
+| `aws` | `An error occurred`, `AccessDenied` | 349 | 301 | 12 |
+| `mvn` | `BUILD FAILURE`, `[ERROR]` | 419 | 395 | 6 |
+| `gradle` | `BUILD FAILED`, `What went wrong` | 357 | 302 | 13 |
+| `dotnet` | `error CS`, `Build FAILED` | 285 | 237 | 12 |
+| `tsc` | `error TS`, `Found N error` | 373 | 325 | 12 |
+| `eslint` | `error`, `warning`, `problems` | 298 | 250 | 12 |
+| `brew` | `Error:`, `failed` | 310 | 262 | 12 |
+| `apt` | `^E:`, `Unable to` | 293 | 245 | 12 |
+| `cmake` | `CMake Error`, `FAILED` | 317 | 255 | 15 |
+
+Deferred to **T58.5** (rule loses table signal on fixture): `docker ps` (`docker_ps`),
+`kubectl get` (`kubectl_get`), `ps aux` (`ps_aux`).
