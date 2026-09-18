@@ -32,7 +32,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
-| T64.1 | todo | P3 | 3 | 0% | |
+| T64.1 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T64.2 | todo | P3 | 2 | 0% | |
 | T65.1 | todo | P2 | 3 | 0% | |
 | T65.2 | todo | P3 | 3 | 0% | |
@@ -240,6 +240,11 @@ Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets th
 
 From `research.md` §11 (rtk's four strategies, 2026-09-18). rtk groups similar items — files by directory, errors by type; rtok's rule engine (`src/plugins/cmd/rules.rs`) only keeps, drops, cuts by position and folds adjacent duplicates, and the `ls`/`find`/`tree` formatters just take the first 40 lines.
 Done when a rule may set `group = "dir"` (path-per-line output: `find`, `rg -l`, `git status` untracked, `ls -R`) or `group = "diag"` (diagnostics keyed by code or rule id: `cargo` `error[E…]`, `tsc` `TS…`, `eslint` rule, `pytest` exception class), the pass rewrites the lines as `dir/ (N files): a, b, c …` and `E0308 ×N: first message (file:line, …)` before the head/tail cut, stays lossless (raw output archived as today, `expand <id>` trailer), and a fixture per family in `tests/cmd_golden` records before/after bytes that beat the same rule without `group` — a family that does not win is not switched on. T58.5 keeps its per-family formatters; this is the generic pass a TOML rule turns on.
+
+Execution plan:
+1. Parse `group = "dir" | "diag"` on a Rule; apply the pass after drop/keep/collapse/dedupe and before the head/tail cut.
+2. `dir` rewrites path-per-line output as `dir/ (N files): a, b, c …`; `diag` keys rustc `E…`, `tsc` `TS…`, `eslint` rules, `dotnet` `CS…`, pytest/python exception classes as `E0308 ×N: first message (file:line, …)`.
+3. Golden per family vs the same rule without `group`; enable the field in `rules/default.toml` only on a win. Leave T58.5 docker/kubectl/ps formatters; drop the ls/find take(40) stubs so a TOML rule can run. Do not implement T64.2.
 
 ### T64.2. `cmd` dedupe across non-adjacent lines with normalised keys
 
