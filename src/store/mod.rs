@@ -582,6 +582,30 @@ impl Store {
         Ok(())
     }
 
+    /// This session's archived tool results still in the live window, newest first (T58.2).
+    pub fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            id: String,
+            #[diesel(sql_type = Text)]
+            tool: String,
+            #[diesel(sql_type = BigInt)]
+            bytes: i64,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT a.id AS id, COALESCE(NULLIF(a.tool, ''), '-') AS tool, a.bytes AS bytes
+             FROM archive_decisions d
+             JOIN archive a ON a.id = d.archive_id
+             WHERE d.session = ?1
+             ORDER BY a.ts DESC, a.id DESC",
+        )
+        .bind::<Text, _>(session)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| (r.id, r.tool, r.bytes)).collect())
+    }
+
     /// Any pointer text for one archive id (T36.2: attribute expand rows to toon vs archive;
     /// T55.11: the expander — CLI session `expand`, MCP `mcp-<pid>` — never shares a session
     /// with the proxy that wrote the decision, so the lookup is by archive id alone).
