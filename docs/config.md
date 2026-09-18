@@ -115,6 +115,7 @@ timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
 context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
+# TLS: Mozilla webpki roots (`use_preconfigured_tls`). Corporate CAs: SSL_CERT_FILE (PEM, curl). See "TLS and corporate CAs".
 
 [proxy.tools_rewrite]                 # T59.5; max_description_tokens = 0 is off
 max_description_tokens = 0
@@ -380,6 +381,16 @@ the flag is visible in `rtok config show --sources` but has no loader.
 `backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` / `explore` through a
 language server from `PATH` instead of the tags index. Setup walkthrough for
 Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
+
+## TLS and corporate CAs
+
+`rtok proxy` and OpenTelemetry export share one rustls client config: Mozilla
+roots via `webpki-roots`, handed to reqwest with `use_preconfigured_tls`. They
+do not use the macOS Security.framework verifier. Corporate or private CAs:
+set `SSL_CERT_FILE` to a PEM bundle (curl's convention). Those certificates
+extend the Mozilla set. If the variable is set, a missing, empty, or
+unparsable file fails startup with the path in the error (curl parity).
+Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 
 ## OpenTelemetry
 
