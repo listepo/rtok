@@ -3,6 +3,7 @@
 pub mod export;
 pub mod import;
 pub mod status;
+pub mod sync;
 
 use rtok_plugin_sdk::{
     Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PromptSubmit,
