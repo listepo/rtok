@@ -8,7 +8,7 @@ View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tas
 |------|------------------------|
 | core / installers / tests | T53.3, T53.4, T55.12, T56.2, T56.3, T56.5 |
 | `measure` / `report` / docs | T61.1, T59.8, T64.3, T71.4 |
-| `inject` | T52.3, T53.1, T58.2 |
+| `inject` | T52.3, T58.2 |
 | `cmd` / `expand` | T50.1, T58.5, T59.1, T64.1, T64.2, T65.1, T65.2, T65.3, T65.4, T67.2, T71.1 |
 | `read` | T50.3, T58.1, T68.8 |
 | `proxy` / `archive` | T51.1, T55.15, T59.5, T61.2 |
