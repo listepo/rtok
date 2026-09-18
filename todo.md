@@ -13,7 +13,6 @@
 - T61.2. Archive skill bodies outside the live zone
 - T61.3. `doctor` skill audit
 - T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
-- T63.1. Skills page on `tui` and `web`
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.3. `cmd` column-padding collapse
 - T70.1. pi extension shortens every tool result, not only bash

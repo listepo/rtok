@@ -407,6 +407,13 @@ Check: `rtok bench --suite graph --runs 1 --dry-run` prints 24 lines `{id} {repo
 
 **Live API clause remains open.** `RTOK_BENCH_LIVE` was not set; no `claude -p` spend. Dated live numbers are not in `research.md` / `docs/comparison.md`; those files record the suite and the dry-run command only.
 
+## T63.1 — Skills page on `tui` and `web`
+
+Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: which of the 66 listed skills (`research.md` §10.2, this machine) were ever invoked, which never, how many bytes each body is, and how much of the input a session carried as skill bodies. `rtok stats` gains the numbers in T61.1 and `doctor` the audit in T61.3; this task renders both on the same page.
+Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
+
+**Result (2026-09-18).** `model::skills_from` joins T61.3 `SkillsAudit` listing to T61.1 `stats::SkillRow` resident/count (no UI crate file walk). Snapshot `skills` rides `pages()` `("skills", "skills")`. Header uses desc bytes/4 (`research.md` §10.2 ≈ 49 tok vs docs "~100"). Empty listing is "no skills listed"; zero invocations still show the host list. TUI `n` / web checkbox filter never-invoked. Tests: `skills_from_joins_listing_and_resident_without_stats_rows`, `skills_tab_lists_three_rows_and_n_hides_invoked`, `skills_never_only_checkbox_hides_invoked`, `skills_page_exists_on_both_surfaces`.
+
 ## T60.4 — Archive `expand` on `tui` and `web`
 
 Lossless by default means every trailer id is retrievable, but only `rtok expand <id>` retrieves it; the Calls detail on both surfaces prints `ref_id` as text (survey 2026-09-17).
