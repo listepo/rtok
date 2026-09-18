@@ -671,7 +671,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__list)
-            opts="-h --config --help"
+            opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -707,7 +707,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__sessions)
-            opts="-h --all --config --help watch help"
+            opts="-h --all --json --config --help watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1359,7 +1359,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__status)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --json --config --help proxy mcp web"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1413,7 +1413,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__doctor)
-            opts="-h --instructions --config --help"
+            opts="-h --instructions --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1431,7 +1431,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__expand)
-            opts="-h --lines --grep --config --help"
+            opts="-h --lines --grep --context --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1442,6 +1442,10 @@ _rtok() {
                     return 0
                     ;;
                 --grep)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --context)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2441,7 +2445,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__logs)
-            opts="-h --lines --config --help export watch help"
+            opts="-h --lines --json --config --help export watch help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2945,7 +2949,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__otel__subcmd__status)
-            opts="-h --config --help"
+            opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2963,7 +2967,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__plugins)
-            opts="-h --config --help"
+            opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
