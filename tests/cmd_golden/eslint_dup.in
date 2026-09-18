@@ -1,0 +1,23 @@
+argv: eslint src/
+exit: 0
+---
+  0:1  error  Unexpected var  no-var
+  1:1  error  Unexpected var  no-var
+  2:1  error  Unexpected var  no-var
+  3:1  error  Unexpected var  no-var
+  4:1  error  Unexpected var  no-var
+  5:1  error  Unexpected var  no-var
+  6:1  error  Unexpected var  no-var
+  7:1  error  Unexpected var  no-var
+  8:1  error  Unexpected var  no-var
+  9:1  error  Unexpected var  no-var
+  10:1  error  Unexpected var  no-var
+  11:1  error  Unexpected var  no-var
+  12:1  error  Unexpected var  no-var
+  13:1  error  Unexpected var  no-var
+  14:1  error  Unexpected var  no-var
+  15:1  error  Unexpected var  no-var
+  16:1  error  Unexpected var  no-var
+  17:1  error  Unexpected var  no-var
+  18:1  error  Unexpected var  no-var
+  19:1  error  Unexpected var  no-var
