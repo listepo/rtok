@@ -117,6 +117,7 @@ tasks    = "bench/tasks.toml"
 runs     = 3
 dry_run  = false
 timeout_s = 900                       # per task run
+suite    = ""                         # "" = T9.1 six tasks; "graph" = T68.9 with/without MCP
 [bench.configs]                       # name = settings file passed to `claude --settings`
 a = "bench/configs/legacy.json"
 b = "bench/configs/rtok.json"

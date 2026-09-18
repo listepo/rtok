@@ -2,6 +2,7 @@ bench.configs.a = bench/configs/legacy.json
 bench.configs.b = bench/configs/rtok.json
 bench.dry_run = false
 bench.runs = 3
+bench.suite = 
 bench.tasks = bench/tasks.toml
 bench.timeout_s = 900
 core.archive_dir = ~/.rtok/archive
