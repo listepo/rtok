@@ -559,7 +559,7 @@ mod wasm {
         let loc = web_sys::window().expect("window").location();
         let host = loc.host().unwrap_or_else(|_| "127.0.0.1:3333".into());
         let ws = match WebSocket::new(&format!("ws://{host}/ws")) {
-            Ok(ws) => ws,
+            Ok(ws) => Rc::new(ws),
             Err(_) => {
                 schedule_reconnect(&ui.as_weak(), attempt);
                 return;
@@ -575,6 +575,16 @@ mod wasm {
         on_open.forget();
 
         let ui_weak = ui.as_weak();
+        let ws_send = ws.clone();
+        ui.on_toggle_plugin(move |id, value| {
+            let msg = serde_json::json!({
+                "set": {
+                    "key": format!("plugins.{id}.enabled"),
+                    "value": value,
+                }
+            });
+            let _ = ws_send.send_with_str(&msg.to_string());
+        });
         let on_msg = Closure::<dyn FnMut(MessageEvent)>::new(move |ev: MessageEvent| {
             let Some(text) = ev.data().as_string() else {
                 return;
@@ -585,6 +595,11 @@ mod wasm {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
+            if v.get("type").and_then(|t| t.as_str()) == Some("message") {
+                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("error");
+                ui.set_status(SharedString::from(text));
+                return;
+            }
             super::apply_snapshot(&ui, &v);
         });
         ws.set_onmessage(Some(on_msg.as_ref().unchecked_ref()));
