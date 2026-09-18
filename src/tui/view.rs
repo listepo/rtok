@@ -11,7 +11,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs};
+use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs, Wrap};
 
 use super::app::{App, keys_for};
 use crate::store::CallRow;
@@ -293,16 +293,34 @@ fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(Paragraph::new(msg), area);
         return;
     }
-    let (list, detail) = if app.calls_detail() {
-        let [l, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(area);
-        (l, Some(d))
-    } else {
-        (area, None)
+    let expand = app.calls_expand();
+    let (list, detail, expand_area) = match (app.calls_detail(), expand.is_some()) {
+        (true, true) => {
+            let [l, d, e] = Layout::vertical([
+                Constraint::Min(0),
+                Constraint::Length(7),
+                Constraint::Min(6),
+            ])
+            .areas(area);
+            (l, Some(d), Some(e))
+        }
+        (true, false) => {
+            let [l, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(area);
+            (l, Some(d), None)
+        }
+        (false, true) => {
+            let [l, e] = Layout::vertical([Constraint::Min(0), Constraint::Min(8)]).areas(area);
+            (l, None, Some(e))
+        }
+        (false, false) => (area, None, None),
     };
     let selected = app.calls_selected();
     frame.render_widget(calls_table(rows, selected), list);
     if let Some(area) = detail {
-        frame.render_widget(call_detail(&rows[selected]), area);
+        frame.render_widget(call_detail(&rows[selected], app), area);
+    }
+    if let (Some(area), Some((id, text, filtering, filter, scroll))) = (expand_area, expand) {
+        frame.render_widget(expand_pane(id, &text, filtering, filter, scroll), area);
     }
 }
 
@@ -355,7 +373,7 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
 
 /// The selected row's full fields: every column the ledger keeps, the slugs its ids
 /// point at, and the usage/api linkage when the call recorded one.
-fn call_detail(c: &CallRow) -> Paragraph<'static> {
+fn call_detail(c: &CallRow, app: &App) -> Paragraph<'static> {
     let dash = |v: Option<&str>| v.unwrap_or("-").to_string();
     let mut lines = vec![
         Line::from(format!(
@@ -384,6 +402,14 @@ fn call_detail(c: &CallRow) -> Paragraph<'static> {
             "ms {}",
             c.ms.map_or_else(|| "-".into(), |ms| ms.to_string())
         )),
+        Line::from(format!(
+            "ref_id {}",
+            app.snapshot()
+                .ref_ids
+                .get(&c.id)
+                .map(String::as_str)
+                .unwrap_or("-")
+        )),
     ];
     lines.push(Line::from(match (c.api.as_deref(), c.input) {
         (Some(api), Some(input)) => format!(
@@ -396,6 +422,24 @@ fn call_detail(c: &CallRow) -> Paragraph<'static> {
         _ => "usage no row linked (only an api request records one)".to_string(),
     }));
     Paragraph::new(lines).block(Block::default().title(format!("call {}", c.id)))
+}
+
+fn expand_pane(
+    id: &str,
+    text: &str,
+    filtering: bool,
+    filter: &str,
+    scroll: u16,
+) -> Paragraph<'static> {
+    let title = if filtering {
+        format!("expand {id}  /{filter}")
+    } else {
+        format!("expand {id}")
+    };
+    Paragraph::new(text.to_string())
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
+        .block(Block::default().title(title))
 }
 
 /// `HH:MM:SS` — `log::stamp`'s time half; the full date is in the detail view.
@@ -781,6 +825,41 @@ mod tests {
         (cfg, store)
     }
 
+    fn expand_seeded() -> Config {
+        let (mut cfg, store) = fresh_store("expand-calls");
+        store.upsert_session("s", None, None, None, None).unwrap();
+        let call = store
+            .insert_call(
+                "s",
+                "hook",
+                "plugin_run",
+                None,
+                None,
+                None,
+                Some("cmd"),
+                None,
+            )
+            .unwrap();
+        let id = store
+            .put_archive("s", b"other-line\nNEEDLELINE\n", &cfg.core.archive_dir)
+            .unwrap();
+        let rt = Runtime::open(cfg.clone(), "seed").expect("seed runtime");
+        rt.record(&Measurement {
+            plugin: "cmd",
+            kind: "filter",
+            before_bytes: 20,
+            after_bytes: 8,
+            est_before: 5,
+            est_after: 2,
+            ref_id: Some(id),
+            call_id: Some(call),
+        })
+        .unwrap();
+        drop(rt);
+        cfg.tui.tab = "calls".into();
+        cfg
+    }
+
     /// A config whose store holds two sessions, three turns and two measured plugins,
     /// so the Overview tab has numbers worth rendering.
     fn seeded() -> Config {
@@ -969,6 +1048,33 @@ mod tests {
         let open = screen(&app);
         assert!(open.contains("mcp_call"), "the mcp row is the selection");
         assert!(open.contains("no row linked"));
+    }
+
+    /// T60.4: `e` opens the selected call's archive through `expand_payload`; `/`
+    /// filters the pane with grep parity.
+    #[test]
+    fn e_opens_the_archive_pane_and_slash_filters_it() {
+        let mut cfg = expand_seeded();
+        cfg.tui.tab = "calls".into();
+        let mut app = App::new(&cfg);
+        assert_eq!(app.page(), "calls");
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        let detail = screen(&app);
+        assert!(detail.contains("ref_id "), "detail prints the archive id");
+        app.key(KeyCode::Char('e'), KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(
+            open.contains("NEEDLELINE"),
+            "payload is in the pane: {open}"
+        );
+        assert!(open.contains("expand "), "the pane is titled");
+        app.key(KeyCode::Char('/'), KeyModifiers::NONE);
+        for c in "NEEDLE".chars() {
+            app.key(KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        let filtered = screen(&app);
+        assert!(filtered.contains("NEEDLELINE"), "{filtered}");
+        assert!(!filtered.contains("other-line"), "{filtered}");
     }
 
     /// An empty ledger is an empty page, and its keys do nothing — not a panic.
