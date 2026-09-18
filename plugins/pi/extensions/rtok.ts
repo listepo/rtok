@@ -1,11 +1,10 @@
 // rtok pi extension (T10.6, D21): the single bash call path, no MCP.
 //
-// pi philosophy is no MCP: this extension does NOT register tools. It
-// rewrites `bash` calls to `rtok run -- …` (archived, filtered, measured),
-// compresses `bash` results through `rtok filter`, and shrinks the pi
-// `context` message array through `rtok archive rewrite` (T70.2) — the same
-// archive live zone the proxy runs, without a proxy. Every shortened payload
-// carries an `expand <id>` trailer (lossless by default, D4). Missing `rtok`
+// pi philosophy is no MCP: bash still goes through `rtok run` / `rtok filter`.
+// When `[setup.pi] tools = true`, `pi.registerTool` exposes the measured MCP
+// set as thin `rtok mcp --call` wrappers (T70.3) — one call path, not a second
+// read/search. Off by default so those descriptions do not ride every request.
+// Every shortened payload carries an `expand <id>` trailer (D4). Missing `rtok`
 // fails open and names the ketch install (D21).
 //
 // Optional proxy: uncomment the `registerProvider` block to route pi's
@@ -178,6 +177,10 @@ export default function (pi) {
     restore = true;
   });
 
+  pi.on("session_start", async () => {
+    await registerPiTools(pi);
+  });
+
   // Optional proxy (T11.5 pattern): route pi through `rtok proxy`.
   // pi.registerProvider("anthropic", {
   //   baseUrl: "http://127.0.0.1:8790/v1",
@@ -191,6 +194,83 @@ function claudeTool(name) {
   if (l === "edit") return "Edit";
   if (l === "write") return "Write";
   return String(name ?? "");
+}
+
+
+const PI_TOOLS = [
+  {
+    name: "read",
+    label: "Read",
+    description: "Read a file; mode full|lines|map|signatures; range a-b for full|lines.",
+    parameters: { type: "object", properties: { path: { type: "string" }, mode: { type: "string" }, range: { type: "string" } }, required: ["path"] },
+  },
+  {
+    name: "search",
+    label: "Search",
+    description: "Regex search files; path:line: snippet, max hits.",
+    parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, max: { type: "integer" } }, required: ["pattern"] },
+  },
+  {
+    name: "tree",
+    label: "Tree",
+    description: "Compact directory listing with sizes; depth cap.",
+    parameters: { type: "object", properties: { path: { type: "string" }, depth: { type: "integer" } } },
+  },
+  {
+    name: "symbol",
+    label: "Symbol",
+    description: "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
+    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" }, kind: { type: "string" } }, required: ["name"] },
+  },
+  {
+    name: "callers",
+    label: "Callers",
+    description: "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
+    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" } }, required: ["name"] },
+  },
+  {
+    name: "expand",
+    label: "Expand",
+    description: "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
+    parameters: { type: "object", properties: { id: { type: "string" }, lines: { type: "string" }, grep: { type: "string" }, context: { type: "integer" } }, required: ["id"] },
+  },
+  {
+    name: "mem_search",
+    label: "Mem search",
+    description: "Search notes by FTS5; ids, titles, snippets.",
+    parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+  },
+  {
+    name: "mem_get",
+    label: "Mem get",
+    description: "Return one note body by id.",
+    parameters: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
+  },
+];
+
+async function registerPiTools(pi) {
+  if (typeof pi.registerTool !== "function") return;
+  const r = await rtok(["config", "get", "setup.pi.tools"]);
+  if (r.missing || r.stdout.trim() !== "true") return;
+  for (const t of PI_TOOLS) {
+    pi.registerTool({
+      name: t.name,
+      label: t.label,
+      description: t.description,
+      parameters: t.parameters,
+      execute: async (_id, params, signal) => {
+        const out = await rtok(
+          ["mcp", "--call", t.name, "--json", JSON.stringify(params ?? {})],
+          undefined,
+          signal,
+        );
+        if (out.missing) {
+          return { content: [{ type: "text", text: KETCH_HINT }] };
+        }
+        return { content: [{ type: "text", text: String(out.stdout ?? "") }] };
+      },
+    });
+  }
 }
 
 function additionalContext(stdout) {
