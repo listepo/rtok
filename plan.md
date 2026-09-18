@@ -49,7 +49,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T65.3 | todo | P3 | 1 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
 | T67.2 | todo | P3 | 2 | 0% | |
-| T68.1 | in progress | P2 | 4 | 0% | Kimi Code |
 | T68.2 | todo | P3 | 2 | 0% | |
 | T68.3 | todo | P2 | 2 | 0% | |
 | T68.4 | todo | P3 | 2 | 0% | |
@@ -354,11 +353,6 @@ Done when `rules::apply` detects a trace block — Python `Traceback (most recen
 
 From I-54 (`research.md` §12). After T67.1 the model needs two calls to see the lines around a hit (grep, then `--lines`); in rtok's metric every extra call is a turn that re-reads the whole prompt, so one call that returns hit ± N lines is cheaper than two smaller ones.
 Done when `expand` takes `context` (CLI `--context N`, MCP `expand.context`, default 0 = today's output) and, with `grep`, prints each hit with N numbered lines before and after it, overlapping windows merged, windows separated by `--`, still under `expand.max_lines`; without `grep` the flag is ignored; per call like `--grep` (no config key; the `config_coverage` allow-list and the `docs/config.md` row name it); a test with two hits whose windows overlap and one at the file edge; the README example gains the one-call form.
-
-### T68.1. `explore`: one call answers a code question
-
-From the codegraph / graphify review (2026-09-18; https://github.com/colbymchenry/codegraph, https://github.com/Graphify-Labs/graphify). codegraph's single `codegraph_explore` returns, for a free-text question, the matching symbols' source grouped by file, the call paths between them and a blast-radius line; its README claims 88 % fewer tool calls (2–4 vs 6–43) on 7 repos — a vendor number until T68.9 measures it here. rtok answers the same question in three to five calls (`symbol`, `callers`, `impact`, `read`), and in rtok's metric every extra call is a turn that re-reads the whole prompt.
-Done when a fifth MCP tool `explore(query, path?)` splits the query into identifier tokens, resolves each against `symbol_defs` (exact, then prefix on `symbols.name`, best 5 by reference count), prints each definition's body once per file (`body_lines` cap, files in path order), then the call paths between the resolved symbols (T68.4's `to` walk, depth ≤ 3) and one fan-out line per symbol (`impact` depth 1 count); the tags and LSP backends share one assembler; the whole answer goes through `cap` with an archive id; description ≤ 60 tokens and the surface stays ≤ 150 (`graph_surface_is_four_tools_under_150_tokens` re-blessed to five); `tests/graph_contract.rs` pins one two-symbol question byte-exact; `Measurement { plugin = "graph", kind = "explore" }` records bytes returned versus the sum of the calls it replaced. Off the hook path; no indexing on call beyond `auto_index`.
 
 ### T68.2. `symbol` lists what a definition calls
 

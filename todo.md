@@ -46,7 +46,6 @@
 - T65.3. `cmd` column-padding collapse
 - T65.4. Never cut a stack trace
 - T67.2. `expand --context N` around grep hits
-- T68.1. `explore`: one call answers a code question
 - T68.2. `symbol` lists what a definition calls
 - T68.3. Staleness line on every graph answer
 - T68.4. `impact` with a target: call paths between two symbols
