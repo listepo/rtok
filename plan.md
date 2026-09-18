@@ -23,7 +23,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
-| T60.1 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T60.2 | todo | P2 | 3 | 0% | |
 | T60.3 | todo | P3 | 3 | 0% | |
 | T60.4 | todo | P3 | 4 | 0% | |
@@ -193,14 +192,6 @@ Done when:
 
 From I-48 (caveman `learn`, context-budget plugin). `stats` has per-family and per-tool rows and `report` renders the D24 rules; what is missing is "which ten paths and commands cost the most, and which rtok switch would have shortened each".
 Done when `report` gains one rule that prints the top-10 sinks by bytes over the session window (file path for Read/read, first stem for Bash/cmd, server/tool for MCP), each with the switch that applies (`read.default_mode = map`, a `[stem]` rule, `--wrap`, or "none: already shortened"), sourced from `Measurement` rows only, with a fixture test and a line on the report docs page.
-
-### T60.1. `--json` on every reading command
-
-Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
-Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
-
-Execution plan: (1) `--json` on the table-printing readers; serialize `doctor::Report`, `PluginPage`, `SessionTotals`, log lines, `demon::Row`, plus model helpers for agents-list / otel-status — no parallel DTOs. (2) hermetic trycmd goldens like `stats-price`. (3) `docs/config.md` lists `--json` once; `surface_parity` fails a reader without the flag.
-
 
 ### T60.2. trycmd goldens for every subcommand
 
