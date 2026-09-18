@@ -265,8 +265,7 @@ mod tests {
         Ctx::new(&cx)
             .put_read_cache(&key, "dead", Some("no-such-id"))
             .unwrap();
-        let miss =
-            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "c.txt", "full", None).unwrap();
+        let miss = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "c.txt", "full", None).unwrap();
         assert_eq!(miss, "1:keep");
         let _ = fs::remove_dir_all(dir);
         let _ = fs::remove_dir_all(dir2);
@@ -320,8 +319,7 @@ mod tests {
         vfs.write("ws/a.txt", many_lines(None).as_bytes());
         let _ = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None);
         vfs.write("ws/a.txt", many_lines(Some(3)).as_bytes());
-        let out =
-            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "diff", None).unwrap();
+        let out = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "diff", None).unwrap();
         assert!(out.contains("+chg3"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
