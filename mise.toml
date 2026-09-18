@@ -8,3 +8,9 @@ just = "1.58.0"
 node = "26.8.2" # jscpd runs on it; nothing in the binary does
 "npm:jscpd" = "5.1.2" # `just dup` (T26.0): copy-paste detector, config in .jscpd.json
 rust = { version = "1.97.1", components = "rustfmt,clippy" } # CI otherwise installs the minimal profile
+
+# Lightweight Docker-compatible stack (agents: prefer this over Docker Desktop; see docs/colima.md)
+colima = { version = "0.10.3", os = ["linux", "macos"] } # container runtime UI → Lima VM (aqua:abiosoft/colima)
+lima = { version = "2.2.0", os = ["linux", "macos"] } # VM backend Colima drives (aqua:lima-vm/lima)
+docker-cli = "29.8.1" # `docker` client; talks to Colima's Docker daemon (aqua:docker/cli)
+docker-compose = "5.5.1" # standalone `docker-compose` (Compose v5) against the same daemon (github:docker/compose)
