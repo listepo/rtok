@@ -431,6 +431,13 @@ pub trait Symbols {
         let _ = (root, name);
         Ok(Vec::new())
     }
+
+    /// T52.3: names ranked by reference count with one def site:
+    /// `(name, refs, path, line)`, `ORDER BY refs DESC, name ASC`.
+    fn symbol_top_refs(&self, root: &str, limit: i64) -> Result<Vec<(String, i64, String, i32)>> {
+        let _ = (root, limit);
+        Ok(Vec::new())
+    }
 }
 
 // The tests for what a host owes a plugin live beside `testing::MemoryHost`, the host this

@@ -523,6 +523,10 @@ impl Symbols for Runtime {
     fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
         self.store.symbol_import_follow(root, name)
     }
+
+    fn symbol_top_refs(&self, root: &str, limit: i64) -> Result<Vec<(String, i64, String, i32)>> {
+        self.store.symbol_top_refs(root, limit)
+    }
 }
 
 #[cfg(test)]

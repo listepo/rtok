@@ -488,6 +488,51 @@ impl Store {
         Ok(self.symbol_refs(root, name)?.len() as i64)
     }
 
+    /// T52.3: names under `root` ranked by reference count, with one def site
+    /// `(path, line)`. `ORDER BY refs DESC, name ASC` (byte-stable). The def
+    /// site is first by `path ASC, line ASC`. Import rows are not refs.
+    pub fn symbol_top_refs(
+        &self,
+        root: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, i64, String, i32)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            name: String,
+            #[diesel(sql_type = BigInt)]
+            refs: i64,
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Integer)]
+            line: i32,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.name AS name,
+                    (SELECT COUNT(*) FROM symbols r
+                      WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
+                        AND r.kind != 'import') AS refs,
+                    d.path AS path,
+                    d.line AS line
+             FROM symbols d
+             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
+               AND NOT EXISTS (
+                 SELECT 1 FROM symbols e
+                  WHERE e.root = d.root AND e.name = d.name AND e.is_def = 1
+                    AND (e.path < d.path OR (e.path = d.path AND e.line < d.line)))
+             ORDER BY refs DESC, name ASC
+             LIMIT ?",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(limit as i32)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.name, r.refs, r.path, r.line))
+            .collect())
+    }
+
     /// T52.4: definitions with no same-name reference row under `root`,
     /// as `(path, name, kind, line)`. Name-based, like `callers`: a shared
     /// name keeps every same-named definition live. Callers filter pub,
@@ -727,5 +772,86 @@ impl Store {
         .bind::<Text, _>(name)
         .load(&mut *conn)?;
         Ok(rows.into_iter().map(|r| (r.path, r.name)).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(name: &str, line: i32, is_def: bool) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "function".into(),
+            line,
+            is_def,
+            line,
+            String::new(),
+        )
+    }
+
+    fn import(name: &str, line: i32) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "import".into(),
+            line,
+            false,
+            line,
+            String::new(),
+        )
+    }
+
+    #[test]
+    fn top_refs_rank_by_count_then_name() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    row("foo", 1, true),
+                    row("bar", 2, true),
+                    row("aaa", 3, true),
+                    row("zed", 4, true),
+                    row("foo", 10, false),
+                    row("foo", 11, false),
+                    row("bar", 12, false),
+                    row("bar", 13, false),
+                    row("aaa", 14, false),
+                    import("foo", 20),
+                ],
+            )
+            .unwrap();
+        let got = store.symbol_top_refs("/r", 10).unwrap();
+        assert_eq!(
+            got.iter().map(|r| (r.0.as_str(), r.1)).collect::<Vec<_>>(),
+            [("bar", 2), ("foo", 2), ("aaa", 1), ("zed", 0)]
+        );
+        assert_eq!(store.symbol_top_refs("/r", 10).unwrap(), got);
+    }
+
+    #[test]
+    fn top_refs_picks_first_def_site() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols("/r", "b.rs", "s", (0, 0), &[row("dup", 5, true)])
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    row("dup", 9, true),
+                    row("dup", 3, true),
+                    row("dup", 1, false),
+                ],
+            )
+            .unwrap();
+        let got = store.symbol_top_refs("/r", 4).unwrap();
+        assert_eq!(got, vec![("dup".into(), 1, "a.rs".into(), 3)]);
     }
 }
