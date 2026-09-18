@@ -17,11 +17,13 @@ function load(body: string | null) {
   fakeRtok(body);
   const on: Record<string, Handler> = {};
   const entries: [string, string][] = [];
+  const tools: any[] = [];
   extension({
     on: (name: string, fn: Handler) => (on[name] = fn),
     appendEntry: (kind: string, text: string) => entries.push([kind, text]),
+    registerTool: (t: any) => tools.push(t),
   });
-  return { on, entries };
+  return { on, entries, tools };
 }
 
 test("bash calls are rewritten to one quoted `rtok run --`", async () => {
@@ -249,4 +251,37 @@ test("unparsable guard output fails open", async () => {
   const event = { toolName: "bash", input: { command: "ls" } };
   assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
   assert.match(event.input.command, /rtok run/);
+});
+
+const PI_TOOL_NAMES = ["read", "search", "tree", "symbol", "callers", "expand", "mem_search", "mem_get"];
+
+test("tools stay unregistered until setup.pi.tools is true", async () => {
+  const off = load('process.stdout.write("false");');
+  await off.on.session_start({});
+  assert.equal(off.tools.length, 0);
+  const missing = load(null);
+  await missing.on.session_start({});
+  assert.equal(missing.tools.length, 0, "missing rtok fails open");
+});
+
+test("each registered tool is one mcp --call", async () => {
+  const { on, tools } = load(`
+    if (args.includes("config")) process.stdout.write("true");
+    else process.stdout.write(args.join(" "));
+  `);
+  await on.session_start({});
+  assert.deepEqual(tools.map((t) => t.name), PI_TOOL_NAMES);
+  for (const t of tools) {
+    const out = await t.execute("id1", { q: 1 });
+    assert.equal(out.content[0].text, `mcp --call ${t.name} --json {"q":1}`);
+  }
+});
+
+test("registered tool execute fails open when rtok is missing", async () => {
+  const { on, tools } = load('process.stdout.write("true");');
+  await on.session_start({});
+  assert.equal(tools.length, 8);
+  fakeRtok(null);
+  const out = await tools[0].execute("id1", { path: "a.rs" });
+  assert.match(out.content[0].text, /ketch install listepo\/rtok/);
 });
