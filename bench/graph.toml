@@ -1,102 +1,86 @@
-# Graph tool bench schedule (T68.9). Live run: `RTOK_BENCH_LIVE=1 rtok bench --suite graph`.
-# Dry run: `rtok bench --suite graph --dry-run`
-
-[configs]
-graph-on = "bench/configs/graph-on.json"
-graph-off = "bench/configs/graph-off.json"
+# T68.9 — architecture questions with vs without rtok graph MCP.
+# Live spend is gated on RTOK_BENCH_LIVE; dry-run prints the schedule only.
 
 [[repos]]
-name = "rtok"
+id = "rtok"
 path = "."
 
 [[repos]]
-name = "tokio"
-path = "../tokio"
+id = "mini-rs"
+path = "bench/repos/mini-rs"
 
 [[repos]]
-name = "serde"
-path = "../serde"
+id = "mini-py"
+path = "bench/repos/mini-py"
 
-[[tasks]]
-id = "registry"
+[[questions]]
+id = "plugin"
 repo = "rtok"
-prompt = "Which Rust type registers catalogue plugins at startup? Answer with the type name only."
-expect = "Registry"
+prompt = "How does rtok register a plugin? Name the type or file."
+expect = "(?i)plugin"
 
-[[tasks]]
-id = "hook-path"
-repo = "rtok"
-prompt = "What CLI subcommand handles Claude Code hook events? One word."
-expect = "hook"
-
-[[tasks]]
-id = "graph-tools"
-repo = "rtok"
-prompt = "Name one MCP tool the graph plugin exposes for symbol lookup."
-expect = "symbol|callers|impact|outline|explore"
-
-[[tasks]]
-id = "store-backend"
-repo = "rtok"
-prompt = "What database backend holds the symbol index after P39?"
-expect = "SQLite|sqlite"
-
-[[tasks]]
+[[questions]]
 id = "fail-open"
 repo = "rtok"
-prompt = "Hooks must exit 0 in at most how many milliseconds even on error?"
-expect = "10"
+prompt = "What happens when an rtok hook errors? One sentence."
+expect = "(?i)fail.?open|exit 0|unmodified"
 
-[[tasks]]
+[[questions]]
 id = "expand"
 repo = "rtok"
-prompt = "What rtok subcommand retrieves archived full text by id?"
-expect = "expand"
+prompt = "How is a shortened tool result retrieved later?"
+expect = "(?i)expand"
 
-[[tasks]]
-id = "proxy-port"
+[[questions]]
+id = "graph-tools"
 repo = "rtok"
-prompt = "Default local proxy port in config?"
-expect = "8790"
+prompt = "Which MCP tools does the rtok graph plugin expose?"
+expect = "(?i)symbol"
 
-[[tasks]]
-id = "mcp-surface"
+[[questions]]
+id = "store"
 repo = "rtok"
-prompt = "Which rtok subcommand serves MCP tools over stdio?"
-expect = "mcp"
+prompt = "Where does rtok persist measurements and the symbol index?"
+expect = "(?i)sqlite|rtok\\.db"
 
-[[tasks]]
-id = "memory-save"
+[[questions]]
+id = "surfaces"
 repo = "rtok"
-prompt = "Name the MCP tool that upserts a note by project+kind+title."
-expect = "mem_save"
+prompt = "What are rtok's three host surfaces?"
+expect = "(?i)hook|mcp|proxy"
 
-[[tasks]]
-id = "inject-budget"
-repo = "rtok"
-prompt = "Which plugin owns SessionStart mode injections under a token budget?"
-expect = "inject"
+[[questions]]
+id = "sink-def"
+repo = "mini-rs"
+prompt = "Where is function sink defined?"
+expect = "sink"
 
-[[tasks]]
-id = "archive-lossless"
-repo = "rtok"
-prompt = "Complete: anything shortened must be retrievable via rtok ___ <id>."
-expect = "expand"
+[[questions]]
+id = "sink-callers"
+repo = "mini-rs"
+prompt = "Which functions call sink?"
+expect = "alpha|beta"
 
-[[tasks]]
-id = "graph-impact"
-repo = "rtok"
-prompt = "Which graph MCP tool walks caller chains up to a depth?"
-expect = "impact"
+[[questions]]
+id = "sink-impact"
+repo = "mini-rs"
+prompt = "What breaks if sink changes?"
+expect = "alpha|gamma"
 
-[[tasks]]
-id = "tokio-runtime"
-repo = "tokio"
-prompt = "What is the primary async runtime crate family in the Rust ecosystem?"
-expect = "tokio"
+[[questions]]
+id = "render-callers"
+repo = "mini-py"
+prompt = "Who calls render?"
+expect = "handler"
 
-[[tasks]]
-id = "serde-format"
-repo = "serde"
-prompt = "Which crate is the de-facto Rust serialization framework?"
-expect = "serde"
+[[questions]]
+id = "main-flow"
+repo = "mini-py"
+prompt = "What does main call?"
+expect = "handler"
+
+[[questions]]
+id = "config-class"
+repo = "mini-py"
+prompt = "Where is class Config defined?"
+expect = "Config"
