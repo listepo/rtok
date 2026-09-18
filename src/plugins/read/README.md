@@ -10,18 +10,23 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
 
 ## Tools
 
-- `read(path, mode=full|lines|map|signatures, range?)` — numbered lines; `map` and
+- `read(path, mode=full|lines|map|signatures|diff, range?)` — numbered lines; `map` and
   `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go) or a
   Markdown heading scan (`.md`, `.mdx`: level, line number, first body line; fenced blocks
   skipped); unknown language → first 60 lines + note. Output over 20 K chars → head/tail +
-  archive id.
+  archive id. `diff` is the edit → verify form of the automatic delta below.
 - `search(pattern, path, max=50)` — regex over files respecting `.gitignore`;
   `path:line: snippet` (≤ 120 chars).
 - `tree(path, depth=2)` — compact listing with sizes.
 - Re-read dedup: same session, same path, same sha256, same mode/range →
-  `unchanged since <archive_id> (N lines)`. Invalidated by PostToolUse(Edit|Write).
+  `unchanged since <archive_id> (N lines)` (≤ 13 estimated tokens on the T58.1 fixture).
+- Changed re-read (T58.1): a later `read` of a file that changed since the last archive
+  returns a unified diff plus `previous <id>` / `expand <id>` of the full file, when the
+  diff is below `delta_max_ratio` of the file (default 0.6). Measured 2026-09-18
+  (`rtok stats --since 90d`, 959 sessions): 593 such re-reads, **7.3 %** of Read bytes.
 - PreToolUse(Read) advice: native `Read` of a file > 32 K that was not edited in the last
-  5 turns is denied with "use rtok read(mode=map) first". Never for files under 32 K.
+  5 turns is denied with "use rtok read(mode=map) first". After an Edit of a file already
+  in the read cache, the deny points at `read(mode=diff)` instead. Never for files under 32 K.
 
 Root guard: paths must be under cwd or `allow_paths`.
 
@@ -32,6 +37,8 @@ Root guard: paths must be under cwd or `allow_paths`.
 enabled = true
 native_max_bytes = 32768     # PreToolUse(Read) deny threshold
 allow_paths = []             # extra roots outside cwd
+delta = true                 # T58.1: changed re-read → unified diff (7.3 % of Read bytes)
+delta_max_ratio = 0.6        # full file when the diff is not below this fraction
 ```
 
 ## Tasks

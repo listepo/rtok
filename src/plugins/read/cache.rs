@@ -313,4 +313,16 @@ mod tests {
         let _ = first;
         let _ = fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn mode_diff_reads_the_full_cache() {
+        let (cx, mut vfs, dir) = vfs_cx("mode-diff");
+        vfs.write("ws/a.txt", many_lines(None).as_bytes());
+        let _ = read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "full", None);
+        vfs.write("ws/a.txt", many_lines(Some(3)).as_bytes());
+        let out =
+            read_with(&Ctx::new(&cx), &vfs, Path::new("ws"), "a.txt", "diff", None).unwrap();
+        assert!(out.contains("+chg3"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
 }
