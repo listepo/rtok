@@ -352,7 +352,7 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
 }
 
 /// Bump when [`scoped`] changes (T35.5).
-const INDEX_VERSION: u32 = 2;
+const INDEX_VERSION: u32 = 3;
 
 /// Hex sha256 of `INDEX_VERSION` and every query string [`outline::config`] compiles —
 /// tags **and** locals, because a language whose locals query changed produces different
@@ -396,6 +396,21 @@ fn extractor_fingerprint() -> String {
         bytes.extend_from_slice(tree_sitter_typescript::LOCALS_QUERY.as_bytes());
         bytes.extend_from_slice(outline::JS_IMPORT.as_bytes());
     }
+    #[cfg(feature = "lang-java")]
+    bytes.extend_from_slice(tree_sitter_java::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-kotlin")]
+    bytes.extend_from_slice(outline::KOTLIN_TAGS.as_bytes());
+    #[cfg(feature = "lang-swift")]
+    bytes.extend_from_slice(tree_sitter_swift::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-csharp")]
+    bytes.extend_from_slice(outline::CSHARP_TAGS.as_bytes());
+    #[cfg(feature = "lang-ruby")]
+    {
+        bytes.extend_from_slice(tree_sitter_ruby::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_ruby::LOCALS_QUERY.as_bytes());
+    }
+    #[cfg(feature = "lang-php")]
+    bytes.extend_from_slice(tree_sitter_php::TAGS_QUERY.as_bytes());
     store::hex_sha256(&bytes)
 }
 

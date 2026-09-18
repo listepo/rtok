@@ -154,6 +154,21 @@ fn suffixes() -> Vec<PathBuf> {
     }
     #[cfg(feature = "lang-go")]
     s.push(PathBuf::from("go"));
+    #[cfg(feature = "lang-java")]
+    s.push(PathBuf::from("java"));
+    #[cfg(feature = "lang-kotlin")]
+    {
+        s.push(PathBuf::from("kt"));
+        s.push(PathBuf::from("kts"));
+    }
+    #[cfg(feature = "lang-swift")]
+    s.push(PathBuf::from("swift"));
+    #[cfg(feature = "lang-csharp")]
+    s.push(PathBuf::from("cs"));
+    #[cfg(feature = "lang-ruby")]
+    s.push(PathBuf::from("rb"));
+    #[cfg(feature = "lang-php")]
+    s.push(PathBuf::from("php"));
     s
 }
 

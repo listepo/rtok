@@ -11,7 +11,7 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
 ## Tools
 
 - `read(path, mode=full|lines|map|signatures, range?)` — numbered lines; `map` and
-  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go);
+  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go, Java, Kotlin, Swift, C#, Ruby, PHP);
   unknown language → first 60 lines + note. Output over 20 K chars → head/tail + archive id.
 - `search(pattern, path, max=50)` — regex over files respecting `.gitignore`;
   `path:line: snippet` (≤ 120 chars).
