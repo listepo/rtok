@@ -1,4 +1,3 @@
-- T48.8. VS Code Copilot Chat host
 - T50.1. More `cmd` filter families
 - T50.3. Extra `read` modes
 - T52.2. More grammars and compressed index payloads
