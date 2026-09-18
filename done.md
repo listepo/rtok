@@ -323,6 +323,18 @@ Check: `cargo test --lib -- plugins::cmd::` 64 passed, including JSON compact, u
 
 ---
 
+## T58.1 — `read` delta since last read
+
+From the competitive gap review (`research.md` §9.3, §9.4 item 2; idea I-41; precedent: lean-ctx `diff` read mode, token-optimizer-mcp delta reads). Read is 15 % of tool-result tokens on the measured workload and the top single results are Reads. The sha256 dedup already answers an unchanged re-read with one line; a re-read of a file that changed since (typically after an Edit) still returns the whole file. The previous read's archive id is already stored, so a unified diff against it is the lossless short form.
+Done when:
+1. Evidence first: over real transcripts (`measure::stats::collect`) count Read calls of a path already read in the same session with an Edit/Write to that path in between, and their bytes; record in `research.md` §2 with date and command. Below 3 % of Read bytes → close the card with the number and no code.
+2. MCP `read` (and the PreToolUse advice for native Read) answers such a re-read with a unified diff against the archived previous content plus that archive id; full content when the diff is not below `read.delta_max_ratio` (default 0.6) of the file or the previous archive is gone. Lossless: `expand <id>` of the new result returns the full file.
+3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
+4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
+5. Parity with lean-ctx: its `diff` mode is opt-in per call and its unchanged re-read costs ~13 tokens (own README). rtok's delta is automatic (no mode to remember) and also reachable as `mode = "diff"` for the edit → verify flow; the unchanged-re-read line is measured on the same fixture and stays ≤ 13 tokens or the card says why.
+
+**Result (2026-09-18, `rtok stats --since 90d`, 959 sessions):** 593 native Read calls of a path already read in-session with Edit/Write/MultiEdit in between; 1.79 MB of 24.61 MB Read result bytes (**7.3 %**) — above the 3 % gate. Landed: `ReadDeltaRow` in `stats`; MCP `read` returns a unified diff (`similar` via `render::unified_diff`) against the archived previous raw file plus `previous <id>` / `expand <id>` of the full file; full fallback when the diff is not below `read.delta_max_ratio` (default 0.6) or the archive is gone; `read.delta = true` by default; PreToolUse advice on a cached large file after Edit points at `mode=diff`; Vfs tests cover unchanged / small / large / missing archive / CRLF; unchanged re-read ≤ 13 estimated tokens on the fixture.
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
