@@ -9,7 +9,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T48.8 | todo | P2 | 3 | 0% | |
 | T50.1 | todo | P2 | 3 | 0% | |
 | T50.3 | todo | P3 | 3 | 0% | |
-| T52.2 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T53.1 | todo | P3 | 3 | 10% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
@@ -80,16 +79,6 @@ Done when:
 
 From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
 Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
-
-### T52.2. More grammars and compressed index payloads
-
-From I-16. Tags cover Rust, TS, JS, Python, Dart, C and Go. Java, Kotlin, Swift, C#, Ruby and PHP repos get no `symbol`/`outline`, and large indexes store plain text.
-Done when each added grammar is an optional feature (dependency reasons in the commit, creator approval for new crates) with a fixture test, and index payload compression is added only if a large repo's `rtok.db` size is measured before and after.
-
-Execution plan (Cursor / grok 4.6; worktree t52.2 from t52.3):
-1. Optional features `lang-java`/`lang-kotlin`/`lang-swift`/`lang-csharp`/`lang-ruby`/`lang-php` on crates.io grammars that already speak `tree-sitter-language` (no tree-sitter 0.25 bump). Skip a crate that fails to compile and record why here.
-2. Wire `outline.rs` + watchman suffixes + extractor fingerprint (`INDEX_VERSION` bump); one small fixture per added language. T8.8 `graph_truth` stays green.
-3. Measure this-repo `rtok.db` before/after a payload-compression trial; add compression only if the db shrinks enough to matter; record both sizes in `research.md`.
 
 ### T53.1. Coaching nudges under an A/B
 
