@@ -255,8 +255,85 @@ fn graph_one(
     arm: &str,
     cfg: &Config,
 ) -> (u64, u64, u64, u64, u64, f64, u64, String) {
-    let _ = (prompt, repo, arm, cfg);
-    (0, 0, 0, 0, 0, 0.0, 0, String::new())
+    let z = (0, 0, 0, 0, 0, 0.0, 0, String::new());
+    if std::env::var("RTOK_BENCH_LIVE").is_err() {
+        return z;
+    }
+    let start = Instant::now();
+    let prefixed = if arm == "mcp" {
+        format!("Prefer rtok MCP graph tools (symbol, callers, impact, outline, explore). {prompt}")
+    } else {
+        format!("Use only Read and Grep. Do not use MCP. {prompt}")
+    };
+    let mut cmd = Command::new("claude");
+    cmd.current_dir(repo)
+        .args(["-p", &prefixed, "--output-format", "json"]);
+    let mcp = std::env::temp_dir().join(format!("rtok-bench-mcp-{}.json", std::process::id()));
+    if arm == "mcp" {
+        let _ = std::fs::write(
+            &mcp,
+            r#"{"mcpServers":{"rtok":{"command":"rtok","args":["mcp"]}}}"#,
+        );
+        cmd.arg("--mcp-config").arg(&mcp);
+    } else {
+        cmd.args(["--allowedTools", "Read,Grep,Glob"]);
+    }
+    let Some(out) = run_bounded(&mut cmd, Duration::from_secs(cfg.bench.timeout_s.max(1))) else {
+        return z;
+    };
+    let v: Value = serde_json::from_slice(&out).unwrap_or(Value::Null);
+    let u = v.get("usage").cloned().unwrap_or(Value::Null);
+    let input = num(&u, "input_tokens");
+    let cache = num(&u, "cache_read_input_tokens");
+    let write = num(&u, "cache_creation_input_tokens");
+    let output = num(&u, "output_tokens");
+    let tools = count_tool_uses(&v);
+    let wall = v
+        .get("duration_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(start.elapsed().as_millis() as u64);
+    let model = v.get("model").and_then(Value::as_str).unwrap_or("");
+    let cost = cfg
+        .stats
+        .prices
+        .get(model)
+        .map(|p| {
+            crate::measure::stats::row_cost(
+                input as i64,
+                write as i64,
+                cache as i64,
+                output as i64,
+                p,
+            )
+            .0
+        })
+        .unwrap_or(0.0);
+    let result = v
+        .get("result")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    (
+        tools,
+        input,
+        output,
+        cache,
+        wall,
+        cost,
+        input + cache,
+        result,
+    )
+}
+
+fn count_tool_uses(v: &Value) -> u64 {
+    match v {
+        Value::Object(m) => {
+            u64::from(m.get("type").and_then(Value::as_str) == Some("tool_use"))
+                + m.values().map(count_tool_uses).sum::<u64>()
+        }
+        Value::Array(a) => a.iter().map(count_tool_uses).sum(),
+        _ => 0,
+    }
 }
 
 fn write_results(by: &BTreeMap<String, Acc>, tasks: usize, cfg: &Config) {
