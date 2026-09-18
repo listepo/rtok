@@ -11,11 +11,7 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 
 | Module | Support | Why |
 | --- | --- | --- |
-<<<<<<< HEAD
-| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `sessionStart` → SessionStart, `preCompact` → PreCompact, `afterMCPExecution` → AfterMCPExecution; all `--host cursor` (injection via flat `additional_context`) |
-=======
-| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `postToolUse` (MCP, `updated_mcp_tool_output`) → PostToolUse, all `--host cursor` |
->>>>>>> 0171455 (T70.4: document Cursor postToolUse MCP result replacement)
+| hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `sessionStart` → SessionStart, `preCompact` → PreCompact, `afterMCPExecution` → AfterMCPExecution, `postToolUse` (MCP, `updated_mcp_tool_output`) → PostToolUse; all `--host cursor` (injection via flat `additional_context`) |
 | mcp | yes | `mcpServers.rtok` in `mcp.json`, or served by the linked plugin (then `mcp.json` is left alone: one MCP per store) |
 | plugin | `--yes` | the offer links `plugins/cursor` (hooks + MCP as one unit); without a terminal only `--yes` accepts |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
@@ -34,11 +30,7 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Plugins (manifest `.cursor-plugin/plugin.json`, local install `~/.cursor/plugins/local/<name>`): https://cursor.com/docs/plugins
 - Manifest reference (`hooks`, `mcpServers` fields): https://cursor.com/docs/reference/plugins
-<<<<<<< HEAD
-- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `sessionStart`, `preCompact`, `afterMCPExecution`): https://cursor.com/docs/agent/hooks
-=======
-- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `postToolUse` / `updated_mcp_tool_output`): https://cursor.com/docs/agent/hooks
->>>>>>> 0171455 (T70.4: document Cursor postToolUse MCP result replacement)
+- Hooks (`~/.cursor/hooks.json`, `"version": 1`, `beforeShellExecution`, `afterShellExecution`, `sessionStart`, `preCompact`, `afterMCPExecution`, `postToolUse` / `updated_mcp_tool_output`): https://cursor.com/docs/agent/hooks
 - MCP (`~/.cursor/mcp.json`, `mcpServers.<name>.command` / `args`): https://cursor.com/docs/context/mcp
 - Skills (`~/.cursor/skills/<name>/SKILL.md`): https://cursor.com/docs/skills
 - The linked bundle: `plugins/cursor/README.md`
