@@ -57,7 +57,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
 | T70.5 | todo | P3 | 3 | 0% | |
-| T70.6 | todo | P3 | 3 | 0% | |
+| T70.6 | in progress | P3 | 3 | 10% | Cursor / grok 4.6 |
 | T70.7 | todo | P2 | 2 | 0% | |
 | T71.1 | todo | P3 | 3 | 0% | |
 | T71.2 | todo | P3 | 3 | 0% | |
@@ -417,6 +417,14 @@ Done when:
 3. Where the host accepts a summary, the plugin returns the rendered checkpoint **appended to** the host's own summary, never replacing it: rtok's checkpoint is prompts, paths, errors and ids, not a conversation summary, and replacing the summary would lose what the host knows.
 4. Restore: the next call injects the checkpoint the way `inject::session_start` does on `source = "compact"`, inside the same budget (D5).
 5. Tests per plugin for a compaction with and without rtok present (fail open), a Rust test that the injected bytes equal Claude Code's for the same store, and both READMEs updated with verified links; cross-reference T58.2 so the two cards do not both claim the host list.
+
+**Execution plan.** T58.2 owns Claude/Cursor/Codex/Copilot hook registration; this card owns only the pi and OpenCode **plugins**. Verify current docs, then each plugin shells `rtok hook PreCompact --host <host>` (reuse `checkpoint::save`) and `PostCompact` / `SessionStart source=compact` for restore bytes. Do not reimplement the checkpoint in TypeScript.
+
+**Step 1 findings (2026-09-18).**
+
+pi — docs: https://pi.dev/docs/latest/compaction and https://pi.dev/docs/latest/extensions (`session_before_compact`). Return is `{ cancel: true }` or `{ compaction: { summary, firstKeptEntryId, tokensBefore, usage?, details? } }`, which **replaces** the host summarizer. There is no append field; `customInstructions` is input (`/compact` text), not a return. `session_compact` after success is observational (the `compactionEntry` is already saved). Real sessions on this machine (`~/.pi/agent/sessions`, jsonl `version: 3`) have `session` / `message` / `toolCall` rows and **no** `type: compaction` entries — compaction never fired here. Close the summary-return half: do not return `compaction.summary`. Save via PreCompact; restore on the next `context` call from PostCompact `additionalContext`.
+
+OpenCode — docs: https://opencode.ai/docs/plugins/ (Compaction hooks). Event `experimental.session.compacting`, input `{ sessionID }`, output `{ context: string[], prompt?: string }`. `output.context.push` appends to the default compaction prompt; setting `output.prompt` **replaces** it (`context` ignored). Real session: `~/.local/share/opencode/opencode.db` message rows with `mode=compaction`, `agent=compaction`, `summary=true` — the LLM summarizer ran; the hook fires before that turn. Append the budgeted checkpoint via `context.push`, never set `prompt`. Restore: next `experimental.chat.system.transform` injects PostCompact `additionalContext` into `output.system`.
 
 ### T70.7. Cursor: `inject` has no path in, and the host table says it does
 
