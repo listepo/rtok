@@ -104,6 +104,11 @@ servers together cost more per turn than rtok's entire injection budget. `graph`
 The trade is real, though, and §5 states it: serena resolves references that rtok's
 tree-sitter tags index misses.
 
+A with/without graph bench now exists (`rtok bench --suite graph`, `bench/graph.toml`,
+T68.9). Dry-run on 2026-09-18: `rtok bench --suite graph --runs 1 --dry-run` (12 questions
+× 3 repos × mcp/native, no API spend). Live numbers are not in yet; vendor with/without
+claims wait for §5 beside rtok's own row.
+
 ### Memory — claude-mem, engram, mem0
 
 Notes that survive compaction. claude-mem extracts them with an LLM, which costs tokens to
@@ -187,8 +192,9 @@ cache-preserving proxy rewrites exist for exactly this reason.
    plugin to claim one, and `rtok stats --plugin <id>` prints them. The proxy writes
    provider-reported `usage`, which is the actual bill rather than a chars/4 estimate.
 4. **It admits what it has not proven.** The committed A/B bench ran offline and reports
-   zeros; the README says so. Every vendor number in §2 that was independently checked came
-   in 5–10× below its claim.
+   zeros; the README says so. The graph with/without suite (`rtok bench --suite graph
+   --dry-run`, 2026-09-18) prints a schedule and no dollars. Every vendor number in §2 that
+   was independently checked came in 5–10× below its claim.
 5. **It cannot break your agent.** A hook exits 0 with unmodified input on any error or
    panic, inside 10 ms. A half-installed or crashing rtok is a no-op, not an outage.
 6. **It does not fight the cache.** Injections are budgeted and byte-stable across turns;
@@ -212,8 +218,10 @@ cache-preserving proxy rewrites exist for exactly this reason.
 
 Stated plainly, because §4 is only worth reading if this section exists.
 
-- **No live end-to-end cost win has been demonstrated.** The A/B harness runs; it has not
-  been run against live traffic. Until it is, rtok's own claim is "measurable", not "cheaper".
+- **No live end-to-end cost win has been demonstrated.** The A/B harness and the graph
+  with/without suite (`rtok bench --suite graph`) run; neither has been run against a live
+  API bill (T68.9 live clause is open). Until one is, rtok's own claim is "measurable", not
+  "cheaper", and vendor 88 % / 62 % figures stay next to an empty rtok row.
 - **`graph` finds every definition and misses most references.** Definition recall and
   precision are 1.000 over a 30-symbol hand-labelled set; reference recall is **0.351**,
   because the tree-sitter tags query does not capture type positions or macro bodies.
