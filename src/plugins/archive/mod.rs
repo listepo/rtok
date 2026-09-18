@@ -17,7 +17,7 @@
 use serde_json::Value;
 
 use rtok_plugin_sdk::{
-    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, SkillRef, Surface, ToolResultRef,
+    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, Surface, ToolResultRef,
     WireRequest,
 };
 
@@ -49,7 +49,6 @@ impl Plugin for Archive {
         }
         let mut out = rewrite(req.tool_results(), cx);
         out.extend(rewrite_blobs(req.live_blobs(), cx));
-        out.extend(rewrite_skills(req.skills(), cx));
         out
     }
 }
@@ -75,50 +74,6 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
         .collect();
     record_run(&mut out, cx);
     out
-}
-
-pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
-    if !cx.plugin_config::<crate::config::Archive>("archive").skills {
-        return Vec::new();
-    }
-    let keep = cx.plugin_config::<crate::config::Archive>("archive").keep_turns as usize;
-    let mut out: Vec<Measurement> = skills
-        .into_iter()
-        .filter(|s| s.turn >= keep)
-        .filter_map(|s| rewrite_skill(&s.id, &s.name, s.content, cx))
-        .collect();
-    record_run(&mut out, cx);
-    out
-}
-
-fn rewrite_skill(id: &str, name: &str, content: &mut serde_json::Value, cx: &Ctx) -> Option<Measurement> {
-    let text = content.as_str()?.to_owned();
-    let key = format!("skill:{id}");
-    let (archive_id, live) = match cx.archive_decision(&key) {
-        Ok(Some(d)) if d.expanded => return None,
-        Ok(Some(d)) => (d.archive_id, d.pointer),
-        Ok(None) => {
-            let archive_id = cx.put_archive(text.as_bytes()).ok()?;
-            let n = text.lines().count();
-            let short = &id[..id.len().min(12)];
-            let live = format!("[archived {short}: skill {name} · {n} lines · expand({archive_id})]");
-            cx.put_archive_decision(&key, &archive_id, &live).ok()?;
-            (archive_id, live)
-        }
-        Err(_) => return None,
-    };
-    let m = Measurement {
-        plugin: "archive",
-        kind: "skill",
-        before_bytes: text.len() as u64,
-        after_bytes: live.len() as u64,
-        est_before: cx.estimate(&text, Class::Prose),
-        est_after: cx.estimate(&live, Class::Prose),
-        ref_id: Some(archive_id),
-        call_id: None,
-    };
-    *content = serde_json::Value::String(live);
-    Some(m)
 }
 
 /// Shrink large non-result payloads inside the live zone (T51.1): nested JSON dumps
