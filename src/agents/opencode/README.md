@@ -38,5 +38,5 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Config (`~/.config/opencode/opencode.json`): https://opencode.ai/docs/config/
 - MCP (`mcp.<name>` with `type: "local"`, `command` array, `enabled`): https://opencode.ai/docs/mcp-servers/
-- Plugins (`~/.config/opencode/plugins/`, `.opencode/plugins/`, `tool.execute.after`): https://opencode.ai/docs/plugins/
+- Plugins (`~/.config/opencode/plugins/`, `.opencode/plugins/`, `tool.execute.before` throw, `tool.execute.after`): https://opencode.ai/docs/plugins/
 - Skills (`skills/<name>/` beside config): https://opencode.ai/docs/skills

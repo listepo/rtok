@@ -17,8 +17,8 @@ No config file is edited: the install is one linked extension, `<extensions_path
 
 ## rtok plugins this host reaches
 
-The extension owns the bash call path (`tool_call` bash → `rtok run -- …`, `tool_result` bash →
-`rtok filter`), pi's file/search tools (`tool_result` read/grep/find/ls →
+The extension owns the bash call path (`tool_call` → `rtok guard check` then bash → `rtok run -- …`,
+`tool_result` bash → `rtok filter`), pi's file/search tools (`tool_result` read/grep/find/ls →
 `rtok filter --stdin --cmd "<tool> <path-or-pattern>"`, T70.1), and the archive live zone
 without a proxy (`context` → `rtok archive rewrite --stdin`, T70.2) — all `cli` surface.
 Hook, MCP and proxy surfaces have no path in.
@@ -30,6 +30,6 @@ Not reachable: read, proxy, inject, guard, memory, graph, toon, compress
 
 Host documentation setup writes against; re-check the links when this host changes.
 
-- Extensions (`~/.pi/agent/extensions/*.ts` or `*/index.ts`; `tool_call`, `tool_result`, `context`): https://pi.dev/docs/latest/extensions
+- Extensions (`~/.pi/agent/extensions/*.ts` or `*/index.ts`; `tool_call` `{block, reason}`, `tool_result`, `context`): https://pi.dev/docs/latest/extensions
 - Packages (`package.json` `pi` key, `pi install <path>`): https://pi.dev/docs/latest/packages
 - The linked bundle: `plugins/pi/README.md`

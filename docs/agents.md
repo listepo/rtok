@@ -52,7 +52,7 @@ rtok has three surfaces of its own (hook, MCP, proxy), and each has a hard edge:
   `Grep` or foreign MCP result enters context whole.
 - The **`archive` live zone runs inside `rtok proxy`**. A host with no base-URL setting never
   shrinks an old tool result, however long the session runs.
-- A **host with no hook events reaches no hook plugin**, so `inject` and `guard` have no way in.
+- A **host with no hook events reaches no hook plugin**, so `inject` has no way in. `guard` reaches pi and OpenCode through `rtok guard check` on the linked plugin (T70.5).
 
 A **host plugin** — the directory under `plugins/<host>/` that `rtok agents install <host>`
 links — sits inside the host process and is not bound by those edges. Where a host's plugin API
