@@ -32,7 +32,6 @@
 - T68.5. `affected`: which tests a change touches
 - T68.6. Import edges in the index
 - T68.9. With / without bench for the graph tools
-- T69.2. Recall ranking: recency decay and use counts, off by default
 - T69.3. Memory recall bench: planted, drifted, superseded facts
 - T69.6. `rtok memory sync`: a managed block in `CLAUDE.md` / `AGENTS.md`
 - T70.1. pi extension shortens every tool result, not only bash
