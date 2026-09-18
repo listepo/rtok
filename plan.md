@@ -22,7 +22,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
-| T68.5 | todo | P2 | 3 | 0% | |
 | T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
@@ -147,11 +146,6 @@ Asked 2026-09-18. Nothing on the operator surfaces shows what the skills cost: w
 Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets the same page (D23: one `model` accessor, two renderings, `tests/surface_parity.rs` asserts the page exists on both): one row per skill the host lists — name, source (user / project / plugin), description chars, body bytes, invocations in the window, bytes resident (T61.1's column), last invoked — sorted by resident bytes, never-invoked rows marked; a header line with totals (skills listed, description bytes ≈ tokens per request, resident bytes in the window, share of input tokens); TUI `↑/↓` + `n` toggling never-invoked-only, web the same as a checkbox; empty state when the store has no skill rows yet ("run T61.1's `rtok stats` first" is not acceptable — the listing half from T61.3 renders even with zero invocations). Gated on T61.1 and T61.3 landing; tests: a `TestBackend` snapshot with three skills (one never invoked) and a Slint e2e case for the filter.
 
 
-
-### T68.5. `affected`: which tests a change touches
-
-From the codegraph / graphify review. codegraph `affected` traces a diff to the test files it reaches so the agent runs those instead of the suite; rtok has `impact(name)` and `is_test_path`, and no path from "these files changed" to "run these tests", so `cargo test` / `pytest` output — the largest Bash family in `research.md` §2 — is paid for the whole suite.
-Done when `rtok graph affected [--since <ref> | --staged]` (CLI, `--json`) takes changed files from `git diff --name-only` (no libgit — `cmd` already shells out to git), their definitions from `symbol_defs`, `impact_bfs` to `depth` (default 3), and prints the reachable definitions whose file passes `is_test_path` as `test file ← via symbol` grouped by file, with the command to run them per language (`cargo test <name>`, `pytest path::name`, `go test -run`, `vitest path`); MCP `impact` accepts `path` alone (no `name`) with the same semantics; an empty result says `no indexed test reaches the change; run the suite`; `Measurement { kind = "affected" }` is written only when a transcript or T68.9 shows the subset actually ran (before = the suite's last measured bytes, after = the subset's), never on the print alone; test on a fixture repo with two tests, one reaching the change.
 
 ### T68.6. Import edges in the index
 
