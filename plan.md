@@ -7,7 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T48.8 | todo | P2 | 3 | 0% | |
-| T50.3 | todo | P3 | 3 | 0% | |
 | T52.2 | todo | P3 | 3 | 0% | |
 | T52.3 | todo | P3 | 4 | 10% | |
 | T53.1 | todo | P3 | 3 | 10% | |
@@ -38,10 +37,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 From I-17. GitHub Copilot Chat in VS Code reads MCP servers from the user `mcp.json` (`servers.<name>`, `type: "stdio"`) in the VS Code profile dir, and agent mode may run hooks; T46.4 covered only the Copilot CLI and the desktop app.
 Done when the VS Code user dir per OS (Code, Code - Insiders) is resolved, `rtok agents install vscode` registers `servers.rtok`, hooks are added only if VS Code documents a hook file the T46.3 Copilot mapping can serve, remove keeps foreign servers, and the host joins the e2e matrix, config and docs.
 
-### T50.3. Extra `read` modes
-
-From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
-Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
 
 ### T52.2. More grammars and compressed index payloads
 
