@@ -25,6 +25,10 @@ pub struct Rule {
     /// their bytes on alignment. TOML rules keep it off unless they ask.
     pub collapse_columns: bool,
     pub group: Group,
+    /// T65.2: first N array elements kept; the rest is `… +K more`.
+    pub json_items: u32,
+    /// T65.2: strings longer than this are cut with their character length.
+    pub json_string: u32,
 }
 
 const BUILTIN_KEEP: &[&str] = &["error", "warning", "panic", "fail", "traceback"];
@@ -235,7 +239,7 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
         for (field, _) in t.iter() {
             match field {
                 "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" | "collapse_columns"
-                | "group" => {}
+                | "group" | "json_items" | "json_string" => {}
                 _ => return Err(format!("[{k}].{field}: unknown field")),
             }
         }
@@ -255,6 +259,8 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
                     .ok_or_else(|| format!("[{k}].collapse_columns: expected bool"))?,
             },
             group: parse_group(t, k)?,
+            json_items: num("json_items", 20)?,
+            json_string: num("json_string", 200)?,
         });
     }
     Ok(out)
@@ -341,6 +347,8 @@ impl Default for Rule {
             dedupe: Dedupe::Adjacent,
             collapse_columns: true,
             group: Group::Off,
+            json_items: 20,
+            json_string: 200,
         }
     }
 }
@@ -750,14 +758,18 @@ fn fold(
 }
 
 fn group_dir(lines: Vec<String>) -> Vec<String> {
-    fold(lines, |l| path_line(l).map(|(d, n)| (d, String::new(), n)), |dir, _, names, n| {
-        let mut list = names.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
-        if names.len() > 3 {
-            list.push_str(" …");
-        }
-        let head = if dir.is_empty() { "." } else { dir };
-        format!("{head}/ ({n} files): {list}").replacen("./ ", ". ", 1)
-    })
+    fold(
+        lines,
+        |l| path_line(l).map(|(d, n)| (d, String::new(), n)),
+        |dir, _, names, n| {
+            let mut list = names.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+            if names.len() > 3 {
+                list.push_str(" …");
+            }
+            let head = if dir.is_empty() { "." } else { dir };
+            format!("{head}/ ({n} files): {list}").replacen("./ ", ". ", 1)
+        },
+    )
 }
 
 fn is_exc(s: &str) -> bool {
@@ -770,14 +782,20 @@ fn loc_before(t: &str, p: usize) -> String {
     let s = t[..p].trim().trim_end_matches(':').trim();
     s.split_once('(').map_or(s.to_string(), |(file, rest)| {
         let line = rest.split([',', ')']).next().unwrap_or("");
-        if file.is_empty() || line.is_empty() { s.to_string() } else { format!("{file}:{line}") }
+        if file.is_empty() || line.is_empty() {
+            s.to_string()
+        } else {
+            format!("{file}:{line}")
+        }
     })
 }
 
 fn coded(t: &str, needle: &str, prefix: &str) -> Option<(String, String, String)> {
     let p = t.find(needle)?;
     let rest = &t[p + needle.len()..];
-    let n = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let n = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     if n == 0 {
         return None;
     }
@@ -797,7 +815,10 @@ fn parse_diag(line: &str) -> Option<(String, String, String)> {
         if key.is_empty() {
             return None;
         }
-        let msg = t[end + 1..].trim_start_matches([':', ' ']).trim().to_string();
+        let msg = t[end + 1..]
+            .trim_start_matches([':', ' '])
+            .trim()
+            .to_string();
         return Some((key, msg, String::new()));
     }
     if let Some(v) = coded(t, "error TS", "TS").or_else(|| coded(t, "error CS", "CS")) {
@@ -808,7 +829,11 @@ fn parse_diag(line: &str) -> Option<(String, String, String)> {
         let loc = parts[0];
         let (a, b) = loc.split_once(':')?;
         if a.chars().all(|c| c.is_ascii_digit()) && b.chars().all(|c| c.is_ascii_digit()) {
-            return Some((parts[parts.len() - 1].to_string(), parts[2..parts.len() - 1].join(" "), loc.to_string()));
+            return Some((
+                parts[parts.len() - 1].to_string(),
+                parts[2..parts.len() - 1].join(" "),
+                loc.to_string(),
+            ));
         }
     }
     if let Some(rest) = t.strip_prefix("FAILED ") {
@@ -841,6 +866,100 @@ fn group_diag(lines: Vec<String>) -> Vec<String> {
             format!("{key} ×{n}: {msg} ({loc_s})")
         }
     })
+}
+
+/// True when `s` trims to a JSON object or array. Primitives (`true`, `"x"`) stay
+/// on the line-cut path so a one-word command is not rewritten.
+pub(crate) fn is_json_body(s: &str) -> bool {
+    parse_json_body(s).is_some()
+}
+
+fn parse_json_body(s: &str) -> Option<serde_json::Value> {
+    let t = s.trim();
+    let b = t.as_bytes().first()?;
+    if *b != b'{' && *b != b'[' {
+        return None;
+    }
+    serde_json::from_str(t).ok()
+}
+
+/// Rewrite a JSON object/array before the line cut (T65.2). `None` = unparseable,
+/// leave the body untouched.
+fn compact_json(output: &str, items: u32, string_max: u32) -> Option<String> {
+    let v = parse_json_body(output)?;
+    let items = items.max(1) as usize;
+    let string_max = string_max.max(1) as usize;
+    Some(fmt_top(&v, items, string_max))
+}
+
+fn fmt_top(v: &serde_json::Value, items: usize, string_max: usize) -> String {
+    match v {
+        serde_json::Value::Object(map) => map
+            .iter()
+            .filter_map(|(k, val)| fmt_val(val, items, string_max).map(|f| format!("{k}: {f}")))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        serde_json::Value::Array(arr) => {
+            let mut lines: Vec<String> = arr
+                .iter()
+                .take(items)
+                .filter_map(|val| fmt_val(val, items, string_max))
+                .collect();
+            if arr.len() > items {
+                lines.push(format!("… +{} more", arr.len() - items));
+            }
+            lines.join("\n")
+        }
+        other => fmt_val(other, items, string_max).unwrap_or_default(),
+    }
+}
+
+fn fmt_val(v: &serde_json::Value, items: usize, string_max: usize) -> Option<String> {
+    match v {
+        serde_json::Value::Null => None,
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::String(s) if s.is_empty() => None,
+        serde_json::Value::String(s) => Some(fmt_string(s, string_max)),
+        serde_json::Value::Array(a) if a.is_empty() => None,
+        serde_json::Value::Array(a) => {
+            let shown: Vec<String> = a
+                .iter()
+                .take(items)
+                .filter_map(|val| fmt_val(val, items, string_max))
+                .collect();
+            let extra = a.len().saturating_sub(items);
+            let mut s = format!("[{}]", shown.join(", "));
+            if extra > 0 {
+                s.push_str(&format!(" … +{extra} more"));
+            }
+            Some(s)
+        }
+        serde_json::Value::Object(m) => {
+            let fields: Vec<String> = m
+                .iter()
+                .filter_map(|(k, val)| fmt_val(val, items, string_max).map(|f| format!("{k}: {f}")))
+                .collect();
+            if fields.is_empty() {
+                None
+            } else {
+                Some(format!("{{{}}}", fields.join(", ")))
+            }
+        }
+    }
+}
+
+fn fmt_string(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        return serde_json::to_string(s).unwrap_or_else(|_| format!("{s:?}"));
+    }
+    let mut shown: String = s.chars().take(max).collect();
+    shown.push('…');
+    format!(
+        "{} ({n})",
+        serde_json::to_string(&shown).unwrap_or_else(|_| format!("{shown:?}"))
+    )
 }
 
 /// Apply `rule` to `output`. `exit != 0` → last `settings.fail_tail_lines` lines, untouched.
@@ -877,6 +996,11 @@ pub fn apply(
         Group::Dir => lines = group_dir(lines),
         Group::Diag => lines = group_diag(lines),
         Group::Off => {}
+    }
+    // T65.2: rewrite a JSON body after grouping and before the cut. Parse the
+    // original payload so drop/keep/dedupe cannot poison a pretty-printed object.
+    if let Some(compacted) = compact_json(output, rule.json_items, rule.json_string) {
+        lines = compacted.lines().map(str::to_string).collect();
     }
     let max = rule.max_lines.max(1) as usize;
     if lines.len() <= max {
@@ -1006,6 +1130,8 @@ fn parse(s: &str) -> Vec<Rule> {
                 Some("diag") => Group::Diag,
                 _ => Group::Off,
             },
+            json_items: num("json_items", 20),
+            json_string: num("json_string", 200),
         });
     }
     out
@@ -1586,9 +1712,72 @@ mod tests {
 
     #[test]
     fn parse_strict_reads_group_dir_and_diag() {
-        assert_eq!(parse_strict("[find]\ngroup = \"dir\"\n").unwrap()[0].group, Group::Dir);
-        assert_eq!(parse_strict("[tsc]\ngroup = \"diag\"\n").unwrap()[0].group, Group::Diag);
-        assert_eq!(parse_strict("[grep]\nmax_lines = 5\n").unwrap()[0].group, Group::Off);
+        assert_eq!(
+            parse_strict("[find]\ngroup = \"dir\"\n").unwrap()[0].group,
+            Group::Dir
+        );
+        assert_eq!(
+            parse_strict("[tsc]\ngroup = \"diag\"\n").unwrap()[0].group,
+            Group::Diag
+        );
+        assert_eq!(
+            parse_strict("[grep]\nmax_lines = 5\n").unwrap()[0].group,
+            Group::Off
+        );
+    }
+
+    #[test]
+    fn parse_strict_reads_json_items_and_string() {
+        let r = &parse_strict("[gh]\njson_items = 5\njson_string = 40\n").unwrap()[0];
+        assert_eq!(r.json_items, 5);
+        assert_eq!(r.json_string, 40);
+        assert_eq!(
+            parse_strict("[gh]\nmax_lines = 5\n").unwrap()[0].json_items,
+            20
+        );
+    }
+
+    #[test]
+    fn json_compaction_drops_empties_keeps_keys_and_caps_arrays() {
+        let s = settings(80);
+        let mut items = Vec::new();
+        for i in 0..25 {
+            items.push(format!(
+                r#"{{"id":{i},"name":"n{i}","empty":"","nil":null,"tags":[],"meta":{{}}}}"#
+            ));
+        }
+        let body = format!(
+            r#"{{"kind":"List","unused":null,"items":[{}]}}"#,
+            items.join(",")
+        );
+        let out = apply(&s, &body, 0, &Rule::default(), "arc");
+        assert!(out.contains("kind: \"List\""), "{out}");
+        assert!(out.contains("items:"), "{out}");
+        assert!(!out.contains("unused"), "{out}");
+        assert!(!out.contains("empty"), "{out}");
+        assert!(!out.contains("nil"), "{out}");
+        assert!(out.contains("… +5 more"), "{out}");
+        assert!(out.contains("n0"), "{out}");
+        assert!(!out.contains("n24"), "{out}");
+        let long = "x".repeat(250);
+        let long_body = format!(r#"{{"blob":"{long}"}}"#);
+        let cut = apply(&s, &long_body, 0, &Rule::default(), "arc");
+        assert!(cut.contains("(250)"), "{cut}");
+        assert!(cut.contains('…'), "{cut}");
+    }
+
+    #[test]
+    fn json_unparseable_body_is_untouched() {
+        let s = settings(80);
+        let body = "not json\n{\n  broken\n";
+        let rule = Rule {
+            max_lines: 80,
+            collapse_columns: false,
+            dedupe: false,
+            ..Rule::default()
+        };
+        let out = apply(&s, body, 0, &rule, "arc");
+        assert_eq!(out, body.trim_end());
     }
 
     fn uncut(group: Group) -> Rule {
@@ -1613,8 +1802,14 @@ mod tests {
         let off = apply(&s, &body, 0, &uncut(Group::Off), "id");
         let on = apply(&s, &body, 0, &uncut(Group::Dir), "id");
         assert!(on.len() < off.len(), "{} vs {}\n{on}", on.len(), off.len());
-        assert!(on.contains("src/ (20 files): a0.rs, a1.rs, a2.rs …"), "{on}");
-        assert!(on.contains("tests/ (20 files): t0.rs, t1.rs, t2.rs …"), "{on}");
+        assert!(
+            on.contains("src/ (20 files): a0.rs, a1.rs, a2.rs …"),
+            "{on}"
+        );
+        assert!(
+            on.contains("tests/ (20 files): t0.rs, t1.rs, t2.rs …"),
+            "{on}"
+        );
         assert!(!on.contains("lines omitted"), "{on}");
     }
 
@@ -1637,13 +1832,19 @@ mod tests {
             "TS2322 ×20: Type 'string' is not assignable to type 'number'. (src/f0.ts:0, src/f1.ts:1, src/f2.ts:2, …)"
         ), "{on}");
         assert!(on.contains("E0308 ×20: mismatched types"), "{on}");
-        assert!(on.contains("no-var ×20: Unexpected var (0:1, 1:1, 2:1, …)"), "{on}");
+        assert!(
+            on.contains("no-var ×20: Unexpected var (0:1, 1:1, 2:1, …)"),
+            "{on}"
+        );
     }
 
     #[test]
     fn group_diag_line_stays_pinned_through_the_cut() {
         let mut lines: Vec<String> = (0..15).map(|i| format!("ok {i}")).collect();
-        lines.push("src/app.ts(10,5): error TS2322: Type 'string' is not assignable to type 'number'.".into());
+        lines.push(
+            "src/app.ts(10,5): error TS2322: Type 'string' is not assignable to type 'number'."
+                .into(),
+        );
         lines.extend((15..45).map(|i| format!("ok {i}")));
         let s = settings(80);
         let out = apply(&s, &lines.join("\n"), 0, &uncut(Group::Diag), "arc");
