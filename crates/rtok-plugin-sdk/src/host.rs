@@ -60,6 +60,15 @@ pub struct ArchiveDecision {
     pub expanded: bool,
 }
 
+/// A same-session archive row whose sha256 matched a later payload (T65.1).
+#[derive(Clone, Debug)]
+pub struct ArchiveHit {
+    /// Handle for [`Archive::get_archive`] and for `rtok expand <id>`.
+    pub id: String,
+    /// Measurement rows in this session after the original archive; 0 if none yet.
+    pub turns: u64,
+}
+
 /// The host, as a plugin sees it.
 ///
 /// This is the part every plugin gets: estimate what text will cost, record what you saved,
@@ -208,6 +217,12 @@ pub trait Archive {
 
     /// Mark an archived blob as expanded by the user; returns how many rows changed.
     fn mark_expanded(&self, archive_id: &str) -> Result<usize>;
+
+    /// The archive row for `sha256` written in this session, if any. Default `Ok(None)`
+    /// so a host that cannot look it up fails open (the caller prints the body).
+    fn archive_in_session(&self, _sha256: &str) -> Result<Option<ArchiveHit>> {
+        Ok(None)
+    }
 }
 
 /// Durable notes the host can search — what a plugin remembers between sessions.

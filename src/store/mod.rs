@@ -432,6 +432,33 @@ impl Store {
         Ok(sha)
     }
 
+    /// T65.1: one PK lookup on `archive.id` (= sha256) scoped to `session`. `turns` is
+    /// later `measurements` in that session (a proxy for "N turns ago"); 0 if none.
+    pub fn archive_in_session(&self, session: &str, sha: &str) -> Result<Option<(String, u64)>> {
+        let mut conn = self.lock()?;
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            id: String,
+            #[diesel(sql_type = BigInt)]
+            turns: i64,
+        }
+        let rows: Vec<Row> = sql_query(
+            "SELECT id,
+                    (SELECT COUNT(*) FROM measurements
+                     WHERE measurements.session = archive.session
+                       AND measurements.ts > archive.ts) AS turns
+             FROM archive WHERE id = ? AND session = ? LIMIT 1",
+        )
+        .bind::<Text, _>(sha)
+        .bind::<Text, _>(session)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .next()
+            .map(|r| (r.id, r.turns.max(0) as u64)))
+    }
+
     /// The one archive write behind [`Self::put_archive`] and `call_io` spills: the body under
     /// its sha256 in `dir`, then one row per distinct body (the same body twice — T5.3 repeat
     /// requests — is one row). `tool` stays NULL: neither caller knows which plugin archived, and
@@ -2616,6 +2643,17 @@ mod tests {
         );
         let other = store.put_archive("c", b"none", &dir).unwrap();
         assert_eq!(store.live_zone_pointer(&other).unwrap(), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn archive_in_session_hits_only_the_writer_session() {
+        let dir = std::env::temp_dir().join(format!("rtok-t651-sess-{}", std::process::id()));
+        let store = Store::open_in_memory().unwrap();
+        let sha = store.put_archive("a", b"same-bytes", &dir).unwrap();
+        let hit = store.archive_in_session("a", &sha).unwrap().expect("writer");
+        assert_eq!(hit.0, sha);
+        assert_eq!(store.archive_in_session("b", &sha).unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 
