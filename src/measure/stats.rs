@@ -10,7 +10,7 @@ use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -62,6 +62,10 @@ pub struct Report {
     /// of that path in between. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "ReadDeltaRow::is_empty")]
     pub read_delta: ReadDeltaRow,
+    /// T65.1: tool_result bytes whose SHA-256 matches an earlier result in the
+    /// same session. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
+    pub repeat: RepeatRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -96,6 +100,22 @@ pub struct ReadDeltaRow {
 }
 
 impl ReadDeltaRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
+}
+
+/// Content-hash repeats within a session (plan T65.1). `bytes` is those
+/// tool-result payloads; `result_bytes` is every tool_result in the same
+/// window — the denominator of "share of result bytes".
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepeatRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub result_bytes: u64,
+}
+
+impl RepeatRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
@@ -252,6 +272,16 @@ impl Report {
                 d.bytes,
                 d.read_bytes,
                 pct(d.bytes, d.read_bytes)
+            ));
+        }
+        if self.repeat.calls > 0 {
+            let d = &self.repeat;
+            s.push_str(&format!(
+                "repeat calls {}  bytes {}  of result bytes {}  {:.1}%\n",
+                d.calls,
+                d.bytes,
+                d.result_bytes,
+                pct(d.bytes, d.result_bytes)
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
@@ -568,6 +598,7 @@ fn fold_session(
         fold_edits(&mut report.edits, u);
     }
     fold_read_delta(&mut report.read_delta, parsed);
+    fold_repeat(&mut report.repeat, parsed);
     for r in &parsed.tool_results {
         let name = id_name
             .get(r.tool_use_id.as_str())
@@ -681,6 +712,22 @@ fn fold_edits(row: &mut EditRow, u: &jsonl::ToolUse) {
         row.calls += 1;
         row.old_bytes += len("old_string");
         row.new_bytes += len("new_string");
+    }
+}
+
+/// T65.1: SHA-256 of each tool_result in order. A later result whose digest
+/// equals an earlier one in the same session is a repeat — its bytes are the
+/// content-hash dedup surface. Guard's input-key cache is a different axis.
+fn fold_repeat(row: &mut RepeatRow, parsed: &Parsed) {
+    let mut seen = BTreeSet::new();
+    for r in &parsed.tool_results {
+        let bytes = r.content.len() as u64;
+        row.result_bytes += bytes;
+        let sha = crate::store::hex_sha256(r.content.as_bytes());
+        if !seen.insert(sha) {
+            row.calls += 1;
+            row.bytes += bytes;
+        }
     }
 }
 
@@ -1153,6 +1200,40 @@ mod tests {
         let table = r.to_table();
         assert!(
             table.contains("read delta calls 1  bytes 20  of Read bytes 38  52.6%"),
+            "{table}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeat_counts_identical_bodies_from_different_tools() {
+        let dir = tempfile_dir();
+        let path = dir.join("r.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        // Bash then Read, same 20-byte body; a third distinct body does not count.
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"head -1000 a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"different-output"}]}}),
+        ];
+        for line in &lines {
+            writeln!(f, "{line}").unwrap();
+        }
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let d = &r.repeat;
+        assert_eq!((d.calls, d.bytes, d.result_bytes), (1, 20, 20 + 20 + 16));
+        let table = r.to_table();
+        assert!(
+            table.contains("repeat calls 1  bytes 20  of result bytes 56  35.7%"),
             "{table}"
         );
         fs::remove_dir_all(&dir).ok();

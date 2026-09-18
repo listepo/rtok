@@ -19,6 +19,7 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Bash by family | `cd …&&` chains 435 K (hides the real command), sed 217 K, grep 131 K, cat 17 K, ls 13 K, pnpm 35 K, python3 34 K |
 | Assistant output | 8.6 M output tokens; text is 4 % of assistant content, 96 % is tool input (the code it writes) |
 | Read delta re-reads (T58.1, 2026-09-18, `rtok stats --since 90d`, 959 sessions) | 593 native `Read` calls of a path already read in the same session with an Edit/Write/MultiEdit of that path in between; 1.79 MB of 24.61 MB Read result bytes (**7.3 %**) — above the 3 % gate, so MCP `read` returns a unified diff against the archived previous content. |
+| Content-hash repeats (T65.1, 2026-09-18, `rtok stats --since 30d`, 924 sessions) | 6,649 later tool_results whose SHA-256 equalled an earlier result in the same session; 1.83 MB of 95.25 MB result bytes (**1.9 %**) — above the 1 % gate, so `cmd::run` and `read` return a pointer at the earlier archive instead of the body. |
 | Edit `old_string` (T58.3, 2026-09-17, `rtok stats --since 90d`, 925 sessions) | 5,990 Edit/MultiEdit calls; `old_string` 1.61 MB, `new_string` 3.60 MB; `old_string` = 3.8 % of tool-input bytes, ≈ 1.3 % of output tokens (bytes/4 against API output) — under the 10 % gate, so the anchored `patch` tool (T58.4) was not built. Caveat: this machine already routes many edits through lean-ctx `ctx_patch`, so the share is a lower bound for a plain-`Edit` workload. |
 | Foreign MCP results (T59.4, 2026-09-17, `rtok stats --since 30d`, 885 sessions) | `rtok stats --since 30d` (2026-09-17, 885 sessions), `mcp` table: lean-ctx 8,232 calls, 19.66 MB result bytes, mean 2.4 KB, p95 45.7 KB (≈ 4.9 M est. tokens) — ≈ 27 % of the 71.8 MB in the tool table; rtok 579 KB, engram 279 KB, t3-code 73 KB (mean 18 KB), Claude_Browser 45 KB. lean-ctx is above the 5 % gate, so the wrapper is justified for this workload; caveat: lean-ctx already compresses its own results, so the win is in the p95 tail, not the mean. |
 | Cache | read 1,367 M, creation 26.7 M, uncached input 42 K → 98.1 % hit rate |
@@ -777,7 +778,7 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 | rtk truncation | `max_lines`/`head`/`tail`, lossless (`expand <id>`) | rtok is ahead: rtk drops, rtok archives | — |
 | rtk / sqz dedup of repeated log lines | `dedupe` folds adjacent identical lines to `(×N)` | non-adjacent, timestamp-normalised | T64.2 |
 | rtk "does not break the prompt cache" paragraph | byte-stable inject, live-zone proxy rewrites, `report` cache section, 98.1 % hit rate on this machine | no page says it | T64.3 |
-| sqz content-hash dedup (`§ref:HASH§`, 13 tokens) | `guard` dedups by input key only | same bytes from a different call paid twice | T65.1 (gated on a measured share) |
+| sqz content-hash dedup (`§ref:HASH§`, 13 tokens) | `guard` dedups by input key only | same bytes from a different call paid twice | T65.1 (1.9 % of result bytes, 2026-09-18, `rtok stats --since 30d`, 924 sessions — above the 1 % gate) |
 | sqz structural summaries (imports + signatures, ~70 %) | `read` modes via tree-sitter (`map`, `signatures`) | none | — |
 | sqz JSON pipeline (nulls, arrays) | line cut; `toon` is wire-side and off | JSON-aware cut in the hook path | T65.2 (gated) |
 | sqz table compaction | none | padding collapse | T65.3 |
@@ -786,8 +787,9 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 | sqz `gain` / `stats --breakdown` | `stats`, `report`, `dashboard`, one ledger | none | — |
 
 Order by expected effect on this workload (§2: Bash 35 % of result tokens): T65.4 and T64.3
-are cheap and close a correctness / documentation hole; T65.1 and T65.2 start with a
-measured share and only proceed above it; T64.1, T64.2, T65.3 are fixture-gated.
+are cheap and close a correctness / documentation hole; T65.1 measured **1.9 %** of result
+bytes as same-session SHA-256 repeats (`rtok stats --since 30d`, 924 sessions, 2026-09-18)
+and proceeds; T65.2 still starts with a measured share; T64.1, T64.2, T65.3 are fixture-gated.
 
 ## 12. recursive-llm (RLM), against rtok (2026-09-18)
 

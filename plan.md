@@ -35,7 +35,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T63.1 | todo | P3 | 3 | 0% | |
 | T64.1 | todo | P3 | 3 | 0% | |
 | T64.2 | todo | P3 | 2 | 0% | |
-| T65.1 | todo | P2 | 3 | 0% | |
+| T65.1 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T65.2 | todo | P3 | 3 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
 | T67.2 | todo | P3 | 2 | 0% | |
@@ -261,6 +261,11 @@ Done when `dedupe = "normalized"` (the current behaviour stays `dedupe = true`) 
 From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before in the session comes back as a 13-token `§ref:HASH§` instead of the text. rtok's `guard` dedups by input key (`guard::cache_key`: same tool, same normalised input), so `cat a` followed by `head -1000 a`, or the same `cargo test` failure printed twice, is paid twice.
 Step 1 (gate): `stats` gains a `repeat` column — share of tool_result bytes whose SHA-256 (`sha2` is already a dependency, T13.3) equals an earlier result in the same session — measured over 30 d on this machine into `research.md` §11. Proceeds only above 1 % of result bytes; otherwise the card leaves for `ideas.md` with the number.
 Done when `cmd::run` and the `read` plugin hash the raw output before archiving, a hit in the same session returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` instead of the body (`Measurement { kind = "dedup" }`, before = body bytes), a miss archives as today, the lookup is one indexed query on the archive table (≤ 10 ms, fail open), and a test replays two different commands with identical output.
+
+Execution plan (worktree `.worktrees/T65.1` on `t65.1` from `t58.1`):
+1. `RepeatRow` in `stats`: SHA-256 of each tool_result per session; unit test two different tools with the same body.
+2. Measure `rtok stats --since 30d` on this machine; write the share into `research.md` §11.
+3. Below 1 % of result bytes: move the card to `ideas.md` with the number and close. Above: hash raw output in `cmd::run` and `read` before archive; same-session archive lookup; fail open ≤ 10 ms.
 
 ### T65.2. `cmd` JSON output compaction
 
