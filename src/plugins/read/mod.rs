@@ -9,8 +9,8 @@ use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
 use rtok_plugin_sdk::{
-    Ctx, DashboardPage, Manifest, Plugin, PostToolUse, PreToolDecision, PreToolUse, Surface,
-    ToolDef,
+    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, PreToolDecision,
+    PreToolUse, Surface, ToolDef,
 };
 
 pub mod cache;
@@ -53,7 +53,7 @@ impl Plugin for Read {
         vec![
             ToolDef {
                 name: "read",
-                description: "Read a file; mode full|lines|map|signatures|diff; range a-b for full|lines.",
+                description: "Read a file; mode full|lines|map|signatures|diff|stripped; range a-b for full|lines|stripped.",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
             },
             ToolDef {
@@ -103,12 +103,19 @@ pub(crate) fn read_with(
     };
     let force_delta = mode == "diff";
     let mode = if force_delta { "full" } else { mode };
+    // T50.3: comments-stripped when a grammar exists; unknown language / parse fail → `full`.
+    let stripped_src = if mode == "stripped" {
+        outline::stripped(&abs, &raw)
+    } else {
+        None
+    };
     let body = if mode == "map" || mode == "signatures" {
         outline::render(&abs, &raw, mode)?
     } else {
         // Same grammar as `expand --lines` (`a`, `a-b`, `a-`, `-b`); a malformed range is an
         // error, not the whole file. Outline modes carry their own line numbers per definition.
-        let lines: Vec<&str> = raw.lines().collect();
+        let view = stripped_src.as_deref().unwrap_or(raw.as_str());
+        let lines: Vec<&str> = view.lines().collect();
         let (a, b) = match range {
             Some(spec) => crate::expand::parse_range(spec, lines.len())?,
             None => (1, lines.len()),
@@ -121,7 +128,7 @@ pub(crate) fn read_with(
             .join("\n")
     };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
-    let payload = if mode == "map" || mode == "signatures" {
+    let payload = if mode == "map" || mode == "signatures" || stripped_src.is_some() {
         body.as_bytes()
     } else {
         raw.as_bytes()
@@ -142,7 +149,20 @@ pub(crate) fn read_with(
         return Ok(msg);
     }
     let _ = cache::remember(cx, &key, payload);
-    cap(cx, body)
+    let out = cap(cx, body)?;
+    if stripped_src.is_some() && (out.len() as u64) < (raw.len() as u64) {
+        let _ = cx.record(&Measurement {
+            plugin: "read",
+            kind: "stripped",
+            before_bytes: raw.len() as u64,
+            after_bytes: out.len() as u64,
+            est_before: cx.estimate(&raw, Class::Code),
+            est_after: cx.estimate(&out, Class::Code),
+            ref_id: None,
+            call_id: None,
+        });
+    }
+    Ok(out)
 }
 
 pub(crate) fn resolve(cwd: &Path, path: &Path, extra: &[PathBuf]) -> Result<PathBuf> {
@@ -643,6 +663,23 @@ pub(crate) mod tests {
         let (cx, dir) = crate::testutil::runtime("mapmain");
         let out = read(&Ctx::new(&cx), "src/main.rs", "map", None).unwrap();
         assert!(out.contains("fn main"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stripped_drops_comments_keeps_body_and_unknown_is_full() {
+        let (cx, dir) = cx("stripped");
+        let rs = dir.join("a.rs");
+        fs::write(&rs, "/// gone\nfn keep() {}\n").unwrap();
+        let out = read(&Ctx::new(&cx), rs.to_str().unwrap(), "stripped", None).unwrap();
+        assert!(!out.contains("gone"), "{out}");
+        assert!(out.contains("fn keep"), "{out}");
+        assert!(cx.store.measurement_count("read").unwrap() >= 1);
+        let txt = dir.join("a.txt");
+        fs::write(&txt, "// gone\nkeep\n").unwrap();
+        let out = read(&Ctx::new(&cx), txt.to_str().unwrap(), "stripped", None).unwrap();
+        assert!(out.contains("gone"), "{out}");
+        assert!(out.contains("keep"), "{out}");
         let _ = fs::remove_dir_all(dir);
     }
 }

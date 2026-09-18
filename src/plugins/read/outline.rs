@@ -1,4 +1,5 @@
-//! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3).
+//! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3);
+//! `mode=stripped` via tree-sitter comment nodes (plan T50.3).
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -188,6 +189,64 @@ fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
     }
 }
 
+fn ts_lang(path: &Path) -> Option<tree_sitter::Language> {
+    match path.extension()?.to_str()? {
+        #[cfg(feature = "lang-rust")]
+        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
+        #[cfg(feature = "lang-ts")]
+        "ts" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        #[cfg(feature = "lang-ts")]
+        "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        #[cfg(feature = "lang-js")]
+        "js" | "mjs" | "cjs" => Some(tree_sitter_javascript::LANGUAGE.into()),
+        #[cfg(feature = "lang-python")]
+        "py" => Some(tree_sitter_python::LANGUAGE.into()),
+        #[cfg(feature = "lang-dart")]
+        "dart" => Some(tree_sitter_dart::LANGUAGE.into()),
+        #[cfg(feature = "lang-c")]
+        "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
+        #[cfg(feature = "lang-go")]
+        "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        _ => None,
+    }
+}
+
+/// Comments removed, newlines kept so original line numbers still match. `None` → no grammar
+/// or parse fail; the caller serves `full` (T50.3).
+pub fn stripped(path: &Path, src: &str) -> Option<String> {
+    let lang = ts_lang(path)?;
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&lang).ok()?;
+    let tree = parser.parse(src, None)?;
+    Some(drop_comments(src, tree.root_node()))
+}
+
+fn drop_comments(src: &str, root: tree_sitter::Node<'_>) -> String {
+    let bytes = src.as_bytes();
+    let mut drop = vec![false; bytes.len()];
+    mark_comments(root, &mut drop);
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if !drop[i] || b == b'\n' {
+            out.push(b);
+        }
+    }
+    String::from_utf8(out).unwrap_or_else(|_| src.to_string())
+}
+
+fn mark_comments(node: tree_sitter::Node<'_>, drop: &mut [bool]) {
+    if node.kind().contains("comment") {
+        let start = node.start_byte().min(drop.len());
+        let end = node.end_byte().min(drop.len());
+        drop[start..end].fill(true);
+        return;
+    }
+    let mut c = node.walk();
+    for child in node.children(&mut c) {
+        mark_comments(child, drop);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +311,54 @@ mod tests {
         let out = render(Path::new("a.txt"), src, "map").unwrap();
         assert!(out.contains("1:hello"), "{out}");
         assert!(out.contains("unknown language"), "{out}");
+    }
+
+    #[test]
+    fn stripped_per_language() {
+        let cases = [
+            ("a.rs", "/// gone\nfn keep() {}\n", "gone", "fn keep"),
+            (
+                "a.ts",
+                "// gone\nfunction keep() { return 1; }\n",
+                "gone",
+                "function keep",
+            ),
+            (
+                "a.js",
+                "// gone\nfunction keep() { return 1; }\n",
+                "gone",
+                "function keep",
+            ),
+            (
+                "a.py",
+                "# gone\ndef keep():\n    return 1\n",
+                "gone",
+                "def keep",
+            ),
+            ("a.dart", "// gone\nvoid keep() {}\n", "gone", "void keep"),
+            (
+                "a.c",
+                "/* gone */\nint keep(void) { return 1; }\n",
+                "gone",
+                "int keep",
+            ),
+            (
+                "a.go",
+                "// gone\nfunc Keep() int { return 1 }\n",
+                "gone",
+                "func Keep",
+            ),
+        ];
+        for (path, src, gone, keep) in cases {
+            let src = pad(src);
+            let out = stripped(Path::new(path), &src).expect(path);
+            assert!(!out.contains(gone), "{path} still has comment: {out}");
+            assert!(out.contains(keep), "{path} lost body: {out}");
+        }
+    }
+
+    #[test]
+    fn stripped_unknown_language_is_none() {
+        assert!(stripped(Path::new("a.txt"), "// gone\nkeep\n").is_none());
     }
 }
