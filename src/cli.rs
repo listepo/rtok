@@ -1101,18 +1101,17 @@ pub fn run() -> Result<()> {
                 GraphCmd::Status { path, json } => {
                     crate::plugins::graph::status::run(&cfg, path, json)?;
                 }
-                GraphCmd::Impact { name, depth, to, path } => {
+                GraphCmd::Impact {
+                    name,
+                    depth,
+                    to,
+                    path,
+                } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",
-                        crate::plugins::graph::impact(
-                            &ctx,
-                            &root,
-                            &name,
-                            depth,
-                            to.as_deref(),
-                        )?
+                        crate::plugins::graph::impact(&ctx, &root, &name, depth, to.as_deref(),)?
                     );
                 }
                 GraphCmd::Affected {

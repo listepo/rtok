@@ -7,7 +7,9 @@ Changes not staged for commit:
 """
 stdout = """
 On branch main
-modified:   src/lib.rs"""
+modified:   src/lib.rs
+[rtok c6a9698fdee17f8f72bd106dc8a69ce4d5661e6913fadb2c41c24371cf8d1506 · 3 lines · expand: rtok expand c6a9698fdee17f8f72bd106dc8a69ce4d5661e6913fadb2c41c24371cf8d1506]
+"""
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
 [env]

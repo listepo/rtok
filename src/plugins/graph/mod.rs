@@ -25,9 +25,9 @@ use rtok_plugin_sdk::{
 
 pub mod index;
 pub mod lsp;
-pub mod watch;
-pub mod walk;
 pub mod status;
+pub mod walk;
+pub mod watch;
 
 #[cfg(test)]
 thread_local! {
@@ -154,7 +154,6 @@ pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
     }
 }
 
-
 /// Pending re-index paths: hook marks, stat drift and the watcher queue (T68.3).
 pub(crate) fn pending_paths(cx: &Ctx, root: &Path) -> Result<Vec<String>> {
     let key = index::canon(root);
@@ -178,8 +177,13 @@ fn stale_banner(cx: &Ctx, root: &Path) -> Result<String> {
         let show = pending.len().min(5);
         let listed = pending[..show].join(", ");
         let tail = if pending.len() > 5 { ", …" } else { "" };
-        return Ok(format!("stale: {} files pending ({}{})
-", pending.len(), listed, tail));
+        return Ok(format!(
+            "stale: {} files pending ({}{})
+",
+            pending.len(),
+            listed,
+            tail
+        ));
     }
     Ok(String::new())
 }
@@ -256,7 +260,11 @@ pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Re
         .filter(|(path, kind, ..)| filter.path_ok(path) && filter.kind_ok(kind))
         .collect();
     if rows.is_empty() {
-        return with_stale(cx, root, format!("no definition of {name}{}", filter.scope_note()));
+        return with_stale(
+            cx,
+            root,
+            format!("no definition of {name}{}", filter.scope_note()),
+        );
     }
     let key = index::canon(root);
     let callees = cx.symbol_callees(&key, name)?;
@@ -288,12 +296,20 @@ fn mark_ambiguous_lines(out: &str) -> String {
     if out.is_empty() {
         return String::new();
     }
-    out.lines().map(|line| format!("{line} ?")).collect::<Vec<_>>().join("\n") + "\n"
+    out.lines()
+        .map(|line| format!("{line} ?"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn annotate_ambiguous(cx: &Ctx, root: &Path, name: &str, out: String) -> Result<String> {
     if cx.symbol_defs(&index::canon(root), name)?.len() > 1 {
-        Ok(format!("{}{}", ambiguous_banner(1), mark_ambiguous_lines(&out)))
+        Ok(format!(
+            "{}{}",
+            ambiguous_banner(1),
+            mark_ambiguous_lines(&out)
+        ))
     } else {
         Ok(out)
     }
@@ -309,7 +325,10 @@ fn defs_text(
     let cap = budget / 2;
     let mut by_def: HashMap<(String, i32), Vec<String>> = HashMap::new();
     for (path, line, callee, _) in callees {
-        by_def.entry((path.clone(), *line)).or_default().push(callee.clone());
+        by_def
+            .entry((path.clone(), *line))
+            .or_default()
+            .push(callee.clone());
     }
     let mut out = String::new();
     let mut cached: Option<(String, String)> = None;
@@ -317,9 +336,17 @@ fn defs_text(
         out.push_str(&format!("{path}:{line} {kind}\n"));
         if !cached.as_ref().is_some_and(|(p, _)| p == path) {
             symbol_src_reads_add(1);
-            cached = Some((path.clone(), std::fs::read_to_string(root.join(path)).unwrap_or_default()));
+            cached = Some((
+                path.clone(),
+                std::fs::read_to_string(root.join(path)).unwrap_or_default(),
+            ));
         }
-        out.push_str(&body_lines(&cached.as_ref().unwrap().1, *line, *end_line, budget));
+        out.push_str(&body_lines(
+            &cached.as_ref().unwrap().1,
+            *line,
+            *end_line,
+            budget,
+        ));
         if let Some(names) = by_def.get(&(path.clone(), *line)) {
             out.push_str(&calls_line(names, cap));
         }
@@ -363,11 +390,24 @@ pub fn callers_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> R
         .filter(|(path, ..)| filter.path_ok(path))
         .collect();
     if rows.is_empty() {
-        return with_stale(cx, root, annotate_ambiguous(cx, root, name, format!("no references to {name}{}", filter.scope_note()))?);
+        return with_stale(
+            cx,
+            root,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("no references to {name}{}", filter.scope_note()),
+            )?,
+        );
     }
     let mut out = String::new();
     for (path, scope, n, line) in rows {
-        let scope = if scope.is_empty() { String::new() } else { format!("  {scope}") };
+        let scope = if scope.is_empty() {
+            String::new()
+        } else {
+            format!("  {scope}")
+        };
         out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
     }
     with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, out)?)?)
@@ -408,10 +448,16 @@ pub fn impact_filtered(
                 format!("no path from {name} to {target} within depth {depth}"),
             );
         }
-        let body = chains.join("
-") + "
+        let body = chains.join(
+            "
+",
+        ) + "
 ";
-        return with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, body)?)?);
+        return with_stale(
+            cx,
+            root,
+            cap(cx, annotate_ambiguous(cx, root, name, body)?)?,
+        );
     }
     let rows: Vec<_> = cx
         .symbol_impact(&index::canon(root), name, depth)?
@@ -422,10 +468,22 @@ pub fn impact_filtered(
         return with_stale(
             cx,
             root,
-            annotate_ambiguous(cx, root, name, format!("nothing reaches {name}{}", filter.scope_note()))?,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("nothing reaches {name}{}", filter.scope_note()),
+            )?,
         );
     }
-    with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, impact_lines_text(&rows))?)?)
+    with_stale(
+        cx,
+        root,
+        cap(
+            cx,
+            annotate_ambiguous(cx, root, name, impact_lines_text(&rows))?,
+        )?,
+    )
 }
 
 /// `symbol_paths` walks callers; `impact --to` prints callee chains, so reverse the arrows.
@@ -1229,11 +1287,14 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-
     #[test]
     fn symbol_lists_callees_on_impact_fixture() {
         let (cx, dir) = cx("callees");
-        fs::write(dir.join("chain.rs"), "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n").unwrap();
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
         let ctx = Ctx::new(&cx);
         assert!(symbol(&ctx, &dir, "a").unwrap().contains("calls: b"));
         assert!(symbol(&ctx, &dir, "b").unwrap().contains("calls: c"));
@@ -1251,7 +1312,11 @@ mod tests {
         let new = callers(&ctx, &dir, "new").unwrap();
         assert!(new.starts_with("1 names ambiguous"));
         assert!(new.contains(" ?\n"));
-        assert!(impact(&ctx, &dir, "new", 1, None).unwrap().starts_with("1 names ambiguous"));
+        assert!(
+            impact(&ctx, &dir, "new", 1, None)
+                .unwrap()
+                .starts_with("1 names ambiguous")
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

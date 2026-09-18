@@ -1,7 +1,7 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
-pub mod handoff;
 pub mod export;
+pub mod handoff;
 pub mod import;
 pub mod status;
 pub mod sync;
@@ -35,7 +35,7 @@ impl Plugin for Memory {
         vec![
             ToolDef {
                 name: "mem_save",
-                description: "Save a note (kind, title, body); same project+kind+title updates it.",
+                description: "Save a note; same project+kind+title updates it.",
                 input_schema: json!({"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"project":{"type":"string"}},"required":["kind","title","body"]}),
             },
             ToolDef {
@@ -57,12 +57,7 @@ impl Plugin for Memory {
         ]
     }
 
-    fn session_start(&self, ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
-        if ev.source == "startup" {
-            if let Some(h) = super::checkpoint::offer_session_handoff(cx) {
-                return Some(h);
-            }
-        }
+    fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
         recall(cx)
     }
 
@@ -94,11 +89,10 @@ fn remember_save(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
         return None;
     }
     let title: String = rest.chars().take(80).collect();
-    let project = cx
-        .cwd()
-        .map(std::path::Path::new)
-        .and_then(project_name);
-    let id = cx.upsert_note(project.as_deref(), "user", &title, rest).ok()?;
+    let project = cx.cwd().map(std::path::Path::new).and_then(project_name);
+    let id = cx
+        .upsert_note(project.as_deref(), "user", &title, rest)
+        .ok()?;
     Some(Injection {
         plugin: "memory",
         text: format!("saved note {id}"),
@@ -112,7 +106,12 @@ fn prompt_recall(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
     if n == 0 {
         return None;
     }
-    let query = ev.prompt.split_whitespace().take(24).collect::<Vec<_>>().join(" ");
+    let query = ev
+        .prompt
+        .split_whitespace()
+        .take(24)
+        .collect::<Vec<_>>()
+        .join(" ");
     if query.is_empty() {
         return None;
     }
@@ -155,7 +154,6 @@ fn prompt_recall(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
         priority: 11,
     })
 }
-
 
 fn recall(cx: &Ctx) -> Option<Injection> {
     let cfg = cx.plugin_config::<crate::config::Memory>("memory");
@@ -334,7 +332,9 @@ mod tests {
         assert_eq!(first.text, "saved note 1");
         let second = Memory.prompt_submit(&ev, &ctx).unwrap();
         assert_eq!(second.text, "saved note 1");
-        let plain = PromptSubmit { prompt: "just a question" };
+        let plain = PromptSubmit {
+            prompt: "just a question",
+        };
         assert!(Memory.prompt_submit(&plain, &ctx).is_none());
     }
 
@@ -473,8 +473,9 @@ mod tests {
         );
     }
 
-    /// T69.1: the four memory tools stay within the 60-description-token surface budget
-    /// (`rtok doctor` prices the same strings).
+    /// T69.1: the memory tools stay within the 60-description-token surface budget
+    /// (`rtok doctor` prices the same strings). T71.2 added `mem_handoff` as the fifth,
+    /// so `mem_save` drops the field list the input schema already carries.
     #[test]
     fn mcp_surface_stays_within_sixty_description_tokens() {
         let cx = crate::plugin::Runtime::in_memory("t691-surface").unwrap();
@@ -525,7 +526,11 @@ mod tests {
         assert!(cx.estimate(&a.text, Class::Prose) <= 200);
         assert_eq!(a.priority, 10);
         let rows = cx.store.list_measurements("memory").unwrap();
-        assert_eq!(rows.iter().filter(|r| r.kind == "recall").count(), 2, "{rows:?}");
+        assert_eq!(
+            rows.iter().filter(|r| r.kind == "recall").count(),
+            2,
+            "{rows:?}"
+        );
     }
 
     #[test]

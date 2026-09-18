@@ -115,20 +115,40 @@ fn session_detail_exists_on_both_surfaces() {
     );
 }
 
+/// The five sources every "both surfaces" case reads: model, TUI view and app, the web
+/// crate and its Slint UI.
+struct Surfaces {
+    model: &'static str,
+    tui: &'static str,
+    app: &'static str,
+    web: &'static str,
+    slint: &'static str,
+}
+
+const SURFACES: Surfaces = Surfaces {
+    model: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs")),
+    tui: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs")),
+    app: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs")),
+    web: include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    )),
+    slint: include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    )),
+};
+
 /// T60.4: both surfaces render archive expand from the same model accessor.
 #[test]
 fn expand_payload_exists_on_both_surfaces() {
-    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
-    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
-    let app = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs"));
-    let web = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    ));
-    let slint = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/ui/app.slint"
-    ));
+    let Surfaces {
+        model,
+        tui,
+        app,
+        web,
+        slint,
+    } = SURFACES;
     let inbound = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/mod.rs"));
     assert!(
         model.contains("pub fn expand_payload"),
@@ -151,17 +171,13 @@ fn expand_payload_exists_on_both_surfaces() {
 /// T63.1: both surfaces render the skills page from the same model accessor.
 #[test]
 fn skills_page_exists_on_both_surfaces() {
-    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
-    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
-    let app = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs"));
-    let web = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/src/lib.rs"
-    ));
-    let slint = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/crates/rtok-webui/ui/app.slint"
-    ));
+    let Surfaces {
+        model,
+        tui,
+        app,
+        web,
+        slint,
+    } = SURFACES;
     assert!(
         model.contains("pub fn skills_from"),
         "the one accessor lives on the model (D23)"
@@ -446,6 +462,7 @@ const JSON_READERS: &[&str] = &[
     "logs",
     "demon status",
     "otel status",
+    "memory status",
 ];
 
 fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {

@@ -284,7 +284,7 @@ impl Host for Runtime {
             .unwrap_or_default();
         out.sort();
         out
-        }
+    }
 
     fn publish_graph_watch_pending(&self, paths: &[String]) {
         if let Ok(mut guard) = self.graph_watch_pending.lock() {
@@ -403,8 +403,7 @@ impl ReadCache for Runtime {
 
 impl Ledger for Runtime {
     fn last_measurement_ref(&self, plugin: &str, kind: &str) -> Result<Option<String>> {
-        self.store
-            .last_measurement_ref(&self.session, plugin, kind)
+        self.store.last_measurement_ref(&self.session, plugin, kind)
     }
 
     fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>> {

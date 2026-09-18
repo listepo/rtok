@@ -12,7 +12,7 @@ No config file is edited: the install is one linked extension, `<extensions_path
 | --- | --- | --- |
 | plugin | `--yes` | the offer links `plugins/pi`; without a terminal only `--yes` accepts |
 | hooks | no | pi has no hook events; the extension owns the bash call path |
-| mcp | no | pi philosophy is no MCP; `[setup.pi] tools` registers the measured set through `pi.registerTool` |
+| mcp | no | pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true |
 | proxy | no | pi provider base URLs live in its models config, which setup does not edit |
 
 ## rtok plugins this host reaches
@@ -26,8 +26,8 @@ When `[setup.pi] tools = true`, `session_start` registers the measured MCP set t
 tree 12, symbol 30, callers 27, expand 22, mem_search 11, mem_get 7). Hook and proxy surfaces
 have no path in. `toon` declares MCP but is not registered.
 
-Reachable: measure, cmd, archive, guard, read, memory, graph
-Not reachable: proxy, inject, toon, compress
+Reachable: measure, cmd, read, archive, guard, memory, graph, toon
+Not reachable: proxy, inject, compress
 
 ## Docs
 

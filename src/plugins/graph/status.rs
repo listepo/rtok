@@ -29,7 +29,10 @@ pub fn collect(cx: &Ctx, root: &Path) -> Result<GraphStatus> {
         rows: cx.symbol_count(&key)?,
         files: cx.symbol_file_count(&key)?,
         pending: pending_paths(cx, root)?,
-        watch: cx.plugin_config::<crate::config::Graph>("graph").watch.clone(),
+        watch: cx
+            .plugin_config::<crate::config::Graph>("graph")
+            .watch
+            .clone(),
         indexed_at: cx.symbol_indexed_at(&key)?,
     })
 }

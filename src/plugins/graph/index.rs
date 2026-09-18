@@ -204,7 +204,8 @@ fn run_changed_with(
     let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
-    let matcher = super::walk::Matcher::new(&root, &cx.plugin_config::<crate::config::Graph>("graph"));
+    let matcher =
+        super::walk::Matcher::new(&root, &cx.plugin_config::<crate::config::Graph>("graph"));
     let mut jobs = Vec::new();
     for event_path in changed {
         let abs = changed_abs(&root, event_path);
@@ -373,7 +374,7 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
 /// Bump when [`scoped`] changes (T35.5).
 const INDEX_VERSION: u32 = 3;
 
-/// Hex sha256 of `INDEX_VERSION` and every query string [`outline::config`] compiles —
+/// Hex sha256 of `INDEX_VERSION` and every query string [`outline::tags`] compiles —
 /// tags **and** locals, because a language whose locals query changed produces different
 /// rows. The TypeScript pair was hashed twice, which hid a `LOCALS_QUERY` bump for
 /// ts/tsx/js/dart behind an unchanged fingerprint.

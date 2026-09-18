@@ -116,7 +116,6 @@ pub fn tags_with_extensions(
     Ok(out)
 }
 
-
 /// One ATX heading: 1-based line, `#` level, full trimmed line, first body line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MdHeading {
@@ -144,11 +143,11 @@ pub fn markdown_headings(src: &str) -> Vec<MdHeading> {
                 body: None,
             });
             slot = Some(out.len() - 1);
-        } else if let Some(j) = slot {
-            if !t.is_empty() {
-                out[j].body = Some(t.to_string());
-                slot = None;
-            }
+        } else if let Some(j) = slot
+            && !t.is_empty()
+        {
+            out[j].body = Some(t.to_string());
+            slot = None;
         }
     }
     out
@@ -170,7 +169,10 @@ pub fn markdown_digest(src: &str) -> String {
 }
 
 fn is_markdown(path: &Path) -> bool {
-    matches!(path.extension().and_then(|e| e.to_str()), Some("md" | "mdx"))
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("md" | "mdx")
+    )
 }
 
 fn markdown_render(headings: &[MdHeading], mode: &str) -> String {
@@ -193,6 +195,8 @@ fn markdown_render(headings: &[MdHeading], mode: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
 /// Last path segment of an import / use / require specifier (T68.6).
 fn import_last_segment(raw: &str) -> String {
     let t = raw.trim().trim_matches(|c| matches!(c, '"' | '\'' | '`'));
@@ -208,7 +212,8 @@ fn import_last_segment(raw: &str) -> String {
     t.rsplit([':', '.', '/', '\\'])
         .find(|s| !s.is_empty())
         .unwrap_or(t)
-        .to_string()}
+        .to_string()
+}
 
 /// Definitions as `kind name line`, or verbatim definition lines.
 pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
@@ -220,9 +225,7 @@ pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
             markdown_render(&hs, mode)
         });
     }
-    let defs: Vec<TagHit> = tags(path, src)?.into_iter().filter(|h| h.is_def).collect();
-    if defs.is_empty() {
-let hits = tags(path, src)?;
+    let hits = tags(path, src)?;
     let mut seen = std::collections::HashSet::new();
     let imports: Vec<&str> = hits
         .iter()
@@ -230,7 +233,8 @@ let hits = tags(path, src)?;
         .map(|h| h.name.as_str())
         .collect();
     let defs: Vec<&TagHit> = hits.iter().filter(|h| h.is_def).collect();
-    if defs.is_empty() && imports.is_empty() {        return Ok(fallback(src));
+    if defs.is_empty() && imports.is_empty() {
+        return Ok(fallback(src));
     }
     let mut out = Vec::new();
     if !imports.is_empty() && mode != "signatures" {
@@ -342,6 +346,23 @@ pub(crate) const DART_IMPORT: &str = "
 (import_specification uri: [(configurable_uri) (uri)] @name) @reference.import
 ";
 
+/// tree-sitter-kotlin-ng 1.1.0 ships no tags query (T52.2).
+#[cfg(feature = "lang-kotlin")]
+pub(crate) const KOTLIN_TAGS: &str = "
+(class_declaration name: (identifier) @name) @definition.class
+(object_declaration name: (identifier) @name) @definition.class
+(function_declaration name: (identifier) @name) @definition.function
+";
+
+/// tree-sitter-c-sharp 0.23.5 gates `TAGS_QUERY` behind `cfg(with_tags_query)`.
+#[cfg(feature = "lang-csharp")]
+pub(crate) const CSHARP_TAGS: &str = "
+(class_declaration name: (identifier) @name) @definition.class
+(interface_declaration name: (identifier) @name) @definition.interface
+(method_declaration name: (identifier) @name) @definition.method
+(namespace_declaration name: (identifier) @name) @definition.module
+";
+
 /// The query for `path`'s language, compiled on first use (T35.1): the compile was 19 ms of a
 /// 26.5 ms `tags` call on `graph/index.rs` (debug, 2026-09-10), paid again on every file.
 fn config_with_extensions(
@@ -354,10 +375,6 @@ fn config_with_extensions(
         .map(String::as_str)
         .or_else(|| grammar_for_ext(Some(ext)));
     config_for_grammar(grammar)
-}
-
-fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
-    config_for_grammar(grammar_for_ext(path.extension()?.to_str()))
 }
 
 fn config_for_grammar(grammar: Option<&str>) -> Option<Result<&'static TagsConfiguration>> {
@@ -519,10 +536,11 @@ mod tests {
     /// recompile per call would hand back a fresh configuration each time.
     #[test]
     fn each_language_compiles_once() {
-        let a = config(Path::new("a.rs")).unwrap().unwrap();
-        let b = config(Path::new("src/b.rs")).unwrap().unwrap();
+        let cfg = |p: &str| config_with_extensions(Path::new(p), &HashMap::new());
+        let a = cfg("a.rs").unwrap().unwrap();
+        let b = cfg("src/b.rs").unwrap().unwrap();
         assert!(std::ptr::eq(a, b), "a second .rs file recompiled the query");
-        let ts = config(Path::new("a.ts")).unwrap().unwrap();
+        let ts = cfg("a.ts").unwrap().unwrap();
         assert!(
             !std::ptr::eq(a, ts),
             "two languages share one configuration"
@@ -538,7 +556,8 @@ mod tests {
     }
     #[test]
     fn markdown_map_skips_fenced_headings() {
-        let src = "# One\nFirst.\n```sh\n# not a heading\n```\n## Two\nSecond.\n### Three\nThird.\n";
+        let src =
+            "# One\nFirst.\n```sh\n# not a heading\n```\n## Two\nSecond.\n### Three\nThird.\n";
         let hs = markdown_headings(src);
         assert_eq!(hs.len(), 3);
         assert_eq!(hs[0].body.as_deref(), Some("First."));
@@ -556,7 +575,6 @@ mod tests {
         assert!(digest.contains("## Two\n  Second."));
         assert!(!digest.contains("not a heading"), "{digest}");
     }
-
 
     #[test]
     fn stripped_per_language() {
@@ -606,7 +624,7 @@ mod tests {
     fn stripped_unknown_language_is_none() {
         assert!(stripped(Path::new("a.txt"), "// gone\nkeep\n").is_none());
     }
-/// T68.6: import rows are last path segment, kind import, not definitions.
+    /// T68.6: import rows are last path segment, kind import, not definitions.
     #[test]
     fn import_queries_capture_last_segment() {
         let cases = [
@@ -653,4 +671,5 @@ mod tests {
             assert!(map.starts_with("imports: "), "{path} outline: {map}");
             assert!(map.contains(name), "{path} outline: {map}");
         }
-    }}
+    }
+}

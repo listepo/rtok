@@ -212,7 +212,10 @@ fn second_repo_leaves_the_first_intact() {
     std::fs::write(b.join("chain.rs"), "fn alpha() {}\n").unwrap();
     let name = serde_json::json!({"name": "a"});
     let first = call(&home, &a, "symbol", name.clone());
-    assert_eq!(first, "chain.rs:1 function\nfn a() {\n    b();\n}\n");
+    assert_eq!(
+        first,
+        "chain.rs:1 function\nfn a() {\n    b();\n}\ncalls: b\n"
+    );
     assert_eq!(
         call(&home, &b, "symbol", name.clone()),
         "no definition of a"

@@ -48,11 +48,7 @@ async fn proxy_capture_measures_skill_listing_overhead() {
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
     assert_eq!(state.store.count_call_io().expect("call_io"), 1);
-    let call_id = state
-        .store
-        .calls_after(0, 1)
-        .expect("calls")[0]
-        .id;
+    let call_id = state.store.calls_after(0, 1).expect("calls")[0].id;
     let req = state
         .store
         .call_io_request(call_id)
@@ -60,7 +56,10 @@ async fn proxy_capture_measures_skill_listing_overhead() {
         .expect("request bytes");
     let wire = measure(&req).expect("stored request");
     assert_eq!(wire.count, fixture.count);
-    assert_eq!(wire.framing_bytes_per_skill, fixture.framing_bytes_per_skill);
+    assert_eq!(
+        wire.framing_bytes_per_skill,
+        fixture.framing_bytes_per_skill
+    );
 
     task.abort();
     let _ = std::fs::remove_dir_all(&dir);

@@ -34,17 +34,12 @@ pub struct Rule {
 const BUILTIN_KEEP: &[&str] = &["error", "warning", "panic", "fail", "traceback"];
 
 /// How repeated lines fold before the head/tail cut (T64.2).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Dedupe {
     Off,
+    #[default]
     Adjacent,
     Normalized,
-}
-
-impl Default for Dedupe {
-    fn default() -> Self {
-        Self::Adjacent
-    }
 }
 
 fn parse_dedupe(v: Option<&toml_edit::Item>, default: Dedupe) -> Result<Dedupe, String> {
@@ -563,10 +558,10 @@ fn placeholder_token(rest: &str) -> Option<(usize, &'static str)> {
     if let Some(n) = long_hex_at(rest) {
         return Some((n, "<HEX>"));
     }
-    if b.first().is_some_and(|c| c.is_ascii_digit()) {
-        if let Some((n, _)) = duration_at(rest) {
-            return Some((n, "<DUR>"));
-        }
+    if b.first().is_some_and(|c| c.is_ascii_digit())
+        && let Some((n, _)) = duration_at(rest)
+    {
+        return Some((n, "<DUR>"));
     }
     None
 }
@@ -629,7 +624,10 @@ fn duration_at(rest: &str) -> Option<(usize, ())> {
 }
 
 fn format_also_lines(nums: &[usize]) -> String {
-    nums.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
+    nums.iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn normalized_dedupe(lines: Vec<String>) -> Vec<String> {
@@ -836,14 +834,12 @@ fn parse_diag(line: &str) -> Option<(String, String, String)> {
             ));
         }
     }
-    if let Some(rest) = t.strip_prefix("FAILED ") {
-        if let Some((loc, err)) = rest.split_once(" - ") {
-            if let Some((cls, msg)) = err.split_once(": ") {
-                if is_exc(cls) {
-                    return Some((cls.to_string(), msg.to_string(), loc.to_string()));
-                }
-            }
-        }
+    if let Some(rest) = t.strip_prefix("FAILED ")
+        && let Some((loc, err)) = rest.split_once(" - ")
+        && let Some((cls, msg)) = err.split_once(": ")
+        && is_exc(cls)
+    {
+        return Some((cls.to_string(), msg.to_string(), loc.to_string()));
     }
     if let Some((cls, msg)) = t.split_once(": ") {
         let cls = cls.trim().trim_start_matches("E ").trim();
@@ -1228,7 +1224,6 @@ mod tests {
         assert_eq!(n_lines - content, expect_omitted, "{out}");
     }
 
-
     #[test]
     fn normalize_line_key_keeps_distinct_error_codes() {
         assert_ne!(
@@ -1286,7 +1281,12 @@ mod tests {
         let s = settings(80);
         let plain = apply(&s, &body, 0, &rule_adj, "arc");
         let norm = apply(&s, &body, 0, &rule_norm, "arc");
-        assert!(norm.len() < plain.len(), "plain={} norm={}", plain.len(), norm.len());
+        assert!(
+            norm.len() < plain.len(),
+            "plain={} norm={}",
+            plain.len(),
+            norm.len()
+        );
     }
 
     // --- T65.4: a stack-trace block survives the head/tail cut whole ---
@@ -1773,7 +1773,7 @@ mod tests {
         let rule = Rule {
             max_lines: 80,
             collapse_columns: false,
-            dedupe: false,
+            dedupe: Dedupe::Off,
             ..Rule::default()
         };
         let out = apply(&s, body, 0, &rule, "arc");
@@ -1785,7 +1785,7 @@ mod tests {
             max_lines: 40,
             head: 10,
             tail: 10,
-            dedupe: false,
+            dedupe: Dedupe::Off,
             collapse_columns: false,
             group,
             ..Rule::default()

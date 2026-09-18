@@ -94,7 +94,10 @@ async fn watchman_loop(
         .await
         .map_err(|e| e.to_string())?;
     let ig = gitignore(root);
-    let matcher = crate::plugins::graph::walk::Matcher::new(root, &cx.plugin_config::<crate::config::Graph>("graph"));
+    let matcher = crate::plugins::graph::walk::Matcher::new(
+        root,
+        &cx.plugin_config::<crate::config::Graph>("graph"),
+    );
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -206,7 +209,10 @@ fn pump<F>(
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
     let ig = gitignore(root);
-    let matcher = crate::plugins::graph::walk::Matcher::new(root, &cx.plugin_config::<crate::config::Graph>("graph"));
+    let matcher = crate::plugins::graph::walk::Matcher::new(
+        root,
+        &cx.plugin_config::<crate::config::Graph>("graph"),
+    );
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -334,7 +340,6 @@ mod tests {
     use rstest::rstest;
     use std::fs;
     use std::time::Duration;
-
 
     fn test_matcher(dir: &Path) -> crate::plugins::graph::walk::Matcher {
         crate::plugins::graph::walk::Matcher::new(dir, &Graph::default())
@@ -505,7 +510,13 @@ mod tests {
             "existing unsupported file triggered a rescan"
         );
         let gone_dir = dir.join("src/module");
-        assert!(absorb_event(gone_dir, &ig, &matcher, &mut pending, &mut rescan));
+        assert!(absorb_event(
+            gone_dir,
+            &ig,
+            &matcher,
+            &mut pending,
+            &mut rescan
+        ));
         assert!(
             rescan && pending.is_empty(),
             "removed directory must rescan"
@@ -523,7 +534,13 @@ mod tests {
         let mut pending = HashSet::new();
         let mut rescan = false;
         let built = dir.join("target/debug/build/x/out/y.rs");
-        assert!(!absorb_event(built, &ig, &matcher, &mut pending, &mut rescan));
+        assert!(!absorb_event(
+            built,
+            &ig,
+            &matcher,
+            &mut pending,
+            &mut rescan
+        ));
         assert!(pending.is_empty() && !rescan);
         assert!(absorb_event(
             dir.join("src/lib.rs"),

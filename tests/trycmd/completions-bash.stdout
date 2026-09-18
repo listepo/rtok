@@ -245,8 +245,9 @@ _rtok() {
                 cmd="rtok__subcmd__demon__subcmd__help__subcmd__supervise"
                 ;;
             rtok__subcmd__graph,affected)
-            rtok__subcmd__graph,dead)
                 cmd="rtok__subcmd__graph__subcmd__affected"
+                ;;
+            rtok__subcmd__graph,dead)
                 cmd="rtok__subcmd__graph__subcmd__dead"
                 ;;
             rtok__subcmd__graph,help)
@@ -262,8 +263,9 @@ _rtok() {
                 cmd="rtok__subcmd__graph__subcmd__status"
                 ;;
             rtok__subcmd__graph__subcmd__help,affected)
-            rtok__subcmd__graph__subcmd__help,dead)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__affected"
+                ;;
+            rtok__subcmd__graph__subcmd__help,dead)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__dead"
                 ;;
             rtok__subcmd__graph__subcmd__help,help)
@@ -277,6 +279,7 @@ _rtok() {
                 ;;
             rtok__subcmd__graph__subcmd__help,status)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__status"
+                ;;
             rtok__subcmd__guard,check)
                 cmd="rtok__subcmd__guard__subcmd__check"
                 ;;
@@ -428,8 +431,9 @@ _rtok() {
                 cmd="rtok__subcmd__help__subcmd__demon__subcmd__supervise"
                 ;;
             rtok__subcmd__help__subcmd__graph,affected)
-            rtok__subcmd__help__subcmd__graph,dead)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__affected"
+                ;;
+            rtok__subcmd__help__subcmd__graph,dead)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__dead"
                 ;;
             rtok__subcmd__help__subcmd__graph,impact)
@@ -440,6 +444,7 @@ _rtok() {
                 ;;
             rtok__subcmd__help__subcmd__graph,status)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__status"
+                ;;
             rtok__subcmd__help__subcmd__guard,check)
                 cmd="rtok__subcmd__help__subcmd__guard__subcmd__check"
                 ;;
@@ -1566,6 +1571,27 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__affected)
+            opts="-h --since --staged --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__graph__subcmd__dead)
             opts="-h --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1599,6 +1625,19 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help__subcmd__affected)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__graph__subcmd__help__subcmd__dead)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -1716,6 +1755,21 @@ _rtok() {
         rtok__subcmd__graph__subcmd__status)
             opts="-h --json --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__guard)
             opts="-h --config --help check help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -2231,6 +2285,19 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__affected)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__help__subcmd__graph__subcmd__dead)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -2274,6 +2341,19 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph__subcmd__status)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__help__subcmd__guard)
             opts="check"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then

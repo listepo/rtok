@@ -124,11 +124,11 @@ fn seed(n: u32) -> (Runtime, Vec<(i32, String)>, Vec<i32>, PathBuf) {
     }
     assert_eq!(live.len(), FACTS, "generator must plant {FACTS} facts");
     let mut retired = Vec::new();
-    for i in 0..REVISE {
-        let old = live[i].0;
+    for (i, slot) in live.iter_mut().enumerate().take(REVISE) {
+        let old = slot.0;
         let (title, body) = fact(i, true);
         let (new, old_id) = mem_revise(&cx, old, &title, &body).unwrap();
-        live[i] = (new, body);
+        *slot = (new, body);
         retired.push(old_id.expect("revise must retire the old row"));
     }
     (cx, live, retired, dir)

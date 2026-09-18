@@ -48,6 +48,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
             [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')
             [CompletionResult]::new('graph', 'graph', [CompletionResultType]::ParameterValue, 'Symbol index (`rtok graph index`)')
+            [CompletionResult]::new('guard', 'guard', [CompletionResultType]::ParameterValue, 'Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)')
             [CompletionResult]::new('dashboard', 'dashboard', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok web`; still runs, still prints where to go')
             [CompletionResult]::new('demon', 'demon', [CompletionResultType]::ParameterValue, 'Keep `rtok proxy` (or `mcp` / `web`) running in the background')
             [CompletionResult]::new('otel', 'otel', [CompletionResultType]::ParameterValue, 'OpenTelemetry export (`rtok otel flush | status`)')
@@ -64,6 +65,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;mcp' {
+            [CompletionResult]::new('--call', '--call', [CompletionResultType]::ParameterName, 'Call one listed tool and print the text result (pi `registerTool` shim, T70.3)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON arguments for `--call`')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -113,6 +116,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--tasks', '--tasks', [CompletionResultType]::ParameterName, 'Task list TOML')
             [CompletionResult]::new('--runs', '--runs', [CompletionResultType]::ParameterName, 'Repeats per task × config')
             [CompletionResult]::new('--timeout', '--timeout', [CompletionResultType]::ParameterName, 'Per-run timeout in seconds')
+            [CompletionResult]::new('--suite', '--suite', [CompletionResultType]::ParameterName, 'Task suite (`graph` = with/without rtok MCP)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the schedule and exit')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -352,6 +356,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--cmd', '--cmd', [CompletionResultType]::ParameterName, 'Command family hint (`git status`, `cargo test`, …)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool.execute.after`)')
+            [CompletionResult]::new('--archive', '--archive', [CompletionResultType]::ParameterName, 'Archive stdin and print the expand trailer (same path as `run`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -505,6 +510,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
             [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
             [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            [CompletionResult]::new('sync', 'sync', [CompletionResultType]::ParameterValue, 'Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Notes live/pinned/retired, recall and MCP call counts (T69.4)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -549,6 +556,26 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;memory;sync' {
+            [CompletionResult]::new('--file', '--file', [CompletionResultType]::ParameterName, 'CLAUDE.md or AGENTS.md')
+            [CompletionResult]::new('--budget', '--budget', [CompletionResultType]::ParameterName, 'Token budget; default `[plugins.memory] sync_tokens`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the unified diff and write nothing')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Delete the managed block and nothing else')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Overwrite a hand-edited block')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;status' {
+            [CompletionResult]::new('--project', '--project', [CompletionResultType]::ParameterName, 'Only notes of this project')
+            [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'Window for recalls and MCP calls (`30d`, `24h`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;memory;help' {
             [CompletionResult]::new('import', 'import', [CompletionResultType]::ParameterValue, 'Import `{kind,title,body}` JSONL; dedupe by body sha256')
             [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Print every note but session checkpoints as the JSONL `import` reads')
@@ -556,6 +583,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
             [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
             [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            [CompletionResult]::new('sync', 'sync', [CompletionResultType]::ParameterValue, 'Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Notes live/pinned/retired, recall and MCP call counts (T69.4)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -577,6 +606,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;memory;help;revise' {
             break
         }
+        'rtok;memory;help;sync' {
+            break
+        }
+        'rtok;memory;help;status' {
+            break
+        }
         'rtok;memory;help;help' {
             break
         }
@@ -586,6 +621,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
+            [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -602,9 +640,36 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;graph;status' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'json')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;impact' {
+            [CompletionResult]::new('--depth', '--depth', [CompletionResultType]::ParameterName, 'depth')
+            [CompletionResult]::new('--to', '--to', [CompletionResultType]::ParameterName, 'to')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;affected' {
+            [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'Diff against this ref')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--staged', '--staged', [CompletionResultType]::ParameterName, 'Staged files only (`git diff --cached --name-only`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of `file ← via symbol` lines')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;graph;help' {
             [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
+            [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -614,7 +679,45 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;graph;help;dead' {
             break
         }
+        'rtok;graph;help;status' {
+            break
+        }
+        'rtok;graph;help;impact' {
+            break
+        }
+        'rtok;graph;help;affected' {
+            break
+        }
         'rtok;graph;help;help' {
+            break
+        }
+        'rtok;guard' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;guard;check' {
+            [CompletionResult]::new('--tool', '--tool', [CompletionResultType]::ParameterName, 'Host tool name (`bash`, `Read`, …)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'Tool arguments as JSON')
+            [CompletionResult]::new('--session', '--session', [CompletionResultType]::ParameterName, 'Host session id (the cache is per session)')
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Overlay `[hook] host`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;guard;help' {
+            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;guard;help;check' {
+            break
+        }
+        'rtok;guard;help;help' {
             break
         }
         'rtok;dashboard' {
@@ -815,6 +918,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
             [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')
             [CompletionResult]::new('graph', 'graph', [CompletionResultType]::ParameterValue, 'Symbol index (`rtok graph index`)')
+            [CompletionResult]::new('guard', 'guard', [CompletionResultType]::ParameterValue, 'Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)')
             [CompletionResult]::new('dashboard', 'dashboard', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok web`; still runs, still prints where to go')
             [CompletionResult]::new('demon', 'demon', [CompletionResultType]::ParameterValue, 'Keep `rtok proxy` (or `mcp` / `web`) running in the background')
             [CompletionResult]::new('otel', 'otel', [CompletionResultType]::ParameterValue, 'OpenTelemetry export (`rtok otel flush | status`)')
@@ -935,6 +1039,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
             [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
             [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            [CompletionResult]::new('sync', 'sync', [CompletionResultType]::ParameterValue, 'Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Notes live/pinned/retired, recall and MCP call counts (T69.4)')
             break
         }
         'rtok;help;memory;import' {
@@ -955,15 +1061,40 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;help;memory;revise' {
             break
         }
+        'rtok;help;memory;sync' {
+            break
+        }
+        'rtok;help;memory;status' {
+            break
+        }
         'rtok;help;graph' {
             [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
             [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Index health for the current or given root (T68.3)')
+            [CompletionResult]::new('impact', 'impact', [CompletionResultType]::ParameterValue, 'Symbol impact or call paths to a target (T68.4)')
+            [CompletionResult]::new('affected', 'affected', [CompletionResultType]::ParameterValue, 'Tests that reach files changed in git (`git diff --name-only`)')
             break
         }
         'rtok;help;graph;index' {
             break
         }
         'rtok;help;graph;dead' {
+            break
+        }
+        'rtok;help;graph;status' {
+            break
+        }
+        'rtok;help;graph;impact' {
+            break
+        }
+        'rtok;help;graph;affected' {
+            break
+        }
+        'rtok;help;guard' {
+            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)')
+            break
+        }
+        'rtok;help;guard;check' {
             break
         }
         'rtok;help;dashboard' {

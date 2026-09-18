@@ -184,51 +184,6 @@ fn kind(cx: &Ctx) -> String {
 }
 
 /// Read `transcript_path`, store a `notes` row `kind=checkpoint:<session>`.
-
-pub fn session_kind(session: &str) -> String {
-    format!("session:{session}")
-}
-
-/// SessionEnd handoff (T71.2): same extractor/render as PreCompact, different note kind.
-pub fn save_session_end(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
-    let cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
-    let project = cx.cwd().and_then(|p| super::memory::project_name(std::path::Path::new(p)));
-    cx.insert_note(project.as_deref(), &session_kind(cx.session()), "session", &cp.render())?;
-    Ok(cp)
-}
-
-pub fn offer_session_handoff(cx: &Ctx) -> Option<Injection> {
-    let cfg = cx.plugin_config::<crate::config::Memory>("memory");
-    if !cfg.startup_recall {
-        return None;
-    }
-    let project = cx.cwd().and_then(|p| super::memory::project_name(std::path::Path::new(p)));
-    let text = cx
-        .latest_note_for_project(project.as_deref(), "session:")
-        .ok()
-        .flatten()?;
-    let cap = cfg.checkpoint_tokens.max(1);
-    let text = crate::plugin::fit_budget(cx, &text, Class::Prose, cap);
-    if text.is_empty() {
-        return None;
-    }
-    let _ = cx.record(&rtok_plugin_sdk::Measurement {
-        plugin: "memory",
-        kind: "handoff",
-        before_bytes: text.len() as u64,
-        after_bytes: text.len() as u64,
-        est_before: cx.estimate(&text, Class::Prose),
-        est_after: cx.estimate(&text, Class::Prose),
-        ref_id: Some(cx.session().to_string()),
-        call_id: None,
-    });
-    Some(Injection {
-        plugin: "memory",
-        priority: 9,
-        text,
-    })
-}
-
 pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
     write(transcript_path, cx, &kind(cx), Some("rtok"))
 }
@@ -508,8 +463,10 @@ mod tests {
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
         assert!(inj.text.starts_with("checkpoint\n"), "{}", inj.text);
 
-        let mut many = Checkpoint::default();
-        many.prompts = vec!["x".repeat(80)];
+        let mut many = Checkpoint {
+            prompts: vec!["x".repeat(80)],
+            ..Default::default()
+        };
         for i in 0..200 {
             many.ids.push(format!("id{i:04}"));
             many.id_meta.push(("Read".into(), 9999));
@@ -569,8 +526,7 @@ mod tests {
         assert_eq!(claude, opencode);
     }
 
-    #[test]
-fn additional(out: &[u8]) -> String {
+    fn additional(out: &[u8]) -> String {
         serde_json::from_slice::<serde_json::Value>(out).unwrap()["hookSpecificOutput"]
             ["additionalContext"]
             .as_str()

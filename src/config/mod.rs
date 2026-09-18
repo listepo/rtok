@@ -186,17 +186,6 @@ section! {
 }
 
 section! {
-    /// `[proxy.tools_rewrite]`
-    ToolsRewrite {
-        /// Off by default so request bytes stay identical until an A/B (T59.5).
-        enabled: bool = false,
-        max_description_tokens: u32 = 60,
-        allow: Vec<String> = Vec::new(),
-        deny: Vec<String> = Vec::new(),
-    }
-}
-
-section! {
     /// `[web]` — `rtok web` (P19). Slint WASM UI + WebSocket API, the same data as `rtok tui`.
     Web {
         host: String = s("127.0.0.1"),

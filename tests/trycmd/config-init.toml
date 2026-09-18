@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,287 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -55,6 +55,12 @@ target/tmp/t60-2-config-init.toml
 +include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
 +context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 +dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
++
++[proxy.tools_rewrite]                 # T59.5; off: request bytes stay identical
++enabled = false
++max_description_tokens = 60           # 0 = no truncate; sentence boundary; estimator Class::Prose
++allow = []                            # empty = keep all names not in deny
++deny = []                             # drop these names from tools[]; later calls still forward
 +
 +[web]                                 # rtok web (same data as rtok tui)
 +host = "127.0.0.1"                    # --host
@@ -119,6 +125,7 @@ target/tmp/t60-2-config-init.toml
 +runs     = 3
 +dry_run  = false
 +timeout_s = 900                       # per task run
++suite    = ""                         # "" = T9.1 six tasks; "graph" = T68.9 with/without MCP
 +[bench.configs]                       # name = settings file passed to `claude --settings`
 +a = "bench/configs/legacy.json"
 +b = "bench/configs/rtok.json"
@@ -150,10 +157,14 @@ target/tmp/t60-2-config-init.toml
 +config_path   = "~/.config/opencode/opencode.json"
 +[setup.pi]
 +extensions_path = "~/.pi/agent/extensions"
++tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)
 +[setup.zcode]
 +config_path   = "~/.zcode/cli/config.json"
 +[setup.kimi]
 +config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
++[setup.vscode]
++code_user_dir = ""
++insiders_user_dir = ""
 +[setup.copilot]
 +dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
 +[setup.aider]
@@ -191,7 +202,8 @@ target/tmp/t60-2-config-init.toml
 +rules_dir = "~/.rtok/rules.d"         # drop-ins: every *.toml merges after rules in name order (T50.2)
 +trailer_min_lines = 40                # add `[rtok <id> · N lines · expand …]` above this
 +fail_tail_lines   = 80                # non-zero exit → last N lines verbatim
-+never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&`, -i are always skipped
++never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&` are always skipped
++interactive_stems = ["python", "node", "psql", "sqlite3", "irb", "bash", "sh", "zsh", "docker", "kubectl"]  # `-i` skips wrap only for these (docker: run/exec; kubectl: exec); `--interactive` always skips
 +
 +[plugins.read]
 +enabled          = true
@@ -203,6 +215,8 @@ target/tmp/t60-2-config-init.toml
 +search_max       = 50
 +search_max_bytes = 1048576             # search skips files larger than this (T55.5)
 +tree_depth       = 2
++delta            = true               # T58.1: changed re-read → unified diff vs last archive
++delta_max_ratio  = 0.6                # full file when the diff is not below this fraction
 +
 +[plugins.archive]
 +enabled    = true
@@ -212,6 +226,7 @@ target/tmp/t60-2-config-init.toml
 +tail_lines = 4
 +tiers      = false                    # optional L0/L1/L2 depth (OpenViking spec, AGPL-3.0 — rtok does not vendor/link/subprocess; native impl T33.2)
 +live_blobs = false                    # shrink nested JSON dumps + data: blobs in user blocks, never results/system/tools/last-2-turns (T51.1, opt-in)
++skills     = false                    # opt-in skill body archiving outside the live zone (T61.2)
 +
 +[plugins.proxy]
 +enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]
@@ -241,8 +256,12 @@ target/tmp/t60-2-config-init.toml
 +enabled        = true
 +recall_titles  = 5                    # SessionStart: last N titles + ids
 +recall_tokens  = 200
++prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
 +checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 +search_limit   = 5
++sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
++startup_recall = false                # SessionStart(startup) restores newest session:* note (T71.2); off until A/B
++handoff        = false                # T59.6 sub-agent digest MCP tool
 +
 +[plugins.memory.embed]
 +enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
@@ -254,10 +273,14 @@ target/tmp/t60-2-config-init.toml
 +[plugins.graph]
 +enabled    = true
 +max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"
++map_tokens = 0                        # SessionStart repo map cap (D5 share next to memory.recall_tokens); 0 = off
 +body_lines = 40                       # symbol(): source lines shown per definition
 +auto_index = true                     # every symbol/callers/impact call walks the tree; false = index once, then `rtok graph index` or the watcher
 +backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 +watch      = "off"                    # off | notify | watchman (P8d): background re-index inside `rtok mcp`
++exclude    = []                       # gitignore-style paths dropped from the walk (T68.10)
++include    = []                       # gitignore-style paths forced back in (T68.10)
++extensions = {}                       # ext = "grammar" remap for custom suffixes (T68.10)
 +
 +[plugins.toon]
 +enabled  = false

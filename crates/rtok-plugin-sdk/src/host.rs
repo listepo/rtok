@@ -382,11 +382,7 @@ pub trait Symbols {
     fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>>;
 
     /// Callees per definition of `name`: `(def_path, def_line, callee, first_line)` (T68.2).
-    fn symbol_callees(
-        &self,
-        root: &str,
-        name: &str,
-    ) -> Result<Vec<(String, i32, String, i32)>> {
+    fn symbol_callees(&self, root: &str, name: &str) -> Result<Vec<(String, i32, String, i32)>> {
         let _ = (root, name);
         Ok(Vec::new())
     }

@@ -14,9 +14,11 @@ the OS default under Code / Code - Insiders).
 | proxy | no | Copilot in VS Code has no documented base-URL setting to point at the proxy |
 | plugin | no | VS Code loads MCP from the user mcp.json; there is no local plugin directory to link |
 
-Reachable (desktop): cmd, read, graph, memory, measure, inject, guard, archive, toon, compress (via MCP).
+MCP is the only path in, so only the plugins that declare an MCP surface are carried.
 
-Not reachable: proxy.
+Reachable (desktop): read, archive, memory, graph, toon
+
+Not reachable: measure, cmd, proxy, inject, guard, compress
 
 ## Docs
 

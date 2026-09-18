@@ -29,8 +29,8 @@ prints the ketch install line once.
 The proxy carries `proxy`, MCP carries `mcp`, and the linked plugin carries the bash call
 path (`cli`). Nothing carries `hook`.
 
-Reachable: measure, cmd, read, archive, proxy, memory, graph, toon, compress
-Not reachable: inject, guard
+Reachable: measure, cmd, read, archive, proxy, guard, memory, graph, toon, compress
+Not reachable: inject
 
 ## Docs
 

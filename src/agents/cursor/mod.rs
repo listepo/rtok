@@ -242,7 +242,13 @@ fn insert_ours(root: &mut Value) -> String {
 
 fn strip_ours(root: &mut Value) -> String {
     let mut removed = Vec::new();
-    for event in ["beforeShellExecution", "afterShellExecution", "sessionStart", "preCompact", "postToolUse"] {
+    for event in [
+        "beforeShellExecution",
+        "afterShellExecution",
+        "sessionStart",
+        "preCompact",
+        "postToolUse",
+    ] {
         let Some(arr) = root
             .pointer_mut(&format!("/hooks/{event}"))
             .and_then(Value::as_array_mut)
@@ -270,7 +276,9 @@ fn is_ours(entry: &Value) -> bool {
     let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
-    for event in ["PreToolUse", "PostToolUse", "SessionStart"] {
+    // Every Claude-side event `insert_ours` writes: a name missing here leaves that
+    // entry behind on remove, and `agents list` keeps reporting hooks as installed.
+    for event in ["PreToolUse", "PostToolUse", "SessionStart", "PreCompact"] {
         let suffix = format!(" hook {event} --host cursor");
         if let Some(bin) = cmd.strip_suffix(&suffix)
             && super::is_rtok_bin(super::unquote_bin(bin))

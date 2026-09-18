@@ -200,9 +200,9 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
     };
     // Hash the raw bytes before archiving (T65.1): a same-session hit is a pointer, not
     // the body. Fail open — lookup errors and short bodies print as today.
-    if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", &body) {
+    if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", body) {
         println!("{msg}");
-        return Ok(code);
+        return;
     }
     // The archive keeps the command's bytes, not the lossy `String` used to filter and
     // print them: `expand` must return what the command wrote, including invalid UTF-8.

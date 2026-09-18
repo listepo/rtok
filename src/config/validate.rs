@@ -38,12 +38,7 @@ fn issues_in(path: &Path, text: &str) -> Vec<String> {
     errors
 }
 
-fn check_graph_extensions(
-    path: &Path,
-    src: &str,
-    doc: &dyn TableLike,
-    errors: &mut Vec<String>,
-) {
+fn check_graph_extensions(path: &Path, src: &str, doc: &dyn TableLike, errors: &mut Vec<String>) {
     let Some(plugins) = doc.get("plugins").and_then(|i| i.as_table_like()) else {
         return;
     };

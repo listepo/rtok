@@ -128,7 +128,7 @@ dedupe = true
 max_lines = 40
 head = 8
 tail = 20
-keep = ["BUILD FAILURE|ERROR|FAILURE|\[ERROR\]"]
+keep = ['BUILD FAILURE|ERROR|FAILURE|\[ERROR\]']
 dedupe = true
 
 [gradle]
@@ -151,7 +151,7 @@ group = "diag"
 max_lines = 40
 head = 8
 tail = 16
-keep = ["error TS|Found \d+ error"]
+keep = ['error TS|Found \d+ error']
 dedupe = true
 group = "diag"
 

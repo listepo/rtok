@@ -145,7 +145,10 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     let v: serde_json::Value = serde_json::from_str(&reply).expect("json");
     assert_eq!(v["type"], "expand", "{reply}");
     assert_eq!(v["id"], id, "{reply}");
-    assert!(v["text"].as_str().unwrap_or("").contains("NEEDLE"), "{reply}");
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("NEEDLE"),
+        "{reply}"
+    );
 
     let missing = state
         .inbound(r#"{"expand":"no-such-id"}"#)
@@ -153,7 +156,10 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     let v: serde_json::Value = serde_json::from_str(&missing).expect("json");
     assert_eq!(v["type"], "message", "{missing}");
     assert!(
-        v["text"].as_str().unwrap_or("").contains("unknown archive id"),
+        v["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unknown archive id"),
         "{missing}"
     );
 

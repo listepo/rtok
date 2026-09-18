@@ -26,7 +26,10 @@ Arguments:
   [WRAP]...  Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
 
 Options:
+      --call <TOOL>    Call one listed tool and print the text result (pi `registerTool` shim,
+                       T70.3)
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json <ARGS>    JSON arguments for `--call`
   -h, --help           Print help
 
 $ rtok proxy --help
@@ -92,6 +95,7 @@ Options:
       --runs <RUNS>        Repeats per task × config
       --dry-run            Print the schedule and exit
       --timeout <TIMEOUT>  Per-run timeout in seconds
+      --suite <SUITE>      Task suite (`graph` = with/without rtok MCP)
   -h, --help               Print help
 
 $ rtok doctor --help
@@ -138,7 +142,7 @@ Usage: rtok agents install [OPTIONS] <HOST>
 
 Arguments:
   <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
-          `copilot`, `aider`, `windsurf`, `zed`)
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -163,7 +167,7 @@ Usage: rtok agents remove [OPTIONS] <HOST>
 
 Arguments:
   <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
-          `copilot`, `aider`, `windsurf`, `zed`)
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -226,6 +230,7 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --stdin          Read the payload from stdin (OpenCode `tool.execute.after`)
       --cmd <CMD>      Command family hint (`git status`, `cargo test`, …)
+      --archive        Archive stdin and print the expand trailer (same path as `run`)
   -h, --help           Print help
 
 $ rtok expand --help
@@ -399,6 +404,8 @@ Commands:
   pin     Pin a note so it leads SessionStart recall (T69.1)
   unpin   Drop a note back to newest-first recall order (T69.1)
   revise  Save a replacement (title, body) for a note and retire the old row (T69.1)
+  sync    Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)
+  status  Notes live/pinned/retired, recall and MCP call counts (T69.4)
   help    Print this message or the help of the given subcommand(s)
 
 Options:
@@ -485,9 +492,12 @@ Symbol index (`rtok graph index`)
 Usage: rtok graph [OPTIONS] <COMMAND>
 
 Commands:
-  index  Walk a tree and insert definitions + references
-  dead   List unreferenced private definitions (skips pub, trait impls, tests, macros)
-  help   Print this message or the help of the given subcommand(s)
+  index     Walk a tree and insert definitions + references
+  dead      List unreferenced private definitions (skips pub, trait impls, tests, macros)
+  status    Index health for the current or given root (T68.3)
+  impact    Symbol impact or call paths to a target (T68.4)
+  affected  Tests that reach files changed in git (`git diff --name-only`)
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -517,6 +527,72 @@ Arguments:
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
   -h, --help           Print help
+
+$ rtok graph status --help
+Index health for the current or given root (T68.3)
+
+Usage: rtok graph status [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           
+  -h, --help           Print help
+
+$ rtok graph impact --help
+Symbol impact or call paths to a target (T68.4)
+
+Usage: rtok graph impact [OPTIONS] <NAME> [PATH]
+
+Arguments:
+  <NAME>  
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --depth <DEPTH>  [default: 2]
+      --to <TO>        
+  -h, --help           Print help
+
+$ rtok graph affected --help
+Tests that reach files changed in git (`git diff --name-only`)
+
+Usage: rtok graph affected [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --since <SINCE>  Diff against this ref
+      --staged         Staged files only (`git diff --cached --name-only`)
+      --json           JSON instead of `file ← via symbol` lines
+  -h, --help           Print help
+
+$ rtok guard --help
+Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
+
+Usage: rtok guard [OPTIONS] <COMMAND>
+
+Commands:
+  check  Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok guard check --help
+Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+
+Usage: rtok guard check [OPTIONS] --tool <TOOL> --json <INPUT>
+
+Options:
+      --config <PATH>      User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --tool <TOOL>        Host tool name (`bash`, `Read`, …)
+      --json <INPUT>       Tool arguments as JSON
+      --session <SESSION>  Host session id (the cache is per session)
+      --host <HOST>        Overlay `[hook] host`
+  -h, --help               Print help
 
 $ rtok demon --help
 Keep `rtok proxy` (or `mcp` / `web`) running in the background

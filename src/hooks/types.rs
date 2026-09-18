@@ -54,15 +54,15 @@ impl HookInput {
         self.take_transcript_path_alias();
         if matches!(event, "afterMCPExecution") || self.hook_event_name == "afterMCPExecution" {
             self.hook_event_name = "AfterMCPExecution".into();
-            if self.tool_name.is_none() {
-                if let Some(n) = self.extra.get("tool_name").and_then(|v| v.as_str()) {
-                    self.tool_name = Some(n.to_string());
-                }
+            if self.tool_name.is_none()
+                && let Some(n) = self.extra.get("tool_name").and_then(|v| v.as_str())
+            {
+                self.tool_name = Some(n.to_string());
             }
-            if self.tool_response.is_none() {
-                if let Some(r) = self.extra.get("result_json").and_then(|v| v.as_str()) {
-                    self.tool_response = Some(serde_json::Value::String(r.to_string()));
-                }
+            if self.tool_response.is_none()
+                && let Some(r) = self.extra.get("result_json").and_then(|v| v.as_str())
+            {
+                self.tool_response = Some(serde_json::Value::String(r.to_string()));
             }
         }
         if self.session_id.is_empty()

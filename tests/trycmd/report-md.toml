@@ -49,6 +49,7 @@ Every effective key with its origin — the `config show --sources` page.
 | bench.configs.b | bench/configs/rtok.json | default |
 | bench.dry_run | false | default |
 | bench.runs | 3 | default |
+| bench.suite |  | default |
 | bench.tasks | bench/tasks.toml | default |
 | bench.timeout_s | 900 | default |
 | core.archive_dir | ~/.rtok/archive | default |
@@ -100,10 +101,12 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.archive.keep_turns | 4 | default |
 | plugins.archive.live_blobs | false | default |
 | plugins.archive.min_tokens | 1500 | default |
+| plugins.archive.skills | false | default |
 | plugins.archive.tail_lines | 4 | default |
 | plugins.archive.tiers | false | default |
 | plugins.cmd.enabled | true | default |
 | plugins.cmd.fail_tail_lines | 80 | default |
+| plugins.cmd.interactive_stems | [python, node, psql, sqlite3, irb, bash, sh, zsh, docker, kubectl] | default |
 | plugins.cmd.never_wrap | [rtok, sudo] | default |
 | plugins.cmd.rewrite | true | default |
 | plugins.cmd.rules | ~/.rtok/rules.toml | default |
@@ -115,6 +118,9 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.graph.backend | tags | default |
 | plugins.graph.body_lines | 40 | default |
 | plugins.graph.enabled | true | default |
+| plugins.graph.exclude | [] | default |
+| plugins.graph.include | [] | default |
+| plugins.graph.map_tokens | 0 | default |
 | plugins.graph.max_tokens | 2000 | default |
 | plugins.graph.watch | off | default |
 | plugins.guard.deny_grep_glob | false | default |
@@ -134,9 +140,13 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.memory.embed.model | all-MiniLM-L6-v2 | default |
 | plugins.memory.embed.provider | local | default |
 | plugins.memory.enabled | true | default |
+| plugins.memory.handoff | false | default |
+| plugins.memory.prompt_recall | 0 | default |
 | plugins.memory.recall_titles | 5 | default |
 | plugins.memory.recall_tokens | 200 | default |
 | plugins.memory.search_limit | 5 | default |
+| plugins.memory.startup_recall | false | default |
+| plugins.memory.sync_tokens | 300 | default |
 | plugins.proxy.enabled | true | default |
 | plugins.proxy.semantic_cache.cache_by_model | true | default |
 | plugins.proxy.semantic_cache.cache_by_provider | true | default |
@@ -149,6 +159,8 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.read.advice | true | default |
 | plugins.read.allow_paths | [] | default |
 | plugins.read.default_mode | full | default |
+| plugins.read.delta | true | default |
+| plugins.read.delta_max_ratio | 0.6 | default |
 | plugins.read.enabled | true | default |
 | plugins.read.languages | [] | default |
 | plugins.read.max_chars | 20000 | default |
@@ -170,6 +182,10 @@ Every effective key with its origin — the `config show --sources` page.
 | proxy.openai_upstream | https://api.openai.com | default |
 | proxy.port | 8790 | default |
 | proxy.timeout_s | 600 | default |
+| proxy.tools_rewrite.allow | [] | default |
+| proxy.tools_rewrite.deny | [] | default |
+| proxy.tools_rewrite.enabled | false | default |
+| proxy.tools_rewrite.max_description_tokens | 60 | default |
 | proxy.upstream | https://api.anthropic.com | default |
 | report.ai | false | default |
 | report.budget_tokens | 8000 | default |
@@ -189,7 +205,10 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.modes | [] | default |
 | setup.opencode.config_path | ~/.config/opencode/opencode.json | default |
 | setup.pi.extensions_path | ~/.pi/agent/extensions | default |
+| setup.pi.tools | false | default |
 | setup.proxy | false | default |
+| setup.vscode.code_user_dir |  | default |
+| setup.vscode.insiders_user_dir |  | default |
 | setup.windsurf.config_path | ~/.codeium/windsurf/mcp_config.json | default |
 | setup.yes | false | default |
 | setup.zcode.config_path | ~/.zcode/cli/config.json | default |
@@ -223,7 +242,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.host | 127.0.0.1 | default |
 | web.port | 3333 | default |
 
-177 keys.
+196 keys.
 
 ## Doctor
 
@@ -232,7 +251,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 mcp
-  rtok ([..] tools, ~[..] desc tokens) [..]
+  rtok (14 tools, ~257 desc tokens) [CWD]/target/debug/rtok
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)
@@ -260,7 +279,7 @@ agents
     proxy   not supported: Cursor has no base-URL setting to point at the proxy
     plugin  not installed (--yes)
   codex (cli)
-    hooks   not supported: Codex has no shell hook events
+    hooks   not installed
     mcp     not installed
     proxy   not installed (--proxy)
     plugin  not supported: Codex loads MCP from config.toml; there is no plugin directory to link
@@ -276,7 +295,7 @@ agents
     plugin  not installed (--yes)
   pi (cli)
     hooks   not supported: pi has no hook events; the extension owns the bash call path
-    mcp     not supported: pi philosophy is no MCP; the extension calls rtok run and rtok filter directly
+    mcp     not supported: pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true
     proxy   not supported: pi provider base URLs live in its models config, which setup does not edit
     plugin  not installed (--yes)
   zcode (desktop)
@@ -289,6 +308,16 @@ agents
     mcp     not installed
     proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
     plugin  not supported: Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link
+  vscode (desktop)
+    hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    mcp     not installed
+    proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
+    plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
+  vscode (desktop)
+    hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    mcp     not installed
+    proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
+    plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
   copilot (cli)
     hooks   not installed
     mcp     not installed

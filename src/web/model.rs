@@ -289,7 +289,11 @@ pub struct MemoryKindAgg {
 }
 
 /// One `rtok memory status` snapshot — the same type `--json` prints (T60.1).
-pub fn memory_status(cfg: &Config, project: Option<&str>, since: Option<&str>) -> Result<MemoryStatus> {
+pub fn memory_status(
+    cfg: &Config,
+    project: Option<&str>,
+    since: Option<&str>,
+) -> Result<MemoryStatus> {
     let since_label = since.unwrap_or(&cfg.stats.since);
     let span = stats::parse_since(since_label)?;
     let since_unix = std::time::SystemTime::now()
@@ -618,11 +622,19 @@ fn sink_label(plugin: &str, kind: &str, ref_id: Option<&str>) -> (String, String
 
 fn sink_switch(cfg: &Config, class: &str, sink: &str) -> String {
     match class {
-        "read" => format!("[plugins.read] default_mode = {}", cfg.plugins.read.default_mode),
+        "read" => format!(
+            "[plugins.read] default_mode = {}",
+            cfg.plugins.read.default_mode
+        ),
         "cmd" => {
+            // Without the `cmd` plugin there are no built-in rules, so every stem
+            // reads as "no rule yet" (T0.4: one plugin feature must build alone).
+            #[cfg(feature = "cmd")]
             let has = crate::plugins::cmd::rules::defaults()
                 .iter()
                 .any(|r| r.match_cmd == sink);
+            #[cfg(not(feature = "cmd"))]
+            let has = false;
             if has {
                 format!("[{sink}] rule")
             } else {
@@ -1147,17 +1159,18 @@ impl<'a> Model<'a> {
             .into_iter()
             .map(|(m, enabled, mut page)| {
                 page.fields.extend(config_fields(m.id, self.cfg));
-                if m.id == "memory" {
-                    if let Some(store) = self.store {
-                        if let Ok(aggs) = store.memory_note_aggs(None) {
-                            let live: u64 = aggs.iter().map(|r| r.live).sum();
-                            let pinned: u64 = aggs.iter().map(|r| r.pinned).sum();
-                            let retired: u64 = aggs.iter().map(|r| r.retired).sum();
-                            page.fields.push(("notes live".into(), live.to_string()));
-                            page.fields.push(("notes pinned".into(), pinned.to_string()));
-                            page.fields.push(("notes retired".into(), retired.to_string()));
-                        }
-                    }
+                if m.id == "memory"
+                    && let Some(store) = self.store
+                    && let Ok(aggs) = store.memory_note_aggs(None)
+                {
+                    let live: u64 = aggs.iter().map(|r| r.live).sum();
+                    let pinned: u64 = aggs.iter().map(|r| r.pinned).sum();
+                    let retired: u64 = aggs.iter().map(|r| r.retired).sum();
+                    page.fields.push(("notes live".into(), live.to_string()));
+                    page.fields
+                        .push(("notes pinned".into(), pinned.to_string()));
+                    page.fields
+                        .push(("notes retired".into(), retired.to_string()));
                 }
                 PluginPage {
                     id: m.id,

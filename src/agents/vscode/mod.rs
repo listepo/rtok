@@ -126,29 +126,20 @@ pub fn mcp_path(cfg: &Config, insiders: bool) -> PathBuf {
 pub fn default_user_dir(insiders: bool) -> PathBuf {
     let home = home_dir();
     if cfg!(target_os = "macos") {
-        let app = if insiders {
-            "Code - Insiders"
-        } else {
-            "Code"
-        };
-        return home.join("Library/Application Support").join(app).join("User");
+        let app = if insiders { "Code - Insiders" } else { "Code" };
+        return home
+            .join("Library/Application Support")
+            .join(app)
+            .join("User");
     }
     if cfg!(windows) {
-        let app = if insiders {
-            "Code - Insiders"
-        } else {
-            "Code"
-        };
+        let app = if insiders { "Code - Insiders" } else { "Code" };
         let root = std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or(home);
         return root.join(app).join("User");
     }
-    let app = if insiders {
-        "Code - Insiders"
-    } else {
-        "Code"
-    };
+    let app = if insiders { "Code - Insiders" } else { "Code" };
     home.join(".config").join(app).join("User")
 }
 

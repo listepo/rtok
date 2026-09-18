@@ -131,8 +131,11 @@ Changes not staged for commit:
             })
             .collect();
         assert_eq!(families, ["grep", "find", "ls"]);
-        assert_eq!(rows[0].kind, "rule");
-        assert_eq!(rows[1].kind, "formatter");
-        assert_eq!(rows[2].kind, "formatter");
+        // All three are rule-engine families: `format()` has no `ls`/`find` arm, they
+        // compact through `[ls]` / `[find]` (`group = "dir"`) in `rules/default.toml`.
+        assert_eq!(
+            rows.iter().map(|r| r.kind.as_str()).collect::<Vec<_>>(),
+            ["rule"; 3]
+        );
     }
 }

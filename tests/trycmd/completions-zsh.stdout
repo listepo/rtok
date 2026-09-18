@@ -40,6 +40,8 @@ _arguments "${_arguments_options[@]}" : /
 ;;
 (mcp)
 _arguments "${_arguments_options[@]}" : /
+'--call=[Call one listed tool and print the text result (pi /`registerTool/` shim, T70.3)]:TOOL:_default' /
+'--json=[JSON arguments for /`--call/`]:ARGS:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /
@@ -95,6 +97,7 @@ _arguments "${_arguments_options[@]}" : /
 '--tasks=[Task list TOML]:TASKS:_files' /
 '--runs=[Repeats per task × config]:RUNS:_default' /
 '--timeout=[Per-run timeout in seconds]:TIMEOUT:_default' /
+'--suite=[Task suite (/`graph/` = with/without rtok MCP)]:SUITE:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--dry-run[Print the schedule and exit]' /
 '-h[Print help]' /
@@ -148,7 +151,7 @@ _arguments "${_arguments_options[@]}" : /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
 (remove)
@@ -157,7 +160,7 @@ _arguments "${_arguments_options[@]}" : /
 '--dry-run[Print what would be removed and exit]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
 (list)
@@ -307,7 +310,7 @@ _arguments "${_arguments_options[@]}" : /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
 (remove)
@@ -316,7 +319,7 @@ _arguments "${_arguments_options[@]}" : /
 '--dry-run[Print what would be removed and exit]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
 (list)
@@ -451,7 +454,7 @@ _arguments "${_arguments_options[@]}" : /
 '--all[All variants (the default when neither /`--cli/` nor /`--desktop/` is given)]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`):_default' /
+':host -- Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`):_default' /
 && ret=0
 ;;
 (run)
@@ -467,6 +470,7 @@ _arguments "${_arguments_options[@]}" : /
 '--cmd=[Command family hint (/`git status/`, /`cargo test/`, …)]:CMD:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '--stdin[Read the payload from stdin (OpenCode /`tool.execute.after/`)]' /
+'--archive[Archive stdin and print the expand trailer (same path as /`run/`)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0
@@ -737,6 +741,28 @@ _arguments "${_arguments_options[@]}" : /
 ':id:_default' /
 && ret=0
 ;;
+(sync)
+_arguments "${_arguments_options[@]}" : /
+'--file=[CLAUDE.md or AGENTS.md]:FILE:_files' /
+'--budget=[Token budget; default /`/[plugins.memory/] sync_tokens/`]:BUDGET:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--dry-run[Print the unified diff and write nothing]' /
+'--remove[Delete the managed block and nothing else]' /
+'--force[Overwrite a hand-edited block]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+'--project=[Only notes of this project]:PROJECT:_default' /
+'--since=[Window for recalls and MCP calls (/`30d/`, /`24h/`)]:SINCE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__memory__subcmd__help_commands" /
@@ -770,6 +796,14 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (revise)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(sync)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -817,6 +851,36 @@ _arguments "${_arguments_options[@]}" : /
 '::path:_files' /
 && ret=0
 ;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'::path:_files' /
+&& ret=0
+;;
+(impact)
+_arguments "${_arguments_options[@]}" : /
+'--depth=[]:DEPTH:_default' /
+'--to=[]:TO:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+':name:_default' /
+'::path:_files' /
+&& ret=0
+;;
+(affected)
+_arguments "${_arguments_options[@]}" : /
+'(--staged)--since=[Diff against this ref]:SINCE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--staged[Staged files only (/`git diff --cached --name-only/`)]' /
+'--json[JSON instead of /`file ← via symbol/` lines]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__graph__subcmd__help_commands" /
@@ -834,6 +898,72 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (dead)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(impact)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(affected)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(guard)
+_arguments "${_arguments_options[@]}" : /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+":: :_rtok__subcmd__guard_commands" /
+"*::: :->guard" /
+&& ret=0
+
+    case $state in
+    (guard)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-guard-command-$line[1]:"
+        case $line[1] in
+            (check)
+_arguments "${_arguments_options[@]}" : /
+'--tool=[Host tool name (/`bash/`, /`Read/`, …)]:TOOL:_default' /
+'--json=[Tool arguments as JSON]:INPUT:_default' /
+'--session=[Host session id (the cache is per session)]:SESSION:_default' /
+'--host=[Overlay /`/[hook/] host/`]:HOST:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__guard__subcmd__help_commands" /
+"*::: :->help" /
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-guard-help-command-$line[1]:"
+        case $line[1] in
+            (check)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1328,6 +1458,14 @@ _arguments "${_arguments_options[@]}" : /
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
+(sync)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -1349,6 +1487,38 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (dead)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(impact)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(affected)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(guard)
+_arguments "${_arguments_options[@]}" : /
+":: :_rtok__subcmd__help__subcmd__guard_commands" /
+"*::: :->guard" /
+&& ret=0
+
+    case $state in
+    (guard)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rtok-help-guard-command-$line[1]:"
+        case $line[1] in
+            (check)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1490,6 +1660,7 @@ _rtok_commands() {
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /
 'graph:Symbol index (/`rtok graph index/`)' /
+'guard:Duplicate-call verdict (/`rtok guard check/` — pi / OpenCode plugin path, T70.5)' /
 'dashboard:Deprecated spelling of /`rtok web/`; still runs, still prints where to go' /
 'demon:Keep /`rtok proxy/` (or /`mcp/` / /`web/`) running in the background' /
 'otel:OpenTelemetry export (/`rtok otel flush | status/`)' /
@@ -1847,9 +2018,17 @@ _rtok__subcmd__graph_commands() {
     local commands; commands=(
 'index:Walk a tree and insert definitions + references' /
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+'status:Index health for the current or given root (T68.3)' /
+'impact:Symbol impact or call paths to a target (T68.4)' /
+'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok graph commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__affected_commands] )) ||
+_rtok__subcmd__graph__subcmd__affected_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph affected commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__graph__subcmd__dead_commands] )) ||
 _rtok__subcmd__graph__subcmd__dead_commands() {
@@ -1861,9 +2040,17 @@ _rtok__subcmd__graph__subcmd__help_commands() {
     local commands; commands=(
 'index:Walk a tree and insert definitions + references' /
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+'status:Index health for the current or given root (T68.3)' /
+'impact:Symbol impact or call paths to a target (T68.4)' /
+'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok graph help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__affected_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__affected_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help affected commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__dead_commands] )) ||
 _rtok__subcmd__graph__subcmd__help__subcmd__dead_commands() {
@@ -1875,15 +2062,66 @@ _rtok__subcmd__graph__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'rtok graph help help commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__impact_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__impact_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help impact commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__index_commands] )) ||
 _rtok__subcmd__graph__subcmd__help__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok graph help index commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__graph__subcmd__help__subcmd__status_commands] )) ||
+_rtok__subcmd__graph__subcmd__help__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph help status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__impact_commands] )) ||
+_rtok__subcmd__graph__subcmd__impact_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph impact commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__graph__subcmd__index_commands] )) ||
 _rtok__subcmd__graph__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__graph__subcmd__status_commands] )) ||
+_rtok__subcmd__graph__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok graph status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__guard_commands] )) ||
+_rtok__subcmd__guard_commands() {
+    local commands; commands=(
+'check:Print /`{"allow"/:true}/` or /`{"allow"/:false,"reason"/:…}/` (fail open/: bad input allows)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok guard commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__guard__subcmd__check_commands] )) ||
+_rtok__subcmd__guard__subcmd__check_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok guard check commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__guard__subcmd__help_commands] )) ||
+_rtok__subcmd__guard__subcmd__help_commands() {
+    local commands; commands=(
+'check:Print /`{"allow"/:true}/` or /`{"allow"/:false,"reason"/:…}/` (fail open/: bad input allows)' /
+'help:Print this message or the help of the given subcommand(s)' /
+    )
+    _describe -t commands 'rtok guard help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__guard__subcmd__help__subcmd__check_commands] )) ||
+_rtok__subcmd__guard__subcmd__help__subcmd__check_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok guard help check commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__guard__subcmd__help__subcmd__help_commands] )) ||
+_rtok__subcmd__guard__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok guard help help commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help_commands] )) ||
 _rtok__subcmd__help_commands() {
@@ -1909,6 +2147,7 @@ _rtok__subcmd__help_commands() {
 'config:The one config file' /
 'memory:Notes (/`mem_save/` / import / export)' /
 'graph:Symbol index (/`rtok graph index/`)' /
+'guard:Duplicate-call verdict (/`rtok guard check/` — pi / OpenCode plugin path, T70.5)' /
 'dashboard:Deprecated spelling of /`rtok web/`; still runs, still prints where to go' /
 'demon:Keep /`rtok proxy/` (or /`mcp/` / /`web/`) running in the background' /
 'otel:OpenTelemetry export (/`rtok otel flush | status/`)' /
@@ -2086,18 +2325,48 @@ _rtok__subcmd__help__subcmd__graph_commands() {
     local commands; commands=(
 'index:Walk a tree and insert definitions + references' /
 'dead:List unreferenced private definitions (skips pub, trait impls, tests, macros)' /
+'status:Index health for the current or given root (T68.3)' /
+'impact:Symbol impact or call paths to a target (T68.4)' /
+'affected:Tests that reach files changed in git (/`git diff --name-only/`)' /
     )
     _describe -t commands 'rtok help graph commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__affected_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__affected_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph affected commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__dead_commands] )) ||
 _rtok__subcmd__help__subcmd__graph__subcmd__dead_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help graph dead commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__impact_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__impact_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph impact commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__index_commands] )) ||
 _rtok__subcmd__help__subcmd__graph__subcmd__index_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help graph index commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__graph__subcmd__status_commands] )) ||
+_rtok__subcmd__help__subcmd__graph__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help graph status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__guard_commands] )) ||
+_rtok__subcmd__help__subcmd__guard_commands() {
+    local commands; commands=(
+'check:Print /`{"allow"/:true}/` or /`{"allow"/:false,"reason"/:…}/` (fail open/: bad input allows)' /
+    )
+    _describe -t commands 'rtok help guard commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__guard__subcmd__check_commands] )) ||
+_rtok__subcmd__help__subcmd__guard__subcmd__check_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help guard check commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__help_commands] )) ||
 _rtok__subcmd__help__subcmd__help_commands() {
@@ -2151,6 +2420,8 @@ _rtok__subcmd__help__subcmd__memory_commands() {
 'pin:Pin a note so it leads SessionStart recall (T69.1)' /
 'unpin:Drop a note back to newest-first recall order (T69.1)' /
 'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+'sync:Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)' /
+'status:Notes live/pinned/retired, recall and MCP call counts (T69.4)' /
     )
     _describe -t commands 'rtok help memory commands' commands "$@"
 }
@@ -2178,6 +2449,16 @@ _rtok__subcmd__help__subcmd__memory__subcmd__retire_commands() {
 _rtok__subcmd__help__subcmd__memory__subcmd__revise_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help memory revise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__status_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__sync_commands] )) ||
+_rtok__subcmd__help__subcmd__memory__subcmd__sync_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help memory sync commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__memory__subcmd__unpin_commands] )) ||
 _rtok__subcmd__help__subcmd__memory__subcmd__unpin_commands() {
@@ -2314,6 +2595,8 @@ _rtok__subcmd__memory_commands() {
 'pin:Pin a note so it leads SessionStart recall (T69.1)' /
 'unpin:Drop a note back to newest-first recall order (T69.1)' /
 'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+'sync:Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)' /
+'status:Notes live/pinned/retired, recall and MCP call counts (T69.4)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok memory commands' commands "$@"
@@ -2332,6 +2615,8 @@ _rtok__subcmd__memory__subcmd__help_commands() {
 'pin:Pin a note so it leads SessionStart recall (T69.1)' /
 'unpin:Drop a note back to newest-first recall order (T69.1)' /
 'revise:Save a replacement (title, body) for a note and retire the old row (T69.1)' /
+'sync:Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)' /
+'status:Notes live/pinned/retired, recall and MCP call counts (T69.4)' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok memory help commands' commands "$@"
@@ -2366,6 +2651,16 @@ _rtok__subcmd__memory__subcmd__help__subcmd__revise_commands() {
     local commands; commands=()
     _describe -t commands 'rtok memory help revise commands' commands "$@"
 }
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__status_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__sync_commands] )) ||
+_rtok__subcmd__memory__subcmd__help__subcmd__sync_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory help sync commands' commands "$@"
+}
 (( $+functions[_rtok__subcmd__memory__subcmd__help__subcmd__unpin_commands] )) ||
 _rtok__subcmd__memory__subcmd__help__subcmd__unpin_commands() {
     local commands; commands=()
@@ -2390,6 +2685,16 @@ _rtok__subcmd__memory__subcmd__retire_commands() {
 _rtok__subcmd__memory__subcmd__revise_commands() {
     local commands; commands=()
     _describe -t commands 'rtok memory revise commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__status_commands] )) ||
+_rtok__subcmd__memory__subcmd__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory status commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__memory__subcmd__sync_commands] )) ||
+_rtok__subcmd__memory__subcmd__sync_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok memory sync commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__memory__subcmd__unpin_commands] )) ||
 _rtok__subcmd__memory__subcmd__unpin_commands() {

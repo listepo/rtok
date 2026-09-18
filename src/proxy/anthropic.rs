@@ -106,13 +106,34 @@ impl ToolResults for Anthropic {
                 if block["type"] != "text" {
                     continue;
                 }
-                let Some(text) = block.get_mut("text") else { continue; };
-                let Some(body) = text.as_str() else { continue; };
-                let Some(rest) = body.strip_prefix("Base directory for this skill: ") else { continue; };
-                let dir = rest.lines().next().unwrap_or("").trim_end_matches(['/', '\\']);
-                let name = dir.rsplit(['/', '\\']).next().filter(|n| !n.is_empty()).unwrap_or("skill");
-                let id = pending_skill.take().unwrap_or_else(|| format!("skill-{turn}"));
-                out.push(SkillRef { id, name: name.to_string(), content: text, turn });
+                let Some(text) = block.get_mut("text") else {
+                    continue;
+                };
+                let Some(body) = text.as_str() else {
+                    continue;
+                };
+                let Some(rest) = body.strip_prefix("Base directory for this skill: ") else {
+                    continue;
+                };
+                let dir = rest
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches(['/', '\\']);
+                let name = dir
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or("skill");
+                let id = pending_skill
+                    .take()
+                    .unwrap_or_else(|| format!("skill-{turn}"));
+                out.push(SkillRef {
+                    id,
+                    name: name.to_string(),
+                    content: text,
+                    turn,
+                });
             }
         }
         out

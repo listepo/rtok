@@ -635,8 +635,10 @@ mod tests {
             );
             let rule = settings.pick(bin(&family_argv(&argv)));
             let head = rule.head.min(rule.max_lines) as usize;
-            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join("
-");
+            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join(
+                "
+",
+            );
             assert!(
                 !pretty_head.contains(kept),
                 "{file}: {kept} already in the pretty head — fixture too small"
@@ -655,7 +657,7 @@ mod tests {
     }
 
     #[test]
-fn skill_rule_keeps_headings_and_names_kind() {
+    fn skill_rule_keeps_headings_and_names_kind() {
         let settings = rules::Settings::builtin();
         assert_eq!(settings.pick("skill").head, 30);
         assert_eq!(settings.pick("skill").tail, 5);
@@ -663,8 +665,10 @@ fn skill_rule_keeps_headings_and_names_kind() {
         lines.extend((0..60).map(|i| format!("body {i}")));
         lines.push("## Middle".into());
         lines.extend((60..120).map(|i| format!("body {i}")));
-        let body = lines.join("
-");
+        let body = lines.join(
+            "
+",
+        );
         let (out, kind) = compress(&settings, &["skill".into(), "demo".into()], &body, 0, "id1");
         assert_eq!(kind, "skill");
         assert!(out.contains("# Title"), "{out}");

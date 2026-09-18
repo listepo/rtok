@@ -333,7 +333,7 @@ impl Report {
                 pct(d.bytes, d.result_bytes)
             ));
         }
-if !self.agents.is_empty() {
+        if !self.agents.is_empty() {
             let a = &self.agents;
             let sub_tokens = self.tools.get("Agent").map(|r| r.est_tokens).unwrap_or(0)
                 + self.tools.get("Task").map(|r| r.est_tokens).unwrap_or(0);
@@ -362,53 +362,98 @@ if !self.agents.is_empty() {
     }
 }
 
+/// A second column: its header, and the value for one row's name.
+type ExtraCol<'a> = (&'a str, &'a dyn Fn(&str) -> String);
 
-fn format_bash_section(
-    rows: &BTreeMap<String, SizeRow>,
-    kinds: &BTreeMap<String, String>,
+/// One `name  count bytes mean p95 max est_tokens <last>` section. `extra` inserts a
+/// second column (its header plus a per-name value) — the Bash section's filter label.
+/// `last` is the trailing column's header and its width floor.
+fn size_section(
+    title: &str,
+    last: (&str, usize),
+    extra: Option<ExtraCol<'_>>,
+    rows: &[(String, [u64; 7])],
 ) -> String {
-    let cols = [
-        Col::left(24),
-        Col::left(8),
+    // The section's own title sits in the first column of its header line; the fixed
+    // widths are floors now (`render::table`, T25.2), bytes unchanged.
+    let mut cols = vec![Col::left(24)];
+    if extra.is_some() {
+        cols.push(Col::left(8));
+    }
+    cols.extend([
         Col::right(7),
         Col::right(12),
         Col::right(8),
         Col::right(8),
         Col::right(8),
         Col::right(12),
-        Col::right(12),
-    ];
-    let mut out = vec![vec![
-        "bash".to_string(),
-        "filter".into(),
-        "count".into(),
-        "bytes".into(),
-        "mean".into(),
-        "p95".into(),
-        "max".into(),
-        "est_tokens".into(),
-        "ctt".into(),
-    ]];
-    for (name, r) in rows {
-        out.push(vec![
-            name.clone(),
-            kinds
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| "default".to_string()),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
+        Col::right(last.1),
+    ]);
+    let mut head = vec![title.to_string()];
+    if let Some((h, _)) = extra {
+        head.push(h.to_string());
+    }
+    head.extend(["count", "bytes", "mean", "p95", "max", "est_tokens", last.0].map(str::to_string));
+    let mut out = vec![head];
+    for (name, vals) in rows {
+        let mut row = vec![name.clone()];
+        if let Some((_, value)) = extra {
+            row.push(value(name));
+        }
+        row.extend(vals.iter().map(u64::to_string));
+        out.push(row);
     }
     table(&cols, &out)
 }
 
+fn size_cells(rows: &BTreeMap<String, SizeRow>) -> Vec<(String, [u64; 7])> {
+    rows.iter()
+        .map(|(name, r)| {
+            (
+                name.clone(),
+                [
+                    r.count,
+                    r.total_bytes,
+                    r.mean,
+                    r.p95,
+                    r.max,
+                    r.est_tokens,
+                    r.ctt,
+                ],
+            )
+        })
+        .collect()
+}
+
+fn format_bash_section(
+    rows: &BTreeMap<String, SizeRow>,
+    kinds: &BTreeMap<String, String>,
+) -> String {
+    let filter = |name: &str| {
+        kinds
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| "default".to_string())
+    };
+    size_section(
+        "bash",
+        ("ctt", 12),
+        Some(("filter", &filter)),
+        &size_cells(rows),
+    )
+}
+
 /// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+/// Without the `cmd` plugin there are no rules to label a family against, so the
+/// report keeps the families and leaves the filter column empty (T0.4: one plugin
+/// feature must build alone).
+#[cfg(not(feature = "cmd"))]
+pub fn attach_bash_cmd(_report: &mut Report, _store: &Store) -> Result<()> {
+    Ok(())
+}
+
+/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+#[cfg(feature = "cmd")]
 pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
     let settings = crate::plugins::cmd::rules::Settings::builtin();
     for name in report.bash_families.keys() {
@@ -441,79 +486,30 @@ pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
     Ok(())
 }
 fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
-    // The section's own title sits in the first column of its header line; the fixed
-    // widths are floors now (`render::table`, T25.2), bytes unchanged.
-    let cols = [
-        Col::left(24),
-        Col::right(7),
-        Col::right(12),
-        Col::right(8),
-        Col::right(8),
-        Col::right(8),
-        Col::right(12),
-        Col::right(12),
-    ];
-    let mut out = vec![vec![
-        title.to_string(),
-        "count".into(),
-        "bytes".into(),
-        "mean".into(),
-        "p95".into(),
-        "max".into(),
-        "est_tokens".into(),
-        "ctt".into(),
-    ]];
-    for (name, r) in rows {
-        out.push(vec![
-            name.clone(),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
-    }
-    table(&cols, &out)
+    size_section(title, ("ctt", 12), None, &size_cells(rows))
 }
 
 /// T61.1: the injected skill bodies, one row per skill, `resident` = the bytes the
 /// later API requests of the same session actually carried.
 fn skills_section(skills: &BTreeMap<String, SkillRow>) -> String {
-    let cols = [
-        Col::left(24),
-        Col::right(7),
-        Col::right(12),
-        Col::right(8),
-        Col::right(8),
-        Col::right(8),
-        Col::right(12),
-        Col::right(14),
-    ];
-    let mut out = vec![vec![
-        "skill".to_string(),
-        "count".into(),
-        "bytes".into(),
-        "mean".into(),
-        "p95".into(),
-        "max".into(),
-        "est_tokens".into(),
-        "resident".into(),
-    ]];
-    for (name, r) in skills {
-        out.push(vec![
-            name.clone(),
-            r.count.to_string(),
-            r.bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.resident.to_string(),
-        ]);
-    }
-    table(&cols, &out)
+    let cells: Vec<(String, [u64; 7])> = skills
+        .iter()
+        .map(|(name, r)| {
+            (
+                name.clone(),
+                [
+                    r.count,
+                    r.bytes,
+                    r.mean,
+                    r.p95,
+                    r.max,
+                    r.est_tokens,
+                    r.resident,
+                ],
+            )
+        })
+        .collect();
+    size_section("skill", ("resident", 14), None, &cells)
 }
 
 pub fn parse_since(s: &str) -> Result<Duration> {

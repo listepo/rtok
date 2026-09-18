@@ -31,7 +31,7 @@ agents
     − proxy   not supported: Cursor has no base-URL setting to point at the proxy
     ✗ plugin  not installed (--yes)
   codex (cli)
-    − hooks   not supported: Codex has no shell hook events
+    ✗ hooks   not installed
     ✗ mcp     not installed
     ✗ proxy   not installed (--proxy)
     − plugin  not supported: Codex loads MCP from config.toml; there is no plugin directory to link
@@ -47,7 +47,7 @@ agents
     ✗ plugin  not installed (--yes)
   pi (cli)
     − hooks   not supported: pi has no hook events; the extension owns the bash call path
-    − mcp     not supported: pi philosophy is no MCP; the extension calls rtok run and rtok filter directly
+    − mcp     not supported: pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true
     − proxy   not supported: pi provider base URLs live in its models config, which setup does not edit
     ✗ plugin  not installed (--yes)
   zcode (desktop)
@@ -60,6 +60,16 @@ agents
     ✗ mcp     not installed
     − proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
     − plugin  not supported: Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link
+  vscode (desktop)
+    − hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    ✗ mcp     not installed
+    − proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
+    − plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
+  vscode (desktop)
+    − hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    ✗ mcp     not installed
+    − proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
+    − plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
   copilot (cli)
     ✗ hooks   not installed
     ✗ mcp     not installed
@@ -80,16 +90,6 @@ agents
     ✗ mcp     not installed
     − proxy   not supported: Windsurf serves its own models; there is no documented base-URL setting to point at the proxy
     − plugin  not supported: Cascade has no local plugin directory to link; rules and memories live in .windsurf/
-  zed (cli)
-    − hooks   not supported: Zed has no shell hook events; its agent runs tools itself and takes external agents over ACP
-    ✗ mcp     not installed
-    − proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
-    − plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
-  zed (desktop)
-    − hooks   not supported: Zed has no shell hook events; its agent runs tools itself and takes external agents over ACP
-    ✗ mcp     not installed
-    − proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
-    − plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
 ...
 """
 

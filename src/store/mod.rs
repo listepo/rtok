@@ -931,7 +931,6 @@ impl Store {
         Ok(n == 1)
     }
 
-
     /// Last-written `rtok memory sync` block digest (T69.6 hand-edit guard).
     pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
         #[derive(QueryableByName)]
@@ -1142,7 +1141,6 @@ impl Store {
             .map_err(Into::into)
     }
 
-
     /// Per `(project, kind)` note counts for `memory status` (T69.4).
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
         let mut conn = self.lock()?;
@@ -1156,10 +1154,15 @@ impl Store {
          FROM notes
          WHERE kind NOT LIKE 'checkpoint%'";
         let rows: Vec<MemoryNoteKindAggRow> = match project {
-            Some(p) => sql_query(&format!("{base} AND project = ? GROUP BY project, kind ORDER BY project, kind"))
-                .bind::<Text, _>(p)
-                .load(&mut *conn)?,
-            None => sql_query(&format!("{base} GROUP BY project, kind ORDER BY project, kind")).load(&mut *conn)?,
+            Some(p) => sql_query(format!(
+                "{base} AND project = ? GROUP BY project, kind ORDER BY project, kind"
+            ))
+            .bind::<Text, _>(p)
+            .load(&mut *conn)?,
+            None => sql_query(format!(
+                "{base} GROUP BY project, kind ORDER BY project, kind"
+            ))
+            .load(&mut *conn)?,
         };
         Ok(rows
             .into_iter()
@@ -1188,9 +1191,9 @@ impl Store {
         )
         .bind::<BigInt, _>(since_unix)
         .load(&mut *conn)?;
-        let r = rows
-            .first()
-            .map_or((0, 0, 0), |x| (x.recalls, x.stood_for_bytes, x.injected_bytes));
+        let r = rows.first().map_or((0, 0, 0), |x| {
+            (x.recalls, x.stood_for_bytes, x.injected_bytes)
+        });
         Ok((u64::try_from(r.0).unwrap_or(0), r.1, r.2))
     }
 
@@ -1206,7 +1209,10 @@ impl Store {
         .bind::<BigInt, _>(since_unix)
         .load(&mut *conn)?;
         let r = rows.first().map_or((0, 0), |x| (x.mem_search, x.mem_get));
-        Ok((u64::try_from(r.0).unwrap_or(0), u64::try_from(r.1).unwrap_or(0)))
+        Ok((
+            u64::try_from(r.0).unwrap_or(0),
+            u64::try_from(r.1).unwrap_or(0),
+        ))
     }
 
     /// Last `ref_id` on a measurement row for one session (T69.5 prompt_recall dedup).
@@ -2787,7 +2793,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-t651-sess-{}", std::process::id()));
         let store = Store::open_in_memory().unwrap();
         let sha = store.put_archive("a", b"same-bytes", &dir).unwrap();
-        let hit = store.archive_in_session("a", &sha).unwrap().expect("writer");
+        let hit = store
+            .archive_in_session("a", &sha)
+            .unwrap()
+            .expect("writer");
         assert_eq!(hit.0, sha);
         assert_eq!(store.archive_in_session("b", &sha).unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);

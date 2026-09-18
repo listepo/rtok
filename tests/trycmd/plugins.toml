@@ -8,9 +8,9 @@ read     on       mcp,hook
 archive  on       proxy,mcp,cli
 proxy    on       proxy
 inject   on       hook
-guard    on       hook
+guard    on       hook,cli
 memory   on       mcp,hook
-graph    on       mcp
+graph    on       mcp,hook
 toon     off      proxy,mcp
 compress off      proxy
 """

@@ -17,8 +17,8 @@
 use serde_json::Value;
 
 use rtok_plugin_sdk::{
-    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, SkillRef, Surface, ToolResultRef,
-    WireRequest,
+    BlobRef, Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, SkillRef, Surface,
+    ToolResultRef, WireRequest,
 };
 
 pub mod pi;
@@ -81,7 +81,9 @@ pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     if !cx.plugin_config::<crate::config::Archive>("archive").skills {
         return Vec::new();
     }
-    let keep = cx.plugin_config::<crate::config::Archive>("archive").keep_turns as usize;
+    let keep = cx
+        .plugin_config::<crate::config::Archive>("archive")
+        .keep_turns as usize;
     let mut out: Vec<Measurement> = skills
         .into_iter()
         .filter(|s| s.turn >= keep)
@@ -91,7 +93,12 @@ pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     out
 }
 
-fn rewrite_skill(id: &str, name: &str, content: &mut serde_json::Value, cx: &Ctx) -> Option<Measurement> {
+fn rewrite_skill(
+    id: &str,
+    name: &str,
+    content: &mut serde_json::Value,
+    cx: &Ctx,
+) -> Option<Measurement> {
     let text = content.as_str()?.to_owned();
     let key = format!("skill:{id}");
     let (archive_id, live) = match cx.archive_decision(&key) {
@@ -101,7 +108,8 @@ fn rewrite_skill(id: &str, name: &str, content: &mut serde_json::Value, cx: &Ctx
             let archive_id = cx.put_archive(text.as_bytes()).ok()?;
             let n = text.lines().count();
             let short = &id[..id.len().min(12)];
-            let live = format!("[archived {short}: skill {name} · {n} lines · expand({archive_id})]");
+            let live =
+                format!("[archived {short}: skill {name} · {n} lines · expand({archive_id})]");
             cx.put_archive_decision(&key, &archive_id, &live).ok()?;
             (archive_id, live)
         }

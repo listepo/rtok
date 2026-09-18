@@ -27,6 +27,62 @@ fn note_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResul
     Ok(())
 }
 
+/// One file's rows, inside the caller's transaction: drop what the file had, insert the
+/// new tags in chunks, and return how many landed. A tagless file still gets a row so the
+/// `file_sha` stands and the next run skips it on the stat alone.
+fn replace_one(
+    conn: &mut SqliteConnection,
+    root: &str,
+    path: &str,
+    file_sha: &str,
+    stat: (i64, i64),
+    rows: &[(String, String, i32, bool, i32, String)],
+) -> QueryResult<usize> {
+    diesel::delete(symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))))
+        .execute(conn)?;
+    if rows.is_empty() {
+        diesel::insert_into(symbols::table)
+            .values((
+                symbols::root.eq(root),
+                symbols::path.eq(path),
+                symbols::name.eq(""),
+                symbols::kind.eq(""),
+                symbols::line.eq(0),
+                symbols::is_def.eq(0),
+                symbols::file_sha.eq(file_sha),
+                symbols::mtime.eq(stat.0),
+                symbols::size.eq(stat.1),
+            ))
+            .execute(conn)?;
+        return Ok(0);
+    }
+    for chunk in rows.chunks(INSERT_CHUNK) {
+        let values: Vec<_> = chunk
+            .iter()
+            .map(|(name, kind, line, is_def, end_line, scope)| {
+                (
+                    symbols::root.eq(root),
+                    symbols::path.eq(path),
+                    symbols::name.eq(name),
+                    symbols::kind.eq(kind),
+                    symbols::line.eq(line),
+                    symbols::is_def.eq(i32::from(*is_def)),
+                    symbols::file_sha.eq(file_sha),
+                    symbols::mtime.eq(stat.0),
+                    symbols::size.eq(stat.1),
+                    symbols::end_line.eq(end_line),
+                    symbols::scope.eq(scope),
+                )
+            })
+            .collect();
+        diesel::insert_into(symbols::table)
+            .values(&values)
+            .execute(conn)?;
+    }
+    clear_stale(conn, root, path)?;
+    Ok(rows.len())
+}
+
 fn clear_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
     sql_query("DELETE FROM symbol_stale WHERE root = ? AND path = ?")
         .bind::<Text, _>(root)
@@ -65,9 +121,10 @@ impl Store {
             path: String,
         }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
-            .bind::<Text, _>(root)
-            .load(&mut *conn)?;
+        let rows: Vec<Row> =
+            sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
+                .bind::<Text, _>(root)
+                .load(&mut *conn)?;
         Ok(rows.into_iter().map(|r| r.path).collect())
     }
 
@@ -148,51 +205,7 @@ impl Store {
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
             let mut inserted = 0usize;
             for (path, file_sha, stat, rows) in files {
-                diesel::delete(
-                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&path))),
-                )
-                .execute(conn)?;
-                if rows.is_empty() {
-                    diesel::insert_into(symbols::table)
-                        .values((
-                            symbols::root.eq(root),
-                            symbols::path.eq(&path),
-                            symbols::name.eq(""),
-                            symbols::kind.eq(""),
-                            symbols::line.eq(0),
-                            symbols::is_def.eq(0),
-                            symbols::file_sha.eq(&file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                        ))
-                        .execute(conn)?;
-                    continue;
-                }
-                for chunk in rows.chunks(INSERT_CHUNK) {
-                    let values: Vec<_> = chunk
-                        .iter()
-                        .map(|(name, kind, line, is_def, end_line, scope)| {
-                            (
-                                symbols::root.eq(root),
-                                symbols::path.eq(&path),
-                                symbols::name.eq(name),
-                                symbols::kind.eq(kind),
-                                symbols::line.eq(line),
-                                symbols::is_def.eq(i32::from(*is_def)),
-                                symbols::file_sha.eq(&file_sha),
-                                symbols::mtime.eq(stat.0),
-                                symbols::size.eq(stat.1),
-                                symbols::end_line.eq(end_line),
-                                symbols::scope.eq(scope),
-                            )
-                        })
-                        .collect();
-                    diesel::insert_into(symbols::table)
-                        .values(&values)
-                        .execute(conn)?;
-                }
-                clear_stale(conn, root, &path)?;
-                inserted += rows.len();
+                inserted += replace_one(conn, root, path, file_sha, *stat, rows)?;
             }
             Ok(inserted)
         })?)
@@ -213,52 +226,7 @@ impl Store {
         // one transaction per batch of files. Why: ~140 single-row INSERTs per file. Not yet
         // measured apart from the parse — measure before changing.
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            diesel::delete(
-                symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))),
-            )
-            .execute(conn)?;
-            if rows.is_empty() {
-                // Keep file_sha so an unchanged tagless file is skipped next run.
-                diesel::insert_into(symbols::table)
-                    .values((
-                        symbols::root.eq(root),
-                        symbols::path.eq(path),
-                        symbols::name.eq(""),
-                        symbols::kind.eq(""),
-                        symbols::line.eq(0),
-                        symbols::is_def.eq(0),
-                        symbols::file_sha.eq(file_sha),
-                        symbols::mtime.eq(stat.0),
-                        symbols::size.eq(stat.1),
-                    ))
-                    .execute(conn)?;
-                return Ok(0);
-            }
-            for chunk in rows.chunks(INSERT_CHUNK) {
-                let values: Vec<_> = chunk
-                    .iter()
-                    .map(|(name, kind, line, is_def, end_line, scope)| {
-                        (
-                            symbols::root.eq(root),
-                            symbols::path.eq(path),
-                            symbols::name.eq(name),
-                            symbols::kind.eq(kind),
-                            symbols::line.eq(line),
-                            symbols::is_def.eq(i32::from(*is_def)),
-                            symbols::file_sha.eq(file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                            symbols::end_line.eq(end_line),
-                            symbols::scope.eq(scope),
-                        )
-                    })
-                    .collect();
-                diesel::insert_into(symbols::table)
-                    .values(&values)
-                    .execute(conn)?;
-            }
-            clear_stale(conn, root, path)?;
-            Ok(rows.len())
+            replace_one(conn, root, path, file_sha, stat, rows)
         })?)
     }
 

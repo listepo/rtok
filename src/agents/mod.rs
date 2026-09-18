@@ -31,8 +31,8 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "vscode", "copilot", "aider", "windsurf",
-    "zed",
+    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "vscode", "copilot", "aider",
+    "windsurf", "zed",
 ];
 
 /// Every module an rtok install can carry, in print order.
