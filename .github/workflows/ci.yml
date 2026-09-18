@@ -1,8 +1,6 @@
 name: ci
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 # A newer push cancels the previous run for the same ref.
