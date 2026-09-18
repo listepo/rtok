@@ -8,6 +8,7 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::config::{Config, layers};
@@ -38,6 +39,10 @@ pub struct Snapshot {
     /// selection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot
     /// makes the page both surfaces' (D23); `[log] lines` is the frame's bound too.
     pub logs: Vec<String>,
+    /// Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither
+    /// queries the store for an expand handle (D23 / D27).
+    #[serde(default)]
+    pub ref_ids: BTreeMap<i32, String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -615,17 +620,26 @@ impl<'a> Model<'a> {
     }
 
     pub fn snapshot(&self) -> Snapshot {
+        let calls = self.calls();
+        let ref_ids = self
+            .store
+            .and_then(|s| {
+                s.archive_ref_ids(&calls.iter().map(|c| c.id).collect::<Vec<_>>())
+                    .ok()
+            })
+            .unwrap_or_default();
         Snapshot {
             kind: "snapshot",
             usage: self.overview(),
             plugins: self.plugins(),
-            calls: self.calls(),
+            calls,
             sessions: self.sessions(0),
             // The one doctor query (D27): the snapshot carries what `rtok doctor`
             // renders, so neither surface grows a probe of its own. Cached briefly —
             // a failed or in-flight tick is `None`, never a failed snapshot.
             doctor: doctor_for_snapshot(self.cfg),
             logs: self.log_lines(None),
+            ref_ids,
         }
     }
 
@@ -810,6 +824,17 @@ pub fn call_linked_tokens(c: &CallRow) -> i64 {
 /// Session drill-down (T60.3, D23): the snapshot's `SessionTotals` row plus the
 /// snapshot's calls filtered by that id. Both surfaces render this pair; neither
 /// grows a second session type or a second query (D27).
+/// Archive payload for both surfaces (T60.4, D23): [`crate::expand::fetch`] then
+/// [`crate::expand::render_lines`] with `[expand] max_lines`. A live-zone pointer
+/// freezes exactly as `rtok expand` does — one function, no second path. `grep`
+/// is `--grep` parity for the TUI `/` filter and the web filter box.
+pub fn expand_payload(cfg: &Config, id: &str, grep: Option<&str>) -> Option<String> {
+    let cx = crate::plugin::Runtime::open(cfg.clone(), "expand").ok()?;
+    let bytes = crate::expand::fetch(&cx, id).ok()??;
+    let text = String::from_utf8_lossy(&bytes);
+    crate::expand::render_lines(&text, id, None, grep, 0, cfg.expand.max_lines).ok()
+}
+
 pub fn session_detail<'a>(
     snapshot: &'a Snapshot,
     id: &str,
@@ -1315,6 +1340,74 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name.as_deref(), Some("/v1/messages"));
         assert!(session_detail(&snap, "missing").is_none());
+    }
+
+    /// T60.4: `expand_payload` is `expand::fetch` + `[expand] max_lines`; a live-zone
+    /// pointer freezes as the CLI does; the snapshot carries the call's archive id.
+    #[test]
+    fn expand_payload_caps_greps_and_freezes_like_cli() {
+        let mut cfg = crate::testutil::config("expand-model").0;
+        cfg.expand.max_lines = 2;
+        let home = cfg.core.db_path.parent().unwrap().to_path_buf();
+        cfg.doctor.settings_path = home.join("missing-settings.json");
+        cfg.doctor.claude_json = home.join("missing-claude.json");
+        cfg.doctor.mcp_json = home.join("missing-mcp.json");
+        let cx = crate::plugin::Runtime::open(cfg.clone(), "proxy-sess").unwrap();
+        let id = cx
+            .store
+            .put_archive(
+                "proxy-sess",
+                b"alpha\nbeta\ngamma\nHIT\n",
+                &cfg.core.archive_dir,
+            )
+            .unwrap();
+        cx.store
+            .put_archive_decision("tu-1", &id, "proxy-sess", &format!("[archived {id}]"))
+            .unwrap();
+        cx.store
+            .upsert_session("s", None, None, None, None)
+            .unwrap();
+        let call = cx
+            .store
+            .insert_call(
+                "s",
+                "hook",
+                "plugin_run",
+                None,
+                None,
+                None,
+                Some("cmd"),
+                None,
+            )
+            .unwrap();
+        cx.record(&Measurement {
+            plugin: "cmd",
+            kind: "filter",
+            before_bytes: 10,
+            after_bytes: 4,
+            est_before: 3,
+            est_after: 1,
+            ref_id: Some(id.clone()),
+            call_id: Some(call),
+        })
+        .unwrap();
+        drop(cx);
+
+        let text = expand_payload(&cfg, &id, None).expect("payload");
+        assert!(text.contains("alpha"), "{text}");
+        assert!(text.contains("omitted"), "{text}");
+        let hit = expand_payload(&cfg, &id, Some("HIT")).expect("grep");
+        assert!(hit.contains("HIT"), "{hit}");
+        let snap = snapshot(&cfg);
+        assert_eq!(snap.ref_ids.get(&call), Some(&id));
+        let cx = crate::plugin::Runtime::open(cfg, "check").unwrap();
+        assert!(
+            cx.store
+                .archive_decision("proxy-sess", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded
+        );
     }
 
     /// The report's percentile, pinned where it is defined: nearest rank, so
