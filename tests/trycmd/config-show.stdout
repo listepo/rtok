@@ -68,6 +68,7 @@ plugins.graph.auto_index = true
 plugins.graph.backend = tags
 plugins.graph.body_lines = 40
 plugins.graph.enabled = true
+plugins.graph.map_tokens = 0
 plugins.graph.max_tokens = 2000
 plugins.graph.watch = off
 plugins.guard.deny_grep_glob = false
