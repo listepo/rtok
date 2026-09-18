@@ -371,7 +371,12 @@ section! {
 
 section! {
     /// `[setup.pi]`
-    SetupPi { extensions_path: PathBuf = p("~/.pi/agent/extensions") }
+    SetupPi {
+        extensions_path: PathBuf = p("~/.pi/agent/extensions"),
+        /// Register the measured MCP tools through `pi.registerTool` (T70.3).
+        /// Off: those descriptions do not ride every pi request.
+        tools: bool = false,
+    }
 }
 
 section! {

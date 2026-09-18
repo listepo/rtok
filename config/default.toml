@@ -143,6 +143,7 @@ config_path   = "~/.codex/config.toml"
 config_path   = "~/.config/opencode/opencode.json"
 [setup.pi]
 extensions_path = "~/.pi/agent/extensions"
+tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)
 [setup.zcode]
 config_path   = "~/.zcode/cli/config.json"
 [setup.kimi]
