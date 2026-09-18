@@ -7,7 +7,6 @@ tail = 10
 drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
-group = "dir"
 
 
 [rg]
