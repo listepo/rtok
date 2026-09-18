@@ -170,15 +170,55 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
 /// Stems whose output only changes when something else ran in between. Looks past the
 /// `cd <dir> &&` prefix [`norm_cmd`] keeps: only the command after it is keyed.
 fn read_only(cmd: &str) -> bool {
-    let mut w = after_cd_prefix(cmd).split_whitespace();
+    let cmd = after_cd_prefix(cmd);
+    if has_writer_marker(&cmd) {
+        return false;
+    }
+    cmd.split('|').all(|seg| read_only_stem(seg.trim()))
+}
+
+fn read_only_stem(cmd: &str) -> bool {
+    let mut w = cmd.split_whitespace();
     match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
-        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" => true,
+        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" | "sed"
+        | "jq" | "awk" => true,
         "git" => matches!(
             w.next(),
-            Some("status" | "log" | "diff" | "show" | "branch")
+            Some("status" | "log" | "diff" | "show" | "branch" | "rev-parse")
         ),
+        "cargo" => matches!(w.next(), Some("metadata")),
         _ => false,
     }
+}
+
+fn has_writer_marker(cmd: &str) -> bool {
+    let tokens: Vec<&str> = cmd.split_whitespace().collect();
+    if tokens.windows(2).any(|w| w[0] == "|" && w[1] == "tee") {
+        return true;
+    }
+    for (i, tok) in tokens.iter().enumerate() {
+        if tok.starts_with('>') {
+            return true;
+        }
+        if *tok == "-delete" || *tok == "-exec" {
+            return true;
+        }
+        if *tok == "-i" || *tok == "--in-place" {
+            return true;
+        }
+        if *tok == "-f" && i > 0 && super::cmd::formatters::cmd_stem(tokens[0]) == "tail" {
+            return true;
+        }
+    }
+    let parts: Vec<&str> = cmd.split('|').collect();
+    if parts.len() > 1 {
+        for seg in parts.iter().skip(1) {
+            if !read_only_stem(seg.trim()) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Normalized Bash key body: whitespace collapsed, the `rtok run --` wrap stripped,
@@ -265,6 +305,27 @@ fn payload(v: &Value) -> Vec<u8> {
         }
     }
     serde_json::to_vec(v).unwrap_or_default()
+}
+
+
+/// `rtok guard check` — same verdict as the hook path (T70.5).
+pub fn check_json(cfg: &crate::config::Config, tool: &str, input: &serde_json::Value) -> serde_json::Value {
+    use rtok_plugin_sdk::PreToolUse;
+    let cx = match crate::plugin::Runtime::open(cfg.clone(), format!("guard-check-{}", std::process::id())) {
+        Ok(c) => c,
+        Err(_) => return serde_json::json!({"decision": "allow"}),
+    };
+    let ev = PreToolUse {
+        tool_name: tool,
+        tool_input: input,
+    };
+    match Guard.pre_tool(&ev, &crate::plugin::Ctx::new(&cx)) {
+        Some(PreToolDecision::Deny { reason }) => serde_json::json!({"decision": "deny", "reason": reason}),
+        Some(PreToolDecision::Rewrite { input, reason }) => {
+            serde_json::json!({"decision": "rewrite", "input": input, "reason": reason})
+        }
+        None => serde_json::json!({"decision": "allow"}),
+    }
 }
 
 #[cfg(test)]
@@ -680,6 +741,56 @@ mod tests {
             "an unreadable body must still deny — only its metadata was consulted"
         );
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[test]
+    fn read_only_flag_aware_stems() {
+        assert!(read_only("sed -n '1,40p' file"));
+        assert!(!read_only("sed -i 's/a/b/' file"));
+        assert!(!read_only("find . -name x -delete"));
+        assert!(!read_only("cat a > b"));
+        assert!(!read_only("tail -f log"));
+        assert!(read_only("cat a | grep b"));
+        assert!(!read_only("ls | xargs rm"));
+    }
+
+    #[test]
+    fn mutating_bash_clears_then_allows_repeat_ls() {
+        let cx = setup();
+        let g = Guard;
+        let ctx = || Ctx::new(&cx);
+        let ls = json!({"command": "ls"});
+        let ls_resp = json!({"stdout": "a"});
+        assert!(g
+            .post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                    tool_response: &ls_resp,
+                },
+                &ctx(),
+            )
+            .is_none());
+        let mutating = json!({"command": "find . -delete"});
+        assert!(g
+            .post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &mutating,
+                    tool_response: &json!({"stdout": ""}),
+                },
+                &ctx(),
+            )
+            .is_none());
+        assert!(g
+            .pre_tool(
+                &PreToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                },
+                &ctx(),
+            )
+            .is_none());
     }
 
     #[test]
