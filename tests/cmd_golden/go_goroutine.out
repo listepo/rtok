@@ -1,0 +1,25 @@
+ok 0
+ok 1
+ok 2
+ok 3
+ok 4
+ok 5
+ok 6
+ok 7
+ok 8
+ok 9
+… 5 lines omitted (expand deadbeef)
+goroutine 1 [running]:
+main.main()
+	/src/m.go:9 +0x2c
+… 21 lines omitted (expand deadbeef)
+ok 35
+ok 36
+ok 37
+ok 38
+ok 39
+ok 40
+ok 41
+ok 42
+ok 43
+ok 44

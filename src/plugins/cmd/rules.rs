@@ -294,6 +294,107 @@ fn is_drop(low: &str, rule: &Rule) -> bool {
     matches_pat(&rule.drop, low)
 }
 
+/// T65.4: which lines belong to a stack-trace block that a head/tail cut must never
+/// drop — the frames under a kept `error`/`panic` line are the part the model needs.
+/// One detector per language: Python's `Traceback (most recent call last):` header
+/// plus its indented frames; Rust's `thread '…' panicked at` plus the indented
+/// panic message and `stack backtrace:` frames; JS's `Error:` line followed by
+/// `    at ` frames; Go's `goroutine N [running]:` plus its `()` / tab-indented
+/// frames; Java's `Exception in thread` plus its `\tat` frames. Whole blocks are
+/// kept regardless of `head`/`tail`; only the block's own length counts against
+/// `max_lines`.
+fn trace_blocks(lines: &[String]) -> Vec<bool> {
+    let mut keep = vec![false; lines.len()];
+    let mut i = 0;
+    while i < lines.len() {
+        let low = lines[i].to_ascii_lowercase();
+        let indented_from = |keep: &mut Vec<bool>, from: usize| -> usize {
+            let mut j = from;
+            while j < lines.len() && (lines[j].starts_with(' ') || lines[j].starts_with('\t')) {
+                keep[j] = true;
+                j += 1;
+            }
+            j
+        };
+        if low.starts_with("traceback (most recent call last):") {
+            keep[i] = true;
+            i = indented_from(&mut keep, i + 1);
+        } else if low.contains("panicked at") {
+            keep[i] = true;
+            let mut j = i + 1;
+            // The panic message sits directly under the header; from
+            // `stack backtrace:` on, the indented frames are kept until the first
+            // non-indented line (the `note:` trailer ends the block unkept).
+            if j < lines.len() && !lines[j].starts_with(' ') && !lines[j].starts_with('\t') {
+                let l = lines[j].to_ascii_lowercase();
+                if !l.starts_with("stack backtrace:")
+                    && !l.starts_with("note:")
+                    && !l.starts_with("error")
+                    && !l.starts_with("warning")
+                {
+                    keep[j] = true;
+                    j += 1;
+                }
+            }
+            while j < lines.len() {
+                let ll = lines[j].to_ascii_lowercase();
+                if ll.starts_with("stack backtrace:") {
+                    keep[j] = true;
+                    j += 1;
+                    j = indented_from(&mut keep, j);
+                    break;
+                }
+                if ll.starts_with("note:") || ll.starts_with("error") || ll.starts_with("warning") {
+                    break;
+                }
+                if lines[j].starts_with(' ') || lines[j].starts_with('\t') || j == i + 1 {
+                    keep[j] = true;
+                    j += 1;
+                    continue;
+                }
+                break;
+            }
+            i = j;
+        } else if low.starts_with("goroutine ") && low.contains('[') {
+            keep[i] = true;
+            let mut j = i + 1;
+            while j < lines.len()
+                && (lines[j].starts_with('\t')
+                    || lines[j].starts_with(' ')
+                    || lines[j].trim_end().ends_with("()"))
+            {
+                keep[j] = true;
+                j += 1;
+            }
+            i = j;
+        } else if low.contains("exception in thread") {
+            keep[i] = true;
+            let mut j = i + 1;
+            while j < lines.len() && lines[j].starts_with('\t') {
+                keep[j] = true;
+                j += 1;
+            }
+            i = j;
+        } else if low.contains("error")
+            && lines
+                .get(i + 1)
+                .is_some_and(|next| next.starts_with("    at "))
+        {
+            keep[i] = true;
+            let mut j = i + 1;
+            while j < lines.len() && (lines[j].starts_with("    at ") || lines[j].starts_with('\t'))
+            {
+                keep[j] = true;
+                j += 1;
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    keep
+}
+
 fn dedupe(lines: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     let mut prev: Option<String> = None;
@@ -345,6 +446,7 @@ pub fn apply(
     if lines.len() <= max {
         return lines.join("\n");
     }
+    let trace_kept = trace_blocks(&lines);
     let head = rule.head.min(rule.max_lines) as usize;
     let tail = rule.tail.min(rule.max_lines.saturating_sub(rule.head)) as usize;
     let keep_idx: Vec<usize> = lines
@@ -367,23 +469,46 @@ pub fn apply(
     let total = lines.len();
     let mut picked: Vec<String> = Vec::new();
     let mut omitted = 0usize;
+    let mut last_pushed_trace = false;
+    // Suffix count of trace lines still ahead, so the fold-into-trailer count stays
+    // true when trace blocks keep printing past a spent budget (T65.4).
+    let mut trace_rest_from = vec![0usize; total + 1];
+    for i in (0..total).rev() {
+        trace_rest_from[i] = trace_rest_from[i + 1] + usize::from(trace_kept[i]);
+    }
     for (i, line) in lines.into_iter().enumerate() {
+        // T65.4: a trace block's frames are never omitted, even past the budget or
+        // behind a trailer — only the block's own length counts against `max_lines`.
+        if trace_kept[i] {
+            if omitted > 0 {
+                picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
+                omitted = 0;
+            }
+            picked.push(line);
+            last_pushed_trace = true;
+            continue;
+        }
         if take[i] {
             if picked.len() < max {
                 if omitted > 0 {
                     let extra = if picked.len() + 1 >= max {
-                        total - i
+                        (total - i) - trace_rest_from[i]
                     } else {
                         0
                     };
                     let count = omitted + extra;
                     picked.push(format!("… {count} lines omitted (expand {archive_id})"));
                     omitted = 0;
-                    if picked.len() >= max {
+                    last_pushed_trace = false;
+                    // Nothing but trace blocks prints past a spent budget; when none
+                    // remain ahead, fold everything and stop (the pinned true-count
+                    // tests hold only under that exact fold).
+                    if trace_rest_from[i + 1] == 0 && picked.len() >= max {
                         break;
                     }
                 }
                 picked.push(line);
+                last_pushed_trace = false;
             } else {
                 omitted += 1;
             }
@@ -392,13 +517,14 @@ pub fn apply(
         }
     }
     if omitted > 0 {
-        if picked.len() >= max {
+        // Fold the trailer into a full budget only when the last pushed line is not
+        // a trace line; a trace frame is never popped for it.
+        if picked.len() >= max && !last_pushed_trace {
             picked.pop();
             omitted += 1;
         }
         picked.push(format!("… {omitted} lines omitted (expand {archive_id})"));
     }
-    picked.truncate(max);
     picked.join("\n")
 }
 
@@ -530,6 +656,69 @@ mod tests {
         );
         let content = out.lines().filter(|l| !l.contains("lines omitted")).count();
         assert_eq!(n_lines - content, expect_omitted, "{out}");
+    }
+
+    // --- T65.4: a stack-trace block survives the head/tail cut whole ---
+
+    /// One fixture per language — a trace block in the middle of a long output
+    /// survives the default rule's cut with every frame, while an ordinary middle
+    /// line is still cut and the trailer still names the archive id.
+    #[test]
+    fn stack_traces_survive_the_head_tail_cut_per_language() {
+        let s = settings(80);
+        let rule = Rule::default();
+        let traces: &[&[&str]] = &[
+            // Python: header + indented frames; the bare exception line is BUILTIN_KEEP.
+            &[
+                "Traceback (most recent call last):",
+                "  File \"m.py\", line 3, in main",
+                "    run()",
+                "ValueError: boom",
+            ],
+            // Rust: header, the message line under it, and the backtrace frames.
+            &[
+                "thread 'main' panicked at src/m.rs:2:5:",
+                "explicit panic",
+                "stack backtrace:",
+                "   0: rtok::main",
+                "   1: core::ops::function::FnOnce::call_once",
+            ],
+            // JS: an Error line and its `    at ` frames.
+            &[
+                "Error: cannot read properties of undefined",
+                "    at main (/x/app.js:10:13)",
+                "    at Object.<anonymous> (/x/app.js:3:1)",
+            ],
+            // Go: the goroutine header and its `()` / tab-indented frames.
+            &[
+                "goroutine 1 [running]:",
+                "main.main()",
+                "\t/src/m.go:9 +0x2c",
+            ],
+            // Java: the exception header and its `\tat` frames.
+            &[
+                "Exception in thread \"main\" java.lang.NullPointerException",
+                "\tat Main.run(Main.java:8)",
+                "\tat Main.main(Main.java:4)",
+            ],
+        ];
+        for trace in traces {
+            let mut lines: Vec<String> = (0..15).map(|i| format!("ok {i}")).collect();
+            lines.extend(trace.iter().map(|l| l.to_string()));
+            lines.extend((15..45).map(|i| format!("ok {i}")));
+            let out = apply(&s, &lines.join("\n"), 0, &rule, "arc1");
+            for frame in *trace {
+                assert!(out.contains(frame), "`{frame}` must survive:\n{out}");
+            }
+            assert!(
+                out.contains("lines omitted (expand arc1)"),
+                "the trailer names the archive id:\n{out}"
+            );
+            assert!(
+                !out.contains("ok 30"),
+                "an ordinary middle line is still cut:\n{out}"
+            );
+        }
     }
 
     // --- disk Settings::load twins (restored; keep coverage of real path I/O) ---

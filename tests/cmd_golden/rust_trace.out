@@ -1,0 +1,27 @@
+ok 0
+ok 1
+ok 2
+ok 3
+ok 4
+ok 5
+ok 6
+ok 7
+ok 8
+ok 9
+… 5 lines omitted (expand deadbeef)
+thread 'main' panicked at src/m.rs:2:5:
+explicit panic
+stack backtrace:
+   0: rtok::main
+   1: core::ops::function::FnOnce::call_once
+… 21 lines omitted (expand deadbeef)
+ok 35
+ok 36
+ok 37
+ok 38
+ok 39
+ok 40
+ok 41
+ok 42
+ok 43
+ok 44
