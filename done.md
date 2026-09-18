@@ -1,5 +1,16 @@
 # rtok — completed tasks
 
+## T59.6 — `handoff` MCP tool for sub-agents
+
+From I-46 (lean-ctx `ctx_handoff` / `ctx_agent`). Agent tool results were 23 K of 2.83 M tokens on the measured workload (§2), so this ships only with a number.
+Done when:
+1. Evidence: `stats` splits Agent/Task tool inputs and results per session; the card records the share, and closes with the number if sub-agents are below 5 % of tokens.
+2. `handoff(budget_tokens)` returns one budgeted digest: the session's memory notes (titles first), archive ids of live tool results with tool and bytes (T58.2 field), touched paths, and the last N user prompts (`checkpoint::extract` reused, not copied); deterministic order; the digest itself is archived and carries an `expand <id>`.
+3. Description ≤ 40 tokens; Vfs unit test on a fixture store; docs next to the memory tools.
+Execution plan (Cursor / grok 4.6): evidence first in `src/measure/stats.rs` — `Report` gains an `agents` row that splits `Agent` and `Task` tool-input bytes vs result bytes and counts sessions that used either; `to_table` prints the two shares against all tool-result tokens and all tool-input bytes (the T58.3 denominator). Unit test on a two-session fixture (one Agent, one Task). Run `rtok stats --since 30d` on the author's transcripts; if Agent+Task result tokens are < 5 % of tool-result tokens, close with the number and do not add a `handoff` MCP tool.
+
+**Result (2026-09-18, `rtok stats --since 30d`, 939 sessions).** 42 sessions used `Agent` (449 calls); `Task` 0. Agent in 1,042,386 B / out 632,586 B (158,299 est. tokens) = **0.7 % of tool-result tokens** (JSON 0.662 % of 23,905,777) and 2.7 % of tool-input bytes. Under the 5 % gate → `handoff` MCP tool not built. Landed: `AgentRow` in `src/measure/stats.rs` (`agents` in `--json`, one `agent` line in the table), unit test on an Agent + Task + Bash-only fixture; row in `research.md` §2. I-46 keeps the number.
+
 ## T58.2 — Compaction checkpoint on every host, with archive ids
 
 From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). What exists (T2.5): on Claude Code `agents install` registers `PreCompact` and `PostCompact`; `checkpoint::save` stores the last 20 prompts, touched paths and 8 error lines as a memory note, and `inject::session_start` re-emits it (priority 9) plus the modes when `source == "compact"`. Two gaps remain. (a) No other host registers its compaction event — Codex (`PreCompact`/`PostCompact`), Cursor (`preCompact`), Gemini CLI (compression hook), Copilot CLI (auto-compact at 80 %) are listed in `research.md` §9.2 as of 2026-09-17, ZCode has none — so on those hosts the modes and the checkpoint vanish after the summary. (b) The checkpoint carries no archive ids, so `expand <id>` of a tool result that the summary dropped needs the id from a transcript the model no longer sees. Neither rtk, headroom nor caveman handle compaction at all (§9.3), so closing (a) and (b) is "better", not parity.

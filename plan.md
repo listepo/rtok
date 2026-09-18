@@ -20,7 +20,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.1 | todo | P3 | 2 | 0% | |
 | T59.3 | todo | P3 | 2 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
-| T59.6 | todo | P3 | 3 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
 | T60.1 | todo | P2 | 3 | 0% | |
 | T60.2 | todo | P2 | 3 | 0% | |
@@ -170,14 +169,6 @@ Done when:
 1. Evidence: `doctor` already prices descriptions per server; a `stats` row shows description tokens × turns per session for a host without deferral, recorded in `research.md`. Below 3 % of session input, the card closes with the number.
 2. Proxy option `proxy.tools_rewrite = { max_description_tokens = N, allow = [..], deny = [..] }`, off by default: descriptions truncated at a sentence boundary to N tokens (the tokenizer `measure` uses), tools outside `allow` or inside `deny` dropped from `tools[]`; the rewrite is deterministic so the cached prefix changes once per session, and `input_schema` is never touched.
 3. `Measurement { plugin = "proxy", kind = "tools_rewrite" }` per request with before/after description bytes; wire tests for Anthropic and OpenAI Chat request shapes; a tool the model then calls that was dropped by `deny` is forwarded unchanged (the proxy never blocks a call).
-
-### T59.6. `handoff` MCP tool for sub-agents
-
-From I-46 (lean-ctx `ctx_handoff` / `ctx_agent`). Agent tool results were 23 K of 2.83 M tokens on the measured workload (§2), so this ships only with a number.
-Done when:
-1. Evidence: `stats` splits Agent/Task tool inputs and results per session; the card records the share, and closes with the number if sub-agents are below 5 % of tokens.
-2. `handoff(budget_tokens)` returns one budgeted digest: the session's memory notes (titles first), archive ids of live tool results with tool and bytes (T58.2 field), touched paths, and the last N user prompts (`checkpoint::extract` reused, not copied); deterministic order; the digest itself is archived and carries an `expand <id>`.
-3. Description ≤ 40 tokens; Vfs unit test on a fixture store; docs next to the memory tools.
 
 ### T59.8. Token-sink ranking in `report`
 
