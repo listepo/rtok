@@ -64,6 +64,7 @@ pub mod snapshot {
         pub tokens: String,
         pub subtitle: String,
         pub detail: String,
+        pub ref_id: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -164,6 +165,12 @@ pub mod snapshot {
                     }
                     None => "-".into(),
                 };
+                let id = c["id"].as_i64().unwrap_or(0);
+                let ref_id = v["ref_ids"]
+                    .get(id.to_string())
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 Call {
                     when: time_of(c["ts"].as_i64().unwrap_or(0)),
                     surface: str_of(&c["surface"]),
@@ -173,19 +180,22 @@ pub mod snapshot {
                     ms: ms.clone(),
                     tokens: tokens.clone(),
                     subtitle: format!("{name} / {} / {ms} ms / {tokens}", str_of(&c["session"])),
-                    detail: call_detail(c, &name, &ms, &tokens),
+                    detail: call_detail(c, &name, &ms, &tokens, &ref_id),
+                    ref_id,
                 }
             })
             .collect()
     }
 
-    fn call_detail(c: &Value, name: &str, ms: &str, tokens: &str) -> String {
+    fn call_detail(c: &Value, name: &str, ms: &str, tokens: &str, ref_id: &str) -> String {
         let dash = |k: &str| opt_str(&c[k]).unwrap_or_else(|| "-".into());
+        let ref_id = if ref_id.is_empty() { "-" } else { ref_id };
         format!(
             "session {session} · surface {surface} · kind {kind}\n\
              name {name} · plugin {plugin} · host {host}\n\
              provider {provider} · model {model} · api {api}\n\
-             ms {ms} · tokens {tokens} · ok {ok}",
+             ms {ms} · tokens {tokens} · ok {ok}\n\
+             ref_id {ref_id}",
             session = str_of(&c["session"]),
             surface = str_of(&c["surface"]),
             kind = str_of(&c["kind"]),
@@ -444,6 +454,16 @@ pub mod snapshot {
     }
 }
 
+fn filter_expand(text: &str, needle: &str) -> String {
+    if needle.is_empty() {
+        return text.to_string();
+    }
+    text.lines()
+        .filter(|line| line.contains(needle))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Apply one `/ws` snapshot onto the window: the one call path the WASM
 /// client and the e2e tests share. Fail-open like [`snapshot::parse`]:
 /// missing keys become empty pages, never a panic.
@@ -492,6 +512,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
             tokens: SharedString::from(c.tokens),
             subtitle: SharedString::from(c.subtitle),
             detail: SharedString::from(c.detail),
+            ref_id: SharedString::from(c.ref_id),
         })
         .collect();
     ui.set_calls(ModelRc::from(Rc::new(VecModel::from(calls))));
@@ -640,6 +661,22 @@ mod wasm {
             });
             let _ = ws_send.send_with_str(&msg.to_string());
         });
+        let ws_expand = ws.clone();
+        ui.on_expand_archive(move |id| {
+            let msg = serde_json::json!({ "expand": id });
+            let _ = ws_expand.send_with_str(&msg.to_string());
+        });
+        let ui_filter = ui.as_weak();
+        ui.on_filter_expand(move |needle| {
+            let Some(ui) = ui_filter.upgrade() else {
+                return;
+            };
+            let body = ui.get_expand_text();
+            ui.set_expand_view(SharedString::from(filter_expand(
+                body.as_str(),
+                needle.as_str(),
+            )));
+        });
         let on_msg = Closure::<dyn FnMut(MessageEvent)>::new(move |ev: MessageEvent| {
             let Some(text) = ev.data().as_string() else {
                 return;
@@ -653,6 +690,13 @@ mod wasm {
             if v.get("type").and_then(|t| t.as_str()) == Some("message") {
                 let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("error");
                 ui.set_status(SharedString::from(text));
+                return;
+            }
+            if v.get("type").and_then(|t| t.as_str()) == Some("expand") {
+                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                ui.set_expand_text(SharedString::from(text));
+                let needle = ui.get_expand_filter();
+                ui.set_expand_view(SharedString::from(filter_expand(text, needle.as_str())));
                 return;
             }
             super::apply_snapshot(&ui, &v);
@@ -758,6 +802,7 @@ mod tests {
         assert_eq!(view.plugins.len(), 1);
         assert_eq!(view.calls.len(), 1);
         assert!(view.calls[0].detail.contains("anthropic"));
+        assert!(view.calls[0].detail.contains("ref_id"));
         assert_eq!(view.sessions.len(), 1);
         assert!(view.sessions[0].live);
         assert!(view.sessions[0].detail.contains("project rtok"));
@@ -765,6 +810,25 @@ mod tests {
         assert!(view.doctor_text.contains("hooks 3"));
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
+    }
+
+    #[test]
+    fn calls_bind_snapshot_ref_ids() {
+        let v = json!({
+            "type": "snapshot",
+            "usage": {},
+            "plugins": [],
+            "calls": [{
+                "id": 7, "ts": 0, "session": "s", "surface": "hook", "kind": "hook", "ok": 1
+            }],
+            "sessions": [],
+            "logs": [],
+            "ref_ids": {"7": "abc123"}
+        });
+        let view = snapshot::parse(&v);
+        assert_eq!(view.calls[0].ref_id, "abc123");
+        assert!(view.calls[0].detail.contains("ref_id abc123"));
+        assert_eq!(super::filter_expand("a\nb-hit\nc", "hit"), "b-hit");
     }
 
     #[test]
