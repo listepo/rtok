@@ -649,17 +649,12 @@ section! {
         prompt_recall: u32 = 0,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
-<<<<<<< HEAD
         sync_tokens: u32 = 300,
-        /// Inject last session checkpoint at startup (T71.2); off by default.
-        startup_recall: bool = false,
-        /// Sub-agent handoff MCP tool (T59.6); off by default.
-        handoff: bool = false,
-=======
         /// SessionStart `source = startup` restores the newest `session:*` note (T71.2). Off
         /// until a P7-style A/B shows cost per passed task does not rise.
         startup_recall: bool = false,
->>>>>>> a68750a (T71.2: add plugins.memory.startup_recall, off by default)
+        /// Sub-agent handoff MCP tool (T59.6); off by default.
+        handoff: bool = false,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }
