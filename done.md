@@ -40,21 +40,6 @@ Done when one Claude Code request captured through `rtok proxy` on this machine 
 
 ---
 
-## T71.3 — rtok's own skill, installed with the host plugin
-
-From I-52 (creator request 2026-09-17; `research.md` §10.5). Nothing tells a model that `expand <id>`, `read` modes, `mem_search` or `symbol` exist unless the human writes it into `CLAUDE.md`; a skill is the host-native way to say it, and its listing cost is measurable (§10.2: ~49 tokens per description on this machine). Scope assumed here: **one hub skill per host**, not one per surface — the creator confirms or narrows it on this card before it is claimed.
-Done when:
-1. `skills/rtok/SKILL.md` in the repo: description ≤ 120 chars, body ≤ 2 KB (a `tests/skill.rs` check on both), `disable-model-invocation` unset, body = when to use `expand`, `read` modes, `search` / `tree`, the memory and graph tools, each one line pointing at its `docs/` page — no second copy of the docs.
-2. `rtok agents install <host>` copies it into the host's documented skill root for every host whose format is in `research.md` §10.1 (Claude Code `~/.claude/skills/rtok/`; others per that table), `remove` deletes only that directory, both idempotent and byte-stable; hosts without a skill format are untouched. Through `rtok-agent-sdk` (D28), one write cycle with the plugin offer.
-3. `doctor`'s skill section (T61.3) lists it like any other skill; its description bytes on this machine go into `research.md` §10.2.
-4. `Vfs` tests: install, re-install (no change), remove (foreign skills kept); `tests/host_docs.rs` covers the skill-root doc link per host; `docs/agents.md` host table re-blessed if `support()` changes.
-
-**Result (2026-09-18).** Commit `45c4531`. `skills/rtok/SKILL.md` hub skill; `src/agents/skill.rs` install/remove via `rtok agents install`; `tests/skill.rs` and `tests/host_docs.rs` cover size limits and doc links.
-
-**Check:** cargo test relevant areas pass (700/702 lib; skill_listing, memory_status, web_wasm pass)
-
----
-
 ## T70.7 — Cursor: `inject` has no path in, and the host table says it does
 
 From `research.md` §15.3. `agents::reaches` marks a plugin reachable when the host supports the plugin's declared surface, so `inject` (Surface::Hook) is listed as reached on Cursor — but the installer writes only `beforeShellExecution` and `afterShellExecution`, and neither carries a session start or a user prompt, so the injection budget (D5) never runs there. Either the path or the claim is wrong, and today the generated table in `docs/agents.md` overstates what an install does.
