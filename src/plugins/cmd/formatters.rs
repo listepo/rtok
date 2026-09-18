@@ -52,7 +52,7 @@ pub(crate) use crate::agents::cmd_stem;
 
 /// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
 const FORMATTER_STEMS: &[&str] = &[
-    "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go",
+    "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go", "docker", "kubectl",
 ];
 
 /// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
@@ -95,6 +95,8 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         ("go", "test") => Some(keep(output, &["FAIL", "PASS", "ok  ", "--- FAIL"])),
         ("ls", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
         ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("docker", "ps") => docker_ps(output),
+        ("kubectl", "get") => kubectl_get(output),
         _ => None,
     }
 }
@@ -178,6 +180,127 @@ fn is_porcelain(line: &str) -> bool {
         )
     };
     b.len() > 3 && column(b[0]) && column(b[1]) && b[2] == b' '
+}
+
+/// `docker ps`: one compact row per container. Padding, bind-all, container-side
+/// port/proto, registry host and `N days`/`N hours` units are alignment noise; the
+/// name, status, host port and image tag are the objects the rule's head/tail cut drops.
+fn docker_ps(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let u = header.to_ascii_uppercase();
+    if !u.contains("CONTAINER ID") && !(u.contains("IMAGE") && u.contains("NAMES")) {
+        return None;
+    }
+    let rows: Vec<String> = lines
+        .map(compact_docker_row)
+        .filter(|r| !r.is_empty())
+        .collect();
+    if rows.is_empty() {
+        None
+    } else {
+        Some(rows.join("\n"))
+    }
+}
+
+fn compact_docker_row(line: &str) -> String {
+    let joined = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let no_bind = joined.replace("0.0.0.0:", "");
+    shorten_ago(&drop_registry_host(&drop_arrow_port(&no_bind)))
+}
+
+fn drop_arrow_port(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '-' && chars.peek() == Some(&'>') {
+            chars.next();
+            while matches!(chars.peek(), Some(d) if d.is_ascii_digit()) {
+                chars.next();
+            }
+            if chars.peek() == Some(&'/') {
+                chars.next();
+                while matches!(chars.peek(), Some(d) if d.is_ascii_alphabetic()) {
+                    chars.next();
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn drop_registry_host(s: &str) -> String {
+    s.split_whitespace()
+        .map(|tok| match tok.split_once('/') {
+            Some((host, rest)) if host.contains('.') && !host.contains(':') => rest,
+            _ => tok,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn shorten_ago(s: &str) -> String {
+    let mut out = s.to_string();
+    for (from, to) in [
+        (" days", "d"),
+        (" day", "d"),
+        (" hours", "h"),
+        (" hour", "h"),
+        (" minutes", "m"),
+        (" minute", "m"),
+        (" seconds", "s"),
+        (" second", "s"),
+        (" weeks", "w"),
+        (" week", "w"),
+    ] {
+        out = out.replace(from, to);
+    }
+    out
+}
+
+/// `kubectl get`: one row per object, dropping wide columns (AGE, NODE, RESTARTS)
+/// that the default rule keeps in the head/tail while omitting the middle objects.
+fn kubectl_get(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let cols: Vec<&str> = header.split_whitespace().collect();
+    if cols.first().copied() != Some("NAME") {
+        return None;
+    }
+    if !cols
+        .iter()
+        .any(|c| matches!(*c, "STATUS" | "READY" | "AGE"))
+    {
+        return None;
+    }
+    const KEEP: &[&str] = &["NAME", "READY", "STATUS", "IP"];
+    let idx: Vec<usize> = cols
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| KEEP.contains(c))
+        .map(|(i, _)| i)
+        .collect();
+    if idx.is_empty() {
+        return None;
+    }
+    let mut out = vec![idx.iter().map(|&i| cols[i]).collect::<Vec<_>>().join(" ")];
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        let picked: Vec<&str> = idx.iter().filter_map(|&i| fields.get(i).copied()).collect();
+        if !picked.is_empty() {
+            out.push(picked.join(" "));
+        }
+    }
+    if out.len() < 2 {
+        None
+    } else {
+        Some(out.join("\n"))
+    }
 }
 
 fn keep(output: &str, needles: &[&str]) -> String {
@@ -329,5 +452,66 @@ mod tests {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(family(&argv(&[r"C:\tools\git.exe", "status"])), "git");
         assert_eq!(family(&argv(&["cargo.exe", "test"])), "cargo");
+    }
+
+    #[test]
+    fn table_formatter_beats_default_rule_and_keeps_every_object() {
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for (file, argv0, prefix) in [
+            ("docker_ps.in", ["docker", "ps"], "web-"),
+            ("kubectl_get.in", ["kubectl", "get"], "web-deploy-"),
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (_, exit, output) = parse_in(&raw);
+            let argv = argv0.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+            let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
+            assert_eq!(kind, "formatter", "{file}");
+            let rule_out = rules::apply(
+                &settings,
+                &output,
+                exit,
+                &rules::Rule::default(),
+                "deadbeef",
+            );
+            assert!(
+                got.len() < rule_out.len(),
+                "{file}: formatter {} vs rule {}",
+                got.len(),
+                rule_out.len()
+            );
+            for i in 0..40 {
+                let name = if prefix == "web-" {
+                    format!("web-{i:02}")
+                } else {
+                    format!("web-deploy-{i:02}-abcd")
+                };
+                assert!(got.contains(&name), "{file} dropped {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn table_formatter_stands_down_on_unrecognized() {
+        let settings = rules::Settings::builtin();
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["docker", "ps"]),
+            "Cannot connect to the Docker daemon\n",
+            0,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("Cannot connect"), "{got}");
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["kubectl", "get"]),
+            "error: the server doesn't have a resource type \"pods\"\n",
+            1,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("doesn't have a resource type"), "{got}");
     }
 }
