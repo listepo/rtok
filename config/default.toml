@@ -184,7 +184,8 @@ rules    = "~/.rtok/rules.toml"       # extra filter rules; missing → built-in
 rules_dir = "~/.rtok/rules.d"         # drop-ins: every *.toml merges after rules in name order (T50.2)
 trailer_min_lines = 40                # add `[rtok <id> · N lines · expand …]` above this
 fail_tail_lines   = 80                # non-zero exit → last N lines verbatim
-never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&`, -i are always skipped
+never_wrap = ["rtok", "sudo"]         # first-word deny list; heredocs, `&` are always skipped
+interactive_stems = ["python", "node", "psql", "sqlite3", "irb", "bash", "sh", "zsh", "docker", "kubectl"]  # `-i` skips wrap only for these (docker: run/exec; kubectl: exec); `--interactive` always skips
 
 [plugins.read]
 enabled          = true
@@ -234,6 +235,7 @@ deny_grep_glob = false           # opt-in: deny native Grep/Glob, point at MCP s
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
+prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact)
 search_limit   = 5
 
@@ -251,6 +253,9 @@ body_lines = 40                       # symbol(): source lines shown per definit
 auto_index = true                     # every symbol/callers/impact call walks the tree; false = index once, then `rtok graph index` or the watcher
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
 watch      = "off"                    # off | notify | watchman (P8d): background re-index inside `rtok mcp`
+exclude    = []                       # gitignore-style paths dropped from the walk (T68.10)
+include    = []                       # gitignore-style paths forced back in (T68.10)
+extensions = {}                       # ext = "grammar" remap for custom suffixes (T68.10)
 
 [plugins.toon]
 enabled  = false

@@ -56,9 +56,7 @@ impl HookInput {
             self.session_id = id.to_string();
         }
         if self.tool_name.is_some() {
-            if self.hook_event_name.is_empty() {
-                self.hook_event_name = event.to_string();
-            }
+            self.hook_event_name = cursor_event(event, &self.hook_event_name).into();
             return;
         }
         let Some(cmd) = self
@@ -67,9 +65,7 @@ impl HookInput {
             .and_then(|v| v.as_str())
             .map(str::to_string)
         else {
-            if self.hook_event_name.is_empty() {
-                self.hook_event_name = event.to_string();
-            }
+            self.hook_event_name = cursor_event(event, &self.hook_event_name).into();
             return;
         };
         self.tool_name = Some("Bash".into());
@@ -164,6 +160,18 @@ fn as_string(v: Value) -> Option<String> {
     match v {
         Value::String(s) => Some(s),
         _ => None,
+    }
+}
+
+/// Cursor hook names to Claude's; a Claude name passes through.
+fn cursor_event<'a>(cli: &'a str, stdin: &'a str) -> &'a str {
+    let name = if stdin.is_empty() { cli } else { stdin };
+    match name {
+        "sessionStart" => "SessionStart",
+        "beforeSubmitPrompt" => "UserPromptSubmit",
+        "afterShellExecution" => "PostToolUse",
+        "beforeShellExecution" => "PreToolUse",
+        other => other,
     }
 }
 

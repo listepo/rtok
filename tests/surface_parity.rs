@@ -126,6 +126,7 @@ fn wasm_ui_renders_every_model_page() {
 /// The mapping is many-to-one: several commands may render the same page.
 const COMMAND_PAGES: &[(&str, &str)] = &[
     ("plugins", "plugins"),
+    ("memory status", "plugins"),
     // the Sessions page rides the snapshot since T25.1, so the command renders a
     // real page, not an on-demand call
     ("agents sessions", "sessions"),

@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Result;
-use ignore::WalkBuilder;
 
 use crate::plugins::read::outline;
 use crate::store;
@@ -18,6 +17,9 @@ pub struct Report {
     pub skipped: u32,
     /// Files whose bytes were read (T8.4). A warm run over an untouched tree reads none.
     pub read: u32,
+    pub exclude_skipped: u32,
+    pub include_added: u32,
+    pub extension_mapped: u32,
 }
 
 /// One symbol row: name, kind, line, is-definition, end line, enclosing definition.
@@ -107,11 +109,9 @@ pub fn run_with(
     let mut report = Report::default();
     let mut keep = HashSet::new();
     let mut jobs = Vec::new();
-    for entry in WalkBuilder::new(&root)
-        .hidden(false)
-        .filter_entry(crate::plugins::read::search::skip_git)
-        .build()
-    {
+    let graph_cfg = cx.plugin_config::<crate::config::Graph>("graph");
+    let matcher = super::walk::Matcher::new(&root, &graph_cfg);
+    for entry in matcher.walk_builder(&root).build() {
         let Ok(entry) = entry else {
             continue;
         };
@@ -119,8 +119,18 @@ pub fn run_with(
             continue;
         }
         let path = entry.path();
-        if !outline::supported(path) {
+        let builtin = outline::supported(path);
+        if builtin && !matcher.indexable(path) {
+            report.exclude_skipped += 1;
             continue;
+        }
+        if !matcher.indexable(path) {
+            continue;
+        }
+        if matcher.uses_extension_map(path) {
+            report.extension_mapped += 1;
+        } else if !builtin {
+            report.include_added += 1;
         }
         let rel = pathdiff::diff_paths(path, &root)
             .filter(|p| {
@@ -144,6 +154,7 @@ pub fn run_with(
             rel,
             stat,
             known: known.map(|(sha, _, _)| sha),
+            extensions: matcher.extensions().clone(),
         });
     }
     let mut pending = Vec::new();
@@ -173,6 +184,11 @@ pub fn run_with(
         if fp_stale {
             cx.set_extractor_fingerprint(&rk, &current_fp)?;
         }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        cx.touch_symbol_indexed_at(&rk, ts)?;
     }
     pb.finish_and_clear();
     Ok(report)
@@ -188,6 +204,7 @@ fn run_changed_with(
     let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
+    let matcher = super::walk::Matcher::new(&root, &cx.plugin_config::<crate::config::Graph>("graph"));
     let mut jobs = Vec::new();
     for event_path in changed {
         let abs = changed_abs(&root, event_path);
@@ -200,7 +217,7 @@ fn run_changed_with(
         let Some(rel) = rel else {
             continue;
         };
-        if !abs.exists() || !outline::supported(&abs) {
+        if !abs.exists() || !matcher.indexable(&abs) {
             if !dry_run {
                 let _ = cx.mark_symbols_stale(&canon(&abs));
             }
@@ -221,6 +238,7 @@ fn run_changed_with(
             rel,
             stat,
             known: known.map(|(sha, _, _)| sha),
+            extensions: matcher.extensions().clone(),
         });
     }
     each_parsed(&jobs, |job, parsed| {
@@ -257,6 +275,7 @@ struct Job {
     rel: String,
     stat: (i64, i64),
     known: Option<String>,
+    extensions: std::collections::HashMap<String, String>,
 }
 
 /// What a worker made of a [`Job`]; the calling thread turns it into store writes.
@@ -307,7 +326,7 @@ fn parse(job: &Job) -> Parsed {
     if job.known.as_deref() == Some(sha.as_str()) {
         return Parsed::Same;
     }
-    match outline::tags(&job.path, &src) {
+    match outline::tags_with_extensions(&job.path, &src, &job.extensions) {
         Ok(hits) => Parsed::Rows(sha, scoped(&hits)),
         Err(_) => Parsed::Unparsed,
     }
@@ -532,7 +551,7 @@ pub(crate) mod tests {
 
     /// T8.4: a warm run over an untouched tree opens no file; rewriting identical bytes
     /// costs one read and no rows. The 3 000-file wall time is a release measurement
-    /// (`done.md`); at this size the cold run is one transaction per file and would put
+    /// (`done.md`); at this size the cold run batches SYMBOL_BATCH_FILES files per transaction and would put
     /// ~90 s of fixture setup into every `just check`.
     #[test]
     fn warm_run_reads_nothing_and_touch_inserts_zero() {
@@ -607,6 +626,7 @@ pub(crate) mod tests {
                     rel,
                     stat: (0, 0),
                     known: None,
+                    extensions: std::collections::HashMap::new(),
                 }
             })
             .collect()

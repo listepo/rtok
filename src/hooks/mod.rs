@@ -100,6 +100,10 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(copilot_output(&parsed));
     }
+    if cfg.hook.host == "cursor" {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(cursor_output(&parsed));
+    }
     Ok(out)
 }
 
@@ -130,6 +134,21 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
         if let Some(r) = &out.reason {
             o.insert("permissionDecisionReason".into(), r.as_str().into());
         }
+    }
+    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
+}
+
+
+/// Cursor session/prompt hooks read a flat object: `{additional_context}`.
+pub fn cursor_output(out: &HookOutput) -> Vec<u8> {
+    let mut o = serde_json::Map::new();
+    if let Some(h) = &out.hook_specific_output {
+        if let Some(c) = &h.additional_context {
+            o.insert("additional_context".into(), c.as_str().into());
+        }
+    }
+    if o.is_empty() {
+        return b"{}".to_vec();
     }
     serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
 }
@@ -566,4 +585,47 @@ mod tests {
         );
         assert!(cx.estimate(&out, Class::Prose) <= 30, "{out}");
     }
+
+    #[test]
+    fn cursor_session_start_injects_flat_and_stable() {
+        let dir = std::env::temp_dir().join(format!("rtok-cursor-ss-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.hook.host = "cursor".into();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        cfg.plugins.inject.modes = vec!["nudges".into()];
+        let raw = serde_json::json!({
+            "hook_event_name": "sessionStart",
+            "conversation_id": "sess-cur",
+            "cwd": dir.display().to_string(),
+            "source": "startup"
+        });
+        let stdin = serde_json::to_vec(&raw).unwrap();
+        let mut out1 = Vec::new();
+        run("SessionStart", stdin.as_slice(), &mut out1, &cfg);
+        let mut out2 = Vec::new();
+        run("SessionStart", stdin.as_slice(), &mut out2, &cfg);
+        assert_eq!(out1, out2, "byte-stable");
+        let v: serde_json::Value = serde_json::from_slice(&out1).unwrap();
+        assert!(v.get("hookSpecificOutput").is_none(), "{v}");
+        assert!(v.get("additional_context").is_some(), "{v}");
+        let mut claude = cfg.clone();
+        claude.hook.host = "claude".into();
+        claude.plugins.inject.modes = vec!["nudges".into()];
+        let mut claude_out = Vec::new();
+        run(
+            "SessionStart",
+            include_str!("../../tests/fixtures/hooks/session_start.json").as_bytes(),
+            &mut claude_out,
+            &claude,
+        );
+        let cv: serde_json::Value = serde_json::from_slice(&claude_out).unwrap();
+        let cursor_ctx = v["additional_context"].as_str().unwrap_or("");
+        let claude_ctx = cv["hookSpecificOutput"]["additionalContext"].as_str().unwrap_or("");
+        assert_eq!(cursor_ctx, claude_ctx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
 }

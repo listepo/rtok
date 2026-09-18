@@ -1,5 +1,7 @@
-//! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3).
+//! `mode=map` / `mode=signatures` via tree-sitter-tags (plan T4.3) or a line scan for
+//! Markdown (T68.8).
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -21,31 +23,63 @@ pub struct TagHit {
 
 /// True when `path` has a tags-supported extension (cheap; does not parse).
 pub fn supported(path: &Path) -> bool {
+    grammar_for_ext(path.extension().and_then(|e| e.to_str())).is_some()
+}
+
+/// Whether a grammar name from `[plugins.graph.extensions]` is available in this build.
+pub fn grammar_available(grammar: &str) -> bool {
+    grammar_for_ext(Some(grammar)).is_some()
+}
+
+fn grammar_for_ext(ext: Option<&str>) -> Option<&'static str> {
+    match ext? {
+        #[cfg(feature = "lang-rust")]
+        "rs" | "rust" => Some("rust"),
+        #[cfg(feature = "lang-ts")]
+        "ts" => Some("ts"),
+        #[cfg(feature = "lang-ts")]
+        "tsx" => Some("tsx"),
+        #[cfg(feature = "lang-js")]
+        "js" | "mjs" | "cjs" => Some("js"),
+        #[cfg(feature = "lang-python")]
+        "py" => Some("py"),
+        #[cfg(feature = "lang-dart")]
+        "dart" => Some("dart"),
+        #[cfg(feature = "lang-c")]
+        "c" => Some("c"),
+        #[cfg(feature = "lang-c")]
+        "h" => Some("h"),
+        #[cfg(feature = "lang-go")]
+        "go" => Some("go"),
+        _ => None,
+    }
+}
+
+/// True when `path` is indexable with built-in extensions or `extensions` remap (T68.10).
+pub fn supported_with(path: &Path, extensions: &HashMap<String, String>) -> bool {
+    if supported(path) {
+        return true;
+    }
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
         return false;
     };
-    match ext {
-        #[cfg(feature = "lang-rust")]
-        "rs" => true,
-        #[cfg(feature = "lang-ts")]
-        "ts" | "tsx" => true,
-        #[cfg(feature = "lang-js")]
-        "js" | "mjs" | "cjs" => true,
-        #[cfg(feature = "lang-python")]
-        "py" => true,
-        #[cfg(feature = "lang-dart")]
-        "dart" => true,
-        #[cfg(feature = "lang-c")]
-        "c" | "h" => true,
-        #[cfg(feature = "lang-go")]
-        "go" => true,
-        _ => false,
-    }
+    extensions
+        .get(ext)
+        .is_some_and(|grammar| grammar_available(grammar))
 }
 
 /// Definitions and references from the grammar's tags query. Unknown language → empty.
 pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
-    let Some(cfg) = config(path) else {
+    tags_with_extensions(path, src, &HashMap::new())
+}
+
+/// Like [`tags`], but `[plugins.graph.extensions]` can remap the file suffix (T68.10).
+pub fn tags_with_extensions(
+    path: &Path,
+    src: &str,
+    extensions: &HashMap<String, String>,
+) -> Result<Vec<TagHit>> {
+    let Some(cfg) = config_with_extensions(path, extensions) else {
         return Ok(Vec::new());
     };
     let cfg = cfg?;
@@ -76,8 +110,95 @@ pub fn tags(path: &Path, src: &str) -> Result<Vec<TagHit>> {
     Ok(out)
 }
 
+
+/// One ATX heading: 1-based line, `#` level, full trimmed line, first body line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MdHeading {
+    pub line: usize,
+    pub level: usize,
+    pub text: String,
+    pub body: Option<String>,
+}
+
+/// `#` headings with the first non-empty body line; fenced blocks skipped (T68.8).
+pub fn markdown_headings(src: &str) -> Vec<MdHeading> {
+    let mut out = Vec::new();
+    let (mut fenced, mut slot) = (false, None);
+    for (i, line) in src.lines().enumerate() {
+        let t = line.trim();
+        if t.starts_with("```") {
+            fenced = !fenced;
+        } else if fenced {
+        } else if t.starts_with('#') {
+            let level = t.chars().take_while(|c| *c == '#').count().clamp(1, 6);
+            out.push(MdHeading {
+                line: i + 1,
+                level,
+                text: t.to_string(),
+                body: None,
+            });
+            slot = Some(out.len() - 1);
+        } else if let Some(j) = slot {
+            if !t.is_empty() {
+                out[j].body = Some(t.to_string());
+                slot = None;
+            }
+        }
+    }
+    out
+}
+
+/// Heading map for skill digest: full heading line plus indented first body line.
+pub fn markdown_digest(src: &str) -> String {
+    let mut s = String::new();
+    for h in markdown_headings(src) {
+        s.push_str(&h.text);
+        s.push('\n');
+        if let Some(b) = &h.body {
+            s.push_str("  ");
+            s.push_str(b);
+            s.push('\n');
+        }
+    }
+    s
+}
+
+fn is_markdown(path: &Path) -> bool {
+    matches!(path.extension().and_then(|e| e.to_str()), Some("md" | "mdx"))
+}
+
+fn markdown_render(headings: &[MdHeading], mode: &str) -> String {
+    if mode == "signatures" {
+        return headings
+            .iter()
+            .map(|h| h.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    headings
+        .iter()
+        .map(|h| {
+            let title = h.text.trim_start_matches('#').trim();
+            let mut row = format!("h{} {} {}", h.level, title, h.line);
+            if let Some(b) = &h.body {
+                row.push_str(&format!("\n  {b}"));
+            }
+            row
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Definitions as `kind name line`, or verbatim definition lines.
 pub fn render(path: &Path, src: &str, mode: &str) -> Result<String> {
+    if is_markdown(path) {
+        let hs = markdown_headings(src);
+        return Ok(if hs.is_empty() {
+            fallback(src)
+        } else {
+            markdown_render(&hs, mode)
+        });
+    }
     let defs: Vec<TagHit> = tags(path, src)?.into_iter().filter(|h| h.is_def).collect();
     if defs.is_empty() {
         return Ok(fallback(src));
@@ -142,10 +263,26 @@ pub(crate) const RUST_SCOPED_CALL: &str = "
 
 /// The query for `path`'s language, compiled on first use (T35.1): the compile was 19 ms of a
 /// 26.5 ms `tags` call on `graph/index.rs` (debug, 2026-09-10), paid again on every file.
+fn config_with_extensions(
+    path: &Path,
+    extensions: &HashMap<String, String>,
+) -> Option<Result<&'static TagsConfiguration>> {
+    let ext = path.extension()?.to_str()?;
+    let grammar = extensions
+        .get(ext)
+        .map(String::as_str)
+        .or_else(|| grammar_for_ext(Some(ext)));
+    config_for_grammar(grammar)
+}
+
 fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
-    match path.extension()?.to_str()? {
+    config_for_grammar(grammar_for_ext(path.extension()?.to_str()))
+}
+
+fn config_for_grammar(grammar: Option<&str>) -> Option<Result<&'static TagsConfiguration>> {
+    match grammar? {
         #[cfg(feature = "lang-rust")]
-        "rs" => compiled!(
+        "rs" | "rust" => compiled!(
             tree_sitter_rust::LANGUAGE,
             &format!("{}{RUST_SCOPED_CALL}", tree_sitter_rust::TAGS_QUERY),
             ""
@@ -253,4 +390,25 @@ mod tests {
         assert!(out.contains("1:hello"), "{out}");
         assert!(out.contains("unknown language"), "{out}");
     }
+    #[test]
+    fn markdown_map_skips_fenced_headings() {
+        let src = "# One\nFirst.\n```sh\n# not a heading\n```\n## Two\nSecond.\n### Three\nThird.\n";
+        let hs = markdown_headings(src);
+        assert_eq!(hs.len(), 3);
+        assert_eq!(hs[0].body.as_deref(), Some("First."));
+        assert_eq!(hs[1].text, "## Two");
+        assert_eq!(hs[2].text, "### Three");
+        let map = render(Path::new("doc.md"), src, "map").unwrap();
+        assert!(map.contains("h1 One 1"));
+        assert!(map.contains("h2 Two 6"));
+        assert!(map.contains("h3 Three 8"));
+        assert!(map.contains("  Second."));
+        assert!(!map.contains("not a heading"), "{map}");
+        let sig = render(Path::new("doc.mdx"), src, "signatures").unwrap();
+        assert_eq!(sig.lines().count(), 3);
+        let digest = markdown_digest(src);
+        assert!(digest.contains("## Two\n  Second."));
+        assert!(!digest.contains("not a heading"), "{digest}");
+    }
+
 }

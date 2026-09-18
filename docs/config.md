@@ -315,6 +315,7 @@ skill_max_bytes = 8192           # bodies at or under this load whole; so does a
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
+prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
 

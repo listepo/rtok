@@ -46,4 +46,5 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`~/.claude/settings.json`, event names incl. `PreCompact`, `PostCompact`, `SessionEnd`): https://code.claude.com/docs/en/hooks
 - Settings (`env.ANTHROPIC_BASE_URL`): https://code.claude.com/docs/en/settings
 - MCP (user scope in `~/.claude.json` `mcpServers`): https://code.claude.com/docs/en/mcp
+- Skills (`~/.claude/skills/<name>/SKILL.md`): https://code.claude.com/docs/en/skills
 - Claude Desktop (`claude_desktop_config.json` `mcpServers.<name>.command` / `args`): https://modelcontextprotocol.io/docs/develop/connect-local-servers

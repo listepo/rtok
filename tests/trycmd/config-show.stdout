@@ -57,6 +57,7 @@ plugins.archive.tail_lines = 4
 plugins.archive.tiers = false
 plugins.cmd.enabled = true
 plugins.cmd.fail_tail_lines = 80
+plugins.cmd.interactive_stems = [python, node, psql, sqlite3, irb, bash, sh, zsh, docker, kubectl]
 plugins.cmd.never_wrap = [rtok, sudo]
 plugins.cmd.rewrite = true
 plugins.cmd.rules = ~/.rtok/rules.toml

@@ -43,6 +43,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0013.sql", include_str!("../../migrations/0013.sql")),
     ("0014.sql", include_str!("../../migrations/0014.sql")),
     ("0015.sql", include_str!("../../migrations/0015.sql")),
+    ("0016.sql", include_str!("../../migrations/0016.sql")),
 ];
 
 pub struct Store {
@@ -941,6 +942,96 @@ impl Store {
             .map_err(Into::into)
     }
 
+
+    /// Per `(project, kind)` note counts for `memory status` (T69.4).
+    pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
+        let mut conn = self.lock()?;
+        let base = "SELECT project, kind,
+                SUM(CASE WHEN retired IS NULL THEN 1 ELSE 0 END) AS live,
+                SUM(CASE WHEN retired IS NULL AND pinned != 0 THEN 1 ELSE 0 END) AS pinned,
+                SUM(CASE WHEN retired IS NOT NULL THEN 1 ELSE 0 END) AS retired,
+                SUM(length(body)) AS body_bytes,
+                MIN(ts) AS oldest_ts,
+                MAX(ts) AS newest_ts
+         FROM notes
+         WHERE kind NOT LIKE 'checkpoint%'";
+        let rows: Vec<MemoryNoteKindAggRow> = match project {
+            Some(p) => sql_query(&format!("{base} AND project = ? GROUP BY project, kind ORDER BY project, kind"))
+                .bind::<Text, _>(p)
+                .load(&mut *conn)?,
+            None => sql_query(&format!("{base} GROUP BY project, kind ORDER BY project, kind")).load(&mut *conn)?,
+        };
+        Ok(rows
+            .into_iter()
+            .map(|r| MemoryNoteKindAgg {
+                project: r.project,
+                kind: r.kind,
+                live: u64::try_from(r.live).unwrap_or(0),
+                pinned: u64::try_from(r.pinned).unwrap_or(0),
+                retired: u64::try_from(r.retired).unwrap_or(0),
+                body_bytes: r.body_bytes,
+                oldest_ts: r.oldest_ts,
+                newest_ts: r.newest_ts,
+            })
+            .collect())
+    }
+
+    /// SessionStart recall measurements in a time window (T69.4).
+    pub fn memory_recall_totals(&self, since_unix: i64) -> Result<(u64, i64, i64)> {
+        let mut conn = self.lock()?;
+        let rows: Vec<MemoryRecallAggRow> = sql_query(
+            "SELECT COUNT(*) AS recalls,
+                    COALESCE(SUM(before_bytes), 0) AS stood_for_bytes,
+                    COALESCE(SUM(after_bytes), 0) AS injected_bytes
+             FROM measurements
+             WHERE plugin = 'memory' AND kind = 'recall' AND ts >= ?",
+        )
+        .bind::<BigInt, _>(since_unix)
+        .load(&mut *conn)?;
+        let r = rows
+            .first()
+            .map_or((0, 0, 0), |x| (x.recalls, x.stood_for_bytes, x.injected_bytes));
+        Ok((u64::try_from(r.0).unwrap_or(0), r.1, r.2))
+    }
+
+    /// MCP `mem_search` / `mem_get` calls in a time window (T69.4).
+    pub fn memory_mcp_calls(&self, since_unix: i64) -> Result<(u64, u64)> {
+        let mut conn = self.lock()?;
+        let rows: Vec<MemoryMcpCallsRow> = sql_query(
+            "SELECT COALESCE(SUM(CASE WHEN name = 'mem_search' THEN 1 ELSE 0 END), 0) AS mem_search,
+                    COALESCE(SUM(CASE WHEN name = 'mem_get' THEN 1 ELSE 0 END), 0) AS mem_get
+             FROM calls
+             WHERE plugin = 'memory' AND surface = 'mcp' AND kind = 'mcp_call' AND ts >= ?",
+        )
+        .bind::<BigInt, _>(since_unix)
+        .load(&mut *conn)?;
+        let r = rows.first().map_or((0, 0), |x| (x.mem_search, x.mem_get));
+        Ok((u64::try_from(r.0).unwrap_or(0), u64::try_from(r.1).unwrap_or(0)))
+    }
+
+    /// Last `ref_id` on a measurement row for one session (T69.5 prompt_recall dedup).
+    pub fn last_measurement_ref(
+        &self,
+        session: &str,
+        plugin: &str,
+        kind: &str,
+    ) -> Result<Option<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Nullable<Text>)]
+            ref_id: Option<String>,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT ref_id FROM measurements WHERE session = ? AND plugin = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(plugin)
+        .bind::<Text, _>(kind)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().next().and_then(|r| r.ref_id))
+    }
+
     pub fn insert_tokens(
         &self,
         call_id: i32,
@@ -1481,6 +1572,57 @@ impl NoteRow {
     pub fn is_pinned(&self) -> bool {
         self.pinned != 0
     }
+}
+
+/// One `(project, kind)` row from [`Store::memory_note_aggs`].
+#[derive(Debug, Clone)]
+pub struct MemoryNoteKindAgg {
+    pub project: Option<String>,
+    pub kind: String,
+    pub live: u64,
+    pub pinned: u64,
+    pub retired: u64,
+    pub body_bytes: i64,
+    pub oldest_ts: i64,
+    pub newest_ts: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryNoteKindAggRow {
+    #[diesel(sql_type = Nullable<Text>)]
+    project: Option<String>,
+    #[diesel(sql_type = Text)]
+    kind: String,
+    #[diesel(sql_type = BigInt)]
+    live: i64,
+    #[diesel(sql_type = BigInt)]
+    pinned: i64,
+    #[diesel(sql_type = BigInt)]
+    retired: i64,
+    #[diesel(sql_type = BigInt)]
+    body_bytes: i64,
+    #[diesel(sql_type = BigInt)]
+    oldest_ts: i64,
+    #[diesel(sql_type = BigInt)]
+    newest_ts: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryRecallAggRow {
+    #[diesel(sql_type = BigInt)]
+    recalls: i64,
+    #[diesel(sql_type = BigInt)]
+    stood_for_bytes: i64,
+    #[diesel(sql_type = BigInt)]
+    injected_bytes: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryMcpCallsRow {
+    #[diesel(sql_type = BigInt)]
+    mem_search: i64,
+    #[diesel(sql_type = BigInt)]
+    mem_get: i64,
 }
 
 /// One `measurements` row for `stats --plugin`.

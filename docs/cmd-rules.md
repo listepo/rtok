@@ -39,7 +39,7 @@ lands as a `cmd` / `wrap` measurement with `ref_id = <server>/<tool>:<id>`.
 | `tail` | integer ≥ 0 | 10 | lines always kept from the end |
 | `drop` | array of strings | `[]` | case-insensitive substrings to remove (`\|` separates alternatives) |
 | `keep` | array of strings | `[]` | substrings that are never dropped and never cut by the cap; built-in keeps are `error`, `warning`, `panic`, `fail`, `traceback` |
-| `dedupe` | bool | true | collapse runs of identical lines into `line (×N)` |
+| `dedupe` | bool or `"normalized"` | true | `true` folds adjacent identical lines into `line (×N)`; `"normalized"` keys lines with timestamps, ids, pids and durations replaced by placeholders and folds non-adjacent matches into `line (×N, also lines k, l, …)` |
 
 Any other field, a wrong type, or broken TOML is malformed. A non-zero exit
 ignores all of this: the last `[plugins.cmd] fail_tail_lines` lines (default

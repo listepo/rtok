@@ -469,6 +469,77 @@ impl PluginLink<'_> {
     }
 }
 
+/// Hub skill directory (`skills/rtok/`) copied into a host's documented skill root.
+///
+/// Always an owned directory copy marked with [`OWNED_MARKER`]; foreign skill trees are
+/// left alone on install and remove.
+pub struct SkillCopy {
+    /// Absolute source directory in this repo (`skills/rtok`).
+    pub src: PathBuf,
+    /// Where the host loads skills from (`~/.cursor/skills/rtok`, …).
+    pub dest: PathBuf,
+    /// How the destination reads to a person; dry runs print the concrete path beside it.
+    pub label: Option<&'static str>,
+}
+
+impl SkillCopy {
+    fn owned(&self) -> bool {
+        self.dest.join(OWNED_MARKER).is_file()
+    }
+
+    fn dest_desc(&self) -> String {
+        match self.label {
+            Some(label) => format!("{label} ({})", self.dest.display()),
+            None => self.dest.display().to_string(),
+        }
+    }
+
+    /// Copy or remove the hub skill tree. Returns one report line; a dry run describes the
+    /// change and touches nothing.
+    pub fn run(&self, apply: &Apply, remove: bool) -> Result<String> {
+        if apply.dry_run {
+            if remove {
+                return Ok(if self.owned() {
+                    format!("- skill {}", self.dest_desc())
+                } else {
+                    NO_CHANGES.into()
+                });
+            }
+            if self.owned() {
+                return Ok(NO_CHANGES.into());
+            }
+            if self.dest.exists() {
+                return Ok(format!(
+                    "leave {} (not an rtok skill; remove by hand)",
+                    self.dest.display()
+                ));
+            }
+            return Ok(format!("+ skill → {}", self.dest_desc()));
+        }
+        if remove {
+            if !self.owned() {
+                return Ok(NO_CHANGES.into());
+            }
+            fs::remove_dir_all(&self.dest)?;
+            return Ok(format!("- skill {}", self.dest.display()));
+        }
+        if self.owned() {
+            return Ok(NO_CHANGES.into());
+        }
+        if self.dest.exists() {
+            return Ok(format!(
+                "leave {} (not an rtok skill; remove by hand)",
+                self.dest.display()
+            ));
+        }
+        if let Some(dir) = self.dest.parent() {
+            fs::create_dir_all(dir).ok();
+        }
+        copy_owned(&self.src, &self.dest)?;
+        Ok(format!("+ skill → {}", self.dest_desc()))
+    }
+}
+
 /// Install the plugin tree at `dest`: symlink on Unix, owned copy elsewhere.
 fn install_plugin(src: &Path, dest: &Path) -> Result<()> {
     #[cfg(unix)]
@@ -956,6 +1027,55 @@ mod tests {
         let report = link.run(&yes, true).unwrap();
         assert!(report.starts_with("leave "), "{report}");
         assert!(dest.join("mine.txt").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn skill_copy_install_reinstall_remove_keeps_foreign() {
+        let dir = tmp("skill-copy");
+        let src = dir.join("src");
+        let skills = dir.join("skills");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "hub body\n").unwrap();
+        let dest = skills.join("rtok");
+        let foreign = skills.join("other");
+        fs::create_dir_all(&foreign).unwrap();
+        fs::write(foreign.join("SKILL.md"), "# other\n").unwrap();
+
+        let copy = SkillCopy {
+            src,
+            dest: dest.clone(),
+            label: None,
+        };
+        let first = copy.run(&apply(), false).unwrap();
+        assert!(first.starts_with("+ skill"), "{first}");
+        assert!(dest.join(OWNED_MARKER).is_file());
+        assert_eq!(copy.run(&apply(), false).unwrap(), NO_CHANGES);
+        assert_eq!(copy.run(&apply(), true).unwrap(), format!("- skill {}", dest.display()));
+        assert_eq!(copy.run(&apply(), true).unwrap(), NO_CHANGES);
+        assert!(foreign.join("SKILL.md").is_file());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn skill_copy_leaves_a_foreign_skill_tree() {
+        let dir = tmp("skill-foreign");
+        let src = dir.join("src");
+        let dest = dir.join("skills/rtok");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("SKILL.md"), "hub body\n").unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("SKILL.md"), "# foreign\n").unwrap();
+
+        let out = SkillCopy {
+            src,
+            dest: dest.clone(),
+            label: None,
+        }
+        .run(&apply(), false)
+        .unwrap();
+        assert!(out.contains("leave"), "{out}");
+        assert_eq!(fs::read_to_string(dest.join("SKILL.md")).unwrap(), "# foreign\n");
         let _ = fs::remove_dir_all(dir);
     }
 }

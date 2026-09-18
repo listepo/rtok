@@ -74,6 +74,7 @@ impl Agent for Codex {
         if remove || cfg.setup.proxy {
             lines.push(register_proxy(cfg, remove)?);
         }
+        lines.push(super::skill::sync("codex", cfg, remove)?);
         Ok(lines)
     }
 }

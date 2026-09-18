@@ -45,4 +45,5 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`hooks/*.json` shape, event names, stdin and stdout keys, exit codes): https://docs.github.com/en/copilot/reference/hooks-reference
 - Plugins (`installed-plugins/`, `copilot plugin`): https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference
 - BYOK (`COPILOT_PROVIDER_BASE_URL`, `providers.json`): https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models
+- Agent skills (`~/.copilot/skills/<name>/`): https://docs.github.com/en/copilot/concepts/agents/about-agent-skills
 - GitHub Copilot app (reuses the CLI's MCP, skills and plugins): https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app

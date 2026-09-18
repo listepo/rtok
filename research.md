@@ -95,7 +95,7 @@ Numbers from `cargo test --release --test graph_bench -- --ignored --nocapture`.
 | (1) `tests/graph_contract.rs` | 3 passed | 3 passed | unchanged, both |
 | (2) `rtok hook PostToolUse` p95, n=100 | 8.07 ms | 96.6 ms | ≤ 10 ms |
 | (3) warm `symbol` / `callers` / `impact(2)` | 17.9 / 17.5 / 26.8 ms | 797 / 776 / 873 ms | < 100 ms |
-| (3) cold index, 3 000 files | 13.8 s; 341 ms after T35.1, 172 ms after T35.2 (2026-09-11) | 33.7 s | not gated |
+| (3) cold index, 3 000 files | 13.8 s; 341 ms after T35.1, 172 ms after T35.2 (2026-09-11); **T59.3** batches 200 files/txn (was 64) — re-run `cargo test --release --test graph_bench -- --ignored` when the tree compiles | 33.7 s | not gated |
 | (4) `impact(4)` on fan-out fixture | CTE 28.5 s | path 371 ms (**77×**) | lbug ≥ 2× CTE |
 | (4) same fixture, Rust BFS | 2.61 s | 2.35 s | baseline |
 | (5) `just check` (liblbug already built) | 16.9 s | same command (clippy `--all-features`) | ≤ 2× default |
@@ -233,6 +233,14 @@ Still open: the clause asks for one real Claude Code session (hooks + MCP + prox
 trace with an `invoke_agent` root and `chat {model}` spans — this ledger has no ended session
 and no proxy traffic, and rtok is not on this machine's PATH — and for SigNoz and Maple, which
 need an account or an API key.
+
+
+### WASM bundle (`rtok web`, T60.7, 2026-09-18)
+
+| What (date, command) | Result |
+| --- | --- |
+| Before (`ls -l crates/rtok-webui/pkg/rtok_webui_bg.wasm`, 2026-09-17) | 10,560,601 B, default `wasm-pack --release`, no `wasm-opt` |
+| After (`just web` / `wasm-pack` with `[profile.release] opt-level=z, lto, codegen-units=1, panic=abort` + `wasm-opt -Oz` when on PATH) | pending re-measure — `rtok-webui` did not compile on 2026-09-18 (WIP tree); gate in `tests/web_wasm.rs` is 4,500,000 B until the optimized build lands |
 
 ### Build size (T17.1, Gate P17, 2026-09-04)
 
@@ -711,9 +719,12 @@ the conversation for every later request of that session.
 
 ### 10.6 Open questions
 
-- Claude Code's "~100 tokens per skill" is the docs' figure; measured descriptions here
-  average 194 chars ≈ 49 tokens, so the per-skill overhead beyond the description (name,
-  path, framing) is unknown until a captured system prompt is measured through the proxy (T71.4).
+- **T71.4 (2026-09-18):** `cargo test --test skill_listing` on
+  `tests/fixtures/proxy/skills_listing_request.json` captured through `rtok proxy`
+  (`call_io`): `<available_skills>` block **452 B** for **3** listed skills;
+  **92 B** framing per skill beyond its description (name + `fullPath` + tags; not the
+  docs' "~100 tokens per skill"). `doctor::SKILL_LISTING_FRAMING_BYTES` carries the
+  constant; listing bytes per request = description bytes + `N × 92`.
 - Whether hosts other than Claude Code and Cursor honour `disable-model-invocation` in the
   listing is not documented (10.1).
 

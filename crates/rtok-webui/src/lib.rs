@@ -33,6 +33,7 @@ pub mod snapshot {
         pub sessions: Vec<Session>,
         pub doctor_text: String,
         pub logs: Vec<String>,
+        pub error: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -97,6 +98,7 @@ pub mod snapshot {
             sessions: sessions_of(v),
             doctor_text: doctor_of(&v["doctor"]),
             logs: logs_of(v),
+            error: v.get("error").and_then(|e| e.as_str()).unwrap_or("").to_string(),
         }
     }
 
@@ -462,7 +464,66 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
 
     let logs: Vec<SharedString> = view.logs.into_iter().map(SharedString::from).collect();
     ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
+    ui.set_error(SharedString::from(view.error));
     ui.set_status(SharedString::from("live"));
+}
+
+/// Load theme from `localStorage` / `prefers-color-scheme` (T60.9).
+#[cfg(target_family = "wasm")]
+fn init_theme(ui: &MainWindow) {
+    use wasm_bindgen::JsCast;
+    use web_sys::MediaQueryList;
+    let dark = read_theme_storage().unwrap_or_else(system_prefers_dark);
+    ui.set_dark(dark);
+    let ui_weak = ui.as_weak();
+    ui.on_theme_toggle(move || {
+        let Some(ui) = ui_weak.upgrade() else {
+            return;
+        };
+        let next = !ui.get_dark();
+        ui.set_dark(next);
+        write_theme_storage(next);
+    });
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub fn init_theme(ui: &MainWindow) {
+    let ui_weak = ui.as_weak();
+    ui.on_theme_toggle(move || {
+        let Some(ui) = ui_weak.upgrade() else {
+            return;
+        };
+        ui.set_dark(!ui.get_dark());
+    });
+}
+
+#[cfg(target_family = "wasm")]
+const THEME_KEY: &str = "rtok-theme";
+
+#[cfg(target_family = "wasm")]
+fn read_theme_storage() -> Option<bool> {
+    let storage = web_sys::window()?.local_storage().ok()??;
+    match storage.get_item(THEME_KEY).ok()?.as_deref() {
+        Some("dark") => Some(true),
+        Some("light") => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn write_theme_storage(dark: bool) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
+        let _ = storage.set_item(THEME_KEY, if dark { "dark" } else { "light" });
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn system_prefers_dark() -> bool {
+    web_sys::window()
+        .and_then(|w| w.match_media("(prefers-color-scheme: dark)").ok())
+        .flatten()
+        .map(|m: MediaQueryList| m.matches())
+        .unwrap_or(true)
 }
 
 #[cfg(target_family = "wasm")]
@@ -485,14 +546,35 @@ mod wasm {
                 })
                 .collect::<Vec<_>>(),
         ))));
-        connect(&ui);
+        super::init_theme(&ui);
+        connect(&ui, 0);
         ui.run().expect("slint run");
     }
 
-    fn connect(ui: &MainWindow) {
+    fn connect(ui: &MainWindow, attempt: u32) {
+        ui.set_status(SharedString::from(if attempt == 0 {
+            "connecting"
+        } else {
+            "reconnecting"
+        }));
         let loc = web_sys::window().expect("window").location();
         let host = loc.host().unwrap_or_else(|_| "127.0.0.1:3333".into());
-        let ws = WebSocket::new(&format!("ws://{host}/ws")).expect("websocket");
+        let ws = match WebSocket::new(&format!("ws://{host}/ws")) {
+            Ok(ws) => ws,
+            Err(_) => {
+                schedule_reconnect(ui.as_weak(), attempt);
+                return;
+            }
+        };
+        let ui_weak = ui.as_weak();
+        let on_open = Closure::<dyn FnMut()>::new(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_status(SharedString::from("live"));
+            }
+        });
+        ws.set_onopen(Some(on_open.as_ref().unchecked_ref()));
+        on_open.forget();
+
         let ui_weak = ui.as_weak();
         let on_msg = Closure::<dyn FnMut(MessageEvent)>::new(move |ev: MessageEvent| {
             let Some(text) = ev.data().as_string() else {
@@ -508,6 +590,36 @@ mod wasm {
         });
         ws.set_onmessage(Some(on_msg.as_ref().unchecked_ref()));
         on_msg.forget();
+
+        let ui_weak = ui.as_weak();
+        let on_close = Closure::<dyn FnMut()>::new(move || {
+            schedule_reconnect(&ui_weak, attempt.saturating_add(1));
+        });
+        ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
+        on_close.forget();
+    }
+
+    fn schedule_reconnect(ui_weak: &slint::Weak<MainWindow>, attempt: u32) {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_status(SharedString::from("reconnecting"));
+        }
+        let delay_ms = (1000u32)
+            .saturating_mul(1 << attempt.min(4))
+            .min(30_000);
+        let ui_weak = ui_weak.clone();
+        let closure = Closure::<dyn FnMut()>::new(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                connect(&ui, attempt);
+            }
+        });
+        let _ = web_sys::window().and_then(|w| {
+            w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                closure.as_ref().unchecked_ref(),
+                delay_ms as i32,
+            )
+            .ok()
+        });
+        closure.forget();
     }
 }
 

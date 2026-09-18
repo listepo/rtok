@@ -345,6 +345,18 @@ enum MemoryCmd {
         #[arg(long)]
         body: String,
     },
+    /// Notes live/pinned/retired, recall and MCP call counts (T69.4)
+    Status {
+        /// Only notes of this project
+        #[arg(long)]
+        project: Option<String>,
+        /// Window for recalls and MCP calls (`30d`, `24h`)
+        #[arg(long)]
+        since: Option<String>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "graph")]
@@ -359,6 +371,21 @@ enum GraphCmd {
     },
     /// List unreferenced private definitions (skips pub, trait impls, tests, macros)
     Dead { path: Option<PathBuf> },
+    /// Index health for the current or given root (T68.3)
+    Status {
+        path: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Symbol impact or call paths to a target (T68.4)
+    Impact {
+        name: String,
+        #[arg(long, default_value_t = 2)]
+        depth: u32,
+        #[arg(long)]
+        to: Option<String>,
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -875,12 +902,22 @@ pub fn run() -> Result<()> {
                         None => println!("updated note {new} in place"),
                     }
                 }
+                MemoryCmd::Status {
+                    project,
+                    since,
+                    json,
+                } => crate::plugins::memory::status::run(
+                    &cfg,
+                    project.as_deref(),
+                    since.as_deref(),
+                    json,
+                )?,
             }
         }
         #[cfg(feature = "graph")]
         Cmd::Graph { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let cx = crate::plugin::Runtime::open(cfg, "graph")?;
+            let cx = crate::plugin::Runtime::open(cfg.clone(), "graph")?;
             match action {
                 GraphCmd::Index { path, dry_run } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
@@ -892,8 +929,14 @@ pub fn run() -> Result<()> {
                         &pb,
                     )?;
                     println!(
-                        "indexed {} files · {} rows · {} skipped · {} read",
-                        r.indexed, r.inserted, r.skipped, r.read
+                        "indexed {} files · {} rows · {} skipped · {} read · exclude {} · include {} · mapped {}",
+                        r.indexed,
+                        r.inserted,
+                        r.skipped,
+                        r.read,
+                        r.exclude_skipped,
+                        r.include_added,
+                        r.extension_mapped,
                     );
                 }
                 GraphCmd::Dead { path } => {
@@ -901,6 +944,23 @@ pub fn run() -> Result<()> {
                     print!(
                         "{}",
                         crate::plugins::graph::dead(&crate::plugin::Ctx::new(&cx), &root)?
+                    );
+                }
+                GraphCmd::Status { path, json } => {
+                    crate::plugins::graph::status::run(&cfg, path, json)?;
+                }
+                GraphCmd::Impact { name, depth, to, path } => {
+                    let root = path.unwrap_or(std::env::current_dir()?);
+                    let ctx = crate::plugin::Ctx::new(&cx);
+                    print!(
+                        "{}",
+                        crate::plugins::graph::impact(
+                            &ctx,
+                            &root,
+                            &name,
+                            depth,
+                            to.as_deref(),
+                        )?
                     );
                 }
             }

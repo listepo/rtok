@@ -35,3 +35,10 @@ slint-build = "1.18"
 # `=` pin is mandatory — the crate ignores semver and must match `slint` exactly.
 [dev-dependencies]
 i-slint-backend-testing = "=1.18.0"
+
+# T60.7: size-first release profile for the WASM operator UI.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

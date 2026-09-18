@@ -617,3 +617,16 @@ fn concurrent_flushes_post_each_row_once() {
     assert_eq!((pending_calls, pending_logs), (0, 0));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// T53.4: `tools/otel-check.sh` seeds `RTOK_HOME` before `rtok otel flush`.
+#[ignore]
+#[test]
+fn seed_fixture_ledger() {
+    let home = std::env::var("RTOK_HOME").expect("RTOK_HOME");
+    let dir = PathBuf::from(home);
+    let mut cfg = rtok::testutil::config_in(&dir);
+    cfg.core.db_path = dir.join("rtok.db");
+    cfg.core.archive_dir = dir.join("archive");
+    let cx = Runtime::open(cfg, "s1").unwrap();
+    seed(&cx);
+}

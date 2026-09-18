@@ -26,3 +26,4 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Config reference (`~/.codex/config.toml`: `mcp_servers.<id>.command` / `args`, `model_providers.<id>.base_url`, top-level `model_provider`): https://learn.chatgpt.com/docs/config-file/config-reference
 - MCP (`[mcp_servers.<name>]` example): https://learn.chatgpt.com/docs/extend/mcp
+- Agent Skills (`~/.codex/skills/<name>/`): https://agentskills.io

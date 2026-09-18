@@ -3,17 +3,44 @@
 use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 use serde_json::json;
 
-fn skip_wrap(cmd: &str, never_wrap: &[String]) -> bool {
-    skip_wrap_host(cfg!(windows), cmd, never_wrap)
+fn skip_wrap(cmd: &str, cfg: &crate::config::Cmd) -> bool {
+    skip_wrap_host(
+        cfg!(windows),
+        cmd,
+        &cfg.never_wrap,
+        &cfg.interactive_stems,
+    )
+}
+
+/// True when `-i` on this command should skip wrapping (REPL / TTY stems only).
+fn interactive_i_skip(stem: &str, args: &[&str], interactive_stems: &[String]) -> bool {
+    if !interactive_stems
+        .iter()
+        .any(|s| s.eq_ignore_ascii_case(stem))
+    {
+        return false;
+    }
+    match stem.to_ascii_lowercase().as_str() {
+        "docker" => args
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case("run") || t.eq_ignore_ascii_case("exec")),
+        "kubectl" => args.iter().any(|t| t.eq_ignore_ascii_case("exec")),
+        _ => true,
+    }
 }
 
 /// `windows` is a parameter so both host contracts stay tested on one toolchain
 /// (T55.12): a PowerShell `''` rewrite must never reach a POSIX shell, where
 /// `'echo it''s fine'` concatenates to `echo its fine` and silently drops the
 /// apostrophe — so any command containing `'` stays unwrapped there.
-fn skip_wrap_host(windows: bool, cmd: &str, never_wrap: &[String]) -> bool {
-    let mut toks = cmd.split_whitespace();
-    let first = toks.next().unwrap_or("");
+fn skip_wrap_host(
+    windows: bool,
+    cmd: &str,
+    never_wrap: &[String],
+    interactive_stems: &[String],
+) -> bool {
+    let tokens: Vec<&str> = cmd.split_whitespace().collect();
+    let first = tokens.first().copied().unwrap_or("");
     // Same stem rules as formatters::cmd_stem / run::shell_kind: Windows argv may
     // be `C:\…\sudo.exe` while never_wrap lists bare `sudo`.
     let base = super::formatters::cmd_stem(first);
@@ -30,9 +57,14 @@ fn skip_wrap_host(windows: bool, cmd: &str, never_wrap: &[String]) -> bool {
     if windows && cmd.contains('\'') {
         return true;
     }
-    if std::iter::once(first)
-        .chain(toks)
-        .any(|t| matches!(t, "&" | "-i" | "--interactive"))
+    if tokens.iter().any(|t| *t == "&") {
+        return true;
+    }
+    if tokens.iter().any(|t| *t == "--interactive") {
+        return true;
+    }
+    if tokens.iter().any(|t| *t == "-i")
+        && interactive_i_skip(base, &tokens[1..], interactive_stems)
     {
         return true;
     }
@@ -52,7 +84,7 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
         return None;
     }
     let cmd = ev.tool_input.get("command")?.as_str()?;
-    if skip_wrap(cmd, &cfg.never_wrap) {
+    if skip_wrap(cmd, &cfg) {
         return None;
     }
     let mut input = ev.tool_input.clone();
@@ -160,13 +192,33 @@ mod tests {
 
     #[test]
     fn windows_apostrophe_commands_stay_unwrapped() {
-        assert!(skip_wrap_host(true, "echo it's fine", &[]));
-        assert!(skip_wrap_host(true, "git commit -m 'fix it'", &[]));
+        let stems = crate::config::Cmd::default().interactive_stems;
+        assert!(skip_wrap_host(true, "echo it's fine", &[], &stems));
+        assert!(skip_wrap_host(true, "git commit -m 'fix it'", &[], &stems));
         // The rule fires regardless of position; other skips still apply first.
-        assert!(skip_wrap_host(true, "jq '.' data.json", &[]));
+        assert!(skip_wrap_host(true, "jq '.' data.json", &[], &stems));
         // A POSIX host keeps wrapping apostrophe commands: sh quoting round-trips.
-        assert!(!skip_wrap_host(false, "echo it's fine", &[]));
-        assert!(!skip_wrap_host(false, "git commit -m 'fix it'", &[]));
+        assert!(!skip_wrap_host(false, "echo it's fine", &[], &stems));
+        assert!(!skip_wrap_host(false, "git commit -m 'fix it'", &[], &stems));
+    }
+
+    #[test]
+    fn per_stem_interactive_i_table() {
+        let stems = crate::config::Cmd::default().interactive_stems;
+        let nw = &[];
+        // Non-interactive `-i` stems get wrapped.
+        assert!(!skip_wrap_host(false, "ffmpeg -i x", nw, &stems));
+        assert!(decide("ffmpeg -i x").is_some());
+        assert!(!skip_wrap_host(false, "ssh -i key host", nw, &stems));
+        assert!(decide("ssh -i key host").is_some());
+        // REPL / TTY stems stay unwrapped.
+        assert!(skip_wrap_host(false, "python -i", nw, &stems));
+        assert!(decide("python -i").is_none());
+        assert!(skip_wrap_host(false, "docker run -i alpine sh", nw, &stems));
+        assert!(decide("docker run -i alpine sh").is_none());
+        // `--interactive` always skips, even on non-REPL stems.
+        assert!(skip_wrap_host(false, "ffmpeg --interactive x", nw, &stems));
+        assert!(decide("ffmpeg --interactive x").is_none());
     }
 
     /// Parse-simulation of the loss the fix removes: the PowerShell `''` form,

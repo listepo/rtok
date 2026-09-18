@@ -15,6 +15,7 @@ pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 pub mod pi;
+pub mod skill;
 pub mod windsurf;
 pub mod zcode;
 pub mod zed;
@@ -790,6 +791,11 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
         env!("CARGO_PKG_VERSION"),
     )
+}
+
+/// The hub skill tree this repo ships (`skills/rtok/`).
+pub(crate) fn skill_src() -> std::path::PathBuf {
+    plugin_src("skills/rtok")
 }
 
 /// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).

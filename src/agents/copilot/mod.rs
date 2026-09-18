@@ -113,6 +113,7 @@ impl Agent for Copilot {
         } else if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
         }
+        lines.push(super::skill::sync("copilot", cfg, remove)?);
         Ok(lines)
     }
 }

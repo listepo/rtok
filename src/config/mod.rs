@@ -506,6 +506,7 @@ section! {
         trailer_min_lines: u32 = 40,
         fail_tail_lines: u32 = 80,
         never_wrap: Vec<String> = strs(&["rtok", "sudo"]),
+        interactive_stems: Vec<String> = strs(&["python", "node", "psql", "sqlite3", "irb", "bash", "sh", "zsh", "docker", "kubectl"]),
     }
 }
 
@@ -612,6 +613,7 @@ section! {
         enabled: bool = true,
         recall_titles: u32 = 5,
         recall_tokens: u32 = 200,
+        prompt_recall: u32 = 0,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
         embed: MemoryEmbed = MemoryEmbed::default(),
@@ -627,6 +629,9 @@ section! {
         auto_index: bool = true,
         backend: String = s("tags"),
         watch: String = s("off"),
+        exclude: Vec<String> = vec![],
+        include: Vec<String> = vec![],
+        extensions: std::collections::HashMap<String, String> = std::collections::HashMap::new(),
     }
 }
 

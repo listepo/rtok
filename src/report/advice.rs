@@ -38,7 +38,7 @@ fn count(n: u64, what: &str) -> String {
 /// Finding sink: recoverable tokens plus the rule triple.
 type Push<'a> = &'a mut dyn FnMut(i64, &str, String, String);
 
-/// The six T22.5 rules over one ledger read, most recoverable tokens first.
+/// The T22.5 rules over one ledger read, most recoverable tokens first.
 pub fn recommendations(ledgers: &ReportLedgers, cfg: &Config) -> Vec<Recommendation> {
     // Findings carry their recoverable tokens as the sort key, so a finding with no
     // number cannot be pushed.
@@ -57,6 +57,7 @@ pub fn recommendations(ledgers: &ReportLedgers, cfg: &Config) -> Vec<Recommendat
     idle_hooks(ledgers, &mut push);
     inject_budget(ledgers, cfg, &mut push);
     archive_window(ledgers, cfg, &mut push);
+    top_sinks(ledgers, &mut push);
     // Stable: ties keep the rule order above.
     out.sort_by_key(|&(tokens, _)| std::cmp::Reverse(tokens));
     out.into_iter().map(|(_, r)| r).collect()
@@ -241,9 +242,108 @@ fn archive_window(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
     }
 }
 
+
+/// (7) Top token sinks: which paths, stems or MCP tools cost the most bytes.
+fn top_sinks(ledgers: &ReportLedgers, push: Push<'_>) {
+    for s in &ledgers.sinks.rows {
+        if s.before_bytes < 1 {
+            continue;
+        }
+        push(
+            s.before_bytes,
+            "top-sinks",
+            format!(
+                "{} {} cost {} bytes over {} — {}",
+                s.class,
+                s.sink,
+                s.before_bytes,
+                count(s.rows, "Measurement row"),
+                s.switch
+            ),
+            format!(
+                "{} {} Measurement rows, {} total in ledger",
+                count(s.rows, &format!("{} row", s.sink)),
+                s.class,
+                count(ledgers.window.measurements, "Measurement row")
+            ),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::web::model::{ReportBust, ReportCache};
+    use crate::web::model::{ReportBust, ReportCache, ReportLedgers, ReportSink, ReportSinksSection};
+
+    #[test]
+    fn top_sinks_ranks_largest_sink_first() {
+        let ledgers = ReportLedgers {
+            window: crate::web::model::ReportWindow {
+                since: "30d".into(),
+                from_unix: 0,
+                to_unix: 1,
+                from_date: "1970-01-01".into(),
+                to_date: "1970-01-01".into(),
+                db_path: "x".into(),
+                calls_in_window: 0,
+                calls_total: 0,
+                measurements: 2,
+                usage: 0,
+            },
+            savings: crate::web::model::ReportSavingsSection {
+                rows: vec![],
+                total_rows: 0,
+                total_saved: 0,
+                kinds: vec![],
+            },
+            sinks: ReportSinksSection {
+                rows: vec![
+                    ReportSink {
+                        class: "cmd".into(),
+                        sink: "grep".into(),
+                        before_bytes: 200,
+                        rows: 2,
+                        switch: "[grep] rule".into(),
+                    },
+                    ReportSink {
+                        class: "read".into(),
+                        sink: "src/a.rs".into(),
+                        before_bytes: 50,
+                        rows: 1,
+                        switch: "[plugins.read] default_mode = full".into(),
+                    },
+                ],
+            },
+            calls: crate::web::model::ReportCallsSection {
+                rows: vec![],
+                in_window: 0,
+                total: 0,
+                hooks: vec![],
+            },
+            cache: ReportCache {
+                sessions: 0,
+                turns: 0,
+                busts: 0,
+                by_cause: vec![],
+                detail: vec![],
+            },
+            expand: crate::web::model::ReportExpand {
+                decisions: 0,
+                expanded: 0,
+                rate: 0.0,
+                expanded_ids: vec![],
+                cost: 0,
+                cost_rows: 0,
+            },
+        };
+        let mut found = Vec::new();
+        super::top_sinks(&ledgers, &mut |tokens, rule, finding, _| {
+            found.push((tokens, rule.to_string(), finding));
+        });
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].1, "top-sinks");
+        assert!(found[0].2.contains("grep"), "{}", found[0].2);
+        assert!(found[0].0 >= found[1].0);
+    }
 
     /// A session busting on every turn is one finding with a count, not one per turn.
     #[test]

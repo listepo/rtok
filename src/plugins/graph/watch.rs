@@ -94,6 +94,7 @@ async fn watchman_loop(
         .await
         .map_err(|e| e.to_string())?;
     let ig = gitignore(root);
+    let matcher = crate::plugins::graph::walk::Matcher::new(root, &cx.plugin_config::<crate::config::Graph>("graph"));
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -108,7 +109,7 @@ async fn watchman_loop(
                     Ok(SubscriptionData::Canceled) => break,
                     Ok(SubscriptionData::FilesChanged(payload)) => {
                         for f in payload.files.unwrap_or_default() {
-                            if absorb_event(root.join(f.name.as_path()), &ig, &mut pending, &mut rescan) {
+                            if absorb_event(root.join(f.name.as_path()), &ig, &matcher, &mut pending, &mut rescan) {
                                 last = Instant::now();
                             }
                         }
@@ -122,6 +123,7 @@ async fn watchman_loop(
             }
             _ = tokio::time::sleep(Duration::from_millis(50)) => {}
         }
+        sync_watch_pending(cx, root, &pending);
         settle(cx, root, runs, &mut last, &mut pending, &mut rescan);
     }
     Ok(())
@@ -189,6 +191,7 @@ fn pump<F>(
     F: FnMut(notify::Result<Event>) -> Vec<PathBuf>,
 {
     let ig = gitignore(root);
+    let matcher = crate::plugins::graph::walk::Matcher::new(root, &cx.plugin_config::<crate::config::Graph>("graph"));
     let mut last = Instant::now();
     let mut pending = HashSet::new();
     let mut rescan = false;
@@ -204,7 +207,7 @@ fn pump<F>(
                 }
                 let mut touched = false;
                 for p in events(ev) {
-                    if absorb_event(p, &ig, &mut pending, &mut rescan) {
+                    if absorb_event(p, &ig, &matcher, &mut pending, &mut rescan) {
                         touched = true;
                     }
                 }
@@ -219,6 +222,7 @@ fn pump<F>(
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(_) => break,
         }
+        sync_watch_pending(cx, root, &pending);
         settle(cx, root, runs, &mut last, &mut pending, &mut rescan);
     }
 }
@@ -245,7 +249,9 @@ fn settle(
     }
     runs.fetch_add(1, Ordering::Relaxed);
     *last = Instant::now();
+    sync_watch_pending(cx, root, pending);
     pending.clear();
+    cx.publish_graph_watch_pending(&[]);
     *rescan = false;
 }
 
@@ -262,8 +268,8 @@ fn git_path(p: &Path) -> bool {
     p.components().any(|c| c.as_os_str() == ".git")
 }
 
-fn relevant(p: &Path) -> bool {
-    crate::plugins::read::outline::supported(p) && !git_path(p)
+fn relevant(p: &Path, matcher: &crate::plugins::graph::walk::Matcher) -> bool {
+    matcher.indexable(p) && !git_path(p)
 }
 
 /// Source files go to `pending`. A directory (still there, or just removed with no extension)
@@ -273,13 +279,14 @@ fn relevant(p: &Path) -> bool {
 fn absorb_event(
     p: PathBuf,
     ig: &Gitignore,
+    matcher: &crate::plugins::graph::walk::Matcher,
     pending: &mut HashSet<PathBuf>,
     rescan: &mut bool,
 ) -> bool {
     if git_path(&p) || ig.matched_path_or_any_parents(&p, p.is_dir()).is_ignore() {
         return false;
     }
-    if relevant(&p) {
+    if relevant(&p, matcher) {
         pending.insert(p);
         return true;
     }
@@ -293,13 +300,30 @@ fn absorb_event(
     }
 }
 
+fn sync_watch_pending(cx: &Ctx, root: &Path, pending: &HashSet<PathBuf>) {
+    let mut out: Vec<String> = pending
+        .iter()
+        .filter_map(|p| {
+            pathdiff::diff_paths(p, root).map(|r| r.to_string_lossy().replace('\\', "/"))
+        })
+        .collect();
+    out.sort();
+    cx.publish_graph_watch_pending(&out);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Graph;
     use crate::plugins::graph::index::tests::cx as mk;
     use rstest::rstest;
     use std::fs;
     use std::time::Duration;
+
+
+    fn test_matcher(dir: &Path) -> crate::plugins::graph::walk::Matcher {
+        crate::plugins::graph::walk::Matcher::new(dir, &Graph::default())
+    }
 
     fn arm(cx: &mut crate::plugin::Runtime, watch: &str) {
         cx.config.plugins.graph.auto_index = false;
@@ -438,9 +462,10 @@ mod tests {
 
     #[test]
     fn git_and_unsupported_paths_are_irrelevant() {
-        assert!(!relevant(Path::new(".git/HEAD")));
-        assert!(!relevant(Path::new("foo/bar.md")));
-        assert!(relevant(Path::new("src/lib.rs")));
+        let m = test_matcher(Path::new("."));
+        assert!(!relevant(Path::new(".git/HEAD"), &m));
+        assert!(!relevant(Path::new("foo/bar.md"), &m));
+        assert!(relevant(Path::new("src/lib.rs"), &m));
     }
 
     /// A live store/log/doc file must not swallow a pending source path (the Linux flake:
@@ -452,9 +477,11 @@ mod tests {
         let mut pending = HashSet::from([dir.join("watched.rs")]);
         let mut rescan = false;
         let ig = Gitignore::empty();
+        let matcher = test_matcher(&dir);
         assert!(!absorb_event(
             dir.join("rtok.db"),
             &ig,
+            &matcher,
             &mut pending,
             &mut rescan
         ));
@@ -463,7 +490,7 @@ mod tests {
             "existing unsupported file triggered a rescan"
         );
         let gone_dir = dir.join("src/module");
-        assert!(absorb_event(gone_dir, &ig, &mut pending, &mut rescan));
+        assert!(absorb_event(gone_dir, &ig, &matcher, &mut pending, &mut rescan));
         assert!(
             rescan && pending.is_empty(),
             "removed directory must rescan"
@@ -477,14 +504,16 @@ mod tests {
         let (_rt, dir) = mk("watch-gitignore");
         fs::write(dir.join(".gitignore"), "target/\n").unwrap();
         let ig = gitignore(&dir);
+        let matcher = test_matcher(&dir);
         let mut pending = HashSet::new();
         let mut rescan = false;
         let built = dir.join("target/debug/build/x/out/y.rs");
-        assert!(!absorb_event(built, &ig, &mut pending, &mut rescan));
+        assert!(!absorb_event(built, &ig, &matcher, &mut pending, &mut rescan));
         assert!(pending.is_empty() && !rescan);
         assert!(absorb_event(
             dir.join("src/lib.rs"),
             &ig,
+            &matcher,
             &mut pending,
             &mut rescan
         ));
