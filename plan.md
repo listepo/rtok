@@ -7,8 +7,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T57.1 | todo | P3 | 3 | 0% | |
-| T59.5 | todo | P3 | 3 | 0% | |
-| T61.2 | todo | P3 | 3 | 0% | |
+| T59.5 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 
 
 
@@ -28,6 +27,12 @@ Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the t
 ### T59.5. Byte-stable `tools[]` description rewrite in the proxy
 
 From I-45 (Portkey / LiteLLM "tool description compression + allowlist", 18–28 % claimed, unverified). Redundant on Claude Code with Tool Search deferral (`doctor` flags `mcp_tool_search_disabled`); a host without deferral pays every schema on every turn at cache-read price.
+
+Execution plan:
+1. Evidence: `rtok doctor` (desc tokens/server) + `rtok stats --since 30d` (session input) + transcript turns; host without Tool Search = this machine's proxy (`mcp_tool_search_disabled`) or Codex.
+2. Record description tokens × turns / session input in `research.md` §2.
+3. Below 3 %: close with the number, no rewrite. At or above 3 %: `proxy.tools_rewrite` off by default.
+
 Done when:
 1. Evidence: `doctor` already prices descriptions per server; a `stats` row shows description tokens × turns per session for a host without deferral, recorded in `research.md`. Below 3 % of session input, the card closes with the number.
 2. Proxy option `proxy.tools_rewrite = { max_description_tokens = N, allow = [..], deny = [..] }`, off by default: descriptions truncated at a sentence boundary to N tokens (the tokenizer `measure` uses), tools outside `allow` or inside `deny` dropped from `tools[]`; the rewrite is deterministic so the cached prefix changes once per session, and `input_schema` is never touched.
