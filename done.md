@@ -323,6 +323,14 @@ Check: `cargo test --lib -- plugins::cmd::` 64 passed, including JSON compact, u
 
 ---
 
+## T65.1 — Content-hash dedup of tool output within a session
+
+From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before in the session comes back as a 13-token `§ref:HASH§` instead of the text. rtok's `guard` dedups by input key (`guard::cache_key`: same tool, same normalised input), so `cat a` followed by `head -1000 a`, or the same `cargo test` failure printed twice, is paid twice.
+Step 1 (gate): `stats` gains a `repeat` column — share of tool_result bytes whose SHA-256 (`sha2` is already a dependency, T13.3) equals an earlier result in the same session — measured over 30 d on this machine into `research.md` §11. Proceeds only above 1 % of result bytes; otherwise the card leaves for `ideas.md` with the number.
+Done when `cmd::run` and the `read` plugin hash the raw output before archiving, a hit in the same session returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` instead of the body (`Measurement { kind = "dedup" }`, before = body bytes), a miss archives as today, the lookup is one indexed query on the archive table (≤ 10 ms, fail open), and a test replays two different commands with identical output.
+
+**Result (2026-09-18, `rtok stats --since 30d`, 924 sessions):** 6,649 later tool_results whose SHA-256 equalled an earlier result in the same session; 1.83 MB of 95.25 MB result bytes (**1.9 %**) — above the 1 % gate. Landed: `RepeatRow` in `stats`; `cmd::run` and MCP `read` hash raw output before `put_archive`; a same-session `archive.id` hit returns `[rtok <id> · identical to a result N turns ago · expand: rtok expand <id>]` (`Measurement { kind = "dedup" }`, before = body bytes); miss archives as today; lookup is one PK query (`id` = sha256 and `session`); fail open on error or when the pointer would be longer than the body; a test replays `printf` and `sh -c printf` with identical output.
+
 ## T58.1 — `read` delta since last read
 
 From the competitive gap review (`research.md` §9.3, §9.4 item 2; idea I-41; precedent: lean-ctx `diff` read mode, token-optimizer-mcp delta reads). Read is 15 % of tool-result tokens on the measured workload and the top single results are Reads. The sha256 dedup already answers an unchanged re-read with one line; a re-read of a file that changed since (typically after an Edit) still returns the whole file. The previous read's archive id is already stored, so a unified diff against it is the lossless short form.
