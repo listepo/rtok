@@ -15,20 +15,24 @@ use owo_colors::{OwoColorize, Stream};
 
 use crate::store::SessionTotals;
 
-/// A `git diff` of one file, three lines of context, coloured. Empty when nothing differs.
-pub fn file_diff(path: &Path, before: &str, after: &str) -> String {
+/// Uncoloured unified diff of one file, three lines of context. Empty when nothing differs.
+pub fn unified_diff(path: &Path, before: &str, after: &str) -> String {
     if before == after {
         return String::new();
     }
-    let text = similar::TextDiff::from_lines(before, after)
+    similar::TextDiff::from_lines(before, after)
         .unified_diff()
         .context_radius(3)
         .header(
             &format!("a/{}", path.display()),
             &format!("b/{}", path.display()),
         )
-        .to_string();
-    paint(&text)
+        .to_string()
+}
+
+/// A `git diff` of one file, three lines of context, coloured. Empty when nothing differs.
+pub fn file_diff(path: &Path, before: &str, after: &str) -> String {
+    paint(&unified_diff(path, before, after))
 }
 
 /// Colour diff-shaped text: green additions, red removals, cyan hunk headers, bold file headers.
