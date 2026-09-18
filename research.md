@@ -946,6 +946,19 @@ Order by expected effect: T69.1 first (a wrong fact recalled is worse than a mis
 T69.3 (landed 2026-09-18: FTS5/hybrid 20/20, Gate P6 now has a floor), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
 T69.6 behind their gates.
 
+### 14.1 Live notes vs `recall_titles` (T69.2, 2026-09-18)
+
+Installed `rtok 0.1.1` (`dbcc7a162`) has no `memory status`. Counted with T69.4's
+`Store::memory_note_aggs` query (`kind NOT LIKE 'checkpoint%'`) on this machine:
+
+`sqlite3 ~/.rtok/rtok.db "SELECT COALESCE(project, '-'), SUM(CASE WHEN retired IS NULL THEN 1 ELSE 0 END) FROM notes WHERE kind NOT LIKE 'checkpoint%' GROUP BY project;"`
+
+Result: **0 rows**. Live notes: **0**. Projects with more than `[plugins.memory] recall_titles` (5): **0**.
+The same file holds 25 `checkpoint` rows under project `rtok` (title `compact`, none retired);
+T69.4 excludes them from the live count. SessionStart still injects those titles
+(`list_note_titles` does not filter kind). Ranking order among live facts never matters here,
+so T69.2 ships no scorer and no `uses` / `last_used` columns.
+
 ## 15. What a host plugin can do that rtok's own surfaces cannot (2026-09-18)
 
 Creator request: go through §1–§13 and `ideas.md` for everything parked because rtok's three
