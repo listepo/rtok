@@ -435,6 +435,16 @@ Done when the web Plugins page has the same toggle, sent as one inbound WebSocke
 
 **Result (2026-09-18).** Commits `e66e2e5` (inbound `/ws` `set` through `validate::set`) and `633fbd6` (Slint toggle + WASM send + e2e click). Allow-list is `plugins.<id>.enabled` where `id` is a catalogue plugin from `Registry::manifests` (D23: no second list); anything else, a non-bool `value`, or a `config set` error is a `{"type":"message","text":...}` frame. The next snapshot reloads Config so the Plugins rows match the file. `tests/web.rs` `ws_set_accepts_plugin_enabled` / `ws_set_refuses_other_keys` green; `plugin_toggle_click_sends_the_set` green under `SLINT_EMIT_DEBUG_INFO=1`.
 
+## T60.1 — `--json` on every reading command
+
+
+Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
+Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
+
+Execution plan: (1) `--json` on the table-printing readers; serialize `doctor::Report`, `PluginPage`, `SessionTotals`, log lines, `demon::Row`, plus model helpers for agents-list / otel-status — no parallel DTOs. (2) hermetic trycmd goldens like `stats-price`. (3) `docs/config.md` lists `--json` once; `surface_parity` fails a reader without the flag.
+
+**Result (2026-09-18).** `doctor`, `plugins`, `agents list`, `agents sessions`, `logs`, `demon status` and `otel status` accept `--json` and serialize the existing `web::model` / store types (`doctor::Report`, `PluginPage`, `AgentListRow`, `SessionTotals`, log lines, `demon::Row`, `OtelStatus`) through `serde` — no parallel DTOs. trycmd goldens sit next to `stats-price`; `docs/config.md` lists `--json` once; `tests/surface_parity.rs` fails a reading command without the flag. `graph dead` still prints text only (no model page).
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`

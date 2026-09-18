@@ -12,7 +12,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T58.2 | todo | P2 | 3 | 0% | |
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
-| T60.1 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T60.2 | todo | P2 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
@@ -77,13 +76,6 @@ Done when:
 1. Evidence: `stats` splits Agent/Task tool inputs and results per session; the card records the share, and closes with the number if sub-agents are below 5 % of tokens.
 2. `handoff(budget_tokens)` returns one budgeted digest: the session's memory notes (titles first), archive ids of live tool results with tool and bytes (T58.2 field), touched paths, and the last N user prompts (`checkpoint::extract` reused, not copied); deterministic order; the digest itself is archived and carries an `expand <id>`.
 3. Description ≤ 40 tokens; Vfs unit test on a fixture store; docs next to the memory tools.
-
-### T60.1. `--json` on every reading command
-
-Survey 2026-09-17 (`src/cli.rs`): 22 user-facing commands, `--json` only on `stats`, `info` and `config show`. `doctor`, `plugins`, `agents list`, `agents sessions`, `logs print`, `demon status` and `otel status` print tables only, so a script or another agent has to scrape text, and the web/TUI model already carries the same rows (D27).
-Done when every reading command that prints a table accepts `--json` and emits the `web::model` type that page renders (`DoctorPage`, `PluginPage` list, `SessionTotals`, log lines, demon/otel status) through one `serde` path — no second struct, no hand-built JSON; each command has a trycmd golden on the fixture store next to `stats-price`; `docs/config.md` mapping table lists the flag once; `tests/surface_parity.rs` gains the check that a reading command without `--json` fails the gate.
-
-Execution plan: (1) `--json` on the table-printing readers; serialize `doctor::Report`, `PluginPage`, `SessionTotals`, log lines, `demon::Row`, plus model helpers for agents-list / otel-status — no parallel DTOs. (2) hermetic trycmd goldens like `stats-price`. (3) `docs/config.md` lists `--json` once; `surface_parity` fails a reader without the flag.
 
 
 ### T60.2. trycmd goldens for every subcommand
