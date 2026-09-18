@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 export type AfterInput = {
   tool: string;
   sessionID?: string;
-  args?: { command?: string; filePath?: string; path?: string };
+  args?: { command?: string; filePath?: string; path?: string; name?: string };
 };
 
 export type AfterOutput = {
@@ -21,7 +21,7 @@ export type GuardFn = (
 ) => { allow: boolean; reason?: string };
 
 const KETCH_HINT =
-  "rtok is not installed; bash output is passed through unfiltered.\n" +
+  "rtok is not installed; tool output is passed through unfiltered.\n" +
   "Install with ketch:  ketch install listepo/rtok";
 let hinted = false;
 
@@ -45,7 +45,9 @@ function spawnRtok(args: string[], stdin = ""): Spawn {
 }
 
 export function filterStdin(cmd: string, stdin: string): string {
-  const r = spawnRtok(["filter", "--stdin", "--cmd", cmd], stdin);
+  const args = ["filter", "--stdin", "--cmd", cmd];
+  if (/^skill(\s|$)/i.test(cmd.trim())) args.push("--archive");
+  const r = spawnRtok(args, stdin);
   if (r.failed) return stdin;
   return r.stdout;
 }
@@ -166,7 +168,12 @@ export function createPlugin(
           output.output,
         );
       }
-      if (String(input.tool).toLowerCase() !== "bash") return;
+      const tool = String(input.tool).toLowerCase();
+      if (tool === "skill") {
+        output.output = run(`skill ${String(input.args?.name ?? "")}`, output.output);
+        return;
+      }
+      if (tool !== "bash") return;
       output.output = run(String(input.args?.command ?? ""), output.output);
     },
     "experimental.session.compacting": async (
