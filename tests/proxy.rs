@@ -1610,3 +1610,104 @@ async fn proxy_compress_shrinks_live_blobs_on_both_wires() {
         task.abort();
     }
 }
+
+const T612_SESSION: &str = "sess-t612";
+
+fn t612_skill_body() -> String {
+    let lines: Vec<String> = (1..=400)
+        .map(|i| format!("slint line {i}: widget docs and examples for the skill body"))
+        .collect();
+    format!(
+        "Base directory for this skill: /s/slint\n\n# Slint\n{}",
+        lines.join("\n")
+    )
+}
+
+fn t612_request() -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "model": T51_MODEL,
+        "max_tokens": 8,
+        "metadata": {"user_id": T612_SESSION},
+        "messages": [
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"toolu_skill","content":"Launching skill: slint"},
+                {"type":"text","text": t612_skill_body()}
+            ]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":[{"type":"text","text":"mid"}]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":[{"type":"text","text":"now"}]}
+        ]
+    }))
+    .expect("request json")
+}
+
+/// T61.2: a 3-turn request carrying a skill body archives it on turn
+/// `keep_turns + 1` (keep_turns = 2 → oldest of three), byte-identically on
+/// replay, `kind = "skill"`, `expand` recovers the original.
+#[tokio::test]
+async fn proxy_compress_archives_skill_bodies_outside_keep_turns() {
+    let up = MockUpstream::anthropic_messages_body();
+    let (addr, state, task) = proxy_server("t612-skill", |cfg| {
+        cfg.proxy.mode = "compress".to_string();
+        cfg.proxy.upstream = up.base_url();
+        cfg.plugins.archive.keep_turns = 2;
+    })
+    .await;
+    let request = t612_request();
+    for _ in 0..2 {
+        let resp = t51_post(&addr, request.clone()).await;
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+    }
+    let rows = t51_usage_n(&state.store, T612_SESSION, 2).await;
+    let sent: Vec<Vec<u8>> = rows
+        .iter()
+        .map(|u| {
+            state
+                .store
+                .call_io_request(u.call_id.expect("call id") as i32)
+                .expect("call_io")
+                .expect("request")
+        })
+        .collect();
+    assert_eq!(sent[0], sent[1], "replay is byte-identical");
+    let body: serde_json::Value = serde_json::from_slice(&sent[0]).expect("json");
+    let pointer = body["messages"][0]["content"][1]["text"]
+        .as_str()
+        .expect("skill text");
+    assert!(
+        pointer.starts_with("[archived ")
+            && pointer.contains("skill slint")
+            && pointer.contains("expand("),
+        "{pointer:.120}"
+    );
+    assert_eq!(
+        body["messages"][0]["content"][0]["content"].as_str(),
+        Some("Launching skill: slint"),
+        "the Launching skill result stays"
+    );
+    assert_eq!(
+        body["messages"][2]["content"][0]["text"].as_str(),
+        Some("mid"),
+        "turns inside keep_turns stay whole"
+    );
+    let ms = state
+        .store
+        .list_measurements("archive")
+        .expect("measurements");
+    assert!(ms.iter().all(|m| m.kind == "skill"), "{ms:?}");
+    assert_eq!(ms.len(), 2, "one measurement per request, not a re-archive");
+    assert_eq!(ms[0].ref_id, ms[1].ref_id);
+    let id = ms[0].ref_id.as_deref().expect("ref id");
+    let recovered = state
+        .store
+        .get_archive(id, None)
+        .expect("read")
+        .expect("payload");
+    assert_eq!(
+        String::from_utf8(recovered).expect("utf-8"),
+        t612_skill_body()
+    );
+    task.abort();
+}
