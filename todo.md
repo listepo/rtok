@@ -3,7 +3,6 @@
 - T50.3. Extra `read` modes
 - T52.2. More grammars and compressed index payloads
 - T52.3. Ranked repo map at SessionStart
-- T53.1. Coaching nudges under an A/B
 - T53.3. Hook start without Security.framework
 - T53.4. `just otel-check` against real backends
 - T56.5. ReadFs trait + optional HostFs walk swap
