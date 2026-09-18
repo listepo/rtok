@@ -54,7 +54,7 @@ fn snapshot() -> serde_json::Value {
             }
         ],
         "calls": [{
-            "id": 1, "ts": 3661, "session": "s", "surface": "proxy", "kind": "api_request",
+            "id": 1, "ts": 3661, "session": "a", "surface": "proxy", "kind": "api_request",
             "plugin": null, "name": "/v1/messages", "parent_id": null, "ms": 12.5, "ok": 1,
             "error": null, "host": "claude", "provider": "anthropic", "model": "x",
             "api": "anthropic", "input": 10, "cache_create": 1, "cache_read": 2, "output": 3
@@ -179,6 +179,29 @@ fn snapshot_error_reaches_the_banner() {
         &json!({"type":"snapshot","usage":{},"plugins":[],"calls":[],"sessions":[],"logs":[],"doctor":null,"error":"store unreadable"}),
     );
     assert_eq!(ui.get_error().as_str(), "store unreadable");
+
+#[test]
+fn session_click_opens_detail() {
+    let ui = window();
+    apply_snapshot(&ui, &snapshot());
+    let tab = ElementHandle::find_by_accessible_label(&ui, "sessions")
+        .next()
+        .unwrap_or_else(|| panic!("sessions tab (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    tab.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_page_id().as_str(), "sessions");
+    let row = ElementHandle::find_by_accessible_label(&ui, "session a")
+        .next()
+        .unwrap_or_else(|| panic!("session row (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    row.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_session_cursor(), 0);
+    let detail = ui.get_selected_session().detail;
+    assert!(detail.as_str().contains("project rtok"), "{detail}");
+    assert!(detail.as_str().contains("api anthropic"), "{detail}");
+    assert!(detail.as_str().contains("started"), "{detail}");
+    assert!(detail.as_str().contains("last"), "{detail}");
+    assert!(detail.as_str().contains("ended live"), "{detail}");
+    assert!(detail.as_str().contains("usage (anthropic)"), "{detail}");
+    assert!(detail.as_str().contains("/v1/messages"), "{detail}");
 }
 
 #[test]
@@ -187,9 +210,7 @@ fn plugin_toggle_click_sends_the_set() {
     apply_snapshot(&ui, &snapshot());
     let tab = ElementHandle::find_by_accessible_label(&ui, "plugins")
         .next()
-        .unwrap_or_else(|| {
-            panic!("plugins tab (run with SLINT_EMIT_DEBUG_INFO=1)")
-        });
+        .unwrap_or_else(|| panic!("plugins tab (run with SLINT_EMIT_DEBUG_INFO=1)"));
     tab.mock_single_click(slint::platform::PointerEventButton::Left);
     assert_eq!(ui.get_page_id().as_str(), "plugins");
 
@@ -200,9 +221,7 @@ fn plugin_toggle_click_sends_the_set() {
     });
     let toggle = ElementHandle::find_by_accessible_label(&ui, "toggle cmd")
         .next()
-        .unwrap_or_else(|| {
-            panic!("plugin toggle (run with SLINT_EMIT_DEBUG_INFO=1)")
-        });
+        .unwrap_or_else(|| panic!("plugin toggle (run with SLINT_EMIT_DEBUG_INFO=1)"));
     toggle.mock_single_click(slint::platform::PointerEventButton::Left);
     let (id, on) = hit.take().expect("toggle callback fired");
     assert_eq!(id, "cmd");
