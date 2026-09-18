@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fakeRtok } from "../../tests/node/fake-rtok.ts";
-import { createPlugin, filterStdin, hookStdin } from "./rtok.ts";
+import { createPlugin, filterStdin, guardCheck, hookStdin } from "./rtok.ts";
 
 test("replaces bash output via the injected filter", async () => {
   const plugin = await createPlugin((cmd, stdin) => {
@@ -105,4 +105,58 @@ test("missing rtok compacting fails open", async () => {
   await plugin["experimental.session.compacting"]({ sessionID: "s" }, output);
   assert.deepEqual(output.context, ["host"]);
   assert.equal(output.prompt, undefined);
+});
+
+test("guardCheck denies with a reason", () => {
+  fakeRtok(
+    `if (!args.includes("guard")) process.exit(9);
+     process.stdout.write(JSON.stringify({allow:false, reason:"duplicate; rtok expand abc"}));`,
+  );
+  assert.deepEqual(guardCheck("bash", { command: "ls" }, "s"), {
+    allow: false,
+    reason: "duplicate; rtok expand abc",
+  });
+});
+
+test("guardCheck fails open on a non-zero exit", () => {
+  fakeRtok(`process.stdout.write("partial"); process.exit(1);`);
+  assert.deepEqual(guardCheck("bash", { command: "ls" }, "s"), { allow: true });
+});
+
+test("guardCheck fails open when rtok is missing", () => {
+  fakeRtok(null);
+  assert.deepEqual(guardCheck("bash", { command: "ls" }, "s"), { allow: true });
+});
+
+test("before throws the deny reason and stays silent without one", async () => {
+  const deny = await createPlugin(
+    () => {
+      throw new Error("filter must not run");
+    },
+    () => "",
+    () => ({ allow: false, reason: "duplicate; rtok expand abc" }),
+  )();
+  await assert.rejects(
+    () => deny["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "ls" } }),
+    /duplicate; rtok expand abc/,
+  );
+  const silent = await createPlugin(
+    () => {
+      throw new Error("filter must not run");
+    },
+    () => "",
+    () => ({ allow: false }),
+  )();
+  await silent["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "ls" } });
+});
+
+test("before allow does not throw", async () => {
+  const plugin = await createPlugin(
+    () => {
+      throw new Error("filter must not run");
+    },
+    () => "",
+    () => ({ allow: true }),
+  )();
+  await plugin["tool.execute.before"]({ tool: "read", sessionID: "s" }, { args: { filePath: "a.rs" } });
 });
