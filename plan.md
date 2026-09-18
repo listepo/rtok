@@ -15,7 +15,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T57.1 | todo | P3 | 3 | 0% | |
-| T58.1 | todo | P2 | 3 | 0% | |
+| T58.1 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T58.2 | todo | P2 | 3 | 0% | |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
@@ -141,6 +141,11 @@ Done when:
 3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
 4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
 5. Parity with lean-ctx: its `diff` mode is opt-in per call and its unchanged re-read costs ~13 tokens (own README). rtok's delta is automatic (no mode to remember) and also reachable as `mode = "diff"` for the edit → verify flow; the unchanged-re-read line is measured on the same fixture and stays ≤ 13 tokens or the card says why.
+
+Execution plan:
+1. Add a `ReadDeltaRow` fold in `measure::stats::collect` (Read of a path already read in-session with Edit/Write/MultiEdit in between + result bytes); unit-test the fixture; run `rtok stats --since 90d`.
+2. Record the share of Read bytes in `research.md` §2. If < 3 %, close the card with the number (no feature code).
+3. If ≥ 3 %, implement MCP `read` unified diff vs archived previous (crate `similar`, already in tree), `read.delta` / `read.delta_max_ratio` (D12), PreToolUse advice, Vfs tests, docs; split commits ≤200 LOC / ≤3 files.
 
 ### T58.2. Compaction checkpoint on every host, with archive ids
 
