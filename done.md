@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+## T68.6 — Import edges in the index
+
+From the codegraph / graphify review. Both tools store `imports` edges (codegraph resolves them to source files; graphify's `module_source`); rtok's rows are definitions and reference sites only, so a file that imports a module without calling a uniquely named symbol has no edge, and T68.5 cannot reach it. T52.5 already appends rtok's own tags queries to the grammar's, so this is query data plus one row kind.
+Done when the extra queries capture `use` / `import` / `require` / `from … import` for Rust, TS/JS, Python, Go and Dart as rows of kind `import` whose `name` is the last path segment, `scope` empty, `is_def = false`; `symbol_imports(root, path)` lists a file's imports and `symbol_importers(root, module)` the files importing a module; `outline` prints an `imports:` line first; `impact_bfs` follows an import row to the file's definitions at cost 1 (one extra step in the same query, argument `follow_imports` default true); T8.8 recall on the 30-symbol set unchanged (imports never count as references); index time on this repo before / after in `research.md` with the command; no migration (kind is a string) — the extractor fingerprint bump re-indexes.
+
+**Result (2026-09-18).** Extra tags queries (appended like T52.5) emit `kind = import` rows: Rust `use`, JS/TS `import`/`require`, Python `import` / `from … import`, Go `import`, Dart `import`. `name` is the last path segment; `scope` empty; `is_def = false`. `symbol_imports` / `symbol_importers` list them; `outline` (read map) prints `imports:` first. `symbol_refs` / `callers` skip imports. `symbol_impact` and `impact_bfs` (`follow_imports` default true) take one extra hop from an import to that file's definitions, so T68.5 `affected` reaches import-only tests. Extractor fingerprint includes the new queries (`INDEX_VERSION` 2). This-repo release index: 172 files, 33 312 → 35 017 rows, 0.270 s → 0.325 s (`RTOK_HOME=$(mktemp -d) rtok graph index <repo>`). T8.8 reference recall 0.305 (floor 0.30).
+
+
 ## T68.5 — `affected`: which tests a change touches
 
 From the codegraph / graphify review. codegraph `affected` traces a diff to the test files it

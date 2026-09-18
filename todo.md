@@ -42,7 +42,6 @@
 - T68.2. `symbol` lists what a definition calls
 - T68.3. Staleness line on every graph answer
 - T68.4. `impact` with a target: call paths between two symbols
-- T68.6. Import edges in the index
 - T68.7. Mark ambiguous references
 - T68.8. Markdown outline shared by `outline`, `read map` and the skill digest
 - T68.9. With / without bench for the graph tools
