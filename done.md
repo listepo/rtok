@@ -1,5 +1,12 @@
 # rtok — completed tasks
 
+## T60.3 — Per-session drill-down on `tui` and `web`
+
+`SessionTotals` carries `project`, `api`, `started_at`, `last_activity`, `ended_at` (survey 2026-09-17, `src/web/model.rs`) and neither surface shows them; the Sessions page is a list on both, so "what did this session cost and which calls made it" needs the CLI.
+Done when Enter on a Sessions row (TUI) and a click (web) open a detail pane with those fields, the API row, and the session's calls filtered from the same snapshot; both surfaces read the same `model` accessor (D23: one model, two renderings), `tests/surface_parity.rs` asserts the detail exists on both, and a TUI `TestBackend` test plus a Slint e2e case cover the selection.
+
+**Result (2026-09-18).** Accessor `model::session_detail(snapshot, id)` returns `(&SessionTotals, Vec<&CallRow>)` from the same snapshot. TUI Enter toggles a pane with project, api, started/last/ended, the API usage row, and those calls; web click selects the same fields. Tests: `session_detail_filters_snapshot_calls_by_id`, `enter_opens_the_session_detail_pane` (TestBackend), `session_click_opens_detail` (Slint e2e), `session_detail_exists_on_both_surfaces`.
+
 ## T60.5 — Plugin toggle on the web Plugins page
 
 The TUI Plugins tab toggles `plugins.<id>.enabled` through `config set`; the web page renders the same rows read-only and `src/web/mod.rs` has no inbound WebSocket message at all (survey 2026-09-17) — a D23 defect.
