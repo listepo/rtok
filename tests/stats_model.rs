@@ -114,7 +114,7 @@ fn stats_table_is_unchanged_on_a_fixture_store() {
     assert_eq!(
         rtok(&["stats"], &h),
         "\
-sessions 2  compact 0  lines 6  malformed 0
+sessions 2  compact 0  checkpoint 0  no_checkpoint 2  lines 6  malformed 0
 usage input=42 cache_create=3 cache_read=80 output=5  hit=64.0%  median_context=100
 api                         input cache_create cache_read output    hit
 anthropic                      10            1          2      3  15.4%
@@ -139,6 +139,7 @@ fn stats_json_is_unchanged_on_a_fixture_store() {
         rtok(&["stats", "--json"], &h),
         r#"{
   "sessions": 2,
+  "no_checkpoint": 2,
   "lines": 6,
   "malformed": 0,
   "tools": {
