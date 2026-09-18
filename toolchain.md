@@ -70,11 +70,17 @@ Project programs and direct packages from the manifests.
 | tower-http | local | https://crates.io/crates/tower-http | Rust dependency |
 | tree-sitter | local | https://crates.io/crates/tree-sitter | Rust dependency |
 | tree-sitter-c | local | https://crates.io/crates/tree-sitter-c | Rust dependency |
+| tree-sitter-c-sharp | local | https://crates.io/crates/tree-sitter-c-sharp | C# grammar tags (T52.2) |
 | tree-sitter-dart | local | https://crates.io/crates/tree-sitter-dart | Rust dependency |
 | tree-sitter-go | local | https://crates.io/crates/tree-sitter-go | Rust dependency |
+| tree-sitter-java | local | https://crates.io/crates/tree-sitter-java | Java grammar tags (T52.2) |
 | tree-sitter-javascript | local | https://crates.io/crates/tree-sitter-javascript | Rust dependency |
+| tree-sitter-kotlin-ng | local | https://crates.io/crates/tree-sitter-kotlin-ng | Kotlin grammar tags (T52.2) |
+| tree-sitter-php | local | https://crates.io/crates/tree-sitter-php | PHP grammar tags (T52.2) |
 | tree-sitter-python | local | https://crates.io/crates/tree-sitter-python | Rust dependency |
+| tree-sitter-ruby | local | https://crates.io/crates/tree-sitter-ruby | Ruby grammar tags (T52.2) |
 | tree-sitter-rust | local | https://crates.io/crates/tree-sitter-rust | Rust dependency |
+| tree-sitter-swift | local | https://crates.io/crates/tree-sitter-swift | Swift grammar tags (T52.2) |
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
