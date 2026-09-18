@@ -652,6 +652,7 @@ section! {
     Graph {
         enabled: bool = true,
         max_tokens: u32 = 2000,
+        map_tokens: u32 = 0,
         body_lines: u32 = 40,
         auto_index: bool = true,
         backend: String = s("tags"),
@@ -1313,6 +1314,7 @@ bogus = true
     #[test]
     fn graph_backend_defaults_to_tags() {
         assert_eq!(Config::default().plugins.graph.backend, "tags");
+        assert_eq!(Config::default().plugins.graph.map_tokens, 0);
     }
 
     #[test]
