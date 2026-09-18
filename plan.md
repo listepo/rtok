@@ -15,7 +15,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
 | T57.1 | todo | P3 | 3 | 0% | |
-| T58.1 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T58.2 | todo | P2 | 3 | 0% | |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
@@ -131,21 +130,6 @@ Done when:
 3. Unit tests in `src/plugins/guard/mod.rs`: `sed -n` keyed and `sed -i` mutating; `find -delete` mutating; `cat a > b` mutating; `tail -f` never keyed; `cat a | grep b` keyed; `ls | xargs rm` mutating; and the false-deny Check: `ls` → `find . -delete` → `ls` is allowed.
 4. `guard` deny Measurements (`kind = guard`) on the hook e2e fixture before and after, so the change in deny count is a measured row, not a claim. Off-by-default is not needed: the change only removes wrong denies and adds keyed repeats that already carry a retrievable archive.
 Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the tests do not pin two behaviors at once.
-
-### T58.1. `read` delta since last read
-
-From the competitive gap review (`research.md` §9.3, §9.4 item 2; idea I-41; precedent: lean-ctx `diff` read mode, token-optimizer-mcp delta reads). Read is 15 % of tool-result tokens on the measured workload and the top single results are Reads. The sha256 dedup already answers an unchanged re-read with one line; a re-read of a file that changed since (typically after an Edit) still returns the whole file. The previous read's archive id is already stored, so a unified diff against it is the lossless short form.
-Done when:
-1. Evidence first: over real transcripts (`measure::stats::collect`) count Read calls of a path already read in the same session with an Edit/Write to that path in between, and their bytes; record in `research.md` §2 with date and command. Below 3 % of Read bytes → close the card with the number and no code.
-2. MCP `read` (and the PreToolUse advice for native Read) answers such a re-read with a unified diff against the archived previous content plus that archive id; full content when the diff is not below `read.delta_max_ratio` (default 0.6) of the file or the previous archive is gone. Lossless: `expand <id>` of the new result returns the full file.
-3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
-4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
-5. Parity with lean-ctx: its `diff` mode is opt-in per call and its unchanged re-read costs ~13 tokens (own README). rtok's delta is automatic (no mode to remember) and also reachable as `mode = "diff"` for the edit → verify flow; the unchanged-re-read line is measured on the same fixture and stays ≤ 13 tokens or the card says why.
-
-Execution plan:
-1. Add a `ReadDeltaRow` fold in `measure::stats::collect` (Read of a path already read in-session with Edit/Write/MultiEdit in between + result bytes); unit-test the fixture; run `rtok stats --since 90d`.
-2. Record the share of Read bytes in `research.md` §2. If < 3 %, close the card with the number (no feature code).
-3. If ≥ 3 %, implement MCP `read` unified diff vs archived previous (crate `similar`, already in tree), `read.delta` / `read.delta_max_ratio` (D12), PreToolUse advice, Vfs tests, docs; split commits ≤200 LOC / ≤3 files.
 
 ### T58.2. Compaction checkpoint on every host, with archive ids
 
