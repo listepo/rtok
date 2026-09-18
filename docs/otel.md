@@ -84,6 +84,10 @@ the archive id, so the full bytes stay retrievable with `rtok expand <id>`.
 
 ## Backends
 
+Local `docker run` / `docker compose` examples below need a running Docker-compatible engine.
+Prefer Colima from mise (`docs/colima.md`); Docker Desktop is not required.
+
+
 ### Jaeger
 
 ```bash
