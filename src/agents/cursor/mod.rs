@@ -3,9 +3,10 @@
 //! Cursor shell stdin uses top-level `command` and `conversation_id`.
 //! `beforeShellExecution` → PreToolUse; `afterShellExecution` → PostToolUse
 //! (`output`/`stdout` → `tool_response`) so guard/read caches populate.
+//! `postToolUse` (MCP, `updated_mcp_tool_output`) also maps to PostToolUse.
 //! [`crate::hooks::types::HookInput::adapt_cursor`] performs that map when
 //! `[hook] host` is `cursor` (also `--host cursor`).
-//! Cursor `hooks.json` is `{version, hooks.before|afterShellExecution[].command}`.
+//! Cursor `hooks.json` is `{version, hooks.before|afterShellExecution|postToolUse[].command}`.
 
 use std::path::PathBuf;
 
@@ -215,10 +216,16 @@ fn insert_ours(root: &mut Value) -> String {
         ("afterShellExecution", post.as_str()),
         ("sessionStart", start_cmd().as_str()),
         ("preCompact", compact.as_str()),
+        ("postToolUse", post.as_str()),
     ] {
         let arr = array_at(hooks, event);
         if !arr.iter().any(|e| is_cmd(e, cmd)) {
-            arr.push(json!({"command": cmd}));
+            let entry = if event == "postToolUse" {
+                json!({"command": cmd, "matcher": "MCP:"})
+            } else {
+                json!({"command": cmd})
+            };
+            arr.push(entry);
             added.push(format!("+ {event} {cmd}"));
         }
     }
@@ -235,7 +242,7 @@ fn insert_ours(root: &mut Value) -> String {
 
 fn strip_ours(root: &mut Value) -> String {
     let mut removed = Vec::new();
-    for event in ["beforeShellExecution", "afterShellExecution", "sessionStart", "preCompact"] {
+    for event in ["beforeShellExecution", "afterShellExecution", "sessionStart", "preCompact", "postToolUse"] {
         let Some(arr) = root
             .pointer_mut(&format!("/hooks/{event}"))
             .and_then(Value::as_array_mut)
@@ -381,6 +388,7 @@ mod tests {
         assert!(dry.contains("beforeShellExecution"), "{dry}");
         assert!(dry.contains("afterShellExecution"), "{dry}");
         assert!(dry.contains("preCompact"), "{dry}");
+        assert!(dry.contains("postToolUse"), "{dry}");
         assert!(!path.exists());
         let c = cfg(path.clone(), false);
         assert!(run(&c, false).unwrap().contains(&pre_cmd()));
@@ -392,6 +400,7 @@ mod tests {
         assert!(raw.contains(&compact_cmd()));
         assert!(raw.contains("afterShellExecution"));
         assert!(raw.contains("preCompact"));
+        assert!(raw.contains("postToolUse"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -458,6 +467,12 @@ mod tests {
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
         assert!(after.iter().any(|e| e["command"] == post_cmd()), "{root}");
+        let mcp = root["hooks"]["postToolUse"].as_array().unwrap();
+        assert!(
+            mcp.iter()
+                .any(|e| e["command"] == post_cmd() && e["matcher"] == "MCP:"),
+            "{root}"
+        );
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
