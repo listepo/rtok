@@ -3,7 +3,6 @@
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T59.5. Byte-stable `tools[]` description rewrite in the proxy
-- T59.6. `handoff` MCP tool for sub-agents
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
 - T60.8. TUI help overlay and manual refresh
 - T61.1. `stats` counts injected skill bodies
