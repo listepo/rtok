@@ -16,7 +16,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.4 | todo | P3 | 2 | 0% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
-| T58.2 | todo | P2 | 3 | 0% | |
 | T58.5 | todo | P3 | 3 | 0% | |
 | T59.1 | todo | P3 | 2 | 0% | |
 | T59.3 | todo | P3 | 2 | 0% | |
@@ -141,15 +140,6 @@ Done when:
 3. `Measurement` rows `plugin = read`, `kind = delta`, before = full bytes, after = diff bytes. Vfs unit tests: unchanged → existing "unchanged since" line; small change → hunks; large change → full; missing archive → full; CRLF preserved.
 4. Byte-stable for the same file state; `read.delta = true` by default (safe because of the full fallback), documented in the read plugin's docs page with the measured row from step 1.
 5. Parity with lean-ctx: its `diff` mode is opt-in per call and its unchanged re-read costs ~13 tokens (own README). rtok's delta is automatic (no mode to remember) and also reachable as `mode = "diff"` for the edit → verify flow; the unchanged-re-read line is measured on the same fixture and stays ≤ 13 tokens or the card says why.
-
-### T58.2. Compaction checkpoint on every host, with archive ids
-
-From the competitive gap review (`research.md` §9.2, §9.4 item 3; idea I-42). What exists (T2.5): on Claude Code `agents install` registers `PreCompact` and `PostCompact`; `checkpoint::save` stores the last 20 prompts, touched paths and 8 error lines as a memory note, and `inject::session_start` re-emits it (priority 9) plus the modes when `source == "compact"`. Two gaps remain. (a) No other host registers its compaction event — Codex (`PreCompact`/`PostCompact`), Cursor (`preCompact`), Gemini CLI (compression hook), Copilot CLI (auto-compact at 80 %) are listed in `research.md` §9.2 as of 2026-09-17, ZCode has none — so on those hosts the modes and the checkpoint vanish after the summary. (b) The checkpoint carries no archive ids, so `expand <id>` of a tool result that the summary dropped needs the id from a transcript the model no longer sees. Neither rtk, headroom nor caveman handle compaction at all (§9.3), so closing (a) and (b) is "better", not parity.
-Done when:
-1. Evidence: compactions per session counted from transcripts by `rtok stats` (a `compact` count next to the session rows) and recorded in `research.md`; the current checkpoint's injected bytes on the T2.5 fixture recorded as the baseline.
-2. `Checkpoint` gains `ids: Vec<String>`: the archive ids of this session's tool results that are still in the live window (from the store, not the transcript), newest first, capped so the rendered note stays under the existing checkpoint budget (`offer_fits_checkpoint_tokens` extended); rendered as `id <archive-id> <tool> <bytes>` lines. Unit test: a fixture with three archived results yields three `id` lines and the restore injection contains them.
-3. Per host, the compaction events verified against the current hooks doc (links in `src/agents/<host>/README.md` `## Docs`) and registered by `agents install` where they exist (Codex, Cursor, Gemini if a host, Copilot): the pre-event maps to `pre_compact`, the post-event to `session_start` with `source = "compact"`; hosts without the event are untouched. `tests/agents_doc.rs` regenerated with `RTOK_BLESS=1`. One commit per host if the 3-file limit needs it.
-4. Hook e2e per new host: pre-event → note exists; post-event → injection bytes equal Claude Code's for the same store; fail open, ≤ 10 ms.
 
 ### T58.5. `cmd` formatters for structured families
 

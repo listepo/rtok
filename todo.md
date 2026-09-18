@@ -9,7 +9,6 @@
 - T56.5. ReadFs trait + optional HostFs walk swap
 - T57.1. Flag-aware `guard` read-only classes
 - T58.1. `read` delta since last read
-- T58.2. Compaction checkpoint on every host, with archive ids
 - T58.5. `cmd` formatters for structured families
 - T59.1. Per-stem interactive table for `skip_wrap`
 - T59.3. Batch the cold `graph` index in one transaction per N files
