@@ -21,7 +21,6 @@
 - T60.2. trycmd goldens for every subcommand
 - T60.3. Per-session drill-down on `tui` and `web`
 - T60.4. Archive `expand` on `tui` and `web`
-- T60.5. Plugin toggle on the web Plugins page
 - T60.6. Error and connection states on `web` and `tui`
 - T60.7. WASM bundle size gate
 - T60.8. TUI help overlay and manual refresh
