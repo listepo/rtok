@@ -206,6 +206,12 @@ enum Cmd {
         #[command(subcommand)]
         action: GraphCmd,
     },
+    /// Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
+    #[cfg(feature = "guard")]
+    Guard {
+        #[command(subcommand)]
+        action: GuardCmd,
+    },
     /// Deprecated spelling of `rtok web`; still runs, still prints where to go
     #[command(hide = true)]
     Dashboard {
@@ -437,6 +443,27 @@ enum GraphCmd {
         /// JSON instead of `file ← via symbol` lines
         #[arg(long)]
         json: bool,
+    },
+}
+
+/// `rtok guard check` — the same allow/deny `plugins::guard` returns on PreToolUse.
+#[cfg(feature = "guard")]
+#[derive(Subcommand)]
+enum GuardCmd {
+    /// Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+    Check {
+        /// Host tool name (`bash`, `Read`, …)
+        #[arg(long)]
+        tool: String,
+        /// Tool arguments as JSON
+        #[arg(long, value_name = "INPUT")]
+        json: String,
+        /// Host session id (the cache is per session)
+        #[arg(long)]
+        session: Option<String>,
+        /// Overlay `[hook] host`
+        #[arg(long)]
+        host: Option<String>,
     },
 }
 
@@ -1073,6 +1100,19 @@ pub fn run() -> Result<()> {
                     );
                 }
             }
+        }
+        #[cfg(feature = "guard")]
+        Cmd::Guard { action } => {
+            let GuardCmd::Check {
+                tool,
+                json,
+                session,
+                host,
+            } = action;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
+            let sid = session.unwrap_or_else(|| "guard-check".into());
+            let cx = crate::plugin::Runtime::open(cfg, sid)?;
+            println!("{}", crate::plugins::guard::check(&tool, &json, &cx));
         }
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;

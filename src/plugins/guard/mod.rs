@@ -14,7 +14,7 @@ impl Plugin for Guard {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "guard",
-            surfaces: &[Surface::Hook],
+            surfaces: &[Surface::Hook, Surface::Cli],
             default_on: true,
         }
     }
@@ -105,6 +105,27 @@ impl Plugin for Guard {
             None => {}
         }
         None
+    }
+}
+
+/// `rtok guard check` — same allow/deny `pre_tool` returns, as a JSON line.
+pub fn check(tool: &str, raw_input: &str, cx: &crate::plugin::Runtime) -> String {
+    let tool = crate::hooks::types::canonical_tool_name(tool);
+    let mut input: Value = serde_json::from_str(raw_input).unwrap_or(Value::Null);
+    if let Some(obj) = input.as_object_mut() {
+        if let Some(fp) = obj.remove("filePath") {
+            obj.entry("file_path").or_insert(fp);
+        }
+    }
+    let ev = PreToolUse {
+        tool_name: &tool,
+        tool_input: &input,
+    };
+    match Guard.pre_tool(&ev, &Ctx::new(cx)) {
+        Some(PreToolDecision::Deny { reason }) if !reason.is_empty() => {
+            serde_json::json!({ "allow": false, "reason": reason }).to_string()
+        }
+        _ => serde_json::json!({ "allow": true }).to_string(),
     }
 }
 
