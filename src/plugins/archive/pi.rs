@@ -74,10 +74,7 @@ pub fn live_blobs(messages: &mut Value) -> Vec<BlobRef<'_>> {
         if message.get("content").is_some_and(Value::is_string) {
             let content = message.get_mut("content").expect("string checked above");
             out.push(BlobRef { content, turn });
-        } else if let Some(parts) = message
-            .get_mut("content")
-            .and_then(Value::as_array_mut)
-        {
+        } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) {
             for part in parts {
                 if part["type"].as_str() == Some("text")
                     && let Some(content) = part.get_mut("text")
@@ -95,7 +92,10 @@ pub fn live_blobs(messages: &mut Value) -> Vec<BlobRef<'_>> {
 /// stays one rule.
 fn split(messages: &mut Value) -> Option<(&mut Vec<Value>, usize)> {
     let entries = messages.as_array_mut()?;
-    let total = entries.iter().filter(|entry| entry["role"] == "user").count();
+    let total = entries
+        .iter()
+        .filter(|entry| entry["role"] == "user")
+        .count();
     Some((entries, total))
 }
 
@@ -245,10 +245,12 @@ mod tests {
             .position(|m| m["toolCallId"] == "call_b")
             .unwrap();
         assert_eq!(changed, vec![b_pos], "only the newly-aged block changed");
-        assert!(after[a_pos]["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .starts_with("[archived "));
+        assert!(
+            after[a_pos]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("[archived ")
+        );
         // Lossless: expand recovers the original bytes of every pointer.
         for tag in ["a", "b"] {
             let pos = after
