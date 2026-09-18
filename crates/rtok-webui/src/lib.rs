@@ -471,8 +471,6 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
 /// Load theme from `localStorage` / `prefers-color-scheme` (T60.9).
 #[cfg(target_family = "wasm")]
 fn init_theme(ui: &MainWindow) {
-    use wasm_bindgen::JsCast;
-    use web_sys::MediaQueryList;
     let dark = read_theme_storage().unwrap_or_else(system_prefers_dark);
     ui.set_dark(dark);
     let ui_weak = ui.as_weak();
@@ -519,6 +517,7 @@ fn write_theme_storage(dark: bool) {
 
 #[cfg(target_family = "wasm")]
 fn system_prefers_dark() -> bool {
+    use web_sys::MediaQueryList;
     web_sys::window()
         .and_then(|w| w.match_media("(prefers-color-scheme: dark)").ok())
         .flatten()
@@ -562,7 +561,7 @@ mod wasm {
         let ws = match WebSocket::new(&format!("ws://{host}/ws")) {
             Ok(ws) => ws,
             Err(_) => {
-                schedule_reconnect(ui.as_weak(), attempt);
+                schedule_reconnect(&ui.as_weak(), attempt);
                 return;
             }
         };

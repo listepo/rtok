@@ -240,7 +240,7 @@ need an account or an API key.
 | What (date, command) | Result |
 | --- | --- |
 | Before (`ls -l crates/rtok-webui/pkg/rtok_webui_bg.wasm`, 2026-09-17) | 10,560,601 B, default `wasm-pack --release`, no `wasm-opt` |
-| After (`just web` / `wasm-pack` with `[profile.release] opt-level=z, lto, codegen-units=1, panic=abort` + `wasm-opt -Oz` when on PATH) | pending re-measure — `rtok-webui` did not compile on 2026-09-18 (WIP tree); gate in `tests/web_wasm.rs` is 4,500,000 B until the optimized build lands |
+| After (`wasm-pack --release` + wasm-opt -Oz, 2026-09-18) | 4,130,017 B |
 
 ### Build size (T17.1, Gate P17, 2026-09-04)
 
