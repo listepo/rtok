@@ -56,6 +56,13 @@ Release build. The 3 000-file repo is generated, each file one function calling 
 The fourth clause — fewer tool calls per multi-file task on the P9 set — is not measured, so
 the gate is open. `callers("estimate")` on this repo fell from 1 959 bytes at v0.1 to 793.
 
+T68.9 (2026-09-18) adds `rtok bench --suite graph`: 12 architecture questions, three repos
+(this tree, `bench/repos/mini-rs`, `bench/repos/mini-py`), each run twice (rtok MCP on vs
+native Read/Grep only) through the T9.1 `claude -p` harness. Dry-run (no spend):
+`rtok bench --suite graph --runs 1 --dry-run`. The live API run is not done (needs the
+creator's go); until a dated live result lands here, codegraph's −88 % tool calls / −62 %
+tokens stay a vendor claim in the §4 matrix, not an rtok number.
+
 ### `graph` composite-query chains (T52.1, 2026-09-17)
 
 Dated command: three ad-hoc scans over all 172 transcripts in

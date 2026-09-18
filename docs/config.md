@@ -172,6 +172,7 @@ tasks    = "bench/tasks.toml"
 runs     = 3
 dry_run  = false
 timeout_s = 900                       # per task run
+suite    = ""                         # "" = T9.1 six tasks; "graph" = T68.9 with/without MCP
 [bench.configs]                       # name = settings file passed to `claude --settings`
 a = "bench/configs/legacy.json"
 b = "bench/configs/rtok.json"
@@ -388,7 +389,7 @@ Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 | `tui` | `--tab`, `--tick-secs` | `tui.tab`, `tui.tick_secs` |
 | `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache`, `--price` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`), `stats.price` (`stats.prices.*` are data) |
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
-| `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
+| `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout`, `--suite` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
 | `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
