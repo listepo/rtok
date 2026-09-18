@@ -402,7 +402,8 @@ impl Store {
                 symbols::root
                     .eq(root)
                     .and(symbols::name.eq(name))
-                    .and(symbols::is_def.eq(0)),
+                    .and(symbols::is_def.eq(0))
+                    .and(symbols::kind.ne("import")),
             )
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::line))
@@ -461,7 +462,8 @@ impl Store {
                 symbols::root
                     .eq(root)
                     .and(symbols::name.eq(name))
-                    .and(symbols::is_def.eq(0)),
+                    .and(symbols::is_def.eq(0))
+                    .and(symbols::kind.ne("import")),
             )
             .group_by((symbols::path, symbols::scope))
             .order((symbols::path.asc(), symbols::scope.asc()))
@@ -508,7 +510,8 @@ impl Store {
              FROM symbols d
              WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
                AND NOT EXISTS (SELECT 1 FROM symbols r
-                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0)
+                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
+                   AND r.kind != 'import')
              ORDER BY d.path, d.line",
         )
         .bind::<Text, _>(root)
@@ -541,14 +544,30 @@ impl Store {
             "WITH RECURSIVE walk(depth, path, scope, seen) AS (
                 SELECT 1, path, scope, ',' || scope || ','
                 FROM symbols
-                WHERE root = ? AND name = ? AND is_def = 0 AND name != ''
+                WHERE root = ? AND name = ? AND is_def = 0 AND name != '' AND kind != 'import'
+                UNION ALL
+                SELECT 1, d.path, d.name, ',' || d.name || ','
+                FROM symbols i
+                JOIN symbols d
+                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+                WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
                 UNION ALL
                 SELECT w.depth + 1, s.path, s.scope, w.seen || s.scope || ','
                 FROM walk w
                 JOIN symbols s
                   ON s.root = ? AND s.name = w.scope AND s.is_def = 0 AND s.name != ''
+                 AND s.kind != 'import'
                 WHERE w.depth < ? AND w.scope != ''
                   AND instr(w.seen, ',' || s.scope || ',') = 0
+                UNION ALL
+                SELECT w.depth + 1, d.path, d.name, w.seen || d.name || ','
+                FROM walk w
+                JOIN symbols i
+                  ON i.root = ? AND i.name = w.scope AND i.kind = 'import' AND i.is_def = 0
+                JOIN symbols d
+                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+                WHERE w.depth < ? AND w.scope != ''
+                  AND instr(w.seen, ',' || d.name || ',') = 0
             )
             SELECT MIN(depth) AS depth, path, scope
             FROM walk
@@ -557,6 +576,10 @@ impl Store {
         )
         .bind::<Text, _>(root)
         .bind::<Text, _>(name)
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(depth)
         .bind::<Text, _>(root)
         .bind::<Integer, _>(depth)
         .load(&mut *conn)?;
@@ -584,7 +607,8 @@ impl Store {
         let rows: Vec<Row> = sql_query(
             "SELECT d.name AS name,
                     (SELECT COUNT(*) FROM symbols r
-                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0) AS refs
+                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0
+                        AND r.kind != 'import') AS refs
              FROM symbols d
              WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
                AND d.name LIKE ? ESCAPE '\\'
@@ -631,6 +655,7 @@ impl Store {
                 FROM walk w
                 JOIN symbols s ON s.root = ? AND s.name = w.tip
                               AND s.is_def = 0 AND s.scope != ''
+                              AND s.kind != 'import'
                 WHERE w.depth < ? AND w.tip != ?
                   AND instr(w.seen, ',' || s.scope || ',') = 0
             )
@@ -646,5 +671,61 @@ impl Store {
         .bind::<Text, _>(to)
         .load(&mut *conn)?;
         Ok(rows.into_iter().map(|r| r.chain).collect())
+    }
+
+    /// T68.6: import rows of `path` as `(name, line)`, first-seen order.
+    pub fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::path.eq(path))
+                    .and(symbols::kind.eq("import"))
+                    .and(symbols::is_def.eq(0)),
+            )
+            .order(symbols::line.asc())
+            .select((symbols::name, symbols::line))
+            .load(&mut *conn)?)
+    }
+
+    /// T68.6: files that import `module` as `(path, line)`.
+    pub fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::name.eq(module))
+                    .and(symbols::kind.eq("import"))
+                    .and(symbols::is_def.eq(0)),
+            )
+            .order((symbols::path.asc(), symbols::line.asc()))
+            .select((symbols::path, symbols::line))
+            .load(&mut *conn)?)
+    }
+
+    /// T68.6: definitions in files that import `name` — the extra impact hop.
+    pub fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Text)]
+            name: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.path AS path, d.name AS name
+             FROM symbols i
+             JOIN symbols d
+               ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+             WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
+             ORDER BY d.path, d.line",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| (r.path, r.name)).collect())
     }
 }
