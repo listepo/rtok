@@ -39,6 +39,18 @@ pub fn supported(path: &Path) -> bool {
         "c" | "h" => true,
         #[cfg(feature = "lang-go")]
         "go" => true,
+        #[cfg(feature = "lang-java")]
+        "java" => true,
+        #[cfg(feature = "lang-kotlin")]
+        "kt" | "kts" => true,
+        #[cfg(feature = "lang-swift")]
+        "swift" => true,
+        #[cfg(feature = "lang-csharp")]
+        "cs" => true,
+        #[cfg(feature = "lang-ruby")]
+        "rb" => true,
+        #[cfg(feature = "lang-php")]
+        "php" => true,
         _ => false,
     }
 }
@@ -223,6 +235,23 @@ pub(crate) const DART_IMPORT: &str = "
 (import_specification uri: [(configurable_uri) (uri)] @name) @reference.import
 ";
 
+/// tree-sitter-kotlin-ng 1.1.0 ships no tags query (T52.2).
+#[cfg(feature = "lang-kotlin")]
+pub(crate) const KOTLIN_TAGS: &str = "
+(class_declaration name: (identifier) @name) @definition.class
+(object_declaration name: (identifier) @name) @definition.class
+(function_declaration name: (identifier) @name) @definition.function
+";
+
+/// tree-sitter-c-sharp 0.23.5 gates `TAGS_QUERY` behind `cfg(with_tags_query)`.
+#[cfg(feature = "lang-csharp")]
+pub(crate) const CSHARP_TAGS: &str = "
+(class_declaration name: (identifier) @name) @definition.class
+(interface_declaration name: (identifier) @name) @definition.interface
+(method_declaration name: (identifier) @name) @definition.method
+(namespace_declaration name: (identifier) @name) @definition.module
+";
+
 /// The query for `path`'s language, compiled on first use (T35.1): the compile was 19 ms of a
 /// 26.5 ms `tags` call on `graph/index.rs` (debug, 2026-09-10), paid again on every file.
 fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
@@ -274,6 +303,22 @@ fn config(path: &Path) -> Option<Result<&'static TagsConfiguration>> {
             &format!("{}{GO_IMPORT}", tree_sitter_go::TAGS_QUERY),
             ""
         ),
+        #[cfg(feature = "lang-java")]
+        "java" => compiled!(tree_sitter_java::LANGUAGE, tree_sitter_java::TAGS_QUERY, ""),
+        #[cfg(feature = "lang-kotlin")]
+        "kt" | "kts" => compiled!(tree_sitter_kotlin_ng::LANGUAGE, KOTLIN_TAGS, ""),
+        #[cfg(feature = "lang-swift")]
+        "swift" => compiled!(tree_sitter_swift::LANGUAGE, tree_sitter_swift::TAGS_QUERY, ""),
+        #[cfg(feature = "lang-csharp")]
+        "cs" => compiled!(tree_sitter_c_sharp::LANGUAGE, CSHARP_TAGS, ""),
+        #[cfg(feature = "lang-ruby")]
+        "rb" => compiled!(
+            tree_sitter_ruby::LANGUAGE,
+            tree_sitter_ruby::TAGS_QUERY,
+            tree_sitter_ruby::LOCALS_QUERY
+        ),
+        #[cfg(feature = "lang-php")]
+        "php" => compiled!(tree_sitter_php::LANGUAGE_PHP, tree_sitter_php::TAGS_QUERY, ""),
         _ => None,
     }
 }
@@ -308,6 +353,12 @@ mod tests {
             ("a.dart", "void start() {}\n", "void start"),
             ("a.c", "int add(int x) { return x; }\n", "int add"),
             ("a.go", "func Sum() int { return 0 }\n", "func Sum"),
+            ("a.java", "class App { void start() {} }\n", "class App"),
+            ("a.kt", "class App { fun start() {} }\n", "class App"),
+            ("a.swift", "class App { func start() {} }\n", "class App"),
+            ("a.cs", "class App { void Start() {} }\n", "class App"),
+            ("a.rb", "def run; end\n", "def run"),
+            ("a.php", "<?php\nfunction run() {}\n", "function run"),
         ];
         for (path, src, needle) in cases {
             let src = pad(src);
