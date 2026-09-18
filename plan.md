@@ -17,7 +17,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.4 | todo | P3 | 2 | 0% | |
 | T55.12 | todo | P2 | 2 | 0% | |
 | T55.15 | todo | P3 | 2 | 0% | |
-| T56.3 | todo | P2 | 3 | 85% | |
 | T56.5 | todo | P2 | 2 | 80% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
@@ -158,11 +157,6 @@ Done when a Windows rewrite containing `'` cannot reach a POSIX shell unchanged-
 
 From review 2026-09-17, second pass (reproduced, flag off by default). `Anthropic::live_blobs` (`src/proxy/anthropic.rs:96-105`) yields `source.data` of `image`/`document` blocks and `OpenAiChat::live_blobs` yields `image_url.url` (`src/proxy/openai_chat.rs:65-70`); `archive::rewrite_blob` then overwrites that field with pointer text. Repro: after `rewrite_blobs`, `source.data` reads `[archived 7da78e9924c6: 1 lines · 3200 tokens · expand(7da…)]` — not base64, so the moment `[plugins.archive] live_blobs = true` is switched on, every request carrying an old image is rejected by the API (400), which is not fail-open. Text blocks carrying `data:` URIs are the case T51.1 actually wants.
 Done when binary-bearing fields are never rewritten in place: `live_blobs` yields text blocks (and `data:` URIs inside text) only, or the rewrite replaces the whole block with a `text` pointer block; tests `image_source_data_is_never_rewritten` and `openai_image_url_is_never_rewritten` assert the fields stay byte-identical through `rewrite_blobs`, and the existing `live_blobs_*` suite still passes.
-
-### T56.3. Migrate cmd/setup path tests to VFS
-
-Quoting tests are already pure strings; setup/agent install tests that write hook files should use `Vfs` (or a directory trait) where practical.
-**Landed so far (unclaimed)** — disk `Settings::load` twins restored (`user_rules_*`, `drop_ins_*`, `a_broken_drop_in_*`); Vfs twins kept (`*_from_vfs`) plus extras. `issues_in_from_vfs` + spaced-path twin added (disk `issues_in_*` kept). Agent setup hook writers: disk e2e **kept**; Claude/Kimi Vfs rewrite twins for insert/strip/idempotent/foreign/wrong-shape/spaced profile. Remaining: more hosts (cursor/codex,\u2026) Vfs twins if needed; MCP register still disk (SDK write path).
 
 ### T56.5. ReadFs trait + optional HostFs walk swap
 
