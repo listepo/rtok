@@ -14,7 +14,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.6 | todo | P3 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
-| T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
 | T70.5 | todo | P3 | 3 | 0% | |
@@ -93,16 +92,6 @@ Done when (if step 1 passes) the plugin routes that tool's output through `rtok 
 
 
 
-
-### T70.1. pi extension shortens every tool result, not only bash
-
-From `research.md` §15.3. D2's constraint is that a PostToolUse hook can only add context, so on Claude Code every tool except `Bash` (rewritten to `rtok run` in PreToolUse) enters context whole; on a host with no proxy there is no second chance. pi's `tool_result` event is documented to return replacement `content` for **any** tool, and `plugins/pi/extensions/rtok.ts` uses it for bash only. Read is 15 % of tool-result tokens and its largest single results are 9.5–17 K tokens each (§2), so the tools worth adding are pi's file and search tools.
-Done when:
-1. Step 1 (decides the task): verify against pi's current docs (`## Docs` links in `plugins/pi/README.md`, re-checked as `tests/host_docs.rs` requires) and one real pi session that a `tool_result` handler's returned `content` replaces what the model sees for a non-bash built-in tool, and record pi's tool names in the card. If only bash may be replaced, close the task with that finding and no code.
-2. The extension routes the result of pi's read / grep / find / list tools through `rtok filter --stdin --cmd "<tool> <path-or-pattern>"`, keeping the existing bash path unchanged and reusing the one `rtok()` helper already in the file — no second spawn path (D21: one call path per capability). Every shortened result carries the `expand <id>` trailer (D4).
-3. Fail open exactly as today: a missing `rtok`, a spawn error, or empty stdout returns the original content; the ketch hint is printed once.
-4. `plugins/pi/tests/rtok.test.ts` covers a large read result (shortened, trailer present), a small one (byte-identical passthrough) and a spawn failure (original returned); `Measurement { plugin = "cmd", kind = "rule" }` rows appear per tool family.
-5. `plugins/pi/README.md` and `src/agents/pi/README.md` list the new call path and the reached plugins; `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table in `docs/agents.md` if the reached set changes.
 
 ### T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
 

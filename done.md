@@ -454,6 +454,23 @@ Execution plan: (1) `--json` on the table-printing readers; serialize `doctor::R
 
 **Result (2026-09-18).** `doctor`, `plugins`, `agents list`, `agents sessions`, `logs`, `demon status` and `otel status` accept `--json` and serialize the existing `web::model` / store types (`doctor::Report`, `PluginPage`, `AgentListRow`, `SessionTotals`, log lines, `demon::Row`, `OtelStatus`) through `serde` — no parallel DTOs. trycmd goldens sit next to `stats-price`; `docs/config.md` lists `--json` once; `tests/surface_parity.rs` fails a reading command without the flag. `graph dead` still prints text only (no model page).
 
+## T70.1 — pi extension shortens every tool result, not only bash
+
+From `research.md` §15.3. D2's constraint is that a PostToolUse hook can only add context, so on Claude Code every tool except `Bash` (rewritten to `rtok run` in PreToolUse) enters context whole; on a host with no proxy there is no second chance. pi's `tool_result` event is documented to return replacement `content` for **any** tool, and `plugins/pi/extensions/rtok.ts` uses it for bash only. Read is 15 % of tool-result tokens and its largest single results are 9.5–17 K tokens each (§2), so the tools worth adding are pi's file and search tools.
+Done when:
+1. Step 1 (decides the task): verify against pi's current docs (`## Docs` links in `plugins/pi/README.md`, re-checked as `tests/host_docs.rs` requires) and one real pi session that a `tool_result` handler's returned `content` replaces what the model sees for a non-bash built-in tool, and record pi's tool names in the card. If only bash may be replaced, close the task with that finding and no code.
+2. The extension routes the result of pi's read / grep / find / list tools through `rtok filter --stdin --cmd "<tool> <path-or-pattern>"`, keeping the existing bash path unchanged and reusing the one `rtok()` helper already in the file — no second spawn path (D21: one call path per capability). Every shortened result carries the `expand <id>` trailer (D4).
+3. Fail open exactly as today: a missing `rtok`, a spawn error, or empty stdout returns the original content; the ketch hint is printed once.
+4. `plugins/pi/tests/rtok.test.ts` covers a large read result (shortened, trailer present), a small one (byte-identical passthrough) and a spawn failure (original returned); `Measurement { plugin = "cmd", kind = "rule" }` rows appear per tool family.
+5. `plugins/pi/README.md` and `src/agents/pi/README.md` list the new call path and the reached plugins; `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table in `docs/agents.md` if the reached set changes.
+
+**Result (2026-09-18).** Docs (pi 0.85.1 `https://pi.dev/docs/latest/extensions`): `tool_result` **Can modify result** for any tool; handlers return `{ content }` patches. Built-in names: `read`, `bash`, `powershell`, `edit`, `write`, `grep`, `find`, `ls`. The card's "list" is pi's `ls`. Real session: pi 0.85.1 `createAgentSession` with an inline `tool_result` handler — replacement `content` is what `afterToolCall` (the model) sees for `read`/`grep`/`find`/`ls`. Not bash-only → implemented.
+
+The extension keeps bash as `rtok filter --stdin` and routes those four tools through the same `rtok()` helper as `filter --stdin --cmd "<tool> <path-or-pattern>"`. Missing `rtok` / empty stdout fail open; the ketch hint prints once. `rtok filter` archives, prints the `expand <id>` trailer, and records `Measurement { plugin = "cmd" }` per family (`read`/`grep` → `kind = "rule"`; `find`/`ls` → `kind = "formatter"`). Host table reached set unchanged (measure, cmd, archive); `agents_doc` needed no bless.
+
+Check: `plugins/pi/tests/rtok.test.ts` 11/11; `cargo test --lib cmd::filter` 3/3; `--test pi_plugin` / `--test host_docs` / `--test agents_doc` / `--test filter` green; `clippy -D warnings` on `--lib` clean. Isolated worktree `.worktrees/T70.1` on `t70.1` (`ec34dbe`, `42952a6`, `cd9bb14`).
+
+---
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
