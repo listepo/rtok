@@ -12,7 +12,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.5 | todo | P3 | 3 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
-| T71.2 | todo | P3 | 3 | 0% | |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -74,15 +73,6 @@ Done when:
 4. Tests: a hook e2e per result size on a fixture payload, `Measurement { plugin = "archive", kind = "mcp" }` rows, and `plugins/cursor/README.md` + `src/agents/cursor/README.md` updated with the verified docs link (`tests/host_docs.rs`); host table re-blessed.
 
 
-### T71.2. Session handoff: `SessionEnd` checkpoint, injected at the next `SessionStart`
-
-From I-56 (engram `mem_context`, `research.md` §13; MemPalace Stop-hook checkpoint). T2.5 writes a checkpoint only at `PreCompact`, so a session that ends without compacting leaves nothing: on this machine ≥ 80 % of Claude sessions over 20 KB since 2026-09-14 ended with no note (96 sessions touched, 18 checkpoints — a rough mtime count, `ideas.md` I-56). `SessionEnd` is already registered and dispatched (`src/agents/claude/mod.rs`, unhandled), so the save is one call site. The injection half costs up to `checkpoint_tokens` on every startup, which is why it stays off until measured.
-Done when:
-1. Evidence: `stats` counts sessions with and without a checkpoint note (next to the T58.2 compaction count) and the number replaces the rough one in `research.md` §13 with date and command.
-2. `rtok hook SessionEnd` runs the existing `checkpoint::save` (same extractor and render as `PreCompact`, no second implementation) under kind `session:<session-id>` with the project from the hook cwd; hook ≤ 10 ms, fail open; nothing is injected by this half.
-3. `[plugins.memory] startup_recall = false` (D12 row in the same commit): when `true`, `SessionStart` with `source = "startup"` offers the newest `session:*` note of the project at the checkpoint priority inside `checkpoint_tokens`, rendered by the same function as the compact restore, byte-stable for an unchanged store; `Measurement { plugin = "memory", kind = "handoff" }`.
-4. Hook e2e: end → note exists; start with the key off → bytes identical to today; on → the restore lines present and within budget; a second start → the same bytes.
-5. Stays off by default until a P7-style A/B (T53.1 shape) shows cost per passed task does not rise; the dry result is recorded on the card. Hosts other than Claude Code that register `SessionEnd` get it through the same dispatcher (`docs/agents.md` re-blessed if the reached set changes).
 
 ## Reference
 
