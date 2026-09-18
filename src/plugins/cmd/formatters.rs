@@ -27,7 +27,9 @@ pub fn compress(
         return (s, "formatter");
     }
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if s.len() < output.len() {
+    let kind = if bin(&argv) == "skill" {
+        "skill"
+    } else if s.len() < output.len() {
         "rule"
     } else {
         "raw"
@@ -547,7 +549,8 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["docker", "ps"]),
-            "Cannot connect to the Docker daemon\n",
+            "Cannot connect to the Docker daemon
+",
             0,
             "deadbeef",
         );
@@ -556,7 +559,8 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["kubectl", "get"]),
-            "error: the server doesn't have a resource type \"pods\"\n",
+            "error: the server doesn't have a resource type \"pods\"
+",
             1,
             "deadbeef",
         );
@@ -565,7 +569,8 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["ps", "aux"]),
-            "ps: invalid option -- z\n",
+            "ps: invalid option -- z
+",
             1,
             "deadbeef",
         );
@@ -595,7 +600,8 @@ mod tests {
             let ungrouped = rules::apply(&settings, &output, exit, &off, "deadbeef");
             assert!(
                 got.len() < ungrouped.len(),
-                "{file}: grouped {} B vs ungrouped {} B\n{got}",
+                "{file}: grouped {} B vs ungrouped {} B
+{got}",
                 got.len(),
                 ungrouped.len()
             );
@@ -629,7 +635,8 @@ mod tests {
             );
             let rule = settings.pick(bin(&family_argv(&argv)));
             let head = rule.head.min(rule.max_lines) as usize;
-            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join("\n");
+            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join("
+");
             assert!(
                 !pretty_head.contains(kept),
                 "{file}: {kept} already in the pretty head — fixture too small"
@@ -645,5 +652,29 @@ mod tests {
             "deadbeef",
         );
         assert_eq!(kind, "formatter");
+    }
+
+    #[test]
+fn skill_rule_keeps_headings_and_names_kind() {
+        let settings = rules::Settings::builtin();
+        assert_eq!(settings.pick("skill").head, 30);
+        assert_eq!(settings.pick("skill").tail, 5);
+        let mut lines = vec!["# Title".to_string()];
+        lines.extend((0..60).map(|i| format!("body {i}")));
+        lines.push("## Middle".into());
+        lines.extend((60..120).map(|i| format!("body {i}")));
+        let body = lines.join("
+");
+        let (out, kind) = compress(&settings, &["skill".into(), "demo".into()], &body, 0, "id1");
+        assert_eq!(kind, "skill");
+        assert!(out.contains("# Title"), "{out}");
+        assert!(out.contains("## Middle"), "{out}");
+        assert!(out.len() < body.len(), "expected a cut");
+        let small = "# Tiny
+ok
+";
+        let (s, k) = compress(&settings, &["skill".into()], small, 0, "id1");
+        assert_eq!(k, "skill");
+        assert!(s.contains("# Tiny"), "{s}");
     }
 }
