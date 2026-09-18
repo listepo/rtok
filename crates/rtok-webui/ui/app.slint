@@ -1,4 +1,5 @@
 import { HorizontalBox, VerticalBox, ListView, ScrollView, LineEdit } from "std-widgets.slint";
+
 import { RtokTheme } from "theme.slint";
 
 // Bundled IBM Plex Mono (OFL) — weights 400 / 600 / 700
@@ -70,6 +71,18 @@ component CallArchive inherits VerticalBox {
         font-family: "IBM Plex Mono";
         font-size: 12px;
     }
+}
+
+export struct SkillRow {
+    name: string,
+    source: string,
+    desc-chars: string,
+    body-bytes: string,
+    invocations: string,
+    resident: string,
+    last-invoked: string,
+    never: bool,
+    summary: string,
 }
 
 export struct SessionRow {
@@ -183,6 +196,7 @@ component PageIcon inherits Image {
         page-id == "sessions" ? @image-url("icons/sessions.svg") :
         page-id == "doctor" ? @image-url("icons/doctor.svg") :
         page-id == "logs" ? @image-url("icons/logs.svg") :
+        page-id == "skills" ? @image-url("icons/doctor.svg") :
         @image-url("icons/overview.svg");
 }
 
@@ -275,6 +289,9 @@ export component MainWindow inherits Window {
     out property <SessionRow> selected-session: sessions[session-cursor];
     in property <string> doctor-text;
     in-out property <[string]> logs;
+    in property <string> skills-header;
+    in-out property <[SkillRow]> skills;
+    in-out property <bool> skills-never-only: false;
     in property <string> status: "connecting";
     in property <string> error: "";
     in-out property <bool> dark: true;
@@ -993,6 +1010,58 @@ export component MainWindow inherits Window {
                             wrap: word-wrap;
                             font-size: ultrawide ? 13px : 12px;
                             font-family: "IBM Plex Mono";
+                        }
+                    }
+                }
+
+                if page-id == "skills": ScrollView {
+                    VerticalBox {
+                        spacing: RtokTheme.space-2;
+                        max-width: content-max;
+                        Text {
+                            text: "skills";
+                            color: RtokTheme.ink;
+                            font-size: title-size;
+                            font-weight: 700;
+                            font-family: "IBM Plex Mono";
+                        }
+                        Text {
+                            text: skills-header;
+                            color: RtokTheme.ink-muted;
+                            wrap: word-wrap;
+                            font-size: body-size;
+                            font-family: "IBM Plex Mono";
+                        }
+                        TouchArea {
+                            accessible-role: checkbox;
+                            accessible-label: "never invoked only";
+                            clicked => { skills-never-only = !skills-never-only; }
+                            Text {
+                                text: (skills-never-only ? "[x] " : "[ ] ") + "never invoked only";
+                                color: RtokTheme.accent;
+                                font-family: "IBM Plex Mono";
+                                font-size: body-size;
+                            }
+                        }
+                        if skills.length == 0: Text {
+                            text: "no skills listed";
+                            color: RtokTheme.ink-muted;
+                            font-family: "IBM Plex Mono";
+                        }
+                        for s in skills: Rectangle {
+                            property <bool> shown: !skills-never-only || s.never;
+                            height: shown ? 48px : 0px;
+                            border-radius: RtokTheme.radius-md;
+                            if shown: TouchArea {
+                                accessible-role: button;
+                                accessible-label: "skill " + s.name;
+                                Text {
+                                    text: s.summary;
+                                    color: s.never ? RtokTheme.ink-muted : RtokTheme.ink;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                            }
                         }
                     }
                 }

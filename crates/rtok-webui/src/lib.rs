@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 /// Page ids the WASM UI renders, in `model::pages()` order (D23 / T19.4).
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
-pub const PAGE_IDS: &[&str] = &["overview", "plugins", "calls", "sessions", "doctor", "logs"];
+pub const PAGE_IDS: &[&str] = &[
+    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills",
+];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
 /// onto the Slint window. Fail-open: missing keys become empty pages, never a panic.
@@ -34,6 +36,8 @@ pub mod snapshot {
         pub doctor_text: String,
         pub logs: Vec<String>,
         pub error: String,
+        pub skills_header: String,
+        pub skills: Vec<Skill>,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -101,7 +105,51 @@ pub mod snapshot {
             doctor_text: doctor_of(&v["doctor"]),
             logs: logs_of(v),
             error: v.get("error").and_then(|e| e.as_str()).unwrap_or("").to_string(),
+            skills_header: v["skills"]["header"].as_str().unwrap_or("").to_string(),
+            skills: skills_of(v),
         }
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    pub struct Skill {
+        pub name: String,
+        pub source: String,
+        pub desc_chars: String,
+        pub body_bytes: String,
+        pub invocations: String,
+        pub resident: String,
+        pub last_invoked: String,
+        pub never: bool,
+        pub summary: String,
+    }
+
+    fn skills_of(v: &Value) -> Vec<Skill> {
+        let Some(rows) = v["skills"]["rows"].as_array() else {
+            return Vec::new();
+        };
+        rows.iter()
+            .map(|r| {
+                let name = r["name"].as_str().unwrap_or("-").to_string();
+                let source = r["source"].as_str().unwrap_or("-").to_string();
+                let desc = r["desc_chars"].as_u64().unwrap_or(0);
+                let body = r["body_bytes"].as_u64().unwrap_or(0);
+                let calls = r["invocations"].as_u64().unwrap_or(0);
+                let resident = r["resident"].as_u64().unwrap_or(0);
+                let last = r["last_invoked"].as_str().unwrap_or("—").to_string();
+                let never = r["never"].as_bool().unwrap_or(false);
+                Skill {
+                    summary: format!("{name} {source} desc {desc}c body {body}B calls {calls} res {resident} {last}"),
+                    name,
+                    source,
+                    desc_chars: desc.to_string(),
+                    body_bytes: body.to_string(),
+                    invocations: calls.to_string(),
+                    resident: resident.to_string(),
+                    last_invoked: last,
+                    never,
+                }
+            })
+            .collect()
     }
 
     fn plugins_of(v: &Value) -> Vec<Plugin> {
@@ -541,6 +589,23 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     let logs: Vec<SharedString> = view.logs.into_iter().map(SharedString::from).collect();
     ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
     ui.set_error(SharedString::from(view.error));
+    ui.set_skills_header(SharedString::from(view.skills_header));
+    let skills: Vec<SkillRow> = view
+        .skills
+        .into_iter()
+        .map(|s| SkillRow {
+            name: SharedString::from(s.name),
+            source: SharedString::from(s.source),
+            desc_chars: SharedString::from(s.desc_chars),
+            body_bytes: SharedString::from(s.body_bytes),
+            invocations: SharedString::from(s.invocations),
+            resident: SharedString::from(s.resident),
+            last_invoked: SharedString::from(s.last_invoked),
+            never: s.never,
+            summary: SharedString::from(s.summary),
+        })
+        .collect();
+    ui.set_skills(ModelRc::from(Rc::new(VecModel::from(skills))));
     ui.set_status(SharedString::from("live"));
 }
 
@@ -745,7 +810,9 @@ mod tests {
     fn page_ids_cover_the_d23_set() {
         assert_eq!(
             PAGE_IDS,
-            ["overview", "plugins", "calls", "sessions", "doctor", "logs"]
+            [
+                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills"
+            ]
         );
     }
 
@@ -794,7 +861,8 @@ mod tests {
                 && PAGE_IDS.contains(&"calls")
                 && PAGE_IDS.contains(&"logs")
                 && PAGE_IDS.contains(&"doctor")
-                && PAGE_IDS.contains(&"plugins"),
+                && PAGE_IDS.contains(&"plugins")
+                && PAGE_IDS.contains(&"skills"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
