@@ -41,7 +41,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T64.3 | todo | P2 | 1 | 0% | |
 | T65.1 | todo | P2 | 3 | 0% | |
 | T65.2 | todo | P3 | 3 | 0% | |
-| T65.3 | todo | P3 | 1 | 0% | |
 | T65.4 | todo | P2 | 2 | 0% | |
 | T67.2 | todo | P3 | 2 | 0% | |
 | T68.2 | todo | P3 | 2 | 0% | |
@@ -59,7 +58,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T69.5 | todo | P3 | 2 | 0% | |
 | T69.6 | todo | P3 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
-| T70.2 | in progress | P2 | 4 | 0% | Kimi Code |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
 | T70.5 | todo | P3 | 3 | 0% | |
@@ -298,11 +296,6 @@ From `research.md` §11. sqz strips nulls and flattens arrays in JSON output; rt
 Step 1 (gate): `stats` share of Bash result bytes whose body parses as JSON, 30 d, this machine, into `research.md` §11.
 Done when output that parses as JSON is rewritten before the line cut: null / empty-string / empty-container fields dropped, arrays beyond `json_items` (default 20) elements shown as `… +K more`, object keys kept, strings longer than `json_string` (default 200) cut with their length, one line per top-level key; lossless via the archived raw body and the trailer; a fixture per source (`gh pr list --json`, `aws ec2 describe-instances`, `kubectl get pods -o json`) records the bytes against the default rule; a body that does not parse is untouched.
 
-### T65.3. `cmd` column-padding collapse
-
-From `research.md` §11. sqz collapses padding in columnar output; `docker ps`, `kubectl get`, `ps aux`, `ls -l` spend a third of their bytes on alignment spaces.
-Done when a rule may set `collapse_columns = true` (on in `Rule::default()` if the fixtures win), runs of two or more spaces inside a line fold to one, leading indentation is kept (tracebacks, YAML, diffs are not columnar — the pass is skipped when the rule already keeps a block, T65.4), and a fixture per source records the bytes saved; `expand <id>` returns the aligned original.
-
 ### T65.4. Never cut a stack trace
 
 From `research.md` §11. sqz's safe mode passes stack traces and secrets through whole. rtok keeps single lines matching `BUILTIN_KEEP` (`error`, `panic`, `traceback`) but the head/tail cut in `rules::apply` drops the frames under them, which is the part the model needs; secrets are deliberately not redacted (`ten_families_and_aws_key_unredacted`) and stay so.
@@ -413,17 +406,6 @@ Done when:
 3. Fail open exactly as today: a missing `rtok`, a spawn error, or empty stdout returns the original content; the ketch hint is printed once.
 4. `plugins/pi/tests/rtok.test.ts` covers a large read result (shortened, trailer present), a small one (byte-identical passthrough) and a spawn failure (original returned); `Measurement { plugin = "cmd", kind = "rule" }` rows appear per tool family.
 5. `plugins/pi/README.md` and `src/agents/pi/README.md` list the new call path and the reached plugins; `RTOK_BLESS=1 mise exec -- cargo test --test agents_doc` re-blesses the host table in `docs/agents.md` if the reached set changes.
-
-### T70.2. pi `context` hook: the `archive` live zone without a proxy
-
-From `research.md` §15.3 and §1 (shrinking old results in context is the top-ranked lever). `archive` rewrites old `tool_result` blocks into `expand <id>` pointers, but only inside `rtok proxy` — so on every host with no base-URL setting (pi, Cursor, Claude Desktop, Windsurf, Zed, ZCode, Kimi, Copilot) old results are re-sent whole for the rest of the session. pi's `context` event is documented to fire before each LLM call with the message array and to accept a modified array back, which is the same position in the chain the proxy live zone occupies. This also covers pi skill bodies (§10.8 lists only Claude Code and OpenCode), with no separate task.
-Done when:
-1. Step 1 (decides the task): verify against pi's docs and one real session that `context` receives the full message array and that the returned array is what is sent; record whether pi re-runs the handler per call (so the rewrite must be idempotent) in the card. Not so → close with the finding.
-2. A CLI entry point carries it: `rtok archive rewrite --stdin` reads the message array as JSON, applies the existing `plugins::archive::rewrite` through the same wire view the proxy uses (`ToolResultRef`, `keep_turns`, `live_blobs`) and writes the rewritten array to stdout. No second implementation of the live zone — the proxy and this path call one function, or the task is not done.
-3. Byte-stability (D5, §6 (2)): the same message array in rewrites to the same bytes out, so pi's prompt prefix does not churn; a test replays one array three times and asserts byte-identical output, and a fourth call with one new turn changes only the newly-aged block.
-4. The extension calls it from `context` and fails open (any error → the untouched array); `Measurement { plugin = "archive", kind = "live" }` rows carry before/after bytes with `ref_id` = the archive id.
-5. Tests: `plugins/pi/tests/rtok.test.ts` for the wiring (large array shortened, small array untouched, spawn failure untouched); a Rust test for `archive rewrite --stdin` on a 3-turn fixture asserting the pointer appears exactly outside `keep_turns` and `expand <id>` returns the original.
-6. Docs: the archive plugin page says the live zone has two carriers (proxy, pi `context`) and that they share one function; `plugins/pi/README.md` and `src/agents/pi/README.md` add `archive` to the reached set with the host table re-blessed.
 
 ### T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
 

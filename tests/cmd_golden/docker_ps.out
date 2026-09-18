@@ -1,0 +1,21 @@
+CONTAINER ID IMAGE COMMAND STATUS PORTS NAMES
+web-00 Up 3 days 0.0.0.0:8000->80/tcp registry.local/web:v0.2.1
+web-01 Up 3 days 0.0.0.0:8001->80/tcp registry.local/web:v1.2.1
+web-02 Up 3 days 0.0.0.0:8002->80/tcp registry.local/web:v2.2.1
+web-03 Up 3 days 0.0.0.0:8003->80/tcp registry.local/web:v3.2.1
+web-04 Up 3 days 0.0.0.0:8004->80/tcp registry.local/web:v4.2.1
+web-05 Up 3 days 0.0.0.0:8005->80/tcp registry.local/web:v5.2.1
+web-06 Up 3 days 0.0.0.0:8006->80/tcp registry.local/web:v6.2.1
+web-07 Up 3 days 0.0.0.0:8007->80/tcp registry.local/web:v7.2.1
+web-08 Up 3 days 0.0.0.0:8008->80/tcp registry.local/web:v8.2.1
+… 21 lines omitted (expand deadbeef)
+web-30 Up 3 days 0.0.0.0:8030->80/tcp registry.local/web:v30.2.1
+web-31 Up 3 days 0.0.0.0:8031->80/tcp registry.local/web:v31.2.1
+web-32 Up 3 days 0.0.0.0:8032->80/tcp registry.local/web:v32.2.1
+web-33 Up 3 days 0.0.0.0:8033->80/tcp registry.local/web:v33.2.1
+web-34 Up 3 days 0.0.0.0:8034->80/tcp registry.local/web:v34.2.1
+web-35 Up 3 days 0.0.0.0:8035->80/tcp registry.local/web:v35.2.1
+web-36 Up 3 days 0.0.0.0:8036->80/tcp registry.local/web:v36.2.1
+web-37 Up 3 days 0.0.0.0:8037->80/tcp registry.local/web:v37.2.1
+web-38 Up 3 days 0.0.0.0:8038->80/tcp registry.local/web:v38.2.1
+web-39 Up 3 days 0.0.0.0:8039->80/tcp registry.local/web:v39.2.1

@@ -3301,3 +3301,11 @@ Complexity: 1/5 — one table, two keys, one overlay renderer.
 Status: done 2026-09-18
 Check result: tui 35/35 green, fmt/clippy clean, full `just check` green in the isolation worktree. Deviation: the key handler stays behavioural code — the table is the single rendered source, not the dispatch mechanism; the generated footer replaced the hand-written hint list, and three tests that pinned the old wording were updated in the same commit.
 Model: ZCode / GLM-5.3-Flash
+
+**T65.3 `cmd` column-padding collapse** · T65.4 · `src/plugins/cmd/rules.rs`, `tests/cmd_golden/{docker_ps,kubectl_get,ps_aux}.{in,out}`
+Do: a rule may set `collapse_columns = true`; `Rule::default()` — every stem without a TOML rule — turns it on after the fixtures won. Runs of two or more spaces fold to one, leading indentation and tabs are kept, a trailing run folds to nothing, and the pass stands down whenever a trace block is in the output (T65.4's indentation is not columnar). `expand <id>` still returns the aligned original.
+Check: `collapse_columns_folds_padding_keeps_indent_and_tabs` (pure) and `collapse_shrinks_columnar_output_and_stands_down_for_traces` (≥⅓ saved on a docker-ps fixture; padding survives verbatim beside a traceback). Fixtures per source: docker_ps 3147→1311 B (58 %), kubectl_get 4542→1770 B (61 %), ps_aux 2341→990 B (58 %); beyond the rule cut collapse adds 17/21/15 %. The 16 existing goldens re-blessed unchanged in shape — the 5 trace fixtures byte-identical, `cat` still lossless with the AWS key.
+Complexity: 1/5 — one field, one fold pass, one stand-down guard.
+Status: done 2026-09-18
+Check result: cmd 57/57 green, fmt/clippy clean, full `just check` green up to the in-flight T70.2 red (plugins::archive::pi + its 4 test files — another agent's half-landed work at HEAD, verified pre-existing with my changes stashed; their fixes sit in the working tree).
+Model: ZCode / GLM-5.3-Flash

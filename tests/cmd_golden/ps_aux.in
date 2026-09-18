@@ -1,0 +1,44 @@
+argv: ps aux
+exit: 0
+---
+  PID TTY           TIME   CMD
+  500  ttys000    1     0.0 /usr/bin/python3 0  worker-0
+  501  ttys001    2     1.0 /usr/bin/python3 1  worker-1
+  502  ttys002    3     2.0 /usr/bin/python3 2  worker-2
+  503  ttys003    1     3.0 /usr/bin/python3 3  worker-3
+  504  ttys000    2     4.0 /usr/bin/python3 4  worker-4
+  505  ttys001    3     5.0 /usr/bin/python3 5  worker-5
+  506  ttys002    1     6.0 /usr/bin/python3 6  worker-6
+  507  ttys003    2     7.0 /usr/bin/python3 7  worker-7
+  508  ttys000    3     8.0 /usr/bin/python3 8  worker-8
+  509  ttys001    1     9.0 /usr/bin/python3 0  worker-9
+  510  ttys002    2    10.0 /usr/bin/python3 1  worker-10
+  511  ttys003    3    11.0 /usr/bin/python3 2  worker-11
+  512  ttys000    1    12.0 /usr/bin/python3 3  worker-12
+  513  ttys001    2    13.0 /usr/bin/python3 4  worker-13
+  514  ttys002    3    14.0 /usr/bin/python3 5  worker-14
+  515  ttys003    1    15.0 /usr/bin/python3 6  worker-15
+  516  ttys000    2    16.0 /usr/bin/python3 7  worker-16
+  517  ttys001    3    17.0 /usr/bin/python3 8  worker-17
+  518  ttys002    1    18.0 /usr/bin/python3 0  worker-18
+  519  ttys003    2    19.0 /usr/bin/python3 1  worker-19
+  520  ttys000    3    20.0 /usr/bin/python3 2  worker-20
+  521  ttys001    1    21.0 /usr/bin/python3 3  worker-21
+  522  ttys002    2    22.0 /usr/bin/python3 4  worker-22
+  523  ttys003    3    23.0 /usr/bin/python3 5  worker-23
+  524  ttys000    1    24.0 /usr/bin/python3 6  worker-24
+  525  ttys001    2    25.0 /usr/bin/python3 7  worker-25
+  526  ttys002    3    26.0 /usr/bin/python3 8  worker-26
+  527  ttys003    1    27.0 /usr/bin/python3 0  worker-27
+  528  ttys000    2    28.0 /usr/bin/python3 1  worker-28
+  529  ttys001    3    29.0 /usr/bin/python3 2  worker-29
+  530  ttys002    1    30.0 /usr/bin/python3 3  worker-30
+  531  ttys003    2    31.0 /usr/bin/python3 4  worker-31
+  532  ttys000    3    32.0 /usr/bin/python3 5  worker-32
+  533  ttys001    1    33.0 /usr/bin/python3 6  worker-33
+  534  ttys002    2    34.0 /usr/bin/python3 7  worker-34
+  535  ttys003    3    35.0 /usr/bin/python3 8  worker-35
+  536  ttys000    1    36.0 /usr/bin/python3 0  worker-36
+  537  ttys001    2    37.0 /usr/bin/python3 1  worker-37
+  538  ttys002    3    38.0 /usr/bin/python3 2  worker-38
+  539  ttys003    1    39.0 /usr/bin/python3 3  worker-39

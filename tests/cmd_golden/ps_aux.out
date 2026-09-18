@@ -1,0 +1,21 @@
+  PID TTY TIME CMD
+  500 ttys000 1 0.0 /usr/bin/python3 0 worker-0
+  501 ttys001 2 1.0 /usr/bin/python3 1 worker-1
+  502 ttys002 3 2.0 /usr/bin/python3 2 worker-2
+  503 ttys003 1 3.0 /usr/bin/python3 3 worker-3
+  504 ttys000 2 4.0 /usr/bin/python3 4 worker-4
+  505 ttys001 3 5.0 /usr/bin/python3 5 worker-5
+  506 ttys002 1 6.0 /usr/bin/python3 6 worker-6
+  507 ttys003 2 7.0 /usr/bin/python3 7 worker-7
+  508 ttys000 3 8.0 /usr/bin/python3 8 worker-8
+… 21 lines omitted (expand deadbeef)
+  530 ttys002 1 30.0 /usr/bin/python3 3 worker-30
+  531 ttys003 2 31.0 /usr/bin/python3 4 worker-31
+  532 ttys000 3 32.0 /usr/bin/python3 5 worker-32
+  533 ttys001 1 33.0 /usr/bin/python3 6 worker-33
+  534 ttys002 2 34.0 /usr/bin/python3 7 worker-34
+  535 ttys003 3 35.0 /usr/bin/python3 8 worker-35
+  536 ttys000 1 36.0 /usr/bin/python3 0 worker-36
+  537 ttys001 2 37.0 /usr/bin/python3 1 worker-37
+  538 ttys002 3 38.0 /usr/bin/python3 2 worker-38
+  539 ttys003 1 39.0 /usr/bin/python3 3 worker-39

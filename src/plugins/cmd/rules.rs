@@ -11,6 +11,11 @@ pub struct Rule {
     pub drop: Vec<String>,
     pub keep: Vec<String>,
     pub dedupe: bool,
+    /// T65.3: fold runs of two or more spaces inside each line to one before the
+    /// cut. `Rule::default()` — every stem without a TOML rule — turns it on: the
+    /// columnar families (`docker ps`, `kubectl get`, `ps aux`) spend a third of
+    /// their bytes on alignment. TOML rules keep it off unless they ask.
+    pub collapse_columns: bool,
 }
 
 const BUILTIN_KEEP: &[&str] = &["error", "warning", "panic", "fail", "traceback"];
@@ -173,7 +178,8 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
         };
         for (field, _) in t.iter() {
             match field {
-                "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" => {}
+                "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" | "collapse_columns" => {
+                }
                 _ => return Err(format!("[{k}].{field}: unknown field")),
             }
         }
@@ -189,6 +195,12 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
                 Some(v) => v
                     .as_bool()
                     .ok_or_else(|| format!("[{k}].dedupe: expected bool"))?,
+            },
+            collapse_columns: match t.get("collapse_columns") {
+                None => false,
+                Some(v) => v
+                    .as_bool()
+                    .ok_or_else(|| format!("[{k}].collapse_columns: expected bool"))?,
             },
         });
     }
@@ -274,6 +286,7 @@ impl Default for Rule {
             drop: Vec::new(),
             keep: Vec::new(),
             dedupe: true,
+            collapse_columns: true,
         }
     }
 }
@@ -292,6 +305,29 @@ fn is_keep(low: &str, rule: &Rule) -> bool {
 
 fn is_drop(low: &str, rule: &Rule) -> bool {
     matches_pat(&rule.drop, low)
+}
+
+/// T65.3: fold runs of two or more spaces inside a line to one; leading
+/// indentation is kept (tracebacks, YAML and diffs are not columnar) and a
+/// trailing run folds to nothing — no signal, pure bytes.
+fn collapse_columns(line: &str) -> String {
+    let trimmed = line.trim_start();
+    let leading = &line[..line.len() - trimmed.len()];
+    let mut out = String::with_capacity(line.len());
+    out.push_str(leading);
+    let mut spaces = 0usize;
+    for c in trimmed.chars() {
+        if c == ' ' {
+            spaces += 1;
+            continue;
+        }
+        if spaces > 0 {
+            out.push(' ');
+            spaces = 0;
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// T65.4: which lines belong to a stack-trace block that a head/tail cut must never
@@ -439,6 +475,14 @@ pub fn apply(
         let low = l.to_ascii_lowercase();
         is_keep(&low, rule) || !is_drop(&low, rule)
     });
+    // T65.4 first: when a trace block is in the output the columnar pass stands
+    // down — traceback/YAML/diff indentation and frame padding are not columnar.
+    let trace_kept = trace_blocks(&lines);
+    if rule.collapse_columns && !trace_kept.iter().any(|t| *t) {
+        for l in &mut lines {
+            *l = collapse_columns(l);
+        }
+    }
     if rule.dedupe {
         lines = dedupe(lines);
     }
@@ -446,7 +490,6 @@ pub fn apply(
     if lines.len() <= max {
         return lines.join("\n");
     }
-    let trace_kept = trace_blocks(&lines);
     let head = rule.head.min(rule.max_lines) as usize;
     let tail = rule.tail.min(rule.max_lines.saturating_sub(rule.head)) as usize;
     let keep_idx: Vec<usize> = lines
@@ -562,6 +605,10 @@ fn parse(s: &str) -> Vec<Rule> {
             drop: strs("drop"),
             keep: strs("keep"),
             dedupe: t.get("dedupe").and_then(|i| i.as_bool()).unwrap_or(true),
+            collapse_columns: t
+                .get("collapse_columns")
+                .and_then(|i| i.as_bool())
+                .unwrap_or(false),
         });
     }
     out
@@ -659,6 +706,58 @@ mod tests {
     }
 
     // --- T65.4: a stack-trace block survives the head/tail cut whole ---
+
+    // --- T65.3: column-padding collapse ---
+
+    /// Runs of two or more spaces fold to one inside a line; leading indentation
+    /// and tabs are kept; a trailing run folds to nothing.
+    #[test]
+    fn collapse_columns_folds_padding_keeps_indent_and_tabs() {
+        assert_eq!(
+            collapse_columns("NAME   STATUS      AGE"),
+            "NAME STATUS AGE"
+        );
+        assert_eq!(
+            collapse_columns("  indented    four  spaces"),
+            "  indented four spaces"
+        );
+        assert_eq!(collapse_columns("trailing   "), "trailing");
+        assert_eq!(collapse_columns("\tgo frame\ttab"), "\tgo frame\ttab");
+        assert_eq!(collapse_columns("single already"), "single already");
+    }
+
+    /// A columnar fixture shrinks under `collapse_columns = true`, and the same
+    /// output beside a traceback keeps its padding — the T65.4 stand-down.
+    #[test]
+    fn collapse_shrinks_columnar_output_and_stands_down_for_traces() {
+        let s = settings(80);
+        let rows: String = (0..30)
+            .map(|i| {
+                format!(
+                    "pod-{i:04}     Running     0         3d2h  10.0.0.{i}
+"
+                )
+            })
+            .collect();
+        let plain = Rule {
+            collapse_columns: false,
+            ..Rule::default()
+        };
+        let on = Rule::default();
+        let with_rule = |rule: &Rule| apply(&s, &rows, 0, rule, "arc");
+        assert!(
+            with_rule(&on).len() * 2 < with_rule(&plain).len() * 3,
+            "collapse saves ≥ a third: {} vs {}",
+            with_rule(&on).len(),
+            with_rule(&plain).len()
+        );
+        // Trace present: the pass stands down, padding survives everywhere.
+        let mut with_trace = String::from("NAME    STATUS    AGE\n");
+        with_trace.push_str(&rows);
+        with_trace.push_str("Traceback (most recent call last):\n  File \"m.py\", line 1\n");
+        let out = apply(&s, &with_trace, 0, &on, "arc");
+        assert!(out.contains("NAME    STATUS    AGE"), "{out}");
+    }
 
     /// One fixture per language — a trace block in the middle of a long output
     /// survives the default rule's cut with every frame, while an ordinary middle

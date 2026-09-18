@@ -1,0 +1,44 @@
+argv: docker ps
+exit: 0
+---
+CONTAINER ID   IMAGE                        COMMAND                  STATUS         PORTS                      NAMES
+web-00        Up 3 days   0.0.0.0:8000->80/tcp   registry.local/web:v0.2.1
+web-01        Up 3 days   0.0.0.0:8001->80/tcp   registry.local/web:v1.2.1
+web-02        Up 3 days   0.0.0.0:8002->80/tcp   registry.local/web:v2.2.1
+web-03        Up 3 days   0.0.0.0:8003->80/tcp   registry.local/web:v3.2.1
+web-04        Up 3 days   0.0.0.0:8004->80/tcp   registry.local/web:v4.2.1
+web-05        Up 3 days   0.0.0.0:8005->80/tcp   registry.local/web:v5.2.1
+web-06        Up 3 days   0.0.0.0:8006->80/tcp   registry.local/web:v6.2.1
+web-07        Up 3 days   0.0.0.0:8007->80/tcp   registry.local/web:v7.2.1
+web-08        Up 3 days   0.0.0.0:8008->80/tcp   registry.local/web:v8.2.1
+web-09        Up 3 days   0.0.0.0:8009->80/tcp   registry.local/web:v9.2.1
+web-10        Up 3 days   0.0.0.0:8010->80/tcp   registry.local/web:v10.2.1
+web-11        Up 3 days   0.0.0.0:8011->80/tcp   registry.local/web:v11.2.1
+web-12        Up 3 days   0.0.0.0:8012->80/tcp   registry.local/web:v12.2.1
+web-13        Up 3 days   0.0.0.0:8013->80/tcp   registry.local/web:v13.2.1
+web-14        Up 3 days   0.0.0.0:8014->80/tcp   registry.local/web:v14.2.1
+web-15        Up 3 days   0.0.0.0:8015->80/tcp   registry.local/web:v15.2.1
+web-16        Up 3 days   0.0.0.0:8016->80/tcp   registry.local/web:v16.2.1
+web-17        Up 3 days   0.0.0.0:8017->80/tcp   registry.local/web:v17.2.1
+web-18        Up 3 days   0.0.0.0:8018->80/tcp   registry.local/web:v18.2.1
+web-19        Up 3 days   0.0.0.0:8019->80/tcp   registry.local/web:v19.2.1
+web-20        Up 3 days   0.0.0.0:8020->80/tcp   registry.local/web:v20.2.1
+web-21        Up 3 days   0.0.0.0:8021->80/tcp   registry.local/web:v21.2.1
+web-22        Up 3 days   0.0.0.0:8022->80/tcp   registry.local/web:v22.2.1
+web-23        Up 3 days   0.0.0.0:8023->80/tcp   registry.local/web:v23.2.1
+web-24        Up 3 days   0.0.0.0:8024->80/tcp   registry.local/web:v24.2.1
+web-25        Up 3 days   0.0.0.0:8025->80/tcp   registry.local/web:v25.2.1
+web-26        Up 3 days   0.0.0.0:8026->80/tcp   registry.local/web:v26.2.1
+web-27        Up 3 days   0.0.0.0:8027->80/tcp   registry.local/web:v27.2.1
+web-28        Up 3 days   0.0.0.0:8028->80/tcp   registry.local/web:v28.2.1
+web-29        Up 3 days   0.0.0.0:8029->80/tcp   registry.local/web:v29.2.1
+web-30        Up 3 days   0.0.0.0:8030->80/tcp   registry.local/web:v30.2.1
+web-31        Up 3 days   0.0.0.0:8031->80/tcp   registry.local/web:v31.2.1
+web-32        Up 3 days   0.0.0.0:8032->80/tcp   registry.local/web:v32.2.1
+web-33        Up 3 days   0.0.0.0:8033->80/tcp   registry.local/web:v33.2.1
+web-34        Up 3 days   0.0.0.0:8034->80/tcp   registry.local/web:v34.2.1
+web-35        Up 3 days   0.0.0.0:8035->80/tcp   registry.local/web:v35.2.1
+web-36        Up 3 days   0.0.0.0:8036->80/tcp   registry.local/web:v36.2.1
+web-37        Up 3 days   0.0.0.0:8037->80/tcp   registry.local/web:v37.2.1
+web-38        Up 3 days   0.0.0.0:8038->80/tcp   registry.local/web:v38.2.1
+web-39        Up 3 days   0.0.0.0:8039->80/tcp   registry.local/web:v39.2.1

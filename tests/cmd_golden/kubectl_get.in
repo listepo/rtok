@@ -1,0 +1,44 @@
+argv: kubectl get pods
+exit: 0
+---
+NAME                       READY   STATUS    RESTARTS   AGE     IP           NODE
+web-deploy-00-abcd   1/1     Running   0          3d2h    10.244.0.0   ip-10-0-4-0.us-east-2.compute.internal
+web-deploy-01-abcd   1/1     Running   0          3d2h    10.244.0.1   ip-10-0-4-1.us-east-2.compute.internal
+web-deploy-02-abcd   1/1     Running   0          3d2h    10.244.0.2   ip-10-0-4-2.us-east-2.compute.internal
+web-deploy-03-abcd   1/1     Running   0          3d2h    10.244.0.3   ip-10-0-4-3.us-east-2.compute.internal
+web-deploy-04-abcd   1/1     Running   0          3d2h    10.244.0.4   ip-10-0-4-4.us-east-2.compute.internal
+web-deploy-05-abcd   1/1     Running   0          3d2h    10.244.0.5   ip-10-0-4-5.us-east-2.compute.internal
+web-deploy-06-abcd   1/1     Running   0          3d2h    10.244.0.6   ip-10-0-4-6.us-east-2.compute.internal
+web-deploy-07-abcd   1/1     Running   0          3d2h    10.244.0.7   ip-10-0-4-7.us-east-2.compute.internal
+web-deploy-08-abcd   1/1     Running   0          3d2h    10.244.0.8   ip-10-0-4-8.us-east-2.compute.internal
+web-deploy-09-abcd   1/1     Running   0          3d2h    10.244.0.9   ip-10-0-4-9.us-east-2.compute.internal
+web-deploy-10-abcd   1/1     Running   0          3d2h    10.244.0.10   ip-10-0-4-10.us-east-2.compute.internal
+web-deploy-11-abcd   1/1     Running   0          3d2h    10.244.0.11   ip-10-0-4-11.us-east-2.compute.internal
+web-deploy-12-abcd   1/1     Running   0          3d2h    10.244.0.12   ip-10-0-4-12.us-east-2.compute.internal
+web-deploy-13-abcd   1/1     Running   0          3d2h    10.244.0.13   ip-10-0-4-13.us-east-2.compute.internal
+web-deploy-14-abcd   1/1     Running   0          3d2h    10.244.0.14   ip-10-0-4-14.us-east-2.compute.internal
+web-deploy-15-abcd   1/1     Running   0          3d2h    10.244.0.15   ip-10-0-4-15.us-east-2.compute.internal
+web-deploy-16-abcd   1/1     Running   0          3d2h    10.244.0.16   ip-10-0-4-16.us-east-2.compute.internal
+web-deploy-17-abcd   1/1     Running   0          3d2h    10.244.0.17   ip-10-0-4-17.us-east-2.compute.internal
+web-deploy-18-abcd   1/1     Running   0          3d2h    10.244.0.18   ip-10-0-4-18.us-east-2.compute.internal
+web-deploy-19-abcd   1/1     Running   0          3d2h    10.244.0.19   ip-10-0-4-19.us-east-2.compute.internal
+web-deploy-20-abcd   1/1     Running   0          3d2h    10.244.0.20   ip-10-0-4-20.us-east-2.compute.internal
+web-deploy-21-abcd   1/1     Running   0          3d2h    10.244.0.21   ip-10-0-4-21.us-east-2.compute.internal
+web-deploy-22-abcd   1/1     Running   0          3d2h    10.244.0.22   ip-10-0-4-22.us-east-2.compute.internal
+web-deploy-23-abcd   1/1     Running   0          3d2h    10.244.0.23   ip-10-0-4-23.us-east-2.compute.internal
+web-deploy-24-abcd   1/1     Running   0          3d2h    10.244.0.24   ip-10-0-4-24.us-east-2.compute.internal
+web-deploy-25-abcd   1/1     Running   0          3d2h    10.244.0.25   ip-10-0-4-25.us-east-2.compute.internal
+web-deploy-26-abcd   1/1     Running   0          3d2h    10.244.0.26   ip-10-0-4-26.us-east-2.compute.internal
+web-deploy-27-abcd   1/1     Running   0          3d2h    10.244.0.27   ip-10-0-4-27.us-east-2.compute.internal
+web-deploy-28-abcd   1/1     Running   0          3d2h    10.244.0.28   ip-10-0-4-28.us-east-2.compute.internal
+web-deploy-29-abcd   1/1     Running   0          3d2h    10.244.0.29   ip-10-0-4-29.us-east-2.compute.internal
+web-deploy-30-abcd   1/1     Running   0          3d2h    10.244.0.30   ip-10-0-4-30.us-east-2.compute.internal
+web-deploy-31-abcd   1/1     Running   0          3d2h    10.244.0.31   ip-10-0-4-31.us-east-2.compute.internal
+web-deploy-32-abcd   1/1     Running   0          3d2h    10.244.0.32   ip-10-0-4-32.us-east-2.compute.internal
+web-deploy-33-abcd   1/1     Running   0          3d2h    10.244.0.33   ip-10-0-4-33.us-east-2.compute.internal
+web-deploy-34-abcd   1/1     Running   0          3d2h    10.244.0.34   ip-10-0-4-34.us-east-2.compute.internal
+web-deploy-35-abcd   1/1     Running   0          3d2h    10.244.0.35   ip-10-0-4-35.us-east-2.compute.internal
+web-deploy-36-abcd   1/1     Running   0          3d2h    10.244.0.36   ip-10-0-4-36.us-east-2.compute.internal
+web-deploy-37-abcd   1/1     Running   0          3d2h    10.244.0.37   ip-10-0-4-37.us-east-2.compute.internal
+web-deploy-38-abcd   1/1     Running   0          3d2h    10.244.0.38   ip-10-0-4-38.us-east-2.compute.internal
+web-deploy-39-abcd   1/1     Running   0          3d2h    10.244.0.39   ip-10-0-4-39.us-east-2.compute.internal
