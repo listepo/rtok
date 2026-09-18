@@ -38,10 +38,9 @@ impl DashState {
         }
     }
 
-    /// One inbound `/ws` text frame (T60.5). `None` means ignore, or an accepted
-    /// `set` whose next snapshot carries the write. `Some` is a message frame
-    /// refusing a key outside `plugins.<id>.enabled`, a non-bool value, or a
-    /// `config set` error.
+    /// One inbound `/ws` text frame (T60.5 / T60.4). `None` means ignore, or an
+    /// accepted `set` whose next snapshot carries the write. `Some` is a message
+    /// frame (refused `set`) or an `expand` payload frame.
     pub fn inbound(&self, text: &str) -> Option<String> {
         inbound(self, text)
     }
@@ -148,6 +147,13 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
 
 fn inbound(state: &DashState, text: &str) -> Option<String> {
     let v: Value = serde_json::from_str(text).ok()?;
+    if let Some(id) = v.get("expand").and_then(Value::as_str) {
+        let cfg = state.cfg.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        return Some(match model::expand_payload(&cfg, id, None) {
+            Some(body) => json!({ "type": "expand", "id": id, "text": body }).to_string(),
+            None => message_frame(&format!("unknown archive id: {id}")),
+        });
+    }
     let set = v.get("set")?;
     let key = set.get("key").and_then(Value::as_str).unwrap_or("");
     let Some(value) = set.get("value").and_then(Value::as_bool) else {

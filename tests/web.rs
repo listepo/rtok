@@ -1,4 +1,5 @@
-//! Dashboard HTTP + WebSocket smoke (P19) and the T60.5 plugin `set` allow-list.
+//! Dashboard HTTP + WebSocket smoke (P19), the T60.5 plugin `set` allow-list,
+//! and T60.4 inbound `{"expand": id}`.
 
 use std::future::IntoFuture;
 use std::sync::Arc;
@@ -105,6 +106,44 @@ async fn ws_set_refuses_other_keys() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&unknown).unwrap()["type"],
         "message"
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn ws_expand_returns_payload_and_unknown_id() {
+    let (_addr, state, dir, task) = serve("expand-ok").await;
+    let cfg = Config::load_from(&dir).expect("cfg");
+    let cx = rtok::plugin::Runtime::open(cfg, "s").expect("runtime");
+    let id = cx
+        .store
+        .put_archive("s", b"alpha\nNEEDLE\n", &cx.config.core.archive_dir)
+        .expect("archive");
+    drop(cx);
+
+    let reply = state
+        .inbound(&format!(r#"{{"expand":"{id}"}}"#))
+        .expect("expand frame");
+    let v: serde_json::Value = serde_json::from_str(&reply).expect("json");
+    assert_eq!(v["type"], "expand", "{reply}");
+    assert_eq!(v["id"], id, "{reply}");
+    assert!(v["text"].as_str().unwrap_or("").contains("NEEDLE"), "{reply}");
+
+    let missing = state
+        .inbound(r#"{"expand":"no-such-id"}"#)
+        .expect("unknown");
+    let v: serde_json::Value = serde_json::from_str(&missing).expect("json");
+    assert_eq!(v["type"], "message", "{missing}");
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("unknown archive id"),
+        "{missing}"
+    );
+
+    assert!(
+        state
+            .inbound(r#"{"set":{"key":"plugins.cmd.enabled","value":false}}"#)
+            .is_none(),
+        "expand must not break the T60.5 set allow-list"
     );
     task.abort();
 }
