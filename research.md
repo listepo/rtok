@@ -69,6 +69,22 @@ The reference number is a property of the tree-sitter Rust tags query, not of rt
 captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
 else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
 
+### `graph` import-edge index time (T68.6, 2026-09-18)
+
+Same tree (this repo checkout, 172 tagged files). Release `rtok graph index` into a fresh
+`RTOK_HOME`, twice each; the second run is the comparable pair (CPU warm, still a cold store).
+
+Command: `RTOK_HOME=$(mktemp -d) <bin> graph index <repo>`
+
+| | Binary | Files | Rows | Cold s (1st / 2nd) |
+|---|---|---|---|---|
+| Before | t68.5 release | 172 | 33 312 | 0.437 / 0.270 |
+| After | t68.6 release | 172 | 35 017 | 0.922 / 0.325 |
+
+T8.8 `tests/graph_truth.rs` `labelled_symbols_are_found` (2026-09-18, after): definition recall
+1.000, precision 1.000; reference recall 0.305 (floor 0.30). Imports are `kind = import` and
+are excluded from `symbol_refs`.
+
 ### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04; surface re-measured 2026-09-18, T68.1)
 
 Release build. The 3 000-file repo is generated, each file one function calling two others.
