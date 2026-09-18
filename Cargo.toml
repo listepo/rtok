@@ -136,6 +136,16 @@ trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
 # Backtraces keep `file:line`; the full DWARF that dominated every artifact goes.
 debug = "line-tables-only"
 
+# Nobody steps through the 450-odd dependencies, but their debug info is copied into every
+# one of the 41 integration test binaries, which is most of what the linker moves on a dev
+# rebuild. Workspace code is not matched by `"*"`, so it keeps its line tables.
+[profile.dev.package."*"]
+debug = false
+
+# Build scripts and proc macros are run, not debugged.
+[profile.dev.build-override]
+debug = false
+
 [profile.release]
 strip = "symbols"
 

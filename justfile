@@ -35,6 +35,13 @@ dup:
 test:
     {{cargo}} nextest run --workspace
 
+# Inner loop: build and run only the test targets the current change can reach. `nextest -E`
+# filters after the build, so the saving comes from cargo target selection (`--test <name>`);
+# tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an
+# accelerator, not a coverage proof — `just check` stays the gate before a commit.
+test-changed rev="HEAD":
+    CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
+
 # T0.4: one plugin feature must build alone
 build-min:
     {{cargo}} build -q --no-default-features --features measure

@@ -72,7 +72,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T71.2 | todo | P3 | 3 | 0% | |
 | T71.3 | todo | P3 | 2 | 0% | |
 | T71.4 | todo | P3 | 2 | 0% | |
-| T72.1 | in progress | P2 | 2 | 80% | Claude Code / opus-5 |
 
 ### T48.8. VS Code Copilot Chat host
 
@@ -524,13 +523,6 @@ Done when:
 
 From `research.md` §10.6 (open question). The docs say "~100 tokens per skill"; the measured description here averages 194 chars ≈ 49 tokens, so the framing per listed skill (name, path, wrapper text) is unknown, and T61.3 / T63.1 total "description bytes ≈ tokens per request" without it.
 Done when one Claude Code request captured through `rtok proxy` on this machine (a `call_io` row under the inline cap, or the request body dumped behind `[proxy] dump_request_dir` — off by default, one key with its `docs/config.md` row, added only if no existing row holds the body) is measured: bytes of the skills block, bytes per listed skill beyond its description, count of listed skills; recorded in `research.md` §10.6 with date and command; T61.3's total and T63.1's header use the measured per-skill constant (one named const in `doctor`, dated) instead of the docs figure; the card closes with the number alone if an existing capture already answers it.
-
-### T72.1. Shorter dev build and test loop
-
-Asked for by the creator (2026-09-18): dev builds and tests take too long. The suite has 41 integration targets and `cargo nextest run` links every one of them before the first test runs, `nextest -E` filters only after that build, and the ~450 dependencies carry `line-tables-only` debug info that the linker copies into each of those binaries.
-Done when the inner loop stops paying for the whole suite on every edit: `just test-changed [rev]` maps the diff onto cargo target selection (`--lib`, `--test <name>`), dependencies build without debug info while workspace code keeps its line tables, and the before/after is measured on a quiet tree (artifact size and one rebuild of all test targets) rather than asserted. `just check` stays the gate and is unchanged.
-
-Execution plan (Claude Code / opus-5): `tools/test-changed.sh` (diff → target list; `RTOK_CHANGED` overrides the git query so the mapping is exercisable), `justfile` recipe, `Cargo.toml` `[profile.dev.package."*"] debug = false` + `build-override`, README note. Verify: the mapping on eight representative diffs, then `just check`.
 
 ## Reference
 

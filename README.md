@@ -381,6 +381,13 @@ just readme-check
 just dist-plan
 ```
 
+`just check` is the gate. While iterating, `just test-changed` builds and runs only the test
+targets the current diff can reach, which is what makes the loop short: the suite has 41
+integration targets and cargo links every selected one before any test runs. The unit-test
+binary is trimmed the same way, which keeps the slow TUI tests out of an unrelated edit. It
+picks targets by name, so it can miss a test that exercises a module without naming it — run
+`just check` before committing.
+
 The README smoke examples below are executed by `just readme-check`.
 
 ```bash
