@@ -10,7 +10,7 @@ unchanged.
 Three layers merge in this order; a later layer wins per command family:
 
 1. **Built-ins** — `rules/default.toml` in the repo (grep, rg, sed, cat, make,
-   curl, npm, pnpm, node, plus the cargo/git/test/ls formatters in code).
+   curl, npm, pnpm, node, plus the cargo/git/test/tree formatters in code).
 2. **User file** — `[plugins.cmd] rules` (default `~/.rtok/rules.toml`).
 3. **Drop-ins** — every `*.toml` in `[plugins.cmd] rules_dir` (default
    `~/.rtok/rules.d/`), merged in file-name order.
@@ -40,6 +40,7 @@ lands as a `cmd` / `wrap` measurement with `ref_id = <server>/<tool>:<id>`.
 | `drop` | array of strings | `[]` | case-insensitive substrings to remove (`\|` separates alternatives) |
 | `keep` | array of strings | `[]` | substrings that are never dropped and never cut by the cap; built-in keeps are `error`, `warning`, `panic`, `fail`, `traceback` |
 | `dedupe` | bool | true | collapse runs of identical lines into `line (×N)` |
+| `group` | `"dir"` \| `"diag"` | off | `dir` rewrites path-per-line output as `dir/ (N files): a, b, c …`; `diag` rewrites coded diagnostics as `E0308 ×N: first message (file:line, …)`; runs before the head/tail cut (T64.1) |
 
 Any other field, a wrong type, or broken TOML is malformed. A non-zero exit
 ignores all of this: the last `[plugins.cmd] fail_tail_lines` lines (default
@@ -113,3 +114,21 @@ row per object and returns `None` on unrecognized output so the rule path stays 
 | `docker ps` | one row per container | 3147 | 1311 | 1190 | 30 |
 | `kubectl get` | one row per object (`NAME READY STATUS IP`) | 4542 | 1770 | 1731 | 9 |
 | `ps aux` | one row per process | 2341 | 990 | 870 | 30 |
+
+## Grouping (T64.1)
+
+Measured on the golden fixtures in `tests/cmd_golden/` (`formatters::compress` with the
+built-in rule vs the same rule with `group` off; est tokens = bytes/4). A family is
+switched on only when the grouped body is smaller. `tree`, `git status`, `pytest`, and
+`python` stay as they are: tree art and the git/pytest formatters are not path-per-line
+or coded-diagnostic streams, and the T50.1 `python` traceback does not shrink as `NameError ×1`.
+
+| Family | `group` | ungrouped B | grouped B | est saved |
+| --- | --- | ---: | ---: | ---: |
+| `ls` | `dir` | 248 | 49 | 49 |
+| `find` | `dir` | 539 | 83 | 114 |
+| `rg` (`-l`) | `dir` | 459 | 83 | 94 |
+| `tsc` | `diag` | 1619 | 107 | 378 |
+| `eslint` | `diag` | 749 | 48 | 175 |
+| `cargo` (`check`) | `diag` | 749 | 34 | 178 |
+| `dotnet` | `diag` | 849 | 71 | 194 |
