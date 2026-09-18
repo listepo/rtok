@@ -56,7 +56,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
 | T70.4 | todo | P2 | 3 | 0% | |
-| T70.5 | in progress | P3 | 3 | 0% | Cursor / grok 4.6 |
 | T70.7 | todo | P2 | 2 | 0% | |
 | T71.1 | todo | P3 | 3 | 0% | |
 | T71.2 | todo | P3 | 3 | 0% | |
@@ -397,26 +396,6 @@ Done when:
 2. `plugins/cursor/hooks/hooks.json` gains that event pointing at `rtok hook PostToolUse --host cursor`, and the existing hook path shortens the result through the same code `rtok mcp --wrap` uses (T59.4) — one implementation, lossless, `expand <id>` trailer.
 3. Never blocks and never changes a call: only the result text, only above the existing size threshold, fail open in ≤ 10 ms; results of rtok's own MCP server are skipped (they are already short).
 4. Tests: a hook e2e per result size on a fixture payload, `Measurement { plugin = "archive", kind = "mcp" }` rows, and `plugins/cursor/README.md` + `src/agents/cursor/README.md` updated with the verified docs link (`tests/host_docs.rs`); host table re-blessed.
-
-### T70.5. `guard` on pi and OpenCode through the plugin
-
-From `research.md` §15.3. `guard` denies a repeated identical read or command within N turns, and it answers on `PreToolUse` — so it is unreachable on pi, OpenCode and Codex, which have no hook events. pi documents `tool_call` returning a block with a reason, and OpenCode documents `tool.execute.before`, which is the same position.
-Done when:
-1. Step 1: verify both APIs (block shape and whether the reason reaches the model) against their current docs and one real session each; a host where the block has no reason string is closed with the finding, because a silent deny violates fail-open expectations.
-2. Each plugin calls one new CLI path — `rtok guard check --tool <name> --json <input>` printing the same allow/deny verdict the hook path produces from `plugins::guard` — with no second key-building or dedup implementation.
-3. Fail open everywhere: missing `rtok`, non-zero exit, unparsable output, or any spawn error allows the call. T57.1's false-deny concern carries over: a wrong "read-only" verdict must not deny a call whose output changed, so the same tests run against this path.
-4. Tests: `plugins/pi/tests/rtok.test.ts` and `plugins/opencode/rtok.test.ts` each cover allow, deny-with-reason and fail-open; `Measurement { plugin = "guard", kind = "deny" }` rows; both READMEs and the host table updated.
-
-Execution plan (stacked on t70.6 + cherry-pick `1e58c43`):
-1. Record the verified block schema on this card (step 1).
-2. Add `rtok guard check --tool --json` wrapping `Guard::pre_tool` (canonical tool names, no second cache key).
-3. Plugins call that CLI on `tool_call` / `tool.execute.before`; seed/clear keys via existing `rtok hook PostToolUse`.
-4. Tests: CLI T57.1 false-deny, plugin allow/deny-with-reason/fail-open, Measurement rows, READMEs, `RTOK_BLESS=1` host table.
-
-Verified schema (2026-09-18, current docs + installed host libraries):
-- **pi** `tool_call` → `{ block: true, reason?: string, terminate?: boolean }` (https://pi.dev/docs/latest/extensions). Installed `@earendil-works/pi-agent-core` `agent-loop.js`: `createErrorToolResult(beforeResult.reason || "Tool execution was blocked")` with `isError: true` — the reason string is the tool-result text the model reads. A missing `reason` still gets the default string, so this is not a silent deny.
-- **OpenCode** `tool.execute.before` blocks by `throw new Error(reason)` (https://opencode.ai/docs/plugins/). The thrown message is the tool-execution error in the message stream (opencode#6862, #27900). No reason-less deny shape is documented; we still refuse to throw without a non-empty reason.
-
 
 ### T70.7. Cursor: `inject` has no path in, and the host table says it does
 

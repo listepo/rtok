@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+## T70.5 — `guard` on pi and OpenCode through the plugin
+
+From `research.md` §15.3. `guard` denies a repeated identical read or command within N turns, and it answers on `PreToolUse` — so it is unreachable on pi, OpenCode and Codex, which have no hook events. pi documents `tool_call` returning a block with a reason, and OpenCode documents `tool.execute.before`, which is the same position.
+Done when:
+1. Step 1: verify both APIs (block shape and whether the reason reaches the model) against their current docs and one real session each; a host where the block has no reason string is closed with the finding, because a silent deny violates fail-open expectations.
+2. Each plugin calls one new CLI path — `rtok guard check --tool <name> --json <input>` printing the same allow/deny verdict the hook path produces from `plugins::guard` — with no second key-building or dedup implementation.
+3. Fail open everywhere: missing `rtok`, non-zero exit, unparsable output, or any spawn error allows the call. T57.1's false-deny concern carries over: a wrong "read-only" verdict must not deny a call whose output changed, so the same tests run against this path.
+4. Tests: `plugins/pi/tests/rtok.test.ts` and `plugins/opencode/rtok.test.ts` each cover allow, deny-with-reason and fail-open; `Measurement { plugin = "guard", kind = "deny" }` rows; both READMEs and the host table updated.
+
+**Result (2026-09-18).** On `t70.5`, stacked on `t70.6` plus cherry-pick `1e58c43` (T57.1 flag-aware keys). One CLI: `rtok guard check --tool --json --session` calls `Guard::pre_tool` (canonical tool names, `filePath` → `file_path`). Cache seed/clear is existing `rtok hook PostToolUse`. Plugins fail open unless `allow === false` and `reason` is a non-empty string.
+
+pi (docs 2026-09-18: https://pi.dev/docs/latest/extensions): `tool_call` → `{ block: true, reason?: string }`. Installed `@earendil-works/pi-agent-core` 0.85.1 `applyBeforeToolDecision` writes the reason as `isError` tool-result text the model reads. A missing reason is empty text — we do not ship that. OpenCode (https://opencode.ai/docs/plugins/): `tool.execute.before` `throw new Error(reason)` becomes the tool-error the model summarises (opencode#6862, #27900). Denial measurements keep existing `kind = "guard"` (same row the hook path writes), not a second `deny` kind. T57.1 `sed -n` keyed / `find -delete` then `ls` allowed on this CLI path (`tests/guard_check.rs`). Host table: pi and OpenCode now list `guard`.
+
+
 ## T70.6 — Compaction on pi and OpenCode through the plugin
 
 From `research.md` §15.3; the plugin-side half of T58.2, which registers host **hook** events and therefore cannot reach pi or OpenCode. Both document a compaction event that owns the summary — pi's may supply it or cancel, OpenCode's may replace the prompt — which is stronger than Claude Code's checkpoint note (T2.5), where rtok writes a note and hopes the summary keeps it.
