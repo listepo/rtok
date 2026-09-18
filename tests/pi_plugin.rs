@@ -83,13 +83,9 @@ fn pi_extension_owns_the_single_bash_call_path() {
     assert!(ts.contains("rtok filter"), "filter path");
     assert!(ts.contains("expand"), "expand trailer");
     assert!(ts.contains("ketch install listepo/rtok"), "ketch hint");
-    for dup in [
-        "registerTool",
-        "\"read\"",
-        "\"search\"",
-        "rtok read",
-        "rtok search",
-    ] {
+    assert!(ts.contains("guard"), "T70.5 guard check");
+    assert!(ts.contains("block: true"), "deny returns a reasoned block");
+    for dup in ["registerTool", "rtok read", "rtok search"] {
         assert!(!ts.contains(dup), "no duplicate call path: {dup}");
     }
 }
