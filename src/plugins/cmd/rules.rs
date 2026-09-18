@@ -1,5 +1,13 @@
 //! Pure line filter for `rtok run` output (plan T3.2). No I/O.
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Group {
+    #[default]
+    Off,
+    Dir,
+    Diag,
+}
+
 /// One filter applied to captured command output.
 #[derive(Clone, Debug)]
 pub struct Rule {
@@ -16,6 +24,7 @@ pub struct Rule {
     /// columnar families (`docker ps`, `kubectl get`, `ps aux`) spend a third of
     /// their bytes on alignment. TOML rules keep it off unless they ask.
     pub collapse_columns: bool,
+    pub group: Group,
 }
 
 const BUILTIN_KEEP: &[&str] = &["error", "warning", "panic", "fail", "traceback"];
@@ -143,6 +152,17 @@ fn read_rules_file(path: &std::path::Path) -> Option<Vec<Rule>> {
 /// Parse one rules file strictly for `rtok config validate` (T50.2): TOML
 /// syntax, table-only top level, known fields only, right types. The runtime
 /// [`read_rules_file`] uses the same parser and skips the file on any error.
+fn parse_group(t: &toml_edit::Table, k: &str) -> Result<Group, String> {
+    match t.get("group") {
+        None => Ok(Group::Off),
+        Some(v) => match v.as_str() {
+            Some("dir") => Ok(Group::Dir),
+            Some("diag") => Ok(Group::Diag),
+            _ => Err(format!("[{k}].group: expected \"dir\" or \"diag\"")),
+        },
+    }
+}
+
 pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
     let doc = s
         .parse::<toml_edit::DocumentMut>()
@@ -178,8 +198,8 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
         };
         for (field, _) in t.iter() {
             match field {
-                "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" | "collapse_columns" => {
-                }
+                "max_lines" | "head" | "tail" | "drop" | "keep" | "dedupe" | "collapse_columns"
+                | "group" => {}
                 _ => return Err(format!("[{k}].{field}: unknown field")),
             }
         }
@@ -202,6 +222,7 @@ pub fn parse_strict(s: &str) -> Result<Vec<Rule>, String> {
                     .as_bool()
                     .ok_or_else(|| format!("[{k}].collapse_columns: expected bool"))?,
             },
+            group: parse_group(t, k)?,
         });
     }
     Ok(out)
@@ -287,6 +308,7 @@ impl Default for Rule {
             keep: Vec::new(),
             dedupe: true,
             collapse_columns: true,
+            group: Group::Off,
         }
     }
 }
@@ -458,6 +480,162 @@ fn dedupe(lines: Vec<String>) -> Vec<String> {
     out
 }
 
+fn path_line(line: &str) -> Option<(String, String)> {
+    let mut s = line.trim();
+    if s.is_empty() || s.contains(char::is_whitespace) || s.starts_with('-') {
+        return None;
+    }
+    if let Some(r) = s.strip_prefix("./") {
+        s = r;
+    }
+    let drive = s.as_bytes().get(1) == Some(&b':');
+    if s.contains(':') && !drive {
+        return None;
+    }
+    let s = s.replace('\\', "/");
+    match s.rsplit_once('/') {
+        Some((_, n)) if n.is_empty() || n == "." || n == ".." => None,
+        Some((d, n)) => Some((d.to_string(), n.to_string())),
+        None if s.contains('.') && s != "." && s != ".." => Some((String::new(), s)),
+        _ => None,
+    }
+}
+
+fn fold(
+    lines: Vec<String>,
+    parse: impl Fn(&str) -> Option<(String, String, String)>,
+    fmt: impl Fn(&str, &str, &[String], usize) -> String,
+) -> Vec<String> {
+    let mut groups: Vec<(String, String, Vec<String>, usize)> = Vec::new();
+    let mut placed = Vec::new();
+    let mut out: Vec<Result<usize, String>> = Vec::new();
+    for line in lines {
+        let Some((key, msg, extra)) = parse(&line) else {
+            out.push(Err(line));
+            continue;
+        };
+        let i = match groups.iter().position(|(k, _, _, _)| k == &key) {
+            Some(i) => i,
+            None => {
+                groups.push((key, msg, Vec::new(), 0));
+                placed.push(false);
+                groups.len() - 1
+            }
+        };
+        groups[i].3 += 1;
+        if !extra.is_empty() {
+            groups[i].2.push(extra);
+        }
+        if !placed[i] {
+            placed[i] = true;
+            out.push(Ok(i));
+        }
+    }
+    out.into_iter()
+        .map(|e| match e {
+            Ok(i) => {
+                let (key, msg, extra, n) = &groups[i];
+                fmt(key, msg, extra, *n)
+            }
+            Err(s) => s,
+        })
+        .collect()
+}
+
+fn group_dir(lines: Vec<String>) -> Vec<String> {
+    fold(lines, |l| path_line(l).map(|(d, n)| (d, String::new(), n)), |dir, _, names, n| {
+        let mut list = names.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+        if names.len() > 3 {
+            list.push_str(" …");
+        }
+        let head = if dir.is_empty() { "." } else { dir };
+        format!("{head}/ ({n} files): {list}").replacen("./ ", ". ", 1)
+    })
+}
+
+fn is_exc(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_ascii_uppercase())
+        && s.chars().all(|c| c.is_ascii_alphanumeric())
+        && (s.ends_with("Error") || s.ends_with("Exception") || s.ends_with("Warning"))
+}
+
+fn loc_before(t: &str, p: usize) -> String {
+    let s = t[..p].trim().trim_end_matches(':').trim();
+    s.split_once('(').map_or(s.to_string(), |(file, rest)| {
+        let line = rest.split([',', ')']).next().unwrap_or("");
+        if file.is_empty() || line.is_empty() { s.to_string() } else { format!("{file}:{line}") }
+    })
+}
+
+fn coded(t: &str, needle: &str, prefix: &str) -> Option<(String, String, String)> {
+    let p = t.find(needle)?;
+    let rest = &t[p + needle.len()..];
+    let n = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if n == 0 {
+        return None;
+    }
+    Some((
+        format!("{prefix}{}", &rest[..n]),
+        rest[n..].trim_start_matches([':', ' ']).trim().to_string(),
+        loc_before(t, p),
+    ))
+}
+
+fn parse_diag(line: &str) -> Option<(String, String, String)> {
+    let t = line.trim();
+    if let Some(p) = t.find("error[").or_else(|| t.find("warning[")) {
+        let kind_end = t[p..].find('[')? + p + 1;
+        let end = t[kind_end..].find(']')? + kind_end;
+        let key = t[kind_end..end].to_string();
+        if key.is_empty() {
+            return None;
+        }
+        let msg = t[end + 1..].trim_start_matches([':', ' ']).trim().to_string();
+        return Some((key, msg, String::new()));
+    }
+    if let Some(v) = coded(t, "error TS", "TS").or_else(|| coded(t, "error CS", "CS")) {
+        return Some(v);
+    }
+    let parts: Vec<&str> = t.split_whitespace().collect();
+    if parts.len() >= 4 && matches!(parts[1], "error" | "warning") {
+        let loc = parts[0];
+        let (a, b) = loc.split_once(':')?;
+        if a.chars().all(|c| c.is_ascii_digit()) && b.chars().all(|c| c.is_ascii_digit()) {
+            return Some((parts[parts.len() - 1].to_string(), parts[2..parts.len() - 1].join(" "), loc.to_string()));
+        }
+    }
+    if let Some(rest) = t.strip_prefix("FAILED ") {
+        if let Some((loc, err)) = rest.split_once(" - ") {
+            if let Some((cls, msg)) = err.split_once(": ") {
+                if is_exc(cls) {
+                    return Some((cls.to_string(), msg.to_string(), loc.to_string()));
+                }
+            }
+        }
+    }
+    if let Some((cls, msg)) = t.split_once(": ") {
+        let cls = cls.trim().trim_start_matches("E ").trim();
+        if is_exc(cls) {
+            return Some((cls.to_string(), msg.to_string(), String::new()));
+        }
+    }
+    None
+}
+
+fn group_diag(lines: Vec<String>) -> Vec<String> {
+    fold(lines, parse_diag, |key, msg, locs, n| {
+        let mut loc_s = locs.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+        if locs.len() > 3 {
+            loc_s.push_str(", …");
+        }
+        if loc_s.is_empty() {
+            format!("{key} ×{n}: {msg}")
+        } else {
+            format!("{key} ×{n}: {msg} ({loc_s})")
+        }
+    })
+}
+
 /// Apply `rule` to `output`. `exit != 0` → last `settings.fail_tail_lines` lines, untouched.
 pub fn apply(
     settings: &Settings,
@@ -485,6 +663,11 @@ pub fn apply(
     }
     if rule.dedupe {
         lines = dedupe(lines);
+    }
+    match rule.group {
+        Group::Dir => lines = group_dir(lines),
+        Group::Diag => lines = group_diag(lines),
+        Group::Off => {}
     }
     let max = rule.max_lines.max(1) as usize;
     if lines.len() <= max {
@@ -609,6 +792,11 @@ fn parse(s: &str) -> Vec<Rule> {
                 .get("collapse_columns")
                 .and_then(|i| i.as_bool())
                 .unwrap_or(false),
+            group: match t.get("group").and_then(|v| v.as_str()) {
+                Some("dir") => Group::Dir,
+                Some("diag") => Group::Diag,
+                _ => Group::Off,
+            },
         });
     }
     out
@@ -1072,6 +1260,7 @@ mod tests {
             ("[grep]\ndrop = \"x\"\n", "drop"),
             ("[grep]\ndrop = [1]\n", "drop"),
             ("[grep]\ndedupe = \"yes\"\n", "dedupe"),
+            ("[grep]\ngroup = \"nope\"\n", "group"),
             ("[grep]\nnope = 1\n", "nope"),
             ("title = \"x\"\n", "title"),
         ] {
