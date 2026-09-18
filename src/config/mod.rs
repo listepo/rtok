@@ -564,6 +564,8 @@ section! {
         /// in user content blocks (never tool results, system, tools, or the last two
         /// turns). Default off until a bench shows cost per passed task does not rise.
         live_blobs: bool = false,
+        /// Opt-in skill body archiving in the live zone (T61.2).
+        skills: bool = false,
     }
 }
 

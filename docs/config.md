@@ -273,6 +273,7 @@ head_lines = 8
 tail_lines = 4
 tiers      = false                    # opt-in tiered loading (default off); OpenViking L0/L1/L2 behaviour spec is AGPL-3.0 — rtok does not vendor, link, or subprocess it (D6); gates native impl in T33.2
 live_blobs = false                    # shrink nested JSON dumps + data: blobs in user blocks, never results/system/tools/last-2-turns (T51.1, opt-in)
+skills     = false                    # opt-in skill body archiving outside the live zone (T61.2)
 
 [plugins.proxy]
 enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]

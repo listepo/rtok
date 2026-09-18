@@ -33,7 +33,6 @@
 - T68.6. Import edges in the index
 - T68.9. With / without bench for the graph tools
 - T69.2. Recall ranking: recency decay and use counts, off by default
-- T69.3. Memory recall bench: planted, drifted, superseded facts
 - T70.1. pi extension shortens every tool result, not only bash
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`

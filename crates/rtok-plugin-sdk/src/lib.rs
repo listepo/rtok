@@ -103,7 +103,7 @@ pub use host::{
     Archive, ArchiveDecision, Capabilities, Class, Ctx, Host, Ledger, NoteHit, Notes, ReadCache,
     SymbolFileBatch, SymbolFileRows, Symbols,
 };
-pub use wire::{BlobRef, ToolResultRef, ToolResults, WireRequest};
+pub use wire::{BlobRef, SkillRef, ToolResultRef, ToolResults, WireRequest};
 
 use serde::Serialize;
 use serde_json::Value;
