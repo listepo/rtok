@@ -41,6 +41,9 @@ pub fn write_cfg(home: &Path) -> PathBuf {
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
+    for product in ["Code", "Code - Insiders"] {
+        fs::create_dir_all(vscode_mcp(home, product).parent().unwrap()).unwrap();
+    }
     let cfg = home.join("config.toml");
     let h = home.display().to_string().replace('\\', "/");
     fs::write(
@@ -115,4 +118,18 @@ pub fn claude_desktop_config(home: &Path) -> PathBuf {
     } else {
         home.join(".config/Claude/claude_desktop_config.json")
     }
+}
+
+/// Where VS Code's user `mcp.json` lands under `home` on this platform (the binary's rule).
+pub fn vscode_mcp(home: &Path, product: &str) -> PathBuf {
+    let dir = if cfg!(target_os = "macos") {
+        home.join("Library/Application Support")
+            .join(product)
+            .join("User")
+    } else if cfg!(target_os = "windows") {
+        home.join(product).join("User")
+    } else {
+        home.join(".config").join(product).join("User")
+    };
+    dir.join("mcp.json")
 }

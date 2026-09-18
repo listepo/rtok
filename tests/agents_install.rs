@@ -45,6 +45,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".codeium/windsurf/mcp_config.json")),
         ),
         ("zed", vec![], Some(home.join(".config/zed/settings.json"))),
+        (
+            "vscode",
+            vec![],
+            Some(common::agents::vscode_mcp(home, "Code")),
+        ),
     ]
 }
 

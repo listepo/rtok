@@ -134,6 +134,8 @@ pub fn unregister_mcp(cfg: &Config, path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rtok_agent_sdk::NO_CHANGES;
+    use std::fs;
 
     #[test]
     fn user_dir_resolves_code_and_insiders_per_os() {
@@ -153,5 +155,51 @@ mod tests {
                 assert!(s.contains(".config"), "{s}");
             }
         }
+    }
+
+    fn cfg(dry: bool) -> Config {
+        let mut c = Config::default();
+        c.setup.dry_run = dry;
+        c.setup.backup = false;
+        c
+    }
+
+    fn tmp_mcp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("rtok-vscode-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir.join("mcp.json")
+    }
+
+    #[test]
+    fn dry_run_names_the_file_and_creates_nothing() {
+        let path = tmp_mcp("dry");
+        let out = register_mcp(&cfg(true), &path).unwrap();
+        assert_eq!(
+            out,
+            format!("servers.rtok: {} mcp", super::super::rtok_command())
+        );
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn apply_is_idempotent_and_remove_keeps_foreign() {
+        let path = tmp_mcp("apply");
+        fs::write(&path, r#"{"servers":{"foreign":{"command":"x"}}}"#).unwrap();
+        let c = cfg(false);
+        let first = register_mcp(&c, &path).unwrap();
+        assert!(first.starts_with("servers.rtok: "), "{first}");
+        assert_eq!(register_mcp(&c, &path).unwrap(), NO_CHANGES);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("\"stdio\""), "{raw}");
+        assert!(raw.contains("\"mcp\""), "{raw}");
+
+        assert_eq!(unregister_mcp(&c, &path).unwrap(), "- servers.rtok");
+        assert_eq!(unregister_mcp(&c, &path).unwrap(), NO_CHANGES);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("foreign"), "foreign server stays: {raw}");
+        assert!(!raw.contains("rtok"), "{raw}");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
