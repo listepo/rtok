@@ -407,8 +407,9 @@ fn time_of(ts: i64) -> String {
 
 /// The model's Sessions page (T25.1 / D23), now with the same row model as Calls
 /// (T60.10): a cursor (`↑/↓`), the selected row bold, `l` toggling the live-only
-/// filter the CLI exposes as a flag, and the table scrolled so the cursor row stays
-/// visible on a store taller than the terminal.
+/// filter the CLI exposes as a flag, the table scrolled so the cursor row stays
+/// visible on a store taller than the terminal, and `Enter` expanding the selected
+/// row through [`model::session_detail`] (T60.3).
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
     let live_only = app.sessions_live_only();
     let rows: Vec<&crate::store::SessionTotals> = app
@@ -417,17 +418,23 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .filter(|s| !live_only || s.ended_at.is_none())
         .collect();
-    let [table, status] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
+    let [body, status] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
     if rows.is_empty() {
         let msg = if live_only {
             "nothing is running"
         } else {
             "no sessions yet"
         };
-        frame.render_widget(Paragraph::new(msg), table);
+        frame.render_widget(Paragraph::new(msg), body);
         frame.render_widget(Paragraph::new(sessions_status_line(live_only)), status);
         return;
     }
+    let (table, detail) = if app.sessions_detail() {
+        let [t, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(8)]).areas(body);
+        (t, Some(d))
+    } else {
+        (body, None)
+    };
     let selected = app.sessions_selected();
     // Derived scroll: the smallest offset that keeps the cursor row on screen —
     // one body row per terminal line below the header, like the CLI table.
@@ -441,7 +448,50 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(s, i)| sessions_row(s, i == selected))
         .collect();
     frame.render_widget(sessions_table(shown), table);
+    if let Some(area) = detail {
+        let id = rows[selected].id.clone();
+        frame.render_widget(session_pane(app.snapshot(), &id), area);
+    }
     frame.render_widget(Paragraph::new(sessions_status_line(live_only)), status);
+}
+
+/// The selected session's fields the list hides, plus the snapshot's calls for
+/// that id — [`model::session_detail`], never a second query (T60.3 / D23).
+fn session_pane(snapshot: &model::Snapshot, id: &str) -> Paragraph<'static> {
+    let Some((s, calls)) = model::session_detail(snapshot, id) else {
+        return Paragraph::new("no session");
+    };
+    let dash = |v: Option<&str>| v.unwrap_or("-").to_string();
+    let ended = s
+        .ended_at
+        .map_or_else(|| "live".into(), |t| crate::log::stamp(t.max(0) as u64));
+    let api = dash(s.api.as_deref());
+    let mut lines = vec![
+        Line::from(format!(
+            "project {} · api {api}",
+            dash(s.project.as_deref())
+        )),
+        Line::from(format!(
+            "started {} · last {} · ended {ended}",
+            crate::log::stamp(s.started_at.max(0) as u64),
+            crate::log::stamp(s.last_activity.max(0) as u64),
+        )),
+        Line::from(format!(
+            "usage ({api}) input {} cache create {} cache read {} output {}",
+            s.input, s.cache_create, s.cache_read, s.output
+        )),
+        Line::from(format!("calls {}", calls.len())),
+    ];
+    for c in calls {
+        lines.push(Line::from(format!(
+            "{} {} {} {}",
+            time_of(c.ts),
+            c.surface,
+            c.kind,
+            c.name.as_deref().unwrap_or("-")
+        )));
+    }
+    Paragraph::new(lines).block(Block::default().title(format!("session {}", s.id)))
 }
 
 fn sessions_row(s: &crate::store::SessionTotals, selected: bool) -> Row<'static> {
@@ -1072,6 +1122,96 @@ mod tests {
         assert!(!rendered.contains("m1"), "the ended row is filtered off");
         app.key(KeyCode::Char('l'), KeyModifiers::NONE);
         assert!(screen(&app).contains("m1"), "l toggles the filter back");
+    }
+
+    /// T60.3: Enter opens a detail pane from `model::session_detail` — project, api,
+    /// timestamps, the API usage row, and this session's snapshot calls only.
+    #[test]
+    fn enter_opens_the_session_detail_pane() {
+        let cfg = config();
+        let mut app = App::new(&cfg);
+        select(&mut app, "sessions");
+        app.refresh({
+            let mut snap = model::snapshot(&cfg);
+            let mut row = session_row(0, None);
+            row.id = "a".into();
+            row.project = Some("rtok".into());
+            row.api = Some("anthropic".into());
+            row.started_at = 1;
+            row.last_activity = 2;
+            row.input = 30;
+            row.cache_create = 1;
+            row.cache_read = 7;
+            row.output = 7;
+            snap.sessions = vec![row];
+            snap.calls = vec![
+                crate::store::CallRow {
+                    id: 1,
+                    ts: 3661,
+                    session: "a".into(),
+                    surface: "proxy".into(),
+                    kind: "api_request".into(),
+                    plugin: None,
+                    name: Some("/v1/messages".into()),
+                    parent_id: None,
+                    ms: Some(12.5),
+                    ok: 1,
+                    error: None,
+                    host: None,
+                    provider: None,
+                    model: None,
+                    api: Some("anthropic".into()),
+                    input: Some(10),
+                    cache_create: Some(1),
+                    cache_read: Some(2),
+                    output: Some(3),
+                },
+                crate::store::CallRow {
+                    id: 2,
+                    ts: 3,
+                    session: "other".into(),
+                    surface: "hook".into(),
+                    kind: "hook".into(),
+                    plugin: None,
+                    name: Some("Skip".into()),
+                    parent_id: None,
+                    ms: None,
+                    ok: 1,
+                    error: None,
+                    host: None,
+                    provider: None,
+                    model: None,
+                    api: None,
+                    input: None,
+                    cache_create: None,
+                    cache_read: None,
+                    output: None,
+                },
+            ];
+            snap
+        });
+        assert!(
+            !screen(&app).contains("project rtok"),
+            "no detail until Enter"
+        );
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(open.contains("project rtok"), "{open}");
+        assert!(open.contains("api anthropic"), "{open}");
+        assert!(open.contains("started"), "{open}");
+        assert!(open.contains("last"), "{open}");
+        assert!(open.contains("ended live"), "{open}");
+        assert!(open.contains("usage (anthropic)"), "{open}");
+        assert!(open.contains("/v1/messages"), "{open}");
+        assert!(
+            !open.contains("Skip"),
+            "other session's calls stay off: {open}"
+        );
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            !screen(&app).contains("project rtok"),
+            "Enter closes the pane"
+        );
     }
 
     /// T60.10: a store taller than the terminal scrolls to keep the cursor row on
