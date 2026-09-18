@@ -16,6 +16,7 @@ pub mod kimi;
 pub mod opencode;
 pub mod pi;
 pub mod skill;
+pub mod vscode;
 pub mod windsurf;
 pub mod zcode;
 pub mod zed;
@@ -30,7 +31,7 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot", "aider", "windsurf",
+    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "vscode", "copilot", "aider", "windsurf",
     "zed",
 ];
 
@@ -47,6 +48,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "pi" => Some(&pi::Pi),
         "zcode" => Some(&zcode::Zcode),
         "kimi" => Some(&kimi::Kimi),
+        "vscode" => Some(&vscode::Vscode),
         "copilot" => Some(&copilot::Copilot),
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
