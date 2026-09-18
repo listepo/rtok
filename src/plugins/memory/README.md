@@ -51,6 +51,16 @@ but the session-local `checkpoint:*` rows — so notes move between machines thr
 you commit or copy (T66.2). An export piped into `import` on a second store inserts each
 row once; a second import skips them all.
 
+## Sync
+
+`rtok memory sync [--file CLAUDE.md|AGENTS.md] [--budget N] [--dry-run] [--remove] [--force]`
+writes pinned notes first, then remaining live notes by id desc, as `id title` lines between
+`<!-- rtok:memory -->` / `<!-- /rtok:memory -->`. The block is ≤ `[plugins.memory] sync_tokens`
+(default 300), byte-stable for an unchanged store, and created at the end of the file when
+absent. `--remove` deletes only the block. A hand-edited block is refused unless `--force`.
+This command is the only writer — no hook writes the file (fail-open). When the block exists
+and hook recall is on, `sync` and `rtok doctor` print the same T59.7 overlap line.
+
 ## Tasks
 
 See `roadmap.md` § `memory`. Checks in `plan.md`.
