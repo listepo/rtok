@@ -24,7 +24,7 @@ publish = false
 dist = true
 # Host plugins must ship beside the binary: setup resolves `plugins/<host>` next
 # to `current_exe()` for installed archives (Windows zip / unix tarballs).
-include = ["plugins/"]
+include = ["plugins/", "skills/"]
 
 [[bin]]
 name = "rtok"
