@@ -359,6 +359,18 @@ enum GraphCmd {
     },
     /// List unreferenced private definitions (skips pub, trait impls, tests, macros)
     Dead { path: Option<PathBuf> },
+    /// Tests that reach files changed in git (`git diff --name-only`)
+    Affected {
+        /// Diff against this ref
+        #[arg(long, conflicts_with = "staged")]
+        since: Option<String>,
+        /// Staged files only (`git diff --cached --name-only`)
+        #[arg(long)]
+        staged: bool,
+        /// JSON instead of `file ← via symbol` lines
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -901,6 +913,23 @@ pub fn run() -> Result<()> {
                     print!(
                         "{}",
                         crate::plugins::graph::dead(&crate::plugin::Ctx::new(&cx), &root)?
+                    );
+                }
+                GraphCmd::Affected {
+                    since,
+                    staged,
+                    json,
+                } => {
+                    let root = std::env::current_dir()?;
+                    print!(
+                        "{}",
+                        crate::plugins::graph::affected(
+                            &crate::plugin::Ctx::new(&cx),
+                            &root,
+                            since.as_deref(),
+                            staged,
+                            json,
+                        )?
                     );
                 }
             }
