@@ -279,6 +279,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
         overlaps: overlap_lines(
             cfg.plugin_enabled("archive", true),
             cfg.plugin_enabled("memory", true) && cfg.plugins.memory.recall_tokens > 0,
+            sync_block_present(),
             &detected_hosts(settings.as_ref()),
         ),
         // File reads only: no `--version` probe, so the 2 s dashboard tick stays cheap.
@@ -314,15 +315,42 @@ fn detected_hosts(settings: Option<&Value>) -> Vec<&'static str> {
     v
 }
 
+fn sync_block_present() -> bool {
+    #[cfg(feature = "memory")]
+    {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        ["CLAUDE.md", "AGENTS.md"].iter().any(|f| {
+            std::fs::read_to_string(cwd.join(f))
+                .ok()
+                .is_some_and(|t| crate::plugins::memory::sync::has_block(&t))
+        })
+    }
+    #[cfg(not(feature = "memory"))]
+    {
+        false
+    }
+}
+
 /// T59.7: the duplicate checks. Each names the rtok config key that turns the
 /// rtok side off; none claims a saving.
-fn overlap_lines(archive_on: bool, memory_recall_on: bool, installed: &[&str]) -> Vec<String> {
+fn overlap_lines(
+    archive_on: bool,
+    memory_recall_on: bool,
+    sync_block: bool,
+    installed: &[&str],
+) -> Vec<String> {
     let mut out = Vec::new();
     if installed.contains(&"claude") && memory_recall_on {
         out.push(
             "duplicate: Claude Code auto-memory (on by default) and memory recall both carry              facts — rtok side: [plugins.memory] enabled = false"
                 .into(),
         );
+    }
+    if sync_block && memory_recall_on {
+        #[cfg(feature = "memory")]
+        out.push(crate::plugins::memory::sync::overlap_line().into());
+        #[cfg(not(feature = "memory"))]
+        let _ = sync_block;
     }
     if archive_on && installed.contains(&"opencode") {
         out.push(
@@ -1044,7 +1072,7 @@ mod tests {
     /// the rtok config key, and never claim a saving.
     #[test]
     fn overlap_checks_name_the_rtok_off_key_and_stay_off_when_quiet() {
-        let lines = overlap_lines(true, true, &["claude", "opencode", "cursor"]);
+        let lines = overlap_lines(true, true, false, &["claude", "opencode", "cursor"]);
         assert_eq!(lines.len(), 3, "{lines:?}");
         assert!(
             lines[0].contains("[plugins.memory] enabled = false"),
@@ -1063,14 +1091,22 @@ mod tests {
             assert!(!l.contains("saves"), "no measurement claim: {l}");
         }
         // Either side off, or the host absent, is no line.
-        assert!(overlap_lines(false, true, &["opencode"]).is_empty());
-        assert!(overlap_lines(true, false, &["claude"]).is_empty());
-        assert!(overlap_lines(true, true, &[]).is_empty());
+        assert!(overlap_lines(false, true, false, &["opencode"]).is_empty());
+        assert!(overlap_lines(true, false, true, &["claude"]).is_empty());
+        assert!(overlap_lines(true, true, false, &[]).is_empty());
         // The report renders them under `overlaps`.
         let mut r = report_fixture();
-        r.overlaps = overlap_lines(true, true, &["opencode"]);
+        r.overlaps = overlap_lines(true, true, false, &["opencode"]);
         let text = r.to_text();
         assert!(text.contains("overlaps\n  duplicate: OpenCode"), "{text}");
+        let sync = overlap_lines(false, true, true, &[]);
+        assert_eq!(sync.len(), 1, "{sync:?}");
+        assert!(
+            sync[0].contains("[plugins.memory] enabled = false"),
+            "{sync:?}"
+        );
+        assert!(sync[0].starts_with("duplicate:"), "{sync:?}");
+        assert!(!sync[0].contains("saves"), "{sync:?}");
     }
 
     /// The doctor text carries the section with the header total and per-row flags.
