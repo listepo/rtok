@@ -90,7 +90,9 @@ fn pi_extension_owns_the_single_bash_call_path() {
     assert!(ts.contains("--cmd"), "file/search tools pass --cmd");
     assert!(ts.contains("guard"), "T70.5 guard check");
     assert!(ts.contains("block: true"), "deny returns a reasoned block");
-    for dup in ["registerTool", "rtok read", "rtok search"] {
+    assert!(ts.contains("registerTool"), "T70.3 pi.registerTool");
+    assert!(ts.contains("mcp --call"), "thin CLI shim, one call path");
+    for dup in ["rtok read", "rtok search"] {
         assert!(!ts.contains(dup), "no duplicate call path: {dup}");
     }
 }
