@@ -161,6 +161,34 @@ fn cursors_follow_selected_rows() {
 }
 
 #[test]
+fn plugin_toggle_click_sends_the_set() {
+    let ui = window();
+    apply_snapshot(&ui, &snapshot());
+    let tab = ElementHandle::find_by_accessible_label(&ui, "plugins")
+        .next()
+        .unwrap_or_else(|| {
+            panic!("plugins tab (run with SLINT_EMIT_DEBUG_INFO=1)")
+        });
+    tab.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_page_id().as_str(), "plugins");
+
+    let hit = Rc::new(std::cell::Cell::new(None::<(String, bool)>));
+    let hit2 = hit.clone();
+    ui.on_toggle_plugin(move |id, on| {
+        hit2.set(Some((id.to_string(), on)));
+    });
+    let toggle = ElementHandle::find_by_accessible_label(&ui, "toggle cmd")
+        .next()
+        .unwrap_or_else(|| {
+            panic!("plugin toggle (run with SLINT_EMIT_DEBUG_INFO=1)")
+        });
+    toggle.mock_single_click(slint::platform::PointerEventButton::Left);
+    let (id, on) = hit.take().expect("toggle callback fired");
+    assert_eq!(id, "cmd");
+    assert!(!on, "cmd starts enabled, click turns it off");
+}
+
+#[test]
 fn fail_open_snapshot_renders_empty_pages() {
     let ui = window();
     apply_snapshot(&ui, &json!({}));

@@ -152,6 +152,26 @@ component PageIcon inherits Image {
         @image-url("icons/overview.svg");
 }
 
+/// Same toggle as the TUI Plugins tab (T60.5): click sends `plugins.<id>.enabled`.
+component PluginEnableToggle inherits Rectangle {
+    in property <bool> on;
+    in property <string> plugin-id;
+    callback toggled(bool);
+    height: 24px;
+    TouchArea {
+        accessible-role: button;
+        accessible-label: "toggle " + plugin-id;
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+    Text {
+        text: on ? "enabled" : "disabled";
+        color: on ? RtokTheme.success : RtokTheme.ink-subtle;
+        font-family: "IBM Plex Mono";
+    }
+}
+
 /// Nav row used in full sidebar, rail, and mobile icon bar.
 component NavItem inherits Rectangle {
     in property <string> page-id;
@@ -220,6 +240,7 @@ export component MainWindow inherits Window {
     in property <string> doctor-text;
     in-out property <[string]> logs;
     in property <string> status: "connecting";
+    callback toggle-plugin(string, bool);
 
     // --- Responsive shell derived from tracked window width ---
     // Use `changed width` (not a live binding to root.width) to avoid
@@ -508,10 +529,12 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                                 font-family: "IBM Plex Mono";
                             }
-                            Text {
-                                text: selected-plugin.enabled ? "enabled" : "disabled";
-                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
-                                font-family: "IBM Plex Mono";
+                            PluginEnableToggle {
+                                on: selected-plugin.enabled;
+                                plugin-id: selected-plugin.id;
+                                toggled(value) => {
+                                    root.toggle-plugin(selected-plugin.id, value);
+                                }
                             }
                             Text {
                                 text: selected-plugin.summary;
@@ -591,10 +614,12 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                                 font-family: "IBM Plex Mono";
                             }
-                            Text {
-                                text: selected-plugin.enabled ? "enabled" : "disabled";
-                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
-                                font-family: "IBM Plex Mono";
+                            PluginEnableToggle {
+                                on: selected-plugin.enabled;
+                                plugin-id: selected-plugin.id;
+                                toggled(value) => {
+                                    root.toggle-plugin(selected-plugin.id, value);
+                                }
                             }
                             Text {
                                 text: selected-plugin.summary;
