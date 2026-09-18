@@ -14,7 +14,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T53.1 | todo | P3 | 3 | 10% | |
 | T53.3 | todo | P3 | 3 | 0% | |
 | T53.4 | todo | P3 | 2 | 0% | |
-| T56.5 | todo | P2 | 2 | 80% | |
 | T57.1 | todo | P3 | 3 | 0% | |
 | T58.1 | todo | P2 | 3 | 0% | |
 | T58.2 | todo | P2 | 3 | 0% | |
@@ -120,11 +119,6 @@ Execution plan (OpenCode / Muse Spark 1.3; decision as given: webpki + `use_prec
 
 From I-33. OTel export is gated by mock collectors; the Jaeger 2.11 and Grafana `otel-lgtm` recipes in `docs/otel.md` were checked by hand once.
 Done when `just otel-check` starts both containers on shifted ports, flushes a copy of a fixture ledger, and asserts through their APIs: Jaeger has `execute_tool` spans for `service=rtok`, Tempo answers the trace id, Prometheus has `rtok_calls_total`; it skips with a clear message when Docker CLI / Colima is missing, and it stays out of `just check`.
-
-### T56.5. ReadFs trait + optional HostFs walk swap
-
-Post-T56.4 leftover: drive full `read()` resolve/content (line numbering, caps, symlink) through a narrow FS trait on `testutil::Vfs` without deleting disk e2e; optionally share `WalkFs` with production search/tree later.
-**Landed so far (unclaimed)** — `plugins::read::fs::{ReadFs, HostFs}` + `read_with` / `resolve_with`; production `read`/`resolve` use `HostFs`. Vfs gains optional symlinks. Disk tests kept; Vfs twins for three-lines / range / caps / symlink. `HostFs: WalkFs` stub + smoke test (cfg test). **Follow-up (not this PR):** swap production `search`/`tree` from `ignore::WalkBuilder` to `WalkFs`+`HostFs` only if gitignore parity is measured and the swap stays small — do not rewrite for its own sake.
 
 
 ### T57.1. Flag-aware `guard` read-only classes
