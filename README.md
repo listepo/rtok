@@ -149,16 +149,10 @@ mcp
 proxy 8788→8787
 mcp_tool_search likely disabled (ANTHROPIC_BASE_URL is set)
 autoCompactWindow 300000
-skills (68 listed, 12963 desc bytes ≈ 3240 tokens per request)
-  design-is plugin:claude-mem desc 374c body 18403B calls - WARN desc>200 WARN body>8K …
-  caveman-setup user desc 1c body 10304B calls - WARN body>8K (references/) …
 ```
 
 Those description tokens are re-sent on every request of every session. That is the number
-most tools do not count against themselves. The skills section (2026-09-18) prices the same
-listing for the host's skills: 68 listed skills ride as ≈ 3.2 K description tokens per
-request, and the `WARN` flags name the bodies that should live in `references/` instead of
-`SKILL.md` — measured on this machine by the T61.3 audit.
+most tools do not count against themselves.
 
 ### Run a command without paying for its output
 

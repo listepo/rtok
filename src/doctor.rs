@@ -284,9 +284,7 @@ pub fn page(cfg: &Config) -> Result<Report> {
 /// machine (`research.md` §10.1), the enabled plugin skill dirs, and the T61.1
 /// invocation counts from the transcripts. Fail open: unreadable roots are skipped.
 fn skills_audit(cfg: &Config) -> Option<SkillsAudit> {
-    // The user roots hang off $HOME, not rtok's own home: `~/.claude/skills` is the
-    // host's dir, `~/.rtok` never holds skills.
-    let home = crate::config::env_user_home().unwrap_or_else(|| cfg.home.clone());
+    let home = &cfg.home;
     let cwd = std::env::current_dir().ok()?;
     let user = [
         ".claude/skills",
@@ -305,7 +303,7 @@ fn skills_audit(cfg: &Config) -> Option<SkillsAudit> {
     let roots = vec![
         ("user".to_string(), user),
         ("project".to_string(), project),
-        ("plugin".to_string(), plugin_skill_dirs(&home)),
+        ("plugin".to_string(), plugin_skill_dirs(home)),
     ];
     let invocations = skill_invocations(cfg);
     Some(audit_from(
@@ -379,10 +377,6 @@ fn audit_from(
         }
     }
     rows.sort_by(|a, b| b.body_bytes.cmp(&a.body_bytes).then(a.name.cmp(&b.name)));
-    // The same skill reachable from two roots (`.claude/skills` and
-    // `.agents/skills` mirror each other) is one listing, not two.
-    let mut seen = std::collections::HashSet::new();
-    rows.retain(|r| seen.insert((r.source.clone(), r.name.clone())));
     let desc_bytes = rows.iter().map(|r| r.desc_chars as u64).sum();
     SkillsAudit { rows, desc_bytes }
 }

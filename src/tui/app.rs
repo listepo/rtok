@@ -29,7 +29,8 @@ pub(crate) const KEYS: &[(&str, &str, &str)] = &[
 
 /// The key rows for one page: globals first, then the page's own.
 pub(crate) fn keys_for(page: &str) -> Vec<(&'static str, &'static str)> {
-    KEYS.iter()
+    KEYS
+        .iter()
         .filter(|(p, _, _)| p.is_empty() || *p == page)
         .map(|(_, k, d)| (*k, *d))
         .collect()
@@ -624,10 +625,7 @@ pub(super) mod tests {
         let before = app.updated();
         app.key(KeyCode::Char('r'), KeyModifiers::NONE);
         assert!(app.updated() >= before, "the refresh restamped the tick");
-        assert!(
-            !app.key(KeyCode::Char('r'), KeyModifiers::NONE),
-            "r is not a quit"
-        );
+        assert!(!app.key(KeyCode::Char('r'), KeyModifiers::NONE), "r is not a quit");
     }
 
     /// T60.8: the KEYS table documents every page whose keys the handler claims —
