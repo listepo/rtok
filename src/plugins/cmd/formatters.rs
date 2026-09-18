@@ -50,6 +50,22 @@ pub fn family(argv: &[String]) -> String {
 /// shared with `measure::stats::bash_family` and `agents::is_rtok_bin` (T55.10).
 pub(crate) use crate::agents::cmd_stem;
 
+/// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
+const FORMATTER_STEMS: &[&str] = &[
+    "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go",
+];
+
+/// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
+pub fn filter_kind(settings: &rules::Settings, stem: &str) -> &'static str {
+    if FORMATTER_STEMS.contains(&stem) {
+        return "formatter";
+    }
+    if settings.pick(stem).match_cmd == stem {
+        return "rule";
+    }
+    "default"
+}
+
 fn bin(argv: &[String]) -> &str {
     argv.first().map(|a| cmd_stem(a)).unwrap_or("")
 }
