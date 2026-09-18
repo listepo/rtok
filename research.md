@@ -595,8 +595,28 @@ UserPromptSubmit `additionalContext` does not contain `# nudges`.
 | off | 0 | 0 | 0 | 0.0000 | 6/6 | false |
 | on | 0 | 0 | 0 | 0.0000 | 6/6 | false |
 
-Pass parity holds; cost is zeros. The live cost-per-passed-task gate stays open, so
-`nudges` stays **off** by default (`config/default.toml` `[plugins.inject] modes = []`).
+Pass parity holds; cost is zeros.
+
+**Live A/B (2026-09-18).** Creator approved API spend. Intended harness: `RTOK_BENCH_LIVE=1`
+`rtok bench --runs 1` on the existing six-task suite, two arms (default `modes = []` vs
+`modes = ["nudges"]`), same `claude -p` path and host default model, then
+`rtok stats --price` per isolated store. Stopped before that pass:
+
+```bash
+claude --version
+# 2.1.236 (Claude Code)
+claude auth status
+# {"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}
+claude -p "Reply with the single word ok and nothing else." --output-format json --max-turns 1
+# is_error true; result: Failed to authenticate: OAuth session expired and could not be refreshed
+# usage all zeros; total_cost_usd 0
+```
+
+`ANTHROPIC_API_KEY` was unset. `claude` CLI was present. A second probe with the
+environment's gateway key against the already-set `ANTHROPIC_BASE_URL` returned HTTP 401
+`Invalid API key`. No live token, cache, or USD rows. Cost per passed task cannot be
+compared; the gate is **do not enable**. `nudges` stays **off** by default
+(`config/default.toml` `[plugins.inject] modes = []`).
 
 **Reading vs §4 vendor claims.** We still do **not** claim caveman's 65 % or ponytail's
 −54 % LOC against a live bill. This gate shows the native path wins the re-runnable
