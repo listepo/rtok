@@ -22,7 +22,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T61.2 | todo | P3 | 3 | 0% | |
 | T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
-| T68.6 | todo | P3 | 3 | 0% | |
 | T68.9 | todo | P2 | 3 | 0% | |
 | T70.1 | todo | P2 | 3 | 0% | |
 | T70.3 | todo | P3 | 4 | 0% | |
@@ -147,10 +146,6 @@ Done when `web::model::pages()` gains `("skills", "skills")` and the TUI gets th
 
 
 
-### T68.6. Import edges in the index
-
-From the codegraph / graphify review. Both tools store `imports` edges (codegraph resolves them to source files; graphify's `module_source`); rtok's rows are definitions and reference sites only, so a file that imports a module without calling a uniquely named symbol has no edge, and T68.5 cannot reach it. T52.5 already appends rtok's own tags queries to the grammar's, so this is query data plus one row kind.
-Done when the extra queries capture `use` / `import` / `require` / `from … import` for Rust, TS/JS, Python, Go and Dart as rows of kind `import` whose `name` is the last path segment, `scope` empty, `is_def = false`; `symbol_imports(root, path)` lists a file's imports and `symbol_importers(root, module)` the files importing a module; `outline` prints an `imports:` line first; `impact_bfs` follows an import row to the file's definitions at cost 1 (one extra step in the same query, argument `follow_imports` default true); T8.8 recall on the 30-symbol set unchanged (imports never count as references); index time on this repo before / after in `research.md` with the command; no migration (kind is a string) — the extractor fingerprint bump re-indexes.
 
 ### T68.9. With / without bench for the graph tools
 
