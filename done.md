@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+## T57.1 — Flag-aware `guard` read-only classes
+
+From I-38 (promoted 2026-09-17). `guard::read_only` decided which Bash calls got a dedup key from a fixed stem list (`ls cat head tail grep rg find tree wc` plus `git status|log|diff|show|branch`). It ignored flags, redirections and pipes, so it keyed writers (`find -delete`, `cat a > b`, `ls | xargs rm`, `tail -f`) and never keyed repeats of `sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`.
+Done when: (1) stem/flag counts over real transcripts in `research.md` with date and command; stems added only with a count; (2) keyed only if every `|` segment's first stem is read-only and no writer marker (`>`/`>>`, `| tee`, pipe into a non-read-only stem, `find -delete`/`-exec`, `sed -i`/`--in-place`, `tail -f`); parsing is first-word + marker scan, no shell grammar; (3) unit tests in `src/plugins/guard/mod.rs` including the false-deny Check `ls` → `find . -delete` → `ls` allowed; (4) `kind = guard` Measurements on the hook e2e fixture before and after.
+
+**Result (2026-09-18).** Evidence: `research.md` §2 `guard` read-only stems. Added `sed` (2,417 Bash, 2,238 `-n`), `jq` (20), `awk` (359), `git rev-parse` (8), `cargo metadata` (9). Writer markers take the mutating path and clear `bash` keys. Hook e2e fixture Measurements `kind = guard`: before 9 rows / 52 `before_bytes`, after 8 / 32 — wrong writer denies gone, new keyed repeats present. Tests: `flag_aware_read_only_keys`, `find_delete_allows_the_next_ls`. One file, +113/−3.
+
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
