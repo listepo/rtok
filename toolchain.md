@@ -18,6 +18,10 @@ Project programs and direct packages from the manifests.
 | rust | mise | CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Rust build and dependencies | https://github.com/rust-lang/cargo |
+| colima | mise | Container runtime that runs Docker (and others) inside a Lima VM — lightweight alternative to Docker Desktop for agents | https://github.com/abiosoft/colima |
+| lima | mise | Linux VM Colima drives; install via mise, usually started only through `colima start` | https://github.com/lima-vm/lima |
+| docker-cli | mise | `docker` client; points at Colima's Docker context when Colima is running | https://github.com/docker/cli |
+| docker-compose | mise | Standalone `docker-compose` against the same Colima daemon (~Docker-compatible; not Podman) | https://github.com/docker/compose |
 
 ## cargo
 
