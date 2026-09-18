@@ -115,6 +115,9 @@ enum Cmd {
         /// Per-run timeout in seconds
         #[arg(long)]
         timeout: Option<u64>,
+        /// Task suite (`graph` = with/without rtok MCP)
+        #[arg(long)]
+        suite: Option<String>,
     },
     /// Inspect hooks, MCP servers and the proxy chain
     Doctor {
@@ -708,10 +711,11 @@ pub fn run() -> Result<()> {
             runs,
             dry_run,
             timeout,
+            suite,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
-                bench_flags(tasks, runs, dry_run, timeout),
+                bench_flags(tasks, runs, dry_run, timeout, suite),
             )?;
             print!("{}", crate::bench::run(&cfg)?);
         }
@@ -1149,8 +1153,9 @@ fn bench_flags(
     runs: Option<u32>,
     dry_run: bool,
     timeout: Option<u64>,
+    suite: Option<String>,
 ) -> Option<figment::value::Dict> {
-    if tasks.is_none() && runs.is_none() && !dry_run && timeout.is_none() {
+    if tasks.is_none() && runs.is_none() && !dry_run && timeout.is_none() && suite.is_none() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -1172,6 +1177,9 @@ fn bench_flags(
             "timeout_s".into(),
             Value::from(i64::try_from(s).unwrap_or(i64::MAX)),
         );
+    }
+    if let Some(s) = suite {
+        bench.insert("suite".into(), Value::from(s));
     }
     let mut flags = Dict::new();
     flags.insert("bench".into(), Value::from(bench));
