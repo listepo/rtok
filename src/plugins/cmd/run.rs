@@ -179,7 +179,14 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     let mut body = out.stdout;
     body.extend_from_slice(&out.stderr);
     let code = out.status.code().unwrap_or(1);
-    let before = String::from_utf8_lossy(&body);
+    emit_filtered(cfg, args, &body, code);
+    Ok(code)
+}
+
+/// Archive `body`, print the filtered text plus expand trailer, record a Measurement.
+/// Shared by `rtok run` and `rtok filter --archive`.
+pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
+    let before = String::from_utf8_lossy(body);
     let cx = match crate::plugin::Runtime::open(cfg.clone(), "run") {
         Ok(cx) => cx,
         Err(_) => {
@@ -188,7 +195,7 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
             if !before.is_empty() && !before.ends_with('\n') {
                 println!();
             }
-            return Ok(code);
+            return;
         }
     };
     // Hash the raw bytes before archiving (T65.1): a same-session hit is a pointer, not
@@ -199,19 +206,19 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     }
     // The archive keeps the command's bytes, not the lossy `String` used to filter and
     // print them: `expand` must return what the command wrote, including invalid UTF-8.
-    let id = match cx.put_archive(&body) {
+    let id = match cx.put_archive(body) {
         Ok(id) => id,
         Err(_) => {
             print!("{before}");
             if !before.is_empty() && !before.ends_with('\n') {
                 println!();
             }
-            return Ok(code);
+            return;
         }
     };
     let settings = rules::Settings::from_config(cfg);
-    let family = formatters::family(args);
-    let (filtered, kind) = formatters::compress(&settings, args, &before, code, &id);
+    let family = formatters::family(argv);
+    let (filtered, kind) = formatters::compress(&settings, argv, &before, exit, &id);
     print!("{filtered}");
     if !filtered.is_empty() && !filtered.ends_with('\n') {
         println!();
@@ -241,7 +248,6 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
         ref_id: Some(format!("{family}:{id}")),
         call_id: None,
     });
-    Ok(code)
 }
 
 #[cfg(test)]
@@ -249,6 +255,41 @@ mod tests {
     use super::*;
     use crate::testutil::config as cfg;
     use std::fs;
+
+    #[test]
+    fn emit_filtered_archives_stdin_and_records() {
+        let (c, dir) = cfg("emit-archive");
+        let body = (0..80)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        emit_filtered(&c, &["cat".into()], body.as_bytes(), 0);
+        let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1);
+        assert_eq!(fs::read(&files[0]).unwrap(), body.as_bytes());
+        let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{v}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn emit_filtered_skill_records_kind() {
+        let (c, dir) = cfg("emit-skill");
+        let body = (0..80)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        emit_filtered(&c, &["skill".into(), "demo".into()], body.as_bytes(), 0);
+        let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows[0]["kind"], "skill", "{v}");
+        assert_eq!(v["plugin"], "cmd", "{v}");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn printf_two_lines_exit_0_no_trailer() {

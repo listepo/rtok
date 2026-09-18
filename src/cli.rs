@@ -162,6 +162,9 @@ enum Cmd {
         /// Command family hint (`git status`, `cargo test`, …)
         #[arg(long)]
         cmd: Option<String>,
+        /// Archive stdin and print the expand trailer (same path as `run`)
+        #[arg(long)]
+        archive: bool,
     },
     /// Print an archived payload
     Expand {
@@ -917,15 +920,26 @@ pub fn run() -> Result<()> {
             std::process::exit(code);
         }
         #[cfg(feature = "cmd")]
-        Cmd::Filter { stdin: _, cmd } => {
+        Cmd::Filter {
+            stdin: _,
+            cmd,
+            archive,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let hint = cmd.unwrap_or_else(|| cfg.filter.cmd.clone());
-            let mut buf = String::new();
-            let _ = io::stdin().read_to_string(&mut buf);
-            print!(
-                "{}",
-                crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
-            );
+            if archive {
+                let mut buf = Vec::new();
+                let _ = io::stdin().read_to_end(&mut buf);
+                let argv: Vec<String> = hint.split_whitespace().map(str::to_string).collect();
+                crate::plugins::cmd::run::emit_filtered(&cfg, &argv, &buf, 0);
+            } else {
+                let mut buf = String::new();
+                let _ = io::stdin().read_to_string(&mut buf);
+                print!(
+                    "{}",
+                    crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
+                );
+            }
         }
         Cmd::Mcp { call, json, wrap } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
