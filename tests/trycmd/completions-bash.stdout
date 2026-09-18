@@ -241,6 +241,9 @@ _rtok() {
             rtok__subcmd__demon__subcmd__help,supervise)
                 cmd="rtok__subcmd__demon__subcmd__help__subcmd__supervise"
                 ;;
+            rtok__subcmd__graph,affected)
+                cmd="rtok__subcmd__graph__subcmd__affected"
+                ;;
             rtok__subcmd__graph,dead)
                 cmd="rtok__subcmd__graph__subcmd__dead"
                 ;;
@@ -249,6 +252,9 @@ _rtok() {
                 ;;
             rtok__subcmd__graph,index)
                 cmd="rtok__subcmd__graph__subcmd__index"
+                ;;
+            rtok__subcmd__graph__subcmd__help,affected)
+                cmd="rtok__subcmd__graph__subcmd__help__subcmd__affected"
                 ;;
             rtok__subcmd__graph__subcmd__help,dead)
                 cmd="rtok__subcmd__graph__subcmd__help__subcmd__dead"
@@ -393,6 +399,9 @@ _rtok() {
                 ;;
             rtok__subcmd__help__subcmd__demon,supervise)
                 cmd="rtok__subcmd__help__subcmd__demon__subcmd__supervise"
+                ;;
+            rtok__subcmd__help__subcmd__graph,affected)
+                cmd="rtok__subcmd__help__subcmd__graph__subcmd__affected"
                 ;;
             rtok__subcmd__help__subcmd__graph,dead)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__dead"
@@ -1431,7 +1440,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__expand)
-            opts="-h --lines --grep --config --help"
+            opts="-h --lines --grep --context --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1442,6 +1451,10 @@ _rtok() {
                     return 0
                     ;;
                 --grep)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --context)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1479,12 +1492,34 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph)
-            opts="-h --config --help index dead help"
+            opts="-h --config --help index dead affected help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__affected)
+            opts="-h --since --staged --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --since)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --config)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1515,8 +1550,22 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__graph__subcmd__help)
-            opts="index dead help"
+            opts="index dead affected help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__graph__subcmd__help__subcmd__affected)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1995,8 +2044,22 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__graph)
-            opts="index dead"
+            opts="index dead affected"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__graph__subcmd__affected)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
