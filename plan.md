@@ -31,7 +31,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T60.7 | todo | P3 | 2 | 0% | |
 | T60.9 | todo | P3 | 2 | 0% | |
 | T61.2 | todo | P3 | 3 | 0% | |
-| T62.3 | todo | P3 | 3 | 0% | |
 | T63.1 | todo | P3 | 3 | 0% | |
 | T64.1 | todo | P3 | 3 | 0% | |
 | T64.2 | todo | P3 | 2 | 0% | |
@@ -231,12 +230,6 @@ Done when the web UI follows `prefers-color-scheme` on load, the icon toggles it
 From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
 Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
 Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
-
-### T62.3. OpenCode plugin shortens skill bodies in `tool.execute.after`
-
-From `research.md` §10.8. `plugins/opencode/rtok.ts` already replaces bash output through `rtok filter` in `tool.execute.after`; if OpenCode delivers a skill body through a tool call, the same hook sees it.
-Step 1 (decides the task): verify against OpenCode's current docs and one real session log (`~/.local/share/opencode/opencode.db`, `part` rows) which tool carries a skill body and whether `tool.execute.after` receives its `output`; record the finding in the card. If skills are injected outside the tool path, close the task with that finding and no code.
-Done when (if step 1 passes) the plugin routes that tool's output through `rtok filter --cmd "skill <name>"` with a `[skill]` rule in `rules/default.toml` (head 30 / tail 5, keep headings), the cut is lossless — `filter` archives the raw body and prints the `expand <id>` trailer, adding an `--archive` flag to `filter` if it has none today (check first; one code path with `run`) — `rtok.test.ts` covers a 3,000-line body and a small one, `Measurement { plugin = "cmd", kind = "skill" }`, and `plugins/opencode/README.md` documents it with the verified docs link (`tests/host_docs.rs`).
 
 ### T63.1. Skills page on `tui` and `web`
 

@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+## T62.3 — OpenCode plugin shortens skill bodies in `tool.execute.after`
+
+From `research.md` §10.8. `plugins/opencode/rtok.ts` already replaces bash output through `rtok filter` in `tool.execute.after`; if OpenCode delivers a skill body through a tool call, the same hook sees it.
+Step 1 (decides the task): verify against OpenCode's current docs and one real session log (`~/.local/share/opencode/opencode.db`, `part` rows) which tool carries a skill body and whether `tool.execute.after` receives its `output`; record the finding in the card. If skills are injected outside the tool path, close the task with that finding and no code.
+Done when (if step 1 passes) the plugin routes that tool's output through `rtok filter --cmd "skill <name>"` with a `[skill]` rule in `rules/default.toml` (head 30 / tail 5, keep headings), the cut is lossless — `filter` archives the raw body and prints the `expand <id>` trailer, adding an `--archive` flag to `filter` if it has none today (check first; one code path with `run`) — `rtok.test.ts` covers a 3,000-line body and a small one, `Measurement { plugin = "cmd", kind = "skill" }`, and `plugins/opencode/README.md` documents it with the verified docs link (`tests/host_docs.rs`).
+
+**Finding (2026-09-18).** On the tool path -- implement. Docs: native `skill` tool, `skill({ name })`, body returned in the conversation (https://opencode.ai/docs/skills/, https://opencode.ai/docs/tools/). `tool.execute.after` already mutates `output.output` for every tool (bash path; apply_patch docs name the same hook). Session `~/.local/share/opencode/opencode.db`: 7 `part` rows `type=tool` `tool=skill` `state.status=completed`, `state.input={"name":"..."}`, `state.output` the body (`<skill_content name="nx-workspace">`, 7628 bytes). `rtok filter` on t70.3 has no `--archive`; add it and share emit with `run`.
+
+**Result (2026-09-18).** On `t62.3`, stacked on `t70.3`. Step 1 passed: skills are the native `skill` tool. `rtok filter --archive` shares `run::emit_filtered` (archive raw body, expand trailer, Measurement). `[skill]` in `rules/default.toml` is head 30 / tail 5, keep `# ` headings. OpenCode `tool.execute.after` routes `skill` through `rtok filter --cmd "skill <name>" --archive`. Guard (T70.5) and compaction (T70.6) unchanged. Tests: 3000-line + small body in `rtok.test.ts`; `Measurement { plugin = "cmd", kind = "skill" }`.
+
 ## T70.3 — pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`
 
 From `research.md` §15.3. `src/agents/pi/README.md` records "Not reachable: read, archive, proxy, inject, guard, memory, graph, toon, compress" because pi's philosophy is no MCP. `pi.registerTool` is documented as pi's own tool registration, which is not MCP, so the MCP-surface plugins have a path in on pi after all. The cost is description tokens in every pi request, which is the thing D15 holds `graph` and `memory` to (4 tools / 94 tokens, 3 memory tools).
