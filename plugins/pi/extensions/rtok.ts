@@ -1,15 +1,11 @@
-// rtok pi extension (T10.6, D21): the single bash call path, no MCP.
+// rtok pi extension (T10.6, T70.1, D21): one spawn helper, no MCP.
 //
 // pi philosophy is no MCP: this extension does NOT register tools. It
 // rewrites `bash` calls to `rtok run -- …` (archived, filtered, measured),
-// compresses `bash` results through `rtok filter`, and shrinks the pi
-// `context` message array through `rtok archive rewrite` (T70.2) — the same
-// archive live zone the proxy runs, without a proxy. Every shortened payload
-// carries an `expand <id>` trailer (lossless by default, D4). Missing `rtok`
-// fails open and names the ketch install (D21).
-//
-// Optional proxy: uncomment the `registerProvider` block to route pi's
-// provider through `rtok proxy` (T11.5 pattern, `http://127.0.0.1:8790/v1`).
+// compresses `bash` / `read` / `grep` / `find` / `ls` results through
+// `rtok filter`, and shrinks the pi `context` message array through
+// `rtok archive rewrite` (T70.2) — the same call path as `rtok proxy`
+// (T11.5 pattern, `http://127.0.0.1:8790/v1`).
 
 import { execFile } from "node:child_process";
 
@@ -23,6 +19,8 @@ const KETCH_HINT = [
   "  curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh | bash",
   "  ketch install listepo/rtok",
 ].join("\n");
+
+const FILE_TOOLS = new Set(["read", "grep", "find", "ls"]);
 
 function rtok(args, input, signal) {
   return new Promise((resolve) => {
@@ -42,6 +40,21 @@ function rtok(args, input, signal) {
   });
 }
 
+function hintMissing(pi) {
+  if (pi._rtokHinted) return;
+  pi._rtokHinted = true;
+  pi.appendEntry?.("system", KETCH_HINT);
+}
+
+/** `rtok filter` argv for this result, or null when the tool is left alone. */
+function filterArgs(event) {
+  if (event.toolName === "bash") return ["filter", "--stdin"];
+  if (!FILE_TOOLS.has(event.toolName)) return null;
+  const arg = event.input?.path ?? event.input?.pattern;
+  const hint = typeof arg === "string" && arg ? `${event.toolName} ${arg}` : event.toolName;
+  return ["filter", "--stdin", "--cmd", hint];
+}
+
 export default function (pi) {
   // One call path: bash → `rtok run -- <command>`. Not a duplicate of any
   // MCP read/search: pi has no MCP, and the hook never touches other tools.
@@ -52,23 +65,29 @@ export default function (pi) {
     // Probe install only: `rtok run` would execute the command before bash does.
     const r = await rtok(["--version"]);
     if (r.missing) {
-      pi.appendEntry?.("system", KETCH_HINT);
+      hintMissing(pi);
       return;
     }
     const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
     event.input.command = `rtok run -- ${quoted}`;
   });
 
-  // Bash results: `rtok filter` compresses oversized output; the trailer
-  // carries `expand <id>` for the full text. Small output passes through.
+  // Bash results: `rtok filter` compresses oversized output. File/search
+  // tools pass `--cmd "<tool> <path-or-pattern>"` so the cmd family matches.
+  // The trailer carries `expand <id>` for the full text. Small output passes through.
   pi.on("tool_result", async (event) => {
-    if (event.toolName !== "bash") return;
+    const args = filterArgs(event);
+    if (!args) return;
     const text = (event.content ?? [])
       .map((c) => (typeof c?.text === "string" ? c.text : ""))
       .join("\n");
     if (!text) return;
-    const r = await rtok(["filter", "--stdin"], text, undefined);
-    if (r.missing || !r.stdout) return;
+    const r = await rtok(args, text, undefined);
+    if (r.missing) {
+      hintMissing(pi);
+      return;
+    }
+    if (!r.stdout) return;
     const out = r.stdout.trimEnd();
     if (out && out !== text.trimEnd()) {
       return { content: [{ type: "text", text: out }] };
