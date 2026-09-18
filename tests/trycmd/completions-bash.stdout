@@ -905,7 +905,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__bench)
-            opts="-h --tasks --runs --dry-run --timeout --config --help"
+            opts="-h --tasks --runs --dry-run --timeout --suite --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -920,6 +920,10 @@ _rtok() {
                     return 0
                     ;;
                 --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --suite)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
