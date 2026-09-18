@@ -131,10 +131,10 @@ async fn socket_loop(mut socket: WebSocket, state: Arc<DashState>) {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(Message::Text(text))) => {
-                        if let Some(reply) = inbound(&state, text.as_str()) {
-                            if socket.send(Message::text(reply)).await.is_err() {
-                                break;
-                            }
+                        if let Some(reply) = inbound(&state, text.as_str())
+                            && socket.send(Message::text(reply)).await.is_err()
+                        {
+                            break;
                         }
                     }
                     Some(Ok(_)) => {}
