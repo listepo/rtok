@@ -9,9 +9,10 @@ Files:
 
 - `package.json` — pi manifest: `pi.extensions` → `extensions/rtok.ts`, `pi.skills` → `skills/`.
 - `extensions/rtok.ts` — `tool_call` bash → `rtok run -- <command>`; `tool_result` bash →
-  `rtok filter` with an `expand <id>` trailer; `context` → `rtok archive rewrite --stdin`
-  (the archive live zone without a proxy, T70.2). Missing `rtok` fails open and names ketch
-  (`ketch install listepo/rtok`).
+  `rtok filter` with an `expand <id>` trailer; `tool_result` read/grep/find/ls →
+  `rtok filter --stdin --cmd "<tool> <path-or-pattern>"` (T70.1); `context` →
+  `rtok archive rewrite --stdin` (the archive live zone without a proxy, T70.2). Missing
+  `rtok` fails open and names ketch (`ketch install listepo/rtok`).
 - `skills/rtok/SKILL.md` — tells the model how to recover full output (`rtok expand <id>`).
 - `tests/load.test.ts` — loads the linked directory with pi's own `discoverAndLoadExtensions` and expects
   one extension with `tool_call` and `tool_result`; skipped when pi is not installed.
