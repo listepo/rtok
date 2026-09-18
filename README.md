@@ -290,7 +290,7 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 |---|---|
 | `rtok agents install claude` | install Claude Code hooks and MCP registration (`--dry-run`) |
 | `rtok agents remove claude` | take hooks, MCP registration and proxy variable back out (`--dry-run`) |
-| `rtok agents install cursor` / `codex` / `opencode` / `pi` / `zcode` / `kimi` / `copilot` / `aider --proxy` / `windsurf` / `zed` | register the other supported host integrations |
+| `rtok agents install cursor` / `codex` / `opencode` / `pi` / `zcode` / `kimi` / `copilot` / `aider --proxy` / `windsurf` / `zed` / `vscode` | register the other supported host integrations |
 | `rtok hook <event>` | hook entry point (JSON on stdin, JSON on stdout) |
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok mcp -- <server argv>` | wrap a foreign stdio MCP server: long `tools/call` text blocks are archived and cut by the `[mcp]` rule, everything else passes byte-for-byte, `rtok expand <id>` returns the raw block |
