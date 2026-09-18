@@ -19,7 +19,6 @@
 - T63.1. Skills page on `tui` and `web`
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.3. `cmd` column-padding collapse
-- T68.9. With / without bench for the graph tools
 - T70.1. pi extension shortens every tool result, not only bash
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T70.3. pi tools without MCP: `read`, `search`, `graph`, `memory` through `pi.registerTool`

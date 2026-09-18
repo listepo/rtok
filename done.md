@@ -398,6 +398,15 @@ on that file (D21: one tool). Print is `file ← via symbol` plus the language c
 `{"tests":[{"file","symbol","command"}]}`. No `cap` / Measurement on print. Empty:
 `no indexed test reaches the change; run the suite`. Import edges (T68.6) are not followed.
 
+## T68.9 — With / without bench for the graph tools
+
+From the codegraph / graphify review. codegraph's number is the only measured one in the pair: median of 4 runs, 7 repos, Claude Opus 4.8 answering architecture questions with and without the graph — tool calls, wall time, tokens, cost — and it also reports the cost (80 % more retrieval context resident at session end). rtok's `docs/comparison.md` §5 still says no end-to-end win is demonstrated, and Gate P8b's task-set clause was never closable in code.
+Done when `rtok bench --suite graph` runs N fixed questions (≥ 10, three repos including this one, in `bench/graph.toml`) through the existing `claude -p` harness twice — rtok MCP on, rtok MCP off (native Read / Grep only) — and reports per question and in total: tool calls, tokens in / out / cache-read, wall time, cost via `stats --price`, resident context at the last turn, pass / fail against an expected-answer regex; `--dry-run` prints the schedule without spend; the live run needs the creator's go (API spend) and its result goes into `research.md` and `docs/comparison.md` §4 / §5 with the date and command; the vendor's 88 % / 62 % numbers are quoted there only next to rtok's own.
+
+Check: `rtok bench --suite graph --runs 1 --dry-run` prints 24 lines `{id} {repo} {mcp|native} {n}` covering 12 questions × 3 repos (this tree, `bench/repos/mini-rs`, `bench/repos/mini-py`) × two arms. Offline table headers are `id repo arm tools in out cache wall_ms cost resident pass` plus `TOTAL` rows; cost uses `stats --price` (`row_cost`) when live. Unit tests `graph_dry_run_lists_each_question_on_both_arms` and `graph_offline_table_names_the_metrics`; trycmd `tests/trycmd/bench-graph-dry-run.toml`.
+
+**Live API clause remains open.** `RTOK_BENCH_LIVE` was not set; no `claude -p` spend. Dated live numbers are not in `research.md` / `docs/comparison.md`; those files record the suite and the dry-run command only.
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
