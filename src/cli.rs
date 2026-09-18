@@ -37,6 +37,12 @@ enum Cmd {
     },
     /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
     Mcp {
+        /// Call one listed tool and print the text result (pi `registerTool` shim, T70.3)
+        #[arg(long, value_name = "TOOL")]
+        call: Option<String>,
+        /// JSON arguments for `--call`
+        #[arg(long, value_name = "ARGS")]
+        json: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -921,9 +927,22 @@ pub fn run() -> Result<()> {
                 crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
             );
         }
-        Cmd::Mcp { wrap } => {
+        Cmd::Mcp { call, json, wrap } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if wrap.is_empty() {
+            if let Some(name) = call {
+                if !wrap.is_empty() {
+                    bail!("rtok mcp --call does not wrap a foreign server");
+                }
+                let raw = json.as_deref().unwrap_or("{}");
+                let args: serde_json::Value = serde_json::from_str(raw)?;
+                match crate::mcp::call(&cfg, &name, &args) {
+                    Ok(text) => print!("{text}"),
+                    Err(e) => {
+                        print!("{e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else if wrap.is_empty() {
                 crate::mcp::run(&cfg)?;
             } else {
                 #[cfg(feature = "cmd")]
