@@ -543,6 +543,10 @@ section! {
         /// Max bytes `search` will read from one file (T55.5). Larger files are skipped.
         search_max_bytes: u64 = 1_048_576,
         tree_depth: u32 = 2,
+        /// T58.1: re-read of a changed file returns a unified diff vs the last archive.
+        delta: bool = true,
+        /// Serve the full file when the diff is not below this fraction of the file.
+        delta_max_ratio: f32 = 0.6,
         /// Deprecated compatibility key; grammars are Cargo features now, so this is ignored.
         languages: Vec<String> = Vec::new(),
     }
