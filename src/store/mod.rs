@@ -44,6 +44,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0014.sql", include_str!("../../migrations/0014.sql")),
     ("0015.sql", include_str!("../../migrations/0015.sql")),
     ("0016.sql", include_str!("../../migrations/0016.sql")),
+    ("0017.sql", include_str!("../../migrations/0017.sql")),
 ];
 
 pub struct Store {
@@ -764,6 +765,40 @@ impl Store {
             ))
             .execute(&mut *conn)?;
         Ok(n == 1)
+    }
+
+    /// Last-written `rtok memory sync` block digest (T69.6 hand-edit guard).
+    pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            value: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query("SELECT value FROM kv WHERE key = ?")
+            .bind::<Text, _>(key)
+            .load(&mut *conn)?;
+        Ok(rows.into_iter().next().map(|r| r.value))
+    }
+
+    pub fn kv_set(&self, key: &str, value: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO kv (key, value) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind::<Text, _>(key)
+        .bind::<Text, _>(value)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    pub fn kv_delete(&self, key: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query("DELETE FROM kv WHERE key = ?")
+            .bind::<Text, _>(key)
+            .execute(&mut *conn)?;
+        Ok(())
     }
 
     /// Pin or unpin `id`; pinned notes lead recall (T69.1). Returns `false` for an
