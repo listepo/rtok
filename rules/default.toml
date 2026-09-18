@@ -152,6 +152,8 @@ head = 8
 tail = 16
 keep = ["error TS|Found \\d+ error"]
 dedupe = true
+group = "diag"
+
 
 [eslint]
 max_lines = 40
