@@ -3,7 +3,8 @@
 use serde_json::Value;
 
 use super::wire::{
-    BlobRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup,
+    BlobRef, SkillRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, collect_skill_refs,
+    find_usage, turn_setup,
 };
 
 pub static ANTHROPIC: Anthropic = Anthropic;
@@ -106,6 +107,13 @@ impl ToolResults for Anthropic {
             }
         }
         out
+    }
+
+    fn skill_refs<'a>(&self, req: &'a mut Value) -> Vec<SkillRef<'a>> {
+        let Some((messages, total)) = turn_setup(req, "messages") else {
+            return Vec::new();
+        };
+        collect_skill_refs(messages, total)
     }
 }
 
@@ -210,5 +218,42 @@ mod tests {
 
         let mut scalar = json!("nope");
         assert!(!apply_context_edits(&mut scalar, true));
+    }
+    #[test]
+    fn skill_body_right_after_launching_skill_is_a_skill_ref() {
+        let mut same = json!({"messages":[
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: slint"},
+                {"type":"text","text":"Base directory for this skill: /s/slint\n\n# Slint\n"}
+            ]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":[{"type":"text","text":"next"}]}
+        ]});
+        let refs = ANTHROPIC.skill_refs(&mut same);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].id, "tu1");
+        assert_eq!(refs[0].name, "slint");
+        assert_eq!(refs[0].turn, 1);
+
+        let mut next = json!({"messages":[
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"tu2","content":"Launching skill: ponytail"}
+            ]},
+            {"role":"user","content":[{"type":"text","text":"Base directory for this skill: /s/ponytail\n\n# P\n"}]},
+            {"role":"user","content":[{"type":"text","text":"hello"}]}
+        ]});
+        let refs = ANTHROPIC.skill_refs(&mut next);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].id, "tu2");
+        assert_eq!(refs[0].name, "ponytail");
+        assert_eq!(refs[0].turn, 1);
+
+        let mut skip = json!({"messages":[
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"tu3","content":"Launching skill: x"},
+                {"type":"text","text":"not a skill body"}
+            ]}
+        ]});
+        assert!(ANTHROPIC.skill_refs(&mut skip).is_empty());
     }
 }
