@@ -176,20 +176,19 @@ fn t51_request() -> Vec<u8> {
     .into_bytes()
 }
 
-async fn t51_server(
-    label: &str,
-    up: &MockUpstream,
-    mode: &str,
-) -> (
+type Server = (
     String,
     Arc<ProxyState>,
     tokio::task::JoinHandle<std::io::Result<()>>,
-) {
-    let dir = std::env::temp_dir().join(format!("rtok-proxy-t51-{label}-{}", std::process::id()));
+);
+
+/// One proxy on a fresh store and a throwaway config dir; `tune` points it at the
+/// mock upstream and sets whatever else the case needs (mode, plugin flags).
+async fn proxy_server(dir_tag: &str, tune: impl FnOnce(&mut Config)) -> Server {
+    let dir = std::env::temp_dir().join(format!("rtok-proxy-{dir_tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut cfg = Config::load_from(&dir).expect("config");
-    cfg.proxy.upstream = up.base_url();
-    cfg.proxy.mode = mode.to_string();
+    tune(&mut cfg);
     let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -197,6 +196,14 @@ async fn t51_server(
     let addr = listener.local_addr().expect("local addr").to_string();
     let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
     (addr, state, task)
+}
+
+async fn t51_server(label: &str, up: &MockUpstream, mode: &str) -> Server {
+    proxy_server(&format!("t51-{label}"), |cfg| {
+        cfg.proxy.upstream = up.base_url();
+        cfg.proxy.mode = mode.to_string();
+    })
+    .await
 }
 
 async fn t51_post(addr: &str, body: Vec<u8>) -> reqwest::Response {
@@ -371,28 +378,13 @@ const T112_MODEL: &str = "gpt-4o";
 
 /// Points `proxy.openai_upstream` (not `proxy.upstream`) at the mock, so a request that
 /// reaches the fixture proves the OpenAI wire picked the OpenAI upstream.
-async fn openai_server(
-    label: &str,
-    up: &MockUpstream,
-    mode: &str,
-) -> (
-    String,
-    Arc<ProxyState>,
-    tokio::task::JoinHandle<std::io::Result<()>>,
-) {
-    let dir = std::env::temp_dir().join(format!("rtok-proxy-t11-{label}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let mut cfg = Config::load_from(&dir).expect("config");
-    cfg.proxy.upstream = "http://127.0.0.1:1".to_string(); // Anthropic upstream must go unused
-    cfg.proxy.openai_upstream = up.base_url();
-    cfg.proxy.mode = mode.to_string();
-    let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind");
-    let addr = listener.local_addr().expect("local addr").to_string();
-    let task = tokio::spawn(axum::serve(listener, app(state.clone())).into_future());
-    (addr, state, task)
+async fn openai_server(label: &str, up: &MockUpstream, mode: &str) -> Server {
+    proxy_server(&format!("t11-{label}"), |cfg| {
+        cfg.proxy.upstream = "http://127.0.0.1:1".to_string(); // Anthropic upstream must go unused
+        cfg.proxy.openai_upstream = up.base_url();
+        cfg.proxy.mode = mode.to_string();
+    })
+    .await
 }
 
 async fn openai_post(addr: &str, path: &str, body: Vec<u8>) -> reqwest::Response {
@@ -1450,4 +1442,171 @@ async fn proxy_upstream_error_still_records_usage_row() {
         "no provider counters, no tokens row"
     );
     task.abort();
+}
+
+// ── T51.1: live-zone blob shrinking — pointered from turn 2, byte-stable, expandable ──
+
+const T511_SESSION: &str = "sess-t511";
+
+/// A 400-row JSON dump: a blob candidate (parses as JSON, not prose), far above
+/// `archive.min_tokens`, and identical bytes every time the same turn is re-sent.
+fn t511_blob(turn: usize) -> String {
+    let rows: Vec<serde_json::Value> = (1..=400)
+        .map(|i| {
+            serde_json::json!({"id": i, "turn": turn, "name": format!("entry-{i}"),
+                "note": "some payload the model already read"})
+        })
+        .collect();
+    serde_json::to_string(&serde_json::json!({"rows": rows})).expect("blob json")
+}
+
+/// Six user turns, each carrying one blob in a non-`tool_result` position: Anthropic
+/// `text` blocks, Chat plain string content. No tool results at all, so every `archive`
+/// measurement the run writes has to have come from the live-blob pass.
+fn t511_request(openai: bool) -> Vec<u8> {
+    let mut messages = Vec::new();
+    for t in 1..=6 {
+        let blob = t511_blob(t);
+        messages.push(if openai {
+            serde_json::json!({"role": "user", "content": blob})
+        } else {
+            serde_json::json!({"role": "user", "content": [{"type": "text", "text": blob}]})
+        });
+        messages.push(serde_json::json!({"role": "assistant", "content": "ok"}));
+    }
+    let body = if openai {
+        serde_json::json!({"model": T112_MODEL, "user": T511_SESSION, "messages": messages})
+    } else {
+        serde_json::json!({"model": T51_MODEL, "max_tokens": 8, "messages": messages,
+            "metadata": {"user_id": T511_SESSION}})
+    };
+    serde_json::to_vec(&body).expect("request json")
+}
+
+fn t511_texts(openai: bool, body: &serde_json::Value) -> Vec<&str> {
+    body["messages"]
+        .as_array()
+        .expect("messages")
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .map(|m| {
+            if openai {
+                m["content"].as_str().expect("string content")
+            } else {
+                m["content"][0]["text"].as_str().expect("text block")
+            }
+        })
+        .collect()
+}
+
+async fn t511_server(label: &str, up: &MockUpstream, openai: bool) -> Server {
+    let base = up.base_url();
+    proxy_server(&format!("t511-{label}"), move |cfg| {
+        cfg.proxy.mode = "compress".to_string();
+        if openai {
+            cfg.proxy.upstream = "http://127.0.0.1:1".to_string();
+            cfg.proxy.openai_upstream = base;
+        } else {
+            cfg.proxy.upstream = base;
+        }
+        cfg.plugins.archive.live_blobs = true;
+    })
+    .await
+}
+
+/// T51.1 acceptance. With the opt-in flag on, a six-turn request whose user blocks carry a
+/// large JSON dump leaves the proxy pointered from turn 2 up, byte-identical on a replay
+/// (so the prompt cache still hits), with the two working-edge turns untouched and every
+/// archived original recoverable by its measurement's `ref_id` — what `expand <id>` reads.
+#[tokio::test]
+async fn proxy_compress_shrinks_live_blobs_on_both_wires() {
+    for (label, path, openai) in [
+        ("anthropic", "/v1/messages", false),
+        ("chat", "/v1/chat/completions", true),
+    ] {
+        let up = if openai {
+            MockUpstream::openai_chat_body()
+        } else {
+            MockUpstream::anthropic_messages_body()
+        };
+        let (addr, state, task) = t511_server(label, &up, openai).await;
+        let request = t511_request(openai);
+        for _ in 0..2 {
+            let resp = openai_post(&addr, path, request.clone()).await;
+            assert_eq!(resp.status(), reqwest::StatusCode::OK, "{label}");
+            up.assert_passthrough_bytes(&resp.bytes().await.expect("body"));
+        }
+        let rows = t51_usage_n(&state.store, T511_SESSION, 2).await;
+        let sent: Vec<Vec<u8>> = rows
+            .iter()
+            .map(|u| {
+                state
+                    .store
+                    .call_io_request(u.call_id.expect("call id") as i32)
+                    .expect("call_io")
+                    .expect("request")
+            })
+            .collect();
+        assert_eq!(
+            sent[0], sent[1],
+            "{label}: replay is byte-identical upstream"
+        );
+        assert!(
+            sent[0].len() < request.len() / 2,
+            "{label}: the blobs actually left the request"
+        );
+        let body: serde_json::Value = serde_json::from_slice(&sent[0]).expect("json");
+        let texts = t511_texts(openai, &body);
+        assert_eq!(texts.len(), 6, "{label}");
+        for (i, text) in texts.iter().enumerate() {
+            // Oldest user message first, so turn = 5 - i; the pass keeps turns 0 and 1.
+            if i < 4 {
+                assert!(
+                    text.starts_with("[archived "),
+                    "{label}: turn {} pointered",
+                    5 - i
+                );
+            } else {
+                assert_eq!(*text, t511_blob(i + 1), "{label}: working edge stays whole");
+            }
+        }
+        let ms = state
+            .store
+            .list_measurements("archive")
+            .expect("measurements");
+        assert!(
+            ms.iter().all(|m| m.kind == "live_blob"),
+            "{label}: no tool results in this fixture, so nothing but blobs is measured"
+        );
+        assert_eq!(
+            ms.len(),
+            8,
+            "{label}: four blobs, measured on both requests"
+        );
+        let mut ids: Vec<&str> = ms
+            .iter()
+            .map(|m| m.ref_id.as_deref().expect("ref id"))
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let mut recovered: Vec<String> = ids
+            .iter()
+            .map(|id| {
+                let bytes = state
+                    .store
+                    .get_archive(id, None)
+                    .expect("archive read")
+                    .expect("payload");
+                String::from_utf8(bytes).expect("utf-8")
+            })
+            .collect();
+        recovered.sort();
+        let mut originals: Vec<String> = (1usize..=4).map(t511_blob).collect();
+        originals.sort();
+        assert_eq!(
+            recovered, originals,
+            "{label}: every pointer expands to its original blob, byte for byte"
+        );
+        task.abort();
+    }
 }
