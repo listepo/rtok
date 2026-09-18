@@ -71,9 +71,12 @@ impl ToolResults for Anthropic {
         results
     }
 
-    /// Shrinkable non-result payloads (T51.1): user text blocks and base64
-    /// `image` / `document` sources. `tool_result` blocks belong to `archive`'s
-    /// result pass and are skipped here.
+    /// Shrinkable non-result payloads (T51.1): user text blocks only — the big
+    /// JSON dumps and `data:` URIs T51.1 wants. Binary-bearing fields are never
+    /// yielded (T55.15): overwriting `image` / `document` `source.data` with
+    /// pointer text makes the whole request invalid (400) the moment
+    /// `[plugins.archive] live_blobs` turns on. `tool_result` blocks belong to
+    /// `archive`'s result pass and are skipped here.
     fn live_blobs<'a>(&self, req: &'a mut Value) -> Vec<BlobRef<'a>> {
         let Some((messages, total)) = turn_setup(req, "messages") else {
             return Vec::new();
@@ -95,9 +98,6 @@ impl ToolResults for Anthropic {
                 }
                 let content = match block["type"].as_str() {
                     Some("text") => block.get_mut("text"),
-                    Some("image") | Some("document") => {
-                        block.get_mut("source").and_then(|s| s.get_mut("data"))
-                    }
                     _ => None,
                 };
                 if let Some(content) = content {

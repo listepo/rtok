@@ -45,8 +45,10 @@ impl ToolResults for OpenAiChat {
     }
 
     /// Shrinkable non-result payloads (T51.1): user message text — whole strings
-    /// and `text` / `image_url` parts. `role: "tool"` messages belong to `archive`'s
-    /// result pass and are skipped here.
+    /// and `text` parts. `image_url.url` is never yielded (T55.15): pointer text
+    /// in that field makes the request invalid the moment
+    /// `[plugins.archive] live_blobs` turns on. `role: "tool"` messages belong to
+    /// `archive`'s result pass and are skipped here.
     fn live_blobs<'a>(&self, req: &'a mut Value) -> Vec<BlobRef<'a>> {
         let Some((messages, total)) = turn_setup(req, "messages") else {
             return Vec::new();
@@ -64,14 +66,9 @@ impl ToolResults for OpenAiChat {
                 out.push(BlobRef { content, turn });
             } else if let Some(parts) = message.get_mut("content").and_then(Value::as_array_mut) {
                 for part in parts {
-                    let content = match part["type"].as_str() {
-                        Some("text") => part.get_mut("text"),
-                        Some("image_url") => {
-                            part.get_mut("image_url").and_then(|u| u.get_mut("url"))
-                        }
-                        _ => None,
-                    };
-                    if let Some(content) = content {
+                    if part["type"].as_str() == Some("text")
+                        && let Some(content) = part.get_mut("text")
+                    {
                         out.push(BlobRef { content, turn });
                     }
                 }

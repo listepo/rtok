@@ -824,4 +824,83 @@ mod tests {
         assert_eq!(ms2.len(), 1, "the expanded blob stays original");
         assert!(again[0].as_str().unwrap().starts_with("data:"));
     }
+
+    /// T55.15: binary-bearing fields are never rewritten in place — pointer text
+    /// inside `source.data` would make the request invalid (400) the moment
+    /// `live_blobs` turns on. The very same bytes shrink as a *text* block in the
+    /// same turn, so the only reason the image survives is its block type.
+    #[test]
+    fn image_source_data_is_never_rewritten() {
+        let cx = brewed_cx("blobs-image");
+        let uri = format!("data:image/png;base64,{}", "aB3dE5g7".repeat(900));
+        let mut req = serde_json::json!({"messages":[
+            {"role":"user","content":[
+                {"type":"text","text": uri},
+                {"type":"image","source":{"type":"base64","media_type":"image/png","data": uri}}
+            ]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":[{"type":"text","text": uri}]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":[{"type":"text","text":"small"}]}
+        ]});
+        let original = req.clone();
+        let ms = rewrite_blobs(
+            crate::proxy::wire::ToolResults::live_blobs(
+                &crate::proxy::anthropic::ANTHROPIC,
+                &mut req,
+            ),
+            &Ctx::new(&cx),
+        );
+        assert_eq!(ms.len(), 1, "the text blob shrinks, the image never");
+        assert!(ms.iter().all(|m| m.kind == "live_blob"));
+        assert_eq!(
+            req["messages"][0]["content"][1]["source"]["data"],
+            original["messages"][0]["content"][1]["source"]["data"],
+            "source.data is byte-identical through rewrite_blobs"
+        );
+        assert!(
+            req["messages"][0]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("[archived ")
+        );
+    }
+
+    /// T55.15 on the Chat wire: `image_url.url` is byte-identical through
+    /// `rewrite_blobs`; the text part beside it still shrinks.
+    #[test]
+    fn openai_image_url_is_never_rewritten() {
+        let cx = brewed_cx("blobs-image-url");
+        let uri = format!("data:image/png;base64,{}", "aB3dE5g7".repeat(900));
+        let mut req = serde_json::json!({"messages":[
+            {"role":"user","content":[
+                {"type":"text","text": uri},
+                {"type":"image_url","image_url":{"url": uri}}
+            ]},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":"mid-turn filler"},
+            {"role":"assistant","content":"ok"},
+            {"role":"user","content":"small"}
+        ]});
+        let original = req.clone();
+        let ms = rewrite_blobs(
+            crate::proxy::wire::ToolResults::live_blobs(
+                &crate::proxy::openai_chat::OPENAI_CHAT,
+                &mut req,
+            ),
+            &Ctx::new(&cx),
+        );
+        assert_eq!(ms.len(), 1, "the text part shrinks, the image_url never");
+        assert_eq!(
+            req["messages"][0]["content"][1]["image_url"]["url"],
+            original["messages"][0]["content"][1]["image_url"]["url"],
+            "image_url.url is byte-identical through rewrite_blobs"
+        );
+        assert!(
+            req["messages"][0]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("[archived ")
+        );
+    }
 }
