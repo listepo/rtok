@@ -49,6 +49,7 @@ impl HookInput {
     /// Cursor shell hooks: top-level `command` + `conversation_id`.
     /// `beforeShellExecution` → Claude PreToolUse (`tool_name=Bash`, `tool_input.command`).
     /// `afterShellExecution` → Claude PostToolUse (+ `tool_response` from `output`/`stdout`).
+    /// `postToolUse` → PostToolUse (`tool_output` / `result_json` → `tool_response`).
     pub fn adapt_cursor(&mut self, event: &str) {
         self.take_transcript_path_alias();
         if matches!(event, "afterMCPExecution") || self.hook_event_name == "afterMCPExecution" {
@@ -69,7 +70,17 @@ impl HookInput {
         {
             self.session_id = id.to_string();
         }
+        if self.tool_response.is_none() {
+            if let Some(v) = take_jsonish(&mut self.extra, "tool_output") {
+                self.tool_response = Some(v);
+            } else if let Some(v) = take_jsonish(&mut self.extra, "result_json") {
+                self.tool_response = Some(v);
+            }
+        }
         if self.tool_name.is_some() {
+            if self.tool_input.is_none() {
+                self.tool_input = Some(Value::Object(Map::new()));
+            }
             self.hook_event_name = cursor_event(event, &self.hook_event_name).into();
             return;
         }
@@ -84,8 +95,7 @@ impl HookInput {
         };
         self.tool_name = Some("Bash".into());
         self.tool_input = Some(serde_json::json!({"command": cmd}));
-        let after = matches!(event, "PostToolUse" | "afterShellExecution")
-            || self.hook_event_name == "afterShellExecution";
+        let after = matches!(cursor_event(event, &self.hook_event_name), "PostToolUse");
         if after {
             self.hook_event_name = "PostToolUse".into();
             if self.tool_response.is_none() {
@@ -189,14 +199,23 @@ fn as_string(v: Value) -> Option<String> {
     }
 }
 
+/// Cursor stdin `tool_output` / `result_json` is often a JSON string of the result object.
+fn take_jsonish(extra: &mut Map<String, Value>, key: &str) -> Option<Value> {
+    let v = extra.remove(key)?;
+    match v {
+        Value::String(s) => serde_json::from_str(&s).ok().or(Some(Value::String(s))),
+        other => Some(other),
+    }
+}
+
 /// Cursor hook names to Claude's; a Claude name passes through.
 fn cursor_event<'a>(cli: &'a str, stdin: &'a str) -> &'a str {
     let name = if stdin.is_empty() { cli } else { stdin };
     match name {
         "sessionStart" => "SessionStart",
         "beforeSubmitPrompt" => "UserPromptSubmit",
-        "afterShellExecution" => "PostToolUse",
-        "beforeShellExecution" => "PreToolUse",
+        "postToolUse" | "PostToolUse" | "afterShellExecution" => "PostToolUse",
+        "preToolUse" | "PreToolUse" | "beforeShellExecution" => "PreToolUse",
         "afterMCPExecution" => "AfterMCPExecution",
         "preCompact" => "PreCompact",
         other => other,
@@ -277,6 +296,9 @@ pub struct HookSpecificOutput {
     pub updated_input: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_context: Option<String>,
+    /// Cursor `postToolUse` only: replaces an MCP tool result (`updated_mcp_tool_output`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_mcp_tool_output: Option<Value>,
 }
 
 #[cfg(test)]
@@ -417,5 +439,28 @@ mod tests {
         assert!(input.pre_tool().is_some());
         assert!(input.post_tool().is_none());
         assert!(input.tool_response.is_none());
+    }
+
+    #[test]
+    fn cursor_post_tool_use_maps_mcp_tool_output() {
+        let raw = serde_json::json!({
+            "hook_event_name": "postToolUse",
+            "tool_name": "MCP:list_issues",
+            "tool_input": {"team": "eng"},
+            "tool_output": "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}",
+            "conversation_id": "sess-mcp",
+            "mcp_server_name": "linear"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_cursor("PostToolUse");
+        assert_eq!(input.session_id, "sess-mcp");
+        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert_eq!(input.tool_name.as_deref(), Some("MCP:list_issues"));
+        assert_eq!(input.tool_input.as_ref().unwrap()["team"], "eng");
+        assert_eq!(
+            input.tool_response.as_ref().unwrap()["content"][0]["text"],
+            "ok"
+        );
+        assert!(input.post_tool().is_some());
     }
 }
