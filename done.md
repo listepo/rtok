@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+## T50.3 — Extra `read` modes
+
+From I-07. `read` has full, lines, map and signatures. The measured Read tail (38–68 K char files) may still be served whole when only imports or code without comments are needed.
+Done when a measurement on those files shows which extra mode (imports-only, comments-stripped, or none) saves tokens without losing the answer; each added mode goes through tree-sitter where a grammar exists, falls back to `full`, keeps the read cap and dedup, and has a test per language. If no mode wins, the card closes with the numbers.
+
+**Result (2026-09-18):** On 11 Rust files in this repo's 38–68 K char class (534 894 B), comments-stripped saves **18.9 %** (100 897 B, ~25 K est. tokens) and keeps function/type bodies → MCP `read` `mode=stripped` via existing tree-sitter grammars (Rust, TS, JS, Python, Dart, C, Go); unknown language or parse fail → `full`; read cap, T65.1 content-hash and T58.1 delta unchanged; `Measurement { kind = "stripped" }` when it shrinks; one test per language. imports-only is 0.1–2.1 % of each file and drops those bodies → not added. `app.slint` (38 064 B, no grammar) stays `full`. Numbers in `research.md` §2.
+
+
 ## T65.1 — Content-hash dedup of tool output within a session
 
 From `research.md` §11 (sqz, 2026-09-18). sqz's flagship: content seen before in the session comes back as a 13-token `§ref:HASH§` instead of the text. rtok's `guard` dedups by input key (`guard::cache_key`: same tool, same normalised input), so `cat a` followed by `head -1000 a`, or the same `cargo test` failure printed twice, is paid twice.
