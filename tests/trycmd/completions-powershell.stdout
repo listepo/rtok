@@ -1,0 +1,1031 @@
+
+using namespace System.Management.Automation
+using namespace System.Management.Automation.Language
+
+Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    $commandElements = $commandAst.CommandElements
+    $command = @(
+        'rtok'
+        for ($i = 1; $i -lt $commandElements.Count; $i++) {
+            $element = $commandElements[$i]
+            if ($element -isnot [StringConstantExpressionAst] -or
+                $element.StringConstantType -ne [StringConstantType]::BareWord -or
+                $element.Value.StartsWith('-') -or
+                $element.Value -eq $wordToComplete) {
+                break
+        }
+        $element.Value
+    }) -join ';'
+
+    $completions = @(switch ($command) {
+        'rtok' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('-V', '-V ', [CompletionResultType]::ParameterName, 'Print version')
+            [CompletionResult]::new('--version', '--version', [CompletionResultType]::ParameterName, 'Print version')
+            [CompletionResult]::new('hook', 'hook', [CompletionResultType]::ParameterValue, 'Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout')
+            [CompletionResult]::new('mcp', 'mcp', [CompletionResultType]::ParameterValue, 'Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead')
+            [CompletionResult]::new('proxy', 'proxy', [CompletionResultType]::ParameterValue, 'Local API proxy for ANTHROPIC_BASE_URL')
+            [CompletionResult]::new('web', 'web', [CompletionResultType]::ParameterValue, 'Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)')
+            [CompletionResult]::new('tui', 'tui', [CompletionResultType]::ParameterValue, 'Terminal UI over the same data as `rtok web` (D23: one model, two renderings)')
+            [CompletionResult]::new('stats', 'stats', [CompletionResultType]::ParameterValue, 'Measurements from session logs and the proxy')
+            [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
+            [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
+            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
+            [CompletionResult]::new('agent', 'agent', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
+            [CompletionResult]::new('setup', 'setup', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go')
+            [CompletionResult]::new('run', 'run', [CompletionResultType]::ParameterValue, 'Execute a command, archive its raw output, print the filtered version')
+            [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
+            [CompletionResult]::new('expand', 'expand', [CompletionResultType]::ParameterValue, 'Print an archived payload')
+            [CompletionResult]::new('archive', 'archive', [CompletionResultType]::ParameterValue, 'The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)')
+            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions for `bash`, `zsh`, `fish` or `powershell`')
+            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff) to stdout')
+            [CompletionResult]::new('plugins', 'plugins', [CompletionResultType]::ParameterValue, 'List plugins: id, enabled, surfaces')
+            [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
+            [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')
+            [CompletionResult]::new('graph', 'graph', [CompletionResultType]::ParameterValue, 'Symbol index (`rtok graph index`)')
+            [CompletionResult]::new('dashboard', 'dashboard', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok web`; still runs, still prints where to go')
+            [CompletionResult]::new('demon', 'demon', [CompletionResultType]::ParameterValue, 'Keep `rtok proxy` (or `mcp` / `web`) running in the background')
+            [CompletionResult]::new('otel', 'otel', [CompletionResultType]::ParameterValue, 'OpenTelemetry export (`rtok otel flush | status`)')
+            [CompletionResult]::new('logs', 'logs', [CompletionResultType]::ParameterValue, 'rtok''s own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)')
+            [CompletionResult]::new('report', 'report', [CompletionResultType]::ParameterValue, 'The operator model as one document (D24): Markdown, HTML and PDF')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;hook' {
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Overlay `[hook] host` (`claude` | `cursor` | `copilot`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;mcp' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;proxy' {
+            [CompletionResult]::new('--port', '--port', [CompletionResultType]::ParameterName, 'Override `[proxy] port`')
+            [CompletionResult]::new('--upstream', '--upstream', [CompletionResultType]::ParameterName, 'Override `[proxy] upstream`')
+            [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Override `[proxy] mode` (`passthrough` | `compress`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print effective `[proxy]` settings and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;web' {
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'Override `[web] host`')
+            [CompletionResult]::new('--port', '--port', [CompletionResultType]::ParameterName, 'Override `[web] port`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;tui' {
+            [CompletionResult]::new('--tab', '--tab', [CompletionResultType]::ParameterName, 'Start on this tab (a page name both surfaces carry)')
+            [CompletionResult]::new('--tick-secs', '--tick-secs', [CompletionResultType]::ParameterName, 'Model re-read cadence in seconds')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;stats' {
+            [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'How far back to read transcripts (`60d`, `24h`)')
+            [CompletionResult]::new('--plugin', '--plugin', [CompletionResultType]::ParameterName, 'Restrict to one tool or plugin id')
+            [CompletionResult]::new('--save-baseline', '--save-baseline', [CompletionResultType]::ParameterName, 'Write this report JSON to `<home>/measurements/<name>.json`')
+            [CompletionResult]::new('--compare', '--compare', [CompletionResultType]::ParameterName, 'Print deltas against a saved baseline')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('--calibrate', '--calibrate', [CompletionResultType]::ParameterName, 'Fit chars-per-token via count_tokens (skipped without an API key)')
+            [CompletionResult]::new('--cache', '--cache', [CompletionResultType]::ParameterName, 'Cache health per session from proxy usage rows: busts and their cause')
+            [CompletionResult]::new('--price', '--price', [CompletionResultType]::ParameterName, 'Show per-model USD costs from `[stats.prices]` (`--price`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;bench' {
+            [CompletionResult]::new('--tasks', '--tasks', [CompletionResultType]::ParameterName, 'Task list TOML')
+            [CompletionResult]::new('--runs', '--runs', [CompletionResultType]::ParameterName, 'Repeats per task × config')
+            [CompletionResult]::new('--timeout', '--timeout', [CompletionResultType]::ParameterName, 'Per-run timeout in seconds')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the schedule and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;doctor' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--instructions', '--instructions', [CompletionResultType]::ParameterName, 'Also run the instruction-file audit (T7.2)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;info' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the text lines')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;install' {
+            [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
+            [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
+            [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
+            [CompletionResult]::new('--proxy', '--proxy', [CompletionResultType]::ParameterName, 'Set `env.ANTHROPIC_BASE_URL` to this proxy')
+            [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;install' {
+            [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
+            [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
+            [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
+            [CompletionResult]::new('--proxy', '--proxy', [CompletionResultType]::ParameterName, 'Set `env.ANTHROPIC_BASE_URL` to this proxy')
+            [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;remove' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;remove' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;sessions' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also show sessions that have ended')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;sessions;watch' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also show sessions that have ended')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;sessions;help' {
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;sessions;help;watch' {
+            break
+        }
+        'rtok;agents;sessions;help;help' {
+            break
+        }
+        'rtok;agent;sessions' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also show sessions that have ended')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;sessions;watch' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'Also show sessions that have ended')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;sessions;help' {
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;sessions;help;watch' {
+            break
+        }
+        'rtok;agent;sessions;help;help' {
+            break
+        }
+        'rtok;agents;help' {
+            [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agents;help;install' {
+            break
+        }
+        'rtok;agents;help;remove' {
+            break
+        }
+        'rtok;agents;help;list' {
+            break
+        }
+        'rtok;agents;help;sessions' {
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            break
+        }
+        'rtok;agents;help;sessions;watch' {
+            break
+        }
+        'rtok;agents;help;help' {
+            break
+        }
+        'rtok;agent;help' {
+            [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;agent;help;install' {
+            break
+        }
+        'rtok;agent;help;remove' {
+            break
+        }
+        'rtok;agent;help;list' {
+            break
+        }
+        'rtok;agent;help;sessions' {
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            break
+        }
+        'rtok;agent;help;sessions;watch' {
+            break
+        }
+        'rtok;agent;help;help' {
+            break
+        }
+        'rtok;setup' {
+            [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
+            [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
+            [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
+            [CompletionResult]::new('--proxy', '--proxy', [CompletionResultType]::ParameterName, 'Set `env.ANTHROPIC_BASE_URL` to this proxy')
+            [CompletionResult]::new('--cli', '--cli', [CompletionResultType]::ParameterName, 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--desktop', '--desktop', [CompletionResultType]::ParameterName, 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)')
+            [CompletionResult]::new('--all', '--all', [CompletionResultType]::ParameterName, 'All variants (the default when neither `--cli` nor `--desktop` is given)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;run' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;filter' {
+            [CompletionResult]::new('--cmd', '--cmd', [CompletionResultType]::ParameterName, 'Command family hint (`git status`, `cargo test`, …)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool.execute.after`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;expand' {
+            [CompletionResult]::new('--lines', '--lines', [CompletionResultType]::ParameterName, 'Inclusive 1-based range `a-b`')
+            [CompletionResult]::new('--grep', '--grep', [CompletionResultType]::ParameterName, 'Regex filter (literal when it does not compile); hits print as `N:line`')
+            [CompletionResult]::new('--context', '--context', [CompletionResultType]::ParameterName, 'With `--grep`: N lines around each hit, overlapping windows merged with `--`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;archive' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('rewrite', 'rewrite', [CompletionResultType]::ParameterValue, 'Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;archive;rewrite' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the message array from stdin (pi `context` event)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;archive;help' {
+            [CompletionResult]::new('rewrite', 'rewrite', [CompletionResultType]::ParameterValue, 'Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;archive;help;rewrite' {
+            break
+        }
+        'rtok;archive;help;help' {
+            break
+        }
+        'rtok;completions' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;man' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;plugins' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('init', 'init', [CompletionResultType]::ParameterValue, 'Write the annotated reference file to `<home>/config.toml`')
+            [CompletionResult]::new('path', 'path', [CompletionResultType]::ParameterValue, 'Print the path of the config file')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'Print every effective key')
+            [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Print one key''s effective value')
+            [CompletionResult]::new('validate', 'validate', [CompletionResultType]::ParameterValue, 'Reject unknown keys, wrong types, and out-of-range values')
+            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Edit one key in the user file, preserving comments')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;config;init' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'Overwrite an existing file')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the diff it would write and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;path' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;show' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--sources', '--sources', [CompletionResultType]::ParameterName, 'Append `(default|user|project|env|flag)` from figment metadata')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON array of `{key,value,source}`')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;get' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;validate' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;set' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the diff it would write and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;config;help' {
+            [CompletionResult]::new('init', 'init', [CompletionResultType]::ParameterValue, 'Write the annotated reference file to `<home>/config.toml`')
+            [CompletionResult]::new('path', 'path', [CompletionResultType]::ParameterValue, 'Print the path of the config file')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'Print every effective key')
+            [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Print one key''s effective value')
+            [CompletionResult]::new('validate', 'validate', [CompletionResultType]::ParameterValue, 'Reject unknown keys, wrong types, and out-of-range values')
+            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Edit one key in the user file, preserving comments')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;config;help;init' {
+            break
+        }
+        'rtok;config;help;path' {
+            break
+        }
+        'rtok;config;help;show' {
+            break
+        }
+        'rtok;config;help;get' {
+            break
+        }
+        'rtok;config;help;validate' {
+            break
+        }
+        'rtok;config;help;set' {
+            break
+        }
+        'rtok;config;help;help' {
+            break
+        }
+        'rtok;memory' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('import', 'import', [CompletionResultType]::ParameterValue, 'Import `{kind,title,body}` JSONL; dedupe by body sha256')
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Print every note but session checkpoints as the JSONL `import` reads')
+            [CompletionResult]::new('retire', 'retire', [CompletionResultType]::ParameterValue, 'Retire a note: a tombstone — never recalled or searched, body kept (T69.1)')
+            [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
+            [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
+            [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;memory;import' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Count what would be imported and write nothing')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;export' {
+            [CompletionResult]::new('--project', '--project', [CompletionResultType]::ParameterName, 'Only notes of this project')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;retire' {
+            [CompletionResult]::new('--superseded-by', '--superseded-by', [CompletionResultType]::ParameterName, 'The replacement note id this one is superseded by')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;pin' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;unpin' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;revise' {
+            [CompletionResult]::new('--title', '--title', [CompletionResultType]::ParameterName, 'The replacement title')
+            [CompletionResult]::new('--body', '--body', [CompletionResultType]::ParameterName, 'The replacement body')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;memory;help' {
+            [CompletionResult]::new('import', 'import', [CompletionResultType]::ParameterValue, 'Import `{kind,title,body}` JSONL; dedupe by body sha256')
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Print every note but session checkpoints as the JSONL `import` reads')
+            [CompletionResult]::new('retire', 'retire', [CompletionResultType]::ParameterValue, 'Retire a note: a tombstone — never recalled or searched, body kept (T69.1)')
+            [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
+            [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
+            [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;memory;help;import' {
+            break
+        }
+        'rtok;memory;help;export' {
+            break
+        }
+        'rtok;memory;help;retire' {
+            break
+        }
+        'rtok;memory;help;pin' {
+            break
+        }
+        'rtok;memory;help;unpin' {
+            break
+        }
+        'rtok;memory;help;revise' {
+            break
+        }
+        'rtok;memory;help;help' {
+            break
+        }
+        'rtok;graph' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
+            [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;index' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Report what would be indexed and write no rows')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;dead' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;graph;help' {
+            [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
+            [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;graph;help;index' {
+            break
+        }
+        'rtok;graph;help;dead' {
+            break
+        }
+        'rtok;graph;help;help' {
+            break
+        }
+        'rtok;dashboard' {
+            [CompletionResult]::new('--host', '--host', [CompletionResultType]::ParameterName, 'host')
+            [CompletionResult]::new('--port', '--port', [CompletionResultType]::ParameterName, 'port')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
+            [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
+            [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
+            [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
+            [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;demon;start' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;stop' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;restart' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;status' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;kill' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;supervise' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;help' {
+            [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
+            [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
+            [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
+            [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
+            [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;demon;help;start' {
+            break
+        }
+        'rtok;demon;help;stop' {
+            break
+        }
+        'rtok;demon;help;restart' {
+            break
+        }
+        'rtok;demon;help;status' {
+            break
+        }
+        'rtok;demon;help;kill' {
+            break
+        }
+        'rtok;demon;help;supervise' {
+            break
+        }
+        'rtok;demon;help;help' {
+            break
+        }
+        'rtok;otel' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('flush', 'flush', [CompletionResultType]::ParameterValue, 'Post rows past the watermarks to the endpoint, once')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Endpoint, watermarks, pending rows, last exporter log line')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;otel;flush' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;otel;status' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;otel;help' {
+            [CompletionResult]::new('flush', 'flush', [CompletionResultType]::ParameterValue, 'Post rows past the watermarks to the endpoint, once')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Endpoint, watermarks, pending rows, last exporter log line')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;otel;help;flush' {
+            break
+        }
+        'rtok;otel;help;status' {
+            break
+        }
+        'rtok;otel;help;help' {
+            break
+        }
+        'rtok;logs' {
+            [CompletionResult]::new('--lines', '--lines', [CompletionResultType]::ParameterName, 'Override `[log] lines`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Same selection, no numbering, no colour — for `rtok logs export > my.log`')
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Print the last lines, then follow: new lines arrive above the old, newest first')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;logs;export' {
+            [CompletionResult]::new('--lines', '--lines', [CompletionResultType]::ParameterName, 'Override `[log] lines`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;logs;watch' {
+            [CompletionResult]::new('--lines', '--lines', [CompletionResultType]::ParameterName, 'Override `[log] lines`')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;logs;help' {
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Same selection, no numbering, no colour — for `rtok logs export > my.log`')
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Print the last lines, then follow: new lines arrive above the old, newest first')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;logs;help;export' {
+            break
+        }
+        'rtok;logs;help;watch' {
+            break
+        }
+        'rtok;logs;help;help' {
+            break
+        }
+        'rtok;report' {
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Output format')
+            [CompletionResult]::new('--out', '--out', [CompletionResultType]::ParameterName, 'Write to this path instead of stdout')
+            [CompletionResult]::new('--since', '--since', [CompletionResultType]::ParameterName, 'How far back the report reads (`30d`, `24h`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--ai', '--ai', [CompletionResultType]::ParameterName, 'Model-shaped rendering of the same document instead of `--format` (T22.4)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;help' {
+            [CompletionResult]::new('hook', 'hook', [CompletionResultType]::ParameterValue, 'Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout')
+            [CompletionResult]::new('mcp', 'mcp', [CompletionResultType]::ParameterValue, 'Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead')
+            [CompletionResult]::new('proxy', 'proxy', [CompletionResultType]::ParameterValue, 'Local API proxy for ANTHROPIC_BASE_URL')
+            [CompletionResult]::new('web', 'web', [CompletionResultType]::ParameterValue, 'Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)')
+            [CompletionResult]::new('tui', 'tui', [CompletionResultType]::ParameterValue, 'Terminal UI over the same data as `rtok web` (D23: one model, two renderings)')
+            [CompletionResult]::new('stats', 'stats', [CompletionResultType]::ParameterValue, 'Measurements from session logs and the proxy')
+            [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
+            [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
+            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
+            [CompletionResult]::new('setup', 'setup', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go')
+            [CompletionResult]::new('run', 'run', [CompletionResultType]::ParameterValue, 'Execute a command, archive its raw output, print the filtered version')
+            [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
+            [CompletionResult]::new('expand', 'expand', [CompletionResultType]::ParameterValue, 'Print an archived payload')
+            [CompletionResult]::new('archive', 'archive', [CompletionResultType]::ParameterValue, 'The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)')
+            [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Print shell completions for `bash`, `zsh`, `fish` or `powershell`')
+            [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Print the man page (roff) to stdout')
+            [CompletionResult]::new('plugins', 'plugins', [CompletionResultType]::ParameterValue, 'List plugins: id, enabled, surfaces')
+            [CompletionResult]::new('config', 'config', [CompletionResultType]::ParameterValue, 'The one config file')
+            [CompletionResult]::new('memory', 'memory', [CompletionResultType]::ParameterValue, 'Notes (`mem_save` / import / export)')
+            [CompletionResult]::new('graph', 'graph', [CompletionResultType]::ParameterValue, 'Symbol index (`rtok graph index`)')
+            [CompletionResult]::new('dashboard', 'dashboard', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok web`; still runs, still prints where to go')
+            [CompletionResult]::new('demon', 'demon', [CompletionResultType]::ParameterValue, 'Keep `rtok proxy` (or `mcp` / `web`) running in the background')
+            [CompletionResult]::new('otel', 'otel', [CompletionResultType]::ParameterValue, 'OpenTelemetry export (`rtok otel flush | status`)')
+            [CompletionResult]::new('logs', 'logs', [CompletionResultType]::ParameterValue, 'rtok''s own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)')
+            [CompletionResult]::new('report', 'report', [CompletionResultType]::ParameterValue, 'The operator model as one document (D24): Markdown, HTML and PDF')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;help;hook' {
+            break
+        }
+        'rtok;help;mcp' {
+            break
+        }
+        'rtok;help;proxy' {
+            break
+        }
+        'rtok;help;web' {
+            break
+        }
+        'rtok;help;tui' {
+            break
+        }
+        'rtok;help;stats' {
+            break
+        }
+        'rtok;help;bench' {
+            break
+        }
+        'rtok;help;doctor' {
+            break
+        }
+        'rtok;help;info' {
+            break
+        }
+        'rtok;help;agents' {
+            [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
+            break
+        }
+        'rtok;help;agents;install' {
+            break
+        }
+        'rtok;help;agents;remove' {
+            break
+        }
+        'rtok;help;agents;list' {
+            break
+        }
+        'rtok;help;agents;sessions' {
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Redraw the sessions table in place as sessions appear, end or spend')
+            break
+        }
+        'rtok;help;agents;sessions;watch' {
+            break
+        }
+        'rtok;help;setup' {
+            break
+        }
+        'rtok;help;run' {
+            break
+        }
+        'rtok;help;filter' {
+            break
+        }
+        'rtok;help;expand' {
+            break
+        }
+        'rtok;help;archive' {
+            [CompletionResult]::new('rewrite', 'rewrite', [CompletionResultType]::ParameterValue, 'Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)')
+            break
+        }
+        'rtok;help;archive;rewrite' {
+            break
+        }
+        'rtok;help;completions' {
+            break
+        }
+        'rtok;help;man' {
+            break
+        }
+        'rtok;help;plugins' {
+            break
+        }
+        'rtok;help;config' {
+            [CompletionResult]::new('init', 'init', [CompletionResultType]::ParameterValue, 'Write the annotated reference file to `<home>/config.toml`')
+            [CompletionResult]::new('path', 'path', [CompletionResultType]::ParameterValue, 'Print the path of the config file')
+            [CompletionResult]::new('show', 'show', [CompletionResultType]::ParameterValue, 'Print every effective key')
+            [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Print one key''s effective value')
+            [CompletionResult]::new('validate', 'validate', [CompletionResultType]::ParameterValue, 'Reject unknown keys, wrong types, and out-of-range values')
+            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Edit one key in the user file, preserving comments')
+            break
+        }
+        'rtok;help;config;init' {
+            break
+        }
+        'rtok;help;config;path' {
+            break
+        }
+        'rtok;help;config;show' {
+            break
+        }
+        'rtok;help;config;get' {
+            break
+        }
+        'rtok;help;config;validate' {
+            break
+        }
+        'rtok;help;config;set' {
+            break
+        }
+        'rtok;help;memory' {
+            [CompletionResult]::new('import', 'import', [CompletionResultType]::ParameterValue, 'Import `{kind,title,body}` JSONL; dedupe by body sha256')
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Print every note but session checkpoints as the JSONL `import` reads')
+            [CompletionResult]::new('retire', 'retire', [CompletionResultType]::ParameterValue, 'Retire a note: a tombstone — never recalled or searched, body kept (T69.1)')
+            [CompletionResult]::new('pin', 'pin', [CompletionResultType]::ParameterValue, 'Pin a note so it leads SessionStart recall (T69.1)')
+            [CompletionResult]::new('unpin', 'unpin', [CompletionResultType]::ParameterValue, 'Drop a note back to newest-first recall order (T69.1)')
+            [CompletionResult]::new('revise', 'revise', [CompletionResultType]::ParameterValue, 'Save a replacement (title, body) for a note and retire the old row (T69.1)')
+            break
+        }
+        'rtok;help;memory;import' {
+            break
+        }
+        'rtok;help;memory;export' {
+            break
+        }
+        'rtok;help;memory;retire' {
+            break
+        }
+        'rtok;help;memory;pin' {
+            break
+        }
+        'rtok;help;memory;unpin' {
+            break
+        }
+        'rtok;help;memory;revise' {
+            break
+        }
+        'rtok;help;graph' {
+            [CompletionResult]::new('index', 'index', [CompletionResultType]::ParameterValue, 'Walk a tree and insert definitions + references')
+            [CompletionResult]::new('dead', 'dead', [CompletionResultType]::ParameterValue, 'List unreferenced private definitions (skips pub, trait impls, tests, macros)')
+            break
+        }
+        'rtok;help;graph;index' {
+            break
+        }
+        'rtok;help;graph;dead' {
+            break
+        }
+        'rtok;help;dashboard' {
+            break
+        }
+        'rtok;help;demon' {
+            [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
+            [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
+            [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
+            [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
+            [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
+            break
+        }
+        'rtok;help;demon;start' {
+            break
+        }
+        'rtok;help;demon;stop' {
+            break
+        }
+        'rtok;help;demon;restart' {
+            break
+        }
+        'rtok;help;demon;status' {
+            break
+        }
+        'rtok;help;demon;kill' {
+            break
+        }
+        'rtok;help;demon;supervise' {
+            break
+        }
+        'rtok;help;otel' {
+            [CompletionResult]::new('flush', 'flush', [CompletionResultType]::ParameterValue, 'Post rows past the watermarks to the endpoint, once')
+            [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'Endpoint, watermarks, pending rows, last exporter log line')
+            break
+        }
+        'rtok;help;otel;flush' {
+            break
+        }
+        'rtok;help;otel;status' {
+            break
+        }
+        'rtok;help;logs' {
+            [CompletionResult]::new('export', 'export', [CompletionResultType]::ParameterValue, 'Same selection, no numbering, no colour — for `rtok logs export > my.log`')
+            [CompletionResult]::new('watch', 'watch', [CompletionResultType]::ParameterValue, 'Print the last lines, then follow: new lines arrive above the old, newest first')
+            break
+        }
+        'rtok;help;logs;export' {
+            break
+        }
+        'rtok;help;logs;watch' {
+            break
+        }
+        'rtok;help;report' {
+            break
+        }
+        'rtok;help;help' {
+            break
+        }
+    })
+
+    $completions.Where{ $_.CompletionText -like "$wordToComplete*" } |
+        Sort-Object -Property ListItemText
+}
