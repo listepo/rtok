@@ -148,6 +148,7 @@ setup.mcp = true
 setup.modes = []
 setup.opencode.config_path = ~/.config/opencode/opencode.json
 setup.pi.extensions_path = ~/.pi/agent/extensions
+setup.pi.tools = false
 setup.proxy = false
 setup.windsurf.config_path = ~/.codeium/windsurf/mcp_config.json
 setup.yes = false
