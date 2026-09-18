@@ -1526,7 +1526,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__filter)
-            opts="-h --stdin --cmd --config --help"
+            opts="-h --stdin --cmd --archive --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
