@@ -1,0 +1,29 @@
+[
+  {
+    "service": "proxy",
+    "running": false,
+    "supervisor": null,
+    "child": null,
+    "uptime_secs": null,
+    "restarts": null,
+    "log": "[..]/demon/proxy.log"
+  },
+  {
+    "service": "mcp",
+    "running": false,
+    "supervisor": null,
+    "child": null,
+    "uptime_secs": null,
+    "restarts": null,
+    "log": "[..]/demon/mcp.log"
+  },
+  {
+    "service": "web",
+    "running": false,
+    "supervisor": null,
+    "child": null,
+    "uptime_secs": null,
+    "restarts": null,
+    "log": "[..]/demon/web.log"
+  }
+]
