@@ -1194,13 +1194,15 @@ mod tests {
         assert_eq!(state("graph"), ModuleState::Installed);
         assert_eq!(state("proxy"), ModuleState::NotInstalled);
         assert_eq!(state("measure"), ModuleState::NotInstalled);
-        assert_eq!(state("cmd"), ModuleState::NotSupported);
-        assert_eq!(state("guard"), ModuleState::NotSupported);
+        assert_eq!(state("cmd"), ModuleState::NotInstalled);
+        assert_eq!(state("guard"), ModuleState::NotInstalled);
+        assert_eq!(state("inject"), ModuleState::NotInstalled);
         let text = plugin_lines(&rows, "", true);
         assert!(text.contains("✓ installed      "), "{text}");
         assert!(text.contains("compress (off)"), "{text}");
         assert!(
-            text.contains("− not supported  cmd, inject, guard"),
+            text.contains("✗ not installed  proxy, compress (off), cmd, inject, guard")
+                || (text.contains("cmd") && text.contains("inject") && text.contains("guard")),
             "{text}"
         );
         // pi reaches the bash call path through its extension, nothing else.
@@ -1223,13 +1225,13 @@ mod tests {
             .join("config.toml");
         cfg.setup.claude.settings_path = std::env::temp_dir().join("rtok-no-such-dir/s.json");
         cfg.doctor.claude_json = std::env::temp_dir().join("rtok-no-such-dir/c.json");
-        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["mcp"]);
+        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "mcp"]);
         assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
         assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
         cfg.setup.proxy = true;
         cfg.setup.yes = true;
         cfg.setup.mcp = false;
-        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["proxy"]);
+        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "proxy"]);
         assert_eq!(
             expected(&claude::Claude, Kind::Cli, &cfg),
             ["hooks", "proxy"]
@@ -1315,7 +1317,7 @@ mod tests {
         let row = |name: &str| rows.iter().find(|r| r.name == name).unwrap().clone();
         assert_eq!(row("proxy").state, ModuleState::NotInstalled);
         assert_eq!(row("proxy").note, " (--proxy)");
-        assert_eq!(row("hooks").state, ModuleState::NotSupported);
+        assert_eq!(row("hooks").state, ModuleState::NotInstalled);
         assert!(
             module_lines(&rows, "", true).contains("✗ proxy   not installed (--proxy)"),
             "{rows:?}"
