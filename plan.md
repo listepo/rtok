@@ -23,7 +23,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T59.5 | todo | P3 | 3 | 0% | |
 | T59.6 | todo | P3 | 3 | 0% | |
 | T59.8 | todo | P3 | 2 | 0% | |
-| T60.2 | todo | P2 | 3 | 0% | |
+| T60.2 | in progress | P2 | 3 | 0% | Cursor / grok 4.6 |
 | T60.3 | todo | P3 | 3 | 0% | |
 | T60.4 | todo | P3 | 4 | 0% | |
 | T60.5 | todo | P2 | 3 | 0% | |
@@ -194,6 +194,8 @@ From I-48 (caveman `learn`, context-budget plugin). `stats` has per-family and p
 Done when `report` gains one rule that prints the top-10 sinks by bytes over the session window (file path for Read/read, first stem for Bash/cmd, server/tool for MCP), each with the switch that applies (`read.default_mode = map`, a `[stem]` rule, `--wrap`, or "none: already shortened"), sourced from `Measurement` rows only, with a fixture test and a line on the report docs page.
 
 ### T60.2. trycmd goldens for every subcommand
+
+Execution plan: (1) one `tests/trycmd/help-subcommands.trycmd` with `--help` for every subcommand and nested verb, plus `*.trycmd` in `cli_trycmd.rs` and a `tests/trycmd/README.md` index; (2) hermetic reading goldens (`inherit = false`, `RTOK_HOME` under `target/tmp/`) for stats table/`--json`, `info --json`, doctor/plugins/agents/demon/otel/logs tables, `config init|path|get|validate|set`, `expand --lines/--grep`, completions zsh/fish/powershell, `man`, `report --format md`, `proxy --dry-run` — skip T60.1 `--json` duplicates; (3) stdin cases for `hook`, `mcp tools/list`, `filter --cmd`, `run -- echo`; (4) README command table vs trycmd case list, bless, close.
 
 Survey 2026-09-17: trycmd (`tests/cli_trycmd.rs`, `tests/trycmd/*.toml`) covers `help`, `version`, `config-show`, `completions-bash`, `bench-dry-run`, `stats-price` — 6 of 22 commands. The other 16 have behaviour tests but no byte-level snapshot of what the binary prints, so a wording, column or ordering change on `doctor`, `info`, `plugins`, `expand`, `report` and the rest lands unnoticed (T59.4 changed the `mcp` help line and only the top-level `help` golden caught it).
 Done when every subcommand has at least one trycmd case of its real output, hermetic the way `stats-price.toml` is (`inherit = false`, `RTOK_HOME` under `target/tmp/`, `--config tests/trycmd/input/<case>.toml`, fixture store or empty dirs), plus a `--help` case for every subcommand and nested subcommand (`agents`, `config`, `demon`, `logs`, `otel`, `memory`, `graph`). Command list and how each becomes deterministic:
