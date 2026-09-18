@@ -328,6 +328,20 @@ pub trait Symbols {
         let _ = root;
         Ok(Vec::new())
     }
+
+    /// Distinct definition names starting with `prefix`, best `limit` by reference
+    /// count, ties by name (T68.1 `explore` prefix resolution).
+    fn symbol_name_prefix(&self, root: &str, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        let _ = (root, prefix, limit);
+        Ok(Vec::new())
+    }
+
+    /// Call chains `from → … → to` walked in the caller direction within `depth`
+    /// hops, shortest first (T68.1 `explore`; T68.4 `impact --to` reuses it).
+    fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
+        let _ = (root, from, to, depth);
+        Ok(Vec::new())
+    }
 }
 
 // The tests for what a host owes a plugin live beside `testing::MemoryHost`, the host this

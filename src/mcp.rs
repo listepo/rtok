@@ -243,7 +243,7 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         #[cfg(feature = "read")]
         "tree" => tree_files(cx, args),
         #[cfg(feature = "graph")]
-        "symbol" | "callers" | "impact" | "outline" => {
+        "symbol" | "callers" | "impact" | "outline" | "explore" => {
             crate::plugins::graph::call(&crate::plugin::Ctx::new(cx), name, args)
         }
         _ => bail!("unknown tool: {name}"),

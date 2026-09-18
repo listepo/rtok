@@ -403,6 +403,14 @@ impl Symbols for Runtime {
     fn symbol_dead_candidates(&self, root: &str) -> Result<Vec<(String, String, String, i32)>> {
         self.store.symbol_dead_candidates(root)
     }
+
+    fn symbol_name_prefix(&self, root: &str, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        self.store.symbol_name_prefix(root, prefix, limit)
+    }
+
+    fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
+        self.store.symbol_paths(root, from, to, depth)
+    }
 }
 
 #[cfg(test)]

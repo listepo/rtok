@@ -1,12 +1,12 @@
 # LSP backend for `graph`
 
-By default the `graph` plugin answers `symbol`, `callers`, `impact` and `outline`
-from its tree-sitter-tags index in SQLite (`backend = "tags"`). Setting
-`backend = "lsp"` routes those same four MCP tools — same names, same callers —
+By default the `graph` plugin answers `symbol`, `callers`, `impact`, `outline` and
+`explore` from its tree-sitter-tags index in SQLite (`backend = "tags"`). Setting
+`backend = "lsp"` routes those same five MCP tools — same names, same callers —
 through a language server spoken to over stdio instead. The tags index is then
 not consulted for that call. Each LSP answer records one `Measurement` row with
 `plugin = "graph"` and `kind = "lsp.symbol" | "lsp.callers" | "lsp.impact" |
-"lsp.outline"`, so `rtok stats` attributes it like any other saving.
+"lsp.outline" | "lsp.explore"`, so `rtok stats` attributes it like any other saving.
 
 The server is picked from the workspace root — rtok never links or shells out to
 anything else (D6); it spawns one of these from `PATH`:

@@ -471,6 +471,37 @@ fn body(root: &Path, path: &str, line: i32, end_line: i32, budget: usize) -> Str
     super::body_lines(&src, line, end_line, budget)
 }
 
+/// The text of `lsp symbol`: one `path:line kind` + body per matching definition,
+/// or the empty-answer sentence. Shared by the tool and `explore` (T68.1).
+fn symbol_text(
+    s: &mut Session,
+    name: &str,
+    filter: &super::Filter,
+    budget: usize,
+) -> Result<String> {
+    let r = s.request("workspace/symbol", json!({"query": name}))?;
+    let mut out = String::new();
+    if let Some(arr) = r.as_array() {
+        for it in arr {
+            if it["name"].as_str() != Some(name) {
+                continue;
+            }
+            let Some(d) = pick_def(&json!([it]), name, &s.root) else {
+                continue;
+            };
+            if !filter.path_ok(&d.path) || !filter.kind_ok(kind_name(d.kind)) {
+                continue;
+            }
+            out.push_str(&format!("{}:{} {}\n", d.path, d.line, kind_name(d.kind)));
+            out.push_str(&body(&s.root, &d.path, d.line, d.end_line, budget));
+        }
+    }
+    if out.is_empty() {
+        out = format!("no definition of {name}{}\n", filter.scope_note());
+    }
+    Ok(out)
+}
+
 pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str, filter: &super::Filter) -> Result<String> {
     let t0 = Instant::now();
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
@@ -483,26 +514,7 @@ pub(crate) fn symbol(cx: &Ctx, root: &Path, name: &str, filter: &super::Filter) 
                 format!("no definition of {name}{}", filter.scope_note()),
             );
         }
-        let r = s.request("workspace/symbol", json!({"query": name}))?;
-        let mut out = String::new();
-        if let Some(arr) = r.as_array() {
-            for it in arr {
-                if it["name"].as_str() != Some(name) {
-                    continue;
-                }
-                let Some(d) = pick_def(&json!([it]), name, &s.root) else {
-                    continue;
-                };
-                if !filter.path_ok(&d.path) || !filter.kind_ok(kind_name(d.kind)) {
-                    continue;
-                }
-                out.push_str(&format!("{}:{} {}\n", d.path, d.line, kind_name(d.kind)));
-                out.push_str(&body(&s.root, &d.path, d.line, d.end_line, budget));
-            }
-        }
-        if out.is_empty() {
-            out = format!("no definition of {name}{}", filter.scope_note());
-        }
+        let out = symbol_text(s, name, filter, budget)?;
         finish(cx, "symbol", t0, out)
     })
 }
@@ -581,6 +593,57 @@ pub(crate) fn callers(cx: &Ctx, root: &Path, name: &str, filter: &super::Filter)
     })
 }
 
+/// The `impact` walk: incoming-call BFS from `name`'s hierarchy items out to
+/// `depth`, one `(depth, path, scope)` row per definition reached (scope empty at
+/// file level). Shared by the tool and `explore` (T68.1).
+fn impact_walk(
+    s: &mut Session,
+    name: &str,
+    depth: u32,
+    filter: &super::Filter,
+) -> Result<Vec<(u32, String, String)>> {
+    let Some(d) = wait_def(s, name)? else {
+        return Ok(Vec::new());
+    };
+    s.did_open(&d.uri)?;
+    let items = s.request(
+        "textDocument/prepareCallHierarchy",
+        json!({"textDocument": {"uri": d.uri}, "position": d.pos}),
+    )?;
+    let mut frontier = items.as_array().cloned().unwrap_or_default();
+    let mut seen = HashSet::from([name.to_string()]);
+    let mut rows = Vec::new();
+    for dpth in 1..=depth.clamp(1, 4) {
+        let mut next = Vec::new();
+        for item in &frontier {
+            let calls = s.request("callHierarchy/incomingCalls", json!({"item": item}))?;
+            for c in calls.as_array().cloned().unwrap_or_default() {
+                let from = &c["from"];
+                let nm = from["name"].as_str().unwrap_or("");
+                if !seen.insert(nm.to_string()) {
+                    continue;
+                }
+                let path = rel(&s.root, from["uri"].as_str().unwrap_or(""));
+                if !filter.path_ok(&path) {
+                    continue;
+                }
+                if nm.is_empty() {
+                    // File-level reference: it prints as `(file)` but never expands.
+                    rows.push((dpth, path, String::new()));
+                    continue;
+                }
+                rows.push((dpth, path, nm.to_string()));
+                next.push(from.clone());
+            }
+        }
+        frontier = next;
+        if frontier.is_empty() {
+            break;
+        }
+    }
+    Ok(rows)
+}
+
 pub(crate) fn impact(
     cx: &Ctx,
     root: &Path,
@@ -590,53 +653,145 @@ pub(crate) fn impact(
 ) -> Result<String> {
     let t0 = Instant::now();
     with_session(root, |s| {
-        let Some(d) = wait_def(s, name)? else {
+        let rows = impact_walk(s, name, depth, filter)?;
+        if rows.is_empty() {
             return finish(
                 cx,
                 "impact",
                 t0,
                 format!("nothing reaches {name}{}", filter.scope_note()),
             );
-        };
-        s.did_open(&d.uri)?;
-        let items = s.request(
-            "textDocument/prepareCallHierarchy",
-            json!({"textDocument": {"uri": d.uri}, "position": d.pos}),
-        )?;
-        let mut frontier = items.as_array().cloned().unwrap_or_default();
-        let mut seen = HashSet::from([name.to_string()]);
-        let mut out = String::new();
-        for dpth in 1..=depth.clamp(1, 4) {
-            let mut next = Vec::new();
-            for item in &frontier {
-                let calls = s.request("callHierarchy/incomingCalls", json!({"item": item}))?;
-                for c in calls.as_array().cloned().unwrap_or_default() {
-                    let from = &c["from"];
-                    let nm = from["name"].as_str().unwrap_or("");
-                    if !seen.insert(nm.to_string()) {
-                        continue;
-                    }
-                    let path = rel(&s.root, from["uri"].as_str().unwrap_or(""));
-                    if !filter.path_ok(&path) {
-                        continue;
-                    }
-                    if nm.is_empty() {
-                        out.push_str(&format!("{dpth}  {path}  (file)\n"));
-                    } else {
-                        out.push_str(&format!("{dpth}  {path}  {nm}\n"));
-                    }
-                    next.push(from.clone());
+        }
+        finish(cx, "impact", t0, super::impact_lines_text(&rows))
+    })
+}
+
+/// Call chains `a → … → b` over incoming calls, at most `max_depth` hops, simple
+/// paths only: a name already in the chain is never revisited and a branch stops
+/// growing once it reaches `b`, so cycles terminate.
+fn call_paths(s: &mut Session, a: &str, b: &str, max_depth: u32) -> Result<Vec<String>> {
+    if a == b {
+        return Ok(Vec::new());
+    }
+    let Some(d) = wait_def(s, a)? else {
+        return Ok(Vec::new());
+    };
+    s.did_open(&d.uri)?;
+    let items = s.request(
+        "textDocument/prepareCallHierarchy",
+        json!({"textDocument": {"uri": d.uri}, "position": d.pos}),
+    )?;
+    let mut frontier: Vec<(Value, String, Vec<String>)> = items
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|it| (it, a.to_string(), vec![a.to_string()]))
+        .collect();
+    if frontier.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut chains: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for _ in 0..max_depth.clamp(1, 4) {
+        let mut next = Vec::new();
+        for (item, tip, chain) in frontier {
+            if tip == b {
+                chains.insert(chain.join(" → "));
+                continue;
+            }
+            let calls = s.request("callHierarchy/incomingCalls", json!({"item": item}))?;
+            for c in calls.as_array().cloned().unwrap_or_default() {
+                let from = c["from"].clone();
+                let nm = from["name"].as_str().unwrap_or("").to_string();
+                if nm.is_empty() || chain.iter().any(|n| n == &nm) {
+                    continue;
+                }
+                let mut c2 = chain.clone();
+                c2.push(nm.clone());
+                if nm == b {
+                    chains.insert(c2.join(" → "));
+                } else {
+                    next.push((from, nm, c2));
                 }
             }
-            frontier = next;
-            if frontier.is_empty() {
-                break;
+        }
+        frontier = next;
+        if frontier.is_empty() {
+            break;
+        }
+    }
+    Ok(chains.into_iter().collect())
+}
+
+/// The LSP backend's `explore` pieces (T68.1): same assembler as the tags
+/// backend, answered over workspace/symbol, document bodies and call hierarchy.
+struct LspExplore<'a> {
+    s: &'a mut Session,
+    filter: &'a super::Filter,
+    budget: usize,
+}
+
+impl super::ExploreParts for LspExplore<'_> {
+    fn resolve(&mut self, token: &str) -> Result<Vec<String>> {
+        let r = self
+            .s
+            .request("workspace/symbol", json!({"query": token}))?;
+        let mut prefixed = std::collections::BTreeSet::new();
+        for it in r.as_array().cloned().unwrap_or_default() {
+            let Some(n) = it["name"].as_str() else {
+                continue;
+            };
+            if n == token {
+                return Ok(vec![token.to_string()]);
+            }
+            if n.starts_with(token) {
+                prefixed.insert(n.to_string());
             }
         }
-        if out.is_empty() {
-            out = format!("nothing reaches {name}{}", filter.scope_note());
+        Ok(prefixed.into_iter().take(5).collect())
+    }
+
+    fn defs(&mut self, name: &str) -> Result<String> {
+        symbol_text(self.s, name, self.filter, self.budget)
+    }
+
+    fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>> {
+        call_paths(self.s, a, b, 3)
+    }
+
+    fn impact1(&mut self, name: &str) -> Result<(String, usize)> {
+        let rows = impact_walk(self.s, name, 1, self.filter)?;
+        if rows.is_empty() {
+            return Ok((format!("nothing reaches {name}"), 0));
         }
-        finish(cx, "impact", t0, out)
+        let n = rows.len();
+        Ok((super::impact_lines_text(&rows), n))
+    }
+}
+
+pub(crate) fn explore(
+    cx: &Ctx,
+    root: &Path,
+    query: &str,
+    filter: &super::Filter,
+) -> Result<String> {
+    let t0 = Instant::now();
+    let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
+    with_session(root, |s| {
+        let mut parts = LspExplore { s, filter, budget };
+        let (text, before) = super::assemble_explore(query, filter, &mut parts)?;
+        let est = cx.estimate(&text, Class::Code);
+        cx.record(&Measurement {
+            plugin: "graph",
+            kind: "lsp.explore",
+            before_bytes: t0.elapsed().as_millis() as u64,
+            after_bytes: text.len() as u64,
+            est_before: est,
+            est_after: est,
+            ref_id: None,
+            call_id: cx.call_id(),
+        })?;
+        super::cap_kind(cx, text, before, "explore")
     })
 }
 

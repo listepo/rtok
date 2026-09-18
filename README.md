@@ -191,8 +191,8 @@ rtok graph index .
 indexed 5 files · 551 rows · 0 skipped · 5 read
 ```
 
-The agent then reaches it over MCP as `symbol`, `callers`, `impact` and `outline` — four
-tools whose descriptions cost 62 tokens, in place of a grep-and-read chain. Definition
+The agent then reaches it over MCP as `symbol`, `callers`, `impact`, `outline` and `explore` —
+five tools whose descriptions cost 127 tokens, in place of a grep-and-read chain. Definition
 lookups are exact (recall and precision 1.000 over a hand-labelled set); reference lookups
 find about a third of the sites, which [docs/comparison.md](docs/comparison.md) explains
 rather than hides.

@@ -10,7 +10,6 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
-#[cfg(test)]
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
@@ -83,6 +82,11 @@ impl Plugin for Graph {
                 name: "outline",
                 description: "Definitions in one file (read mode=map).",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
+            },
+            ToolDef {
+                name: "explore",
+                description: "Answers a code question: the query's symbols as definitions with bodies, call paths between them, impact counts. Optional path narrows.",
+                input_schema: json!({"type":"object","properties":{"query":{"type":"string"},"path":{"type":"string"}},"required":["query"]}),
             },
         ]
     }
@@ -162,6 +166,7 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
             &filter,
         ),
         "outline" => outline(cx, arg("path")),
+        "explore" => explore(cx, &root, arg("query"), &filter),
         _ => anyhow::bail!("unknown tool: {name}"),
     }
 }
@@ -187,10 +192,17 @@ pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Re
     if rows.is_empty() {
         return Ok(format!("no definition of {name}{}", filter.scope_note()));
     }
+    cap(cx, defs_text(cx, root, &rows))
+}
+
+/// `{path}:{line} {kind}` per definition, then that definition's source, at most
+/// `plugins.graph.body_lines` lines each (T8.6). Shared by `symbol` and `explore`
+/// (T68.1) so both print a definition the same way; reads each source file once.
+fn defs_text(cx: &Ctx, root: &Path, rows: &[(String, String, i32, i32)]) -> String {
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
     let mut out = String::new();
     let mut cached: Option<(String, String)> = None;
-    for (path, kind, line, end_line) in &rows {
+    for (path, kind, line, end_line) in rows {
         out.push_str(&format!("{path}:{line} {kind}\n"));
         if !cached.as_ref().is_some_and(|(p, _)| p == path) {
             symbol_src_reads_add(1);
@@ -206,7 +218,7 @@ pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Re
             budget,
         ));
     }
-    cap(cx, out)
+    out
 }
 
 /// Source of one definition, `line..=end_line`, at most `budget` lines then `N more lines`.
@@ -288,6 +300,12 @@ pub fn impact_filtered(
     if rows.is_empty() {
         return Ok(format!("nothing reaches {name}{}", filter.scope_note()));
     }
+    cap(cx, impact_lines_text(&rows))
+}
+
+/// One `depth  path  scope` line per row, `(file)` when the row is file-level.
+/// Shared by `impact` and `explore` (T68.1) so both print a walk the same way.
+pub(crate) fn impact_lines_text(rows: &[(u32, String, String)]) -> String {
     let mut out = String::new();
     for (d, path, scope) in rows {
         if scope.is_empty() {
@@ -296,7 +314,7 @@ pub fn impact_filtered(
             out.push_str(&format!("{d}  {path}  {scope}\n"));
         }
     }
-    cap(cx, out)
+    out
 }
 
 /// `dead()`: unreferenced private definitions as `path:line kind name` lines (T52.4).
@@ -476,12 +494,183 @@ pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
     cap(cx, text)
 }
 
+// ---------- T68.1: explore ----------
+
+/// Identifier tokens of a free-text question: alphanumeric/`_` runs, deduped,
+/// first 8 — single letters are real identifiers (`b`, `c`, `x`), so nothing but
+/// empty runs are dropped; the cap keeps the resolution and the pairwise path
+/// walk below fast.
+fn explore_tokens(query: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    query
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|t| !t.is_empty())
+        .filter(|t| seen.insert((*t).to_string()))
+        .take(8)
+        .map(str::to_string)
+        .collect()
+}
+
+/// At most this many distinct names land in one answer: pairwise paths are
+/// `O(names²)` walks and the answer is capped anyway.
+const EXPLORE_MAX_NAMES: usize = 10;
+
+/// The backend pieces `explore` assembles its answer from (T68.1). Both backends —
+/// tree-sitter-tags (`TagsExplore`) and LSP (`lsp::LspExplore`) — answer the same
+/// four queries, so one assembler produces one answer shape.
+pub(crate) trait ExploreParts {
+    /// Exact-then-prefix resolution of one query token to definition names (best 5).
+    fn resolve(&mut self, token: &str) -> Result<Vec<String>>;
+    /// `{path}:{line} {kind}` + body lines for every definition of `name`.
+    fn defs(&mut self, name: &str) -> Result<String>;
+    /// Call chains `a → … → b` in the caller direction, at most 3 hops.
+    fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>>;
+    /// What `impact(name, 1)` would print, and the row count behind it.
+    fn impact1(&mut self, name: &str) -> Result<(String, usize)>;
+}
+
+/// One assembled `explore` answer plus the bytes the separate calls it replaces
+/// would have returned (`symbol` + `impact` per name) — the Measurement's `before`.
+pub(crate) fn assemble_explore(
+    query: &str,
+    filter: &Filter,
+    parts: &mut dyn ExploreParts,
+) -> Result<(String, u64)> {
+    let mut names: Vec<String> = Vec::new();
+    for token in explore_tokens(query) {
+        for name in parts.resolve(&token)? {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        if names.len() >= EXPLORE_MAX_NAMES {
+            break;
+        }
+    }
+    if names.is_empty() {
+        return Ok((
+            format!("no symbols resolved for \"{query}\"{}", filter.scope_note()),
+            0,
+        ));
+    }
+    let mut out = String::new();
+    let mut before = 0u64;
+    let mut impact = Vec::new();
+    for name in &names {
+        let defs = parts.defs(name)?;
+        before += defs.len() as u64;
+        out.push_str(&format!("= {name}\n{defs}"));
+        let (text, n) = parts.impact1(name)?;
+        before += text.len() as u64;
+        impact.push(format!("{name} ← {n}"));
+    }
+    out.push_str("paths:\n");
+    let mut any = false;
+    for a in &names {
+        for b in &names {
+            if a != b {
+                for chain in parts.paths(a, b)? {
+                    out.push_str(&chain);
+                    out.push('\n');
+                    any = true;
+                }
+            }
+        }
+    }
+    if !any {
+        out.push_str("none\n");
+    }
+    out.push_str("impact:\n");
+    for line in impact {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    Ok((out, before))
+}
+
+/// `explore(query, path?)` (T68.1): one call answers a code question the way
+/// `symbol` + `impact` + caller-walking did in three to five. The query splits
+/// into identifier tokens; each resolves exactly, else by prefix best-5 by
+/// reference count. The answer prints every definition body once per file, the
+/// call paths between the resolved symbols (`symbol_paths`, ≤ 3 hops) and one
+/// impact depth-1 line per symbol, then goes through `cap` like the other tools.
+pub fn explore(cx: &Ctx, root: &Path, query: &str, filter: &Filter) -> Result<String> {
+    if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
+        return lsp::explore(cx, root, query, filter);
+    }
+    index_for(cx, root)?;
+    let mut parts = TagsExplore {
+        cx,
+        root,
+        filter,
+        key: index::canon(root),
+    };
+    let (text, before) = assemble_explore(query, filter, &mut parts)?;
+    cap_kind(cx, text, before, "explore")
+}
+
+/// The tree-sitter-tags backend's pieces: every query is answered from the indexed
+/// rows; definition bodies are read from disk the way `symbol` reads them.
+struct TagsExplore<'a> {
+    cx: &'a Ctx<'a>,
+    root: &'a Path,
+    filter: &'a Filter,
+    key: String,
+}
+
+impl ExploreParts for TagsExplore<'_> {
+    fn resolve(&mut self, token: &str) -> Result<Vec<String>> {
+        if !self.cx.symbol_defs(&self.key, token)?.is_empty() {
+            return Ok(vec![token.to_string()]);
+        }
+        self.cx.symbol_name_prefix(&self.key, token, 5)
+    }
+
+    fn defs(&mut self, name: &str) -> Result<String> {
+        let rows: Vec<_> = self
+            .cx
+            .symbol_defs(&self.key, name)?
+            .into_iter()
+            .filter(|(path, ..)| self.filter.path_ok(path))
+            .collect();
+        if rows.is_empty() {
+            return Ok(format!(
+                "no definition of {name}{}\n",
+                self.filter.scope_note()
+            ));
+        }
+        Ok(defs_text(self.cx, self.root, &rows))
+    }
+
+    fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>> {
+        self.cx.symbol_paths(&self.key, a, b, 3)
+    }
+
+    fn impact1(&mut self, name: &str) -> Result<(String, usize)> {
+        let rows: Vec<_> = self
+            .cx
+            .symbol_impact(&self.key, name, 1)?
+            .into_iter()
+            .filter(|(_, path, _)| self.filter.path_ok(path))
+            .collect();
+        if rows.is_empty() {
+            return Ok((
+                format!("nothing reaches {name}{}", self.filter.scope_note()),
+                0,
+            ));
+        }
+        let n = rows.len();
+        Ok((impact_lines_text(&rows), n))
+    }
+}
+
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
-/// Always records one measurement (capped vs uncapped estimate); `ref_id` when truncated.
-fn cap(cx: &Ctx, text: String) -> Result<String> {
+/// Always records one measurement; `ref_id` when truncated. `before_bytes` is the
+/// uncapped text for the four plain tools, and the sum of the calls `explore`
+/// replaced for `kind = "explore"` (T68.1).
+fn cap_kind(cx: &Ctx, text: String, before_bytes: u64, kind: &'static str) -> Result<String> {
     let max = cx.plugin_config::<crate::config::Graph>("graph").max_tokens;
     let est = cx.estimate(&text, Class::Code);
-    let before_bytes = text.len() as u64;
     let (out, ref_id) = if est <= max {
         (text, None)
     } else {
@@ -508,7 +697,7 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
     };
     cx.record(&Measurement {
         plugin: "graph",
-        kind: "cap",
+        kind,
         before_bytes,
         after_bytes: out.len() as u64,
         est_before: est,
@@ -517,6 +706,11 @@ fn cap(cx: &Ctx, text: String) -> Result<String> {
         call_id: cx.call_id(),
     })?;
     Ok(out)
+}
+
+fn cap(cx: &Ctx, text: String) -> Result<String> {
+    let before = text.len() as u64;
+    cap_kind(cx, text, before, "cap")
 }
 
 #[cfg(test)]
@@ -873,21 +1067,27 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    /// Gate P8b: four tools, and the whole graph surface under 150 description tokens.
+    /// Gate P8b: five tools, each description ≤ 60 tokens, the whole surface ≤ 150.
     #[test]
-    fn graph_surface_is_four_tools_under_150_tokens() {
+    fn graph_surface_is_five_tools_under_150_tokens() {
         let (cx, dir) = cx("surface");
         let tools = Graph.mcp_tools();
-        assert_eq!(tools.len(), 4);
-        let n: u32 = tools
-            .iter()
-            .map(|t| crate::tokens::estimate(t.description, Class::Prose, &cx.config.estimator))
-            .sum();
+        assert_eq!(tools.len(), 5);
+        let est = |d: &str| crate::tokens::estimate(d, Class::Prose, &cx.config.estimator);
+        let n: u32 = tools.iter().map(|t| est(t.description)).sum();
         println!(
             "graph surface: {} tools, {n} description tokens",
             tools.len()
         );
         assert!(n <= 150, "graph descriptions are {n} tokens");
+        for t in &tools {
+            assert!(
+                est(t.description) <= 60,
+                "{} description is {} tokens",
+                t.name,
+                est(t.description)
+            );
+        }
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -943,6 +1143,198 @@ mod tests {
             let err = outline(&Ctx::new(&cx), path).unwrap_err().to_string();
             assert!(err.contains("outside cwd"), "{path}: {err}");
         }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // ---------- T68.1: explore ----------
+
+    /// A fake backend pins the assembled answer's section format byte-exact without
+    /// a store or a language server: `= name` + bodies, `paths:` (or `none`), then
+    /// `impact:` counts — and `before` is exactly the bytes the replaced
+    /// `symbol` + `impact` calls would have printed.
+    struct FakeParts;
+
+    impl ExploreParts for FakeParts {
+        fn resolve(&mut self, token: &str) -> Result<Vec<String>> {
+            Ok(match token {
+                "aa" => vec!["aa".to_string()],
+                "bb" => vec!["bb".to_string()],
+                _ => Vec::new(),
+            })
+        }
+        fn defs(&mut self, name: &str) -> Result<String> {
+            Ok(format!("src/{name}.rs:1 function\nfn {name}() {{}}\n"))
+        }
+        fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>> {
+            if a == "aa" && b == "bb" {
+                return Ok(vec!["aa → cc → bb".to_string()]);
+            }
+            Ok(Vec::new())
+        }
+        fn impact1(&mut self, name: &str) -> Result<(String, usize)> {
+            Ok((format!("nothing reaches {name}"), 0))
+        }
+    }
+
+    #[test]
+    fn assemble_explore_formats_sections_and_counts_replaced_bytes() {
+        let mut parts = FakeParts;
+        let (out, before) = assemble_explore("aa bb zz", &Filter::none(), &mut parts).unwrap();
+        assert_eq!(
+            out,
+            "= aa\nsrc/aa.rs:1 function\nfn aa() {}\n\
+             = bb\nsrc/bb.rs:1 function\nfn bb() {}\n\
+             paths:\naa → cc → bb\n\
+             impact:\naa ← 0\nbb ← 0\n"
+        );
+        let replaced: u64 = [
+            "src/aa.rs:1 function\nfn aa() {}\n",
+            "src/bb.rs:1 function\nfn bb() {}\n",
+            "nothing reaches aa",
+            "nothing reaches bb",
+        ]
+        .iter()
+        .map(|s| s.len() as u64)
+        .sum();
+        assert_eq!(before, replaced);
+    }
+
+    #[test]
+    fn assemble_explore_prints_none_when_no_path_connects() {
+        let (out, _) = assemble_explore("zz", &Filter::none(), &mut FakeParts).unwrap();
+        assert_eq!(out, "no symbols resolved for \"zz\"");
+        let (out, _) = assemble_explore("aa", &Filter::none(), &mut FakeParts).unwrap();
+        assert!(out.contains("paths:\nnone\n"), "{out}");
+        assert!(out.contains("impact:\naa ← 0\n"), "{out}");
+    }
+
+    #[test]
+    fn explore_tokens_split_query_and_dedupe() {
+        assert_eq!(
+            explore_tokens("how do Foo_bar and foo-bar relate?"),
+            vec![
+                "how".to_string(),
+                "do".to_string(),
+                "Foo_bar".to_string(),
+                "and".to_string(),
+                "foo".to_string(),
+                "bar".to_string(),
+                "relate".to_string()
+            ]
+        );
+    }
+
+    /// End to end over the tags index: one question about `b` and `c` answers with
+    /// both definition bodies, the only caller chain between them and both impact
+    /// counts — byte for byte.
+    #[test]
+    fn explore_answers_a_two_symbol_question_byte_exact() {
+        let (cx, dir) = cx("explore");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("other.rs"), "fn d() {\n    c();\n    c();\n}\n").unwrap();
+        let out = explore(
+            &Ctx::new(&cx),
+            &dir,
+            "how do b and c interact",
+            &Filter::none(),
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\n\
+             = c\nchain.rs:7 function\nfn c() {}\n\
+             paths:\nc → b\n\
+             impact:\nb ← 1\nc ← 2\n"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Prefix resolution ranks by reference count: `alphabet` (referenced twice)
+    /// lands before `alpha` (referenced once) for the token `alph`.
+    #[test]
+    fn explore_prefix_resolution_ranks_by_reference_count() {
+        let (cx, dir) = cx("explore-prefix");
+        fs::write(
+            dir.join("p.rs"),
+            "fn alpha() {}\nfn alphabet() {}\nfn user() {\n    alphabet();\n    alpha();\n    alphabet();\n}\n",
+        )
+        .unwrap();
+        let out = explore(&Ctx::new(&cx), &dir, "alph", &Filter::none()).unwrap();
+        let alphabet = out.find("= alphabet\n").expect("alphabet section");
+        let alpha = out.find("= alpha\n").expect("alpha section");
+        assert!(alphabet < alpha, "{out}");
+        assert_eq!(
+            explore(&Ctx::new(&cx), &dir, "zz zz", &Filter::none()).unwrap(),
+            "no symbols resolved for \"zz zz\""
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// The `path` filter keeps the printed definitions in one subtree, same as
+    /// `symbol`'s filter.
+    #[test]
+    fn explore_path_filter_keeps_one_subtree() {
+        let (cx, dir) = cx("explore-path");
+        fs::write(dir.join("a.rs"), "fn dup() {}\n").unwrap();
+        fs::write(dir.join("b.rs"), "fn dup() {}\n").unwrap();
+        let out = explore(
+            &Ctx::new(&cx),
+            &dir,
+            "dup",
+            &Filter {
+                path: "b.rs".into(),
+                kind: String::new(),
+            },
+        )
+        .unwrap();
+        assert!(out.contains("b.rs:1") && !out.contains("a.rs:1"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// `symbol_paths` walks caller edges: chains read from the callee towards its
+    /// callers, cycles terminate, and a name with no inbound chain answers empty.
+    #[test]
+    fn symbol_paths_walks_callers_and_terminates_on_cycles() {
+        let (cx, dir) = cx("paths");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
+        fs::write(dir.join("other.rs"), "fn d() {\n    c();\n}\n").unwrap();
+        index::run(&Ctx::new(&cx), &dir, false).unwrap();
+        let key = index::canon(&dir);
+        assert_eq!(
+            cx.store.symbol_paths(&key, "c", "b", 3).unwrap(),
+            vec!["c → b".to_string()]
+        );
+        assert!(cx.store.symbol_paths(&key, "b", "c", 3).unwrap().is_empty());
+        assert_eq!(
+            cx.store.symbol_paths(&key, "c", "a", 3).unwrap(),
+            vec!["c → b → a".to_string()]
+        );
+        assert_eq!(
+            cx.store.symbol_paths(&key, "c", "d", 3).unwrap(),
+            vec!["c → d".to_string()]
+        );
+        fs::write(
+            dir.join("cyc.rs"),
+            "fn e() {\n    f();\n    g();\n}\nfn f() {\n    e();\n}\nfn g() {}\n",
+        )
+        .unwrap();
+        index::run(&Ctx::new(&cx), &dir, false).unwrap();
+        assert_eq!(
+            cx.store.symbol_paths(&key, "e", "f", 3).unwrap(),
+            vec!["e → f".to_string()]
+        );
+        assert!(
+            cx.store.symbol_paths(&key, "f", "g", 3).unwrap().is_empty(),
+            "e → f cycles; g is never a caller here"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

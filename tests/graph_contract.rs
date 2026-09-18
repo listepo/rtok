@@ -2,7 +2,7 @@
 //!
 //! Every assertion here goes through `rtok mcp` on stdio, so nothing below depends on how
 //! the index is stored. A storage backend is acceptable when this file passes unchanged:
-//! the same four tools, byte for byte, plus the three index behaviours a caller can observe
+//! the same five tools, byte for byte, plus the three index behaviours a caller can observe
 //! — a second repo does not disturb the first, an edited file is re-read, a deleted file
 //! loses its rows. The expected strings are the v0.2 (SQLite) output, copied verbatim.
 
@@ -61,6 +61,45 @@ fn repo(home: &Path, name: &str) -> PathBuf {
     std::fs::write(dir.join("chain.rs"), CHAIN).unwrap();
     std::fs::write(dir.join("other.rs"), OTHER).unwrap();
     dir
+}
+
+#[test]
+fn explore_two_symbol_question_byte_exact() {
+    let home = tmp("explore");
+    let a = repo(&home, "a");
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "explore",
+            serde_json::json!({"query": "how do b and c interact"})
+        ),
+        "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\n\
+         = c\nchain.rs:7 function\nfn c() {}\n\
+         paths:\nc → b\n\
+         impact:\nb ← 1\nc ← 2\n"
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "explore",
+            serde_json::json!({"query": "zzz nothing"})
+        ),
+        "no symbols resolved for \"zzz nothing\""
+    );
+    assert_eq!(
+        call(
+            &home,
+            &a,
+            "explore",
+            serde_json::json!({"query": "b and c", "path": "other"})
+        ),
+        "= b\nno definition of b in other\n= c\nno definition of c in other\n\
+         paths:\nc → b\n\
+         impact:\nb ← 0\nc ← 1\n"
+    );
+    let _ = std::fs::remove_dir_all(&home);
 }
 
 #[test]

@@ -422,4 +422,86 @@ impl Store {
             .map(|r| (r.depth as u32, r.path, r.scope))
             .collect())
     }
+
+    /// T68.1: distinct definition names starting with `prefix`, best `limit` by
+    /// reference count (ties by name, byte-stable) — `explore`'s fallback when a
+    /// query token is not an exact definition name.
+    pub fn symbol_name_prefix(&self, root: &str, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            name: String,
+        }
+        let mut conn = self.lock()?;
+        let escaped = prefix
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let like = format!("{escaped}%");
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.name AS name,
+                    (SELECT COUNT(*) FROM symbols r
+                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0) AS refs
+             FROM symbols d
+             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
+               AND d.name LIKE ? ESCAPE '\\'
+             GROUP BY d.name
+             ORDER BY refs DESC, name ASC
+             LIMIT ?",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(like)
+        .bind::<Integer, _>(limit as i32)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| r.name).collect())
+    }
+
+    /// T68.1: call chains `from → … → to` walked in the caller direction (the
+    /// `impact` edges: each step is a definition that references the previous
+    /// one). Simple paths only — a name already in the chain is never revisited
+    /// and a branch stops growing once it reaches `to` — so cycles terminate and
+    /// the shortest forms come first. `explore` prints these between the symbols
+    /// a question resolved to; T68.4 reuses the query for `impact --to`.
+    pub fn symbol_paths(
+        &self,
+        root: &str,
+        from: &str,
+        to: &str,
+        depth: u32,
+    ) -> Result<Vec<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            chain: String,
+        }
+        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "WITH RECURSIVE walk(depth, chain, tip, seen) AS (
+                SELECT 1, ?, ?, ',' || ? || ','
+                UNION ALL
+                SELECT w.depth + 1,
+                       w.chain || ' → ' || s.scope,
+                       s.scope,
+                       w.seen || s.scope || ','
+                FROM walk w
+                JOIN symbols s ON s.root = ? AND s.name = w.tip
+                              AND s.is_def = 0 AND s.scope != ''
+                WHERE w.depth < ? AND w.tip != ?
+                  AND instr(w.seen, ',' || s.scope || ',') = 0
+            )
+            SELECT chain, MIN(depth) AS depth FROM walk
+            WHERE tip = ? GROUP BY chain ORDER BY depth, chain",
+        )
+        .bind::<Text, _>(from)
+        .bind::<Text, _>(from)
+        .bind::<Text, _>(from)
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(depth)
+        .bind::<Text, _>(to)
+        .bind::<Text, _>(to)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| r.chain).collect())
+    }
 }

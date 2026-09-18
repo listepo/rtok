@@ -41,13 +41,13 @@ The reference number is a property of the tree-sitter Rust tags query, not of rt
 captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
 else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
 
-### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04)
+### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04; surface re-measured 2026-09-18, T68.1)
 
 Release build. The 3 000-file repo is generated, each file one function calling two others.
 
 | Measurement | Value | P8b bar |
 |-------------|-------|---------|
-| Tools, description tokens | 4, 62 | ≤ 150 |
+| Tools, description tokens | 5, 127 | ≤ 150 |
 | Cold index, 3 000 files / 9 000 rows | 22.1 s | not gated |
 | Warm `symbol` / `callers` / `impact` | 23 / 24 / 26 ms | < 100 ms |
 | Definition recall, precision | 1.000, 1.000 | ≥ 0.9 |
@@ -601,13 +601,13 @@ Grounded in §2 (this workload: tool results 2.83 M est. tokens, Bash 35 %, Read
 | Category | rtok better | rtok worse | Missing, and whether it is worth building |
 |----------|-------------|------------|-------------------------------------------|
 | Command output | lossless (`expand`), measured per family, one process ≤ 10 ms; a default rule (40 lines, head/tail, dedupe) caps every stem, so nothing passes through whole | 9 TOML rules + 10 formatters keep signal by meaning; every other family (docker, kubectl, gh, aws, pip, mvn, gradle, dotnet, tsc, eslint) is cut by position, so its error lines can fall in the gap; rtk has 100+ per-command filters | Per-family rules chosen by measured after-bytes — **T50.1** (data only); formatters for table/grouped outputs — **T58.5**. |
-| Reads | 4 modes, sha256 dedup, root guard, 143 desc tokens for 11 tools; no banner | lean-ctx: `diff` mode; token-optimizer: delta reads; lean-ctx re-read 13 tokens (rtok's "unchanged since" line is comparable) | **Delta since last read**: rtok already keeps the sha256 and archive id of the previous read, so a changed file can return a unified diff against that archive instead of 9.5–17 K tokens again — **T58.1**. |
+| Reads | 4 modes, sha256 dedup, root guard, ~223 desc tokens for 12 tools (`rtok doctor`, 2026-09-18); no banner | lean-ctx: `diff` mode; token-optimizer: delta reads; lean-ctx re-read 13 tokens (rtok's "unchanged since" line is comparable) | **Delta since last read**: rtok already keeps the sha256 and archive id of the previous read, so a changed file can return a unified diff against that archive instead of 9.5–17 K tokens again — **T58.1**. |
 | Model output (the code it writes) | typed `yagni` ladder 14/14 on fixtures; modes inside the 800-token budget | nothing targets the 96 % tool-input share | **Measured 2026-09-17 (T58.3):** `old_string` is 3.8 % of tool-input bytes and ≈ 1.3 % of output tokens, so an anchored `patch` tool (serena `replace_symbol_body`, lean-ctx `ctx_patch`) would move at most ~1 % of the output slice; not built (I-43 keeps the number). The output lever that remains is fewer and smaller writes — modes (T53.1) and the read side. |
 | Injection / compaction | byte-stable 800-token budget; progressive-disclosure memory; on Claude Code a `PreCompact` checkpoint (prompts, paths, errors) and modes re-injected after the summary (T2.5) — rtk, headroom and caveman have nothing here | the checkpoint exists on Claude Code only (Codex, Cursor, Gemini, Copilot events are not registered); it carries no archive ids, so `expand` of a summarized-away result depends on the model remembering the id | Register the compaction events on every host that has them and add the live archive ids to the checkpoint — **T58.2**. |
 | Foreign MCP results | old ones shrink in the proxy live zone like any `tool_result` | fresh results of other servers pass whole (atlassian mcp-compressor wraps any server) | Not worth it on this workload: MCP results were 15 K of 2.83 M (§2). Idea I-44. |
-| Tool descriptions | 11 tools / ~143 tokens; `doctor` prices every server | — | Portkey-style description compression is redundant with Tool Search deferral. Idea I-45, parked. |
+| Tool descriptions | 12 tools / ~223 tokens (`rtok doctor`, 2026-09-18); `doctor` prices every server | — | Portkey-style description compression is redundant with Tool Search deferral. Idea I-45, parked. |
 | Memory | agent-written, FTS5, no model calls, titles-first | claude-mem/mem0 have vectors (P29 landed hash-embed; no ONNX); Claude Code auto-memory is free on that host | `doctor` should say when auto-memory makes rtok recall a duplicate injection. Idea I-47. |
-| Code graph | 4 tools / 94 tokens, SQLite only, hook ≤ 10 ms | reference recall 0.351 vs LSP-grade (serena, codebase-memory-mcp hybrid LSP) | Already T52.5 / T30.2 (LSP optional). jCodeMunch's measured 96.5 % vs grep-read is the same claim class as `graph`; no new task. |
+| Code graph | 5 tools / 127 tokens (2026-09-18, T68.1 added `explore`), SQLite only, hook ≤ 10 ms | reference recall 0.351 vs LSP-grade (serena, codebase-memory-mcp hybrid LSP) | Already T52.5 / T30.2 (LSP optional). jCodeMunch's measured 96.5 % vs grep-read is the same claim class as `graph`; no new task. |
 | Learning from history | `stats`, `report` rules (D24), `doctor --instructions` | caveman `learn`, lean-ctx mode predictor, context-budget plugin rank *sinks* and *recommend* | `report` already renders recommendations; a per-file / per-command sink ranking is idea I-48 until `stats` shows a sink the existing rows do not name. |
 | Sub-agents | — | lean-ctx `ctx_handoff`/`ctx_agent`; theme "sub-agent isolation" | Agent results were 23 K of 2.83 M here (§2): not a lever. Idea I-46, parked with the number. |
 | Gateways / caches | 4 wires, usage capture, semantic cache off (P31: 0 hits at 0.99) | — | Nothing to add; bifrost/Portkey/LiteLLM are routing products. |
@@ -878,7 +878,8 @@ numbers are the useful ones, because rtok has none for `memory`.
 
 Where rtok is ahead: one ledger — `Measurement` rows plus proxy `usage` — where graymatter's
 numbers are its own bench; FTS5 in the same SQLite file as every other plugin (D8) and three
-memory tools inside the measured 11-tool / ~143-token surface (`docs/comparison.md` §2); the
+memory tools inside the measured 12-tool / ~223-token surface (`docs/comparison.md` §2,
+`rtok doctor` 2026-09-18); the
 `expand` path and the compaction checkpoint with modes re-injected (T2.5); titles → ids → bodies
 where graymatter injects the top-K bodies.
 

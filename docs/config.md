@@ -367,7 +367,7 @@ the flag is visible in `rtok config show --sources` but has no loader.
 
 ### Graph backends (`[plugins.graph]`)
 
-`backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` through a
+`backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` / `explore` through a
 language server from `PATH` instead of the tags index. Setup walkthrough for
 Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
 
