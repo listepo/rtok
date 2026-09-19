@@ -8,3 +8,4 @@
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.3. `cmd` column-padding collapse
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
+- T73. Cycle demon surfaces around a binary replace

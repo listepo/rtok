@@ -7,6 +7,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T57.1 | todo | P3 | 3 | 0% | |
+| T73 | in progress | P1 | 2 | 0% | Cursor / grok 4.6 |
 
 
 
@@ -30,6 +31,15 @@ Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the t
 From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
 Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
 Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
+
+### T73. Cycle demon surfaces around a binary replace
+
+Creator 2026-09-19. `ketch upgrade` kills PIDs holding the binary but does not write the demon stop marker, so the supervisor can respawn mid-replace and keep SQLite (`rtok.db` WAL) locked. `rtok-update` does not stop anything. HTTP+WS are `web`; MCP is `mcp`; SQLite is released when those processes exit.
+
+**Plan.** Hidden `rtok demon upgrade`: snapshot kernel-live services (`rows` flock), `stop` them (marker + wait), run `ketch upgrade rtok --yes` (or `rtok-update`, or `RTOK_UPDATE_CMD` in tests), `start` the same set even if replace failed. Reuse `stop`/`start`. Do not revive T40 `demon update`. Spawn the supervisor from the on-disk path when `current_exe` is gone after replace.
+
+Check: `tests/demon.rs` — live mcp is down during the replace command (no state file), up afterwards; a failing replace still leaves mcp running; `just check`.
+
 
 
 
