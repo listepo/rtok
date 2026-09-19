@@ -52,7 +52,7 @@ pub const OWNED_MARKER: &str = ".rtok-owned";
 pub struct Apply {
     /// Describe the change and write nothing.
     pub dry_run: bool,
-    /// Copy each file to `<name>.bak-<unix-seconds>` before the first write to it.
+    /// Copy each file to `_backup/<name>.bak-<unix-seconds>` before the first write to it.
     pub backup: bool,
     /// Accept every offer without asking. The only way to say yes without a terminal.
     pub yes: bool,
@@ -65,9 +65,12 @@ impl Apply {
     }
 }
 
-/// Copy `path` to `<name>.bak-<unix-seconds>` beside it. `None` when there is no file yet, or
-/// when a `<name>.bak-*` sibling already holds the same bytes — a second `setup` or `remove`
-/// over an unchanged file adds nothing to undo, so it adds no copy either.
+/// Directory name next to a host config that holds undo copies.
+pub const BACKUP_DIR: &str = "_backup";
+
+/// Copy `path` to `_backup/<name>.bak-<unix-seconds>` beside it. `None` when there is no file
+/// yet, or when any file in that folder already holds the same bytes — a second install or
+/// uninstall of unchanged content is the same undo, whatever the copy is named.
 pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
@@ -79,39 +82,40 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
     backup_at(path, ts)
 }
 
+fn backup_dir(path: &Path) -> Option<PathBuf> {
+    path.parent().map(|p| p.join(BACKUP_DIR))
+}
+
 /// `backup` with the clock passed in, so a test can pin the second instead of racing it.
 fn backup_at(path: &Path, ts: u64) -> Result<Option<PathBuf>> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let body = fs::read(path).with_context(|| path.display().to_string())?;
-    if identical_backup_exists(path, &name, &body) {
+    let Some(dir) = backup_dir(path) else {
+        return Ok(None);
+    };
+    if identical_backup_exists(&dir, &body) {
         return Ok(None);
     }
-    // Two commands inside one second would otherwise share a name and the first copy would go.
+    fs::create_dir_all(&dir).with_context(|| dir.display().to_string())?;
     let mut n = 0u32;
-    let mut bak = path.with_file_name(format!("{name}.bak-{ts}"));
+    let mut bak = dir.join(format!("{name}.bak-{ts}"));
     while bak.exists() {
         n += 1;
-        bak = path.with_file_name(format!("{name}.bak-{ts}-{n}"));
+        bak = dir.join(format!("{name}.bak-{ts}-{n}"));
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
     Ok(Some(bak))
 }
 
-/// True when any `<name>.bak-*` beside `path` is byte-equal to `body`. The suffix is not
-/// compared: the copy of the same content is the same undo, whichever second it was taken.
-fn identical_backup_exists(path: &Path, name: &str, body: &[u8]) -> bool {
-    let Some(dir) = path.parent() else {
-        return false;
-    };
-    let prefix = format!("{name}.bak-");
+/// True when any regular file in `dir` is byte-equal to `body`. Size first; names are ignored.
+fn identical_backup_exists(dir: &Path, body: &[u8]) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
     entries
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with(&prefix))
+        .filter(|e| e.path().is_file())
         .any(|e| {
-            // Size first: a mismatch skips the read; equal sizes compare bytes.
             e.metadata().is_ok_and(|m| m.len() == body.len() as u64)
                 && fs::read(e.path()).is_ok_and(|b| b == body)
         })
@@ -660,7 +664,8 @@ mod tests {
         a.backup = true;
         write(&a, &path, "two\n", "+ something else").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "two\n");
-        let baks: Vec<_> = fs::read_dir(&dir)
+        let backup = dir.join(BACKUP_DIR);
+        let baks: Vec<_> = fs::read_dir(&backup)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().contains(".bak-"))
@@ -684,12 +689,14 @@ mod tests {
         );
 
         fs::write(&path, "v1").unwrap();
+        let backup = dir.join(BACKUP_DIR);
+        fs::create_dir_all(&backup).unwrap();
         for n in 1..100 {
-            let slot = dir.join(format!("settings.json.bak-{ts}-{n}"));
+            let slot = backup.join(format!("settings.json.bak-{ts}-{n}"));
             fs::write(&slot, format!("slot-{n}")).unwrap();
         }
 
-        let contents_before: Vec<_> = fs::read_dir(&dir)
+        let contents_before: Vec<_> = fs::read_dir(&backup)
             .unwrap()
             .filter_map(|e| e.ok())
             .filter(|e| e.file_name().to_string_lossy().contains(".bak-"))
@@ -725,19 +732,34 @@ mod tests {
         fs::write(&path, "same").unwrap();
         let first = backup_at(&path, 1).unwrap().expect("first copy");
         assert_eq!(backup_at(&path, 2).unwrap(), None, "same bytes, no copy");
-        // Only a differently suffixed identical copy remains: still no new copy.
-        fs::rename(&first, dir.join("settings.json.bak-9-7")).unwrap();
+        // Only a differently named identical copy remains: still no new copy.
+        let backup = dir.join(BACKUP_DIR);
+        fs::rename(&first, backup.join("settings.json.bak-9-7")).unwrap();
         assert_eq!(backup_at(&path, 3).unwrap(), None);
+        fs::rename(
+            backup.join("settings.json.bak-9-7"),
+            backup.join("other.txt"),
+        )
+        .unwrap();
+        assert_eq!(
+            backup_at(&path, 3).unwrap(),
+            None,
+            "name in _backup is ignored"
+        );
         // Same size, different bytes: a copy is due.
         fs::write(&path, "diff").unwrap();
         let third = backup_at(&path, 4)
             .unwrap()
             .expect("changed content is copied");
         assert_eq!(fs::read_to_string(&third).unwrap(), "diff");
-        // Another file's copies do not count for this one.
-        fs::write(dir.join("other.json.bak-1"), "back").unwrap();
+        // Identical bytes under any name in _backup skip a new copy.
+        fs::write(backup.join("other.json"), "back").unwrap();
         fs::write(&path, "back").unwrap();
-        assert!(backup_at(&path, 5).unwrap().is_some(), "prefix is per file");
+        assert_eq!(
+            backup_at(&path, 5).unwrap(),
+            None,
+            "bytes anywhere in _backup count"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

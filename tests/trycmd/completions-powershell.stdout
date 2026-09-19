@@ -35,8 +35,8 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
             [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
-            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
-            [CompletionResult]::new('agent', 'agent', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
+            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
+            [CompletionResult]::new('agent', 'agent', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
             [CompletionResult]::new('setup', 'setup', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go')
             [CompletionResult]::new('run', 'run', [CompletionResultType]::ParameterValue, 'Execute a command, archive its raw output, print the filtered version')
             [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
@@ -143,8 +143,10 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -154,8 +156,10 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
+            [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -164,7 +168,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
-            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`')
             [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
             [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
             [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
@@ -180,7 +184,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
-            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`')
             [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
             [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
             [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
@@ -192,7 +196,21 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;agents;uninstall' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;agents;remove' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;uninstall' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -214,6 +232,20 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;agent;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agents;info' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;agent;info' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -278,8 +310,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;agents;help' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
-            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -287,10 +320,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agents;help;install' {
             break
         }
-        'rtok;agents;help;remove' {
+        'rtok;agents;help;uninstall' {
             break
         }
         'rtok;agents;help;list' {
+            break
+        }
+        'rtok;agents;help;info' {
             break
         }
         'rtok;agents;help;sessions' {
@@ -305,8 +341,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;agent;help' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
-            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
@@ -314,10 +351,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;agent;help;install' {
             break
         }
-        'rtok;agent;help;remove' {
+        'rtok;agent;help;uninstall' {
             break
         }
         'rtok;agent;help;list' {
+            break
+        }
+        'rtok;agent;help;info' {
             break
         }
         'rtok;agent;help;sessions' {
@@ -334,7 +374,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--mode', '--mode', [CompletionResultType]::ParameterName, 'Enable prompt modes (`terse,yagni`)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print the planned edits and exit')
-            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`')
+            [CompletionResult]::new('--remove', '--remove', [CompletionResultType]::ParameterName, 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`')
             [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Confirm destructive `--replace`')
             [CompletionResult]::new('--replace', '--replace', [CompletionResultType]::ParameterName, 'Remove legacy token hooks and retarget the proxy')
             [CompletionResult]::new('--mcp', '--mcp', [CompletionResultType]::ParameterName, 'Register `rtok mcp` in the host MCP map')
@@ -735,6 +775,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
             [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
             [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('upgrade', 'upgrade', [CompletionResultType]::ParameterValue, 'Stop live surfaces, replace the binary, start the same set')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
             [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
             [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
@@ -754,6 +795,12 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;demon;restart' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;demon;upgrade' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -782,6 +829,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
             [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
             [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('upgrade', 'upgrade', [CompletionResultType]::ParameterValue, 'Stop live surfaces, replace the binary, start the same set')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
             [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
             [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
@@ -795,6 +843,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;demon;help;restart' {
+            break
+        }
+        'rtok;demon;help;upgrade' {
             break
         }
         'rtok;demon;help;status' {
@@ -906,7 +957,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
             [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
-            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|remove|list …`)')
+            [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
             [CompletionResult]::new('setup', 'setup', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go')
             [CompletionResult]::new('run', 'run', [CompletionResultType]::ParameterValue, 'Execute a command, archive its raw output, print the filtered version')
             [CompletionResult]::new('filter', 'filter', [CompletionResultType]::ParameterValue, 'Filter text from stdin without executing')
@@ -956,18 +1007,22 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;help;agents' {
             [CompletionResult]::new('install', 'install', [CompletionResultType]::ParameterValue, 'Install hooks, MCP server and proxy into a host')
-            [CompletionResult]::new('remove', 'remove', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
+            [CompletionResult]::new('uninstall', 'uninstall', [CompletionResultType]::ParameterValue, 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every known app: kind and name, path and version, config files, rtok modules')
+            [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'One host: the same block `agents list` prints, just for that app')
             [CompletionResult]::new('sessions', 'sessions', [CompletionResultType]::ParameterValue, 'What is running in this project: host, provider, model, tokens, start, run time')
             break
         }
         'rtok;help;agents;install' {
             break
         }
-        'rtok;help;agents;remove' {
+        'rtok;help;agents;uninstall' {
             break
         }
         'rtok;help;agents;list' {
+            break
+        }
+        'rtok;help;agents;info' {
             break
         }
         'rtok;help;agents;sessions' {
@@ -1104,6 +1159,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('start', 'start', [CompletionResultType]::ParameterValue, 'Detach a supervisor that restarts the service whenever it dies')
             [CompletionResult]::new('stop', 'stop', [CompletionResultType]::ParameterValue, 'Ask the supervisor and its child to exit')
             [CompletionResult]::new('restart', 'restart', [CompletionResultType]::ParameterValue, 'Stop, then start')
+            [CompletionResult]::new('upgrade', 'upgrade', [CompletionResultType]::ParameterValue, 'Stop live surfaces, replace the binary, start the same set')
             [CompletionResult]::new('status', 'status', [CompletionResultType]::ParameterValue, 'State, pids, uptime, restarts and log path; every service when none is named')
             [CompletionResult]::new('kill', 'kill', [CompletionResultType]::ParameterValue, 'SIGKILL instead of SIGTERM, and drop the state file')
             [CompletionResult]::new('supervise', 'supervise', [CompletionResultType]::ParameterValue, 'The detached half; `demon start` runs this, you do not')
@@ -1116,6 +1172,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;demon;restart' {
+            break
+        }
+        'rtok;help;demon;upgrade' {
             break
         }
         'rtok;help;demon;status' {

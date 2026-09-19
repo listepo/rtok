@@ -630,21 +630,47 @@ fn apply_all(
     Ok((out, changed))
 }
 
+/// Walk each requested host's variants. Hosts run in parallel; output stays in `ids` order.
+pub fn visit_hosts<T: Send>(ids: &[&str], f: impl Fn(&dyn Agent, &Variant) -> T + Sync) -> Vec<T> {
+    std::thread::scope(|scope| {
+        let mut joins = Vec::with_capacity(ids.len());
+        for &id in ids {
+            let Some(a) = host(id) else { continue };
+            let f = &f;
+            joins.push(
+                scope.spawn(move || a.variants().iter().map(|v| f(a, v)).collect::<Vec<_>>()),
+            );
+        }
+        joins
+            .into_iter()
+            .flat_map(|j| j.join().expect("host listing thread"))
+            .collect()
+    })
+}
+
 /// `rtok agents list`: every known host × variant as a [`block`], nothing written.
 pub fn list(cfg: &Config) -> String {
-    let mut out = String::new();
-    for id in HOSTS {
-        let Some(a) = host(id) else { continue };
-        for v in a.variants() {
-            let outcome = if present(a, v, cfg) {
-                Outcome::Listed
-            } else {
-                Outcome::NotFound
-            };
-            out.push_str(&block(a, v, cfg, outcome));
-        }
-    }
-    out
+    list_ids(cfg, HOSTS)
+}
+
+/// Same blocks as [`list`], only for `ids` (already-resolved host ids).
+pub fn list_ids(cfg: &Config, ids: &[&str]) -> String {
+    visit_hosts(ids, |a, v| {
+        let outcome = if present(a, v, cfg) {
+            Outcome::Listed
+        } else {
+            Outcome::NotFound
+        };
+        block(a, v, cfg, outcome)
+    })
+    .concat()
+}
+
+/// `rtok agents info <host>`: [`list`] filtered to the named host(s).
+pub fn info(cfg: &Config, hosts: &[String]) -> Result<String> {
+    let agents = resolve(hosts)?;
+    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+    Ok(list_ids(cfg, &ids))
 }
 
 /// The `[setup]` flags an installer acts on, as the SDK spells them.

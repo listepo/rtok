@@ -828,42 +828,40 @@ pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
 
 /// `rtok agents list` as data — one row per known host variant.
 pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
-    let mut out = Vec::new();
-    for id in crate::agents::HOSTS {
-        let Some(a) = crate::agents::host(id) else {
-            continue;
+    agents_listed(cfg, crate::agents::HOSTS)
+}
+
+/// `rtok agents list` / `agents info` as data — one row per requested host variant.
+pub fn agents_listed(cfg: &Config, ids: &[&str]) -> Vec<AgentListRow> {
+    crate::agents::visit_hosts(ids, |a, v| {
+        let present = crate::agents::present(a, v, cfg);
+        let app = crate::agents::app_path(v).map(|p| p.display().to_string());
+        let version = app.as_ref().map(|_| crate::agents::app_version(v));
+        let config = a
+            .files(cfg, v.kind)
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        let (modules, plugins) = if present {
+            (
+                crate::agents::module_rows(a, v.kind, cfg),
+                crate::agents::plugin_rows(a, v.kind, cfg),
+            )
+        } else {
+            (Vec::new(), Vec::new())
         };
-        for v in a.variants() {
-            let present = crate::agents::present(a, v, cfg);
-            let app = crate::agents::app_path(v).map(|p| p.display().to_string());
-            let version = app.as_ref().map(|_| crate::agents::app_version(v));
-            let config = a
-                .files(cfg, v.kind)
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect();
-            let (modules, plugins) = if present {
-                (
-                    crate::agents::module_rows(a, v.kind, cfg),
-                    crate::agents::plugin_rows(a, v.kind, cfg),
-                )
-            } else {
-                (Vec::new(), Vec::new())
-            };
-            out.push(AgentListRow {
-                host: a.id(),
-                kind: v.kind.as_str(),
-                name: v.name,
-                present,
-                app,
-                version,
-                config,
-                modules,
-                plugins,
-            });
+        AgentListRow {
+            host: a.id(),
+            kind: v.kind.as_str(),
+            name: v.name,
+            present,
+            app,
+            version,
+            config,
+            modules,
+            plugins,
         }
-    }
-    out
+    })
 }
 
 /// `rtok otel status` as data — the same watermarks the table prints.

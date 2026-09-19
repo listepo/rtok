@@ -198,10 +198,10 @@ mcp_timeout_ms  = 15000               # per MCP server tools/list (uvx/npx serve
 instruction_warn_tokens = 1000        # --instructions: flag files above this
 instructions    = false               # run the instruction audit by default (--instructions)
 
-[setup]                               # rtok agents install / remove <host>
+[setup]                               # rtok agents install / uninstall <host>
 dry_run      = false
 yes          = false                  # required by --replace
-backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
+backup       = true                   # <name>.bak-<ts> in sibling _backup/, before install and uninstall touch it
 hook_timeout_s = 5                    # timeout written into each hook entry
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)
@@ -420,7 +420,7 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 |-----------|------|-----|
 | global | `--config <path>` | (selects the file; not a key) |
 | global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
-| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents sessions`, `logs`, `demon status`, `otel status` |
+| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents info`, `agents sessions`, `logs`, `demon status`, `otel status` |
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
@@ -430,8 +430,9 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 | `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout`, `--suite` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
-| `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
+| `agents uninstall` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
 | `agents list` | — | reads the host configs and `<bin> --version` (`--json` is the reading row) |
+| `agents info` | — | same as `agents list` for one host (`--json` is the reading row) |
 | `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`), `--context N` (lines around each grep hit, windows merged with `--`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |

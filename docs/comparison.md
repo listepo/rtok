@@ -207,7 +207,7 @@ cache-preserving proxy rewrites exist for exactly this reason.
 8. **One config, with provenance.** Every flag is a config key; `rtok config show --sources`
    names the layer each value came from. No tool in the survey can answer that question.
 9. **Reversible install.** `rtok agents install claude --dry-run` prints the exact edits, the real run
-   backs up the settings file before writing it, and `rtok agents remove claude` takes the hooks,
+   backs up the settings file before writing it, and `rtok agents uninstall claude` takes the hooks,
    the MCP registration and the proxy variable back out (foreign entries stay).
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and

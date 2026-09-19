@@ -36,8 +36,8 @@ complete -c rtok -n "__fish_rtok_needs_command" -f -a "stats" -d 'Measurements f
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "bench" -d 'A/B benchmark of host configurations'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "doctor" -d 'Inspect hooks, MCP servers and the proxy chain'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "info" -d 'Version, effective paths, disk usage, error count and proxy status'
-complete -c rtok -n "__fish_rtok_needs_command" -f -a "agents" -d 'Agent hosts (`rtok agents install|remove|list …`)'
-complete -c rtok -n "__fish_rtok_needs_command" -f -a "agent" -d 'Agent hosts (`rtok agents install|remove|list …`)'
+complete -c rtok -n "__fish_rtok_needs_command" -f -a "agents" -d 'Agent hosts (`rtok agents install|uninstall|list|info …`)'
+complete -c rtok -n "__fish_rtok_needs_command" -f -a "agent" -d 'Agent hosts (`rtok agents install|uninstall|list|info …`)'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "setup" -d 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "run" -d 'Execute a command, archive its raw output, print the filtered version'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "filter" -d 'Filter text from stdin without executing'
@@ -101,17 +101,19 @@ complete -c rtok -n "__fish_rtok_using_subcommand doctor" -s h -l help -d 'Print
 complete -c rtok -n "__fish_rtok_using_subcommand info" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand info" -l json -d 'JSON instead of the text lines'
 complete -c rtok -n "__fish_rtok_using_subcommand info" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "uninstall" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "info" -d 'One host: the same block `agents list` prints, just for that app'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l mode -d 'Enable prompt modes (`terse,yagni`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l dry-run -d 'Print the planned edits and exit'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l yes -d 'Confirm destructive `--replace`'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l replace -d 'Remove legacy token hooks and retarget the proxy'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l mcp -d 'Register `rtok mcp` in the host MCP map'
@@ -120,12 +122,18 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l desktop -d 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -l json -d 'JSON instead of the table'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l all -d 'Also show sessions that have ended'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -l json -d 'JSON instead of the table'
@@ -133,21 +141,24 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -f -a "watch" -d 'Redraw the sessions table in place as sessions appear, end or spend'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from sessions" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
-complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "uninstall" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "info" -d 'One host: the same block `agents list` prints, just for that app'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install remove list sessions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "uninstall" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "info" -d 'One host: the same block `agents list` prints, just for that app'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and not __fish_seen_subcommand_from install uninstall remove list info sessions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l mode -d 'Enable prompt modes (`terse,yagni`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l dry-run -d 'Print the planned edits and exit'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l yes -d 'Confirm destructive `--replace`'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l replace -d 'Remove legacy token hooks and retarget the proxy'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l mcp -d 'Register `rtok mcp` in the host MCP map'
@@ -156,12 +167,18 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l desktop -d 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -l json -d 'JSON instead of the table'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from info" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l all -d 'Also show sessions that have ended'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -l json -d 'JSON instead of the table'
@@ -169,14 +186,15 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -f -a "watch" -d 'Redraw the sessions table in place as sessions appear, end or spend'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from sessions" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
-complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "uninstall" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "info" -d 'One host: the same block `agents list` prints, just for that app'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l mode -d 'Enable prompt modes (`terse,yagni`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l dry-run -d 'Print the planned edits and exit'
-complete -c rtok -n "__fish_rtok_using_subcommand setup" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`'
+complete -c rtok -n "__fish_rtok_using_subcommand setup" -l remove -d 'Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l yes -d 'Confirm destructive `--replace`'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l replace -d 'Remove legacy token hooks and retarget the proxy'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l mcp -d 'Register `rtok mcp` in the host MCP map'
@@ -342,21 +360,24 @@ complete -c rtok -n "__fish_rtok_using_subcommand dashboard" -l host -r
 complete -c rtok -n "__fish_rtok_using_subcommand dashboard" -l port -r
 complete -c rtok -n "__fish_rtok_using_subcommand dashboard" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand dashboard" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -s h -l help -d 'Print help'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "start" -d 'Detach a supervisor that restarts the service whenever it dies'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "stop" -d 'Ask the supervisor and its child to exit'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "restart" -d 'Stop, then start'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "status" -d 'State, pids, uptime, restarts and log path; every service when none is named'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "kill" -d 'SIGKILL instead of SIGTERM, and drop the state file'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "supervise" -d 'The detached half; `demon start` runs this, you do not'
-complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart status kill supervise help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "start" -d 'Detach a supervisor that restarts the service whenever it dies'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "stop" -d 'Ask the supervisor and its child to exit'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "restart" -d 'Stop, then start'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "upgrade" -d 'Stop live surfaces, replace the binary, start the same set'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "status" -d 'State, pids, uptime, restarts and log path; every service when none is named'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "kill" -d 'SIGKILL instead of SIGTERM, and drop the state file'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "supervise" -d 'The detached half; `demon start` runs this, you do not'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and not __fish_seen_subcommand_from start stop restart upgrade status kill supervise help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from start" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from start" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from stop" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from stop" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from restart" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from restart" -s h -l help -d 'Print help'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from upgrade" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from upgrade" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from status" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from status" -l json -d 'JSON instead of the table'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from status" -s h -l help -d 'Print help'
@@ -367,6 +388,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "start" -d 'Detach a supervisor that restarts the service whenever it dies'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "stop" -d 'Ask the supervisor and its child to exit'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "restart" -d 'Stop, then start'
+complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "upgrade" -d 'Stop live surfaces, replace the binary, start the same set'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "status" -d 'State, pids, uptime, restarts and log path; every service when none is named'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "kill" -d 'SIGKILL instead of SIGTERM, and drop the state file'
 complete -c rtok -n "__fish_rtok_using_subcommand demon; and __fish_seen_subcommand_from help" -f -a "supervise" -d 'The detached half; `demon start` runs this, you do not'
@@ -417,7 +439,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subc
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "bench" -d 'A/B benchmark of host configurations'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "doctor" -d 'Inspect hooks, MCP servers and the proxy chain'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "info" -d 'Version, effective paths, disk usage, error count and proxy status'
-complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "agents" -d 'Agent hosts (`rtok agents install|remove|list …`)'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "agents" -d 'Agent hosts (`rtok agents install|uninstall|list|info …`)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "setup" -d 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "run" -d 'Execute a command, archive its raw output, print the filtered version'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "filter" -d 'Filter text from stdin without executing'
@@ -437,8 +459,9 @@ complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subc
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "report" -d 'The operator model as one document (D24): Markdown, HTML and PDF'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and not __fish_seen_subcommand_from hook mcp proxy web tui stats bench doctor info agents setup run filter expand archive completions man plugins config memory graph guard dashboard demon otel logs report help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "install" -d 'Install hooks, MCP server and proxy into a host'
-complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "remove" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "uninstall" -d 'Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "list" -d 'Every known app: kind and name, path and version, config files, rtok modules'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "info" -d 'One host: the same block `agents list` prints, just for that app'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from agents" -f -a "sessions" -d 'What is running in this project: host, provider, model, tokens, start, run time'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from archive" -f -a "rewrite" -d 'Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout (input bytes echoed when nothing is eligible)'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from config" -f -a "init" -d 'Write the annotated reference file to `<home>/config.toml`'
@@ -464,6 +487,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcomma
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "start" -d 'Detach a supervisor that restarts the service whenever it dies'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "stop" -d 'Ask the supervisor and its child to exit'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "restart" -d 'Stop, then start'
+complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "upgrade" -d 'Stop live surfaces, replace the binary, start the same set'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "status" -d 'State, pids, uptime, restarts and log path; every service when none is named'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "kill" -d 'SIGKILL instead of SIGTERM, and drop the state file'
 complete -c rtok -n "__fish_rtok_using_subcommand help; and __fish_seen_subcommand_from demon" -f -a "supervise" -d 'The detached half; `demon start` runs this, you do not'

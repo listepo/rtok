@@ -140,7 +140,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Agent hosts (`rtok agents install|remove|list …`)
+    /// Agent hosts (`rtok agents install|uninstall|list|info …`)
     #[command(visible_alias = "agent")]
     Agents {
         #[command(subcommand)]
@@ -292,6 +292,9 @@ enum DemonCmd {
     Stop { service: Vec<Service> },
     /// Stop, then start
     Restart { service: Vec<Service> },
+    /// Stop live surfaces, replace the binary, start the same set
+    #[command(hide = true)]
+    Upgrade,
     /// State, pids, uptime, restarts and log path; every service when none is named
     Status {
         service: Vec<Service>,
@@ -482,9 +485,18 @@ enum AgentCmd {
     #[command(alias = "setup")]
     Install(SetupArgs),
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
-    Remove(RemoveArgs),
+    #[command(visible_alias = "remove")]
+    Uninstall(RemoveArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
     List {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
+    /// One host: the same block `agents list` prints, just for that app
+    Info {
+        /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
+        host: String,
         /// JSON instead of the table
         #[arg(long)]
         json: bool,
@@ -529,7 +541,7 @@ struct SetupArgs {
     /// Print the planned edits and exit
     #[arg(long)]
     dry_run: bool,
-    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`
+    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`
     #[arg(long)]
     remove: bool,
     /// Enable prompt modes (`terse,yagni`)
@@ -559,7 +571,7 @@ struct SetupArgs {
 }
 
 impl SetupArgs {
-    /// `rtok agents remove <host>` is the install run backwards; nothing else about it differs.
+    /// `rtok agents uninstall <host>` is the install run backwards; nothing else about it differs.
     fn removing(args: RemoveArgs) -> Self {
         Self {
             host: args.host,
@@ -842,15 +854,30 @@ pub fn run() -> Result<()> {
         }
         Cmd::Agents { action } => match action {
             AgentCmd::Install(args) => setup_host(config_file.as_deref(), args)?,
-            AgentCmd::Remove(args) => {
+            AgentCmd::Uninstall(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
             AgentCmd::List { json } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
                 if json {
-                    print_json(&model::agents_list(&cfg))?;
+                    let rows = with_loader("listing hosts", || model::agents_list(&cfg));
+                    print_json(&rows)?;
                 } else {
-                    print!("{}", crate::agents::list(&cfg));
+                    let text = with_loader("listing hosts", || crate::agents::list(&cfg));
+                    print!("{text}");
+                }
+            }
+            AgentCmd::Info { host, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let hosts = parse_hosts(&host)?;
+                if json {
+                    let agents = crate::agents::resolve(&hosts)?;
+                    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+                    let rows = with_loader("reading host", || model::agents_listed(&cfg, &ids));
+                    print_json(&rows)?;
+                } else {
+                    let text = with_loader("reading host", || crate::agents::info(&cfg, &hosts))?;
+                    print!("{text}");
                 }
             }
             // The command renders the model's Sessions page (T25.2): newest first, live
@@ -1155,6 +1182,7 @@ pub fn run() -> Result<()> {
                 DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
                 DemonCmd::Stop { service } => crate::demon::stop(&cfg, &service, false)?,
                 DemonCmd::Restart { service } => crate::demon::restart(&cfg, c, &service)?,
+                DemonCmd::Upgrade => crate::demon::upgrade(&cfg, c)?,
                 DemonCmd::Status { service, json } => {
                     let rows = model::Model::new(&cfg, None).demon(&service)?;
                     if json {
@@ -1330,7 +1358,26 @@ fn bench_flags(
     Some(flags)
 }
 
-/// The host installers, one call site for `rtok agents install|remove` and the deprecated
+fn with_loader<T>(msg: &str, f: impl FnOnce() -> T) -> T {
+    let pb = crate::render::loader(msg);
+    let out = f();
+    pb.finish_and_clear();
+    out
+}
+
+fn parse_hosts(host: &str) -> Result<Vec<String>> {
+    let hosts: Vec<String> = host
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if hosts.is_empty() {
+        bail!("unknown host: {host}");
+    }
+    Ok(hosts)
+}
+
+/// The host installers, one call site for `rtok agents install|uninstall` and the deprecated
 /// `rtok setup`. Unknown hosts are refused before any backup is taken.
 fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<()> {
     let SetupArgs {
@@ -1348,14 +1395,7 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     } = args;
     let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
     // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
-    let hosts: Vec<String> = host
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if hosts.is_empty() {
-        bail!("unknown host: {host}");
-    }
+    let hosts = parse_hosts(&host)?;
     let mode = if remove {
         crate::agents::Mode::Remove
     } else if replace {
@@ -1370,7 +1410,8 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         desktop,
         all,
     };
-    print!("{}", crate::agents::run(&mut cfg, &req)?);
+    let out = with_loader("updating host", || crate::agents::run(&mut cfg, &req))?;
+    print!("{out}");
     Ok(())
 }
 

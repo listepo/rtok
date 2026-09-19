@@ -98,10 +98,17 @@ pub fn json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The `.bak-*` copies sitting beside `path`, oldest name first.
+/// The copies of `path` in its sibling `_backup/` directory, oldest name first.
 pub fn backups(path: &Path) -> Vec<PathBuf> {
+    let Some(parent) = path.parent() else {
+        return Vec::new();
+    };
+    let dir = parent.join("_backup");
+    if !dir.is_dir() {
+        return Vec::new();
+    }
     let name = format!("{}.bak-", path.file_name().unwrap().to_string_lossy());
-    let mut found: Vec<PathBuf> = fs::read_dir(path.parent().unwrap())
+    let mut found: Vec<PathBuf> = fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(&name))

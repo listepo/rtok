@@ -106,6 +106,9 @@ _rtok() {
             rtok__subcmd__agents,help)
                 cmd="rtok__subcmd__agents__subcmd__help"
                 ;;
+            rtok__subcmd__agents,info)
+                cmd="rtok__subcmd__agents__subcmd__info"
+                ;;
             rtok__subcmd__agents,install)
                 cmd="rtok__subcmd__agents__subcmd__install"
                 ;;
@@ -113,13 +116,19 @@ _rtok() {
                 cmd="rtok__subcmd__agents__subcmd__list"
                 ;;
             rtok__subcmd__agents,remove)
-                cmd="rtok__subcmd__agents__subcmd__remove"
+                cmd="rtok__subcmd__agents__subcmd__uninstall"
                 ;;
             rtok__subcmd__agents,sessions)
                 cmd="rtok__subcmd__agents__subcmd__sessions"
                 ;;
+            rtok__subcmd__agents,uninstall)
+                cmd="rtok__subcmd__agents__subcmd__uninstall"
+                ;;
             rtok__subcmd__agents__subcmd__help,help)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__help"
+                ;;
+            rtok__subcmd__agents__subcmd__help,info)
+                cmd="rtok__subcmd__agents__subcmd__help__subcmd__info"
                 ;;
             rtok__subcmd__agents__subcmd__help,install)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__install"
@@ -127,11 +136,11 @@ _rtok() {
             rtok__subcmd__agents__subcmd__help,list)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__list"
                 ;;
-            rtok__subcmd__agents__subcmd__help,remove)
-                cmd="rtok__subcmd__agents__subcmd__help__subcmd__remove"
-                ;;
             rtok__subcmd__agents__subcmd__help,sessions)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__sessions"
+                ;;
+            rtok__subcmd__agents__subcmd__help,uninstall)
+                cmd="rtok__subcmd__agents__subcmd__help__subcmd__uninstall"
                 ;;
             rtok__subcmd__agents__subcmd__help__subcmd__sessions,watch)
                 cmd="rtok__subcmd__agents__subcmd__help__subcmd__sessions__subcmd__watch"
@@ -223,6 +232,9 @@ _rtok() {
             rtok__subcmd__demon,supervise)
                 cmd="rtok__subcmd__demon__subcmd__supervise"
                 ;;
+            rtok__subcmd__demon,upgrade)
+                cmd="rtok__subcmd__demon__subcmd__upgrade"
+                ;;
             rtok__subcmd__demon__subcmd__help,help)
                 cmd="rtok__subcmd__demon__subcmd__help__subcmd__help"
                 ;;
@@ -243,6 +255,9 @@ _rtok() {
                 ;;
             rtok__subcmd__demon__subcmd__help,supervise)
                 cmd="rtok__subcmd__demon__subcmd__help__subcmd__supervise"
+                ;;
+            rtok__subcmd__demon__subcmd__help,upgrade)
+                cmd="rtok__subcmd__demon__subcmd__help__subcmd__upgrade"
                 ;;
             rtok__subcmd__graph,affected)
                 cmd="rtok__subcmd__graph__subcmd__affected"
@@ -376,17 +391,20 @@ _rtok() {
             rtok__subcmd__help,web)
                 cmd="rtok__subcmd__help__subcmd__web"
                 ;;
+            rtok__subcmd__help__subcmd__agents,info)
+                cmd="rtok__subcmd__help__subcmd__agents__subcmd__info"
+                ;;
             rtok__subcmd__help__subcmd__agents,install)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__install"
                 ;;
             rtok__subcmd__help__subcmd__agents,list)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__list"
                 ;;
-            rtok__subcmd__help__subcmd__agents,remove)
-                cmd="rtok__subcmd__help__subcmd__agents__subcmd__remove"
-                ;;
             rtok__subcmd__help__subcmd__agents,sessions)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__sessions"
+                ;;
+            rtok__subcmd__help__subcmd__agents,uninstall)
+                cmd="rtok__subcmd__help__subcmd__agents__subcmd__uninstall"
                 ;;
             rtok__subcmd__help__subcmd__agents__subcmd__sessions,watch)
                 cmd="rtok__subcmd__help__subcmd__agents__subcmd__sessions__subcmd__watch"
@@ -429,6 +447,9 @@ _rtok() {
                 ;;
             rtok__subcmd__help__subcmd__demon,supervise)
                 cmd="rtok__subcmd__help__subcmd__demon__subcmd__supervise"
+                ;;
+            rtok__subcmd__help__subcmd__demon,upgrade)
+                cmd="rtok__subcmd__help__subcmd__demon__subcmd__upgrade"
                 ;;
             rtok__subcmd__help__subcmd__graph,affected)
                 cmd="rtok__subcmd__help__subcmd__graph__subcmd__affected"
@@ -599,7 +620,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents)
-            opts="-h --config --help install remove list sessions help"
+            opts="-h --config --help install uninstall remove list info sessions help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -617,7 +638,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help)
-            opts="install remove list sessions help"
+            opts="install uninstall list info sessions help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -631,6 +652,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__help__subcmd__info)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -672,20 +707,6 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtok__subcmd__agents__subcmd__help__subcmd__remove)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         rtok__subcmd__agents__subcmd__help__subcmd__sessions)
             opts="watch"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -707,6 +728,38 @@ _rtok() {
                 return 0
             fi
             case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__help__subcmd__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__info)
+            opts="-h --json --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -738,24 +791,6 @@ _rtok() {
             ;;
         rtok__subcmd__agents__subcmd__list)
             opts="-h --json --config --help"
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                --config)
-                    COMPREPLY=($(compgen -f "${cur}"))
-                    return 0
-                    ;;
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
-        rtok__subcmd__agents__subcmd__remove)
-            opts="-h --dry-run --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -835,6 +870,24 @@ _rtok() {
         rtok__subcmd__agents__subcmd__sessions__subcmd__watch)
             opts="-h --all --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__agents__subcmd__uninstall)
+            opts="-h --dry-run --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1245,7 +1298,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon)
-            opts="-h --config --help start stop restart status kill supervise help"
+            opts="-h --config --help start stop restart upgrade status kill supervise help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1263,7 +1316,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__help)
-            opts="start stop restart status kill supervise help"
+            opts="start stop restart upgrade status kill supervise help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1374,6 +1427,20 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        rtok__subcmd__demon__subcmd__help__subcmd__upgrade)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         rtok__subcmd__demon__subcmd__kill)
             opts="-h --config --help proxy mcp web"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -1466,6 +1533,24 @@ _rtok() {
             ;;
         rtok__subcmd__demon__subcmd__supervise)
             opts="-h --config --help proxy mcp web"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__demon__subcmd__upgrade)
+            opts="-h --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1879,8 +1964,22 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__agents)
-            opts="install remove list sessions"
+            opts="install uninstall list info sessions"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__agents__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -1920,20 +2019,6 @@ _rtok() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        rtok__subcmd__help__subcmd__agents__subcmd__remove)
-            opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
-                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-                return 0
-            fi
-            case "${prev}" in
-                *)
-                    COMPREPLY=()
-                    ;;
-            esac
-            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-            return 0
-            ;;
         rtok__subcmd__help__subcmd__agents__subcmd__sessions)
             opts="watch"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -1951,6 +2036,20 @@ _rtok() {
         rtok__subcmd__help__subcmd__agents__subcmd__sessions__subcmd__watch)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 5 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__agents__subcmd__uninstall)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -2131,7 +2230,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__demon)
-            opts="start stop restart status kill supervise"
+            opts="start stop restart upgrade status kill supervise"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2215,6 +2314,20 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__help__subcmd__demon__subcmd__supervise)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        rtok__subcmd__help__subcmd__demon__subcmd__upgrade)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

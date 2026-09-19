@@ -142,7 +142,7 @@ target/tmp/t60-2-config-init.toml
 +[setup]                               # rtok agents install / remove <host>
 +dry_run      = false
 +yes          = false                  # required by --replace
-+backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
++backup       = true                   # _backup/<name>.bak-<ts> beside each file, before install and uninstall touch it
 +hook_timeout_s = 5                    # timeout written into each hook entry
 +modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 +mcp          = true                   # also register the MCP server   (--mcp)

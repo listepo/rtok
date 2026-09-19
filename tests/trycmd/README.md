@@ -32,6 +32,8 @@ config; reading cases set `inherit = false` and `RTOK_HOME` under `target/tmp/`.
 - `completions-powershell.toml` — powershell completions
 - `man.toml` — man page (roff); version via `[..]`
 - `agents-list.toml` — `agents list` table (host paths via `...`)
+- `agents-info.toml` — `agents info` table for one host (host paths via `...`)
+- `agents-info-json.toml` — `agents info --json` for one host (host paths via `...`)
 - `agents-sessions.toml` — `agents sessions` on an empty store
 - `demon-status.toml` — `demon status` with nothing running
 - `otel-status.toml` — `otel status` table

@@ -74,6 +74,17 @@ pub fn spinner(what: &str) -> indicatif::ProgressBar {
     pb
 }
 
+/// A spinner with no file counter. Same TTY rule as [`spinner`]: silent when stderr is not a terminal.
+pub fn loader(what: &str) -> indicatif::ProgressBar {
+    let pb = indicatif::ProgressBar::new_spinner();
+    if let Ok(style) = indicatif::ProgressStyle::with_template("{spinner:.cyan} {msg}") {
+        pb.set_style(style);
+    }
+    pb.set_message(what.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(120));
+    pb
+}
+
 /// Colour a stored log line's level (`<date> <time> <level> <source>/<name>: <message>`, T24.0's
 /// `log::line`): red error, yellow warn, dim debug, info plain. `rtok logs export` prints the same
 /// line through no such call, so piping stays byte-plain.

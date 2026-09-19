@@ -120,16 +120,18 @@ Options:
   -h, --help           Print help
 
 $ rtok agents --help
-Agent hosts (`rtok agents install|remove|list …`)
+Agent hosts (`rtok agents install|uninstall|list|info …`)
 
 Usage: rtok agents [OPTIONS] <COMMAND>
 
 Commands:
-  install   Install hooks, MCP server and proxy into a host
-  remove    Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
-  list      Every known app: kind and name, path and version, config files, rtok modules
-  sessions  What is running in this project: host, provider, model, tokens, start, run time
-  help      Print this message or the help of the given subcommand(s)
+  install    Install hooks, MCP server and proxy into a host
+  uninstall  Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link [alias:
+             remove]
+  list       Every known app: kind and name, path and version, config files, rtok modules
+  info       One host: the same block `agents list` prints, just for that app
+  sessions   What is running in this project: host, provider, model, tokens, start, run time
+  help       Print this message or the help of the given subcommand(s)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -148,7 +150,7 @@ Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --dry-run        Print the planned edits and exit
       --remove         Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok
-                       agents remove <host>`
+                       agents uninstall <host>`
       --mode <MODE>    Enable prompt modes (`terse,yagni`)
       --yes            Confirm destructive `--replace`
       --replace        Remove legacy token hooks and retarget the proxy
@@ -160,10 +162,10 @@ Options:
       --all            All variants (the default when neither `--cli` nor `--desktop` is given)
   -h, --help           Print help
 
-$ rtok agents remove --help
+$ rtok agents uninstall --help
 Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
 
-Usage: rtok agents remove [OPTIONS] <HOST>
+Usage: rtok agents uninstall [OPTIONS] <HOST>
 
 Arguments:
   <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
@@ -178,6 +180,20 @@ $ rtok agents list --help
 Every known app: kind and name, path and version, config files, rtok modules
 
 Usage: rtok agents list [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok agents info --help
+One host: the same block `agents list` prints, just for that app
+
+Usage: rtok agents info [OPTIONS] <HOST>
+
+Arguments:
+  <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)

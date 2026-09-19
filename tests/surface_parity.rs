@@ -298,10 +298,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents install",
         "installs hooks, MCP and the proxy into a host",
     ),
-    ("agents remove", "takes rtok back out of a host"),
+    ("agents uninstall", "takes rtok back out of a host"),
     (
         "agents list",
         "lists known hosts with app type, version, install state and modules",
+    ),
+    (
+        "agents info",
+        "lists one host with app type, version, install state and modules",
     ),
     ("setup", "deprecated spelling of `rtok agents install`"),
     ("config init", "writes the annotated reference file"),
@@ -325,6 +329,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ("demon restart", "stop, then start"),
     ("demon kill", "SIGKILL and drop the state file"),
     ("demon supervise", "the detached half of `demon start`"),
+    (
+        "demon upgrade",
+        "stops live surfaces, replaces the binary, starts the same set",
+    ),
     ("otel flush", "posts rows past the watermarks"),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
@@ -458,6 +466,7 @@ const JSON_READERS: &[&str] = &[
     "doctor",
     "plugins",
     "agents list",
+    "agents info",
     "agents sessions",
     "logs",
     "demon status",
