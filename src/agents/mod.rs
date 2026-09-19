@@ -822,8 +822,15 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
 }
 
 /// The hub skill tree this repo ships (`skills/rtok/`).
+///
+/// Prefer the top-level hub. Older ketch archives only shipped
+/// `plugins/` (no `skills/`), so fall back to the pi-bundled copy.
 pub(crate) fn skill_src() -> std::path::PathBuf {
-    plugin_src("skills/rtok")
+    let hub = plugin_src("skills/rtok");
+    if hub.exists() {
+        return hub;
+    }
+    plugin_src("plugins/pi/skills/rtok")
 }
 
 /// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).
@@ -982,6 +989,36 @@ mod tests {
             !quoted.contains("\\\""),
             "bash-style escape must not appear: {quoted}"
         );
+    }
+
+    #[test]
+    fn skill_src_falls_back_to_pi_skill_in_ketch_store() {
+        let root = std::env::temp_dir().join(format!("rtok-skill-fallback-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        let store = root.join("store/rtok/v0.2.0");
+        let pi_skill = store.join("plugins/pi/skills/rtok");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&pi_skill).unwrap();
+        std::fs::write(pi_skill.join("SKILL.md"), b"pi\n").unwrap();
+        let exe = bin.join("rtok");
+        std::fs::write(&exe, b"x").unwrap();
+        // No top-level skills/ in the store — only the pi copy.
+        let got = resolve_plugin_src(
+            "skills/rtok",
+            Some(&exe),
+            &root.join("missing-cargo"),
+            "0.2.0",
+        );
+        assert!(!got.exists(), "hub must be absent: {}", got.display());
+        let fallback = resolve_plugin_src(
+            "plugins/pi/skills/rtok",
+            Some(&exe),
+            &root.join("missing-cargo"),
+            "0.2.0",
+        );
+        assert_eq!(fallback, pi_skill);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
