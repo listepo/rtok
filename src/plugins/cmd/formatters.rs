@@ -11,25 +11,12 @@ pub fn compress(
     archive_id: &str,
 ) -> (String, &'static str) {
     let argv = family_argv(argv);
-    let rule = settings.pick(bin(&argv));
-    // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
-    // reach the compact pass instead of a NAME/STATUS parser.
-    if rules::is_json_body(output) {
-        let s = rules::apply(settings, output, exit, &rule, archive_id);
-        let kind = if s.len() < output.len() {
-            "rule"
-        } else {
-            "raw"
-        };
-        return (s, kind);
-    }
     if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
+    let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if bin(&argv) == "skill" {
-        "skill"
-    } else if s.len() < output.len() {
+    let kind = if s.len() < output.len() {
         "rule"
     } else {
         "raw"
@@ -65,7 +52,8 @@ pub(crate) use crate::agents::cmd_stem;
 
 /// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
 const FORMATTER_STEMS: &[&str] = &[
-    "cargo", "git", "pytest", "jest", "vitest", "tree", "go", "docker", "kubectl", "ps",
+    "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go", "docker", "kubectl",
+    "ps",
 ];
 
 /// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
@@ -106,7 +94,8 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         )),
         ("jest", _) | ("vitest", _) => Some(keep(output, &["FAIL", "PASS", "Tests:", "● "])),
         ("go", "test") => Some(keep(output, &["FAIL", "PASS", "ok  ", "--- FAIL"])),
-        ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("ls", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
         ("docker", "ps") => docker_ps(output),
         ("kubectl", "get") => kubectl_get(output),
         ("ps", "aux") => ps_aux(output),
@@ -549,8 +538,7 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["docker", "ps"]),
-            "Cannot connect to the Docker daemon
-",
+            "Cannot connect to the Docker daemon\n",
             0,
             "deadbeef",
         );
@@ -559,8 +547,7 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["kubectl", "get"]),
-            "error: the server doesn't have a resource type \"pods\"
-",
+            "error: the server doesn't have a resource type \"pods\"\n",
             1,
             "deadbeef",
         );
@@ -569,116 +556,11 @@ mod tests {
         let (got, kind) = compress(
             &settings,
             &argv(&["ps", "aux"]),
-            "ps: invalid option -- z
-",
+            "ps: invalid option -- z\n",
             1,
             "deadbeef",
         );
         assert_ne!(kind, "formatter", "{got}");
         assert!(got.contains("invalid option"), "{got}");
-    }
-
-    #[test]
-    fn group_goldens_beat_the_same_rule_without_group() {
-        use super::rules::Group;
-        let settings = rules::Settings::builtin();
-        let dir = goldens();
-        for file in [
-            "ls.in",
-            "find.in",
-            "rg.in",
-            "tsc_dup.in",
-            "eslint_dup.in",
-            "cargo_check.in",
-            "dotnet_dup.in",
-        ] {
-            let raw = fs::read_to_string(dir.join(file)).unwrap();
-            let (argv, exit, output) = parse_in(&raw);
-            let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
-            let mut off = settings.pick(bin(&family_argv(&argv)));
-            off.group = Group::Off;
-            let ungrouped = rules::apply(&settings, &output, exit, &off, "deadbeef");
-            assert!(
-                got.len() < ungrouped.len(),
-                "{file}: grouped {} B vs ungrouped {} B
-{got}",
-                got.len(),
-                ungrouped.len()
-            );
-        }
-    }
-
-    #[test]
-    fn json_goldens_beat_the_line_cut_and_stand_down_from_table_formatters() {
-        let settings = rules::Settings::builtin();
-        let dir = goldens();
-        for (file, kept) in [
-            ("gh_json.in", "https://github.com/o/r/pull/20"),
-            ("aws_json.in", "i-00000013"),
-            ("kubectl_json.in", "web-deploy-19-abcd"),
-        ] {
-            let raw = fs::read_to_string(dir.join(file)).unwrap();
-            let (argv, exit, output) = parse_in(&raw);
-            let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
-            assert_ne!(kind, "formatter", "{file} should skip table formatters");
-            assert!(
-                got.len() < output.len(),
-                "{file}: compact {} vs raw {}",
-                got.len(),
-                output.len()
-            );
-            assert!(got.contains("… +5 more"), "{file}: {got}");
-            assert!(
-                got.contains(kept),
-                "{file} dropped {kept} (line-cut keeps the opening):
-{got}"
-            );
-            let rule = settings.pick(bin(&family_argv(&argv)));
-            let head = rule.head.min(rule.max_lines) as usize;
-            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join(
-                "
-",
-            );
-            assert!(
-                !pretty_head.contains(kept),
-                "{file}: {kept} already in the pretty head — fixture too small"
-            );
-        }
-        let table = fs::read_to_string(dir.join("kubectl_get.in")).unwrap();
-        let (_, exit, output) = parse_in(&table);
-        let (_, kind) = compress(
-            &settings,
-            &["kubectl".into(), "get".into(), "pods".into()],
-            &output,
-            exit,
-            "deadbeef",
-        );
-        assert_eq!(kind, "formatter");
-    }
-
-    #[test]
-    fn skill_rule_keeps_headings_and_names_kind() {
-        let settings = rules::Settings::builtin();
-        assert_eq!(settings.pick("skill").head, 30);
-        assert_eq!(settings.pick("skill").tail, 5);
-        let mut lines = vec!["# Title".to_string()];
-        lines.extend((0..60).map(|i| format!("body {i}")));
-        lines.push("## Middle".into());
-        lines.extend((60..120).map(|i| format!("body {i}")));
-        let body = lines.join(
-            "
-",
-        );
-        let (out, kind) = compress(&settings, &["skill".into(), "demo".into()], &body, 0, "id1");
-        assert_eq!(kind, "skill");
-        assert!(out.contains("# Title"), "{out}");
-        assert!(out.contains("## Middle"), "{out}");
-        assert!(out.len() < body.len(), "expected a cut");
-        let small = "# Tiny
-ok
-";
-        let (s, k) = compress(&settings, &["skill".into()], small, 0, "id1");
-        assert_eq!(k, "skill");
-        assert!(s.contains("# Tiny"), "{s}");
     }
 }
