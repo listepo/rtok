@@ -30,9 +30,6 @@ pub struct SizeRow {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Report {
     pub sessions: u64,
-    /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub compact: u64,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
@@ -61,10 +58,10 @@ pub struct Report {
     /// Absent from `--json` when no session edited anything, so the T15.11 goldens hold.
     #[serde(default, skip_serializing_if = "EditRow::is_empty")]
     pub edits: EditRow,
-    /// T59.6: Claude Code `Agent` and Cursor/legacy `Task` inputs vs results.
-    /// Absent when no session used either, so the T15.11 goldens hold.
-    #[serde(default, skip_serializing_if = "AgentRow::is_empty")]
-    pub agents: AgentRow,
+    /// T58.1: native Read of a path already read in-session with Edit/Write/MultiEdit
+    /// of that path in between. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "ReadDeltaRow::is_empty")]
+    pub read_delta: ReadDeltaRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -88,26 +85,20 @@ impl EditRow {
     }
 }
 
-/// Sub-agent tools (T59.6): `Agent` (Claude Code) and `Task` (Cursor / older Claude Code).
+/// Re-reads that a unified diff could shorten (plan T58.1). `bytes` is those
+/// tool-result payloads; `read_bytes` is every native `Read` result in the same
+/// window — the denominator of "share of Read bytes".
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentRow {
-    pub sessions: u64,
-    pub agent_calls: u64,
-    pub agent_input_bytes: u64,
-    pub agent_result_bytes: u64,
-    pub task_calls: u64,
-    pub task_input_bytes: u64,
-    pub task_result_bytes: u64,
+pub struct ReadDeltaRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub read_bytes: u64,
 }
 
-impl AgentRow {
+impl ReadDeltaRow {
     fn is_empty(&self) -> bool {
-        self.agent_calls == 0 && self.task_calls == 0
+        self.calls == 0
     }
-}
-
-fn is_zero(n: &u64) -> bool {
-    *n == 0
 }
 
 /// T61.1: one skill's injected bodies — the `isMeta` user records keyed to that
@@ -188,8 +179,8 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  compact {}  lines {}  malformed {}\n",
-            self.sessions, self.compact, self.lines, self.malformed
+            "sessions {}  lines {}  malformed {}\n",
+            self.sessions, self.lines, self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -253,20 +244,14 @@ impl Report {
                 pct(est_tokens(e.old_bytes), self.usage_output)
             ));
         }
-        if !self.agents.is_empty() {
-            let a = &self.agents;
-            let sub_tokens = self.tools.get("Agent").map(|r| r.est_tokens).unwrap_or(0)
-                + self.tools.get("Task").map(|r| r.est_tokens).unwrap_or(0);
-            let tool_tokens: u64 = self.tools.values().map(|r| r.est_tokens).sum();
+        if self.read_delta.calls > 0 {
+            let d = &self.read_delta;
             s.push_str(&format!(
-                "agent sessions {}  Agent in {} B out {} B  Task in {} B out {} B  result/tool_tokens {:.1}%  input/tool_input {:.1}%\n",
-                a.sessions,
-                a.agent_input_bytes,
-                a.agent_result_bytes,
-                a.task_input_bytes,
-                a.task_result_bytes,
-                pct(sub_tokens, tool_tokens),
-                pct(a.agent_input_bytes + a.task_input_bytes, self.edits.tool_input_bytes),
+                "read delta calls {}  bytes {}  of Read bytes {}  {:.1}%\n",
+                d.calls,
+                d.bytes,
+                d.read_bytes,
+                pct(d.bytes, d.read_bytes)
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
@@ -534,7 +519,6 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             report.malformed += 1;
             continue;
         };
-        report.compact += compact_events(&p);
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
     finish_rows(&mut report.tools);
@@ -555,22 +539,6 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
     Ok(report)
 }
 
-/// One Claude Code / Codex compaction: a `system` line with `subtype=compact_boundary`.
-/// `isCompactSummary` rides the same event and is not counted again.
-fn compact_events(path: &Path) -> u64 {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return 0;
-    };
-    text.lines().filter(|line| is_compact_line(line)).count() as u64
-}
-
-fn is_compact_line(line: &str) -> bool {
-    let Ok(v) = serde_json::from_str::<Value>(line) else {
-        return false;
-    };
-    v.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
-}
-
 fn fold_session(
     parsed: &Parsed,
     plugin: &str,
@@ -585,7 +553,6 @@ fn fold_session(
     let mut id_name: BTreeMap<&str, &str> = BTreeMap::new();
     let mut id_family: BTreeMap<&str, String> = BTreeMap::new();
     let mut id_skill: BTreeMap<&str, String> = BTreeMap::new();
-    let mut used_subagent = false;
     for u in &parsed.tool_uses {
         id_name.insert(u.id.as_str(), u.name.as_str());
         if u.name == "Bash"
@@ -599,14 +566,13 @@ fn fold_session(
             id_skill.insert(u.id.as_str(), skill.to_string());
         }
         fold_edits(&mut report.edits, u);
-        used_subagent |= fold_agent_input(&mut report.agents, u);
     }
+    fold_read_delta(&mut report.read_delta, parsed);
     for r in &parsed.tool_results {
         let name = id_name
             .get(r.tool_use_id.as_str())
             .copied()
             .unwrap_or("unknown");
-        fold_agent_result(&mut report.agents, name, r.content.len() as u64);
         if !plugin.is_empty() && plugin != name && !name.contains(plugin) {
             continue;
         }
@@ -631,9 +597,6 @@ fn fold_session(
         if let Some(grp) = mcp_group(name) {
             add(&mut report.mcp_groups, grp, bytes, tokens, ctt);
         }
-    }
-    if used_subagent {
-        report.agents.sessions += 1;
     }
     fold_skills(parsed, &id_skill, report);
     for u in &parsed.usages {
@@ -721,30 +684,65 @@ fn fold_edits(row: &mut EditRow, u: &jsonl::ToolUse) {
     }
 }
 
-/// T59.6: count `Agent` / `Task` tool_use bytes. Returns whether this call is a sub-agent.
-fn fold_agent_input(row: &mut AgentRow, u: &jsonl::ToolUse) -> bool {
-    let bytes = u.input.to_string().len() as u64;
-    match u.name.as_str() {
-        "Agent" => {
-            row.agent_calls += 1;
-            row.agent_input_bytes += bytes;
-            true
+/// T58.1: walk this session's tool uses in order. A native `Read` of a path that
+/// was already read, with an `Edit` / `Write` / `MultiEdit` of that path in
+/// between, is a changed re-read — its result bytes are the delta-read surface.
+fn fold_read_delta(row: &mut ReadDeltaRow, parsed: &Parsed) {
+    let sizes: BTreeMap<&str, u64> = parsed
+        .tool_results
+        .iter()
+        .map(|r| (r.tool_use_id.as_str(), r.content.len() as u64))
+        .collect();
+    let mut paths: Vec<(String, bool, bool)> = Vec::new();
+    for u in &parsed.tool_uses {
+        let Some(path) = tool_path(&u.input) else {
+            continue;
+        };
+        match u.name.as_str() {
+            "Read" => {
+                let bytes = sizes.get(u.id.as_str()).copied().unwrap_or(0);
+                row.read_bytes += bytes;
+                if let Some((_, seen, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path))
+                {
+                    if *seen && *dirty {
+                        row.calls += 1;
+                        row.bytes += bytes;
+                    }
+                    *seen = true;
+                    *dirty = false;
+                } else {
+                    paths.push((path.to_string(), true, false));
+                }
+            }
+            "Edit" | "Write" | "MultiEdit" => {
+                if let Some((_, _, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path)) {
+                    *dirty = true;
+                } else {
+                    paths.push((path.to_string(), false, true));
+                }
+            }
+            _ => {}
         }
-        "Task" => {
-            row.task_calls += 1;
-            row.task_input_bytes += bytes;
-            true
-        }
-        _ => false,
     }
 }
 
-fn fold_agent_result(row: &mut AgentRow, name: &str, bytes: u64) {
-    match name {
-        "Agent" => row.agent_result_bytes += bytes,
-        "Task" => row.task_result_bytes += bytes,
-        _ => {}
+fn tool_path(input: &Value) -> Option<&str> {
+    input
+        .get("file_path")
+        .or_else(|| input.get("path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+}
+
+/// Exact match, or relative-vs-absolute (`src/a.rs` vs `/repo/src/a.rs`).
+fn same_path(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
     }
+    let a = Path::new(a);
+    let b = Path::new(b);
+    a.ends_with(b) || b.ends_with(a)
 }
 
 fn pct(part: u64, whole: u64) -> f64 {
@@ -1122,41 +1120,27 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// T59.6: Agent and Task inputs vs results, counted per session (Bash-only session omitted).
     #[test]
-    fn agents_split_agent_and_task_inputs_and_results_per_session() {
-        let dir = std::env::temp_dir().join(format!("rtok-stats-agent-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let write = |name: &str, lines: &[serde_json::Value]| {
-            let mut f = fs::File::create(dir.join(name)).unwrap();
-            for line in lines {
-                writeln!(f, "{line}").unwrap();
-            }
-        };
-        let agent_in = json!({"prompt": "abcd"});
-        let task_in = json!({"prompt": "efghij"});
-        write(
-            "a.jsonl",
-            &[
-                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"a1","name":"Agent","input":agent_in}],"usage":{"input_tokens":1,"output_tokens":1}}}),
-                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"agent-out"}]}}),
-            ],
-        );
-        write(
-            "t.jsonl",
-            &[
-                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Task","input":task_in}],"usage":{"input_tokens":1,"output_tokens":1}}}),
-                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"task-output!"}]}}),
-            ],
-        );
-        write(
-            "b.jsonl",
-            &[
-                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":1,"output_tokens":1}}}),
-                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b1","content":"ok"}]}}),
-            ],
-        );
+    fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
+        let dir = tempfile_dir();
+        let path = dir.join("d.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        // Read /a.rs (10 B) → Edit /a.rs → Read /a.rs (20 B, counts) → Read /a.rs
+        // again with no edit (does not count) → Read /b.rs only once (does not).
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"0123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/proj/src/a.rs","old_string":"x","new_string":"y"}}]}}),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m4","content":[{"type":"tool_use","id":"t4","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","content":"same"}]}}),
+            json!({"type":"assistant","message":{"id":"m5","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"/b.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"bbbb"}]}}),
+        ];
+        for line in &lines {
+            writeln!(f, "{line}").unwrap();
+        }
         let r = collect(
             &dir,
             Duration::from_secs(86400 * 60),
@@ -1164,20 +1148,13 @@ mod tests {
             Replay::from_cfg(&Config::default()),
         )
         .unwrap();
-        let a = &r.agents;
-        assert_eq!(a.sessions, 2);
-        assert_eq!((a.agent_calls, a.task_calls), (1, 1));
-        assert_eq!(a.agent_input_bytes, agent_in.to_string().len() as u64);
-        assert_eq!(a.task_input_bytes, task_in.to_string().len() as u64);
-        assert_eq!((a.agent_result_bytes, a.task_result_bytes), (9, 12));
+        let d = &r.read_delta;
+        assert_eq!((d.calls, d.bytes, d.read_bytes), (1, 20, 10 + 20 + 4 + 4));
         let table = r.to_table();
         assert!(
-            table.contains("agent sessions 2  Agent in ") && table.contains(" Task in "),
+            table.contains("read delta calls 1  bytes 20  of Read bytes 38  52.6%"),
             "{table}"
         );
-        assert!(table.contains("result/tool_tokens"), "{table}");
-        let js = r.to_json().unwrap();
-        assert!(js.contains("\"agents\""), "{js}");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -1199,37 +1176,15 @@ mod tests {
         assert!(after < tokens * 5);
     }
 
-    #[test]
-    fn compact_boundary_counts_once_per_event() {
-        let dir = tempfile_dir();
-        std::fs::write(
-            dir.join("s.jsonl"),
-            r#"{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}
-{"type":"user","isCompactSummary":true,"message":{"content":"summary"}}
-{"type":"assistant","message":{"content":"ok"}}
-"#,
-        )
-        .unwrap();
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
-        assert_eq!(r.sessions, 1);
-        assert_eq!(r.compact, 1);
-        assert!(
-            r.to_table().starts_with("sessions 1  compact 1  lines 3"),
-            "{}",
-            r.to_table()
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
     fn tempfile_dir() -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("rtok-stats-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
+        let p = std::env::temp_dir().join(format!(
+            "rtok-stats-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         fs::create_dir_all(&p).unwrap();
         p
     }

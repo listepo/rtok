@@ -10,12 +10,10 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
 
 ## Tools
 
-- `read(path, mode=full|lines|map|signatures|diff|stripped, range?)` — numbered lines; `map` and
-  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go, Java, Kotlin, Swift, C#, Ruby, PHP) or a
-  Markdown heading scan (`.md`, `.mdx`: level, line number, first body line; fenced blocks
-  skipped); `stripped` drops comment nodes (same grammars; unknown language or parse fail → `full`);
-  unknown language for `map`/`signatures` → first 60 lines + note. Output over 20 K chars → head/tail +
-  archive id. `diff` is the edit → verify form of the automatic delta below.
+- `read(path, mode=full|lines|map|signatures|diff, range?)` — numbered lines; `map` and
+  `signatures` come from tree-sitter tags queries (Rust, TS, JS, Python, Dart, C, Go);
+  unknown language → first 60 lines + note. Output over 20 K chars → head/tail + archive id.
+  `diff` is the edit → verify form of the automatic delta below.
 - `search(pattern, path, max=50)` — regex over files respecting `.gitignore`;
   `path:line: snippet` (≤ 120 chars).
 - `tree(path, depth=2)` — compact listing with sizes.
@@ -46,7 +44,7 @@ delta_max_ratio = 0.6        # full file when the diff is not below this fractio
 
 See `roadmap.md` § `read`. Checks in `plan.md`.
 
-T4.2 full/lines · T4.3 map/signatures · T4.4 dedup · T4.5 search + tree · T4.6 Read advice · T50.3 stripped.
+T4.2 full/lines · T4.3 map/signatures · T4.4 dedup · T4.5 search + tree · T4.6 Read advice.
 
 ## Status
 
