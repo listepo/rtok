@@ -10,7 +10,7 @@ use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -34,6 +34,12 @@ pub struct Report {
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
     pub bash_families: BTreeMap<String, SizeRow>,
+    /// T50.1: `formatter`, named `rule`, or `default` per Bash stem (transcripts).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bash_filter: BTreeMap<String, String>,
+    /// T50.1: `cmd` measurements with `kind = rule` on stems still on [`Rule::default()`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bash_default_rule: BTreeMap<String, SizeRow>,
     pub mcp_groups: BTreeMap<String, SizeRow>,
     pub usage_input: u64,
     pub usage_cache_create: u64,
@@ -58,6 +64,14 @@ pub struct Report {
     /// Absent from `--json` when no session edited anything, so the T15.11 goldens hold.
     #[serde(default, skip_serializing_if = "EditRow::is_empty")]
     pub edits: EditRow,
+    /// T58.1: native Read of a path already read in-session with Edit/Write/MultiEdit
+    /// of that path in between. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "ReadDeltaRow::is_empty")]
+    pub read_delta: ReadDeltaRow,
+    /// T65.1: tool_result bytes whose SHA-256 matches an earlier result in the
+    /// same session. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
+    pub repeat: RepeatRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +90,38 @@ pub struct EditRow {
 }
 
 impl EditRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
+}
+
+/// Re-reads that a unified diff could shorten (plan T58.1). `bytes` is those
+/// tool-result payloads; `read_bytes` is every native `Read` result in the same
+/// window — the denominator of "share of Read bytes".
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadDeltaRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub read_bytes: u64,
+}
+
+impl ReadDeltaRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
+}
+
+/// Content-hash repeats within a session (plan T65.1). `bytes` is those
+/// tool-result payloads; `result_bytes` is every tool_result in the same
+/// window — the denominator of "share of result bytes".
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepeatRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub result_bytes: u64,
+}
+
+impl RepeatRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
@@ -224,8 +270,31 @@ impl Report {
                 pct(est_tokens(e.old_bytes), self.usage_output)
             ));
         }
+        if self.read_delta.calls > 0 {
+            let d = &self.read_delta;
+            s.push_str(&format!(
+                "read delta calls {}  bytes {}  of Read bytes {}  {:.1}%\n",
+                d.calls,
+                d.bytes,
+                d.read_bytes,
+                pct(d.bytes, d.read_bytes)
+            ));
+        }
+        if self.repeat.calls > 0 {
+            let d = &self.repeat;
+            s.push_str(&format!(
+                "repeat calls {}  bytes {}  of result bytes {}  {:.1}%\n",
+                d.calls,
+                d.bytes,
+                d.result_bytes,
+                pct(d.bytes, d.result_bytes)
+            ));
+        }
         s.push_str(&format_section("tool", &self.tools));
-        s.push_str(&format_section("bash", &self.bash_families));
+        s.push_str(&format_bash_section(&self.bash_families, &self.bash_filter));
+        if !self.bash_default_rule.is_empty() {
+            s.push_str(&format_section("bash_default", &self.bash_default_rule));
+        }
         s.push_str(&format_section("mcp", &self.mcp_groups));
         if let Some(skills) = &self.skills {
             s.push_str(&skills_section(skills));
@@ -234,6 +303,84 @@ impl Report {
     }
 }
 
+
+fn format_bash_section(
+    rows: &BTreeMap<String, SizeRow>,
+    kinds: &BTreeMap<String, String>,
+) -> String {
+    let cols = [
+        Col::left(24),
+        Col::left(8),
+        Col::right(7),
+        Col::right(12),
+        Col::right(8),
+        Col::right(8),
+        Col::right(8),
+        Col::right(12),
+        Col::right(12),
+    ];
+    let mut out = vec![vec![
+        "bash".to_string(),
+        "filter".into(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "ctt".into(),
+    ]];
+    for (name, r) in rows {
+        out.push(vec![
+            name.clone(),
+            kinds
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| "default".to_string()),
+            r.count.to_string(),
+            r.total_bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.ctt.to_string(),
+        ]);
+    }
+    table(&cols, &out)
+}
+
+/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
+    let settings = crate::plugins::cmd::rules::Settings::builtin();
+    for name in report.bash_families.keys() {
+        let kind = crate::plugins::cmd::formatters::filter_kind(&settings, name);
+        report.bash_filter.insert(name.clone(), kind.to_string());
+    }
+    for r in store.list_measurements("cmd")? {
+        if r.kind != "rule" {
+            continue;
+        }
+        let fam = r
+            .ref_id
+            .as_deref()
+            .and_then(|id| id.split(':').next())
+            .unwrap_or("");
+        if fam.is_empty()
+            || crate::plugins::cmd::formatters::filter_kind(&settings, fam) != "default"
+        {
+            continue;
+        }
+        add(
+            &mut report.bash_default_rule,
+            fam,
+            r.after_bytes.max(0) as u64,
+            est_tokens(r.after_bytes.max(0) as u64),
+            0,
+        );
+    }
+    finish_rows(&mut report.bash_default_rule);
+    Ok(())
+}
 fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
     // The section's own title sits in the first column of its header line; the fixed
     // widths are floors now (`render::table`, T25.2), bytes unchanged.
@@ -537,6 +684,8 @@ fn fold_session(
         }
         fold_edits(&mut report.edits, u);
     }
+    fold_read_delta(&mut report.read_delta, parsed);
+    fold_repeat(&mut report.repeat, parsed);
     for r in &parsed.tool_results {
         let name = id_name
             .get(r.tool_use_id.as_str())
@@ -651,6 +800,83 @@ fn fold_edits(row: &mut EditRow, u: &jsonl::ToolUse) {
         row.old_bytes += len("old_string");
         row.new_bytes += len("new_string");
     }
+}
+
+/// T65.1: SHA-256 of each tool_result in order. A later result whose digest
+/// equals an earlier one in the same session is a repeat — its bytes are the
+/// content-hash dedup surface. Guard's input-key cache is a different axis.
+fn fold_repeat(row: &mut RepeatRow, parsed: &Parsed) {
+    let mut seen = BTreeSet::new();
+    for r in &parsed.tool_results {
+        let bytes = r.content.len() as u64;
+        row.result_bytes += bytes;
+        let sha = crate::store::hex_sha256(r.content.as_bytes());
+        if !seen.insert(sha) {
+            row.calls += 1;
+            row.bytes += bytes;
+        }
+    }
+}
+
+/// T58.1: walk this session's tool uses in order. A native `Read` of a path that
+/// was already read, with an `Edit` / `Write` / `MultiEdit` of that path in
+/// between, is a changed re-read — its result bytes are the delta-read surface.
+fn fold_read_delta(row: &mut ReadDeltaRow, parsed: &Parsed) {
+    let sizes: BTreeMap<&str, u64> = parsed
+        .tool_results
+        .iter()
+        .map(|r| (r.tool_use_id.as_str(), r.content.len() as u64))
+        .collect();
+    let mut paths: Vec<(String, bool, bool)> = Vec::new();
+    for u in &parsed.tool_uses {
+        let Some(path) = tool_path(&u.input) else {
+            continue;
+        };
+        match u.name.as_str() {
+            "Read" => {
+                let bytes = sizes.get(u.id.as_str()).copied().unwrap_or(0);
+                row.read_bytes += bytes;
+                if let Some((_, seen, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path))
+                {
+                    if *seen && *dirty {
+                        row.calls += 1;
+                        row.bytes += bytes;
+                    }
+                    *seen = true;
+                    *dirty = false;
+                } else {
+                    paths.push((path.to_string(), true, false));
+                }
+            }
+            "Edit" | "Write" | "MultiEdit" => {
+                if let Some((_, _, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path)) {
+                    *dirty = true;
+                } else {
+                    paths.push((path.to_string(), false, true));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn tool_path(input: &Value) -> Option<&str> {
+    input
+        .get("file_path")
+        .or_else(|| input.get("path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+}
+
+/// Exact match, or relative-vs-absolute (`src/a.rs` vs `/repo/src/a.rs`).
+fn same_path(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let a = Path::new(a);
+    let b = Path::new(b);
+    a.ends_with(b) || b.ends_with(a)
 }
 
 fn pct(part: u64, whole: u64) -> f64 {
@@ -1029,6 +1255,78 @@ mod tests {
     }
 
     #[test]
+    fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
+        let dir = tempfile_dir();
+        let path = dir.join("d.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        // Read /a.rs (10 B) → Edit /a.rs → Read /a.rs (20 B, counts) → Read /a.rs
+        // again with no edit (does not count) → Read /b.rs only once (does not).
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"0123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/proj/src/a.rs","old_string":"x","new_string":"y"}}]}}),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m4","content":[{"type":"tool_use","id":"t4","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","content":"same"}]}}),
+            json!({"type":"assistant","message":{"id":"m5","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"/b.rs"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"bbbb"}]}}),
+        ];
+        for line in &lines {
+            writeln!(f, "{line}").unwrap();
+        }
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let d = &r.read_delta;
+        assert_eq!((d.calls, d.bytes, d.read_bytes), (1, 20, 10 + 20 + 4 + 4));
+        let table = r.to_table();
+        assert!(
+            table.contains("read delta calls 1  bytes 20  of Read bytes 38  52.6%"),
+            "{table}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn repeat_counts_identical_bodies_from_different_tools() {
+        let dir = tempfile_dir();
+        let path = dir.join("r.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        // Bash then Read, same 20-byte body; a third distinct body does not count.
+        let lines = [
+            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"01234567890123456789"}]}}),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"head -1000 a"}}]}}),
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"different-output"}]}}),
+        ];
+        for line in &lines {
+            writeln!(f, "{line}").unwrap();
+        }
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        let d = &r.repeat;
+        assert_eq!((d.calls, d.bytes, d.result_bytes), (1, 20, 20 + 20 + 16));
+        let table = r.to_table();
+        assert!(
+            table.contains("repeat calls 1  bytes 20  of result bytes 56  35.7%"),
+            "{table}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn archive_replay_keeps_young_turns_and_shrinks_old_ones() {
         let rp = Replay {
             keep_turns: 2,
@@ -1047,8 +1345,14 @@ mod tests {
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("rtok-stats-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&p);
+        let p = std::env::temp_dir().join(format!(
+            "rtok-stats-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         fs::create_dir_all(&p).unwrap();
         p
     }

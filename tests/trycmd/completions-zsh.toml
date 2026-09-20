@@ -1,0 +1,10 @@
+bin.name = "rtok"
+args = "completions zsh"
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-completions-zsh"
+RTOK_HOME = "target/tmp/t60-2-completions-zsh"

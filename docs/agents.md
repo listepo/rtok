@@ -15,10 +15,10 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`claude`](https://github.com/listepo/rtok/blob/main/src/agents/claude/README.md) | Claude Desktop | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
 | [`cursor`](https://github.com/listepo/rtok/blob/main/src/agents/cursor/README.md) | Cursor CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`cursor`](https://github.com/listepo/rtok/blob/main/src/agents/cursor/README.md) | Cursor | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
-| [`codex`](https://github.com/listepo/rtok/blob/main/src/agents/codex/README.md) | Codex | CLI | — | yes | `--proxy` | — | measure, read, archive, proxy, memory, graph, toon (off), compress (off) |
-| [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode | CLI | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, memory, graph, toon (off), compress (off) |
-| [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode Desktop | Desktop | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, memory, graph, toon (off), compress (off) |
-| [`pi`](https://github.com/listepo/rtok/blob/main/src/agents/pi/README.md) | pi | CLI | — | — | — | `--yes` | measure, cmd, archive |
+| [`codex`](https://github.com/listepo/rtok/blob/main/src/agents/codex/README.md) | Codex | CLI | yes | yes | `--proxy` | — | measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon (off), compress (off) |
+| [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode | CLI | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
+| [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode Desktop | Desktop | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
+| [`pi`](https://github.com/listepo/rtok/blob/main/src/agents/pi/README.md) | pi | CLI | — | — | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon (off) |
 | [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | Copilot CLI | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
@@ -50,7 +50,7 @@ rtok has three surfaces of its own (hook, MCP, proxy), and each has a hard edge:
   `Grep` or foreign MCP result enters context whole.
 - The **`archive` live zone runs inside `rtok proxy`**. A host with no base-URL setting never
   shrinks an old tool result, however long the session runs.
-- A **host with no hook events reaches no hook plugin**, so `inject` and `guard` have no way in.
+- A **host with no hook events reaches no hook plugin**, so `inject` has no way in. `guard` reaches pi and OpenCode through `rtok guard check` on the linked plugin (T70.5).
 
 A **host plugin** — the directory under `plugins/<host>/` that `rtok agents install <host>`
 links — sits inside the host process and is not bound by those edges. Where a host's plugin API

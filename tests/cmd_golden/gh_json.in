@@ -1,0 +1,500 @@
+argv: gh pr list --json number,title,state,body,author,labels,url
+exit: 0
+---
+[
+  {
+    "number": 1,
+    "title": "Fix login retry 1",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. ",
+    "author": {
+      "login": "dev1",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/1",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 2,
+    "title": "Fix login retry 2",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": null,
+    "author": {
+      "login": "dev2",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/2",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 3,
+    "title": "",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 3",
+    "author": {
+      "login": "dev3",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/3",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 4,
+    "title": "Fix login retry 4",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 4",
+    "author": {
+      "login": "dev4",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/4",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 5,
+    "title": "Fix login retry 5",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 5",
+    "author": {
+      "login": "dev5",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/5",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 6,
+    "title": "Fix login retry 6",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 6",
+    "author": {
+      "login": "dev6",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/6",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 7,
+    "title": "Fix login retry 7",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 7",
+    "author": {
+      "login": "dev7",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/7",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 8,
+    "title": "Fix login retry 8",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 8",
+    "author": {
+      "login": "dev8",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/8",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 9,
+    "title": "Fix login retry 9",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 9",
+    "author": {
+      "login": "dev9",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/9",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 10,
+    "title": "Fix login retry 10",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 10",
+    "author": {
+      "login": "dev10",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/10",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 11,
+    "title": "Fix login retry 11",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 11",
+    "author": {
+      "login": "dev11",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/11",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 12,
+    "title": "Fix login retry 12",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 12",
+    "author": {
+      "login": "dev12",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/12",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 13,
+    "title": "Fix login retry 13",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 13",
+    "author": {
+      "login": "dev13",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/13",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 14,
+    "title": "Fix login retry 14",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 14",
+    "author": {
+      "login": "dev14",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/14",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 15,
+    "title": "Fix login retry 15",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 15",
+    "author": {
+      "login": "dev15",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/15",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 16,
+    "title": "Fix login retry 16",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 16",
+    "author": {
+      "login": "dev16",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/16",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 17,
+    "title": "Fix login retry 17",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 17",
+    "author": {
+      "login": "dev17",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/17",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 18,
+    "title": "Fix login retry 18",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 18",
+    "author": {
+      "login": "dev18",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/18",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 19,
+    "title": "Fix login retry 19",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 19",
+    "author": {
+      "login": "dev19",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/19",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 20,
+    "title": "Fix login retry 20",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 20",
+    "author": {
+      "login": "dev20",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/20",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 21,
+    "title": "Fix login retry 21",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 21",
+    "author": {
+      "login": "dev21",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/21",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 22,
+    "title": "Fix login retry 22",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 22",
+    "author": {
+      "login": "dev22",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/22",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 23,
+    "title": "Fix login retry 23",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 23",
+    "author": {
+      "login": "dev23",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/23",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  },
+  {
+    "number": 24,
+    "title": "Fix login retry 24",
+    "state": "MERGED",
+    "isDraft": false,
+    "body": "short 24",
+    "author": {
+      "login": "dev24",
+      "id": null,
+      "name": ""
+    },
+    "labels": [],
+    "url": "https://github.com/o/r/pull/24",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "number": 25,
+    "title": "Fix login retry 25",
+    "state": "OPEN",
+    "isDraft": false,
+    "body": "short 25",
+    "author": {
+      "login": "dev25",
+      "id": null,
+      "name": ""
+    },
+    "labels": [
+      {
+        "name": "bug",
+        "description": ""
+      }
+    ],
+    "url": "https://github.com/o/r/pull/25",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "mergedAt": null
+  }
+]

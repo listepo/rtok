@@ -1,0 +1,1139 @@
+argv: kubectl get pods -o json
+exit: 0
+---
+{
+  "apiVersion": "v1",
+  "kind": "PodList",
+  "metadata": {
+    "resourceVersion": "12345",
+    "continue": ""
+  },
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-00-abcd",
+        "namespace": "default",
+        "uid": "uid-0",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-0.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.0",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-01-abcd",
+        "namespace": "default",
+        "uid": "uid-1",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-1.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.1",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-02-abcd",
+        "namespace": "default",
+        "uid": "uid-2",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-2.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.2",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-03-abcd",
+        "namespace": "default",
+        "uid": "uid-3",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-3.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.3",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-04-abcd",
+        "namespace": "default",
+        "uid": "uid-4",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-4.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.4",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-05-abcd",
+        "namespace": "default",
+        "uid": "uid-5",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-5.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.5",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-06-abcd",
+        "namespace": "default",
+        "uid": "uid-6",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-6.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.6",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-07-abcd",
+        "namespace": "default",
+        "uid": "uid-7",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-7.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.7",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-08-abcd",
+        "namespace": "default",
+        "uid": "uid-8",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-8.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.8",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-09-abcd",
+        "namespace": "default",
+        "uid": "uid-9",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-9.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.9",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-10-abcd",
+        "namespace": "default",
+        "uid": "uid-10",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-10.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.10",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-11-abcd",
+        "namespace": "default",
+        "uid": "uid-11",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-11.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.11",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-12-abcd",
+        "namespace": "default",
+        "uid": "uid-12",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-12.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.12",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-13-abcd",
+        "namespace": "default",
+        "uid": "uid-13",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-13.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.13",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-14-abcd",
+        "namespace": "default",
+        "uid": "uid-14",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-14.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.14",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-15-abcd",
+        "namespace": "default",
+        "uid": "uid-15",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-15.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.15",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-16-abcd",
+        "namespace": "default",
+        "uid": "uid-16",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-16.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.16",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-17-abcd",
+        "namespace": "default",
+        "uid": "uid-17",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-17.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.17",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-18-abcd",
+        "namespace": "default",
+        "uid": "uid-18",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-18.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.18",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-19-abcd",
+        "namespace": "default",
+        "uid": "uid-19",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-19.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.19",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-20-abcd",
+        "namespace": "default",
+        "uid": "uid-20",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-20.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.20",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-21-abcd",
+        "namespace": "default",
+        "uid": "uid-21",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-21.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.21",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-22-abcd",
+        "namespace": "default",
+        "uid": "uid-22",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-22.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.22",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-23-abcd",
+        "namespace": "default",
+        "uid": "uid-23",
+        "labels": {},
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-23.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.23",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "web-deploy-24-abcd",
+        "namespace": "default",
+        "uid": "uid-24",
+        "labels": {
+          "app": "web"
+        },
+        "annotations": {},
+        "ownerReferences": null
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "ghcr.io/o/web:1.2.3",
+            "command": [],
+            "env": null,
+            "resources": {}
+          }
+        ],
+        "nodeName": "ip-10-0-4-24.us-east-2.compute.internal"
+      },
+      "status": {
+        "phase": "Running",
+        "podIP": "10.244.0.24",
+        "hostIP": null,
+        "message": "",
+        "reason": null,
+        "containerStatuses": [
+          {
+            "name": "web",
+            "ready": true,
+            "restartCount": 0,
+            "state": {
+              "running": {
+                "startedAt": "2026-01-01T00:00:00Z"
+              }
+            },
+            "lastState": {}
+          }
+        ]
+      }
+    }
+  ]
+}
