@@ -1,0 +1,17 @@
+# `rtok run` archives the fixture body; `expand --lines --grep` prints numbered hits (T60.2).
+
+```console
+$ SHELL=/bin/sh HOME=target/tmp/t60-2-expand RTOK_HOME=target/tmp/t60-2-expand rtok --config tests/trycmd/input/json-readers.toml run -- cat tests/trycmd/input/expand-body.txt
+...
+$ SHELL=/bin/sh HOME=target/tmp/t60-2-expand RTOK_HOME=target/tmp/t60-2-expand rtok --config tests/trycmd/input/json-readers.toml expand 438636bf02bc32b6d82a7cab948bcf9d14aed8df6b52be56a95848b4153f5611 --lines 1-10 --grep "line 0"
+1:line 01
+2:line 02
+3:line 03
+4:line 04
+5:line 05
+6:line 06
+7:line 07
+8:line 08
+9:line 09
+
+```

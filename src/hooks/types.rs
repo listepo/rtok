@@ -49,16 +49,39 @@ impl HookInput {
     /// Cursor shell hooks: top-level `command` + `conversation_id`.
     /// `beforeShellExecution` → Claude PreToolUse (`tool_name=Bash`, `tool_input.command`).
     /// `afterShellExecution` → Claude PostToolUse (+ `tool_response` from `output`/`stdout`).
+    /// `postToolUse` → PostToolUse (`tool_output` / `result_json` → `tool_response`).
     pub fn adapt_cursor(&mut self, event: &str) {
+        self.take_transcript_path_alias();
+        if matches!(event, "afterMCPExecution") || self.hook_event_name == "afterMCPExecution" {
+            self.hook_event_name = "AfterMCPExecution".into();
+            if self.tool_name.is_none()
+                && let Some(n) = self.extra.get("tool_name").and_then(|v| v.as_str())
+            {
+                self.tool_name = Some(n.to_string());
+            }
+            if self.tool_response.is_none()
+                && let Some(r) = self.extra.get("result_json").and_then(|v| v.as_str())
+            {
+                self.tool_response = Some(serde_json::Value::String(r.to_string()));
+            }
+        }
         if self.session_id.is_empty()
             && let Some(id) = self.extra.get("conversation_id").and_then(|v| v.as_str())
         {
             self.session_id = id.to_string();
         }
-        if self.tool_name.is_some() {
-            if self.hook_event_name.is_empty() {
-                self.hook_event_name = event.to_string();
+        if self.tool_response.is_none() {
+            if let Some(v) = take_jsonish(&mut self.extra, "tool_output") {
+                self.tool_response = Some(v);
+            } else if let Some(v) = take_jsonish(&mut self.extra, "result_json") {
+                self.tool_response = Some(v);
             }
+        }
+        if self.tool_name.is_some() {
+            if self.tool_input.is_none() {
+                self.tool_input = Some(Value::Object(Map::new()));
+            }
+            self.hook_event_name = cursor_event(event, &self.hook_event_name).into();
             return;
         }
         let Some(cmd) = self
@@ -67,15 +90,12 @@ impl HookInput {
             .and_then(|v| v.as_str())
             .map(str::to_string)
         else {
-            if self.hook_event_name.is_empty() {
-                self.hook_event_name = event.to_string();
-            }
+            self.hook_event_name = cursor_event(event, &self.hook_event_name).into();
             return;
         };
         self.tool_name = Some("Bash".into());
         self.tool_input = Some(serde_json::json!({"command": cmd}));
-        let after = matches!(event, "PostToolUse" | "afterShellExecution")
-            || self.hook_event_name == "afterShellExecution";
+        let after = matches!(cursor_event(event, &self.hook_event_name), "PostToolUse");
         if after {
             self.hook_event_name = "PostToolUse".into();
             if self.tool_response.is_none() {
@@ -152,6 +172,18 @@ impl HookInput {
         })
     }
 
+    pub fn mcp_server_name(&self) -> Option<&str> {
+        self.extra.get("mcp_server_name").and_then(|v| v.as_str())
+    }
+
+    pub fn take_transcript_path_alias(&mut self) {
+        if self.transcript_path.is_none()
+            && let Some(path) = self.extra.remove("transcriptPath").and_then(as_string)
+        {
+            self.transcript_path = Some(path);
+        }
+    }
+
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
         (self.hook_event_name == "PreCompact").then_some(PreCompact {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
@@ -167,6 +199,29 @@ fn as_string(v: Value) -> Option<String> {
     }
 }
 
+/// Cursor stdin `tool_output` / `result_json` is often a JSON string of the result object.
+fn take_jsonish(extra: &mut Map<String, Value>, key: &str) -> Option<Value> {
+    let v = extra.remove(key)?;
+    match v {
+        Value::String(s) => serde_json::from_str(&s).ok().or(Some(Value::String(s))),
+        other => Some(other),
+    }
+}
+
+/// Cursor hook names to Claude's; a Claude name passes through.
+fn cursor_event<'a>(cli: &'a str, stdin: &'a str) -> &'a str {
+    let name = if stdin.is_empty() { cli } else { stdin };
+    match name {
+        "sessionStart" => "SessionStart",
+        "beforeSubmitPrompt" => "UserPromptSubmit",
+        "postToolUse" | "PostToolUse" | "afterShellExecution" => "PostToolUse",
+        "preToolUse" | "PreToolUse" | "beforeShellExecution" => "PreToolUse",
+        "afterMCPExecution" => "AfterMCPExecution",
+        "preCompact" => "PreCompact",
+        other => other,
+    }
+}
+
 /// Copilot's event names, camelCase, to Claude's; a Claude name passes through.
 fn claude_event(name: &str) -> &str {
     match name {
@@ -175,13 +230,13 @@ fn claude_event(name: &str) -> &str {
         "sessionStart" => "SessionStart",
         "sessionEnd" => "SessionEnd",
         "userPromptSubmitted" => "UserPromptSubmit",
+        "preCompact" => "PreCompact",
         other => other,
     }
 }
 
-/// Copilot's tool names are its own (`bash`, `run_in_terminal`, `read_file`, `view`, …); the
-/// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
-fn copilot_tool_name(name: &str) -> String {
+/// Host tool names (`bash`, `read_file`, `edit`, …) to the Claude names `plugins::guard` matches.
+pub(crate) fn canonical_tool_name(name: &str) -> String {
     let l = name.to_ascii_lowercase();
     if ["bash", "shell", "terminal", "powershell"]
         .iter()
@@ -190,9 +245,19 @@ fn copilot_tool_name(name: &str) -> String {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
         "Read".into()
+    } else if l == "edit" {
+        "Edit".into()
+    } else if l == "write" {
+        "Write".into()
     } else {
         name.to_string()
     }
+}
+
+/// Copilot's tool names are its own (`bash`, `run_in_terminal`, `read_file`, `view`, …); the
+/// plugins match on Claude's `Bash` and `Read`. Anything else keeps its name.
+fn copilot_tool_name(name: &str) -> String {
+    canonical_tool_name(name)
 }
 
 /// Hook stdout. `HookOutput::default()` serialises to `{}` (= no opinion, fail open).
@@ -213,6 +278,8 @@ pub struct HookOutput {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hook_specific_output: Option<HookSpecificOutput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_mcp_tool_output: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -229,6 +296,9 @@ pub struct HookSpecificOutput {
     pub updated_input: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub additional_context: Option<String>,
+    /// Cursor `postToolUse` only: replaces an MCP tool result (`updated_mcp_tool_output`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_mcp_tool_output: Option<Value>,
 }
 
 #[cfg(test)]
@@ -369,5 +439,28 @@ mod tests {
         assert!(input.pre_tool().is_some());
         assert!(input.post_tool().is_none());
         assert!(input.tool_response.is_none());
+    }
+
+    #[test]
+    fn cursor_post_tool_use_maps_mcp_tool_output() {
+        let raw = serde_json::json!({
+            "hook_event_name": "postToolUse",
+            "tool_name": "MCP:list_issues",
+            "tool_input": {"team": "eng"},
+            "tool_output": "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}",
+            "conversation_id": "sess-mcp",
+            "mcp_server_name": "linear"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_cursor("PostToolUse");
+        assert_eq!(input.session_id, "sess-mcp");
+        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert_eq!(input.tool_name.as_deref(), Some("MCP:list_issues"));
+        assert_eq!(input.tool_input.as_ref().unwrap()["team"], "eng");
+        assert_eq!(
+            input.tool_response.as_ref().unwrap()["content"][0]["text"],
+            "ok"
+        );
+        assert!(input.post_tool().is_some());
     }
 }

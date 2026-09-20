@@ -6,14 +6,11 @@ publish = false
 description = "OS shims that need unsafe on Windows (process + flock)"
 license = "MIT"
 
-[dependencies]
-fs4 = "0.13"
-
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process", "fs"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",

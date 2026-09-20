@@ -1,14 +1,14 @@
 # rtok-agent-sdk
 
 The agent-host half of [rtok](https://github.com/listepo/rtok): what `rtok agents install <host>` and
-`rtok agents remove <host>` do to a host's configuration, factored out of the hosts themselves.
+`rtok agents uninstall <host>` do to a host's configuration, factored out of the hosts themselves.
 
 Five hosts ship in rtok — Claude Code, Cursor, Codex, OpenCode, pi — and each one edits a different
 file in a different format. What they share is the contract around the edit, and that is this
 crate:
 
-- **Reversible** — `backup` copies a file to `<name>.bak-<unix-seconds>` before the first write,
-  so one `.bak-*` per file is the whole undo.
+- **Reversible** — `backup` copies a file to `_backup/<name>.bak-<unix-seconds>` before the first
+  write; identical bytes already in `_backup/` skip a new copy.
 - **Idempotent** — a second apply returns `NO_CHANGES` and writes nothing.
 - **Dry-runnable** — `--dry-run` produces the same report and touches nothing at all.
 - **Offered, never forced** — `PluginLink` prompts on a terminal, declines itself anywhere else

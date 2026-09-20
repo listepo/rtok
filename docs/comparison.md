@@ -104,14 +104,18 @@ servers together cost more per turn than rtok's entire injection budget. `graph`
 The trade is real, though, and §5 states it: serena resolves references that rtok's
 tree-sitter tags index misses.
 
+A with/without graph bench now exists (`rtok bench --suite graph`, `bench/graph.toml`,
+T68.9). Dry-run on 2026-09-18: `rtok bench --suite graph --runs 1 --dry-run` (12 questions
+× 3 repos × mcp/native, no API spend). Live numbers are not in yet; vendor with/without
+claims wait for §5 beside rtok's own row.
+
 ### Memory — claude-mem, engram, mem0
 
 Notes that survive compaction. claude-mem extracts them with an LLM, which costs tokens to
 build the thing that saves tokens; mem0 wants Docker and a vector database. rtok's `memory`
 is agent-written notes in SQLite FTS5 with progressive disclosure — titles, then ids, then
 bodies, never bodies at `SessionStart` — for 3 tools and no model calls. graymatter is the closest design — one Go binary, MCP plus
-Claude Code hooks, no LLM required — and adds tombstones, decay, pinning and a
-plant-and-recall benchmark that rtok lacks (`research.md` §14).
+Claude Code hooks, no LLM required — and adds tombstones, decay and pinning. rtok's own plant-and-recall bench is `tests/memory_bench.rs` (2026-09-18, `research.md` §14): FTS5 and P29 hybrid 20/20 at 1/10/30/100 sessions, superseded returned 0, SessionStart 100 bytes vs 371 866 bytes of full live-body injection at N=100. Never graymatter's 83 %.
 
 engram was re-read feature by feature on 2026-09-18 (`research.md` §13). Two of its ideas
 fit rtok's zero-LLM lane and were adopted: topic keys — one row per evolving topic, which
@@ -188,8 +192,9 @@ cache-preserving proxy rewrites exist for exactly this reason.
    plugin to claim one, and `rtok stats --plugin <id>` prints them. The proxy writes
    provider-reported `usage`, which is the actual bill rather than a chars/4 estimate.
 4. **It admits what it has not proven.** The committed A/B bench ran offline and reports
-   zeros; the README says so. Every vendor number in §2 that was independently checked came
-   in 5–10× below its claim.
+   zeros; the README says so. The graph with/without suite (`rtok bench --suite graph
+   --dry-run`, 2026-09-18) prints a schedule and no dollars. Every vendor number in §2 that
+   was independently checked came in 5–10× below its claim.
 5. **It cannot break your agent.** A hook exits 0 with unmodified input on any error or
    panic, inside 10 ms. A half-installed or crashing rtok is a no-op, not an outage.
 6. **It does not fight the cache.** Injections are budgeted and byte-stable across turns;
@@ -202,7 +207,7 @@ cache-preserving proxy rewrites exist for exactly this reason.
 8. **One config, with provenance.** Every flag is a config key; `rtok config show --sources`
    names the layer each value came from. No tool in the survey can answer that question.
 9. **Reversible install.** `rtok agents install claude --dry-run` prints the exact edits, the real run
-   backs up the settings file before writing it, and `rtok agents remove claude` takes the hooks,
+   backs up the settings file before writing it, and `rtok agents uninstall claude` takes the hooks,
    the MCP registration and the proxy variable back out (foreign entries stay).
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and
@@ -213,18 +218,20 @@ cache-preserving proxy rewrites exist for exactly this reason.
 
 Stated plainly, because §4 is only worth reading if this section exists.
 
-- **No live end-to-end cost win has been demonstrated.** The A/B harness runs; it has not
-  been run against live traffic. Until it is, rtok's own claim is "measurable", not "cheaper".
+- **No live end-to-end cost win has been demonstrated.** The A/B harness and the graph
+  with/without suite (`rtok bench --suite graph`) run; neither has been run against a live
+  API bill (T68.9 live clause is open). Until one is, rtok's own claim is "measurable", not
+  "cheaper", and vendor 88 % / 62 % figures stay next to an empty rtok row.
 - **`graph` finds every definition and misses most references.** Definition recall and
   precision are 1.000 over a 30-symbol hand-labelled set; reference recall is **0.351**,
   because the tree-sitter tags query does not capture type positions or macro bodies.
   serena's LSP backend is more precise here. An LSP backend for `graph` is v0.2.
 - **No LLM compression, no embeddings, no semantic search.** claude-mem and mem0 do those
   today. In rtok they are v0.2+ and gated on beating the lossless path in a bench.
-- **`memory` has no lifecycle and no recall number.** Notes are insert-only (no retire,
-  supersede or pin), recall is the newest five titles, and nothing measures whether a
-  planted fact is found N sessions later; graymatter ships all three (`research.md` §14,
-  T69.1–T69.3).
+- **`memory` recall is newest-five titles, with no recency ranking.** Lifecycle (retire /
+  supersede / pin) landed in T69.1. The plant-and-recall bench (T69.3, `research.md` §14)
+  is 20/20 FTS5 and P29 hybrid at N=100 against this generator; `half_life_days` ranking
+  did not ship (T69.2), so that row is N/A. Never cite graymatter's 83 % as rtok's.
 - **Smaller filter library than rtk and sqz.** 9 rule families plus ten per-family
   formatters, against rtk's ~80 filters and sqz's 45+; no content-hash dedup, JSON or
   column pass yet (`research.md` §11, T65.1–T65.4).

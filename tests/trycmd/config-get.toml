@@ -1,0 +1,13 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/bench-config.toml config get proxy.port"
+stdout = """
+8790
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-config-get"
+RTOK_HOME = "target/tmp/t60-2-config-get"
