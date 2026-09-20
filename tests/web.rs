@@ -1,4 +1,5 @@
-//! Dashboard HTTP + WebSocket smoke (P19) and the T60.5 plugin `set` allow-list.
+//! Dashboard HTTP + WebSocket smoke (P19), the T60.5 plugin `set` allow-list,
+//! and T60.4 inbound `{"expand": id}`.
 
 use std::future::IntoFuture;
 use std::sync::Arc;
@@ -56,6 +57,24 @@ async fn web_health_and_index() {
 }
 
 #[tokio::test]
+async fn snapshot_error_when_store_path_is_a_directory() {
+    let dir = std::env::temp_dir().join(format!("rtok-web-store-err-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.core.db_path = dir.join("not-a-db");
+    std::fs::create_dir_all(&cfg.core.db_path).unwrap();
+    cfg.doctor.settings_path = dir.join("missing-settings.json");
+    cfg.doctor.claude_json = dir.join("missing-claude.json");
+    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+    let snap = rtok::web::model::snapshot(&cfg);
+    assert!(snap.error.is_some(), "{:?}", snap.error);
+    let v = serde_json::to_value(&snap).unwrap();
+    assert!(v.get("error").is_some(), "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn ws_set_accepts_plugin_enabled() {
     let (_addr, state, dir, task) = serve("set-ok").await;
     let before: serde_json::Value = serde_json::from_str(&state.snapshot_json()).expect("snap");
@@ -105,6 +124,50 @@ async fn ws_set_refuses_other_keys() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&unknown).unwrap()["type"],
         "message"
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn ws_expand_returns_payload_and_unknown_id() {
+    let (_addr, state, dir, task) = serve("expand-ok").await;
+    let cfg = Config::load_from(&dir).expect("cfg");
+    let cx = rtok::plugin::Runtime::open(cfg, "s").expect("runtime");
+    let id = cx
+        .store
+        .put_archive("s", b"alpha\nNEEDLE\n", &cx.config.core.archive_dir)
+        .expect("archive");
+    drop(cx);
+
+    let reply = state
+        .inbound(&format!(r#"{{"expand":"{id}"}}"#))
+        .expect("expand frame");
+    let v: serde_json::Value = serde_json::from_str(&reply).expect("json");
+    assert_eq!(v["type"], "expand", "{reply}");
+    assert_eq!(v["id"], id, "{reply}");
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("NEEDLE"),
+        "{reply}"
+    );
+
+    let missing = state
+        .inbound(r#"{"expand":"no-such-id"}"#)
+        .expect("unknown");
+    let v: serde_json::Value = serde_json::from_str(&missing).expect("json");
+    assert_eq!(v["type"], "message", "{missing}");
+    assert!(
+        v["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unknown archive id"),
+        "{missing}"
+    );
+
+    assert!(
+        state
+            .inbound(r#"{"set":{"key":"plugins.cmd.enabled","value":false}}"#)
+            .is_none(),
+        "expand must not break the T60.5 set allow-list"
     );
     task.abort();
 }

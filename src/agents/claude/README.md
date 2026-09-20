@@ -8,7 +8,7 @@ keep separate files, so each selected app installs on its own (`--cli` / `--desk
   macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` elsewhere. The app starts without a
   shell PATH, so the MCP entry carries the absolute `rtok` binary.
 
-Every file is copied to `<name>.bak-<ts>` before the first write; an unchanged file is not
+Every file is copied to `_backup/<name>.bak-<ts>` before the first write; an unchanged file is not
 copied twice.
 
 ## Modules
@@ -46,4 +46,5 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`~/.claude/settings.json`, event names incl. `PreCompact`, `PostCompact`, `SessionEnd`): https://code.claude.com/docs/en/hooks
 - Settings (`env.ANTHROPIC_BASE_URL`): https://code.claude.com/docs/en/settings
 - MCP (user scope in `~/.claude.json` `mcpServers`): https://code.claude.com/docs/en/mcp
+- Skills (`~/.claude/skills/<name>/SKILL.md`): https://code.claude.com/docs/en/skills
 - Claude Desktop (`claude_desktop_config.json` `mcpServers.<name>.command` / `args`): https://modelcontextprotocol.io/docs/develop/connect-local-servers

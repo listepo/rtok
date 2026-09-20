@@ -11,7 +11,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs};
+use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs, Wrap};
 
 use super::app::{App, keys_for};
 use crate::store::CallRow;
@@ -22,10 +22,12 @@ use crate::web::model::{self, PluginPage};
 /// (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
     let alert = app.snapshot().usage.alerts.first().cloned();
-    let [header, alert_area, tabs, body, footer] = Layout::vertical([
+    let store_error = app.snapshot().error.clone();
+    let [header, alert_area, error_area, tabs, body, footer] = Layout::vertical([
         Constraint::Length(1),
-        // Alert row: height 0 when absent, same five slots either way.
+        // Alert row: height 0 when absent, same slots either way.
         Constraint::Length(u16::from(alert.is_some())),
+        Constraint::Length(u16::from(store_error.is_some())),
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(1),
@@ -36,6 +38,12 @@ pub(super) fn draw(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(format!("⚠ {msg}")).style(Style::new().bold()),
             alert_area,
+        );
+    }
+    if let Some(msg) = store_error {
+        frame.render_widget(
+            Paragraph::new(format!("✕ {msg}")).style(Style::new().bold()),
+            error_area,
         );
     }
     frame.render_widget(tab_bar(app), tabs);
@@ -103,6 +111,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "sessions" => render_sessions(frame, app, area),
         "doctor" => frame.render_widget(doctor(app), area),
         "logs" => frame.render_widget(logs_text(app), area),
+        "skills" => render_skills(frame, app, area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -285,16 +294,34 @@ fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
         frame.render_widget(Paragraph::new(msg), area);
         return;
     }
-    let (list, detail) = if app.calls_detail() {
-        let [l, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(area);
-        (l, Some(d))
-    } else {
-        (area, None)
+    let expand = app.calls_expand();
+    let (list, detail, expand_area) = match (app.calls_detail(), expand.is_some()) {
+        (true, true) => {
+            let [l, d, e] = Layout::vertical([
+                Constraint::Min(0),
+                Constraint::Length(7),
+                Constraint::Min(6),
+            ])
+            .areas(area);
+            (l, Some(d), Some(e))
+        }
+        (true, false) => {
+            let [l, d] = Layout::vertical([Constraint::Min(0), Constraint::Length(9)]).areas(area);
+            (l, Some(d), None)
+        }
+        (false, true) => {
+            let [l, e] = Layout::vertical([Constraint::Min(0), Constraint::Min(8)]).areas(area);
+            (l, None, Some(e))
+        }
+        (false, false) => (area, None, None),
     };
     let selected = app.calls_selected();
     frame.render_widget(calls_table(rows, selected), list);
     if let Some(area) = detail {
-        frame.render_widget(call_detail(&rows[selected]), area);
+        frame.render_widget(call_detail(&rows[selected], app), area);
+    }
+    if let (Some(area), Some((id, text, filtering, filter, scroll))) = (expand_area, expand) {
+        frame.render_widget(expand_pane(id, &text, filtering, filter, scroll), area);
     }
 }
 
@@ -347,7 +374,7 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
 
 /// The selected row's full fields: every column the ledger keeps, the slugs its ids
 /// point at, and the usage/api linkage when the call recorded one.
-fn call_detail(c: &CallRow) -> Paragraph<'static> {
+fn call_detail(c: &CallRow, app: &App) -> Paragraph<'static> {
     let dash = |v: Option<&str>| v.unwrap_or("-").to_string();
     let mut lines = vec![
         Line::from(format!(
@@ -376,6 +403,14 @@ fn call_detail(c: &CallRow) -> Paragraph<'static> {
             "ms {}",
             c.ms.map_or_else(|| "-".into(), |ms| ms.to_string())
         )),
+        Line::from(format!(
+            "ref_id {}",
+            app.snapshot()
+                .ref_ids
+                .get(&c.id)
+                .map(String::as_str)
+                .unwrap_or("-")
+        )),
     ];
     lines.push(Line::from(match (c.api.as_deref(), c.input) {
         (Some(api), Some(input)) => format!(
@@ -388,6 +423,24 @@ fn call_detail(c: &CallRow) -> Paragraph<'static> {
         _ => "usage no row linked (only an api request records one)".to_string(),
     }));
     Paragraph::new(lines).block(Block::default().title(format!("call {}", c.id)))
+}
+
+fn expand_pane(
+    id: &str,
+    text: &str,
+    filtering: bool,
+    filter: &str,
+    scroll: u16,
+) -> Paragraph<'static> {
+    let title = if filtering {
+        format!("expand {id}  /{filter}")
+    } else {
+        format!("expand {id}")
+    };
+    Paragraph::new(text.to_string())
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
+        .block(Block::default().title(title))
 }
 
 /// `HH:MM:SS` — `log::stamp`'s time half; the full date is in the detail view.
@@ -542,6 +595,93 @@ fn sessions_table(rows: Vec<Row<'static>>) -> Table<'static> {
         "started",
         "run",
     ]))
+}
+
+fn render_skills(frame: &mut Frame, app: &App, area: Rect) {
+    let never_only = app.skills_never_only();
+    let rows: Vec<&model::SkillPageRow> = app
+        .snapshot()
+        .skills
+        .rows
+        .iter()
+        .filter(|r| !never_only || r.never)
+        .collect();
+    let [head, body, status] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    frame.render_widget(Paragraph::new(app.snapshot().skills.header.clone()), head);
+    if rows.is_empty() {
+        let msg = if never_only {
+            "no never-invoked skills"
+        } else {
+            "no skills listed"
+        };
+        frame.render_widget(Paragraph::new(msg), body);
+        frame.render_widget(Paragraph::new(skills_status_line(never_only)), status);
+        return;
+    }
+    let selected = app.skills_selected();
+    let visible = body.height.saturating_sub(2).max(1) as usize;
+    let offset = selected.saturating_sub(visible - 1);
+    let shown: Vec<_> = rows
+        .iter()
+        .skip(offset)
+        .take(visible)
+        .zip(offset..)
+        .map(|(r, i)| skills_row(r, i == selected))
+        .collect();
+    frame.render_widget(skills_table(shown), body);
+    frame.render_widget(Paragraph::new(skills_status_line(never_only)), status);
+}
+
+fn skills_row(r: &model::SkillPageRow, selected: bool) -> Row<'static> {
+    let row = Row::new([
+        r.name.clone(),
+        r.source.clone(),
+        r.desc_chars.to_string(),
+        r.body_bytes.to_string(),
+        r.invocations.to_string(),
+        r.resident.to_string(),
+        r.last_invoked.clone(),
+    ]);
+    if selected {
+        row.style(Style::new().bold())
+    } else {
+        row
+    }
+}
+
+fn skills_table(rows: Vec<Row<'static>>) -> Table<'static> {
+    Table::new(
+        rows,
+        [
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Length(5),
+            Constraint::Length(6),
+            Constraint::Length(5),
+            Constraint::Length(8),
+            Constraint::Min(5),
+        ],
+    )
+    .header(Row::new([
+        "name", "source", "desc", "body", "calls", "resident", "last",
+    ]))
+}
+
+fn skills_status_line(never_only: bool) -> String {
+    let mut keys = keys_for("skills")
+        .iter()
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if never_only {
+        keys.push_str(" · n again shows all");
+    }
+    keys
 }
 
 fn sessions_status_line(live_only: bool) -> String {
@@ -773,6 +913,41 @@ mod tests {
         (cfg, store)
     }
 
+    fn expand_seeded() -> Config {
+        let (mut cfg, store) = fresh_store("expand-calls");
+        store.upsert_session("s", None, None, None, None).unwrap();
+        let call = store
+            .insert_call(
+                "s",
+                "hook",
+                "plugin_run",
+                None,
+                None,
+                None,
+                Some("cmd"),
+                None,
+            )
+            .unwrap();
+        let id = store
+            .put_archive("s", b"other-line\nNEEDLELINE\n", &cfg.core.archive_dir)
+            .unwrap();
+        let rt = Runtime::open(cfg.clone(), "seed").expect("seed runtime");
+        rt.record(&Measurement {
+            plugin: "cmd",
+            kind: "filter",
+            before_bytes: 20,
+            after_bytes: 8,
+            est_before: 5,
+            est_after: 2,
+            ref_id: Some(id),
+            call_id: Some(call),
+        })
+        .unwrap();
+        drop(rt);
+        cfg.tui.tab = "calls".into();
+        cfg
+    }
+
     /// A config whose store holds two sessions, three turns and two measured plugins,
     /// so the Overview tab has numbers worth rendering.
     fn seeded() -> Config {
@@ -963,6 +1138,33 @@ mod tests {
         assert!(open.contains("no row linked"));
     }
 
+    /// T60.4: `e` opens the selected call's archive through `expand_payload`; `/`
+    /// filters the pane with grep parity.
+    #[test]
+    fn e_opens_the_archive_pane_and_slash_filters_it() {
+        let mut cfg = expand_seeded();
+        cfg.tui.tab = "calls".into();
+        let mut app = App::new(&cfg);
+        assert_eq!(app.page(), "calls");
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        let detail = screen(&app);
+        assert!(detail.contains("ref_id "), "detail prints the archive id");
+        app.key(KeyCode::Char('e'), KeyModifiers::NONE);
+        let open = screen(&app);
+        assert!(
+            open.contains("NEEDLELINE"),
+            "payload is in the pane: {open}"
+        );
+        assert!(open.contains("expand "), "the pane is titled");
+        app.key(KeyCode::Char('/'), KeyModifiers::NONE);
+        for c in "NEEDLE".chars() {
+            app.key(KeyCode::Char(c), KeyModifiers::NONE);
+        }
+        let filtered = screen(&app);
+        assert!(filtered.contains("NEEDLELINE"), "{filtered}");
+        assert!(!filtered.contains("other-line"), "{filtered}");
+    }
+
     /// An empty ledger is an empty page, and its keys do nothing — not a panic.
     #[test]
     fn calls_keys_do_nothing_on_an_empty_ledger() {
@@ -1084,6 +1286,73 @@ mod tests {
             last_activity: 0,
             ended_at: ended,
         }
+    }
+
+    fn three_skills() -> model::SkillsPage {
+        model::skills_from(
+            Some(&crate::doctor::SkillsAudit {
+                rows: vec![
+                    crate::doctor::SkillRow {
+                        name: "hot".into(),
+                        source: "user".into(),
+                        desc_chars: 40,
+                        body_bytes: 100,
+                        invocations: Some(3),
+                        warn_desc: false,
+                        warn_body: false,
+                        warn_never: false,
+                    },
+                    crate::doctor::SkillRow {
+                        name: "cold".into(),
+                        source: "project".into(),
+                        desc_chars: 10,
+                        body_bytes: 20,
+                        invocations: Some(0),
+                        warn_desc: false,
+                        warn_body: false,
+                        warn_never: true,
+                    },
+                    crate::doctor::SkillRow {
+                        name: "plug".into(),
+                        source: "plugin:x".into(),
+                        desc_chars: 8,
+                        body_bytes: 50,
+                        invocations: Some(1),
+                        warn_desc: false,
+                        warn_body: false,
+                        warn_never: false,
+                    },
+                ],
+                desc_bytes: 58,
+            }),
+            None,
+            10_000,
+            true,
+        )
+    }
+
+    #[test]
+    fn skills_tab_lists_three_rows_and_n_hides_invoked() {
+        let mut cfg = config();
+        cfg.tui.tab = "skills".into();
+        let mut app = App::new(&cfg);
+        app.set_skills(model::SkillsPage::default());
+        assert!(
+            screen(&app).contains("no skills listed"),
+            "listing-empty, not stats-empty"
+        );
+        app.set_skills(three_skills());
+        let shown = screen(&app);
+        assert!(shown.contains("hot"), "{shown}");
+        assert!(shown.contains("cold"), "{shown}");
+        assert!(shown.contains("plug"), "{shown}");
+        assert!(shown.contains("never"), "never-invoked marked: {shown}");
+        assert!(shown.contains("resident"), "{shown}");
+        app.key(KeyCode::Char('n'), KeyModifiers::NONE);
+        let filtered = screen(&app);
+        assert!(filtered.contains("cold"), "{filtered}");
+        assert!(!filtered.contains("hot"), "n hides invoked: {filtered}");
+        assert!(filtered.contains("n again shows all"), "{filtered}");
     }
 
     /// T60.10: the Sessions tab has the Calls row model — an empty state, both rows
@@ -1248,6 +1517,25 @@ mod tests {
         );
         app.key(KeyCode::Char('?'), KeyModifiers::NONE);
         assert!(!screen(&app).contains("keys —"), "? closes the overlay");
+    }
+
+    /// T60.6: an unreadable store renders an error line instead of a silent empty page.
+    #[test]
+    fn unreadable_store_shows_an_error_banner() {
+        let dir = std::env::temp_dir().join(format!("rtok-tui-store-err-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.core.db_path = dir.join("not-a-db");
+        std::fs::create_dir_all(&cfg.core.db_path).unwrap();
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let app = App::new(&cfg);
+        assert!(app.snapshot().error.is_some(), "{:?}", app.snapshot().error);
+        let screen = screen(&app);
+        assert!(screen.contains('✕'), "error banner: {screen}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T60.8: `r` re-reads the model immediately, before the next tick.

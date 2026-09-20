@@ -1,0 +1,13 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml config path"
+stdout = """
+tests/trycmd/input/json-readers.toml
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-config-path"
+RTOK_HOME = "target/tmp/t60-2-config-path"

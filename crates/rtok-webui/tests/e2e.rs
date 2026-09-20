@@ -10,7 +10,7 @@
 //! derived bindings and the tab clicks.
 
 use i_slint_backend_testing::ElementHandle;
-use rtok_webui::{MainWindow, PAGE_IDS, apply_snapshot};
+use rtok_webui::{MainWindow, PAGE_IDS, apply_snapshot, init_theme};
 use serde_json::json;
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::rc::Rc;
@@ -28,6 +28,7 @@ fn window() -> MainWindow {
             })
             .collect::<Vec<_>>(),
     ))));
+    init_theme(&ui);
     ui
 }
 
@@ -161,6 +162,25 @@ fn cursors_follow_selected_rows() {
 }
 
 #[test]
+fn theme_toggle_flips_palette() {
+    let ui = window();
+    assert!(ui.get_dark());
+    ui.invoke_theme_toggle();
+    assert!(!ui.get_dark());
+    ui.invoke_theme_toggle();
+    assert!(ui.get_dark());
+}
+
+#[test]
+fn snapshot_error_reaches_the_banner() {
+    let ui = window();
+    apply_snapshot(
+        &ui,
+        &json!({"type":"snapshot","usage":{},"plugins":[],"calls":[],"sessions":[],"logs":[],"doctor":null,"error":"store unreadable"}),
+    );
+    assert_eq!(ui.get_error().as_str(), "store unreadable");
+
+#[test]
 fn session_click_opens_detail() {
     let ui = window();
     apply_snapshot(&ui, &snapshot());
@@ -217,4 +237,48 @@ fn fail_open_snapshot_renders_empty_pages() {
     assert_eq!(ui.get_sessions().row_count(), 0);
     assert_eq!(ui.get_logs().row_count(), 0);
     assert!(ui.get_doctor_text().as_str().contains("did not answer"));
+}
+
+#[test]
+fn skills_never_only_checkbox_hides_invoked() {
+    let ui = window();
+    let mut v = snapshot();
+    v["skills"] = json!({
+        "header": "3 skills · 58 desc bytes ≈ 14 tok/req · 0 resident · 0.0% of input",
+        "rows": [
+            {"name":"hot","source":"user","desc_chars":40,"body_bytes":100,"invocations":3,"resident":800,"last_invoked":"—","never":false},
+            {"name":"plug","source":"plugin:x","desc_chars":8,"body_bytes":50,"invocations":1,"resident":200,"last_invoked":"—","never":false},
+            {"name":"cold","source":"project","desc_chars":10,"body_bytes":20,"invocations":0,"resident":0,"last_invoked":"never","never":true}
+        ]
+    });
+    apply_snapshot(&ui, &v);
+    let tab = ElementHandle::find_by_accessible_label(&ui, "skills")
+        .next()
+        .unwrap_or_else(|| panic!("skills tab (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    tab.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert_eq!(ui.get_page_id().as_str(), "skills");
+    assert_eq!(ui.get_skills().row_count(), 3);
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "skill hot")
+            .next()
+            .is_some(),
+        "invoked skill is listed"
+    );
+    let filter = ElementHandle::find_by_accessible_label(&ui, "never invoked only")
+        .next()
+        .unwrap_or_else(|| panic!("never-invoked checkbox (run with SLINT_EMIT_DEBUG_INFO=1)"));
+    filter.mock_single_click(slint::platform::PointerEventButton::Left);
+    assert!(ui.get_skills_never_only(), "checkbox toggles");
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "skill cold")
+            .next()
+            .is_some(),
+        "never-invoked row stays"
+    );
+    assert!(
+        ElementHandle::find_by_accessible_label(&ui, "skill hot")
+            .next()
+            .is_none(),
+        "invoked row is hidden"
+    );
 }

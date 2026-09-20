@@ -2,10 +2,32 @@
   "version": 1,
   "hooks": {
     "beforeShellExecution": [
-      { "command": "rtok hook PreToolUse --host cursor" }
+      {
+        "command": "rtok hook PreToolUse --host cursor"
+      }
     ],
     "afterShellExecution": [
-      { "command": "rtok hook PostToolUse --host cursor" }
+      {
+        "command": "rtok hook PostToolUse --host cursor"
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "rtok hook SessionStart --host cursor"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "rtok hook PreCompact --host cursor"
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "rtok hook AfterMCPExecution --host cursor"
+      }
+    ],
+    "postToolUse": [
+      { "command": "rtok hook PostToolUse --host cursor", "matcher": "MCP:" }
     ]
   }
 }

@@ -1,0 +1,8 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml logs --json"
+
+# Hermetic by construction: fixture pins transcripts, the store lands under
+# target/ via RTOK_HOME, and a cleared env keeps ambient RTOK_* / HOME out.
+[env]
+inherit = false
+RTOK_HOME = "target/tmp/t60-1-logs-json"
