@@ -8,7 +8,6 @@ drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
 
-
 [rg]
 max_lines = 40
 head = 10
@@ -16,8 +15,6 @@ tail = 10
 drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
-group = "dir"
-
 
 [sed]
 max_lines = 40
@@ -144,8 +141,6 @@ head = 8
 tail = 16
 keep = ["error CS|error MSB|error NU|Build FAILED"]
 dedupe = true
-group = "diag"
-
 
 [tsc]
 max_lines = 40
@@ -153,8 +148,6 @@ head = 8
 tail = 16
 keep = ["error TS|Found \\d+ error"]
 dedupe = true
-group = "diag"
-
 
 [eslint]
 max_lines = 40
@@ -162,8 +155,6 @@ head = 8
 tail = 16
 keep = ["error|warning|✖|problems"]
 dedupe = true
-group = "diag"
-
 
 [brew]
 max_lines = 40
@@ -184,26 +175,4 @@ max_lines = 40
 head = 8
 tail = 16
 keep = ["CMake Error|error:|FAILED|Error"]
-dedupe = true
-
-[ls]
-max_lines = 40
-head = 10
-tail = 10
-group = "dir"
-dedupe = true
-
-[find]
-max_lines = 40
-head = 10
-tail = 10
-group = "dir"
-dedupe = true
-
-[cargo]
-max_lines = 40
-head = 8
-tail = 16
-keep = ["error[|error:|warning:"]
-group = "diag"
 dedupe = true
