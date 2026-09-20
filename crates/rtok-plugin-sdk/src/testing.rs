@@ -192,6 +192,16 @@ impl Archive for MemoryHost {
 }
 
 impl Notes for MemoryHost {
+    fn upsert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        self.insert_note(project, kind, title, body)
+    }
+
     fn insert_note(
         &self,
         _project: Option<&str>,
@@ -203,6 +213,14 @@ impl Notes for MemoryHost {
     }
 
     fn latest_note(&self, _kind: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn latest_note_for_project(
+        &self,
+        _project: Option<&str>,
+        _kind_prefix: &str,
+    ) -> Result<Option<String>> {
         Ok(None)
     }
 
@@ -234,6 +252,10 @@ impl ReadCache for MemoryHost {
 }
 
 impl Ledger for MemoryHost {
+    fn last_measurement_ref(&self, _plugin: &str, _kind: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     fn recent_hook_inputs(&self, _limit: i64) -> Result<Vec<String>> {
         Ok(Vec::new())
     }

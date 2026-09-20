@@ -588,8 +588,10 @@ fn healthy_store_has_no_recommendations() {
     store
         .insert_usage("ok", Some("m"), "anthropic", 100, 0, 0, 5, id)
         .unwrap();
+    // No `read`/`cmd`/`mcp` row: those are token sinks by construction, and the
+    // top-sinks ranking always names its ten largest (docs/report.md).
     for (plugin, kind, est_before, est_after) in [
-        ("cmd", "filter", 25, 10),
+        ("measure", "estimate", 25, 10),
         ("archive", "pointer", 100, 20),
         ("inject", "inject", 500, 400),
     ] {

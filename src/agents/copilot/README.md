@@ -11,7 +11,7 @@ and the app as one shared host, as it does for Cursor.
 
 | Module | Support | Why |
 | --- | --- | --- |
-| hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd |
+| hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, preCompact |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp-config.json` as `{type: "local", command, args, tools: ["*"]}` (off with `[setup] mcp = false`) |
 | proxy | no | Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy |
 | plugin | no | Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link |
@@ -45,4 +45,5 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`hooks/*.json` shape, event names, stdin and stdout keys, exit codes): https://docs.github.com/en/copilot/reference/hooks-reference
 - Plugins (`installed-plugins/`, `copilot plugin`): https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference
 - BYOK (`COPILOT_PROVIDER_BASE_URL`, `providers.json`): https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models
+- Agent skills (`~/.copilot/skills/<name>/`): https://docs.github.com/en/copilot/concepts/agents/about-agent-skills
 - GitHub Copilot app (reuses the CLI's MCP, skills and plugins): https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app

@@ -53,7 +53,7 @@ fn p8c_numbers() {
     let ws = warm("symbol", symbol);
     let wc = warm("callers", callers);
     let t = Instant::now();
-    impact(&Ctx::new(&cx), &repo, "f0", 2).unwrap();
+    impact(&Ctx::new(&cx), &repo, "f0", 2, None).unwrap();
     let wi = t.elapsed();
     eprintln!("warm_impact2 {wi:?}");
 

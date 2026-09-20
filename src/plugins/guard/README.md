@@ -4,7 +4,7 @@ Stops the model from paying twice for the same result.
 
 | | |
 |---|---|
-| Surfaces | PreToolUse hook |
+| Surfaces | PreToolUse hook; `rtok guard check` (pi / OpenCode plugin) |
 | Spec | the `spec (replaces)` column of the catalogue in `plan.md` §1 |
 | Default | on |
 

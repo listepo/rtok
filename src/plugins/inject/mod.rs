@@ -32,6 +32,15 @@ impl Plugin for Inject {
         {
             text.push_str(&c.text);
             priority = 9;
+        } else if ev.source == "startup" {
+            let mem = cx.plugin_config::<crate::config::Memory>("memory");
+            if mem.enabled
+                && mem.startup_recall
+                && let Some(c) = super::checkpoint::offer_session(cx)
+            {
+                text.push_str(&c.text);
+                priority = 9;
+            }
         }
         if let Some(m) = modes_text(cx) {
             if !text.is_empty() {
