@@ -63,7 +63,9 @@ impl Agent for Pi {
     }
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
-        if plugin_dest(cfg).symlink_metadata().is_ok() {
+        // T75: only what remove will take back counts as installed — a foreign
+        // directory at the plugin dest must not hold the green mark.
+        if link(cfg).ours() {
             vec!["plugin"]
         } else {
             Vec::new()

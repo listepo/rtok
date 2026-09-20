@@ -394,6 +394,23 @@ impl PluginLink<'_> {
         self.dest.symlink_metadata().is_ok()
     }
 
+    /// True when what sits at the destination is rtok's to remove (T75): a link or a
+    /// plain file — either unlinks — or a directory rtok can prove holds its own plugin:
+    /// the [`OWNED_MARKER`] a copy leaves, or every byte of `src` present unchanged (a
+    /// host may materialize the linked tree into a copy). A foreign directory is not
+    /// ours however it got there, so the installed mark never outlives an uninstall
+    /// that refused to touch it.
+    pub fn ours(&self) -> bool {
+        let Ok(meta) = self.dest.symlink_metadata() else {
+            return false;
+        };
+        if meta.file_type().is_symlink() || meta.file_type().is_file() {
+            return true;
+        }
+        meta.is_dir()
+            && (self.dest.join(OWNED_MARKER).is_file() || tree_copies(&self.src, &self.dest))
+    }
+
     /// The destination as the question and a declined offer spell it: the label, or the
     /// path itself when the host has no shorthand for where its plugins live.
     fn main_desc(&self) -> String {
@@ -428,13 +445,13 @@ impl PluginLink<'_> {
                 return Ok(NO_CHANGES.into());
             }
             // Install refuses to overwrite a foreign directory; remove must not wipe one
-            // either. Unlink a symlink / plain file, or wipe a copy we marked as ours.
+            // either. Unlink a symlink / plain file, or wipe a copy we can prove is ours.
             let meta = self.dest.symlink_metadata()?;
             if meta.file_type().is_symlink() || meta.file_type().is_file() {
                 fs::remove_file(&self.dest)?;
                 return Ok(format!("- plugin {}", self.dest.display()));
             }
-            if meta.is_dir() && self.dest.join(OWNED_MARKER).is_file() {
+            if meta.is_dir() && self.ours() {
                 fs::remove_dir_all(&self.dest)?;
                 return Ok(format!("- plugin {}", self.dest.display()));
             }
@@ -562,6 +579,38 @@ impl SkillCopy {
             }
         }
     }
+}
+
+/// True when every file under `src` sits in `dest` with the same bytes — extra files in
+/// `dest` are allowed, a host may put its own beside ours. This is what lets remove take
+/// back a directory a host materialized from our symlink, while a foreign directory
+/// (which fails the first differing byte) still stands. An empty or unreadable `src`
+/// proves nothing.
+fn tree_copies(src: &Path, dest: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(src) else {
+        return false;
+    };
+    let mut seen = 0;
+    for entry in entries.flatten() {
+        seen += 1;
+        let Ok(ft) = entry.file_type() else {
+            return false;
+        };
+        let there = dest.join(entry.file_name());
+        if ft.is_dir() {
+            if !there.is_dir() || !tree_copies(&entry.path(), &there) {
+                return false;
+            }
+        } else {
+            let (Ok(a), Ok(b)) = (fs::read(entry.path()), fs::read(&there)) else {
+                return false;
+            };
+            if a != b {
+                return false;
+            }
+        }
+    }
+    seen > 0
 }
 
 /// Install the plugin tree at `dest`: symlink on Unix, owned copy elsewhere.
@@ -1069,6 +1118,75 @@ mod tests {
         let report = link.run(&yes, true).unwrap();
         assert!(report.starts_with("leave "), "{report}");
         assert!(dest.join("mine.txt").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T75: a host can materialize our symlink into a plain copy with no marker. The
+    /// copy is provably ours (every src byte present) so remove takes it back — that is
+    /// the "uninstall did not take effect on disk" half of the stuck green check.
+    #[test]
+    fn remove_wipes_a_materialized_copy_of_our_tree() {
+        let dir = tmp("materialized-copy");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(src.join("hooks")).unwrap();
+        fs::write(src.join("plugin.json"), "{}").unwrap();
+        fs::write(src.join("hooks").join("pre.js"), "ours").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        // A copy of the tree with the marker deliberately absent, plus a host-side extra
+        // file beside ours — extra files must not break the ownership proof.
+        fs::create_dir_all(dest.join("hooks")).unwrap();
+        fs::copy(src.join("plugin.json"), dest.join("plugin.json")).unwrap();
+        fs::copy(
+            src.join("hooks").join("pre.js"),
+            dest.join("hooks").join("pre.js"),
+        )
+        .unwrap();
+        fs::write(dest.join("host-cache.bin"), "host wrote this").unwrap();
+
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src: src.clone(),
+            dest: dest.clone(),
+            label: None,
+            host: "demo",
+        };
+        let yes = Apply {
+            dry_run: false,
+            backup: false,
+            yes: true,
+        };
+        assert!(link.ours(), "a byte-complete copy of our tree is ours");
+        assert_eq!(
+            link.run(&yes, true).unwrap(),
+            format!("- plugin {}", dest.display())
+        );
+        assert!(!dest.exists(), "the materialized copy must go");
+        assert!(!link.ours(), "and no longer reads as ours");
+        assert_eq!(link.run(&yes, true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T75: the read side — a directory that differs from our tree by one byte is not
+    /// ours, so an `installed()` built on [`PluginLink::ours`] cannot stay green over a
+    /// foreign directory the uninstall was right to leave alone.
+    #[test]
+    fn a_directory_that_differs_by_a_byte_is_not_ours() {
+        let dir = tmp("not-ours");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("plugin.json"), "ours").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("plugin.json"), "someone else's").unwrap();
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src,
+            dest,
+            label: None,
+            host: "demo",
+        };
+        assert!(link.linked(), "something is there");
+        assert!(!link.ours(), "but it is not ours");
         let _ = fs::remove_dir_all(dir);
     }
 
