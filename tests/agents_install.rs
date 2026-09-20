@@ -31,7 +31,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join(".config/opencode/opencode.json")),
         ),
         ("pi", vec!["--yes"], None),
-        ("zcode", vec![], Some(home.join(".zcode/cli/config.json"))),
+        (
+            "zcode",
+            vec!["--yes"],
+            Some(home.join(".zcode/cli/config.json")),
+        ),
         ("kimi", vec![], Some(home.join(".kimi-code/config.toml"))),
         (
             "copilot",

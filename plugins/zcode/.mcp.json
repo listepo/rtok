@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rtok": {
+      "type": "stdio",
+      "command": "${ZCODE_PLUGIN_ROOT}/scripts/mcp.sh",
+      "timeoutMs": 30000
+    }
+  }
+}

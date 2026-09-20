@@ -3,7 +3,7 @@
 Every host `rtok agents install <host>` configures, per app, with what rtok writes into it and which rtok plugins then reach that app.
 
 - **Hooks**, **MCP**, **Proxy**, **Plugin** are the four modules an install can carry. `yes` is written by a plain install; a flag (`--proxy`, `--yes`) means the module is written only with that flag; `—` means the host has no way to carry it. The host README (linked from the Host column) gives the reason for every `—`.
-- **Plugin** is a directory from `plugins/<host>/` that rtok links into the host (Cursor: hooks and MCP as one unit; OpenCode and pi: the bash call path).
+- **Plugin** is a directory from `plugins/<host>/` that rtok links into the host (Cursor and ZCode: hooks and MCP as one unit; OpenCode and pi: the bash call path).
 - **rtok plugins reached** lists every catalogue plugin with at least one surface (hook, bash call path, MCP, proxy) a module above can carry. `(off)` plugins are disabled by default and need `[plugins.<id>] enabled = true`.
 
 Check what is installed on this machine with `rtok agents list`; `rtok doctor` reports the same modules.
@@ -19,7 +19,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode | CLI | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode Desktop | Desktop | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
 | [`pi`](https://github.com/listepo/rtok/blob/main/src/agents/pi/README.md) | pi | CLI | — | — | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon (off) |
-| [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
+| [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
 | [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code - Insiders | Desktop | — | yes | — | — | read, archive, memory, graph, toon (off) |
