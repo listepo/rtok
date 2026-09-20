@@ -1,15 +1,15 @@
 name: ci
 
-# `push: [main]` stayed off deliberately (#72) — it is what arms `revert-on-failure`, which
-# pushes reverts to main on its own. `pull_request` is the gate the rest of the setup is
-# written against: `verify.yml` calls this "the gate ci.yml applies to every pull request",
-# `release-plz.yml` warns that a pull request opened with GITHUB_TOKEN "would be merged having
-# never run ci.yml", and `save-if` below skips the cache upload "on PRs". #72 meant to keep it
-# ("and pull_request where already present") but this workflow had none to keep, so nothing
-# gated anything: main reached a tree that did not compile, and the open dependabot pull
-# requests have never been checked.
+# Push to main arms `revert-on-failure` (auto-revert of a bad push). That is intentional:
+# main must stay green. Pull requests against main are the review gate; draft PRs are skipped
+# so half-finished work does not burn runners. `workflow_dispatch` remains for manual runs
+# (release branches, one-off checks).
 on:
+  push:
+    branches: [main]
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # A newer commit on the same ref cancels the previous run.
@@ -22,6 +22,8 @@ env:
 
 jobs:
   check:
+    # Draft PRs still emit synchronize; skip until ready_for_review.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
       fail-fast: false
       matrix:
