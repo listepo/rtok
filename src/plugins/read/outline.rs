@@ -518,6 +518,12 @@ mod tests {
             ("a.dart", "void start() {}\n", "void start"),
             ("a.c", "int add(int x) { return x; }\n", "int add"),
             ("a.go", "func Sum() int { return 0 }\n", "func Sum"),
+            ("a.java", "class App { void start() {} }\n", "class App"),
+            ("a.kt", "class App { fun start() {} }\n", "class App"),
+            ("a.swift", "class App { func start() {} }\n", "class App"),
+            ("a.cs", "class App { void Start() {} }\n", "class App"),
+            ("a.rb", "def run; end\n", "def run"),
+            ("a.php", "<?php\nfunction run() {}\n", "function run"),
         ];
         for (path, src, needle) in cases {
             let src = pad(src);
