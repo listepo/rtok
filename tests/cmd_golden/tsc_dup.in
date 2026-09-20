@@ -1,0 +1,23 @@
+argv: tsc --noEmit
+exit: 0
+---
+src/f0.ts(0,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f1.ts(1,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f2.ts(2,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f3.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f4.ts(4,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f5.ts(5,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f6.ts(6,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f7.ts(7,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f8.ts(8,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f9.ts(9,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f10.ts(10,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f11.ts(11,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f12.ts(12,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f13.ts(13,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f14.ts(14,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f15.ts(15,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f16.ts(16,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f17.ts(17,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f18.ts(18,1): error TS2322: Type 'string' is not assignable to type 'number'.
+src/f19.ts(19,1): error TS2322: Type 'string' is not assignable to type 'number'.

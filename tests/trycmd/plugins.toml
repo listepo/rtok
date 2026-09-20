@@ -1,0 +1,24 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml plugins"
+stdout = """
+id       enabled  surfaces
+measure  on       cli,proxy
+cmd      on       hook,cli
+read     on       mcp,hook
+archive  on       proxy,mcp,cli
+proxy    on       proxy
+inject   on       hook
+guard    on       hook,cli
+memory   on       mcp,hook
+graph    on       mcp,hook
+toon     off      proxy,mcp
+compress off      proxy
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-plugins"
+RTOK_HOME = "target/tmp/t60-2-plugins"

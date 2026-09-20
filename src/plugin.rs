@@ -10,6 +10,7 @@
 //! implements only the surfaces it declares in its [`Manifest`].
 
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
@@ -18,10 +19,10 @@ use crate::store::Store;
 use crate::tokens;
 
 pub use rtok_plugin_sdk::{
-    Archive, ArchiveDecision, Capabilities, Class, Ctx, DashboardPage, Host, Injection, Ledger,
-    Manifest, Measurement, NoteHit, Notes, Plugin, PostToolUse, PreCompact, PreToolDecision,
-    PreToolUse, PromptSubmit, ReadCache, SessionStart, Surface, Symbols, ToolDef, ToolResultRef,
-    ToolResults, WireRequest,
+    Archive, ArchiveDecision, ArchiveHit, Capabilities, Class, Ctx, DashboardPage, Host, Injection,
+    Ledger, Manifest, Measurement, NoteHit, Notes, Plugin, PostToolUse, PreCompact,
+    PreToolDecision, PreToolUse, PromptSubmit, ReadCache, SessionStart, Surface, Symbols, ToolDef,
+    ToolResultRef, ToolResults, WireRequest,
 };
 
 /// The longest prefix of `text` that estimates to at most `budget` tokens.
@@ -43,6 +44,39 @@ pub fn fit_budget(cx: &Ctx, text: &str, class: Class, budget: u32) -> String {
     out
 }
 
+/// T65.1: same-session content-hash hit. Looks up before the caller archives.
+/// Empty or shorter-than-the-pointer bodies stay as they are (fail open / no inflation).
+pub fn identical_result(
+    host: &dyn Capabilities,
+    plugin: &'static str,
+    body: &[u8],
+) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+    let sha = crate::store::hex_sha256(body);
+    let hit = host.archive_in_session(&sha).ok().flatten()?;
+    let n = hit.turns.max(1);
+    let id = hit.id;
+    let msg =
+        format!("[rtok {id} · identical to a result {n} turns ago · expand: rtok expand {id}]");
+    if body.len() <= msg.len() {
+        return None;
+    }
+    let text = std::str::from_utf8(body).unwrap_or("");
+    let _ = host.record(&Measurement {
+        plugin,
+        kind: "dedup",
+        before_bytes: body.len() as u64,
+        after_bytes: msg.len() as u64,
+        est_before: host.estimate(text, Class::Code),
+        est_after: host.estimate(&msg, Class::Code),
+        ref_id: Some(id.clone()),
+        call_id: host.call_id(),
+    });
+    Some(msg)
+}
+
 /// Everything a plugin may touch: config, the store, and the session id.
 /// The archive store is added in T3.1.
 pub struct Runtime {
@@ -61,6 +95,8 @@ pub struct Runtime {
     /// Host process cwd, when the surface knows it (the hook surface sets this from the
     /// event's own `cwd`, T25.0). `project` is derived from it at write time.
     pub cwd: Option<String>,
+    /// Files the graph watcher has queued but not yet re-indexed (T68.3).
+    pub graph_watch_pending: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Runtime {
@@ -84,6 +120,7 @@ impl Runtime {
             call_id: None,
             host_id,
             cwd: None,
+            graph_watch_pending: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -238,6 +275,23 @@ impl Host for Runtime {
     fn call_id(&self) -> Option<i32> {
         self.call_id
     }
+
+    fn graph_watch_pending(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .graph_watch_pending
+            .lock()
+            .map(|p| p.iter().cloned().collect())
+            .unwrap_or_default();
+        out.sort();
+        out
+    }
+
+    fn publish_graph_watch_pending(&self, paths: &[String]) {
+        if let Ok(mut guard) = self.graph_watch_pending.lock() {
+            guard.clear();
+            guard.extend(paths.iter().cloned());
+        }
+    }
 }
 
 impl Archive for Runtime {
@@ -273,9 +327,30 @@ impl Archive for Runtime {
         self.store
             .archive_size(id, Some(&self.config.core.archive_dir))
     }
+
+    fn archive_in_session(&self, sha256: &str) -> Result<Option<ArchiveHit>> {
+        // Errors fail open: the caller prints the body instead of a pointer.
+        match self.store.archive_in_session(&self.session, sha256) {
+            Ok(Some((id, turns))) => Ok(Some(ArchiveHit { id, turns })),
+            _ => Ok(None),
+        }
+    }
 }
 
 impl Notes for Runtime {
+    fn upsert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        let (id, _) = self.store.upsert_note(project, kind, title, body)?;
+        self.store
+            .upsert_note_embedding(id, title, body, &self.config.plugins.memory.embed)?;
+        Ok(id)
+    }
+
     fn insert_note(
         &self,
         project: Option<&str>,
@@ -288,6 +363,14 @@ impl Notes for Runtime {
 
     fn latest_note(&self, kind: &str) -> Result<Option<String>> {
         self.store.latest_note(kind)
+    }
+
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        self.store.latest_note_for_project(project, kind_prefix)
     }
 
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>> {
@@ -319,6 +402,10 @@ impl ReadCache for Runtime {
 }
 
 impl Ledger for Runtime {
+    fn last_measurement_ref(&self, plugin: &str, kind: &str) -> Result<Option<String>> {
+        self.store.last_measurement_ref(&self.session, plugin, kind)
+    }
+
     fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>> {
         self.store.recent_hook_inputs(&self.session, limit)
     }
@@ -391,6 +478,10 @@ impl Symbols for Runtime {
         self.store.symbol_ref_groups(root, name)
     }
 
+    fn symbol_callees(&self, root: &str, name: &str) -> Result<Vec<(String, i32, String, i32)>> {
+        self.store.symbol_callees(root, name)
+    }
+
     fn symbol_impact(
         &self,
         root: &str,
@@ -410,6 +501,22 @@ impl Symbols for Runtime {
 
     fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
         self.store.symbol_paths(root, from, to, depth)
+    }
+
+    fn symbol_file_count(&self, root: &str) -> Result<i64> {
+        self.store.symbol_file_count(root)
+    }
+
+    fn symbol_pending(&self, root: &str, root_path: &std::path::Path) -> Result<Vec<String>> {
+        self.store.symbol_pending(root, root_path)
+    }
+
+    fn symbol_indexed_at(&self, root: &str) -> Result<Option<i64>> {
+        self.store.symbol_indexed_at(root)
+    }
+
+    fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
+        self.store.touch_symbol_indexed_at(root, ts)
     }
 
     fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {

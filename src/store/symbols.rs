@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Integer, Text};
+use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 
 use super::Store;
@@ -19,6 +19,78 @@ fn delete_file(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResu
         .execute(conn)
 }
 
+fn note_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
+    sql_query("INSERT OR IGNORE INTO symbol_stale (root, path) VALUES (?, ?)")
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(path)
+        .execute(conn)?;
+    Ok(())
+}
+
+/// One file's rows, inside the caller's transaction: drop what the file had, insert the
+/// new tags in chunks, and return how many landed. A tagless file still gets a row so the
+/// `file_sha` stands and the next run skips it on the stat alone.
+fn replace_one(
+    conn: &mut SqliteConnection,
+    root: &str,
+    path: &str,
+    file_sha: &str,
+    stat: (i64, i64),
+    rows: &[(String, String, i32, bool, i32, String)],
+) -> QueryResult<usize> {
+    diesel::delete(symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))))
+        .execute(conn)?;
+    if rows.is_empty() {
+        diesel::insert_into(symbols::table)
+            .values((
+                symbols::root.eq(root),
+                symbols::path.eq(path),
+                symbols::name.eq(""),
+                symbols::kind.eq(""),
+                symbols::line.eq(0),
+                symbols::is_def.eq(0),
+                symbols::file_sha.eq(file_sha),
+                symbols::mtime.eq(stat.0),
+                symbols::size.eq(stat.1),
+            ))
+            .execute(conn)?;
+        return Ok(0);
+    }
+    for chunk in rows.chunks(INSERT_CHUNK) {
+        let values: Vec<_> = chunk
+            .iter()
+            .map(|(name, kind, line, is_def, end_line, scope)| {
+                (
+                    symbols::root.eq(root),
+                    symbols::path.eq(path),
+                    symbols::name.eq(name),
+                    symbols::kind.eq(kind),
+                    symbols::line.eq(line),
+                    symbols::is_def.eq(i32::from(*is_def)),
+                    symbols::file_sha.eq(file_sha),
+                    symbols::mtime.eq(stat.0),
+                    symbols::size.eq(stat.1),
+                    symbols::end_line.eq(end_line),
+                    symbols::scope.eq(scope),
+                )
+            })
+            .collect();
+        diesel::insert_into(symbols::table)
+            .values(&values)
+            .execute(conn)?;
+    }
+    clear_stale(conn, root, path)?;
+    Ok(rows.len())
+}
+
+fn clear_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
+    sql_query("DELETE FROM symbol_stale WHERE root = ? AND path = ?")
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(path)
+        .execute(conn)?;
+    Ok(())
+}
+
 impl Store {
     /// Rows indexed under one repo root (T8.3). Every symbol call is scoped to a root, so
     /// two repos in the one store (D8) never evict or answer for each other.
@@ -28,6 +100,58 @@ impl Store {
             .filter(symbols::root.eq(root))
             .count()
             .get_result(&mut *conn)?)
+    }
+
+    /// Distinct indexed file paths under `root` (T68.3 `graph status`).
+    pub fn symbol_file_count(&self, root: &str) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(symbols::root.eq(root))
+            .select(symbols::path)
+            .distinct()
+            .count()
+            .get_result(&mut *conn)?)
+    }
+
+    /// Paths still carrying the T8.3 stale mark (hook delete, not yet re-indexed).
+    pub fn symbol_stale_paths(&self, root: &str) -> Result<Vec<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            path: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> =
+            sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
+                .bind::<Text, _>(root)
+                .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| r.path).collect())
+    }
+
+    /// Pending files: hook-staled rows plus indexed paths whose stat no longer matches disk.
+    pub fn symbol_pending(&self, root: &str, root_path: &std::path::Path) -> Result<Vec<String>> {
+        let mut pending: HashSet<String> = self.symbol_stale_paths(root)?.into_iter().collect();
+        for (path, (_, mtime, size)) in self.symbol_stats(root)? {
+            let abs = root_path.join(&path);
+            let stat = abs
+                .metadata()
+                .map(|md| {
+                    let mtime = md
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_nanos() as i64)
+                        .unwrap_or(0);
+                    (mtime, md.len() as i64)
+                })
+                .unwrap_or((0, 0));
+            if stat != (mtime, size) && stat != (0, 0) {
+                pending.insert(path);
+            }
+        }
+        let mut out: Vec<String> = pending.into_iter().collect();
+        out.sort();
+        Ok(out)
     }
 
     /// What the index knows about one file: `(sha256, mtime_nanos, size)` (T8.4). A caller
@@ -81,50 +205,7 @@ impl Store {
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
             let mut inserted = 0usize;
             for (path, file_sha, stat, rows) in files {
-                diesel::delete(
-                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&path))),
-                )
-                .execute(conn)?;
-                if rows.is_empty() {
-                    diesel::insert_into(symbols::table)
-                        .values((
-                            symbols::root.eq(root),
-                            symbols::path.eq(&path),
-                            symbols::name.eq(""),
-                            symbols::kind.eq(""),
-                            symbols::line.eq(0),
-                            symbols::is_def.eq(0),
-                            symbols::file_sha.eq(&file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                        ))
-                        .execute(conn)?;
-                    continue;
-                }
-                for chunk in rows.chunks(INSERT_CHUNK) {
-                    let values: Vec<_> = chunk
-                        .iter()
-                        .map(|(name, kind, line, is_def, end_line, scope)| {
-                            (
-                                symbols::root.eq(root),
-                                symbols::path.eq(&path),
-                                symbols::name.eq(name),
-                                symbols::kind.eq(kind),
-                                symbols::line.eq(line),
-                                symbols::is_def.eq(i32::from(*is_def)),
-                                symbols::file_sha.eq(&file_sha),
-                                symbols::mtime.eq(stat.0),
-                                symbols::size.eq(stat.1),
-                                symbols::end_line.eq(end_line),
-                                symbols::scope.eq(scope),
-                            )
-                        })
-                        .collect();
-                    diesel::insert_into(symbols::table)
-                        .values(&values)
-                        .execute(conn)?;
-                }
-                inserted += rows.len();
+                inserted += replace_one(conn, root, path, file_sha, *stat, rows)?;
             }
             Ok(inserted)
         })?)
@@ -145,51 +226,7 @@ impl Store {
         // one transaction per batch of files. Why: ~140 single-row INSERTs per file. Not yet
         // measured apart from the parse — measure before changing.
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            diesel::delete(
-                symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))),
-            )
-            .execute(conn)?;
-            if rows.is_empty() {
-                // Keep file_sha so an unchanged tagless file is skipped next run.
-                diesel::insert_into(symbols::table)
-                    .values((
-                        symbols::root.eq(root),
-                        symbols::path.eq(path),
-                        symbols::name.eq(""),
-                        symbols::kind.eq(""),
-                        symbols::line.eq(0),
-                        symbols::is_def.eq(0),
-                        symbols::file_sha.eq(file_sha),
-                        symbols::mtime.eq(stat.0),
-                        symbols::size.eq(stat.1),
-                    ))
-                    .execute(conn)?;
-                return Ok(0);
-            }
-            for chunk in rows.chunks(INSERT_CHUNK) {
-                let values: Vec<_> = chunk
-                    .iter()
-                    .map(|(name, kind, line, is_def, end_line, scope)| {
-                        (
-                            symbols::root.eq(root),
-                            symbols::path.eq(path),
-                            symbols::name.eq(name),
-                            symbols::kind.eq(kind),
-                            symbols::line.eq(line),
-                            symbols::is_def.eq(i32::from(*is_def)),
-                            symbols::file_sha.eq(file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                            symbols::end_line.eq(end_line),
-                            symbols::scope.eq(scope),
-                        )
-                    })
-                    .collect();
-                diesel::insert_into(symbols::table)
-                    .values(&values)
-                    .execute(conn)?;
-            }
-            Ok(rows.len())
+            replace_one(conn, root, path, file_sha, stat, rows)
         })?)
     }
 
@@ -229,7 +266,11 @@ impl Store {
         let mut conn = self.lock()?;
         conn.transaction::<_, diesel::result::Error, _>(|conn| {
             for (i, _) in abs_path.match_indices('/') {
-                delete_file(conn, &abs_path[..i], &abs_path[i + 1..])?;
+                let root = &abs_path[..i];
+                let rel = &abs_path[i + 1..];
+                if delete_file(conn, root, rel)? > 0 {
+                    note_stale(conn, root, rel)?;
+                }
             }
             Ok(())
         })?;
@@ -240,7 +281,12 @@ impl Store {
     /// the root.
     pub fn mark_symbols_stale_in(&self, root: &str, rel_path: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        delete_file(&mut conn, root, rel_path)?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            if delete_file(conn, root, rel_path)? > 0 {
+                note_stale(conn, root, rel_path)?;
+            }
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -265,6 +311,33 @@ impl Store {
         )
         .bind::<Text, _>(root)
         .bind::<Text, _>(fp)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    pub fn symbol_indexed_at(&self, root: &str) -> Result<Option<i64>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Nullable<BigInt>)]
+            indexed_at: Option<i64>,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query("SELECT indexed_at FROM extractor WHERE root = ?")
+            .bind::<Text, _>(root)
+            .load(&mut *conn)?;
+        Ok(rows.first().and_then(|r| r.indexed_at))
+    }
+
+    pub fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO extractor (root, fingerprint, indexed_at)
+             VALUES (?, COALESCE((SELECT fingerprint FROM extractor WHERE root = ?), ''), ?)
+             ON CONFLICT(root) DO UPDATE SET indexed_at = excluded.indexed_at",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(root)
+        .bind::<BigInt, _>(ts)
         .execute(&mut *conn)?;
         Ok(())
     }
@@ -303,6 +376,44 @@ impl Store {
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::line))
             .load(&mut *conn)?)
+    }
+
+    /// Callees of each definition of `name`: `(path, line, callee, first_ref_line)` (T68.2).
+    /// A reference row counts when it shares the definition's path and its `scope` is the
+    /// definition's name; results are ordered by definition site then first reference line.
+    pub fn symbol_callees(
+        &self,
+        root: &str,
+        name: &str,
+    ) -> Result<Vec<(String, i32, String, i32)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Integer)]
+            line: i32,
+            #[diesel(sql_type = Text)]
+            callee: String,
+            #[diesel(sql_type = Integer)]
+            first_line: i32,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.path AS path, d.line AS line, r.name AS callee, MIN(r.line) AS first_line
+             FROM symbols d
+             JOIN symbols r
+               ON r.root = d.root AND r.path = d.path AND r.is_def = 0 AND r.scope = d.name
+             WHERE d.root = ? AND d.is_def = 1 AND d.name = ? AND r.name != ''
+             GROUP BY d.path, d.line, r.name
+             ORDER BY d.path, d.line, first_line, r.name",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.path, r.line, r.callee, r.first_line))
+            .collect())
     }
 
     /// Reference sites of `name` collapsed to one row per calling definition (T8.5):

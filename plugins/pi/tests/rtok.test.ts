@@ -17,11 +17,13 @@ function load(body: string | null) {
   fakeRtok(body);
   const on: Record<string, Handler> = {};
   const entries: [string, string][] = [];
+  const tools: any[] = [];
   extension({
     on: (name: string, fn: Handler) => (on[name] = fn),
     appendEntry: (kind: string, text: string) => entries.push([kind, text]),
+    registerTool: (t: any) => tools.push(t),
   });
-  return { on, entries };
+  return { on, entries, tools };
 }
 
 test("bash calls are rewritten to one quoted `rtok run --`", async () => {
@@ -35,10 +37,41 @@ test("bash calls are rewritten to one quoted `rtok run --`", async () => {
 
 test("other tools are left alone", async () => {
   const { on } = load(filterPrints("x"));
-  const event = { toolName: "read", input: { command: "echo hi" } };
+  const event = { toolName: "write", input: { command: "echo hi" } };
   await on.tool_call(event);
   assert.equal(event.input.command, "echo hi");
-  assert.equal(await on.tool_result({ toolName: "read", content: [{ text: "a" }] }), undefined);
+  assert.equal(await on.tool_result({ toolName: "write", content: [{ text: "a" }] }), undefined);
+});
+
+test("a large read result is replaced and carries an expand trailer", async () => {
+  const { on } = load(
+    `if (args.join(" ").indexOf("filter --stdin --cmd read src/lib.rs") < 0) process.exit(9);
+process.stdout.write("short [rtok expand abc]");`,
+  );
+  const result = await on.tool_result({
+    toolName: "read",
+    input: { path: "src/lib.rs" },
+    content: [{ type: "text", text: "line\n".repeat(80) }],
+  });
+  assert.deepEqual(result, { content: [{ type: "text", text: "short [rtok expand abc]" }] });
+});
+
+test("a small read result stays byte-identical", async () => {
+  const { on } = load(filterPrints("echo"));
+  assert.equal(
+    await on.tool_result({ toolName: "read", input: { path: "tiny.rs" }, content: [{ text: "small\n" }] }),
+    undefined,
+  );
+});
+
+test("a spawn failure on read returns the original", async () => {
+  const { on, entries } = load(null);
+  assert.equal(
+    await on.tool_result({ toolName: "read", input: { path: "x.rs" }, content: [{ text: "whole file" }] }),
+    undefined,
+  );
+  assert.equal(entries.length, 1);
+  assert.match(entries[0][1], /ketch install listepo\/rtok/);
 });
 
 test("missing rtok fails open and names ketch", async () => {
@@ -126,4 +159,129 @@ test("context: spawn failure or garbage output keeps the array (fail open)", asy
   assert.equal(await missing.on.context({ messages: piArray(true) }), undefined);
   const garbage = load(filterPrints("not json {{{"));
   assert.equal(await garbage.on.context({ messages: piArray(true) }), undefined);
+});
+
+const CKPT = "checkpoint\n- edit the three files\n";
+const COMPACT = `
+if (args.includes("hook") && args.includes("PostCompact")) {
+  process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:${JSON.stringify(CKPT)}}}));
+} else if (args.includes("hook")) {
+  process.stdout.write("{}");
+} else if (args.includes("archive")) {
+  process.stdout.write(input);
+} else {
+  process.stdout.write("{}");
+}
+`;
+
+test("session_before_compact calls PreCompact --host pi and returns nothing", async () => {
+  const { on } = load(`
+    if (args.join(" ") !== "hook PreCompact --host pi") process.exit(9);
+    process.stdout.write("{}");
+  `);
+  const ret = await on.session_before_compact(
+    { reason: "threshold" },
+    { sessionId: "p1" },
+  );
+  assert.equal(ret, undefined, "must not replace the host summary");
+});
+
+test("after compact, the next context injects the checkpoint", async () => {
+  const { on } = load(COMPACT);
+  assert.equal(
+    await on.session_before_compact({ reason: "auto" }, { sessionId: "p1" }),
+    undefined,
+  );
+  await on.session_compact({}, { sessionId: "p1" });
+  const messages = piArray(false);
+  const out = await on.context({ messages });
+  assert.ok(out, "restore must return a replacement array");
+  assert.equal(out.messages.at(-1).content[0].text, CKPT);
+  assert.equal(await on.context({ messages: piArray(false) }), undefined, "once");
+});
+
+test("compaction without rtok fails open", async () => {
+  const { on } = load(null);
+  assert.equal(
+    await on.session_before_compact({ reason: "overflow" }, { sessionId: "p1" }),
+    undefined,
+  );
+  await on.session_compact({}, { sessionId: "p1" });
+  assert.equal(await on.context({ messages: piArray(false) }), undefined);
+});
+
+const GUARD_DENY = `
+if (args.includes("guard")) {
+  process.stdout.write(JSON.stringify({allow:false, reason:"duplicate; rtok expand abc"}));
+} else {
+  process.stdout.write("x");
+}
+`;
+
+test("guard deny with a reason blocks the call", async () => {
+  const { on } = load(GUARD_DENY);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  const ret = await on.tool_call(event, { sessionId: "s1" });
+  assert.deepEqual(ret, { block: true, reason: "duplicate; rtok expand abc" });
+  assert.equal(event.input.command, "ls", "must not wrap a denied call");
+});
+
+test("guard allow still wraps bash", async () => {
+  const { on } = load(`
+    if (args.includes("guard")) process.stdout.write(JSON.stringify({allow:true}));
+    else process.stdout.write("x");
+  `);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.equal(event.input.command, "rtok run -- 'ls'");
+});
+
+test("guard deny without a reason fails open", async () => {
+  const { on } = load(`
+    if (args.includes("guard")) process.stdout.write(JSON.stringify({allow:false}));
+    else process.stdout.write("x");
+  `);
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.equal(event.input.command, "rtok run -- 'ls'");
+});
+
+test("unparsable guard output fails open", async () => {
+  const { on } = load(filterPrints("x"));
+  const event = { toolName: "bash", input: { command: "ls" } };
+  assert.equal(await on.tool_call(event, { sessionId: "s1" }), undefined);
+  assert.match(event.input.command, /rtok run/);
+});
+
+const PI_TOOL_NAMES = ["read", "search", "tree", "symbol", "callers", "expand", "mem_search", "mem_get"];
+
+test("tools stay unregistered until setup.pi.tools is true", async () => {
+  const off = load('process.stdout.write("false");');
+  await off.on.session_start({});
+  assert.equal(off.tools.length, 0);
+  const missing = load(null);
+  await missing.on.session_start({});
+  assert.equal(missing.tools.length, 0, "missing rtok fails open");
+});
+
+test("each registered tool is one mcp --call", async () => {
+  const { on, tools } = load(`
+    if (args.includes("config")) process.stdout.write("true");
+    else process.stdout.write(args.join(" "));
+  `);
+  await on.session_start({});
+  assert.deepEqual(tools.map((t) => t.name), PI_TOOL_NAMES);
+  for (const t of tools) {
+    const out = await t.execute("id1", { q: 1 });
+    assert.equal(out.content[0].text, `mcp --call ${t.name} --json {"q":1}`);
+  }
+});
+
+test("registered tool execute fails open when rtok is missing", async () => {
+  const { on, tools } = load('process.stdout.write("true");');
+  await on.session_start({});
+  assert.equal(tools.length, 8);
+  fakeRtok(null);
+  const out = await tools[0].execute("id1", { path: "a.rs" });
+  assert.match(out.content[0].text, /ketch install listepo\/rtok/);
 });

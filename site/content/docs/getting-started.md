@@ -52,7 +52,7 @@ stripped or half-installed rtok never blocks the host agent.
 ```bash
 rtok agents install claude --dry-run   # print the eight hook entries it would write
 rtok agents install claude             # installs hooks / MCP / proxy, with backups
-rtok agents remove claude      # takes hooks, MCP and the proxy variable back out
+rtok agents uninstall claude      # takes hooks, MCP and the proxy variable back out
 ```
 
 This writes the hook entries, the MCP server registration, and the proxy environment into

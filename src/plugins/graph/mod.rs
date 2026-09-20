@@ -10,7 +10,7 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,6 +25,8 @@ use rtok_plugin_sdk::{
 
 pub mod index;
 pub mod lsp;
+pub mod status;
+pub mod walk;
 pub mod watch;
 
 #[cfg(test)]
@@ -80,8 +82,8 @@ impl Plugin for Graph {
             },
             ToolDef {
                 name: "impact",
-                description: "What breaks if a symbol changes: callers, their callers, up to depth. Optional path substring keeps one subtree.",
-                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}}}),
+                description: "What breaks if a symbol changes: callers up to depth. Optional to: chains reaching it. Empty name + path lists affected tests.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"to":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}}}),
             },
             ToolDef {
                 name: "outline",
@@ -152,6 +154,49 @@ pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
     }
 }
 
+/// Pending re-index paths: hook marks, stat drift and the watcher queue (T68.3).
+pub(crate) fn pending_paths(cx: &Ctx, root: &Path) -> Result<Vec<String>> {
+    let key = index::canon(root);
+    let mut set: HashSet<String> = cx.symbol_pending(&key, root)?.into_iter().collect();
+    for p in cx.graph_watch_pending() {
+        set.insert(p);
+    }
+    let mut out: Vec<String> = set.into_iter().collect();
+    out.sort();
+    Ok(out)
+}
+
+fn stale_banner(cx: &Ctx, root: &Path) -> Result<String> {
+    let cfg = cx.plugin_config::<crate::config::Graph>("graph");
+    let pending = pending_paths(cx, root)?;
+    if pending.is_empty() {
+        return Ok(String::new());
+    }
+    let watch_pending = !cx.graph_watch_pending().is_empty() && cfg.watch != "off";
+    if !cfg.auto_index || watch_pending {
+        let show = pending.len().min(5);
+        let listed = pending[..show].join(", ");
+        let tail = if pending.len() > 5 { ", …" } else { "" };
+        return Ok(format!(
+            "stale: {} files pending ({}{})
+",
+            pending.len(),
+            listed,
+            tail
+        ));
+    }
+    Ok(String::new())
+}
+
+pub(crate) fn with_stale(cx: &Ctx, root: &Path, text: String) -> Result<String> {
+    let banner = stale_banner(cx, root)?;
+    if banner.is_empty() {
+        Ok(text)
+    } else {
+        Ok(format!("{banner}{text}"))
+    }
+}
+
 /// MCP dispatch for the four tools (`mcp.rs` `invoke`). An `Err` becomes an `isError` result.
 pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -186,6 +231,7 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
                     name,
                     args["depth"].as_u64().unwrap_or(2) as u32,
                     &filter,
+                    args["to"].as_str(),
                 )
             }
         }
@@ -214,16 +260,76 @@ pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Re
         .filter(|(path, kind, ..)| filter.path_ok(path) && filter.kind_ok(kind))
         .collect();
     if rows.is_empty() {
-        return Ok(format!("no definition of {name}{}", filter.scope_note()));
+        return with_stale(
+            cx,
+            root,
+            format!("no definition of {name}{}", filter.scope_note()),
+        );
     }
-    cap(cx, defs_text(cx, root, &rows))
+    let key = index::canon(root);
+    let callees = cx.symbol_callees(&key, name)?;
+    with_stale(cx, root, cap(cx, defs_text(cx, root, &rows, &callees))?)
 }
 
 /// `{path}:{line} {kind}` per definition, then that definition's source, at most
 /// `plugins.graph.body_lines` lines each (T8.6). Shared by `symbol` and `explore`
 /// (T68.1) so both print a definition the same way; reads each source file once.
-fn defs_text(cx: &Ctx, root: &Path, rows: &[(String, String, i32, i32)]) -> String {
+fn calls_line(names: &[String], cap: usize) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+    let show = names.len().min(cap);
+    let listed = names[..show].join(", ");
+    let extra = names.len() - show;
+    if extra > 0 {
+        format!("calls: {listed} (+{extra})\n")
+    } else {
+        format!("calls: {listed}\n")
+    }
+}
+
+fn ambiguous_banner(n: usize) -> String {
+    format!("{n} names ambiguous (?): narrow with path or kind, or backend = \"lsp\"\n")
+}
+
+fn mark_ambiguous_lines(out: &str) -> String {
+    if out.is_empty() {
+        return String::new();
+    }
+    out.lines()
+        .map(|line| format!("{line} ?"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+fn annotate_ambiguous(cx: &Ctx, root: &Path, name: &str, out: String) -> Result<String> {
+    if cx.symbol_defs(&index::canon(root), name)?.len() > 1 {
+        Ok(format!(
+            "{}{}",
+            ambiguous_banner(1),
+            mark_ambiguous_lines(&out)
+        ))
+    } else {
+        Ok(out)
+    }
+}
+
+fn defs_text(
+    cx: &Ctx,
+    root: &Path,
+    rows: &[(String, String, i32, i32)],
+    callees: &[(String, i32, String, i32)],
+) -> String {
     let budget = cx.plugin_config::<crate::config::Graph>("graph").body_lines as usize;
+    let cap = budget / 2;
+    let mut by_def: HashMap<(String, i32), Vec<String>> = HashMap::new();
+    for (path, line, callee, _) in callees {
+        by_def
+            .entry((path.clone(), *line))
+            .or_default()
+            .push(callee.clone());
+    }
     let mut out = String::new();
     let mut cached: Option<(String, String)> = None;
     for (path, kind, line, end_line) in rows {
@@ -241,6 +347,9 @@ fn defs_text(cx: &Ctx, root: &Path, rows: &[(String, String, i32, i32)]) -> Stri
             *end_line,
             budget,
         ));
+        if let Some(names) = by_def.get(&(path.clone(), *line)) {
+            out.push_str(&calls_line(names, cap));
+        }
     }
     out
 }
@@ -281,7 +390,16 @@ pub fn callers_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> R
         .filter(|(path, ..)| filter.path_ok(path))
         .collect();
     if rows.is_empty() {
-        return Ok(format!("no references to {name}{}", filter.scope_note()));
+        return with_stale(
+            cx,
+            root,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("no references to {name}{}", filter.scope_note()),
+            )?,
+        );
     }
     let mut out = String::new();
     for (path, scope, n, line) in rows {
@@ -292,14 +410,14 @@ pub fn callers_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> R
         };
         out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
     }
-    cap(cx, out)
+    with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, out)?)?)
 }
 
 /// `impact(name, depth)`: breadth-first walk of the `scope` edges T8.5 stored — who calls
 /// `name`, who calls them, and so on (T8.7). One `depth  path  scope` line per definition
 /// reached. A definition is expanded once, so a call cycle terminates.
-pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32) -> Result<String> {
-    impact_filtered(cx, root, name, depth, &Filter::none())
+pub fn impact(cx: &Ctx, root: &Path, name: &str, depth: u32, to: Option<&str>) -> Result<String> {
+    impact_filtered(cx, root, name, depth, &Filter::none(), to)
 }
 
 /// Filtered `impact`: a non-empty `filter.path` keeps the reported lines in one
@@ -311,20 +429,67 @@ pub fn impact_filtered(
     name: &str,
     depth: u32,
     filter: &Filter,
+    to: Option<&str>,
 ) -> Result<String> {
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
-        return lsp::impact(cx, root, name, depth, filter);
+        return with_stale(cx, root, lsp::impact(cx, root, name, depth, filter, to)?);
     }
     index_for(cx, root)?;
+    if let Some(target) = to.filter(|s| !s.is_empty()) {
+        let chains = cx
+            .symbol_paths(&index::canon(root), target, name, depth)?
+            .into_iter()
+            .map(|c| reverse_call_chain(&c))
+            .collect::<Vec<_>>();
+        if chains.is_empty() {
+            return with_stale(
+                cx,
+                root,
+                format!("no path from {name} to {target} within depth {depth}"),
+            );
+        }
+        let body = chains.join(
+            "
+",
+        ) + "
+";
+        return with_stale(
+            cx,
+            root,
+            cap(cx, annotate_ambiguous(cx, root, name, body)?)?,
+        );
+    }
     let rows: Vec<_> = cx
         .symbol_impact(&index::canon(root), name, depth)?
         .into_iter()
         .filter(|(_, path, _)| filter.path_ok(path))
         .collect();
     if rows.is_empty() {
-        return Ok(format!("nothing reaches {name}{}", filter.scope_note()));
+        return with_stale(
+            cx,
+            root,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("nothing reaches {name}{}", filter.scope_note()),
+            )?,
+        );
     }
-    cap(cx, impact_lines_text(&rows))
+    with_stale(
+        cx,
+        root,
+        cap(
+            cx,
+            annotate_ambiguous(cx, root, name, impact_lines_text(&rows))?,
+        )?,
+    )
+}
+
+/// `symbol_paths` walks callers; `impact --to` prints callee chains, so reverse the arrows.
+fn reverse_call_chain(chain: &str) -> String {
+    let parts: Vec<&str> = chain.split(" → ").collect();
+    parts.into_iter().rev().collect::<Vec<_>>().join(" → ")
 }
 
 /// One `depth  path  scope` line per row, `(file)` when the row is file-level.
@@ -676,16 +841,14 @@ fn symbol_src_reads_add(_n: usize) {}
 
 /// `outline(path)`: the `read` plugin's `map` mode, capped like the other two.
 pub fn outline(cx: &Ctx, path: &str) -> Result<String> {
+    let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     if cx.plugin_config::<crate::config::Graph>("graph").backend == "lsp" {
-        let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        // The same root guard as `read`: the LSP branch used to open any path it was given
-        // (`/etc/passwd`, `../../x`) and hand its symbols back to the MCP caller.
         let allow = &cx.plugin_config::<crate::config::Read>("read").allow_paths;
         let abs = crate::plugins::read::resolve(&root, Path::new(path), allow)?;
-        return lsp::outline(cx, &root, &abs.to_string_lossy());
+        return with_stale(cx, &root, lsp::outline(cx, &root, &abs.to_string_lossy())?);
     }
     let text = crate::plugins::read::read(cx, path, "map", None)?;
-    cap(cx, text)
+    with_stale(cx, &root, cap(cx, text)?)
 }
 
 // ---------- T68.1: explore ----------
@@ -721,6 +884,7 @@ pub(crate) trait ExploreParts {
     fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>>;
     /// What `impact(name, 1)` would print, and the row count behind it.
     fn impact1(&mut self, name: &str) -> Result<(String, usize)>;
+    fn def_count(&mut self, name: &str) -> Result<usize>;
 }
 
 /// One assembled `explore` answer plus the bytes the separate calls it replaces
@@ -747,7 +911,15 @@ pub(crate) fn assemble_explore(
             0,
         ));
     }
+    let mut counts = HashMap::new();
+    for name in &names {
+        counts.insert(name.clone(), parts.def_count(name)?);
+    }
+    let ambiguous = counts.values().filter(|c| **c > 1).count();
     let mut out = String::new();
+    if ambiguous > 0 {
+        out.push_str(&ambiguous_banner(ambiguous));
+    }
     let mut before = 0u64;
     let mut impact = Vec::new();
     for name in &names {
@@ -756,7 +928,8 @@ pub(crate) fn assemble_explore(
         out.push_str(&format!("= {name}\n{defs}"));
         let (text, n) = parts.impact1(name)?;
         before += text.len() as u64;
-        impact.push(format!("{name} ← {n}"));
+        let mark = if counts[name] > 1 { " ?" } else { "" };
+        impact.push(format!("{name} ← {n}{mark}"));
     }
     out.push_str("paths:\n");
     let mut any = false;
@@ -800,7 +973,7 @@ pub fn explore(cx: &Ctx, root: &Path, query: &str, filter: &Filter) -> Result<St
         key: index::canon(root),
     };
     let (text, before) = assemble_explore(query, filter, &mut parts)?;
-    cap_kind(cx, text, before, "explore")
+    with_stale(cx, root, cap_kind(cx, text, before, "explore")?)
 }
 
 /// The tree-sitter-tags backend's pieces: every query is answered from the indexed
@@ -833,7 +1006,12 @@ impl ExploreParts for TagsExplore<'_> {
                 self.filter.scope_note()
             ));
         }
-        Ok(defs_text(self.cx, self.root, &rows))
+        let callees = self.cx.symbol_callees(&self.key, name)?;
+        Ok(defs_text(self.cx, self.root, &rows, &callees))
+    }
+
+    fn def_count(&mut self, name: &str) -> Result<usize> {
+        Ok(self.cx.symbol_defs(&self.key, name)?.len())
     }
 
     fn paths(&mut self, a: &str, b: &str) -> Result<Vec<String>> {
@@ -1089,22 +1267,55 @@ mod tests {
                 .find(|l| l.ends_with(&format!("  {n}")))
                 .map(|l| l[..1].to_string())
         };
-        let two = impact(&Ctx::new(&cx), &dir, "c", 2).unwrap();
+        let two = impact(&Ctx::new(&cx), &dir, "c", 2, None).unwrap();
         assert_eq!(at(&two, "b").as_deref(), Some("1"), "{two}");
         assert_eq!(at(&two, "a").as_deref(), Some("2"), "{two}");
-        let one = impact(&Ctx::new(&cx), &dir, "c", 1).unwrap();
+        let one = impact(&Ctx::new(&cx), &dir, "c", 1, None).unwrap();
         assert_eq!(at(&one, "b").as_deref(), Some("1"), "{one}");
         assert_eq!(at(&one, "a"), None, "depth 1 must stop at the callers");
         // x calls y, y calls x, both reach c: the walk visits each once and returns.
-        let deep = impact(&Ctx::new(&cx), &dir, "c", 4).unwrap();
+        let deep = impact(&Ctx::new(&cx), &dir, "c", 4, None).unwrap();
         assert_eq!(
             deep.lines().filter(|l| l.ends_with("  x")).count(),
             1,
             "{deep}"
         );
         assert_eq!(
-            impact(&Ctx::new(&cx), &dir, "no_such_fn", 2).unwrap(),
+            impact(&Ctx::new(&cx), &dir, "no_such_fn", 2, None).unwrap(),
             "nothing reaches no_such_fn"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn symbol_lists_callees_on_impact_fixture() {
+        let (cx, dir) = cx("callees");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
+        let ctx = Ctx::new(&cx);
+        assert!(symbol(&ctx, &dir, "a").unwrap().contains("calls: b"));
+        assert!(symbol(&ctx, &dir, "b").unwrap().contains("calls: c"));
+        assert!(!symbol(&ctx, &dir, "c").unwrap().contains("calls:"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn callers_and_impact_mark_ambiguous_names() {
+        let (cx, dir) = cx("ambiguous");
+        fs::write(dir.join("a.rs"), "fn new() {}\nfn alpha() { new(); }\n").unwrap();
+        fs::write(dir.join("b.rs"), "fn new() {}\n").unwrap();
+        let ctx = Ctx::new(&cx);
+        assert!(!callers(&ctx, &dir, "alpha").unwrap().contains('?'));
+        let new = callers(&ctx, &dir, "new").unwrap();
+        assert!(new.starts_with("1 names ambiguous"));
+        assert!(new.contains(" ?\n"));
+        assert!(
+            impact(&ctx, &dir, "new", 1, None)
+                .unwrap()
+                .starts_with("1 names ambiguous")
         );
         let _ = fs::remove_dir_all(dir);
     }
@@ -1240,6 +1451,7 @@ mod tests {
                 path: "other".into(),
                 kind: String::new(),
             },
+            None,
         )
         .unwrap();
         assert_eq!(out, "1  other.rs  d\n", "{out}");
@@ -1253,6 +1465,7 @@ mod tests {
                     path: "zzz".into(),
                     kind: String::new(),
                 },
+                None,
             )
             .unwrap(),
             "nothing reaches c in zzz"
@@ -1272,6 +1485,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         fs::write(dir.join("a.rs"), "// bump\nfn alpha() {}\n").unwrap();
         let stale = symbol(&Ctx::new(&cx), &dir, "alpha").unwrap();
+        assert!(
+            stale.starts_with("stale:") && stale.contains("a.rs"),
+            "pending edit must carry a staleness banner: {stale}"
+        );
         assert!(
             stale.contains("a.rs:1"),
             "must still report the old line: {stale}"
@@ -1405,6 +1622,9 @@ mod tests {
         fn impact1(&mut self, name: &str) -> Result<(String, usize)> {
             Ok((format!("nothing reaches {name}"), 0))
         }
+        fn def_count(&mut self, _name: &str) -> Result<usize> {
+            Ok(1)
+        }
     }
 
     #[test]
@@ -1476,7 +1696,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             out,
-            "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\n\
+            "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\ncalls: c\n\
              = c\nchain.rs:7 function\nfn c() {}\n\
              paths:\nc → b\n\
              impact:\nb ← 1\nc ← 2\n"
@@ -1523,6 +1743,44 @@ mod tests {
         )
         .unwrap();
         assert!(out.contains("b.rs:1") && !out.contains("a.rs:1"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T68.4: `impact --to` prints call chains between two symbols on the fixture.
+    #[test]
+    fn impact_to_filters_call_chains() {
+        let (cx, dir) = cx("impact-to");
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {
+    b();
+}
+fn b() {
+    c();
+}
+fn c() {}
+",
+        )
+        .unwrap();
+        let ctx = Ctx::new(&cx);
+        assert_eq!(
+            impact(&ctx, &dir, "a", 3, Some("c")).unwrap(),
+            "a → b → c
+"
+        );
+        assert_eq!(
+            impact(&ctx, &dir, "a", 3, Some("b")).unwrap(),
+            "a → b
+"
+        );
+        assert_eq!(
+            impact(&ctx, &dir, "b", 3, Some("a")).unwrap(),
+            "no path from b to a within depth 3"
+        );
+        assert_eq!(
+            impact(&ctx, &dir, "a", 1, Some("c")).unwrap(),
+            "no path from a to c within depth 1"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 

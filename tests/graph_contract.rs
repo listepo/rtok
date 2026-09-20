@@ -74,7 +74,7 @@ fn explore_two_symbol_question_byte_exact() {
             "explore",
             serde_json::json!({"query": "how do b and c interact"})
         ),
-        "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\n\
+        "= b\nchain.rs:4 function\nfn b() {\n    c();\n}\ncalls: c\n\
          = c\nchain.rs:7 function\nfn c() {}\n\
          paths:\nc → b\n\
          impact:\nb ← 1\nc ← 2\n"
@@ -109,7 +109,7 @@ fn four_tools_byte_exact() {
     let name = |n: &str| serde_json::json!({"name": n});
     assert_eq!(
         call(&home, &a, "symbol", name("b")),
-        "chain.rs:4 function\nfn b() {\n    c();\n}\n"
+        "chain.rs:4 function\nfn b() {\n    c();\n}\ncalls: c\n"
     );
     assert_eq!(
         call(&home, &a, "callers", name("c")),
@@ -212,7 +212,10 @@ fn second_repo_leaves_the_first_intact() {
     std::fs::write(b.join("chain.rs"), "fn alpha() {}\n").unwrap();
     let name = serde_json::json!({"name": "a"});
     let first = call(&home, &a, "symbol", name.clone());
-    assert_eq!(first, "chain.rs:1 function\nfn a() {\n    b();\n}\n");
+    assert_eq!(
+        first,
+        "chain.rs:1 function\nfn a() {\n    b();\n}\ncalls: b\n"
+    );
     assert_eq!(
         call(&home, &b, "symbol", name.clone()),
         "no definition of a"
@@ -266,7 +269,7 @@ fn filters_narrow_to_one_subtree() {
             "symbol",
             serde_json::json!({"name": "b", "path": "chain"})
         ),
-        "chain.rs:4 function\nfn b() {\n    c();\n}\n"
+        "chain.rs:4 function\nfn b() {\n    c();\n}\ncalls: c\n"
     );
     assert_eq!(
         call(
@@ -275,7 +278,7 @@ fn filters_narrow_to_one_subtree() {
             "symbol",
             serde_json::json!({"name": "b", "kind": "function"})
         ),
-        "chain.rs:4 function\nfn b() {\n    c();\n}\n"
+        "chain.rs:4 function\nfn b() {\n    c();\n}\ncalls: c\n"
     );
     assert_eq!(
         call(
