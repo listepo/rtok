@@ -65,8 +65,7 @@ pub(crate) use crate::agents::cmd_stem;
 
 /// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
 const FORMATTER_STEMS: &[&str] = &[
-    "cargo", "git", "pytest", "jest", "vitest", "ls", "find", "tree", "go", "docker", "kubectl",
-    "ps",
+    "cargo", "git", "pytest", "jest", "vitest", "tree", "go", "docker", "kubectl", "ps",
 ];
 
 /// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
@@ -107,8 +106,7 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         )),
         ("jest", _) | ("vitest", _) => Some(keep(output, &["FAIL", "PASS", "Tests:", "● "])),
         ("go", "test") => Some(keep(output, &["FAIL", "PASS", "ok  ", "--- FAIL"])),
-        ("ls", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
-        ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
         ("docker", "ps") => docker_ps(output),
         ("kubectl", "get") => kubectl_get(output),
         ("ps", "aux") => ps_aux(output),
@@ -575,5 +573,34 @@ mod tests {
         );
         assert_ne!(kind, "formatter", "{got}");
         assert!(got.contains("invalid option"), "{got}");
+    }
+
+    #[test]
+    fn group_goldens_beat_the_same_rule_without_group() {
+        use super::rules::Group;
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for file in [
+            "ls.in",
+            "find.in",
+            "rg.in",
+            "tsc_dup.in",
+            "eslint_dup.in",
+            "cargo_check.in",
+            "dotnet_dup.in",
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (argv, exit, output) = parse_in(&raw);
+            let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
+            let mut off = settings.pick(bin(&family_argv(&argv)));
+            off.group = Group::Off;
+            let ungrouped = rules::apply(&settings, &output, exit, &off, "deadbeef");
+            assert!(
+                got.len() < ungrouped.len(),
+                "{file}: grouped {} B vs ungrouped {} B\n{got}",
+                got.len(),
+                ungrouped.len()
+            );
+        }
     }
 }

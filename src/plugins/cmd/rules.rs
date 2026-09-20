@@ -998,6 +998,11 @@ pub fn apply(
     if let Some(compacted) = compact_json(output, rule.json_items, rule.json_string) {
         lines = compacted.lines().map(str::to_string).collect();
     }
+    match rule.group {
+        Group::Dir => lines = group_dir(lines),
+        Group::Diag => lines = group_diag(lines),
+        Group::Off => {}
+    }
     let max = rule.max_lines.max(1) as usize;
     if lines.len() <= max {
         return lines.join("\n");
