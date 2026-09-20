@@ -1670,17 +1670,24 @@ impl Store {
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
         let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
-        let paths = conn
-            .transaction::<_, diesel::result::Error, _>(|c| {
-                #[derive(QueryableByName)]
-                struct ArchPath {
-                    #[diesel(sql_type = Text)]
-                    id: String,
-                    #[diesel(sql_type = Text)]
-                    path: String,
-                }
-                let doomed: Vec<ArchPath> = sql_query(format!(
-                    "SELECT DISTINCT a.id, a.path FROM archive a
+        // T75: every surface opens this one file, and a purge starting while another
+        // process held the write lock came back "database is locked" — the deferred
+        // read-then-write transaction could lose instantly (a snapshot upgrade skips
+        // the busy handler) or after the steady 1 s, and `mcp`/`proxy` died on it at
+        // session start. Same contract as `migrate`: take the writer lock up front
+        // under the maintenance window, and restore the hook's 1 s bound after,
+        // whatever happened inside.
+        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        let purged = conn.exclusive_transaction::<_, anyhow::Error, _>(|c| {
+            #[derive(QueryableByName)]
+            struct ArchPath {
+                #[diesel(sql_type = Text)]
+                id: String,
+                #[diesel(sql_type = Text)]
+                path: String,
+            }
+            let doomed: Vec<ArchPath> = sql_query(format!(
+                "SELECT DISTINCT a.id, a.path FROM archive a
                      WHERE a.id IN (
                        SELECT request_archive FROM call_io
                        WHERE call_id IN {old} AND request_archive IS NOT NULL
@@ -1699,42 +1706,43 @@ impl Store {
                      AND NOT EXISTS (
                        SELECT 1 FROM read_cache r WHERE r.archive_id = a.id
                      )"
-                ))
-                .bind::<BigInt, _>(cutoff)
-                .load(c)?;
-                for sql in [
-                    format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
-                    format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
-                    format!("DELETE FROM call_io WHERE call_id IN {old}"),
-                    format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
-                    format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
-                    format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
-                ] {
-                    sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
-                }
-                for arch in &doomed {
-                    sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
-                        .bind::<Text, _>(&arch.id)
-                        .execute(c)?;
-                    sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
-                        .bind::<Text, _>(&arch.id)
-                        .execute(c)?;
-                    sql_query("DELETE FROM archive WHERE id = ?1")
-                        .bind::<Text, _>(&arch.id)
-                        .execute(c)?;
-                }
-                let n = sql_query("DELETE FROM calls WHERE ts < ?1")
-                    .bind::<BigInt, _>(cutoff)
+            ))
+            .bind::<BigInt, _>(cutoff)
+            .load(c)?;
+            for sql in [
+                format!("DELETE FROM logs WHERE ts < ?1 OR call_id IN {old}"),
+                format!("DELETE FROM tokens WHERE ts < ?1 OR call_id IN {old}"),
+                format!("DELETE FROM call_io WHERE call_id IN {old}"),
+                format!("UPDATE usage SET call_id = NULL WHERE call_id IN {old}"),
+                format!("UPDATE measurements SET call_id = NULL WHERE call_id IN {old}"),
+                format!("UPDATE calls SET parent_id = NULL WHERE parent_id IN {old}"),
+            ] {
+                sql_query(sql).bind::<BigInt, _>(cutoff).execute(c)?;
+            }
+            for arch in &doomed {
+                sql_query("DELETE FROM archive_decisions WHERE archive_id = ?1")
+                    .bind::<Text, _>(&arch.id)
                     .execute(c)?;
-                Ok((
-                    n,
-                    doomed
-                        .into_iter()
-                        .map(|a| PathBuf::from(a.path))
-                        .collect::<Vec<_>>(),
-                ))
-            })
-            .map_err(anyhow::Error::from)?;
+                sql_query("UPDATE read_cache SET archive_id = NULL WHERE archive_id = ?1")
+                    .bind::<Text, _>(&arch.id)
+                    .execute(c)?;
+                sql_query("DELETE FROM archive WHERE id = ?1")
+                    .bind::<Text, _>(&arch.id)
+                    .execute(c)?;
+            }
+            let n = sql_query("DELETE FROM calls WHERE ts < ?1")
+                .bind::<BigInt, _>(cutoff)
+                .execute(c)?;
+            Ok((
+                n,
+                doomed
+                    .into_iter()
+                    .map(|a| PathBuf::from(a.path))
+                    .collect::<Vec<_>>(),
+            ))
+        });
+        conn.batch_execute("PRAGMA busy_timeout = 1000;")?;
+        let paths = purged?;
         for path in paths.1 {
             let _ = std::fs::remove_file(path);
         }
@@ -2096,6 +2104,47 @@ mod tests {
         });
         let _ = std::fs::remove_dir_all(&dir);
         assert!(errs.is_empty(), "{errs:?}");
+    }
+
+    /// T75: the startup purge (`mcp`/`proxy` session start) must queue behind another
+    /// process's write transaction instead of dying on "database is locked" — the
+    /// deferred read-then-write transaction could lose instantly (SQLITE_BUSY_SNAPSHOT
+    /// skips the busy handler) or after the steady 1 s.
+    #[test]
+    fn purge_waits_out_a_concurrent_writer() {
+        let dir = std::env::temp_dir().join(format!("rtok-purge-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("rtok.db");
+        let store = Store::open(&db).unwrap();
+        store.upsert_session("s", None, None, None, None).unwrap();
+        let call = store
+            .insert_call("s", "mcp", "mcp_call", None, None, None, None, None)
+            .unwrap();
+        store.set_call_ts(call, 1).unwrap(); // older than any cutoff
+        drop(store);
+        // A second connection holds the WAL writer lock for 1.2 s — past the steady
+        // 1 s busy timeout the purge used to die on.
+        let (held, held_ack) = std::sync::mpsc::channel();
+        let url = db.to_str().unwrap().to_string();
+        let holder = std::thread::spawn(move || {
+            let mut conn = SqliteConnection::establish(&url).unwrap();
+            conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
+                .unwrap();
+            conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+            held.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+            conn.batch_execute("COMMIT;").unwrap();
+        });
+        held_ack.recv().unwrap();
+        let store = Store::open(&db).unwrap();
+        let purged = store
+            .run_retention(30)
+            .expect("purge queues behind the writer");
+        assert_eq!(purged, 1, "the old call is gone once the lock is released");
+        assert_eq!(store.count_calls().unwrap(), 0);
+        holder.join().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T69.1: a `rtok.db` of the previous schema (0001–0014, one note) migrates in place —

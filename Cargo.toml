@@ -141,6 +141,7 @@ httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
 insta = "1" # snapshot tests for stable text output
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
 trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
+diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # tests hold a competing writer on the store file (same crate/features as [dependencies], T75)
 
 # T17.1. No profile may set `panic = "abort"`: `hooks::dispatch` fails open through five
 # `catch_unwind` sites, and aborting would break the rule that a hook exits 0 on error.

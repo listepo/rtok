@@ -1,5 +1,17 @@
 # rtok — completed tasks
 
+## T75 — `rtok mcp` / `rtok proxy` died at session start on a contended store
+
+Creator 2026-09-20. Both surfaces run the retention purge at session start (`run_retention`, default `retain_calls_days = 30`), and the purge's deferred read-then-write transaction came back "database is locked" when another rtok process held the store's write lock — instantly (a deferred snapshot upgrade returns SQLITE_BUSY without running the busy handler) or after the steady 1 s. The `?` took the whole process down: an MCP client spawning `rtok mcp` saw the server exit before `initialize`, logged `Error: database is locked` / "Server disconnected", and its ~1 s-later retry succeeded once the winner committed. Observed 2026-09-19/20 in the client log (three incidents, deaths at 22–171 ms — too fast for the 1 s busy wait); the binary was v0.3.1, which already had every earlier mitigation (open retry loop, `busy_timeout = 1000`, the 30 s migration window), so the purge was the remaining unguarded startup write.
+
+Done when: the purge takes the writer lock up front under the same maintenance contract as `migrate` (BEGIN EXCLUSIVE inside `PRAGMA busy_timeout = 30000`, restored to the hook's 1 s bound afterwards whatever happened inside), a final purge failure no longer kills `mcp`/`proxy` (one stderr line; WAL reads keep every tool serving; the next start retries), and regression tests hold a competing `BEGIN IMMEDIATE` writer on the store file at both the store and the binary level.
+
+**Result (2026-09-20).** `purge_calls_older_than` runs `exclusive_transaction` under the 30 s window (`src/store/mod.rs`); `mcp::run` and `proxy::serve` log-and-continue on a retention error. Red→green: `store::tests::purge_waits_out_a_concurrent_writer` failed pre-fix in 39 ms with `database is locked` and passes post-fix (waits out a 1.2 s writer, purges the seeded old call); `tests/mcp.rs::mcp_serves_while_another_process_holds_the_store_writer` failed pre-fix with the binary's own `Error: database is locked` under a 2.5 s writer and passes post-fix — initialize + tools/list answered, exit 0. `diesel` added to dev-dependencies (same crate/features as the main dependency) so the e2e test can hold the competing writer. Also refreshed the two trycmd snapshots the v0.3.1 release commit (`f07088f`) left at `0.3.0` — `just check` was deterministically red on `main` before any of this task's edits.
+
+**Check:** both regression tests above red pre-fix / green post-fix; full `just check` green in the isolated worktree `_worktrees/rtok-mcp-db-locked` (branch `fix/mcp-database-locked`, off `2f01e57`).
+
+---
+
 ## T57.1 — Flag-aware `guard` read-only classes
 
 From I-38 (promoted 2026-09-17). `guard::read_only` decided which Bash calls got a dedup key from a fixed stem list (`ls cat head tail grep rg find tree wc` plus `git status|log|diff|show|branch`). It ignored flags, redirections and pipes, so it keyed writers (`find -delete`, `cat a > b`, `ls | xargs rm`, `tail -f`) and never keyed repeats of `sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`.
