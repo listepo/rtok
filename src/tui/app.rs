@@ -23,8 +23,13 @@ pub(crate) const KEYS: &[(&str, &str, &str)] = &[
     ("plugins", "Space/Enter", "toggle plugin"),
     ("calls", "↑/↓", "move selection"),
     ("calls", "Enter/z", "detail pane"),
+    ("calls", "e", "expand archive"),
+    ("calls", "/", "filter expand"),
     ("sessions", "↑/↓", "move selection"),
+    ("sessions", "Enter", "detail pane"),
     ("sessions", "l", "live-only filter"),
+    ("skills", "↑/↓", "move selection"),
+    ("skills", "n", "never-invoked only"),
 ];
 
 /// The key rows for one page: globals first, then the page's own.
@@ -56,6 +61,7 @@ pub struct App {
     /// The Sessions page's own state (T60.10): which row is selected and whether the
     /// live-only filter is on.
     sessions: SessionsState,
+    skills: SkillsState,
     /// Whether the `?` help overlay is up (T60.8).
     help: bool,
 }
@@ -66,15 +72,34 @@ pub struct App {
 struct CallsState {
     selected: usize,
     detail: bool,
+    /// Open archive pane (T60.4), if `e` fetched a payload for this row.
+    expand: Option<ExpandPane>,
 }
 
-/// Selection and filter state of the Sessions page (T60.10). The rows live in the
-/// snapshot (D23); this remembers the cursor and whether `l` narrowed the page to
-/// sessions that are still running.
+/// Fetched archive body for the Calls expand pane. `text` is already `[expand]
+/// max_lines`-capped; `/` filters it through `filter_lines` without re-fetching.
+struct ExpandPane {
+    id: String,
+    text: String,
+    filter: String,
+    filtering: bool,
+    scroll: u16,
+}
+
+/// Selection and filter state of the Sessions page (T60.10 / T60.3). The rows live
+/// in the snapshot (D23); this remembers the cursor, whether `l` narrowed the page
+/// to sessions that are still running, and whether Enter opened the detail pane.
 #[derive(Default)]
 struct SessionsState {
     selected: usize,
     live_only: bool,
+    detail: bool,
+}
+
+#[derive(Default)]
+struct SkillsState {
+    selected: usize,
+    never_only: bool,
 }
 
 impl App {
@@ -96,6 +121,7 @@ impl App {
             plugin_status: String::new(),
             calls: CallsState::default(),
             sessions: SessionsState::default(),
+            skills: SkillsState::default(),
             help: false,
         }
     }
@@ -146,6 +172,10 @@ impl App {
             .sessions
             .selected
             .min(self.visible_sessions(&snapshot).saturating_sub(1));
+        self.skills.selected = self
+            .skills
+            .selected
+            .min(self.visible_skills(&snapshot).saturating_sub(1));
         self.snapshot = snapshot;
         self.updated = crate::log::now();
     }
@@ -183,6 +213,27 @@ impl App {
         self.calls.detail
     }
 
+    /// Open expand pane (T60.4): archive id, rendered body (after `/` filter),
+    /// whether `/` is capturing keys, the filter string, and vertical scroll.
+    pub fn calls_expand(&self) -> Option<(&str, String, bool, &str, u16)> {
+        let pane = self.calls.expand.as_ref()?;
+        let text = if pane.filter.is_empty() {
+            pane.text.clone()
+        } else {
+            crate::expand::filter_lines(&pane.text, None, Some(&pane.filter), 0)
+                .ok()
+                .map(|v| v.join("\n"))
+                .unwrap_or_else(|| pane.text.clone())
+        };
+        Some((
+            pane.id.as_str(),
+            text,
+            pane.filtering,
+            pane.filter.as_str(),
+            pane.scroll,
+        ))
+    }
+
     /// The Sessions page's selected row (T60.10), clamped to the rows it shows —
     /// the filtered list when `l` narrowed it, the snapshot's list otherwise.
     pub fn sessions_selected(&self) -> usize {
@@ -196,13 +247,67 @@ impl App {
         self.sessions.live_only
     }
 
+    /// Whether the Sessions page's detail pane is open (T60.3).
+    pub fn sessions_detail(&self) -> bool {
+        self.sessions.detail
+    }
+
     /// Whether the `?` help overlay is up (T60.8).
     pub fn help_open(&self) -> bool {
         self.help
     }
 
-    /// The Sessions page's keys (T60.10): `Up`/`Down` walk the visible rows, `l`
-    /// toggles the live-only filter. Returns `true` when the key was consumed.
+    fn visible_skills(&self, snapshot: &Snapshot) -> usize {
+        snapshot
+            .skills
+            .rows
+            .iter()
+            .filter(|r| !self.skills.never_only || r.never)
+            .count()
+    }
+
+    pub fn skills_selected(&self) -> usize {
+        self.skills
+            .selected
+            .min(self.visible_skills(&self.snapshot).saturating_sub(1))
+    }
+
+    pub fn skills_never_only(&self) -> bool {
+        self.skills.never_only
+    }
+
+    fn skills_key(&mut self, code: KeyCode) -> bool {
+        let last = self.visible_skills(&self.snapshot).saturating_sub(1);
+        match code {
+            KeyCode::Up => {
+                self.skills.selected = self.skills.selected.saturating_sub(1);
+                true
+            }
+            KeyCode::Down => {
+                self.skills.selected = (self.skills.selected + 1).min(last);
+                true
+            }
+            KeyCode::Char('n') => {
+                self.skills.never_only = !self.skills.never_only;
+                self.skills.selected = self
+                    .skills
+                    .selected
+                    .min(self.visible_skills(&self.snapshot).saturating_sub(1));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::tui) fn set_skills(&mut self, skills: model::SkillsPage) {
+        self.snapshot.skills = skills;
+        self.skills.selected = 0;
+    }
+
+    /// The Sessions page's keys (T60.10 / T60.3): `Up`/`Down` walk the visible rows,
+    /// `Enter` expands the selected one, `l` toggles the live-only filter. Returns
+    /// `true` when the key was consumed.
     fn sessions_key(&mut self, code: KeyCode) -> bool {
         let last = self.visible_sessions(&self.snapshot).saturating_sub(1);
         match code {
@@ -212,6 +317,10 @@ impl App {
             }
             KeyCode::Down => {
                 self.sessions.selected = (self.sessions.selected + 1).min(last);
+                true
+            }
+            KeyCode::Enter if self.visible_sessions(&self.snapshot) > 0 => {
+                self.sessions.detail = !self.sessions.detail;
                 true
             }
             KeyCode::Char('l') => {
@@ -230,6 +339,50 @@ impl App {
     /// selected one. Returns `true` when the key was consumed; the shell's keys
     /// (`q`, arrows, digits) are never reached here.
     fn calls_key(&mut self, code: KeyCode) -> bool {
+        let filtering = self
+            .calls
+            .expand
+            .as_ref()
+            .is_some_and(|pane| pane.filtering);
+        if filtering {
+            let pane = self.calls.expand.as_mut().expect("filtering implies pane");
+            match code {
+                KeyCode::Esc | KeyCode::Enter => pane.filtering = false,
+                KeyCode::Backspace => {
+                    pane.filter.pop();
+                }
+                KeyCode::Char(c) => pane.filter.push(c),
+                _ => {}
+            }
+            return true;
+        }
+        if self.calls.expand.is_some() {
+            match code {
+                KeyCode::Esc | KeyCode::Char('e') => {
+                    self.calls.expand = None;
+                    return true;
+                }
+                KeyCode::Char('/') => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.filtering = true;
+                    }
+                    return true;
+                }
+                KeyCode::Up => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.scroll = pane.scroll.saturating_sub(1);
+                    }
+                    return true;
+                }
+                KeyCode::Down => {
+                    if let Some(pane) = self.calls.expand.as_mut() {
+                        pane.scroll = pane.scroll.saturating_add(1);
+                    }
+                    return true;
+                }
+                _ => {}
+            }
+        }
         let last = self.snapshot.calls.len().saturating_sub(1);
         match code {
             KeyCode::Up => {
@@ -244,13 +397,36 @@ impl App {
                 self.calls.detail = !self.calls.detail;
                 true
             }
+            KeyCode::Char('e') => {
+                self.open_expand();
+                true
+            }
             _ => false,
         }
     }
 
+    fn open_expand(&mut self) {
+        let Some(row) = self.snapshot.calls.get(self.calls_selected()) else {
+            return;
+        };
+        let Some(id) = self.snapshot.ref_ids.get(&row.id).cloned() else {
+            return;
+        };
+        let Some(text) = model::expand_payload(&self.cfg, &id, None) else {
+            return;
+        };
+        self.calls.expand = Some(ExpandPane {
+            id,
+            text,
+            filter: String::new(),
+            filtering: false,
+            scroll: 0,
+        });
+    }
+
     /// One key press; returns `true` when the loop should stop. `Left`/`Right` wrap,
-    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z` (T15.5); the Sessions
-    /// page claims `Up`/`Down`/`l` (T60.10); the Plugins page claims the row keys
+    /// `1..=9` jump; the Calls page claims `Up`/`Down`/`Enter`/`z`/`e`/`/` (T15.5 / T60.4); the Sessions
+    /// page claims `Up`/`Down`/`Enter`/`l` (T60.10 / T60.3); the Plugins page claims the row keys
     /// (T15.4); everything else is the next page's to claim.
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) -> bool {
         if mods.contains(KeyModifiers::CONTROL) && code == KeyCode::Char('c') {
@@ -270,6 +446,9 @@ impl App {
             return false;
         }
         if self.page() == "sessions" && self.sessions_key(code) {
+            return false;
+        }
+        if self.page() == "skills" && self.skills_key(code) {
             return false;
         }
         match code {
@@ -690,6 +869,14 @@ pub(super) mod tests {
         );
         app.key(KeyCode::Char('l'), KeyModifiers::NONE);
         assert!(!app.sessions_live_only(), "l toggles back");
+
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            app.sessions_detail(),
+            "Enter opens the pane when rows exist"
+        );
+        app.key(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(!app.sessions_detail(), "Enter toggles it closed");
 
         // The shell's keys still work on the Sessions page.
         assert!(app.key(KeyCode::Char('q'), KeyModifiers::NONE), "q quits");

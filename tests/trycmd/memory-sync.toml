@@ -1,0 +1,2 @@
+bin.name = "rtok"
+args = "memory sync --help"

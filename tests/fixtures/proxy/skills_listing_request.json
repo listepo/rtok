@@ -1,0 +1,11 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "max_tokens": 1024,
+  "system": [
+    {
+      "type": "text",
+      "text": "You are Claude Code.\n\n<available_skills>\n<agent_skill fullPath=\"/Users/dev/.claude/skills/rtok/SKILL.md\">Token-saving rtok surfaces for coding agents.</agent_skill>\n<agent_skill fullPath=\"/Users/dev/.claude/plugins/cache/slint/slint/1.0/skills/slint/SKILL.md\">Slint UI guidance and widget patterns.</agent_skill>\n<agent_skill fullPath=\"/Users/dev/.claude/skills/dry-refactoring/SKILL.md\">Safe refactors with duplication checks before edits.</agent_skill>\n</available_skills>\n"
+    }
+  ],
+  "messages": [{ "role": "user", "content": "hi" }]
+}

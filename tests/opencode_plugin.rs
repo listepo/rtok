@@ -24,12 +24,13 @@ fn d21_plugin_is_one_bash_filter_without_tools() {
     assert!(ts.contains("\"bash\""), "scoped to bash");
     assert!(ts.contains("\"filter\""), "through `rtok filter`");
     assert!(ts.contains("ketch install listepo/rtok"), "ketch hint");
+    assert!(ts.contains("tool.execute.before"), "T70.5 guard check");
+    assert!(ts.contains("guard"), "through rtok guard check");
     for dup in [
         "tool: {", // OpenCode custom tools
         "\"mcp\"",
-        "\"read\"",
-        "\"search\"",
-        "tool.execute.before",
+        "rtok read",
+        "rtok search",
     ] {
         assert!(!ts.contains(dup), "no second call path: {dup}");
     }

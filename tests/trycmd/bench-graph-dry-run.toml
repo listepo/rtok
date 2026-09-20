@@ -1,0 +1,2 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/bench-config.toml bench --suite graph --runs 1 --dry-run"

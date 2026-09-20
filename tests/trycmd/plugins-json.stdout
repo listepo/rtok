@@ -170,7 +170,8 @@
     "id": "guard",
     "enabled": true,
     "surfaces": [
-      "hook"
+      "hook",
+      "cli"
     ],
     "title": "Guard",
     "summary": "Deny duplicate reads and commands inside a sliding window.",
@@ -209,6 +210,26 @@
       [
         "recall_tokens",
         "200"
+      ],
+      [
+        "prompt_recall",
+        "0"
+      ],
+      [
+        "sync_tokens",
+        "300"
+      ],
+      [
+        "notes live",
+        "0"
+      ],
+      [
+        "notes pinned",
+        "0"
+      ],
+      [
+        "notes retired",
+        "0"
       ]
     ],
     "stats": {
@@ -225,7 +246,8 @@
     "id": "graph",
     "enabled": true,
     "surfaces": [
-      "mcp"
+      "mcp",
+      "hook"
     ],
     "title": "Graph",
     "summary": "symbol / callers / impact from a tree-sitter-tags index.",

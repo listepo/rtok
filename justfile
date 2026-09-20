@@ -88,12 +88,24 @@ site:
 site-serve:
     {{hugo}} server --buildDrafts
 
-# Slint WASM UI, then API+UI on host:port
+# Slint WASM UI, then API+UI on host:port (T60.7: release profile + wasm-opt + precompress)
 web host="127.0.0.1" port="3333":
     #!/usr/bin/env bash
     set -euo pipefail
     if command -v wasm-pack >/dev/null 2>&1; then
         wasm-pack build crates/rtok-webui --release --target web --out-dir pkg
+        wasm="crates/rtok-webui/pkg/rtok_webui_bg.wasm"
+        if command -v wasm-opt >/dev/null 2>&1; then
+            wasm-opt -Oz "$wasm" -o "$wasm"
+        else
+            echo "wasm-opt not on PATH; serving unoptimized wasm" >&2
+        fi
+        if command -v brotli >/dev/null 2>&1; then
+            brotli -f -k "$wasm"
+        fi
+        if command -v gzip >/dev/null 2>&1; then
+            gzip -kf "$wasm"
+        fi
     else
         echo "wasm-pack not found; serving API only until cargo install wasm-pack" >&2
     fi
@@ -107,3 +119,8 @@ cache:
 # drop extracted crate/git checkouts; keep archives
 cache-autoclean:
     {{cache}} --autoclean
+
+# T53.4: Jaeger + Grafana on shifted ports; skips when Docker is unavailable.
+otel-check:
+    tools/otel-check.sh
+

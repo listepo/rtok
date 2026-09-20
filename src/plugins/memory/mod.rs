@@ -1,10 +1,14 @@
 //! Notes API: `mem_save` / `mem_search` / `mem_get` (plan T6.1).
 
 pub mod export;
+pub mod handoff;
 pub mod import;
+pub mod status;
+pub mod sync;
 
 use rtok_plugin_sdk::{
-    Class, Ctx, DashboardPage, Injection, Manifest, Plugin, SessionStart, Surface, ToolDef,
+    Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PromptSubmit,
+    SessionStart, Surface, ToolDef,
 };
 use serde_json::json;
 
@@ -31,7 +35,7 @@ impl Plugin for Memory {
         vec![
             ToolDef {
                 name: "mem_save",
-                description: "Save a note (kind, title, body); same project+kind+title updates it.",
+                description: "Save a note; same project+kind+title updates it.",
                 input_schema: json!({"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"project":{"type":"string"}},"required":["kind","title","body"]}),
             },
             ToolDef {
@@ -49,11 +53,19 @@ impl Plugin for Memory {
                 description: "Retire (tombstone, never delete) or pin a note by id.",
                 input_schema: json!({"type":"object","properties":{"id":{"type":"integer"},"retire":{"type":"boolean"},"superseded_by":{"type":"integer"},"pinned":{"type":"boolean"}},"required":["id"]}),
             },
+            handoff::handoff_tool(),
         ]
     }
 
     fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
         recall(cx)
+    }
+
+    fn prompt_submit(&self, ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
+        if let Some(inj) = remember_save(ev, cx) {
+            return Some(inj);
+        }
+        prompt_recall(ev, cx)
     }
 }
 
@@ -70,6 +82,79 @@ pub fn project_name(cwd: &std::path::Path) -> Option<String> {
     }
 }
 
+fn remember_save(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
+    let first = ev.prompt.lines().next()?.trim();
+    let rest = first.strip_prefix("remember:")?.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    let title: String = rest.chars().take(80).collect();
+    let project = cx.cwd().map(std::path::Path::new).and_then(project_name);
+    let id = cx
+        .upsert_note(project.as_deref(), "user", &title, rest)
+        .ok()?;
+    Some(Injection {
+        plugin: "memory",
+        text: format!("saved note {id}"),
+        priority: 12,
+    })
+}
+
+fn prompt_recall(ev: &PromptSubmit, cx: &Ctx) -> Option<Injection> {
+    let cfg = cx.plugin_config::<crate::config::Memory>("memory");
+    let n = cfg.prompt_recall;
+    if n == 0 {
+        return None;
+    }
+    let query = ev
+        .prompt
+        .split_whitespace()
+        .take(24)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if query.is_empty() {
+        return None;
+    }
+    let hits = cx.search_notes(&query, n).ok()?;
+    if hits.is_empty() {
+        return None;
+    }
+    let mut lines = vec!["notes".to_string()];
+    for h in &hits {
+        lines.push(format!("{} {}", h.id, h.title));
+    }
+    let text = lines.join("\n");
+    let sha = crate::store::hex_sha256(text.as_bytes());
+    if cx.last_measurement_ref("memory", "prompt_recall").ok()? == Some(sha.clone()) {
+        return None;
+    }
+    let mut before_bytes = 0u64;
+    let mut est_before = 0u32;
+    for h in &hits {
+        if let Ok(Some(body)) = cx.get_note_body(h.id) {
+            before_bytes += body.len() as u64;
+            est_before = est_before.saturating_add(cx.estimate(&body, Class::Prose));
+        }
+    }
+    let after_bytes = text.len() as u64;
+    let est_after = cx.estimate(&text, Class::Prose);
+    let _ = cx.record(&Measurement {
+        plugin: "memory",
+        kind: "prompt_recall",
+        before_bytes,
+        after_bytes,
+        est_before,
+        est_after,
+        ref_id: Some(sha),
+        call_id: None,
+    });
+    Some(Injection {
+        plugin: "memory",
+        text,
+        priority: 11,
+    })
+}
+
 fn recall(cx: &Ctx) -> Option<Injection> {
     let cfg = cx.plugin_config::<crate::config::Memory>("memory");
     let n = cfg.recall_titles.max(1);
@@ -83,15 +168,37 @@ fn recall(cx: &Ctx) -> Option<Injection> {
     if rows.is_empty() {
         return None;
     }
+    let mut entries = rows;
     let mut lines = vec!["notes".to_string()];
-    for (id, title) in &rows {
+    for (id, title) in &entries {
         lines.push(format!("{id} {title}"));
     }
     let mut text = lines.join("\n");
-    while cx.estimate(&text, Class::Prose) > cap && lines.len() > 1 {
+    while cx.estimate(&text, Class::Prose) > cap && entries.len() > 1 {
+        entries.pop();
         lines.pop();
         text = lines.join("\n");
     }
+    let mut before_bytes = 0u64;
+    let mut est_before = 0u32;
+    for (id, _) in &entries {
+        if let Ok(Some(body)) = cx.get_note_body(*id) {
+            before_bytes += body.len() as u64;
+            est_before = est_before.saturating_add(cx.estimate(&body, Class::Prose));
+        }
+    }
+    let after_bytes = text.len() as u64;
+    let est_after = cx.estimate(&text, Class::Prose);
+    let _ = cx.record(&Measurement {
+        plugin: "memory",
+        kind: "recall",
+        before_bytes,
+        after_bytes,
+        est_before,
+        est_after,
+        ref_id: Some(cx.session().to_string()),
+        call_id: None,
+    });
     Some(Injection {
         plugin: "memory",
         text,
@@ -213,6 +320,36 @@ pub fn mem_revise(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn remember_prefix_saves_a_note_and_repeats_same_id() {
+        use rtok_plugin_sdk::PromptSubmit;
+        let cx = crate::plugin::Runtime::in_memory("t695-remember").unwrap();
+        let ctx = Ctx::new(&cx);
+        let ev = PromptSubmit {
+            prompt: "remember: hooks fail open under 10 ms",
+        };
+        let first = Memory.prompt_submit(&ev, &ctx).unwrap();
+        assert_eq!(first.text, "saved note 1");
+        let second = Memory.prompt_submit(&ev, &ctx).unwrap();
+        assert_eq!(second.text, "saved note 1");
+        let plain = PromptSubmit {
+            prompt: "just a question",
+        };
+        assert!(Memory.prompt_submit(&plain, &ctx).is_none());
+    }
+
+    #[test]
+    fn prompt_recall_is_off_by_default() {
+        use rtok_plugin_sdk::PromptSubmit;
+        let cx = crate::plugin::Runtime::in_memory("t695-recall-off").unwrap();
+        mem_save(&cx, "note", "alpha", "hooks fail open", None).unwrap();
+        let ctx = Ctx::new(&cx);
+        let ev = PromptSubmit {
+            prompt: "tell me about hooks fail open",
+        };
+        assert!(Memory.prompt_submit(&ev, &ctx).is_none());
+    }
+
     #[test]
     fn save_three_search_hits_first_get_full_body() {
         let cx = crate::plugin::Runtime::in_memory("t61").unwrap();
@@ -336,8 +473,9 @@ mod tests {
         );
     }
 
-    /// T69.1: the four memory tools stay within the 60-description-token surface budget
-    /// (`rtok doctor` prices the same strings).
+    /// T69.1: the memory tools stay within the 60-description-token surface budget
+    /// (`rtok doctor` prices the same strings). T71.2 added `mem_handoff` as the fifth,
+    /// so `mem_save` drops the field list the input schema already carries.
     #[test]
     fn mcp_surface_stays_within_sixty_description_tokens() {
         let cx = crate::plugin::Runtime::in_memory("t691-surface").unwrap();
@@ -387,6 +525,12 @@ mod tests {
         assert_eq!(a.text.lines().count(), 6, "{}", a.text);
         assert!(cx.estimate(&a.text, Class::Prose) <= 200);
         assert_eq!(a.priority, 10);
+        let rows = cx.store.list_measurements("memory").unwrap();
+        assert_eq!(
+            rows.iter().filter(|r| r.kind == "recall").count(),
+            2,
+            "{rows:?}"
+        );
     }
 
     #[test]
