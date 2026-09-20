@@ -19,13 +19,15 @@ Check: `tests/demon.rs` — live mcp is down during the replace command (no stat
 
 **Evidence (2026-09-20).** The Check's first clause is live: one full gate failed `upgrade_stops_before_replace_and_starts_after` — the replace stub's guard `[ ! -f $RTOK_HOME/demon/mcp.json ] || exit 2` fired (`tests/demon.rs:197`, `update command failed (exit status: 2)`), i.e. the update command ran while the mcp state file still existed. Six other runs the same day passed (two local full suites, PR-CI ×2, push-CI ×2, release verify ×2). Harden the stop-wait: wait for the state file to be gone and re-check immediately before invoking the update command, not just for the stop marker.
 
-### T74. Bound the waits in the two load-sensitive gate tests
+### T74. Make the two load-sensitive gate tests deterministic
 
 Two tests fail a full `just check` under parallel CPU load and pass standalone, so a green gate still rerolls dice:
 - `tui::app::tests::space_toggles_the_selected_plugin_through_config_set` — nextest `terminate-after = 3` killed it at 180 s once on 2026-09-20 (full gate on a loaded machine); the immediately following full run and every scoped run passed. The key-injection → frame-assert waits carry no internal deadline, so contention turns into a suite-level timeout.
 - `otel::hooks_stay_fast_with_an_unreachable_endpoint` — latency budget; failed two gates on 2026-09-17, passed standalone every time.
 
-Done when both tests bound their own waiting (deadline + tolerant retry to that deadline in the tui TestBackend loop and in the otel latency assert) so a loaded runner slows them instead of failing them — no nextest `threads-required` or `--test-threads` masking: the point is the wait, not the machine. Check: two full suites running concurrently on one busy machine — zero timeouts.
+(Related but different, fixed 2026-09-20: `rtok::cli_trycmd cli` "panics" after every release bump — `tests/trycmd/version.stdout` / `man.stdout` pinned the literal version. Now wildcarded `rtok [..] ([..])` / `v[..] ([..])`, so a bump can't break the gate again.)
+
+Done when both tests bound their own waiting (deadline + tolerant retry to that deadline in the tui TestBackend loop and in the otel latency assert) so a loaded runner slows them instead of failing them — no `--test-threads` masking: the point is the wait, not the machine. Check: two full suites running concurrently on one busy machine — zero flakes across three runs.
 
 ## Reference
 

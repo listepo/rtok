@@ -1,3 +1,3 @@
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T73. Cycle demon surfaces around a binary replace
-- T74. Bound the waits in the two load-sensitive gate tests
+- T74. Make the two load-sensitive gate tests deterministic (tui timeout, otel latency)
