@@ -13,3 +13,6 @@ report/jscpd-report.json
 .worktrees/
 .claude/
 .rtok/rtok.db
+rtok.db
+rtok.db-shm
+rtok.db-wal

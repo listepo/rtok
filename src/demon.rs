@@ -117,7 +117,7 @@ fn targets(cfg: &Config, named: &[Service], running_first: bool) -> Result<Vec<S
 /// given a second supervisor, which would give the same port two owners.
 pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Result<()> {
     fs::create_dir_all(&cfg.demon.state_dir)?;
-    let exe = std::env::current_exe()?;
+    let exe = on_disk_exe()?;
     for service in targets(cfg, named, false)? {
         // The supervisor's own lock is the truth; the state file can lag it or name a reused pid.
         if claim(cfg, service)?.is_none() {
@@ -210,6 +210,73 @@ pub fn restart(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> R
     let services = targets(cfg, named, true)?;
     stop(cfg, &services, false)?;
     start(cfg, config_file, &services)
+}
+
+/// Stop every live surface (HTTP/WS `web`, `mcp`, `proxy` — SQLite drops with them),
+/// replace the on-disk binary, then start the same set. A failed replace still starts.
+pub fn upgrade(cfg: &Config, config_file: Option<&Path>) -> Result<()> {
+    let up: Vec<Service> = rows(cfg, &[])?
+        .into_iter()
+        .filter(|r| r.running)
+        .map(|r| r.service)
+        .collect();
+    if !up.is_empty() {
+        stop(cfg, &up, false)?;
+    }
+    let replaced = replace_binary();
+    let started = if up.is_empty() {
+        Ok(())
+    } else {
+        start(cfg, config_file, &up)
+    };
+    match (replaced, started) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(e), Ok(())) => Err(e),
+        (Ok(()), Err(e)) => Err(e),
+        (Err(e), Err(s)) => Err(e.context(format!("and restart failed: {s}"))),
+    }
+}
+
+/// The path `start` should spawn: `current_exe` after an in-place replace can be the
+/// deleted inode, while the same path on disk already holds the new file.
+fn on_disk_exe() -> Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    if exe.is_file() {
+        Ok(exe)
+    } else {
+        Ok(PathBuf::from("rtok"))
+    }
+}
+
+fn replace_binary() -> Result<()> {
+    if let Some(cmd) = std::env::var_os("RTOK_UPDATE_CMD") {
+        return run_replace(Command::new(cmd));
+    }
+    match Command::new("ketch")
+        .args(["upgrade", "rtok", "--yes"])
+        .status()
+    {
+        Ok(st) if st.success() => return Ok(()),
+        Ok(st) => anyhow::bail!("ketch upgrade rtok failed ({st})"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    match Command::new("rtok-update").status() {
+        Ok(st) if st.success() => Ok(()),
+        Ok(st) => anyhow::bail!("rtok-update failed ({st})"),
+        Err(_) => anyhow::bail!(
+            "no ketch or rtok-update — install with ketch (`ketch install listepo/rtok`)"
+        ),
+    }
+}
+
+fn run_replace(mut cmd: Command) -> Result<()> {
+    let st = cmd.status()?;
+    if st.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("update command failed ({st})")
+    }
 }
 
 /// One row of the `rtok demon status` page (T15.11): state asked of the kernel, never

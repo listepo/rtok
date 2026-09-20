@@ -74,6 +74,28 @@ pub fn run(cfg: &Config) -> Result<()> {
     })
 }
 
+/// One-shot `tools/call` for hosts that cannot speak MCP (`rtok mcp --call`, T70.3).
+pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
+    let server = Server::new(cfg)?;
+    let plugin = server
+        .listed
+        .iter()
+        .find(|t| t.def.name == name)
+        .map(|t| t.plugin)
+        .unwrap_or("archive");
+    let args = if args.is_null() {
+        json!({})
+    } else {
+        args.clone()
+    };
+    let (text, ok) = match invoke(&server.cx, name, &args) {
+        Ok(t) => (t, true),
+        Err(e) => (e.to_string(), false),
+    };
+    let _ = record(&server.cx, plugin, name, &args, &text);
+    if ok { Ok(text) } else { bail!("{text}") }
+}
+
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
 const MAX_LINE: u64 = 8 << 20;
 
@@ -236,6 +258,8 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "mem_get" => mem_get(cx, args),
         #[cfg(feature = "memory")]
         "mem_update" => mem_update(cx, args),
+        #[cfg(feature = "memory")]
+        "handoff" => handoff(cx, args),
         #[cfg(feature = "read")]
         "read" => read_file(cx, args),
         #[cfg(feature = "read")]
@@ -339,8 +363,7 @@ fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
         .as_i64()
         .and_then(|n| i32::try_from(n).ok())
         .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
-    crate::plugins::memory::mem_get(cx, id)?
-        .ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
+    crate::plugins::memory::mem_get(cx, id)?.ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
 }
 
 #[cfg(feature = "memory")]
@@ -389,6 +412,15 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
     cx.store
         .insert_tokens(call_id, Some(plugin), "mcp", "estimate", after)?;
     Ok(())
+}
+
+#[cfg(feature = "memory")]
+fn handoff(cx: &Runtime, args: &Value) -> Result<String> {
+    let budget = args["budget_tokens"].as_u64().unwrap_or(800) as u32;
+    Ok(crate::plugins::memory::handoff::handoff(
+        &crate::plugin::Ctx::new(cx),
+        budget,
+    ))
 }
 
 #[cfg(test)]
@@ -519,6 +551,22 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn one_shot_call_uses_the_same_invoke_as_tools_call() {
+        let (cfg, dir) = tmp("oneshot");
+        let err = call(&cfg, "nope", &json!({})).unwrap_err().to_string();
+        assert_eq!(err, "unknown tool: nope");
+        let server = Server::new(&cfg).unwrap();
+        let id = server
+            .cx
+            .store
+            .put_archive("mcp", b"payload", &cfg.core.archive_dir)
+            .unwrap();
+        let text = call(&cfg, "expand", &json!({"id": id})).unwrap();
+        assert_eq!(text, "payload");
         let _ = fs::remove_dir_all(dir);
     }
 

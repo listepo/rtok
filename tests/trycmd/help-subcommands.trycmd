@@ -1,0 +1,773 @@
+# --help for every subcommand and nested verb (T60.2)
+
+Top-level `rtok --help` stays in `help.toml`. `web` and `tui` are help-only
+here: a server and a TTY are not snapshot material.
+
+```console
+$ rtok hook --help
+Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
+
+Usage: rtok hook [OPTIONS] <EVENT>
+
+Arguments:
+  <EVENT>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --host <HOST>    Overlay `[hook] host` (`claude` | `cursor` | `copilot`)
+  -h, --help           Print help
+
+$ rtok mcp --help
+Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
+
+Usage: rtok mcp [OPTIONS] [-- <WRAP>...]
+
+Arguments:
+  [WRAP]...  Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
+
+Options:
+      --call <TOOL>    Call one listed tool and print the text result (pi `registerTool` shim,
+                       T70.3)
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json <ARGS>    JSON arguments for `--call`
+  -h, --help           Print help
+
+$ rtok proxy --help
+Local API proxy for ANTHROPIC_BASE_URL
+
+Usage: rtok proxy [OPTIONS]
+
+Options:
+      --config <PATH>        User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --port <PORT>          Override `[proxy] port`
+      --upstream <UPSTREAM>  Override `[proxy] upstream`
+      --mode <MODE>          Override `[proxy] mode` (`passthrough` | `compress`)
+      --dry-run              Print effective `[proxy]` settings and exit
+  -h, --help                 Print help
+
+$ rtok web --help
+Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+
+Usage: rtok web [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --host <HOST>    Override `[web] host`
+      --port <PORT>    Override `[web] port`
+  -h, --help           Print help
+
+$ rtok tui --help
+Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
+
+Usage: rtok tui [OPTIONS]
+
+Options:
+      --config <PATH>          User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --tab <TAB>              Start on this tab (a page name both surfaces carry)
+      --tick-secs <TICK_SECS>  Model re-read cadence in seconds
+  -h, --help                   Print help
+
+$ rtok stats --help
+Measurements from session logs and the proxy
+
+Usage: rtok stats [OPTIONS]
+
+Options:
+      --config <PATH>         User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --since <SINCE>         How far back to read transcripts (`60d`, `24h`)
+      --json                  JSON instead of the table
+      --plugin <PLUGIN>       Restrict to one tool or plugin id
+      --save-baseline <NAME>  Write this report JSON to `<home>/measurements/<name>.json`
+      --compare <NAME>        Print deltas against a saved baseline
+      --calibrate             Fit chars-per-token via count_tokens (skipped without an API key)
+      --cache                 Cache health per session from proxy usage rows: busts and their cause
+      --price                 Show per-model USD costs from `[stats.prices]` (`--price`)
+  -h, --help                  Print help
+
+$ rtok bench --help
+A/B benchmark of host configurations
+
+Usage: rtok bench [OPTIONS]
+
+Options:
+      --config <PATH>      User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --tasks <TASKS>      Task list TOML
+      --runs <RUNS>        Repeats per task × config
+      --dry-run            Print the schedule and exit
+      --timeout <TIMEOUT>  Per-run timeout in seconds
+      --suite <SUITE>      Task suite (`graph` = with/without rtok MCP)
+  -h, --help               Print help
+
+$ rtok doctor --help
+Inspect hooks, MCP servers and the proxy chain
+
+Usage: rtok doctor [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --instructions   Also run the instruction-file audit (T7.2)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok info --help
+Version, effective paths, disk usage, error count and proxy status
+
+Usage: rtok info [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the text lines
+  -h, --help           Print help
+
+$ rtok agents --help
+Agent hosts (`rtok agents install|uninstall|list|info …`)
+
+Usage: rtok agents [OPTIONS] <COMMAND>
+
+Commands:
+  install    Install hooks, MCP server and proxy into a host
+  uninstall  Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link [alias:
+             remove]
+  list       Every known app: kind and name, path and version, config files, rtok modules
+  info       One host: the same block `agents list` prints, just for that app
+  sessions   What is running in this project: host, provider, model, tokens, start, run time
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok agents install --help
+Install hooks, MCP server and proxy into a host
+
+Usage: rtok agents install [OPTIONS] <HOST>
+
+Arguments:
+  <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Print the planned edits and exit
+      --remove         Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok
+                       agents uninstall <host>`
+      --mode <MODE>    Enable prompt modes (`terse,yagni`)
+      --yes            Confirm destructive `--replace`
+      --replace        Remove legacy token hooks and retarget the proxy
+      --mcp            Register `rtok mcp` in the host MCP map
+      --proxy          Set `env.ANTHROPIC_BASE_URL` to this proxy
+      --cli            Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)
+      --desktop        Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is
+                       all)
+      --all            All variants (the default when neither `--cli` nor `--desktop` is given)
+  -h, --help           Print help
+
+$ rtok agents uninstall --help
+Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
+
+Usage: rtok agents uninstall [OPTIONS] <HOST>
+
+Arguments:
+  <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Print what would be removed and exit
+  -h, --help           Print help
+
+$ rtok agents list --help
+Every known app: kind and name, path and version, config files, rtok modules
+
+Usage: rtok agents list [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok agents info --help
+One host: the same block `agents list` prints, just for that app
+
+Usage: rtok agents info [OPTIONS] <HOST>
+
+Arguments:
+  <HOST>  Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`,
+          `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok agents sessions --help
+What is running in this project: host, provider, model, tokens, start, run time
+
+Usage: rtok agents sessions [OPTIONS] [COMMAND]
+
+Commands:
+  watch  Redraw the sessions table in place as sessions appear, end or spend
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --all            Also show sessions that have ended
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok agents sessions watch --help
+Redraw the sessions table in place as sessions appear, end or spend
+
+Usage: rtok agents sessions watch [OPTIONS]
+
+Options:
+      --all            Also show sessions that have ended
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok run --help
+Execute a command, archive its raw output, print the filtered version
+
+Usage: rtok run [OPTIONS] [COMMAND]...
+
+Arguments:
+  [COMMAND]...  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok filter --help
+Filter text from stdin without executing
+
+Usage: rtok filter [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --stdin          Read the payload from stdin (OpenCode `tool.execute.after`)
+      --cmd <CMD>      Command family hint (`git status`, `cargo test`, …)
+      --archive        Archive stdin and print the expand trailer (same path as `run`)
+  -h, --help           Print help
+
+$ rtok expand --help
+Print an archived payload
+
+Usage: rtok expand [OPTIONS] <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --config <PATH>      User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --lines <LINES>      Inclusive 1-based range `a-b`
+      --grep <GREP>        Regex filter (literal when it does not compile); hits print as `N:line`
+      --context <CONTEXT>  With `--grep`: N lines around each hit, overlapping windows merged with
+                           `--`
+  -h, --help               Print help
+
+$ rtok archive --help
+The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
+
+Usage: rtok archive [OPTIONS] <COMMAND>
+
+Commands:
+  rewrite  Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten
+           array on stdout (input bytes echoed when nothing is eligible)
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok archive rewrite --help
+Rewrite old tool results to archive pointers; message array JSON on stdin, rewritten array on stdout
+(input bytes echoed when nothing is eligible)
+
+Usage: rtok archive rewrite [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --stdin          Read the message array from stdin (pi `context` event)
+  -h, --help           Print help
+
+$ rtok completions --help
+Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+
+Usage: rtok completions [OPTIONS] <SHELL>
+
+Arguments:
+  <SHELL>  Shell to complete for [possible values: bash, elvish, fish, powershell, zsh]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok man --help
+Print the man page (roff) to stdout
+
+Usage: rtok man [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok plugins --help
+List plugins: id, enabled, surfaces
+
+Usage: rtok plugins [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok config --help
+The one config file
+
+Usage: rtok config [OPTIONS] <COMMAND>
+
+Commands:
+  init      Write the annotated reference file to `<home>/config.toml`
+  path      Print the path of the config file
+  show      Print every effective key
+  get       Print one key's effective value
+  validate  Reject unknown keys, wrong types, and out-of-range values
+  set       Edit one key in the user file, preserving comments
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok config init --help
+Write the annotated reference file to `<home>/config.toml`
+
+Usage: rtok config init [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --force          Overwrite an existing file
+      --dry-run        Print the diff it would write and exit
+  -h, --help           Print help
+
+$ rtok config path --help
+Print the path of the config file
+
+Usage: rtok config path [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok config show --help
+Print every effective key
+
+Usage: rtok config show [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --sources        Append `(default|user|project|env|flag)` from figment metadata
+      --json           JSON array of `{key,value,source}`
+  -h, --help           Print help
+
+$ rtok config get --help
+Print one key's effective value
+
+Usage: rtok config get [OPTIONS] <KEY>
+
+Arguments:
+  <KEY>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok config validate --help
+Reject unknown keys, wrong types, and out-of-range values
+
+Usage: rtok config validate [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  File to check (else the user config file)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok config set --help
+Edit one key in the user file, preserving comments
+
+Usage: rtok config set [OPTIONS] <KEY> <VALUE>
+
+Arguments:
+  <KEY>    
+  <VALUE>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Print the diff it would write and exit
+  -h, --help           Print help
+
+$ rtok memory --help
+Notes (`mem_save` / import / export)
+
+Usage: rtok memory [OPTIONS] <COMMAND>
+
+Commands:
+  import  Import `{kind,title,body}` JSONL; dedupe by body sha256
+  export  Print every note but session checkpoints as the JSONL `import` reads
+  retire  Retire a note: a tombstone — never recalled or searched, body kept (T69.1)
+  pin     Pin a note so it leads SessionStart recall (T69.1)
+  unpin   Drop a note back to newest-first recall order (T69.1)
+  revise  Save a replacement (title, body) for a note and retire the old row (T69.1)
+  sync    Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)
+  status  Notes live/pinned/retired, recall and MCP call counts (T69.4)
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok memory import --help
+Import `{kind,title,body}` JSONL; dedupe by body sha256
+
+Usage: rtok memory import [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Count what would be imported and write nothing
+  -h, --help           Print help
+
+$ rtok memory export --help
+Print every note but session checkpoints as the JSONL `import` reads
+
+Usage: rtok memory export [OPTIONS]
+
+Options:
+      --config <PATH>      User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --project <PROJECT>  Only notes of this project
+  -h, --help               Print help
+
+$ rtok memory retire --help
+Retire a note: a tombstone — never recalled or searched, body kept (T69.1)
+
+Usage: rtok memory retire [OPTIONS] <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --config <PATH>                  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --superseded-by <SUPERSEDED_BY>  The replacement note id this one is superseded by
+  -h, --help                           Print help
+
+$ rtok memory pin --help
+Pin a note so it leads SessionStart recall (T69.1)
+
+Usage: rtok memory pin [OPTIONS] <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok memory unpin --help
+Drop a note back to newest-first recall order (T69.1)
+
+Usage: rtok memory unpin [OPTIONS] <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok memory revise --help
+Save a replacement (title, body) for a note and retire the old row (T69.1)
+
+Usage: rtok memory revise [OPTIONS] --title <TITLE> --body <BODY> <ID>
+
+Arguments:
+  <ID>  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --title <TITLE>  The replacement title
+      --body <BODY>    The replacement body
+  -h, --help           Print help
+
+$ rtok graph --help
+Symbol index (`rtok graph index`)
+
+Usage: rtok graph [OPTIONS] <COMMAND>
+
+Commands:
+  index     Walk a tree and insert definitions + references
+  dead      List unreferenced private definitions (skips pub, trait impls, tests, macros)
+  status    Index health for the current or given root (T68.3)
+  impact    Symbol impact or call paths to a target (T68.4)
+  affected  Tests that reach files changed in git (`git diff --name-only`)
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok graph index --help
+Walk a tree and insert definitions + references
+
+Usage: rtok graph index [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --dry-run        Report what would be indexed and write no rows
+  -h, --help           Print help
+
+$ rtok graph dead --help
+List unreferenced private definitions (skips pub, trait impls, tests, macros)
+
+Usage: rtok graph dead [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok graph status --help
+Index health for the current or given root (T68.3)
+
+Usage: rtok graph status [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           
+  -h, --help           Print help
+
+$ rtok graph impact --help
+Symbol impact or call paths to a target (T68.4)
+
+Usage: rtok graph impact [OPTIONS] <NAME> [PATH]
+
+Arguments:
+  <NAME>  
+  [PATH]  
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --depth <DEPTH>  [default: 2]
+      --to <TO>        
+  -h, --help           Print help
+
+$ rtok graph affected --help
+Tests that reach files changed in git (`git diff --name-only`)
+
+Usage: rtok graph affected [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --since <SINCE>  Diff against this ref
+      --staged         Staged files only (`git diff --cached --name-only`)
+      --json           JSON instead of `file ← via symbol` lines
+  -h, --help           Print help
+
+$ rtok guard --help
+Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
+
+Usage: rtok guard [OPTIONS] <COMMAND>
+
+Commands:
+  check  Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok guard check --help
+Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+
+Usage: rtok guard check [OPTIONS] --tool <TOOL> --json <INPUT>
+
+Options:
+      --config <PATH>      User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --tool <TOOL>        Host tool name (`bash`, `Read`, …)
+      --json <INPUT>       Tool arguments as JSON
+      --session <SESSION>  Host session id (the cache is per session)
+      --host <HOST>        Overlay `[hook] host`
+  -h, --help               Print help
+
+$ rtok demon --help
+Keep `rtok proxy` (or `mcp` / `web`) running in the background
+
+Usage: rtok demon [OPTIONS] <COMMAND>
+
+Commands:
+  start    Detach a supervisor that restarts the service whenever it dies
+  stop     Ask the supervisor and its child to exit
+  restart  Stop, then start
+  status   State, pids, uptime, restarts and log path; every service when none is named
+  kill     SIGKILL instead of SIGTERM, and drop the state file
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok demon start --help
+Detach a supervisor that restarts the service whenever it dies
+
+Usage: rtok demon start [OPTIONS] [SERVICE]...
+
+Arguments:
+  [SERVICE]...  [possible values: proxy, mcp, web]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok demon stop --help
+Ask the supervisor and its child to exit
+
+Usage: rtok demon stop [OPTIONS] [SERVICE]...
+
+Arguments:
+  [SERVICE]...  [possible values: proxy, mcp, web]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok demon restart --help
+Stop, then start
+
+Usage: rtok demon restart [OPTIONS] [SERVICE]...
+
+Arguments:
+  [SERVICE]...  [possible values: proxy, mcp, web]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok demon status --help
+State, pids, uptime, restarts and log path; every service when none is named
+
+Usage: rtok demon status [OPTIONS] [SERVICE]...
+
+Arguments:
+  [SERVICE]...  [possible values: proxy, mcp, web]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok demon kill --help
+SIGKILL instead of SIGTERM, and drop the state file
+
+Usage: rtok demon kill [OPTIONS] [SERVICE]...
+
+Arguments:
+  [SERVICE]...  [possible values: proxy, mcp, web]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok otel --help
+OpenTelemetry export (`rtok otel flush | status`)
+
+Usage: rtok otel [OPTIONS] <COMMAND>
+
+Commands:
+  flush   Post rows past the watermarks to the endpoint, once
+  status  Endpoint, watermarks, pending rows, last exporter log line
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok otel flush --help
+Post rows past the watermarks to the endpoint, once
+
+Usage: rtok otel flush [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok otel status --help
+Endpoint, watermarks, pending rows, last exporter log line
+
+Usage: rtok otel status [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok logs --help
+rtok's own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)
+
+Usage: rtok logs [OPTIONS] [COMMAND]
+
+Commands:
+  export  Same selection, no numbering, no colour — for `rtok logs export > my.log`
+  watch   Print the last lines, then follow: new lines arrive above the old, newest first
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --lines <LINES>  Override `[log] lines`
+      --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok logs export --help
+Same selection, no numbering, no colour — for `rtok logs export > my.log`
+
+Usage: rtok logs export [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --lines <LINES>  Override `[log] lines`
+  -h, --help           Print help
+
+$ rtok logs watch --help
+Print the last lines, then follow: new lines arrive above the old, newest first
+
+Usage: rtok logs watch [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --lines <LINES>  Override `[log] lines`
+  -h, --help           Print help
+
+$ rtok report --help
+The operator model as one document (D24): Markdown, HTML and PDF
+
+Usage: rtok report [OPTIONS]
+
+Options:
+      --config <PATH>    User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --format <FORMAT>  Output format [default: md] [possible values: md, html, pdf]
+      --out <PATH>       Write to this path instead of stdout
+      --since <SINCE>    How far back the report reads (`30d`, `24h`)
+      --ai               Model-shaped rendering of the same document instead of `--format` (T22.4)
+  -h, --help             Print help
+
+```

@@ -53,7 +53,7 @@ impl Plugin for Read {
         vec![
             ToolDef {
                 name: "read",
-                description: "Read a file; mode full|lines|map|signatures; range a-b for full|lines.",
+                description: "Read a file; mode full|lines|map|signatures|diff; range a-b for full|lines.",
                 input_schema: json!({"type":"object","properties":{"path":{"type":"string"},"mode":{"type":"string"},"range":{"type":"string"}},"required":["path"]}),
             },
             ToolDef {
@@ -101,6 +101,8 @@ pub(crate) fn read_with(
     } else {
         mode
     };
+    let force_delta = mode == "diff";
+    let mode = if force_delta { "full" } else { mode };
     let body = if mode == "map" || mode == "signatures" {
         outline::render(&abs, &raw, mode)?
     } else {
@@ -119,10 +121,22 @@ pub(crate) fn read_with(
             .join("\n")
     };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
-    if let Some(hit) = cache::hit(cx, &key, body.as_bytes(), body.lines().count()) {
+    let payload = if mode == "map" || mode == "signatures" {
+        body.as_bytes()
+    } else {
+        raw.as_bytes()
+    };
+    if let Some(hit) = cache::hit(
+        cx,
+        &key,
+        abs.to_string_lossy().as_ref(),
+        payload,
+        body.lines().count(),
+        force_delta,
+    ) {
         return Ok(hit);
     }
-    let _ = cache::remember(cx, &key, body.as_bytes());
+    let _ = cache::remember(cx, &key, payload);
     cap(cx, body)
 }
 

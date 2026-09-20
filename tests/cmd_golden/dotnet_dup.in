@@ -1,0 +1,23 @@
+argv: dotnet build
+exit: 0
+---
+Program.cs(0,1): error CS1002: ; expected
+Program.cs(1,1): error CS1002: ; expected
+Program.cs(2,1): error CS1002: ; expected
+Program.cs(3,1): error CS1002: ; expected
+Program.cs(4,1): error CS1002: ; expected
+Program.cs(5,1): error CS1002: ; expected
+Program.cs(6,1): error CS1002: ; expected
+Program.cs(7,1): error CS1002: ; expected
+Program.cs(8,1): error CS1002: ; expected
+Program.cs(9,1): error CS1002: ; expected
+Program.cs(10,1): error CS1002: ; expected
+Program.cs(11,1): error CS1002: ; expected
+Program.cs(12,1): error CS1002: ; expected
+Program.cs(13,1): error CS1002: ; expected
+Program.cs(14,1): error CS1002: ; expected
+Program.cs(15,1): error CS1002: ; expected
+Program.cs(16,1): error CS1002: ; expected
+Program.cs(17,1): error CS1002: ; expected
+Program.cs(18,1): error CS1002: ; expected
+Program.cs(19,1): error CS1002: ; expected

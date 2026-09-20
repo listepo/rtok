@@ -1,10 +1,10 @@
 //! pi installer (`rtok agents install pi`, plan T10.6, D21).
 //!
-//! pi philosophy is no MCP: the plugin owns the bash call path only —
-//! `tool_call` bash rewrites to `rtok run -- …`, `tool_result` bash
-//! compresses through `rtok filter`. No `read`/`search` tools, no second
-//! registration, desktop and CLI see the same `~/.pi/agent/extensions`
-//! tree. Missing `rtok` fails open and names the ketch install.
+//! pi philosophy is no MCP: the plugin owns the bash call path
+//! (`rtok run` / `rtok filter`) and, when `[setup.pi] tools` is true,
+//! `pi.registerTool` wrappers around `rtok mcp --call` (T70.3). Desktop
+//! and CLI see the same `~/.pi/agent/extensions` tree. Missing `rtok`
+//! fails open and names the ketch install.
 
 use std::path::PathBuf;
 
@@ -42,7 +42,7 @@ impl Agent for Pi {
             "plugin" => Support::Flag("--yes"),
             "hooks" => Support::No("pi has no hook events; the extension owns the bash call path"),
             "mcp" => Support::No(
-                "pi philosophy is no MCP; the extension calls rtok run and rtok filter directly",
+                "pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true",
             ),
             _ => Support::No(
                 "pi provider base URLs live in its models config, which setup does not edit",
@@ -51,7 +51,7 @@ impl Agent for Pi {
     }
 
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
-        &[rtok_plugin_sdk::Surface::Cli]
+        &[rtok_plugin_sdk::Surface::Cli, rtok_plugin_sdk::Surface::Mcp]
     }
 
     fn files(&self, _cfg: &Config, _kind: Kind) -> Vec<PathBuf> {

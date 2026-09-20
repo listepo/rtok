@@ -131,3 +131,7 @@ here, noted as the lever).
   dropped for numbers outside the chart.
 - A trimmed, fonts-optional typst build measured inside the winner's delta — then criterion
   (3) flips the decision back to typst.
+
+## Recommendations (T22.5)
+
+Rule **top-sinks** (T59.8) ranks the ten largest token sinks from `Measurement.before_bytes` — file paths for `read`, command stems for `cmd`, `server/tool` for MCP wrap — and names the rtok switch that would shorten each (`[plugins.read] default_mode`, a `[stem]` rule, or `rtok mcp --`).

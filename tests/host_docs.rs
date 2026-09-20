@@ -38,3 +38,27 @@ fn every_host_readme_links_its_docs() {
         );
     }
 }
+
+/// Hosts that receive `skills/rtok/` on install must link their skill-root docs (T71.3).
+const SKILL_HOSTS: &[(&str, &str)] = &[
+    ("claude", "code.claude.com/docs/en/skills"),
+    ("cursor", "cursor.com/docs/skills"),
+    ("codex", "agentskills.io"),
+    ("opencode", "opencode.ai/docs/skills"),
+    ("copilot", "copilot/concepts/agents/about-agent-skills"),
+];
+
+#[test]
+fn skill_hosts_link_their_skill_root_docs() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/agents");
+    for (id, needle) in SKILL_HOSTS {
+        let readme = root.join(id).join("README.md");
+        let text =
+            fs::read_to_string(&readme).unwrap_or_else(|e| panic!("{}: {e}", readme.display()));
+        assert!(
+            text.contains(needle),
+            "{}: `## Docs` must link the host skill root ({needle})",
+            readme.display()
+        );
+    }
+}
