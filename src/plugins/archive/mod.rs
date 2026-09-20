@@ -959,4 +959,69 @@ mod tests {
                 .starts_with("[archived ")
         );
     }
+
+    fn skill_text(name: &str) -> String {
+        format!(
+            "Base directory for this skill: /s/{name}\n\n# {name}\n{}",
+            big(name)
+        )
+    }
+
+    fn srefs<'a>(values: &'a mut [Value]) -> Vec<SkillRef<'a>> {
+        let total = values.len();
+        values
+            .iter_mut()
+            .enumerate()
+            .map(|(index, content)| SkillRef {
+                id: format!("tu-{}", index + 1),
+                name: "slint".into(),
+                content,
+                turn: total - index - 1,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn skill_bodies_archive_outside_keep_turns_stably() {
+        let mut cx = cx("skills-on");
+        cx.config.plugins.archive.keep_turns = 1;
+        let body = skill_text("slint");
+        let mut values: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();
+        let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
+        assert_eq!(ms.len(), 2, "turns 2 and 1 (keep_turns=1); turn 0 stays");
+        assert!(ms.iter().all(|m| m.kind == "skill"));
+        assert!(
+            values[0].as_str().unwrap().starts_with("[archived ")
+                && values[0].as_str().unwrap().contains("skill slint")
+        );
+        assert!(values[1].as_str().unwrap().starts_with("[archived "));
+        assert_eq!(
+            values[2],
+            Value::String(body.clone()),
+            "live edge stays whole"
+        );
+        let first = values.clone();
+        let mut again: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();
+        let ms2 = rewrite_skills(srefs(&mut again), &Ctx::new(&cx));
+        assert_eq!(first, again, "byte-identical pointers on replay");
+        assert_eq!(ms2[0].ref_id, ms[0].ref_id, "the body never re-archives");
+        let id = ms[0].ref_id.clone().unwrap();
+        let back = crate::plugin::Ctx::new(&cx)
+            .get_archive(&id)
+            .unwrap()
+            .expect("archived");
+        assert_eq!(String::from_utf8(back).unwrap(), body);
+    }
+
+    #[test]
+    fn skill_bodies_stay_whole_while_the_flag_is_off() {
+        let mut cx = cx("skills-off");
+        cx.config.plugins.archive.skills = false;
+        cx.config.plugins.archive.keep_turns = 0;
+        let body = skill_text("slint");
+        let mut values = vec![Value::String(body.clone())];
+        let ms = rewrite_skills(srefs(&mut values), &Ctx::new(&cx));
+        assert!(ms.is_empty());
+        assert_eq!(values[0], Value::String(body));
+    }
 }

@@ -3,7 +3,6 @@
 - T59.7. `doctor` names host-native features that duplicate a rtok surface
 - T60.8. TUI help overlay and manual refresh
 - T61.1. `stats` counts injected skill bodies
-- T61.2. Archive skill bodies outside the live zone
 - T61.3. `doctor` skill audit
 - T64.3. Prompt-cache FAQ with the measured hit rate per surface
 - T65.3. `cmd` column-padding collapse

@@ -55,6 +55,11 @@ pub trait ToolResults: Send + Sync {
     fn live_blobs<'a>(&self, _req: &'a mut Value) -> Vec<BlobRef<'a>> {
         Vec::new()
     }
+
+    /// Injected skill bodies in `req` (T61.2). Empty by default.
+    fn skill_refs<'a>(&self, _req: &'a mut Value) -> Vec<SkillRef<'a>> {
+        Vec::new()
+    }
 }
 
 /// A provider request, seen through the wire that owns it.
@@ -85,5 +90,10 @@ impl<'a> WireRequest<'a> {
     /// Every shrinkable non-result payload in the request, mutable.
     pub fn live_blobs(&mut self) -> Vec<BlobRef<'_>> {
         self.wire.live_blobs(self.body)
+    }
+
+    /// Every injected skill body in the request, mutable.
+    pub fn skill_refs(&mut self) -> Vec<SkillRef<'_>> {
+        self.wire.skill_refs(self.body)
     }
 }

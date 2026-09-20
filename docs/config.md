@@ -117,6 +117,12 @@ context_management = false            # Anthropic /v1/messages only: add clear_t
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 # TLS: Mozilla webpki roots (`use_preconfigured_tls`). Corporate CAs: SSL_CERT_FILE (PEM, curl). See "TLS and corporate CAs".
 
+[proxy.tools_rewrite]                 # T59.5; off: request bytes stay identical
+enabled = false
+max_description_tokens = 60           # 0 = no truncate; sentence boundary; estimator Class::Prose
+allow = []                            # empty = keep all names not in deny
+deny = []                             # drop these names from tools[]; later calls still forward
+
 [web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
@@ -268,6 +274,7 @@ head_lines = 8
 tail_lines = 4
 tiers      = false                    # opt-in tiered loading (default off); OpenViking L0/L1/L2 behaviour spec is AGPL-3.0 — rtok does not vendor, link, or subprocess it (D6); gates native impl in T33.2
 live_blobs = false                    # shrink nested JSON dumps + data: blobs in user blocks, never results/system/tools/last-2-turns (T51.1, opt-in)
+skills     = true                     # archive skill bodies outside keep_turns (T61.2); off with skills = false
 
 [plugins.proxy]
 enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]
