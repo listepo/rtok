@@ -110,7 +110,7 @@ printpdf = "0.12.8" # paged-PDF renderer for `rtok report --format pdf` (T22.0 s
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
-tower-http = { version = "0.6", features = ["fs"] } # ServeDir for Slint WASM assets
+tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM assets
 futures-util = "0.3.34"
 ratatui = "0.30.2" # `rtok tui`, the terminal rendering of the D23 model (T15.1); default backend is crossterm
 crossterm = "0.29" # key and tick events for the TUI loop (T15.1); same major as ratatui 0.30's backend, so one copy links
