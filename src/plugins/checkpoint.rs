@@ -1,6 +1,6 @@
 //! PreCompact checkpoint + compact restore (plan T2.5).
 
-use rtok_plugin_sdk::{Class, Ctx, Injection};
+use rtok_plugin_sdk::{Class, Ctx, Injection, Measurement};
 use serde_json::Value;
 use std::collections::{BTreeSet, VecDeque};
 use std::path::Path;
@@ -185,10 +185,36 @@ fn kind(cx: &Ctx) -> String {
 
 /// Read `transcript_path`, store a `notes` row `kind=checkpoint:<session>`.
 pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
+    write(transcript_path, cx, &kind(cx), Some("rtok"))
+}
+
+/// SessionEnd: same extractor and render as [`save`], kind `session:<session>`.
+pub fn save_session(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
+    let project = project_of_cx(cx);
+    write(
+        transcript_path,
+        cx,
+        &format!("session:{}", cx.session()),
+        project.as_deref(),
+    )
+}
+
+fn write(
+    transcript_path: &str,
+    cx: &Ctx,
+    kind: &str,
+    project: Option<&str>,
+) -> anyhow::Result<Checkpoint> {
     let mut cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
     attach_ids(&mut cp, cx);
-    cx.insert_note(Some("rtok"), &kind(cx), "compact", &cp.render())?;
+    cx.insert_note(project, kind, "compact", &cp.render())?;
     Ok(cp)
+}
+
+fn project_of_cx(cx: &Ctx) -> Option<String> {
+    crate::config::layers::git_root(Path::new(cx.cwd()?))?
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
 }
 
 fn checkpoint_cap(cx: &Ctx) -> u32 {
@@ -225,7 +251,35 @@ fn attach_ids(cp: &mut Checkpoint, cx: &Ctx) {
 /// Latest checkpoint of this session as an injection, capped at
 /// `plugins.memory.checkpoint_tokens`.
 pub fn offer(cx: &Ctx) -> Option<Injection> {
-    let text = cx.latest_note(&kind(cx)).ok().flatten()?;
+    render_offer(cx, cx.latest_note(&kind(cx)).ok().flatten()?)
+}
+
+/// Newest `session:*` note of the hook cwd's project, same render and budget as [`offer`].
+pub fn offer_session(cx: &Ctx) -> Option<Injection> {
+    let db: std::path::PathBuf = cx.config("core.db_path");
+    if db.as_os_str().is_empty() {
+        return None;
+    }
+    let store = crate::store::Store::open(&db).ok()?;
+    let raw = store
+        .latest_session_note(project_of_cx(cx).as_deref())
+        .ok()
+        .flatten()?;
+    let inj = render_offer(cx, raw.clone())?;
+    let _ = cx.record(&Measurement {
+        plugin: "memory",
+        kind: "handoff",
+        before_bytes: raw.len() as u64,
+        after_bytes: inj.text.len() as u64,
+        est_before: cx.estimate(&raw, Class::Prose),
+        est_after: cx.estimate(&inj.text, Class::Prose),
+        ref_id: None,
+        call_id: None,
+    });
+    Some(inj)
+}
+
+fn render_offer(cx: &Ctx, text: String) -> Option<Injection> {
     let cap = checkpoint_cap(cx);
     let text = crate::plugin::fit_budget(cx, &text, Class::Prose, cap);
     (!text.is_empty()).then_some(Injection {
@@ -409,8 +463,10 @@ mod tests {
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
         assert!(inj.text.starts_with("checkpoint\n"), "{}", inj.text);
 
-        let mut many = Checkpoint::default();
-        many.prompts = vec!["x".repeat(80)];
+        let mut many = Checkpoint {
+            prompts: vec!["x".repeat(80)],
+            ..Default::default()
+        };
         for i in 0..200 {
             many.ids.push(format!("id{i:04}"));
             many.id_meta.push(("Read".into(), 9999));

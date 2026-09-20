@@ -39,6 +39,10 @@ pub struct Snapshot {
     /// selection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot
     /// makes the page both surfaces' (D23); `[log] lines` is the frame's bound too.
     pub logs: Vec<String>,
+    /// Set when the store will not open or this tick's doctor probe failed (T60.6). Both
+    /// surfaces render it as a banner instead of an empty page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Skills page (T63.1): T61.3 listing joined to T61.1 resident/invocations.
     pub skills: SkillsPage,
     /// Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither
@@ -125,6 +129,26 @@ pub struct AgentListRow {
     pub plugins: Vec<crate::agents::PluginRow>,
 }
 
+/// Skills page (T63.1, D23): one row per skill the host lists.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct SkillsPage {
+    /// Totals: listed, desc bytes ≈ tokens/req (chars/4, research.md §10.2), resident, input share.
+    pub header: String,
+    pub rows: Vec<SkillPageRow>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct SkillPageRow {
+    pub name: String,
+    pub source: String,
+    pub desc_chars: usize,
+    pub body_bytes: u64,
+    pub invocations: u64,
+    pub resident: u64,
+    pub last_invoked: String,
+    pub never: bool,
+}
+
 /// `rtok otel status` as data: endpoint, watermarks, pending rows, last exporter line.
 #[derive(Debug, Serialize)]
 pub struct OtelStatus {
@@ -145,6 +169,119 @@ pub struct OtelLastLog {
     pub message: String,
 }
 
+/// Memory plugin status for `rtok memory status` and `--json` (T69.4).
+#[derive(Debug, Serialize)]
+pub struct MemoryStatus {
+    pub since: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    pub notes: MemoryNotesTotals,
+    pub recall: MemoryRecallTotals,
+    pub calls: MemoryMcpCalls,
+    pub by_project: Vec<MemoryProjectBlock>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryNotesTotals {
+    pub live: u64,
+    pub pinned: u64,
+    pub retired: u64,
+    pub body_bytes: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryRecallTotals {
+    pub recalls: u64,
+    pub stood_for_bytes: i64,
+    pub injected_bytes: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryMcpCalls {
+    pub mem_search: u64,
+    pub mem_get: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryProjectBlock {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    pub kinds: Vec<MemoryKindAgg>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryKindAgg {
+    pub kind: String,
+    pub live: u64,
+    pub pinned: u64,
+    pub retired: u64,
+    pub body_bytes: i64,
+    pub oldest_ts: i64,
+    pub newest_ts: i64,
+}
+
+/// One `rtok memory status` snapshot — the same type `--json` prints (T69.4).
+pub fn memory_status(
+    cfg: &Config,
+    project: Option<&str>,
+    since: Option<&str>,
+) -> Result<MemoryStatus> {
+    let since_label = since.unwrap_or(&cfg.stats.since);
+    let span = stats::parse_since(since_label)?;
+    let since_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+        - i64::try_from(span.as_secs()).unwrap_or(i64::MAX);
+    let store = Store::open(&cfg.core.db_path)?;
+    let aggs = store.memory_note_aggs(project)?;
+    let mut notes = MemoryNotesTotals {
+        live: 0,
+        pinned: 0,
+        retired: 0,
+        body_bytes: 0,
+    };
+    let mut by_project: BTreeMap<Option<String>, Vec<MemoryKindAgg>> = BTreeMap::new();
+    for row in aggs {
+        notes.live += row.live;
+        notes.pinned += row.pinned;
+        notes.retired += row.retired;
+        notes.body_bytes += row.body_bytes;
+        by_project
+            .entry(row.project.clone())
+            .or_default()
+            .push(MemoryKindAgg {
+                kind: row.kind,
+                live: row.live,
+                pinned: row.pinned,
+                retired: row.retired,
+                body_bytes: row.body_bytes,
+                oldest_ts: row.oldest_ts,
+                newest_ts: row.newest_ts,
+            });
+    }
+    let (recalls, stood_for_bytes, injected_bytes) = store.memory_recall_totals(since_unix)?;
+    let (mem_search, mem_get) = store.memory_mcp_calls(since_unix)?;
+    Ok(MemoryStatus {
+        since: since_label.to_string(),
+        project: project.map(str::to_string),
+        notes,
+        recall: MemoryRecallTotals {
+            recalls,
+            stood_for_bytes,
+            injected_bytes,
+        },
+        calls: MemoryMcpCalls {
+            mem_search,
+            mem_get,
+        },
+        by_project: by_project
+            .into_iter()
+            .map(|(project, kinds)| MemoryProjectBlock { project, kinds })
+            .collect(),
+    })
+}
+
 /// The pages the model offers, each as `(page, snapshot key)` — the wire key that
 /// carries the page's numbers; `type` is the wire envelope, not a page. D23: a page
 /// that exists on one surface and not the other is a defect, and
@@ -162,10 +299,19 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
 }
 
 /// Open the store at `core.db_path` and read one snapshot. A store that will not open
-/// is not fatal for an operator surface: the pages render with zeros.
+/// is not fatal for an operator surface: the pages render with zeros and [`Snapshot::error`]
+/// carries why (T60.6).
 pub fn snapshot(cfg: &Config) -> Snapshot {
-    let store = Store::open(&cfg.core.db_path).ok();
-    Model::new(cfg, store.as_ref()).snapshot()
+    let opened = Store::open(&cfg.core.db_path);
+    let store_err = opened.as_ref().err().map(|e| e.to_string());
+    let store = opened.ok();
+    let mut snap = Model::new(cfg, store.as_ref()).snapshot();
+    if let Some(msg) = store_err {
+        snap.error = Some(msg);
+    } else if snap.doctor.is_none() {
+        snap.error = Some("doctor probe failed".into());
+    }
+    snap
 }
 
 /// The Sessions page (T25.1, D27): one row per session, newest first — the same rows
@@ -371,11 +517,30 @@ pub struct ReportExpand {
     pub cost_rows: u64,
 }
 
+/// One token sink ranked by raw bytes in `Measurement` rows (T59.8).
+#[derive(Clone, Debug, Serialize)]
+pub struct ReportSink {
+    /// `read` | `cmd` | `mcp`
+    pub class: String,
+    /// File path, command stem, or `server/tool`.
+    pub sink: String,
+    pub before_bytes: i64,
+    pub rows: u64,
+    /// Which rtok switch would shorten this sink.
+    pub switch: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReportSinksSection {
+    pub rows: Vec<ReportSink>,
+}
+
 /// Every ledger section of the report, from one store open.
 #[derive(Debug, Serialize)]
 pub struct ReportLedgers {
     pub window: ReportWindow,
     pub savings: ReportSavingsSection,
+    pub sinks: ReportSinksSection,
     pub calls: ReportCallsSection,
     pub cache: ReportCache,
     pub expand: ReportExpand,
@@ -392,6 +557,7 @@ pub fn report_ledgers(cfg: &Config) -> Result<ReportLedgers> {
         calls: report_calls(&calls, window.from_unix),
         window,
         savings: report_savings(&store)?,
+        sinks: report_sinks(&store, cfg)?,
         cache: report_cache(&store)?,
         expand: report_expand(&store)?,
     })
@@ -460,6 +626,81 @@ fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
         total_saved,
         kinds: kinds.into_iter().collect(),
     })
+}
+
+fn report_sinks(store: &Store, cfg: &Config) -> Result<ReportSinksSection> {
+    let mut by: BTreeMap<(String, String), (i64, u64)> = BTreeMap::new();
+    for (plugin, _) in crate::config::CATALOGUE {
+        for m in store.list_measurements(plugin)? {
+            if m.before_bytes <= 0 {
+                continue;
+            }
+            let (class, sink) = sink_label(plugin, &m.kind, m.ref_id.as_deref());
+            let e = by.entry((class, sink)).or_insert((0, 0));
+            e.0 += m.before_bytes;
+            e.1 += 1;
+        }
+    }
+    let mut rows: Vec<ReportSink> = by
+        .into_iter()
+        .map(|((class, sink), (before_bytes, rows))| {
+            let switch = sink_switch(cfg, &class, &sink);
+            ReportSink {
+                class,
+                sink,
+                before_bytes,
+                rows,
+                switch,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b.before_bytes
+            .cmp(&a.before_bytes)
+            .then_with(|| a.sink.cmp(&b.sink))
+    });
+    rows.truncate(10);
+    Ok(ReportSinksSection { rows })
+}
+
+fn sink_label(plugin: &str, kind: &str, ref_id: Option<&str>) -> (String, String) {
+    match plugin {
+        "cmd" if kind == "wrap" => {
+            let sink = ref_id
+                .and_then(|r| r.rsplit_once(':').map(|(s, _)| s.to_string()))
+                .unwrap_or_else(|| "mcp".into());
+            ("mcp".into(), sink)
+        }
+        "cmd" => {
+            let stem = ref_id
+                .and_then(|r| r.split_once(':').map(|(s, _)| s.to_string()))
+                .unwrap_or_else(|| kind.to_string());
+            ("cmd".into(), stem)
+        }
+        "read" => ("read".into(), ref_id.unwrap_or("unknown").to_string()),
+        _ => (plugin.to_string(), ref_id.unwrap_or(kind).to_string()),
+    }
+}
+
+fn sink_switch(cfg: &Config, class: &str, sink: &str) -> String {
+    match class {
+        "read" => format!(
+            "[plugins.read] default_mode = {}",
+            cfg.plugins.read.default_mode
+        ),
+        "cmd" => {
+            let has = crate::plugins::cmd::rules::defaults()
+                .iter()
+                .any(|r| r.match_cmd == sink);
+            if has {
+                format!("[{sink}] rule")
+            } else {
+                format!("[{sink}] rule (default head/tail)")
+            }
+        }
+        "mcp" => "rtok mcp -- <server> (wrap)".into(),
+        _ => "none: already shortened".into(),
+    }
 }
 
 fn report_calls(all: &[crate::store::models::Call], from: i64) -> ReportCallsSection {
@@ -615,6 +856,40 @@ pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
         }
     }
     out
+}
+
+/// `rtok agents info <host>` as data — the same variant blocks [`agents_list`] prints,
+/// filtered to `ids` (already-resolved host ids).
+pub fn agents_listed(cfg: &Config, ids: &[&str]) -> Vec<AgentListRow> {
+    crate::agents::visit_hosts(ids, |a, v| {
+        let present = crate::agents::present(a, v, cfg);
+        let app = crate::agents::app_path(v).map(|p| p.display().to_string());
+        let version = app.as_ref().map(|_| crate::agents::app_version(v));
+        let config = a
+            .files(cfg, v.kind)
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect();
+        let (modules, plugins) = if present {
+            (
+                crate::agents::module_rows(a, v.kind, cfg),
+                crate::agents::plugin_rows(a, v.kind, cfg),
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        AgentListRow {
+            host: a.id(),
+            kind: v.kind.as_str(),
+            name: v.name,
+            present,
+            app,
+            version,
+            config,
+            modules,
+            plugins,
+        }
+    })
 }
 
 /// `rtok otel status` as data — the same watermarks the table prints.
@@ -836,6 +1111,7 @@ impl<'a> Model<'a> {
             // a failed or in-flight tick is `None`, never a failed snapshot.
             doctor,
             logs: self.log_lines(None),
+            error: None,
             skills,
             ref_ids,
         }

@@ -11,10 +11,21 @@ pub fn compress(
     archive_id: &str,
 ) -> (String, &'static str) {
     let argv = family_argv(argv);
+    let rule = settings.pick(bin(&argv));
+    // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
+    // reach the compact pass instead of a NAME/STATUS parser.
+    if rules::is_json_body(output) {
+        let s = rules::apply(settings, output, exit, &rule, archive_id);
+        let kind = if s.len() < output.len() {
+            "rule"
+        } else {
+            "raw"
+        };
+        return (s, kind);
+    }
     if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
-    let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
     let kind = if bin(&argv) == "skill" {
         "skill"

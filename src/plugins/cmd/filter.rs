@@ -131,11 +131,11 @@ Changes not staged for commit:
             })
             .collect();
         assert_eq!(families, ["grep", "find", "ls"]);
-        // All three are rule-engine families: `format()` has no `ls`/`find` arm, they
-        // compact through `[ls]` / `[find]` (`group = "dir"`) in `rules/default.toml`.
+        // `grep` is a rule-engine family; `find`/`ls` are Rust formatters (`format()` has
+        // a `ls`/`find` arm, T64.1 reverted), so their rows carry different kinds.
         assert_eq!(
             rows.iter().map(|r| r.kind.as_str()).collect::<Vec<_>>(),
-            ["rule"; 3]
+            ["rule", "formatter", "formatter"]
         );
     }
 }
