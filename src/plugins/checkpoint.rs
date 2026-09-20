@@ -450,6 +450,79 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// T71.2 e2e: `SessionEnd` saves the transcript under `session:<id>` with the project
+    /// from the hook cwd; `startup_recall` off injects nothing at startup, on restores the
+    /// newest project note byte-stably within `checkpoint_tokens`, measured as `handoff`.
+    #[test]
+    fn session_end_note_and_startup_recall() {
+        let dir = std::env::temp_dir().join("rtok-t712-session-end");
+        let _ = std::fs::remove_dir_all(&dir);
+        let repo = dir.join("myproj");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join("t.jsonl"), FIXTURE).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes.clear();
+        let end = serde_json::json!({
+            "hook_event_name":"SessionEnd",
+            "session_id":"t712",
+            "transcript_path":repo.join("t.jsonl").to_str().unwrap(),
+            "cwd":repo.display().to_string(),
+            "reason":"clear"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("SessionEnd", end.to_string().as_bytes(), &mut out, &cfg);
+        assert_eq!(out, b"{}");
+        let body = crate::store::Store::open(&cfg.core.db_path)
+            .unwrap()
+            .latest_session_note(Some("myproj"))
+            .unwrap()
+            .expect("session note");
+        assert!(body.starts_with("checkpoint\n"), "{body}");
+        for p in ["src/a.rs", "src/b.rs", "src/c.rs"] {
+            assert!(body.contains(p), "{body}");
+        }
+
+        let start = serde_json::json!({
+            "hook_event_name":"SessionStart",
+            "session_id":"t712-next",
+            "source":"startup",
+            "cwd":repo.display().to_string()
+        });
+        let mut off = Vec::new();
+        crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut off, &cfg);
+        assert_eq!(off, b"{}", "startup_recall off injects nothing");
+
+        cfg.plugins.memory.startup_recall = true;
+        let mut on1 = Vec::new();
+        crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut on1, &cfg);
+        let mut on2 = Vec::new();
+        crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut on2, &cfg);
+        assert_eq!(on1, on2, "byte-stable for an unchanged store");
+        let text = serde_json::from_slice::<serde_json::Value>(&on1).unwrap()
+            ["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        for p in ["src/a.rs", "src/b.rs", "src/c.rs"] {
+            assert!(text.contains(p), "{text}");
+        }
+        let est = crate::plugin::Runtime::in_memory("t712-budget").unwrap();
+        assert!(
+            est.estimate(&text, Class::Prose) <= est.config.plugins.memory.checkpoint_tokens,
+            "{text}"
+        );
+        let handoffs = crate::store::Store::open(&cfg.core.db_path)
+            .unwrap()
+            .list_measurements("memory")
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.kind == "handoff")
+            .count();
+        assert_eq!(handoffs, 2, "one measurement per startup restore");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The cap is a hard ceiling whatever the text size, and the cut is not one pop per char.
     #[test]
     fn offer_fits_checkpoint_tokens() {
