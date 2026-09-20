@@ -48,7 +48,7 @@ Check: uninstall a previously installed host; UI checkmark off; `rtok agents lis
 
 ### T76. Offer to restart the host after `agents install` / `uninstall`
 
-Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit. If the user does not answer within a timeout, take the default **no restart** and continue — do not hang the CLI.
+Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit. **No response within the timeout = No** — do **not** restart the agent; continue and do not hang the CLI. Fallback timeout when the config key is absent: **60 seconds** (one minute), not 30.
 
 **Timeout source.** Duration comes from the rtok **config file**, not a hardcoded constant in code: e.g. `restart_prompt_timeout_seconds` (exact nesting to match existing config style). If the key is **absent**, fall back to **60 seconds** (one minute). If present, use that value (document `0` meaning: wait forever vs skip prompt — pick one). Optional CLI override is fine later; the task gate is config-file configurability + 60s fallback.
 
@@ -58,7 +58,7 @@ Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall
 - Prompt: something like "Restart <host> now so the change takes effect? [y/N] (auto-no in 60s)" — the parenthetical uses the effective timeout (config or 60s fallback).
 - Yes: stop the host/agent process, then start it again (post-config-change only — never restart before the install/uninstall writes finish).
 - No: do nothing further; print that a manual restart is still needed if the host caches config.
-- Timeout / no answer: same as No — default no restart, print that the timeout elapsed and a manual restart may still be needed; then exit the command successfully.
+- **No response / timeout = No:** treat silence as an explicit no — do **not** restart the agent; print that the timeout elapsed and a manual restart may still be needed; then exit the command successfully. Default wait is **60 seconds** (config `restart_prompt_timeout_seconds`, fallback 60 if absent).
 - Changing `restart_prompt_timeout_seconds` in config changes the wait without a rebuild.
 
 **Actual (today).** Install/uninstall edit files and return; no restart offer and no timed prompt, so a running host keeps the old hooks/MCP until the user restarts it by hand.
