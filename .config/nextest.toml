@@ -28,3 +28,11 @@ threads-required = "num-test-threads"
 filter = 'test(/p8c_numbers|p8c_one_edit_reads_one_file_under_10ms/)'
 threads-required = "num-test-threads"
 
+
+# trycmd spawns the real rtok binary for every case; under a full-suite parallel run its
+# output drifted 3x on 2026-09-20/21 (fast, load-only failures; green standalone and in
+# CI). Isolate the runner on the machine like the heavy benches above -- each case still
+# runs, just not sharing CPUs with the rest of the suite.
+[[profile.default.overrides]]
+filter = 'binary(cli_trycmd)'
+threads-required = "num-test-threads"

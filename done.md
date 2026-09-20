@@ -4024,3 +4024,11 @@ Complexity: 3/5 — one wrap helper, Cursor field map, one replacement stdout sh
 Status: done 2026-09-18
 Check result: wrap/hooks/cursor lib tests and `cursor_plugin` / `host_docs` / `agents_doc` / `mcp_wrap` green. `just check` red only on a pre-existing trycmd bash-completion snapshot (`--context` from T67.2), not this hook.
 Model: Cursor / grok 4.6
+
+**T73 Cycle demon surfaces around a binary replace** · `src/demon.rs`, `tests/demon.rs`
+Do: hidden `rtok demon upgrade` snapshots kernel-live services, stops them (marker + wait), runs `ketch upgrade rtok --yes` / `rtok-update` / `RTOK_UPDATE_CMD`, and starts the same set even when the replace failed; the supervisor respawns from the on-disk path. 2026-09-21 (ZCode / GLM-5.3): `quiesce` between stop and replace — a supervisor that lost the race between its child's death and its own signal could still respawn the surface, rewriting the state file and re-locking the store the replace touches (seen 3× on 2026-09-19–20; one occurrence auto-reverted an unrelated markdown push); the respawn is retired with the `start` this-boot guard and the upgrade waits (≤4 s) until every stopped service's file is gone and stays gone, failing loudly instead of racing the replace; the stop folds into the replace arm so a failed stop still restarts what was up.
+Check: `tests/demon.rs` — live mcp is down during the replace command (no state file), up afterwards; a failing replace still leaves mcp running; unit `quiesce_retires_a_late_respawn_state_file`, `quiesce_is_ok_when_nothing_respawned`; `just check`.
+Complexity: 2/5 — one loop; reuses `read`/`boot_time`/`process_kill`.
+Status: done 2026-09-21
+Check result: e2e 10/10 standalone after the fix (3 failures on 2026-09-19–20 before); full gate green.
+Model: ZCode / GLM-5.3 (race fix + close-out; feature skeleton by Cursor / grok 4.6)
