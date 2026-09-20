@@ -1,6 +1,6 @@
 # Agent notes — `memory`
 
-**Owns** `src/plugins/memory/**` (`mod.rs`, `inject.rs`, `import.rs`), `src/plugins/checkpoint.rs`
+**Owns** `src/plugins/memory/**` (`mod.rs`, `inject.rs`, `import.rs`, `sync.rs`), `src/plugins/checkpoint.rs`
 if split out per T2.5.
 
 **Contract**: the `Plugin` trait, `Ctx` and the host capabilities come from the published

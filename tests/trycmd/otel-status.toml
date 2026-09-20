@@ -1,0 +1,16 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml otel status"
+stdout = """
+endpoint: none (set [otel] endpoint or OTEL_EXPORTER_OTLP_ENDPOINT)
+calls: mark 0 · 0 pending
+logs: mark 0 · 0 pending
+sessions: mark 0
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-otel-status"
+RTOK_HOME = "target/tmp/t60-2-otel-status"

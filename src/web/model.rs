@@ -104,6 +104,40 @@ pub struct PluginPage {
     pub stats: Option<Stats>,
 }
 
+/// One `rtok agents list` row: the same host variant `agents::list` prints.
+#[derive(Debug, Serialize)]
+pub struct AgentListRow {
+    pub host: &'static str,
+    pub kind: &'static str,
+    pub name: &'static str,
+    pub present: bool,
+    pub app: Option<String>,
+    pub version: Option<String>,
+    pub config: Vec<String>,
+    pub modules: Vec<crate::agents::ModuleRow>,
+    pub plugins: Vec<crate::agents::PluginRow>,
+}
+
+/// `rtok otel status` as data: endpoint, watermarks, pending rows, last exporter line.
+#[derive(Debug, Serialize)]
+pub struct OtelStatus {
+    pub endpoint: Option<String>,
+    pub calls_mark: i64,
+    pub calls_pending: i64,
+    pub logs_mark: i64,
+    pub logs_pending: i64,
+    pub sessions_mark: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last: Option<OtelLastLog>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OtelLastLog {
+    pub level: String,
+    pub name: String,
+    pub message: String,
+}
+
 /// The pages the model offers, each as `(page, snapshot key)` — the wire key that
 /// carries the page's numbers; `type` is the wire envelope, not a page. D23: a page
 /// that exists on one surface and not the other is a defect, and
@@ -152,6 +186,7 @@ pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
     )?;
     if let Ok(store) = Store::open(&cfg.core.db_path) {
         let _ = stats::attach_api(&mut report, &store);
+        let _ = stats::attach_bash_cmd(&mut report, &store);
         if cfg.stats.price {
             let _ = stats::attach_costs(&mut report, &store, &cfg.stats.prices);
         }
@@ -532,6 +567,66 @@ fn pct(sorted: &[f64], p: f64) -> Option<f64> {
 /// cannot re-spawn every MCP server (T15.6 hot path).
 pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
     doctor::page(cfg)
+}
+
+/// `rtok agents list` as data — one row per known host variant.
+pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
+    let mut out = Vec::new();
+    for id in crate::agents::HOSTS {
+        let Some(a) = crate::agents::host(id) else {
+            continue;
+        };
+        for v in a.variants() {
+            let present = crate::agents::present(a, v, cfg);
+            let app = crate::agents::app_path(v).map(|p| p.display().to_string());
+            let version = app.as_ref().map(|_| crate::agents::app_version(v));
+            let config = a
+                .files(cfg, v.kind)
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+            let (modules, plugins) = if present {
+                (
+                    crate::agents::module_rows(a, v.kind, cfg),
+                    crate::agents::plugin_rows(a, v.kind, cfg),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            out.push(AgentListRow {
+                host: a.id(),
+                kind: v.kind.as_str(),
+                name: v.name,
+                present,
+                app,
+                version,
+                config,
+                modules,
+                plugins,
+            });
+        }
+    }
+    out
+}
+
+/// `rtok otel status` as data — the same watermarks the table prints.
+pub fn otel_status(cfg: &Config) -> Result<OtelStatus> {
+    let store = Store::open(&cfg.core.db_path)?;
+    let (calls_pending, logs_pending) = store.otel_pending()?;
+    let last = store.last_log("otel")?.map(|l| OtelLastLog {
+        level: l.level,
+        name: l.name,
+        message: l.message,
+    });
+    Ok(OtelStatus {
+        endpoint: cfg.otel.resolve().map(|ep| ep.url),
+        calls_mark: store.otel_mark("calls")?,
+        calls_pending,
+        logs_mark: store.otel_mark("logs")?,
+        logs_pending,
+        sessions_mark: store.otel_mark("sessions")?,
+        last,
+    })
 }
 
 /// How long a snapshot may reuse the last doctor report. Shorter than a sitting at the

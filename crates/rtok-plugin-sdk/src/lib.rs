@@ -100,8 +100,8 @@ pub mod testing;
 pub mod wire;
 
 pub use host::{
-    Archive, ArchiveDecision, Capabilities, Class, Ctx, Host, Ledger, NoteHit, Notes, ReadCache,
-    SymbolFileBatch, SymbolFileRows, Symbols,
+    Archive, ArchiveDecision, ArchiveHit, Capabilities, Class, Ctx, Host, Ledger, NoteHit, Notes,
+    ReadCache, SymbolFileBatch, SymbolFileRows, Symbols,
 };
 pub use wire::{BlobRef, SkillRef, ToolResultRef, ToolResults, WireRequest};
 

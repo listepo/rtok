@@ -27,18 +27,15 @@ pub struct BlobRef<'a> {
     pub turn: usize,
 }
 
-/// One injected skill body (plan T61.2): a user text block that starts with
-/// `Base directory for this skill:` immediately after a `Launching skill:` tool
-/// result. `id` is that result's `tool_use_id`, so an archive pointer is
-/// byte-stable across later requests of the same session.
+/// Injected skill body in a user message (T61.2).
 pub struct SkillRef<'a> {
-    /// The preceding `Launching skill` result's provider-stable id.
+    /// Preceding `Skill` tool_use id.
     pub id: String,
-    /// Skill name from `Launching skill: <name>`.
+    /// Last path component of the skill directory.
     pub name: String,
-    /// The mutable skill-body payload. Rewrite it in place.
+    /// Mutable skill body text block.
     pub content: &'a mut Value,
-    /// How many user turns follow this block.
+    /// User turns since this block was injected.
     pub turn: usize,
 }
 
@@ -47,6 +44,11 @@ pub struct SkillRef<'a> {
 pub trait ToolResults: Send + Sync {
     /// Every mutable tool-result payload in `req`, with its id and turn distance.
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>>;
+
+    /// Skill bodies the archive plugin may shrink (T61.2). Empty by default.
+    fn skills<'a>(&self, _req: &'a mut Value) -> Vec<SkillRef<'a>> {
+        Vec::new()
+    }
 
     /// Large non-result payloads a proxy pass may shrink losslessly (T51.1).
     /// Empty by default; wires with user content blocks override it.
@@ -78,6 +80,11 @@ impl<'a> WireRequest<'a> {
     /// Every tool result in the request, mutable.
     pub fn tool_results(&mut self) -> Vec<ToolResultRef<'_>> {
         self.wire.tool_results(self.body)
+    }
+
+    /// Mutable skill bodies in the request.
+    pub fn skills(&mut self) -> Vec<SkillRef<'_>> {
+        self.wire.skills(self.body)
     }
 
     /// Every shrinkable non-result payload in the request, mutable.

@@ -49,7 +49,7 @@ impl Plugin for Archive {
         }
         let mut out = rewrite(req.tool_results(), cx);
         out.extend(rewrite_blobs(req.live_blobs(), cx));
-        out.extend(rewrite_skills(req.skill_refs(), cx));
+        out.extend(rewrite_skills(req.skills(), cx));
         out
     }
 }
@@ -77,16 +77,13 @@ pub fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     out
 }
 
-/// Archive injected skill bodies the same way as old tool results (T61.2):
-/// persist once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`,
-/// keyed by `skill:{tool_use_id}` so the 22-byte `Launching skill:` result is not
-/// overwritten. Off with `[plugins.archive] skills = false`.
 pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
-    let a = cx.plugin_config::<crate::config::Archive>("archive");
-    if !a.skills {
+    if !cx.plugin_config::<crate::config::Archive>("archive").skills {
         return Vec::new();
     }
-    let keep = a.keep_turns as usize;
+    let keep = cx
+        .plugin_config::<crate::config::Archive>("archive")
+        .keep_turns as usize;
     let mut out: Vec<Measurement> = skills
         .into_iter()
         .filter(|s| s.turn >= keep)
@@ -96,58 +93,39 @@ pub fn rewrite_skills(skills: Vec<SkillRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
     out
 }
 
-fn skill_pointer(text: &str, id: &str, name: &str) -> String {
-    let n = text.lines().count();
-    let short = &id[..id.len().min(12)];
-    format!("[archived {short}: skill {name} · {n} lines · expand({id})]")
-}
-
 fn rewrite_skill(
-    tool_use_id: &str,
+    id: &str,
     name: &str,
-    content: &mut Value,
+    content: &mut serde_json::Value,
     cx: &Ctx,
 ) -> Option<Measurement> {
     let text = content.as_str()?.to_owned();
-    if !text.starts_with("Base directory for this skill:") {
-        return None;
-    }
-    let a = cx.plugin_config::<crate::config::Archive>("archive");
-    let key = format!("skill:{tool_use_id}");
+    let key = format!("skill:{id}");
     let (archive_id, live) = match cx.archive_decision(&key) {
         Ok(Some(d)) if d.expanded => return None,
         Ok(Some(d)) => (d.archive_id, d.pointer),
         Ok(None) => {
-            let est = cx.estimate(&text, Class::Code);
-            if est < a.min_tokens {
-                return None;
-            }
-            let archive_id = cx
-                .put_archive(text.as_bytes())
-                .map_err(|e| cx.log("error", "plugin", "archive", &format!("put: {e}")))
-                .ok()?;
-            let live = skill_pointer(&text, &archive_id, name);
-            cx.put_archive_decision(&key, &archive_id, &live)
-                .map_err(|e| cx.log("error", "plugin", "archive", &format!("decision: {e}")))
-                .ok()?;
+            let archive_id = cx.put_archive(text.as_bytes()).ok()?;
+            let n = text.lines().count();
+            let short = &id[..id.len().min(12)];
+            let live =
+                format!("[archived {short}: skill {name} · {n} lines · expand({archive_id})]");
+            cx.put_archive_decision(&key, &archive_id, &live).ok()?;
             (archive_id, live)
         }
-        Err(e) => {
-            cx.log("error", "plugin", "archive", &format!("decision: {e}"));
-            return None;
-        }
+        Err(_) => return None,
     };
     let m = Measurement {
         plugin: "archive",
         kind: "skill",
         before_bytes: text.len() as u64,
         after_bytes: live.len() as u64,
-        est_before: cx.estimate(&text, Class::Code),
-        est_after: cx.estimate(&live, Class::Code),
+        est_before: cx.estimate(&text, Class::Prose),
+        est_after: cx.estimate(&live, Class::Prose),
         ref_id: Some(archive_id),
         call_id: None,
     };
-    *content = Value::String(live);
+    *content = serde_json::Value::String(live);
     Some(m)
 }
 

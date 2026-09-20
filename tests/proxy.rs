@@ -1652,6 +1652,8 @@ async fn proxy_compress_archives_skill_bodies_outside_keep_turns() {
         cfg.proxy.mode = "compress".to_string();
         cfg.proxy.upstream = up.base_url();
         cfg.plugins.archive.keep_turns = 2;
+        // T61.2 ships skill archiving opt-in; this case is what the opt-in buys.
+        cfg.plugins.archive.skills = true;
     })
     .await;
     let request = t612_request();

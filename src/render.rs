@@ -15,20 +15,24 @@ use owo_colors::{OwoColorize, Stream};
 
 use crate::store::SessionTotals;
 
-/// A `git diff` of one file, three lines of context, coloured. Empty when nothing differs.
-pub fn file_diff(path: &Path, before: &str, after: &str) -> String {
+/// Uncoloured unified diff of one file, three lines of context. Empty when nothing differs.
+pub fn unified_diff(path: &Path, before: &str, after: &str) -> String {
     if before == after {
         return String::new();
     }
-    let text = similar::TextDiff::from_lines(before, after)
+    similar::TextDiff::from_lines(before, after)
         .unified_diff()
         .context_radius(3)
         .header(
             &format!("a/{}", path.display()),
             &format!("b/{}", path.display()),
         )
-        .to_string();
-    paint(&text)
+        .to_string()
+}
+
+/// A `git diff` of one file, three lines of context, coloured. Empty when nothing differs.
+pub fn file_diff(path: &Path, before: &str, after: &str) -> String {
+    paint(&unified_diff(path, before, after))
 }
 
 /// Colour diff-shaped text: green additions, red removals, cyan hunk headers, bold file headers.
@@ -63,6 +67,17 @@ pub fn spinner(what: &str) -> indicatif::ProgressBar {
     if let Ok(style) =
         indicatif::ProgressStyle::with_template("{spinner:.cyan} {msg} {pos} files · {elapsed}")
     {
+        pb.set_style(style);
+    }
+    pb.set_message(what.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(120));
+    pb
+}
+
+/// A spinner with no file counter. Same TTY rule as [`spinner`]: silent when stderr is not a terminal.
+pub fn loader(what: &str) -> indicatif::ProgressBar {
+    let pb = indicatif::ProgressBar::new_spinner();
+    if let Ok(style) = indicatif::ProgressStyle::with_template("{spinner:.cyan} {msg}") {
         pb.set_style(style);
     }
     pb.set_message(what.to_string());

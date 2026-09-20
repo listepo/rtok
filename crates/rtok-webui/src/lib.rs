@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 /// Page ids the WASM UI renders, in `model::pages()` order (D23 / T19.4).
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
-pub const PAGE_IDS: &[&str] = &["overview", "plugins", "calls", "sessions", "doctor", "logs"];
+pub const PAGE_IDS: &[&str] = &[
+    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills",
+];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
 /// onto the Slint window. Fail-open: missing keys become empty pages, never a panic.
@@ -33,6 +35,9 @@ pub mod snapshot {
         pub sessions: Vec<Session>,
         pub doctor_text: String,
         pub logs: Vec<String>,
+        pub error: String,
+        pub skills_header: String,
+        pub skills: Vec<Skill>,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -63,6 +68,7 @@ pub mod snapshot {
         pub tokens: String,
         pub subtitle: String,
         pub detail: String,
+        pub ref_id: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -79,6 +85,7 @@ pub mod snapshot {
         pub status: String,
         pub activity: String,
         pub summary: String,
+        pub detail: String,
     }
 
     /// Parse a `/ws` snapshot JSON into the view the UI binds.
@@ -97,7 +104,52 @@ pub mod snapshot {
             sessions: sessions_of(v),
             doctor_text: doctor_of(&v["doctor"]),
             logs: logs_of(v),
+            error: v.get("error").and_then(|e| e.as_str()).unwrap_or("").to_string(),
+            skills_header: v["skills"]["header"].as_str().unwrap_or("").to_string(),
+            skills: skills_of(v),
         }
+    }
+
+    #[derive(Debug, Default, PartialEq, Eq)]
+    pub struct Skill {
+        pub name: String,
+        pub source: String,
+        pub desc_chars: String,
+        pub body_bytes: String,
+        pub invocations: String,
+        pub resident: String,
+        pub last_invoked: String,
+        pub never: bool,
+        pub summary: String,
+    }
+
+    fn skills_of(v: &Value) -> Vec<Skill> {
+        let Some(rows) = v["skills"]["rows"].as_array() else {
+            return Vec::new();
+        };
+        rows.iter()
+            .map(|r| {
+                let name = r["name"].as_str().unwrap_or("-").to_string();
+                let source = r["source"].as_str().unwrap_or("-").to_string();
+                let desc = r["desc_chars"].as_u64().unwrap_or(0);
+                let body = r["body_bytes"].as_u64().unwrap_or(0);
+                let calls = r["invocations"].as_u64().unwrap_or(0);
+                let resident = r["resident"].as_u64().unwrap_or(0);
+                let last = r["last_invoked"].as_str().unwrap_or("—").to_string();
+                let never = r["never"].as_bool().unwrap_or(false);
+                Skill {
+                    summary: format!("{name} {source} desc {desc}c body {body}B calls {calls} res {resident} {last}"),
+                    name,
+                    source,
+                    desc_chars: desc.to_string(),
+                    body_bytes: body.to_string(),
+                    invocations: calls.to_string(),
+                    resident: resident.to_string(),
+                    last_invoked: last,
+                    never,
+                }
+            })
+            .collect()
     }
 
     fn plugins_of(v: &Value) -> Vec<Plugin> {
@@ -161,6 +213,12 @@ pub mod snapshot {
                     }
                     None => "-".into(),
                 };
+                let id = c["id"].as_i64().unwrap_or(0);
+                let ref_id = v["ref_ids"]
+                    .get(id.to_string())
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 Call {
                     when: time_of(c["ts"].as_i64().unwrap_or(0)),
                     surface: str_of(&c["surface"]),
@@ -170,19 +228,22 @@ pub mod snapshot {
                     ms: ms.clone(),
                     tokens: tokens.clone(),
                     subtitle: format!("{name} / {} / {ms} ms / {tokens}", str_of(&c["session"])),
-                    detail: call_detail(c, &name, &ms, &tokens),
+                    detail: call_detail(c, &name, &ms, &tokens, &ref_id),
+                    ref_id,
                 }
             })
             .collect()
     }
 
-    fn call_detail(c: &Value, name: &str, ms: &str, tokens: &str) -> String {
+    fn call_detail(c: &Value, name: &str, ms: &str, tokens: &str, ref_id: &str) -> String {
         let dash = |k: &str| opt_str(&c[k]).unwrap_or_else(|| "-".into());
+        let ref_id = if ref_id.is_empty() { "-" } else { ref_id };
         format!(
             "session {session} · surface {surface} · kind {kind}\n\
              name {name} · plugin {plugin} · host {host}\n\
              provider {provider} · model {model} · api {api}\n\
-             ms {ms} · tokens {tokens} · ok {ok}",
+             ms {ms} · tokens {tokens} · ok {ok}\n\
+             ref_id {ref_id}",
             session = str_of(&c["session"]),
             surface = str_of(&c["surface"]),
             kind = str_of(&c["kind"]),
@@ -220,6 +281,7 @@ pub mod snapshot {
                     status: format!(
                         "in {input}  out {output}  cache+ {cache_create}  cache-r {cache_read}"
                     ),
+                    detail: session_detail(v, &id),
                     id,
                     host,
                     provider,
@@ -232,6 +294,58 @@ pub mod snapshot {
                 }
             })
             .collect()
+    }
+
+    /// Mirror of `model::session_detail`: this session's snapshot JSON row plus the
+    /// snapshot's calls filtered by that id. The WASM crate cannot call the rtok
+    /// accessor, so the filter is rebuilt from the same keys (T60.3 / D23).
+    fn session_detail(v: &Value, id: &str) -> String {
+        let Some(s) = v["sessions"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|s| s["id"].as_str() == Some(id)))
+        else {
+            return String::new();
+        };
+        let dash = |k: &str| opt_str(&s[k]).unwrap_or_else(|| "-".into());
+        let ended = s["ended_at"]
+            .as_i64()
+            .map(time_of)
+            .unwrap_or_else(|| "live".into());
+        let api = dash("api");
+        let mut lines = vec![
+            format!("project {} · api {api}", dash("project")),
+            format!(
+                "started {} · last {} · ended {ended}",
+                time_of(i64_of(&s["started_at"])),
+                time_of(i64_of(&s["last_activity"])),
+            ),
+            format!(
+                "usage ({api}) input {} cache create {} cache read {} output {}",
+                i64_of(&s["input"]),
+                i64_of(&s["cache_create"]),
+                i64_of(&s["cache_read"]),
+                i64_of(&s["output"]),
+            ),
+        ];
+        let calls: Vec<&Value> = v["calls"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|c| c["session"].as_str() == Some(id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        lines.push(format!("calls {}", calls.len()));
+        for c in calls {
+            lines.push(format!(
+                "{} {} {} {}",
+                time_of(i64_of(&c["ts"])),
+                str_of(&c["surface"]),
+                str_of(&c["kind"]),
+                opt_str(&c["name"]).unwrap_or_else(|| "-".into()),
+            ));
+        }
+        lines.join("\n")
     }
 
     fn logs_of(v: &Value) -> Vec<String> {
@@ -388,6 +502,16 @@ pub mod snapshot {
     }
 }
 
+fn filter_expand(text: &str, needle: &str) -> String {
+    if needle.is_empty() {
+        return text.to_string();
+    }
+    text.lines()
+        .filter(|line| line.contains(needle))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Apply one `/ws` snapshot onto the window: the one call path the WASM
 /// client and the e2e tests share. Fail-open like [`snapshot::parse`]:
 /// missing keys become empty pages, never a panic.
@@ -436,6 +560,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
             tokens: SharedString::from(c.tokens),
             subtitle: SharedString::from(c.subtitle),
             detail: SharedString::from(c.detail),
+            ref_id: SharedString::from(c.ref_id),
         })
         .collect();
     ui.set_calls(ModelRc::from(Rc::new(VecModel::from(calls))));
@@ -456,13 +581,89 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
             status: SharedString::from(s.status),
             activity: SharedString::from(s.activity),
             summary: SharedString::from(s.summary),
+            detail: SharedString::from(s.detail),
         })
         .collect();
     ui.set_sessions(ModelRc::from(Rc::new(VecModel::from(sessions))));
 
     let logs: Vec<SharedString> = view.logs.into_iter().map(SharedString::from).collect();
     ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
+    ui.set_error(SharedString::from(view.error));
+    ui.set_skills_header(SharedString::from(view.skills_header));
+    let skills: Vec<SkillRow> = view
+        .skills
+        .into_iter()
+        .map(|s| SkillRow {
+            name: SharedString::from(s.name),
+            source: SharedString::from(s.source),
+            desc_chars: SharedString::from(s.desc_chars),
+            body_bytes: SharedString::from(s.body_bytes),
+            invocations: SharedString::from(s.invocations),
+            resident: SharedString::from(s.resident),
+            last_invoked: SharedString::from(s.last_invoked),
+            never: s.never,
+            summary: SharedString::from(s.summary),
+        })
+        .collect();
+    ui.set_skills(ModelRc::from(Rc::new(VecModel::from(skills))));
     ui.set_status(SharedString::from("live"));
+}
+
+/// Load theme from `localStorage` / `prefers-color-scheme` (T60.9).
+#[cfg(target_family = "wasm")]
+fn init_theme(ui: &MainWindow) {
+    let dark = read_theme_storage().unwrap_or_else(system_prefers_dark);
+    ui.set_dark(dark);
+    let ui_weak = ui.as_weak();
+    ui.on_theme_toggle(move || {
+        let Some(ui) = ui_weak.upgrade() else {
+            return;
+        };
+        let next = !ui.get_dark();
+        ui.set_dark(next);
+        write_theme_storage(next);
+    });
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub fn init_theme(ui: &MainWindow) {
+    let ui_weak = ui.as_weak();
+    ui.on_theme_toggle(move || {
+        let Some(ui) = ui_weak.upgrade() else {
+            return;
+        };
+        ui.set_dark(!ui.get_dark());
+    });
+}
+
+#[cfg(target_family = "wasm")]
+const THEME_KEY: &str = "rtok-theme";
+
+#[cfg(target_family = "wasm")]
+fn read_theme_storage() -> Option<bool> {
+    let storage = web_sys::window()?.local_storage().ok()??;
+    match storage.get_item(THEME_KEY).ok()?.as_deref() {
+        Some("dark") => Some(true),
+        Some("light") => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn write_theme_storage(dark: bool) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
+        let _ = storage.set_item(THEME_KEY, if dark { "dark" } else { "light" });
+    }
+}
+
+#[cfg(target_family = "wasm")]
+fn system_prefers_dark() -> bool {
+    use web_sys::MediaQueryList;
+    web_sys::window()
+        .and_then(|w| w.match_media("(prefers-color-scheme: dark)").ok())
+        .flatten()
+        .map(|m: MediaQueryList| m.matches())
+        .unwrap_or(true)
 }
 
 #[cfg(target_family = "wasm")]
@@ -485,15 +686,62 @@ mod wasm {
                 })
                 .collect::<Vec<_>>(),
         ))));
-        connect(&ui);
+        super::init_theme(&ui);
+        connect(&ui, 0);
         ui.run().expect("slint run");
     }
 
-    fn connect(ui: &MainWindow) {
+    fn connect(ui: &MainWindow, attempt: u32) {
+        ui.set_status(SharedString::from(if attempt == 0 {
+            "connecting"
+        } else {
+            "reconnecting"
+        }));
         let loc = web_sys::window().expect("window").location();
         let host = loc.host().unwrap_or_else(|_| "127.0.0.1:3333".into());
-        let ws = WebSocket::new(&format!("ws://{host}/ws")).expect("websocket");
+        let ws = match WebSocket::new(&format!("ws://{host}/ws")) {
+            Ok(ws) => Rc::new(ws),
+            Err(_) => {
+                schedule_reconnect(&ui.as_weak(), attempt);
+                return;
+            }
+        };
         let ui_weak = ui.as_weak();
+        let on_open = Closure::<dyn FnMut()>::new(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_status(SharedString::from("live"));
+            }
+        });
+        ws.set_onopen(Some(on_open.as_ref().unchecked_ref()));
+        on_open.forget();
+
+        let ui_weak = ui.as_weak();
+        let ws_send = ws.clone();
+        ui.on_toggle_plugin(move |id, value| {
+            let msg = serde_json::json!({
+                "set": {
+                    "key": format!("plugins.{id}.enabled"),
+                    "value": value,
+                }
+            });
+            let _ = ws_send.send_with_str(&msg.to_string());
+        });
+        let ws_expand = ws.clone();
+        ui.on_expand_archive(move |id| {
+            let msg = serde_json::json!({ "expand": id });
+            let _ = ws_expand.send_with_str(&msg.to_string());
+        });
+        let ui_filter = ui.as_weak();
+        ui.on_filter_expand(move |needle| {
+            let Some(ui) = ui_filter.upgrade() else {
+                return;
+            };
+            let body = ui.get_expand_text();
+            ui.set_expand_view(SharedString::from(filter_expand(
+                body.as_str(),
+                needle.as_str(),
+            )));
+        });
         let on_msg = Closure::<dyn FnMut(MessageEvent)>::new(move |ev: MessageEvent| {
             let Some(text) = ev.data().as_string() else {
                 return;
@@ -504,10 +752,52 @@ mod wasm {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
+            if v.get("type").and_then(|t| t.as_str()) == Some("message") {
+                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("error");
+                ui.set_status(SharedString::from(text));
+                return;
+            }
+            if v.get("type").and_then(|t| t.as_str()) == Some("expand") {
+                let text = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                ui.set_expand_text(SharedString::from(text));
+                let needle = ui.get_expand_filter();
+                ui.set_expand_view(SharedString::from(filter_expand(text, needle.as_str())));
+                return;
+            }
             super::apply_snapshot(&ui, &v);
         });
         ws.set_onmessage(Some(on_msg.as_ref().unchecked_ref()));
         on_msg.forget();
+
+        let ui_weak = ui.as_weak();
+        let on_close = Closure::<dyn FnMut()>::new(move || {
+            schedule_reconnect(&ui_weak, attempt.saturating_add(1));
+        });
+        ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
+        on_close.forget();
+    }
+
+    fn schedule_reconnect(ui_weak: &slint::Weak<MainWindow>, attempt: u32) {
+        if let Some(ui) = ui_weak.upgrade() {
+            ui.set_status(SharedString::from("reconnecting"));
+        }
+        let delay_ms = (1000u32)
+            .saturating_mul(1 << attempt.min(4))
+            .min(30_000);
+        let ui_weak = ui_weak.clone();
+        let closure = Closure::<dyn FnMut()>::new(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                connect(&ui, attempt);
+            }
+        });
+        let _ = web_sys::window().and_then(|w| {
+            w.set_timeout_with_callback_and_timeout_and_arguments_0(
+                closure.as_ref().unchecked_ref(),
+                delay_ms as i32,
+            )
+            .ok()
+        });
+        closure.forget();
     }
 }
 
@@ -520,7 +810,9 @@ mod tests {
     fn page_ids_cover_the_d23_set() {
         assert_eq!(
             PAGE_IDS,
-            ["overview", "plugins", "calls", "sessions", "doctor", "logs"]
+            [
+                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills"
+            ]
         );
     }
 
@@ -539,7 +831,7 @@ mod tests {
                           "est_before": 25, "est_after": 10, "rows": 1}
             }],
             "calls": [{
-                "id": 1, "ts": 3661, "session": "s", "surface": "proxy", "kind": "api_request",
+                "id": 1, "ts": 3661, "session": "a", "surface": "proxy", "kind": "api_request",
                 "plugin": null, "name": "/v1/messages", "parent_id": null, "ms": 12.5, "ok": 1,
                 "error": null, "host": "claude", "provider": "anthropic", "model": "x",
                 "api": "anthropic", "input": 10, "cache_create": 1, "cache_read": 2, "output": 3
@@ -569,7 +861,8 @@ mod tests {
                 && PAGE_IDS.contains(&"calls")
                 && PAGE_IDS.contains(&"logs")
                 && PAGE_IDS.contains(&"doctor")
-                && PAGE_IDS.contains(&"plugins"),
+                && PAGE_IDS.contains(&"plugins")
+                && PAGE_IDS.contains(&"skills"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -577,11 +870,33 @@ mod tests {
         assert_eq!(view.plugins.len(), 1);
         assert_eq!(view.calls.len(), 1);
         assert!(view.calls[0].detail.contains("anthropic"));
+        assert!(view.calls[0].detail.contains("ref_id"));
         assert_eq!(view.sessions.len(), 1);
         assert!(view.sessions[0].live);
+        assert!(view.sessions[0].detail.contains("project rtok"));
+        assert!(view.sessions[0].detail.contains("/v1/messages"));
         assert!(view.doctor_text.contains("hooks 3"));
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
+    }
+
+    #[test]
+    fn calls_bind_snapshot_ref_ids() {
+        let v = json!({
+            "type": "snapshot",
+            "usage": {},
+            "plugins": [],
+            "calls": [{
+                "id": 7, "ts": 0, "session": "s", "surface": "hook", "kind": "hook", "ok": 1
+            }],
+            "sessions": [],
+            "logs": [],
+            "ref_ids": {"7": "abc123"}
+        });
+        let view = snapshot::parse(&v);
+        assert_eq!(view.calls[0].ref_id, "abc123");
+        assert!(view.calls[0].detail.contains("ref_id abc123"));
+        assert_eq!(super::filter_expand("a\nb-hit\nc", "hit"), "b-hit");
     }
 
     #[test]
