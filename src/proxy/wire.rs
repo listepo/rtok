@@ -6,7 +6,7 @@ use serde_json::Value;
 
 // The plugin-visible half of the wire is the published contract (D25); the provider
 // dialects that implement it stay here.
-pub use rtok_plugin_sdk::{BlobRef, ToolResultRef, ToolResults, WireRequest};
+pub use rtok_plugin_sdk::{BlobRef, SkillRef, ToolResultRef, ToolResults, WireRequest};
 
 use super::anthropic::ANTHROPIC;
 use super::gemini::GEMINI;
@@ -184,6 +184,98 @@ pub(super) fn turn_setup<'a>(
         .filter(|entry| entry["role"] == "user")
         .count();
     Some((entries, total))
+}
+
+const SKILL_BODY: &str = "Base directory for this skill:";
+
+fn result_text(content: &Value) -> Option<&str> {
+    match content {
+        Value::String(s) => Some(s.as_str()),
+        Value::Array(parts) if parts.len() == 1 => parts[0]
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| parts[0].as_str()),
+        _ => None,
+    }
+}
+
+fn launching_pair(id: Option<&str>, content: Option<&Value>) -> Option<(String, String)> {
+    let id = id?.to_owned();
+    let name = result_text(content?)?
+        .trim()
+        .strip_prefix("Launching skill: ")?
+        .trim();
+    (!name.is_empty()).then(|| (id, name.to_owned()))
+}
+
+/// Skill bodies on Anthropic (`tool_result` then `text`) and Chat (`role: tool`
+/// then a user string). The next user text after `Launching skill:` must start
+/// with `Base directory for this skill:`.
+pub(super) fn collect_skill_refs<'a>(messages: &'a mut [Value], total: usize) -> Vec<SkillRef<'a>> {
+    let mut seen = 0;
+    let mut pending: Option<(String, String)> = None;
+    let mut out = Vec::new();
+    for message in messages {
+        let role = message.get("role").and_then(Value::as_str).unwrap_or("");
+        if role == "tool" {
+            pending = launching_pair(
+                message.get("tool_call_id").and_then(Value::as_str),
+                message.get("content"),
+            );
+            continue;
+        }
+        if role != "user" {
+            continue;
+        }
+        seen += 1;
+        let turn = total - seen;
+        if matches!(message.get("content"), Some(Value::String(_))) {
+            let body = message["content"]
+                .as_str()
+                .is_some_and(|s| s.starts_with(SKILL_BODY));
+            if let Some((id, name)) = pending.take()
+                && body
+            {
+                let content = message.get_mut("content").expect("string content");
+                out.push(SkillRef {
+                    id,
+                    name,
+                    content,
+                    turn,
+                });
+            }
+            continue;
+        }
+        let Some(blocks) = message.get_mut("content").and_then(Value::as_array_mut) else {
+            pending = None;
+            continue;
+        };
+        for block in blocks {
+            if block.get("type").and_then(Value::as_str) == Some("tool_result") {
+                pending = launching_pair(
+                    block.get("tool_use_id").and_then(Value::as_str),
+                    block.get("content"),
+                );
+                continue;
+            }
+            let body = block
+                .get("text")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.starts_with(SKILL_BODY));
+            let Some((id, name)) = pending.take() else {
+                continue;
+            };
+            if body && let Some(content) = block.get_mut("text") {
+                out.push(SkillRef {
+                    id,
+                    name,
+                    content,
+                    turn,
+                });
+            }
+        }
+    }
+    out
 }
 
 /// Read an integer usage counter, treating an absent or non-numeric field as zero.

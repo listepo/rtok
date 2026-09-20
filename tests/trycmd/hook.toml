@@ -1,0 +1,22 @@
+bin.name = "rtok"
+args = "hook SessionStart"
+stdin = """
+{
+  "session_id": "b1e2c3d4-0000-4000-8000-000000000001",
+  "transcript_path": "/Users/dev/.claude/projects/-Users-dev-proj/b1e2c3d4.jsonl",
+  "cwd": "/Users/dev/proj",
+  "permission_mode": "default",
+  "hook_event_name": "SessionStart",
+  "source": "startup"
+}
+"""
+stdout = "{}"
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-hook"
+RTOK_HOME = "target/tmp/t60-2-hook"
+SHELL = "/bin/sh"

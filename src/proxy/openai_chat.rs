@@ -3,7 +3,8 @@
 use serde_json::{Map, Value};
 
 use super::wire::{
-    BlobRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, find_usage, turn_setup,
+    BlobRef, SkillRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, collect_skill_refs,
+    find_usage, turn_setup,
 };
 
 pub static OPENAI_CHAT: OpenAiChat = OpenAiChat;
@@ -75,6 +76,13 @@ impl ToolResults for OpenAiChat {
             }
         }
         out
+    }
+
+    fn skill_refs<'a>(&self, req: &'a mut Value) -> Vec<SkillRef<'a>> {
+        let Some((messages, total)) = turn_setup(req, "messages") else {
+            return Vec::new();
+        };
+        collect_skill_refs(messages, total)
     }
 }
 

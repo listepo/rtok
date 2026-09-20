@@ -52,7 +52,7 @@ pub fn register_proxy(cfg: &Config) -> Result<String> {
     })
 }
 
-/// Clear `env.ANTHROPIC_BASE_URL` (`rtok agents remove claude`), but only while it still
+/// Clear `env.ANTHROPIC_BASE_URL` (`rtok agents uninstall claude`), but only while it still
 /// points at this proxy — a URL the user set themselves is not ours to delete.
 pub fn unregister_proxy(cfg: &Config) -> Result<String> {
     let url = crate::agents::anthropic_proxy_url(cfg);

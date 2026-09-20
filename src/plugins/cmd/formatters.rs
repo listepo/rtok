@@ -16,7 +16,9 @@ pub fn compress(
     }
     let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if s.len() < output.len() {
+    let kind = if bin(&argv) == "skill" {
+        "skill"
+    } else if s.len() < output.len() {
         "rule"
     } else {
         "raw"

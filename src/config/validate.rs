@@ -34,7 +34,32 @@ fn issues_in(path: &Path, text: &str) -> Vec<String> {
         .expect("Config is a table");
     let mut errors = Vec::new();
     check_table(path, text, "", doc.as_table(), &schema, &mut errors);
+    check_graph_extensions(path, text, doc.as_table(), &mut errors);
     errors
+}
+
+fn check_graph_extensions(path: &Path, src: &str, doc: &dyn TableLike, errors: &mut Vec<String>) {
+    let Some(plugins) = doc.get("plugins").and_then(|i| i.as_table_like()) else {
+        return;
+    };
+    let Some(graph) = plugins.get("graph").and_then(|i| i.as_table_like()) else {
+        return;
+    };
+    let Some(ext) = graph.get("extensions").and_then(|i| i.as_table_like()) else {
+        return;
+    };
+    for (k, item) in TableLike::iter(ext) {
+        let dotted = format!("plugins.graph.extensions.{k}");
+        let at = loc(path, src, item);
+        match item.as_str() {
+            Some(s) if GRAPH_GRAMMARS.contains(&s) => {}
+            Some(s) => errors.push(format!(
+                "{at}: {dotted} must be one of {} (got {s})",
+                GRAPH_GRAMMARS.join(", ")
+            )),
+            _ => errors.push(format!("{at}: {dotted}: expected string")),
+        }
+    }
 }
 
 /// Edit `<home>/config.toml` at `key` (dotted), preserving comments. Creates the
@@ -136,8 +161,15 @@ pub fn rules_issues(rules: &Path, rules_dir: &Path) -> Vec<String> {
 fn is_open(dotted: &str) -> bool {
     // `bench.configs` is a free-form name → path map; `stats.prices` is keyed by
     // provider model id, which no schema can enumerate — both skip value checks.
-    dotted == "bench.configs" || dotted == "stats.prices"
+    dotted == "bench.configs"
+        || dotted == "stats.prices"
+        || dotted == "plugins.graph.extensions"
+        || dotted.starts_with("plugins.graph.extensions.")
 }
+
+const GRAPH_GRAMMARS: &[&str] = &[
+    "rust", "ts", "tsx", "js", "mjs", "cjs", "py", "dart", "c", "h", "go",
+];
 
 fn line_of(src: &str, span: Option<std::ops::Range<usize>>) -> usize {
     let off = span.map(|s| s.start).unwrap_or(0).min(src.len());

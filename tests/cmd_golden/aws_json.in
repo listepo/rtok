@@ -1,0 +1,735 @@
+argv: aws ec2 describe-instances
+exit: 0
+---
+{
+  "Reservations": [
+    {
+      "ReservationId": "r-abc",
+      "OwnerId": "123456789012",
+      "Groups": [],
+      "Instances": [
+        {
+          "InstanceId": "i-00000000",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.0",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000001",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.1",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-1",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000002",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.2",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-2",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000003",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.3",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-3",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000004",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.4",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-4",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000005",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.5",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000006",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.6",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-6",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000007",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.7",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-7",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000008",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.8",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-8",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000009",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.9",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-9",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000a",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.10",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000b",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.11",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-11",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000c",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.12",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-12",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000d",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.13",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-13",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000e",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.14",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-14",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-0000000f",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.15",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000010",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.16",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-16",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000011",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.17",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-17",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000012",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.18",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-18",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000013",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.19",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-19",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000014",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.20",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000015",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.21",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-21",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000016",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.22",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-22",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000017",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.23",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-23",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        },
+        {
+          "InstanceId": "i-00000018",
+          "InstanceType": "t3.micro",
+          "State": {
+            "Code": 16,
+            "Name": "running"
+          },
+          "PrivateIpAddress": "10.0.0.24",
+          "PublicIpAddress": null,
+          "SubnetId": "subnet-aaa",
+          "VpcId": "vpc-bbb",
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "web-24",
+              "Propagate": null
+            }
+          ],
+          "SecurityGroups": [
+            {
+              "GroupId": "sg-1",
+              "GroupName": "web"
+            }
+          ],
+          "NetworkInterfaces": [],
+          "Metadata": {},
+          "LaunchTime": "2026-01-01T00:00:00+00:00",
+          "PlatformDetails": "",
+          "UsageOperation": null
+        }
+      ]
+    }
+  ],
+  "NextToken": null
+}
