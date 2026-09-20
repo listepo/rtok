@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,288 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -144,6 +144,7 @@ target/tmp/t60-2-config-init.toml
 +yes          = false                  # required by --replace
 +backup       = true                   # _backup/<name>.bak-<ts> beside each file, before install and uninstall touch it
 +hook_timeout_s = 5                    # timeout written into each hook entry
++restart_prompt_timeout_seconds = 0    # T76: wait forever for restart y/n; >0 = silence means No
 +modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 +mcp          = true                   # also register the MCP server   (--mcp)
 +proxy        = false                  # also set the base URL          (--proxy)

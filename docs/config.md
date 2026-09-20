@@ -198,6 +198,7 @@ dry_run      = false
 yes          = false                  # required by --replace
 backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
 hook_timeout_s = 5                    # timeout written into each hook entry
+restart_prompt_timeout_seconds = 0    # T76: wait forever for restart y/n; >0 = silence means No
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)
 proxy        = false                  # also set the base URL          (--proxy)

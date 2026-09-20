@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T76. Offer to restart the host after `agents install` / `uninstall`
+
+Do: After successful `rtok agents install|uninstall <host>` config writes, ask whether to restart that host. Yes → stop then start; No → leave alone. Config `[setup].restart_prompt_timeout_seconds` defaults to `0` (wait forever); positive → silence = No. Interactive TTY shows a left in-place spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` ~80ms, ASCII `-\|/` fallback). Skip under `--dry-run` and non-TTY stdin.
+
+Check: yes/no/timeout-silence→no / `0` no auto-no / spinner clear / dry-run skip; `just check`.
+
+Check result (2026-09-21): `just check` green — 1054 passed, 3 skipped. Desktop apps (e.g. Cursor/Claude `.app`) get quit+reopen on macOS; CLI-only hosts stop binaries and tell the user to relaunch manually.
+
 ## T75 — `rtok mcp` / `rtok proxy` died at session start on a contended store
 
 Creator 2026-09-20. Both surfaces run the retention purge at session start (`run_retention`, default `retain_calls_days = 30`), and the purge's deferred read-then-write transaction came back "database is locked" when another rtok process held the store's write lock — instantly (a deferred snapshot upgrade returns SQLITE_BUSY without running the busy handler) or after the steady 1 s. The `?` took the whole process down: an MCP client spawning `rtok mcp` saw the server exit before `initialize`, logged `Error: database is locked` / "Server disconnected", and its ~1 s-later retry succeeded once the winner committed. Observed 2026-09-19/20 in the client log (three incidents, deaths at 22–171 ms — too fast for the 1 s busy wait); the binary was v0.3.1, which already had every earlier mitigation (open retry loop, `busy_timeout = 1000`, the 30 s migration window), so the purge was the remaining unguarded startup write.

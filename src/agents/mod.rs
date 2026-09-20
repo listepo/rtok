@@ -15,6 +15,7 @@ pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 pub mod pi;
+pub mod restart;
 pub mod skill;
 pub mod vscode;
 pub mod windsurf;

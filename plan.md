@@ -9,7 +9,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T73 | in progress | P1 | 2 | 0% | Cursor / grok 4.6 |
 | T74 | todo | P2 | 1 | — | — |
 | T75 | todo | P1 | 2 | — | — |
-| T76 | todo | P2 | 2 | — | — |
 
 ### T73. Cycle demon surfaces around a binary replace
 
@@ -44,29 +43,6 @@ Creator 2026-09-21. After `rtok agents uninstall <host>` (reported with a "cloud
 **Plan.** Trace `AgentCmd::Uninstall` → `setup_host(..., SetupArgs::removing)` and whatever feeds the agents/plugins list `enabled` / installed mark. Make uninstall write the same source the UI reads (config + on-disk host files), then refresh or re-read so the checkmark clears. Add a regression test: uninstall → list/UI snapshot shows not installed.
 
 Check: uninstall a previously installed host; UI checkmark off; `rtok agents list` / info agree; `just check`.
-
-
-### T76. Offer to restart the host after `agents install` / `uninstall`
-
-Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit.
-
-**Timeout logic (no baked-in default wait).** Config key `restart_prompt_timeout_seconds` (nesting to match existing config style) **defaults to `0`**. **`0` means "not set"** — **no timeout** — wait **indefinitely** for the user's answer. A timeout applies **only** when the user explicitly sets a **positive** number in config; then **no response within that time = No** (do **not** restart the agent; continue without hanging forever past that limit). There is **no** 30-second or 60-second default.
-
-**Repro / flow.** Run install or uninstall for a host that is currently running. When the config change has completed, rtok prompts (interactive stdin / TUI confirm — not a silent restart). With `restart_prompt_timeout_seconds = 0` (default), wait until yes/no. With a positive value, wait that many seconds then treat silence as no.
-
-**Expected.**
-- Prompt: e.g. "Restart <host> now so the change takes effect? [y/N]" — if a positive timeout is configured, mention auto-no in Ns; if 0, do not imply a countdown.
-- Yes: stop the host/agent process, then start it again (post-config-change only — never restart before the install/uninstall writes finish).
-- No: do nothing further; print that a manual restart is still needed if the host caches config.
-- **No response + positive timeout = No:** do **not** restart; print that the timeout elapsed; exit successfully.
-- **No response + timeout 0:** keep waiting (no auto-no).
-- Changing the config key changes behavior without a rebuild; absent key behaves as `0`.
-
-**Actual (today).** Install/uninstall edit files and return; no restart offer and no timed prompt, so a running host keeps the old hooks/MCP until the user restarts it by hand.
-
-**Plan.** Add `restart_prompt_timeout_seconds` defaulting to `0`. At the end of `setup_host` (install and remove paths): if 0, blocking read for yes/no; if >0, timed read (select/poll or equivalent) that defaults to no on expiry. Per-host restart: prefer an existing host helper if one exists; otherwise document the stop/start command matrix (Claude Code, Cursor, …) and implement the ones we can drive safely. Skip the prompt under `--dry-run` and non-interactive CI (`!stdin.isatty()` or an explicit `--no-restart` / `--yes` policy — pick one and test it). Regression: yes path stops then starts after the config write; no path never touches the process; positive timeout + silence → no restart; `0` does not auto-no.
-
-Check: yes/no, timeout→no (positive only), and `0` = wait-forever covered in tests (prompt/timer stubbed); dry-run never restarts; `just check`.
 
 
 ## Reference

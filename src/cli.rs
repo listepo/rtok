@@ -1410,8 +1410,12 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         desktop,
         all,
     };
+    let hosts_for_restart = req.hosts.clone();
     let out = with_loader("updating host", || crate::agents::run(&mut cfg, &req))?;
     print!("{out}");
+    // T76: after successful config writes, offer a stop→start so the host reloads.
+    // Skipped under --dry-run and when stdin is not a TTY (CI / pipes).
+    crate::agents::restart::offer_after_setup(&cfg, &hosts_for_restart)?;
     Ok(())
 }
 
