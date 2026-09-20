@@ -33,10 +33,10 @@ author's tool-result tokens (1.00 M of 2.83 M).
 
 Two problems. It drops lines with no way to get them back, and the only independent
 measurement of it — JetBrains — found it cost **+7.6 % to 0 %** on agentic work against a
-claimed 60–90 %. rtok's `cmd` plugin keeps the filtering (9 rule families plus per-family
-formatters for `cargo`, `git`, test runners, `ls`/`find`) and adds the two things that were
-missing: the raw output goes to `~/.rtok/archive/<id>` before anything is cut, and the
-before/after byte counts go to `measurements`.
+claimed 60–90 %. rtok's `cmd` plugin keeps the filtering (per-family TOML rules plus
+formatters for `cargo`, `git`, test runners, `tree` and the container tables) and adds
+the two things that were missing: the raw output goes to `~/.rtok/archive/<id>` before
+anything is cut, and the before/after byte counts go to `measurements`.
 
 ### Command-output filters — sqz
 
@@ -232,9 +232,10 @@ Stated plainly, because §4 is only worth reading if this section exists.
   supersede / pin) landed in T69.1. The plant-and-recall bench (T69.3, `research.md` §14)
   is 20/20 FTS5 and P29 hybrid at N=100 against this generator; `half_life_days` ranking
   did not ship (T69.2), so that row is N/A. Never cite graymatter's 83 % as rtok's.
-- **Smaller filter library than rtk and sqz.** 9 rule families plus ten per-family
-  formatters, against rtk's ~80 filters and sqz's 45+; no content-hash dedup, JSON or
-  column pass yet (`research.md` §11, T65.1–T65.4).
+- **Smaller filter library than rtk and sqz.** 27 rule families in `rules/default.toml` plus
+  ten per-family formatters, against rtk's ~80 filters and sqz's 45+ (`research.md` §11;
+  the T65.1 content-hash dedup, T65.2 JSON compact and T65.3 column collapse are in —
+  the library itself is still the smallest of the three).
 - **Younger, and a single maintainer.** Several tools in §2 have five-figure star counts and
   years of edge cases baked in. rtok is at v0.0.1.
 - **`toon` and `graph-watchman` are opt-in** because they lost their gates on this machine.

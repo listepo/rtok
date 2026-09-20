@@ -984,6 +984,7 @@ mod tests {
     #[test]
     fn skill_bodies_archive_outside_keep_turns_stably() {
         let mut cx = cx("skills-on");
+        cx.config.plugins.archive.skills = true;
         cx.config.plugins.archive.keep_turns = 1;
         let body = skill_text("slint");
         let mut values: Vec<Value> = (0..3).map(|_| Value::String(body.clone())).collect();

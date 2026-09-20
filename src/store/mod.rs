@@ -70,8 +70,25 @@ impl Store {
             std::fs::create_dir_all(dir)?;
         }
         let url = path.to_str().context("db path is not UTF-8")?;
-        let mut conn =
-            SqliteConnection::establish(url).with_context(|| path.display().to_string())?;
+        // A first run races: hooks, the MCP server, the proxy and `otel flush` all open
+        // the same fresh file, and the `journal_mode = WAL` switch can return
+        // "database is locked" straight away — SQLite does not always run the busy
+        // handler for a journal-mode change. Retry with a fresh connection instead of
+        // failing the open.
+        for attempt in 0..10 {
+            match Self::connect(url) {
+                Ok(store) => return Ok(store),
+                Err(e) if format!("{e:#}").contains("database is locked") && attempt + 1 < 10 => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => return Err(e.context(path.display().to_string())),
+            }
+        }
+        unreachable!("open: the retry loop always returns")
+    }
+
+    fn connect(url: &str) -> Result<Self> {
+        let mut conn = SqliteConnection::establish(url)?;
         // Hooks, the MCP server, the proxy and the detached `otel flush` child all write this one
         // file. SQLite's default busy timeout is 0, so a second writer failed at once with
         // "database is locked" instead of waiting the few ms the first one holds the lock. First,
@@ -2358,39 +2375,7 @@ mod tests {
     #[test]
     fn two_apis_are_two_stats_rows() {
         let store = Store::open_in_memory().unwrap();
-        store
-            .upsert_session("s1", None, None, None, Some("proxy"))
-            .unwrap();
-        let id1 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/messages"),
-            )
-            .unwrap();
-        let id2 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/chat/completions"),
-            )
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
-            .unwrap();
+        crate::testutil::seed_two_apis(&store);
         assert_eq!(store.usage_by_api().unwrap().len(), 2);
     }
 

@@ -30,6 +30,18 @@ pub struct SizeRow {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Report {
     pub sessions: u64,
+    /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub compact: u64,
+    /// Transcript sessions that already have a `checkpoint:*` or `session:*` note (T71.2).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub checkpoint: u64,
+    /// Transcript sessions with no such note.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub no_checkpoint: u64,
+    /// File stems of counted sessions; matched against notes. Not in JSON.
+    #[serde(skip)]
+    session_stems: Vec<String>,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
@@ -93,6 +105,10 @@ impl EditRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Re-reads that a unified diff could shorten (plan T58.1). `bytes` is those
@@ -205,8 +221,13 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  lines {}  malformed {}\n",
-            self.sessions, self.lines, self.malformed
+            "sessions {}  compact {}  checkpoint {}  no_checkpoint {}  lines {}  malformed {}\n",
+            self.sessions,
+            self.compact,
+            self.checkpoint,
+            self.no_checkpoint,
+            self.lines,
+            self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -303,6 +324,19 @@ impl Report {
     }
 }
 
+/// The seven numeric size columns every `SizeRow` table prints, shared by the bash
+/// and titled formatters.
+fn numeric_cells(r: &SizeRow) -> [String; 7] {
+    [
+        r.count.to_string(),
+        r.total_bytes.to_string(),
+        r.mean.to_string(),
+        r.p95.to_string(),
+        r.max.to_string(),
+        r.est_tokens.to_string(),
+        r.ctt.to_string(),
+    ]
+}
 
 fn format_bash_section(
     rows: &BTreeMap<String, SizeRow>,
@@ -331,25 +365,30 @@ fn format_bash_section(
         "ctt".into(),
     ]];
     for (name, r) in rows {
-        out.push(vec![
+        let mut row = vec![
             name.clone(),
             kinds
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| "default".to_string()),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
+        ];
+        row.extend(numeric_cells(r));
+        out.push(row);
     }
     table(&cols, &out)
 }
 
 /// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+/// Without the `cmd` plugin there are no rules to label a family against, so the
+/// report keeps the families and leaves the filter column empty (T0.4: one plugin
+/// feature must build alone).
+#[cfg(not(feature = "cmd"))]
+pub fn attach_bash_cmd(_report: &mut Report, _store: &Store) -> Result<()> {
+    Ok(())
+}
+
+/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+#[cfg(feature = "cmd")]
 pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
     let settings = crate::plugins::cmd::rules::Settings::builtin();
     for name in report.bash_families.keys() {
@@ -405,16 +444,9 @@ fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
         "ctt".into(),
     ]];
     for (name, r) in rows {
-        out.push(vec![
-            name.clone(),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
+        let mut row = vec![name.clone()];
+        row.extend(numeric_cells(r));
+        out.push(row);
     }
     table(&cols, &out)
 }
@@ -495,6 +527,21 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
             },
         );
     }
+    Ok(())
+}
+
+/// Match counted transcript stems to `checkpoint:<id>` / `session:<id>` notes (T71.2).
+pub fn attach_checkpoint_notes(report: &mut Report, store: &Store) -> Result<()> {
+    let ids: std::collections::BTreeSet<String> =
+        store.checkpoint_session_ids()?.into_iter().collect();
+    let mut with = 0u64;
+    for stem in &report.session_stems {
+        if ids.contains(stem) {
+            with += 1;
+        }
+    }
+    report.checkpoint = with;
+    report.no_checkpoint = report.sessions.saturating_sub(with);
     Ok(())
 }
 
@@ -636,8 +683,13 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             report.malformed += 1;
             continue;
         };
+        report.compact += compact_events(&p);
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            report.session_stems.push(stem.to_string());
+        }
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
+    report.no_checkpoint = report.sessions;
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
     finish_rows(&mut report.mcp_groups);
@@ -654,6 +706,22 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         finals[finals.len() / 2]
     };
     Ok(report)
+}
+
+/// One Claude Code / Codex compaction: a `system` line with `subtype=compact_boundary`.
+/// `isCompactSummary` rides the same event and is not counted again.
+fn compact_events(path: &Path) -> u64 {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    text.lines().filter(|line| is_compact_line(line)).count() as u64
+}
+
+fn is_compact_line(line: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return false;
+    };
+    v.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
 }
 
 fn fold_session(
@@ -1257,8 +1325,6 @@ mod tests {
     #[test]
     fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
         let dir = tempfile_dir();
-        let path = dir.join("d.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
         // Read /a.rs (10 B) → Edit /a.rs → Read /a.rs (20 B, counts) → Read /a.rs
         // again with no edit (does not count) → Read /b.rs only once (does not).
         let lines = [
@@ -1272,16 +1338,7 @@ mod tests {
             json!({"type":"assistant","message":{"id":"m5","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"/b.rs"}}]}}),
             json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"bbbb"}]}}),
         ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
+        let r = write_and_collect(&dir, "d.jsonl", &lines);
         let d = &r.read_delta;
         assert_eq!((d.calls, d.bytes, d.read_bytes), (1, 20, 10 + 20 + 4 + 4));
         let table = r.to_table();
@@ -1295,8 +1352,6 @@ mod tests {
     #[test]
     fn repeat_counts_identical_bodies_from_different_tools() {
         let dir = tempfile_dir();
-        let path = dir.join("r.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
         // Bash then Read, same 20-byte body; a third distinct body does not count.
         let lines = [
             json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat a"}}]}}),
@@ -1306,16 +1361,7 @@ mod tests {
             json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"head -1000 a"}}]}}),
             json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"different-output"}]}}),
         ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
+        let r = write_and_collect(&dir, "r.jsonl", &lines);
         let d = &r.repeat;
         assert_eq!((d.calls, d.bytes, d.result_bytes), (1, 20, 20 + 20 + 16));
         let table = r.to_table();
@@ -1344,6 +1390,92 @@ mod tests {
         assert!(after < tokens * 5);
     }
 
+    #[test]
+    fn compact_boundary_counts_once_per_event() {
+        let dir = tempfile_dir();
+        std::fs::write(
+            dir.join("s.jsonl"),
+            r#"{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}
+{"type":"user","isCompactSummary":true,"message":{"content":"summary"}}
+{"type":"assistant","message":{"content":"ok"}}
+"#,
+        )
+        .unwrap();
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 1);
+        assert_eq!(r.compact, 1);
+        assert!(
+            r.to_table()
+                .starts_with("sessions 1  compact 1  checkpoint 0  no_checkpoint 1  lines 3"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checkpoint_notes_split_sessions_with_and_without() {
+        let dir = std::env::temp_dir().join(format!("rtok-stats-t712-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("has.jsonl"),
+            r#"{"type":"user","message":{"content":"a"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("miss.jsonl"),
+            r#"{"type":"user","message":{"content":"b"}}"#,
+        )
+        .unwrap();
+        let mut r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 2);
+        assert_eq!(r.checkpoint, 0);
+        assert_eq!(r.no_checkpoint, 2);
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_note(Some("rtok"), "checkpoint:has", "compact", "checkpoint\n")
+            .unwrap();
+        attach_checkpoint_notes(&mut r, &store).unwrap();
+        assert_eq!(r.checkpoint, 1);
+        assert_eq!(r.no_checkpoint, 1);
+        assert!(
+            r.to_table()
+                .starts_with("sessions 2  compact 0  checkpoint 1  no_checkpoint 1"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Write `lines` to the dir's transcript and collect the report — the tail
+    /// every collect-based test repeats.
+    fn write_and_collect(dir: &std::path::Path, name: &str, lines: &[serde_json::Value]) -> Report {
+        let mut f = fs::File::create(dir.join(name)).unwrap();
+        for line in lines {
+            writeln!(f, "{line}").unwrap();
+        }
+        collect(
+            dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap()
+    }
+
     fn tempfile_dir() -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!(
             "rtok-stats-{}-{}",
@@ -1360,39 +1492,7 @@ mod tests {
     #[test]
     fn two_apis_print_as_two_table_rows() {
         let store = Store::open_in_memory().unwrap();
-        store
-            .upsert_session("s1", None, None, None, Some("proxy"))
-            .unwrap();
-        let id1 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/messages"),
-            )
-            .unwrap();
-        let id2 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/chat/completions"),
-            )
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
-            .unwrap();
+        crate::testutil::seed_two_apis(&store);
         let mut report = Report::default();
         attach_api(&mut report, &store).unwrap();
         let table = report.to_table();

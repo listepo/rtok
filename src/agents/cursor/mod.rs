@@ -257,7 +257,9 @@ fn is_ours(entry: &Value) -> bool {
     let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
-    for event in ["PreToolUse", "PostToolUse"] {
+    // The events `insert_ours` writes (`beforeShellExecution` etc. are the
+    // Cursor-side names; these are the `rtok hook <event>` spellings).
+    for event in ["PreToolUse", "PostToolUse", "PreCompact"] {
         let suffix = format!(" hook {event} --host cursor");
         if let Some(bin) = cmd.strip_suffix(&suffix)
             && super::is_rtok_bin(super::unquote_bin(bin))
@@ -453,6 +455,27 @@ mod tests {
         let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
         assert!(after.iter().any(|e| e["command"] == post_cmd()), "{root}");
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T58.2 added `preCompact` to insert/strip but not to `is_ours`, so remove
+    /// left `rtok hook PreCompact --host cursor` behind and `agents list` kept
+    /// reporting hooks installed (integration `cursor_remove_…` / `list_…`).
+    #[test]
+    fn remove_strips_every_hook_including_pre_compact() {
+        let dir = tmp("remove-all");
+        let path = dir.join("hooks.json");
+        let c = cfg(path.clone(), false);
+        run(&c, false).unwrap();
+        let report = run(&c, true).unwrap();
+        assert!(report.contains("- preCompact"), "{report}");
+        let left = fs::read_to_string(&path).unwrap();
+        assert!(!left.contains("rtok hook"), "{left}");
+        assert!(
+            left.contains("preCompact"),
+            "foreign-safe shape stays: {left}"
+        );
+        assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
 

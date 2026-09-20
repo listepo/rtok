@@ -8,29 +8,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T73 | in progress | P1 | 2 | 0% | Cursor / grok 4.6 |
 
-
-
-### T57.1. Flag-aware `guard` read-only classes
-
-From I-38 (promoted 2026-09-17). `guard::read_only` decides which Bash calls get a dedup key from a fixed stem list (`ls cat head tail grep rg find tree wc` plus `git status|log|diff|show|branch`). It ignores flags, redirections and pipes, so it errs both ways:
-- **Writers keyed as read-only** (correctness): `find . -name x -delete`, `cat a > b`, `grep x > out`, `ls | xargs rm`, `tail -f log` are keyed, so they never reach the "mutating Bash clears every `bash` key" arm; a following repeat of `ls` or `cat b` is denied with a stale archive (fail-open violation, same family as T55.8).
-- **Repeats never keyed** (missed savings): `sed -n 1,40p f`, `jq . f`, `awk '{print $1}' f`, `git rev-parse HEAD`, `cargo metadata`, `wc -l` under a pipe.
-Done when:
-1. Evidence first: stem and flag counts over real transcripts (`[stats] transcripts_dir`, the `measure::stats::collect` path `doctor` already uses) for Bash calls that repeat inside `window_turns`, recorded in `research.md` with the date and command; stems are added or removed only with a count behind them.
-2. `read_only` becomes flag-aware: a command is keyed only if its first stem is read-only **and** it has no writer marker — `>` / `>>` redirection, `| tee`, a pipe into a non-read-only stem, `find … -delete` / `-exec`, `sed -i` / `--in-place`, `tail -f`. Any command with a writer marker takes the mutating path and clears the `bash` keys. New read-only stems come from step 1 (expected: `sed` without `-i`, `jq`, `awk`, `git rev-parse`, `cargo metadata`). Parsing stays first-word + marker scan; no shell grammar (`cmd/AGENTS.md`).
-3. Unit tests in `src/plugins/guard/mod.rs`: `sed -n` keyed and `sed -i` mutating; `find -delete` mutating; `cat a > b` mutating; `tail -f` never keyed; `cat a | grep b` keyed; `ls | xargs rm` mutating; and the false-deny Check: `ls` → `find . -delete` → `ls` is allowed.
-4. `guard` deny Measurements (`kind = guard`) on the hook e2e fixture before and after, so the change in deny count is a measured row, not a claim. Off-by-default is not needed: the change only removes wrong denies and adds keyed repeats that already carry a retrievable archive.
-Depends on T55.8 and T55.9 (guard key ownership and cwd) landing first, so the tests do not pin two behaviors at once. (Done 2026-09-18 on branch `t57.1` — evidence `research.md` §2, keys + tests `src/plugins/guard/mod.rs`, cards `955806f`/`185c377`; ported here so `main` carries the fix. The duplicate `mutating_bash_clears_then_allows_repeat_ls` test stays: same family, different seed path.)
-
-
-
-
-### T61.2. Archive skill bodies outside the live zone
-
-From I-51 (`research.md` §10.7). A skill body is re-sent in every later request of its session; the `archive` plugin already replaces old tool results with byte-stable pointers, keyed by `tool_use_id`, but a skill body is a user text block, not a tool result, so it is never touched.
-Gated on T61.1: proceeds only when the `resident` column shows skill bodies ≥ 2 % of input tokens over a 30-day window on this machine; otherwise the card leaves the plan for `ideas.md` with the number.
-Done when the wire normaliser yields a `SkillRef { id: <tool_use_id of the preceding "Launching skill" result>, name, content, turn }` for a user text block that starts with `Base directory for this skill:` right after that result; `archive::rewrite` treats it like a result outside `keep_turns` (archive once, pointer `[archived <id>: skill <name> · N lines · expand(<id>)]`, byte-identical on every later request, `Measurement { plugin = "archive", kind = "skill" }`); `expand <id>` returns the body; a proxy test replays a 3-turn fixture and asserts the pointer appears on turn `keep_turns + 1` and the body never re-archives; off switch `[plugins.archive] skills = true` documented next to `live_blobs`.
-
 ### T73. Cycle demon surfaces around a binary replace
 
 Creator 2026-09-19. `ketch upgrade` kills PIDs holding the binary but does not write the demon stop marker, so the supervisor can respawn mid-replace and keep SQLite (`rtok.db` WAL) locked. `rtok-update` does not stop anything. HTTP+WS are `web`; MCP is `mcp`; SQLite is released when those processes exit.
@@ -38,13 +15,6 @@ Creator 2026-09-19. `ketch upgrade` kills PIDs holding the binary but does not w
 **Plan.** Hidden `rtok demon upgrade`: snapshot kernel-live services (`rows` flock), `stop` them (marker + wait), run `ketch upgrade rtok --yes` (or `rtok-update`, or `RTOK_UPDATE_CMD` in tests), `start` the same set even if replace failed. Reuse `stop`/`start`. Do not revive T40 `demon update`. Spawn the supervisor from the on-disk path when `current_exe` is gone after replace.
 
 Check: `tests/demon.rs` — live mcp is down during the replace command (no state file), up afterwards; a failing replace still leaves mcp running; `just check`.
-
-
-
-
-
-
-
 
 ## Reference
 
@@ -177,7 +147,6 @@ Scope: hook dispatcher/types, guard, cmd (hook/run/rules/formatters), read (mod/
 ### Out of scope this pass
 
 Concurrent agent WIP on local `main` (stashed as `preserve-other-agents-wip-before-docs-review-bugs-plan`). Half-finished T48–T53 cards on that WIP were not judged as shipped bugs.
-
 
 ---
 
