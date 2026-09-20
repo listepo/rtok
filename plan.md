@@ -50,42 +50,24 @@ Check: uninstall a previously installed host; UI checkmark off; `rtok agents lis
 
 Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit.
 
-**Timeout logic (no baked-in default wait).** Config key `restart_prompt_timeout_seconds` (nesting to match existing config style) **defaults to `0`**. **`0` means "not set"** — **no timeout** — wait **indefinitely** for the user's answer. A timeout applies **only** when the user explicitly sets a **positive** number in config; then **no response within that time = No** (do **not** restart the agent). There is **no** 30-second or 60-second default and **no** fallback timeout when the key is absent (absent ≡ `0`).
+**Timeout logic (no baked-in default wait).** Config key `restart_prompt_timeout_seconds` (nesting to match existing config style) **defaults to `0`**. **`0` means "not set"** — **no timeout** — wait **indefinitely** for the user's answer. A timeout applies **only** when the user explicitly sets a **positive** number in config; then **no response within that time = No** (do **not** restart the agent; continue without hanging forever past that limit). There is **no** 30-second or 60-second default.
 
-**CLI spinner while waiting (agent-ready).** While rtok waits for the yes/no answer in the terminal, show a spinner on the **left** of the input line:
-
-1. **Placement.** Glyph in the leftmost column of the prompt row, immediately before the input cursor. Line shape: `[spinner] > ` or `[spinner] Your choice: ` (spinner, space, prompt label / `>`, space, then the user's typing). Not above/below the prompt, not after the cursor.
-2. **Glyph.** Prefer braille-dot frames `⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏`, cycle ~every 80 ms. If the terminal lacks Unicode / braille, fall back to ASCII `- \ | /`.
-3. **Lifecycle.** Start the moment the restart prompt is printed and waiting begins. Stop and **clear** the glyph (erase it; leave a clean prompt line) as soon as the user types anything, presses Enter, or a positive timeout fires. Do not leave a stale spinner character.
-4. **Interaction with timeout.** `restart_prompt_timeout_seconds = 0` → spinner runs until input (no auto-no). Positive timeout → spinner runs until input **or** timeout; on timeout clear spinner, treat as No, do not restart.
-5. **No flicker / no new lines.** Redraw in place with carriage return (`\r`) and/or ANSI clear-to-end-of-line (`\x1b[K`); never print a fresh line per frame.
-
-**Repro / flow.** Run install or uninstall for a running host. After the config write completes, print the restart prompt with the left-side spinner and wait per the timeout rules above.
+**Repro / flow.** Run install or uninstall for a host that is currently running. When the config change has completed, rtok prompts (interactive stdin / TUI confirm — not a silent restart). With `restart_prompt_timeout_seconds = 0` (default), wait until yes/no. With a positive value, wait that many seconds then treat silence as no.
 
 **Expected.**
-- Prompt + left spinner while waiting.
-- Yes: stop then start the host/agent (only after install/uninstall writes finished).
-- No: no restart; mention manual restart if the host caches config.
-- **No response + positive timeout = No:** clear spinner; do **not** restart; exit successfully.
-- **Timeout 0 / key absent:** wait forever (spinner until input); never auto-no.
-- Config changes the wait without a rebuild.
+- Prompt: e.g. "Restart <host> now so the change takes effect? [y/N]" — if a positive timeout is configured, mention auto-no in Ns; if 0, do not imply a countdown.
+- Yes: stop the host/agent process, then start it again (post-config-change only — never restart before the install/uninstall writes finish).
+- No: do nothing further; print that a manual restart is still needed if the host caches config.
+- **No response + positive timeout = No:** do **not** restart; print that the timeout elapsed; exit successfully.
+- **No response + timeout 0:** keep waiting (no auto-no).
+- Changing the config key changes behavior without a rebuild; absent key behaves as `0`.
 
-**Actual (today).** Install/uninstall edit files and return; no restart offer, no timed prompt, no wait spinner.
+**Actual (today).** Install/uninstall edit files and return; no restart offer and no timed prompt, so a running host keeps the old hooks/MCP until the user restarts it by hand.
 
-**Plan.** Add `restart_prompt_timeout_seconds` defaulting to `0`. End of `setup_host` (install + remove): blocking or timed read with the in-place left spinner. Per-host restart via existing helper or a documented stop/start matrix. Skip prompt under `--dry-run` and non-interactive CI (`!stdin.isatty()` or `--no-restart` / `--yes` — pick one). Tests: yes / no / positive-timeout-silence→no / `0` waits (no auto-no) / spinner cleared on input and on timeout / ASCII fallback path if feasible.
+**Plan.** Add `restart_prompt_timeout_seconds` defaulting to `0`. At the end of `setup_host` (install and remove paths): if 0, blocking read for yes/no; if >0, timed read (select/poll or equivalent) that defaults to no on expiry. Per-host restart: prefer an existing host helper if one exists; otherwise document the stop/start command matrix (Claude Code, Cursor, …) and implement the ones we can drive safely. Skip the prompt under `--dry-run` and non-interactive CI (`!stdin.isatty()` or an explicit `--no-restart` / `--yes` policy — pick one and test it). Regression: yes path stops then starts after the config write; no path never touches the process; positive timeout + silence → no restart; `0` does not auto-no.
 
-**Check (acceptance).**
-- [ ] Yes path: stop then start after config write.
-- [ ] No path: process untouched.
-- [ ] `restart_prompt_timeout_seconds` defaults to `0`; absent key ≡ `0`; **no** 30s/60s fallback.
-- [ ] Positive timeout + silence → No, no restart.
-- [ ] `0` → wait indefinitely; spinner until input; no auto-no.
-- [ ] Spinner leftmost on the prompt row (`[spinner] > ` / `[spinner] Your choice: `).
-- [ ] Braille sequence `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` ~80 ms; ASCII `-\|/` fallback without Unicode.
-- [ ] Spinner starts with prompt; cleared on first key / Enter / timeout (no stale glyph).
-- [ ] Redraw in place (`\r` / ANSI `\x1b[K`); no per-frame newlines.
-- [ ] Dry-run / non-interactive: no prompt, no spinner, no restart.
-- [ ] `just check`.
+Check: yes/no, timeout→no (positive only), and `0` = wait-forever covered in tests (prompt/timer stubbed); dry-run never restarts; `just check`.
+
 
 ## Reference
 

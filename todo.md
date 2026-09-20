@@ -2,4 +2,4 @@
 - T73. Cycle demon surfaces around a binary replace
 - T74. Make the two load-sensitive gate tests deterministic (tui timeout, otel latency)
 - T75. `agents uninstall` leaves the host marked installed (green check stuck)
-- T76. Offer host restart after agents install/uninstall (config timeout>0 only; 0=wait; silence+timeout=no; left CLI spinner)
+- T76. Offer to restart the host after `agents install` / `uninstall` (timeout only if config >0; 0 = wait forever; silence+timeout = no)
