@@ -115,8 +115,7 @@ Notes that survive compaction. claude-mem extracts them with an LLM, which costs
 build the thing that saves tokens; mem0 wants Docker and a vector database. rtok's `memory`
 is agent-written notes in SQLite FTS5 with progressive disclosure — titles, then ids, then
 bodies, never bodies at `SessionStart` — for 3 tools and no model calls. graymatter is the closest design — one Go binary, MCP plus
-Claude Code hooks, no LLM required — and adds tombstones, decay, pinning and a
-plant-and-recall benchmark that rtok lacks (`research.md` §14).
+Claude Code hooks, no LLM required — and adds tombstones, decay and pinning. rtok's own plant-and-recall bench is `tests/memory_bench.rs` (2026-09-18, `research.md` §14): FTS5 and P29 hybrid 20/20 at 1/10/30/100 sessions, superseded returned 0, SessionStart 100 bytes vs 371 866 bytes of full live-body injection at N=100. Never graymatter's 83 %.
 
 engram was re-read feature by feature on 2026-09-18 (`research.md` §13). Two of its ideas
 fit rtok's zero-LLM lane and were adopted: topic keys — one row per evolving topic, which
@@ -208,7 +207,7 @@ cache-preserving proxy rewrites exist for exactly this reason.
 8. **One config, with provenance.** Every flag is a config key; `rtok config show --sources`
    names the layer each value came from. No tool in the survey can answer that question.
 9. **Reversible install.** `rtok agents install claude --dry-run` prints the exact edits, the real run
-   backs up the settings file before writing it, and `rtok agents remove claude` takes the hooks,
+   backs up the settings file before writing it, and `rtok agents uninstall claude` takes the hooks,
    the MCP registration and the proxy variable back out (foreign entries stay).
 10. **Your ledger, in your observability stack.** `rtok otel flush` projects calls, logs and
     metrics as OTLP/HTTP JSON — verified against Jaeger 2.11 and Grafana `otel-lgtm`, and
@@ -229,10 +228,10 @@ Stated plainly, because §4 is only worth reading if this section exists.
   serena's LSP backend is more precise here. An LSP backend for `graph` is v0.2.
 - **No LLM compression, no embeddings, no semantic search.** claude-mem and mem0 do those
   today. In rtok they are v0.2+ and gated on beating the lossless path in a bench.
-- **`memory` has no lifecycle and no recall number.** Notes are insert-only (no retire,
-  supersede or pin), recall is the newest five titles, and nothing measures whether a
-  planted fact is found N sessions later; graymatter ships all three (`research.md` §14,
-  T69.1–T69.3).
+- **`memory` recall is newest-five titles, with no recency ranking.** Lifecycle (retire /
+  supersede / pin) landed in T69.1. The plant-and-recall bench (T69.3, `research.md` §14)
+  is 20/20 FTS5 and P29 hybrid at N=100 against this generator; `half_life_days` ranking
+  did not ship (T69.2), so that row is N/A. Never cite graymatter's 83 % as rtok's.
 - **Smaller filter library than rtk and sqz.** 9 rule families plus ten per-family
   formatters, against rtk's ~80 filters and sqz's 45+; no content-hash dedup, JSON or
   column pass yet (`research.md` §11, T65.1–T65.4).

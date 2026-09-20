@@ -150,6 +150,46 @@ fn graph_outline_caps_with_measurement() {
     assert!(kinds(&home, "graph").iter().any(|k| k == "cap"));
 }
 #[test]
+fn graph_session_start_map_off_by_default_and_on_when_capped() {
+    let home = tmp("graph-map");
+    let repo = home.0.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::write(
+        repo.join("a.rs"),
+        "fn hot() {}\nfn cold() { hot(); hot(); }\n",
+    )
+    .unwrap();
+    let arg = repo.to_string_lossy().into_owned();
+    let _ = run(&home, &["graph", "index", &arg], "", &home.0);
+    let input = format!(
+        r#"{{"session_id":"s-map","cwd":"{cwd}","hook_event_name":"SessionStart","source":"startup"}}"#,
+        cwd = repo.display()
+    );
+    let off = run(&home, &["hook", "SessionStart"], &input, &home.0);
+    let off_v = js(&off);
+    let off_ctx = off_v
+        .get("hookSpecificOutput")
+        .and_then(|v| v.get("additionalContext"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert!(
+        !off_ctx.contains("repo map"),
+        "default map_tokens=0 must not inject: {off}"
+    );
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.graph]\nmap_tokens = 200\n",
+    )
+    .unwrap();
+    let on = run(&home, &["hook", "SessionStart"], &input, &home.0);
+    let on_v = js(&on);
+    let on_ctx = on_v["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap_or("");
+    assert!(on_ctx.contains("repo map"), "{on}");
+    assert!(on_ctx.contains("hot"), "{on}");
+}
+#[test]
 fn inject_session_start_records_measurement() {
     let home = tmp("inject");
     let c = home.0.join("config.toml");

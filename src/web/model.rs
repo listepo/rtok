@@ -8,6 +8,7 @@
 use anyhow::Result;
 use serde::Serialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::config::{Config, layers};
@@ -38,6 +39,10 @@ pub struct Snapshot {
     /// selection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot
     /// makes the page both surfaces' (D23); `[log] lines` is the frame's bound too.
     pub logs: Vec<String>,
+    /// Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither
+    /// queries the store for an expand handle (D23 / D27).
+    #[serde(default)]
+    pub ref_ids: BTreeMap<i32, String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -104,6 +109,40 @@ pub struct PluginPage {
     pub stats: Option<Stats>,
 }
 
+/// One `rtok agents list` row: the same host variant `agents::list` prints.
+#[derive(Debug, Serialize)]
+pub struct AgentListRow {
+    pub host: &'static str,
+    pub kind: &'static str,
+    pub name: &'static str,
+    pub present: bool,
+    pub app: Option<String>,
+    pub version: Option<String>,
+    pub config: Vec<String>,
+    pub modules: Vec<crate::agents::ModuleRow>,
+    pub plugins: Vec<crate::agents::PluginRow>,
+}
+
+/// `rtok otel status` as data: endpoint, watermarks, pending rows, last exporter line.
+#[derive(Debug, Serialize)]
+pub struct OtelStatus {
+    pub endpoint: Option<String>,
+    pub calls_mark: i64,
+    pub calls_pending: i64,
+    pub logs_mark: i64,
+    pub logs_pending: i64,
+    pub sessions_mark: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last: Option<OtelLastLog>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OtelLastLog {
+    pub level: String,
+    pub name: String,
+    pub message: String,
+}
+
 /// The pages the model offers, each as `(page, snapshot key)` — the wire key that
 /// carries the page's numbers; `type` is the wire envelope, not a page. D23: a page
 /// that exists on one surface and not the other is a defect, and
@@ -152,6 +191,7 @@ pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
     )?;
     if let Ok(store) = Store::open(&cfg.core.db_path) {
         let _ = stats::attach_api(&mut report, &store);
+        let _ = stats::attach_bash_cmd(&mut report, &store);
         if cfg.stats.price {
             let _ = stats::attach_costs(&mut report, &store, &cfg.stats.prices);
         }
@@ -534,6 +574,66 @@ pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
     doctor::page(cfg)
 }
 
+/// `rtok agents list` as data — one row per known host variant.
+pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
+    let mut out = Vec::new();
+    for id in crate::agents::HOSTS {
+        let Some(a) = crate::agents::host(id) else {
+            continue;
+        };
+        for v in a.variants() {
+            let present = crate::agents::present(a, v, cfg);
+            let app = crate::agents::app_path(v).map(|p| p.display().to_string());
+            let version = app.as_ref().map(|_| crate::agents::app_version(v));
+            let config = a
+                .files(cfg, v.kind)
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect();
+            let (modules, plugins) = if present {
+                (
+                    crate::agents::module_rows(a, v.kind, cfg),
+                    crate::agents::plugin_rows(a, v.kind, cfg),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            out.push(AgentListRow {
+                host: a.id(),
+                kind: v.kind.as_str(),
+                name: v.name,
+                present,
+                app,
+                version,
+                config,
+                modules,
+                plugins,
+            });
+        }
+    }
+    out
+}
+
+/// `rtok otel status` as data — the same watermarks the table prints.
+pub fn otel_status(cfg: &Config) -> Result<OtelStatus> {
+    let store = Store::open(&cfg.core.db_path)?;
+    let (calls_pending, logs_pending) = store.otel_pending()?;
+    let last = store.last_log("otel")?.map(|l| OtelLastLog {
+        level: l.level,
+        name: l.name,
+        message: l.message,
+    });
+    Ok(OtelStatus {
+        endpoint: cfg.otel.resolve().map(|ep| ep.url),
+        calls_mark: store.otel_mark("calls")?,
+        calls_pending,
+        logs_mark: store.otel_mark("logs")?,
+        logs_pending,
+        sessions_mark: store.otel_mark("sessions")?,
+        last,
+    })
+}
+
 /// How long a snapshot may reuse the last doctor report. Shorter than a sitting at the
 /// Doctor tab feels stale; far longer than the 2 s tick, so MCP spawns are not the tick.
 const DOCTOR_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(30);
@@ -615,17 +715,26 @@ impl<'a> Model<'a> {
     }
 
     pub fn snapshot(&self) -> Snapshot {
+        let calls = self.calls();
+        let ref_ids = self
+            .store
+            .and_then(|s| {
+                s.archive_ref_ids(&calls.iter().map(|c| c.id).collect::<Vec<_>>())
+                    .ok()
+            })
+            .unwrap_or_default();
         Snapshot {
             kind: "snapshot",
             usage: self.overview(),
             plugins: self.plugins(),
-            calls: self.calls(),
+            calls,
             sessions: self.sessions(0),
             // The one doctor query (D27): the snapshot carries what `rtok doctor`
             // renders, so neither surface grows a probe of its own. Cached briefly —
             // a failed or in-flight tick is `None`, never a failed snapshot.
             doctor: doctor_for_snapshot(self.cfg),
             logs: self.log_lines(None),
+            ref_ids,
         }
     }
 
@@ -805,6 +914,31 @@ pub fn call_linked_tokens(c: &CallRow) -> i64 {
         + c.cache_create.unwrap_or(0)
         + c.cache_read.unwrap_or(0)
         + c.output.unwrap_or(0)
+}
+
+/// Session drill-down (T60.3, D23): the snapshot's `SessionTotals` row plus the
+/// snapshot's calls filtered by that id. Both surfaces render this pair; neither
+/// grows a second session type or a second query (D27).
+/// Archive payload for both surfaces (T60.4, D23): [`crate::expand::fetch`] then
+/// [`crate::expand::render_lines`] with `[expand] max_lines`. A live-zone pointer
+/// freezes exactly as `rtok expand` does — one function, no second path. `grep`
+/// is `--grep` parity for the TUI `/` filter and the web filter box.
+pub fn expand_payload(cfg: &Config, id: &str, grep: Option<&str>) -> Option<String> {
+    let cx = crate::plugin::Runtime::open(cfg.clone(), "expand").ok()?;
+    let bytes = crate::expand::fetch(&cx, id).ok()??;
+    let text = String::from_utf8_lossy(&bytes);
+    crate::expand::render_lines(&text, id, None, grep, 0, cfg.expand.max_lines).ok()
+}
+
+pub fn session_detail<'a>(
+    snapshot: &'a Snapshot,
+    id: &str,
+) -> Option<(&'a SessionTotals, Vec<&'a CallRow>)> {
+    let session = snapshot.sessions.iter().find(|s| s.id == id)?;
+    Some((
+        session,
+        snapshot.calls.iter().filter(|c| c.session == id).collect(),
+    ))
 }
 
 fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
@@ -1232,6 +1366,145 @@ mod tests {
         };
         assert_eq!(call_size_label(&row), want);
     }
+
+    #[test]
+    fn session_detail_filters_snapshot_calls_by_id() {
+        let mut snap = Model::new(&Config::default(), None).snapshot();
+        snap.sessions = vec![SessionTotals {
+            id: "a".into(),
+            host: None,
+            project: Some("rtok".into()),
+            provider: None,
+            api: Some("anthropic".into()),
+            model: None,
+            input: 30,
+            cache_create: 1,
+            cache_read: 7,
+            output: 7,
+            started_at: 1,
+            last_activity: 2,
+            ended_at: None,
+        }];
+        snap.calls = vec![
+            CallRow {
+                id: 1,
+                ts: 1,
+                session: "a".into(),
+                surface: "proxy".into(),
+                kind: "api_request".into(),
+                plugin: None,
+                name: Some("/v1/messages".into()),
+                parent_id: None,
+                ms: None,
+                ok: 1,
+                error: None,
+                host: None,
+                provider: None,
+                model: None,
+                api: None,
+                input: None,
+                cache_create: None,
+                cache_read: None,
+                output: None,
+            },
+            CallRow {
+                id: 2,
+                ts: 2,
+                session: "other".into(),
+                surface: "hook".into(),
+                kind: "hook".into(),
+                plugin: None,
+                name: Some("Skip".into()),
+                parent_id: None,
+                ms: None,
+                ok: 1,
+                error: None,
+                host: None,
+                provider: None,
+                model: None,
+                api: None,
+                input: None,
+                cache_create: None,
+                cache_read: None,
+                output: None,
+            },
+        ];
+        let (session, calls) = session_detail(&snap, "a").expect("session a");
+        assert_eq!(session.project.as_deref(), Some("rtok"));
+        assert_eq!(session.api.as_deref(), Some("anthropic"));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name.as_deref(), Some("/v1/messages"));
+        assert!(session_detail(&snap, "missing").is_none());
+    }
+
+    /// T60.4: `expand_payload` is `expand::fetch` + `[expand] max_lines`; a live-zone
+    /// pointer freezes as the CLI does; the snapshot carries the call's archive id.
+    #[test]
+    fn expand_payload_caps_greps_and_freezes_like_cli() {
+        let mut cfg = crate::testutil::config("expand-model").0;
+        cfg.expand.max_lines = 2;
+        let home = cfg.core.db_path.parent().unwrap().to_path_buf();
+        cfg.doctor.settings_path = home.join("missing-settings.json");
+        cfg.doctor.claude_json = home.join("missing-claude.json");
+        cfg.doctor.mcp_json = home.join("missing-mcp.json");
+        let cx = crate::plugin::Runtime::open(cfg.clone(), "proxy-sess").unwrap();
+        let id = cx
+            .store
+            .put_archive(
+                "proxy-sess",
+                b"alpha\nbeta\ngamma\nHIT\n",
+                &cfg.core.archive_dir,
+            )
+            .unwrap();
+        cx.store
+            .put_archive_decision("tu-1", &id, "proxy-sess", &format!("[archived {id}]"))
+            .unwrap();
+        cx.store
+            .upsert_session("s", None, None, None, None)
+            .unwrap();
+        let call = cx
+            .store
+            .insert_call(
+                "s",
+                "hook",
+                "plugin_run",
+                None,
+                None,
+                None,
+                Some("cmd"),
+                None,
+            )
+            .unwrap();
+        cx.record(&Measurement {
+            plugin: "cmd",
+            kind: "filter",
+            before_bytes: 10,
+            after_bytes: 4,
+            est_before: 3,
+            est_after: 1,
+            ref_id: Some(id.clone()),
+            call_id: Some(call),
+        })
+        .unwrap();
+        drop(cx);
+
+        let text = expand_payload(&cfg, &id, None).expect("payload");
+        assert!(text.contains("alpha"), "{text}");
+        assert!(text.contains("omitted"), "{text}");
+        let hit = expand_payload(&cfg, &id, Some("HIT")).expect("grep");
+        assert!(hit.contains("HIT"), "{hit}");
+        let snap = snapshot(&cfg);
+        assert_eq!(snap.ref_ids.get(&call), Some(&id));
+        let cx = crate::plugin::Runtime::open(cfg, "check").unwrap();
+        assert!(
+            cx.store
+                .archive_decision("proxy-sess", "tu-1")
+                .unwrap()
+                .unwrap()
+                .expanded
+        );
+    }
+
     /// The report's percentile, pinned where it is defined: nearest rank, so
     /// `tests/report.rs` can assert the p50/p95 the fixture's ms values must produce.
     #[test]

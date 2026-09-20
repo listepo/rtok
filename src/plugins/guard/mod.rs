@@ -14,7 +14,7 @@ impl Plugin for Guard {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "guard",
-            surfaces: &[Surface::Hook],
+            surfaces: &[Surface::Hook, Surface::Cli],
             default_on: true,
         }
     }
@@ -108,6 +108,27 @@ impl Plugin for Guard {
     }
 }
 
+/// `rtok guard check` — same allow/deny `pre_tool` returns, as a JSON line.
+pub fn check(tool: &str, raw_input: &str, cx: &crate::plugin::Runtime) -> String {
+    let tool = crate::hooks::types::canonical_tool_name(tool);
+    let mut input: Value = serde_json::from_str(raw_input).unwrap_or(Value::Null);
+    if let Some(obj) = input.as_object_mut()
+        && let Some(fp) = obj.remove("filePath")
+    {
+        obj.entry("file_path").or_insert(fp);
+    }
+    let ev = PreToolUse {
+        tool_name: &tool,
+        tool_input: &input,
+    };
+    match Guard.pre_tool(&ev, &Ctx::new(cx)) {
+        Some(PreToolDecision::Deny { reason }) if !reason.is_empty() => {
+            serde_json::json!({ "allow": false, "reason": reason }).to_string()
+        }
+        _ => serde_json::json!({ "allow": true }).to_string(),
+    }
+}
+
 /// T50.4: opt-in deny of native `Grep`/`Glob` pointing at MCP `search`/`tree`.
 /// Fail open: off by default, and silent while the `read` plugin is disabled
 /// (no `search`/`tree` to point at). The knob is per-host opt-in, so a host
@@ -169,16 +190,60 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
 
 /// Stems whose output only changes when something else ran in between. Looks past the
 /// `cd <dir> &&` prefix [`norm_cmd`] keeps: only the command after it is keyed.
+/// T57.1: first-word + marker scan, no shell grammar. Keyed only when every `|`
+/// segment's stem is read-only and no writer marker is present (`>`/`>>`, `| tee`,
+/// pipe into a non-read-only stem, `find -delete`/`-exec`, `sed -i`, `tail -f`).
 fn read_only(cmd: &str) -> bool {
-    let mut w = after_cd_prefix(cmd).split_whitespace();
+    after_cd_prefix(cmd)
+        .split('|')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .all(segment_read_only)
+}
+
+fn segment_read_only(seg: &str) -> bool {
+    stem_read_only(seg) && !writer_marker(seg)
+}
+
+fn stem_read_only(seg: &str) -> bool {
+    let mut w = seg.split_whitespace();
     match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
-        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" => true,
+        "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" | "sed" | "jq"
+        | "awk" => true,
         "git" => matches!(
             w.next(),
-            Some("status" | "log" | "diff" | "show" | "branch")
+            Some("status" | "log" | "diff" | "show" | "branch" | "rev-parse")
         ),
+        "cargo" => matches!(w.next(), Some("metadata")),
         _ => false,
     }
+}
+
+/// Writer markers take the mutating path and clear `bash` keys (fail-open vs false deny).
+fn writer_marker(seg: &str) -> bool {
+    let toks: Vec<&str> = seg.split_whitespace().collect();
+    let stem = super::cmd::formatters::cmd_stem(toks.first().copied().unwrap_or(""));
+    toks.iter().copied().any(is_redirect)
+        || (stem == "find"
+            && toks
+                .iter()
+                .any(|t| *t == "-delete" || *t == "-exec" || t.starts_with("-exec")))
+        || (stem == "sed" && toks.iter().copied().any(sed_in_place))
+        || (stem == "tail"
+            && toks
+                .iter()
+                .any(|t| *t == "-f" || *t == "--follow" || t.starts_with("--follow=")))
+}
+
+fn is_redirect(t: &str) -> bool {
+    let t = t.trim_start_matches(|c: char| c.is_ascii_digit());
+    t.starts_with('>') || t.starts_with("&>")
+}
+
+fn sed_in_place(t: &str) -> bool {
+    t == "--in-place"
+        || t.starts_with("--in-place=")
+        || (t.starts_with("-i") && !t.starts_with("--"))
 }
 
 /// Normalized Bash key body: whitespace collapsed, the `rtok run --` wrap stripped,
@@ -265,6 +330,35 @@ fn payload(v: &Value) -> Vec<u8> {
         }
     }
     serde_json::to_vec(v).unwrap_or_default()
+}
+
+/// `rtok guard check` — same verdict as the hook path (T70.5).
+pub fn check_json(
+    cfg: &crate::config::Config,
+    tool: &str,
+    input: &serde_json::Value,
+) -> serde_json::Value {
+    use rtok_plugin_sdk::PreToolUse;
+    let cx = match crate::plugin::Runtime::open(
+        cfg.clone(),
+        format!("guard-check-{}", std::process::id()),
+    ) {
+        Ok(c) => c,
+        Err(_) => return serde_json::json!({"decision": "allow"}),
+    };
+    let ev = PreToolUse {
+        tool_name: tool,
+        tool_input: input,
+    };
+    match Guard.pre_tool(&ev, &crate::plugin::Ctx::new(&cx)) {
+        Some(PreToolDecision::Deny { reason }) => {
+            serde_json::json!({"decision": "deny", "reason": reason})
+        }
+        Some(PreToolDecision::Rewrite { input, reason }) => {
+            serde_json::json!({"decision": "rewrite", "input": input, "reason": reason})
+        }
+        None => serde_json::json!({"decision": "allow"}),
+    }
 }
 
 #[cfg(test)]
@@ -449,13 +543,19 @@ mod tests {
             )
             .is_none()
         );
-        crate::plugins::read::cache::invalidate(
-            &PostToolUse {
-                tool_name: "Edit",
-                tool_input: &path,
-                tool_response: &json!({}),
-            },
-            &Ctx::new(&cx),
+        // The guard owns its keys (T55.8): with `read.delta` on, the read plugin keeps
+        // its cache so a re-read can answer with a diff, so the guard's own Edit
+        // invalidation is what has to clear `read\t{path}` here.
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Edit",
+                    tool_input: &path,
+                    tool_response: &json!({}),
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
         );
         let read = PreToolUse {
             tool_name: "Read",
@@ -680,6 +780,114 @@ mod tests {
             "an unreadable body must still deny — only its metadata was consulted"
         );
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    /// T57.1: flag-aware read-only keys — writer markers take the mutating path.
+    #[test]
+    fn flag_aware_read_only_keys() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}));
+        assert!(k("sed -n 1,40p f").is_some(), "sed -n is read-only");
+        assert!(k("sed -i s/a/b/ f").is_none(), "sed -i is mutating");
+        assert!(
+            k("find . -name x -delete").is_none(),
+            "find -delete is mutating"
+        );
+        assert!(k("cat a > b").is_none(), "redirect is mutating");
+        assert!(k("tail -f log").is_none(), "tail -f is never keyed");
+        assert!(k("cat a | grep b").is_some(), "pipe of readers is keyed");
+        assert!(
+            k("ls | xargs rm").is_none(),
+            "pipe into a writer is mutating"
+        );
+        assert!(k("jq . f").is_some());
+        assert!(k("awk '{print $1}' f").is_some());
+        assert!(k("git rev-parse HEAD").is_some());
+        assert!(k("cargo metadata").is_some());
+        assert!(k("cargo test").is_none());
+    }
+
+    /// T57.1 false-deny Check: a writer that shares a read-only stem must clear bash keys.
+    #[test]
+    fn find_delete_allows_the_next_ls() {
+        let cx = setup();
+        let g = Guard;
+        let resp = json!({"stdout": "out"});
+        let post = |cmd: &str| {
+            let input = json!({"command": cmd});
+            assert!(
+                g.post_tool(
+                    &PostToolUse {
+                        tool_name: "Bash",
+                        tool_input: &input,
+                        tool_response: &resp,
+                    },
+                    &Ctx::new(&cx),
+                )
+                .is_none()
+            );
+        };
+        let denied = |cmd: &str| {
+            let input = json!({"command": cmd});
+            matches!(
+                g.pre_tool(
+                    &PreToolUse {
+                        tool_name: "Bash",
+                        tool_input: &input,
+                    },
+                    &Ctx::new(&cx),
+                ),
+                Some(PreToolDecision::Deny { .. })
+            )
+        };
+        post("ls");
+        assert!(denied("ls"));
+        post("find . -delete");
+        assert!(
+            !denied("ls"),
+            "find -delete must drop bash keys so the next ls is allowed"
+        );
+    }
+
+    #[test]
+    fn mutating_bash_clears_then_allows_repeat_ls() {
+        let cx = setup();
+        let g = Guard;
+        let ctx = || Ctx::new(&cx);
+        let ls = json!({"command": "ls"});
+        let ls_resp = json!({"stdout": "a"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                    tool_response: &ls_resp,
+                },
+                &ctx(),
+            )
+            .is_none()
+        );
+        let mutating = json!({"command": "find . -delete"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &mutating,
+                    tool_response: &json!({"stdout": ""}),
+                },
+                &ctx(),
+            )
+            .is_none()
+        );
+        assert!(
+            g.pre_tool(
+                &PreToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                },
+                &ctx(),
+            )
+            .is_none()
+        );
     }
 
     #[test]

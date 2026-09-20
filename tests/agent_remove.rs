@@ -1,4 +1,4 @@
-//! T10.9: `rtok agents remove <host>` takes back everything `rtok agents install <host>` wrote,
+//! T10.9: `rtok agents uninstall <host>` (alias `remove`) takes back everything `rtok agents install <host>` wrote,
 //! and both commands copy the host's config files before they touch anything.
 //!
 //! Check: per host, seed a foreign entry, install, remove, and assert rtok is gone while the

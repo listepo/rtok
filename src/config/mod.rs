@@ -151,6 +151,17 @@ section! {
 }
 
 section! {
+    /// `[proxy.tools_rewrite]` — opt-in `tools[]` description rewrite (T59.5). Off: bytes
+    /// identical. Empty `allow` keeps every tool not in `deny`. `input_schema` is never touched.
+    ToolsRewrite {
+        enabled: bool = false,
+        max_description_tokens: u32 = 60,
+        allow: Vec<String> = Vec::new(),
+        deny: Vec<String> = Vec::new(),
+    }
+}
+
+section! {
     /// `[proxy]` — the proxy server itself; the usage-capture plugin is `[plugins.proxy]`.
     Proxy {
         /// When false the HTTP listener stays up but every request is byte-forwarded with
@@ -170,6 +181,7 @@ section! {
         /// do not already carry the field. Other wires are unaffected.
         context_management: bool = false,
         dry_run: bool = false,
+        tools_rewrite: ToolsRewrite = ToolsRewrite::default(),
     }
 }
 
@@ -344,6 +356,7 @@ section! {
         pi: SetupPi = SetupPi::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
+        vscode: SetupVscode = SetupVscode::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
@@ -373,7 +386,12 @@ section! {
 
 section! {
     /// `[setup.pi]`
-    SetupPi { extensions_path: PathBuf = p("~/.pi/agent/extensions") }
+    SetupPi {
+        extensions_path: PathBuf = p("~/.pi/agent/extensions"),
+        /// Register the measured MCP tools through `pi.registerTool` (T70.3).
+        /// Off: those descriptions do not ride every pi request.
+        tools: bool = false,
+    }
 }
 
 section! {
@@ -389,6 +407,14 @@ section! {
 section! {
     /// `[setup.copilot]` — `mcp-config.json` and `hooks/rtok.json` live under `dir`.
     SetupCopilot { dir: PathBuf = p("~/.copilot") }
+}
+
+section! {
+    /// `[setup.vscode]` — profile `mcp.json` under Code / Code - Insiders user dirs (T48.8).
+    SetupVscode {
+        code_user_dir: PathBuf = PathBuf::new(),
+        insiders_user_dir: PathBuf = PathBuf::new(),
+    }
 }
 
 section! {
@@ -508,6 +534,7 @@ section! {
         trailer_min_lines: u32 = 40,
         fail_tail_lines: u32 = 80,
         never_wrap: Vec<String> = strs(&["rtok", "sudo"]),
+        interactive_stems: Vec<String> = strs(&["python", "node", "psql", "sqlite3", "irb", "bash", "sh", "zsh", "docker", "kubectl"]),
     }
 }
 
@@ -524,6 +551,10 @@ section! {
         /// Max bytes `search` will read from one file (T55.5). Larger files are skipped.
         search_max_bytes: u64 = 1_048_576,
         tree_depth: u32 = 2,
+        /// T58.1: re-read of a changed file returns a unified diff vs the last archive.
+        delta: bool = true,
+        /// Serve the full file when the diff is not below this fraction of the file.
+        delta_max_ratio: f32 = 0.6,
         /// Deprecated compatibility key; grammars are Cargo features now, so this is ignored.
         languages: Vec<String> = Vec::new(),
     }
@@ -545,6 +576,8 @@ section! {
         /// in user content blocks (never tool results, system, tools, or the last two
         /// turns). Default off until a bench shows cost per passed task does not rise.
         live_blobs: bool = false,
+        /// Opt-in skill body archiving in the live zone (T61.2).
+        skills: bool = false,
     }
 }
 
@@ -614,8 +647,15 @@ section! {
         enabled: bool = true,
         recall_titles: u32 = 5,
         recall_tokens: u32 = 200,
+        prompt_recall: u32 = 0,
         checkpoint_tokens: u32 = 400,
         search_limit: u32 = 5,
+        sync_tokens: u32 = 300,
+        /// SessionStart `source = startup` restores the newest `session:*` note (T71.2). Off
+        /// until a P7-style A/B shows cost per passed task does not rise.
+        startup_recall: bool = false,
+        /// Sub-agent handoff MCP tool (T59.6); off by default.
+        handoff: bool = false,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }
@@ -625,10 +665,14 @@ section! {
     Graph {
         enabled: bool = true,
         max_tokens: u32 = 2000,
+        map_tokens: u32 = 0,
         body_lines: u32 = 40,
         auto_index: bool = true,
         backend: String = s("tags"),
         watch: String = s("off"),
+        exclude: Vec<String> = vec![],
+        include: Vec<String> = vec![],
+        extensions: std::collections::HashMap<String, String> = std::collections::HashMap::new(),
     }
 }
 
@@ -842,6 +886,8 @@ impl Config {
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
             &mut self.setup.copilot.dir,
+            &mut self.setup.vscode.code_user_dir,
+            &mut self.setup.vscode.insiders_user_dir,
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
@@ -1188,6 +1234,28 @@ mod tests {
     }
 
     #[test]
+    fn tools_rewrite_defaults_overlay_and_unknown_key() {
+        let d = ToolsRewrite::default();
+        assert!(!d.enabled);
+        assert_eq!(d.max_description_tokens, 60);
+        assert!(d.allow.is_empty());
+        assert!(d.deny.is_empty());
+        let cfg: Config = parse(
+            "[proxy.tools_rewrite]
+enabled = true
+max_description_tokens = 40
+deny = [\"Bash\"]
+",
+        )
+        .unwrap();
+        assert!(cfg.proxy.tools_rewrite.enabled);
+        assert_eq!(cfg.proxy.tools_rewrite.max_description_tokens, 40);
+        assert_eq!(cfg.proxy.tools_rewrite.deny, ["Bash"]);
+        let err = parse("[proxy.tools_rewrite]\nbogus = true\n").unwrap_err();
+        assert!(err.to_string().contains("bogus"), "{err}");
+    }
+
+    #[test]
     fn semantic_cache_defaults_overlay_and_unknown_key() {
         let d = SemanticCache::default();
         assert!(!d.enabled);
@@ -1281,6 +1349,7 @@ bogus = true
     #[test]
     fn graph_backend_defaults_to_tags() {
         assert_eq!(Config::default().plugins.graph.backend, "tags");
+        assert_eq!(Config::default().plugins.graph.map_tokens, 0);
     }
 
     #[test]

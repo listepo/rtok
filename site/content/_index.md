@@ -29,8 +29,8 @@ layout: hextra-home
 
 <div class="rtok-hero-shot hx:mb-16">
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="images/hero-overview-light.png">
-    <img src="images/hero-overview-dark.png" alt="rtok webui Overview — measured token ledger" width="1280" height="720">
+    <source media="(prefers-color-scheme: light)" srcset="images/hero-overview-light.png 2x" type="image/png">
+    <img src="images/hero-overview-dark.png" srcset="images/hero-overview-dark.png 2x" alt="rtok webui Overview — measured token ledger" width="1280" height="720">
   </picture>
 </div>
 

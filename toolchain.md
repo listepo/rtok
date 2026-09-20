@@ -8,6 +8,7 @@ Project programs and direct packages from the manifests.
 | --- | --- | --- | --- |
 | mise | brew / curl, then `mise install` | Pinned tool versions | https://github.com/jdx/mise |
 | cargo-cache | mise | `just cache` / `just cache-autoclean` (T17.2); the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
+| binaryen | brew | wasm-opt for T60.7 webui bundle | https://github.com/WebAssembly/binaryen |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
@@ -70,11 +71,17 @@ Project programs and direct packages from the manifests.
 | tower-http | local | https://crates.io/crates/tower-http | Rust dependency |
 | tree-sitter | local | https://crates.io/crates/tree-sitter | Rust dependency |
 | tree-sitter-c | local | https://crates.io/crates/tree-sitter-c | Rust dependency |
+| tree-sitter-c-sharp | local | https://crates.io/crates/tree-sitter-c-sharp | C# grammar tags (T52.2) |
 | tree-sitter-dart | local | https://crates.io/crates/tree-sitter-dart | Rust dependency |
 | tree-sitter-go | local | https://crates.io/crates/tree-sitter-go | Rust dependency |
+| tree-sitter-java | local | https://crates.io/crates/tree-sitter-java | Java grammar tags (T52.2) |
 | tree-sitter-javascript | local | https://crates.io/crates/tree-sitter-javascript | Rust dependency |
+| tree-sitter-kotlin-ng | local | https://crates.io/crates/tree-sitter-kotlin-ng | Kotlin grammar tags (T52.2) |
+| tree-sitter-php | local | https://crates.io/crates/tree-sitter-php | PHP grammar tags (T52.2) |
 | tree-sitter-python | local | https://crates.io/crates/tree-sitter-python | Rust dependency |
+| tree-sitter-ruby | local | https://crates.io/crates/tree-sitter-ruby | Ruby grammar tags (T52.2) |
 | tree-sitter-rust | local | https://crates.io/crates/tree-sitter-rust | Rust dependency |
+| tree-sitter-swift | local | https://crates.io/crates/tree-sitter-swift | Swift grammar tags (T52.2) |
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
