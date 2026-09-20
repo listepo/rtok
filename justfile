@@ -9,6 +9,9 @@ dist := env("DIST", "mise x cargo:cargo-dist@0.32.0 -- dist")
 hugo := env("HUGO", "mise exec -- hugo --source site")
 jscpd := env("JSCPD", "mise exec -- jscpd")
 
+# Logical CPUs, portable across the OSes rtok's CI runs on (Linux/macOS/BSD, getconf fallback).
+cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *) getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4;; esac`
+
 default: check
 
 # fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector
@@ -32,15 +35,17 @@ dup:
     {{jscpd}}
 
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
+# `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml
+# reserve `num-test-threads`, which is this value.
 test:
-    {{cargo}} nextest run --workspace
+    {{cargo}} nextest run --workspace --test-threads {{cpus}}
 
 # Inner loop: build and run only the test targets the current change can reach. `nextest -E`
 # filters after the build, so the saving comes from cargo target selection (`--test <name>`);
 # tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an
 # accelerator, not a coverage proof — `just check` stays the gate before a commit.
 test-changed rev="HEAD":
-    CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
+    NEXTEST_TEST_THREADS="{{cpus}}" CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
 
 # T0.4: one plugin feature must build alone
 build-min:
