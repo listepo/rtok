@@ -531,6 +531,18 @@ Execution plan: (1) `--json` on the table-printing readers; serialize `doctor::R
 
 **Result (2026-09-18).** `doctor`, `plugins`, `agents list`, `agents sessions`, `logs`, `demon status` and `otel status` accept `--json` and serialize the existing `web::model` / store types (`doctor::Report`, `PluginPage`, `AgentListRow`, `SessionTotals`, log lines, `demon::Row`, `OtelStatus`) through `serde` — no parallel DTOs. trycmd goldens sit next to `stats-price`; `docs/config.md` lists `--json` once; `tests/surface_parity.rs` fails a reading command without the flag. `graph dead` still prints text only (no model page).
 
+## T70.2 — pi `context` hook: the `archive` live zone without a proxy
+
+From the T70 series (pi without MCP). The proxy's live zone — old large `tool_result` payloads swapped for `expand <id>` pointers outside `[plugins.archive] keep_turns` — needs `ANTHROPIC_BASE_URL`; pi has no base-URL setting, so its sessions carry every aged result whole forever. pi's `context` event fires before every LLM call with the full message array (a deep copy) and accepts `{ messages }` back — the one hook that can rewrite what the model sees without a wire hop.
+
+Done when the extension's `context` handler sends the array through `rtok archive rewrite --stdin` (the same live-zone function the proxy filter calls over `ToolResultRef`/`BlobRef` — no second implementation), the rewrite is idempotent (the handler re-runs before every call: decisions persist in the store, nothing-eligible echoes the input bytes back so pi keeps the same array object), pointer strings land in pi's text-block `content[].text` shape, every pointer serves a `Measurement` row (D3), fail open on a missing `rtok` or unparseable output, and the host table / trycmd goldens are re-blessed for the new `archive` command.
+
+**Result.** Implemented as `src/plugins/archive/pi.rs` (`tool_results` over `role: "toolResult"` + camelCase `toolCallId`, turns counted from the end like the proxy's; `live_blobs` for non-result payloads behind the same gate) and the `pi.on("context")` handler in `plugins/pi/extensions/rtok.ts`; CLI `rtok archive rewrite --stdin` (cli.rs, one carrier entry point). Verified against pi 0.85.1 extensions docs and a real `~/.pi/agent/sessions/` file. Landed through the #116 repair PR and the `4701646` follow-up (re-wrap into pi text blocks, `keep_turns = 1` turn semantics, `surface_parity` exemption, blessed `help.stdout`/`completions-bash.stdout` and the `docs/agents.md` pi row — archive now in the reached set).
+
+**Check (2026-09-21, this closure).** `--test pi_plugin` 7/7 (includes `plugins/pi/tests/rtok.test.ts` via node + binary-level link/unlink), `--test archive_rewrite` (shrink only outside keep turns, expand recovers, replay stable), `--lib plugins::archive` 21/21, `--test host_docs` / `agents_doc` / `filter` / `surface_parity` 14/14, full `just check` green in the isolation worktree `apps/rtok-wt-t702` (branch `t70.2`). The todo.md row is dropped with this entry; no code changed in the closure commit.
+
+---
+
 ## T70.1 — pi extension shortens every tool result, not only bash
 
 From `research.md` §15.3. D2's constraint is that a PostToolUse hook can only add context, so on Claude Code every tool except `Bash` (rewritten to `rtok run` in PreToolUse) enters context whole; on a host with no proxy there is no second chance. pi's `tool_result` event is documented to return replacement `content` for **any** tool, and `plugins/pi/extensions/rtok.ts` uses it for bash only. Read is 15 % of tool-result tokens and its largest single results are 9.5–17 K tokens each (§2), so the tools worth adding are pi's file and search tools.
