@@ -5,3 +5,26 @@
 # in the log instead of holding the runner until the GHA 6h ceiling.
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 3 }
+
+# CPU/memory-heavy tests run alone. `threads-required = "num-test-threads"` makes each
+# matching test reserve the whole `--test-threads` pool (see `just test`, which sets `-j`
+# to the system CPU count), so a heavy test never shares the machine with the rest of the
+# suite. The three below are the ones that swamp a box:
+#   - labelled_symbols_are_found  cold-indexes the whole repo; its `each_parsed` walk
+#                                 already spawns one worker per core.
+#   - memory_recall_bench          seeds a 100-session in-memory store (P29 embeddings).
+#   - the graph_bench pair         build 3 000-file trees. They are `#[ignore]` release
+#                                 benches (their headers ask for `--test-threads=1`), so the
+#                                 override only bites under `--run-ignored`.
+[[profile.default.overrides]]
+filter = 'test(/labelled_symbols_are_found/)'
+threads-required = "num-test-threads"
+
+[[profile.default.overrides]]
+filter = 'test(/memory_recall_bench/)'
+threads-required = "num-test-threads"
+
+[[profile.default.overrides]]
+filter = 'test(/p8c_numbers|p8c_one_edit_reads_one_file_under_10ms/)'
+threads-required = "num-test-threads"
+
