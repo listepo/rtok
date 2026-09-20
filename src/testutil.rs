@@ -175,6 +175,44 @@ pub struct VfsMeta {
     pub is_dir: bool,
 }
 
+/// Seed the two-API fixture the store and stats table tests share: one proxy
+/// session, two api_request calls, usage for `anthropic` and `openai_chat`.
+pub fn seed_two_apis(store: &crate::store::Store) {
+    store
+        .upsert_session("s1", None, None, None, Some("proxy"))
+        .unwrap();
+    let id1 = store
+        .insert_call(
+            "s1",
+            "proxy",
+            "api_request",
+            None,
+            None,
+            None,
+            None,
+            Some("/v1/messages"),
+        )
+        .unwrap();
+    let id2 = store
+        .insert_call(
+            "s1",
+            "proxy",
+            "api_request",
+            None,
+            None,
+            None,
+            None,
+            Some("/v1/chat/completions"),
+        )
+        .unwrap();
+    store
+        .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
+        .unwrap();
+    store
+        .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
+        .unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -2375,39 +2375,7 @@ mod tests {
     #[test]
     fn two_apis_are_two_stats_rows() {
         let store = Store::open_in_memory().unwrap();
-        store
-            .upsert_session("s1", None, None, None, Some("proxy"))
-            .unwrap();
-        let id1 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/messages"),
-            )
-            .unwrap();
-        let id2 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/chat/completions"),
-            )
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
-            .unwrap();
+        crate::testutil::seed_two_apis(&store);
         assert_eq!(store.usage_by_api().unwrap().len(), 2);
     }
 

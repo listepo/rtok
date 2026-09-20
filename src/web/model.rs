@@ -690,9 +690,14 @@ fn sink_switch(cfg: &Config, class: &str, sink: &str) -> String {
             cfg.plugins.read.default_mode
         ),
         "cmd" => {
+            // Without the `cmd` plugin `no rule` reads as "no rule yet" (T0.4: one
+            // plugin feature must build alone).
+            #[cfg(feature = "cmd")]
             let has = crate::plugins::cmd::rules::defaults()
                 .iter()
                 .any(|r| r.match_cmd == sink);
+            #[cfg(not(feature = "cmd"))]
+            let has = false;
             if has {
                 format!("[{sink}] rule")
             } else {
@@ -819,6 +824,42 @@ pub fn doctor(cfg: &Config) -> Result<doctor::Report> {
     doctor::page(cfg)
 }
 
+/// One `agents list` row for a host variant — shared by the full list and the
+/// `info`-filtered form.
+fn agent_row(
+    a: &dyn crate::agents::Agent,
+    v: &crate::agents::Variant,
+    cfg: &Config,
+) -> AgentListRow {
+    let present = crate::agents::present(a, v, cfg);
+    let app = crate::agents::app_path(v).map(|p| p.display().to_string());
+    let version = app.as_ref().map(|_| crate::agents::app_version(v));
+    let config = a
+        .files(cfg, v.kind)
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
+    let (modules, plugins) = if present {
+        (
+            crate::agents::module_rows(a, v.kind, cfg),
+            crate::agents::plugin_rows(a, v.kind, cfg),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    AgentListRow {
+        host: a.id(),
+        kind: v.kind.as_str(),
+        name: v.name,
+        present,
+        app,
+        version,
+        config,
+        modules,
+        plugins,
+    }
+}
+
 /// `rtok agents list` as data — one row per known host variant.
 pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
     let mut out = Vec::new();
@@ -827,33 +868,7 @@ pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
             continue;
         };
         for v in a.variants() {
-            let present = crate::agents::present(a, v, cfg);
-            let app = crate::agents::app_path(v).map(|p| p.display().to_string());
-            let version = app.as_ref().map(|_| crate::agents::app_version(v));
-            let config = a
-                .files(cfg, v.kind)
-                .iter()
-                .map(|p| p.display().to_string())
-                .collect();
-            let (modules, plugins) = if present {
-                (
-                    crate::agents::module_rows(a, v.kind, cfg),
-                    crate::agents::plugin_rows(a, v.kind, cfg),
-                )
-            } else {
-                (Vec::new(), Vec::new())
-            };
-            out.push(AgentListRow {
-                host: a.id(),
-                kind: v.kind.as_str(),
-                name: v.name,
-                present,
-                app,
-                version,
-                config,
-                modules,
-                plugins,
-            });
+            out.push(agent_row(a, v, cfg));
         }
     }
     out
@@ -862,35 +877,7 @@ pub fn agents_list(cfg: &Config) -> Vec<AgentListRow> {
 /// `rtok agents info <host>` as data — the same variant blocks [`agents_list`] prints,
 /// filtered to `ids` (already-resolved host ids).
 pub fn agents_listed(cfg: &Config, ids: &[&str]) -> Vec<AgentListRow> {
-    crate::agents::visit_hosts(ids, |a, v| {
-        let present = crate::agents::present(a, v, cfg);
-        let app = crate::agents::app_path(v).map(|p| p.display().to_string());
-        let version = app.as_ref().map(|_| crate::agents::app_version(v));
-        let config = a
-            .files(cfg, v.kind)
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect();
-        let (modules, plugins) = if present {
-            (
-                crate::agents::module_rows(a, v.kind, cfg),
-                crate::agents::plugin_rows(a, v.kind, cfg),
-            )
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        AgentListRow {
-            host: a.id(),
-            kind: v.kind.as_str(),
-            name: v.name,
-            present,
-            app,
-            version,
-            config,
-            modules,
-            plugins,
-        }
-    })
+    crate::agents::visit_hosts(ids, |a, v| agent_row(a, v, cfg))
 }
 
 /// `rtok otel status` as data — the same watermarks the table prints.

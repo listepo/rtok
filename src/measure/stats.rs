@@ -324,6 +324,20 @@ impl Report {
     }
 }
 
+/// The seven numeric size columns every `SizeRow` table prints, shared by the bash
+/// and titled formatters.
+fn numeric_cells(r: &SizeRow) -> [String; 7] {
+    [
+        r.count.to_string(),
+        r.total_bytes.to_string(),
+        r.mean.to_string(),
+        r.p95.to_string(),
+        r.max.to_string(),
+        r.est_tokens.to_string(),
+        r.ctt.to_string(),
+    ]
+}
+
 fn format_bash_section(
     rows: &BTreeMap<String, SizeRow>,
     kinds: &BTreeMap<String, String>,
@@ -351,25 +365,30 @@ fn format_bash_section(
         "ctt".into(),
     ]];
     for (name, r) in rows {
-        out.push(vec![
+        let mut row = vec![
             name.clone(),
             kinds
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| "default".to_string()),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
+        ];
+        row.extend(numeric_cells(r));
+        out.push(row);
     }
     table(&cols, &out)
 }
 
 /// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+/// Without the `cmd` plugin there are no rules to label a family against, so the
+/// report keeps the families and leaves the filter column empty (T0.4: one plugin
+/// feature must build alone).
+#[cfg(not(feature = "cmd"))]
+pub fn attach_bash_cmd(_report: &mut Report, _store: &Store) -> Result<()> {
+    Ok(())
+}
+
+/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+#[cfg(feature = "cmd")]
 pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
     let settings = crate::plugins::cmd::rules::Settings::builtin();
     for name in report.bash_families.keys() {
@@ -425,16 +444,9 @@ fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
         "ctt".into(),
     ]];
     for (name, r) in rows {
-        out.push(vec![
-            name.clone(),
-            r.count.to_string(),
-            r.total_bytes.to_string(),
-            r.mean.to_string(),
-            r.p95.to_string(),
-            r.max.to_string(),
-            r.est_tokens.to_string(),
-            r.ctt.to_string(),
-        ]);
+        let mut row = vec![name.clone()];
+        row.extend(numeric_cells(r));
+        out.push(row);
     }
     table(&cols, &out)
 }
@@ -1313,8 +1325,6 @@ mod tests {
     #[test]
     fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
         let dir = tempfile_dir();
-        let path = dir.join("d.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
         // Read /a.rs (10 B) → Edit /a.rs → Read /a.rs (20 B, counts) → Read /a.rs
         // again with no edit (does not count) → Read /b.rs only once (does not).
         let lines = [
@@ -1328,16 +1338,7 @@ mod tests {
             json!({"type":"assistant","message":{"id":"m5","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"/b.rs"}}]}}),
             json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"bbbb"}]}}),
         ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
+        let r = write_and_collect(&dir, "d.jsonl", &lines);
         let d = &r.read_delta;
         assert_eq!((d.calls, d.bytes, d.read_bytes), (1, 20, 10 + 20 + 4 + 4));
         let table = r.to_table();
@@ -1351,8 +1352,6 @@ mod tests {
     #[test]
     fn repeat_counts_identical_bodies_from_different_tools() {
         let dir = tempfile_dir();
-        let path = dir.join("r.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
         // Bash then Read, same 20-byte body; a third distinct body does not count.
         let lines = [
             json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat a"}}]}}),
@@ -1362,16 +1361,7 @@ mod tests {
             json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"head -1000 a"}}]}}),
             json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"different-output"}]}}),
         ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
+        let r = write_and_collect(&dir, "r.jsonl", &lines);
         let d = &r.repeat;
         assert_eq!((d.calls, d.bytes, d.result_bytes), (1, 20, 20 + 20 + 16));
         let table = r.to_table();
@@ -1470,6 +1460,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Write `lines` to the dir's transcript and collect the report — the tail
+    /// every collect-based test repeats.
+    fn write_and_collect(dir: &std::path::Path, name: &str, lines: &[serde_json::Value]) -> Report {
+        let mut f = fs::File::create(dir.join(name)).unwrap();
+        for line in lines {
+            writeln!(f, "{line}").unwrap();
+        }
+        collect(
+            dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap()
+    }
+
     fn tempfile_dir() -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!(
             "rtok-stats-{}-{}",
@@ -1486,39 +1492,7 @@ mod tests {
     #[test]
     fn two_apis_print_as_two_table_rows() {
         let store = Store::open_in_memory().unwrap();
-        store
-            .upsert_session("s1", None, None, None, Some("proxy"))
-            .unwrap();
-        let id1 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/messages"),
-            )
-            .unwrap();
-        let id2 = store
-            .insert_call(
-                "s1",
-                "proxy",
-                "api_request",
-                None,
-                None,
-                None,
-                None,
-                Some("/v1/chat/completions"),
-            )
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "anthropic", 10, 1, 2, 3, id1)
-            .unwrap();
-        store
-            .insert_usage("s1", Some("m"), "openai_chat", 20, 0, 5, 4, id2)
-            .unwrap();
+        crate::testutil::seed_two_apis(&store);
         let mut report = Report::default();
         attach_api(&mut report, &store).unwrap();
         let table = report.to_table();
