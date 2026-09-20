@@ -346,9 +346,10 @@ fn stop_desktop(app_name: &str) -> Result<()> {
     }
 }
 
-fn start_desktop(app_name: &str, _path: &std::path::Path) -> Result<()> {
+fn start_desktop(app_name: &str, path: &std::path::Path) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
+        let _ = path; // used on Windows/Linux cfgs
         std::process::Command::new("open")
             .arg("-a")
             .arg(app_name)
