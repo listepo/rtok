@@ -3,9 +3,10 @@
 //! Cursor shell stdin uses top-level `command` and `conversation_id`.
 //! `beforeShellExecution` → PreToolUse; `afterShellExecution` → PostToolUse
 //! (`output`/`stdout` → `tool_response`) so guard/read caches populate.
+//! `postToolUse` (MCP, `updated_mcp_tool_output`) also maps to PostToolUse.
 //! [`crate::hooks::types::HookInput::adapt_cursor`] performs that map when
 //! `[hook] host` is `cursor` (also `--host cursor`).
-//! Cursor `hooks.json` is `{version, hooks.before|afterShellExecution[].command}`.
+//! Cursor `hooks.json` is `{version, hooks.before|afterShellExecution|postToolUse[].command}`.
 
 use std::path::PathBuf;
 
@@ -124,6 +125,10 @@ fn start_cmd() -> String {
     format!("{} hook SessionStart --host cursor", super::rtok_hook_bin())
 }
 
+fn compact_cmd() -> String {
+    format!("{} hook PreCompact --host cursor", super::rtok_hook_bin())
+}
+
 /// Apply, dry-run, or remove Cursor before/after shell hook entries.
 pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     edit_json(&apply(cfg), &cfg.setup.cursor.hooks_path, |root| {
@@ -205,14 +210,22 @@ fn insert_ours(root: &mut Value) -> String {
     let mut added = Vec::new();
     let pre = pre_cmd();
     let post = post_cmd();
+    let compact = compact_cmd();
     for (event, cmd) in [
         ("beforeShellExecution", pre.as_str()),
         ("afterShellExecution", post.as_str()),
         ("sessionStart", start_cmd().as_str()),
+        ("preCompact", compact.as_str()),
+        ("postToolUse", post.as_str()),
     ] {
         let arr = array_at(hooks, event);
         if !arr.iter().any(|e| is_cmd(e, cmd)) {
-            arr.push(json!({"command": cmd}));
+            let entry = if event == "postToolUse" {
+                json!({"command": cmd, "matcher": "MCP:"})
+            } else {
+                json!({"command": cmd})
+            };
+            arr.push(entry);
             added.push(format!("+ {event} {cmd}"));
         }
     }
@@ -229,7 +242,13 @@ fn insert_ours(root: &mut Value) -> String {
 
 fn strip_ours(root: &mut Value) -> String {
     let mut removed = Vec::new();
-    for event in ["beforeShellExecution", "afterShellExecution", "sessionStart"] {
+    for event in [
+        "beforeShellExecution",
+        "afterShellExecution",
+        "sessionStart",
+        "preCompact",
+        "postToolUse",
+    ] {
         let Some(arr) = root
             .pointer_mut(&format!("/hooks/{event}"))
             .and_then(Value::as_array_mut)
@@ -257,7 +276,9 @@ fn is_ours(entry: &Value) -> bool {
     let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
-    for event in ["PreToolUse", "PostToolUse", "SessionStart"] {
+    // Every Claude-side event `insert_ours` writes: a name missing here leaves that
+    // entry behind on remove, and `agents list` keeps reporting hooks as installed.
+    for event in ["PreToolUse", "PostToolUse", "SessionStart", "PreCompact"] {
         let suffix = format!(" hook {event} --host cursor");
         if let Some(bin) = cmd.strip_suffix(&suffix)
             && super::is_rtok_bin(super::unquote_bin(bin))
@@ -374,6 +395,8 @@ mod tests {
         let dry = run(&cfg(path.clone(), true), false).unwrap();
         assert!(dry.contains("beforeShellExecution"), "{dry}");
         assert!(dry.contains("afterShellExecution"), "{dry}");
+        assert!(dry.contains("preCompact"), "{dry}");
+        assert!(dry.contains("postToolUse"), "{dry}");
         assert!(!path.exists());
         let c = cfg(path.clone(), false);
         assert!(run(&c, false).unwrap().contains(&pre_cmd()));
@@ -382,7 +405,10 @@ mod tests {
         assert!(raw.contains("\"version\""));
         assert!(raw.contains(&pre_cmd()));
         assert!(raw.contains(&post_cmd()));
+        assert!(raw.contains(&compact_cmd()));
         assert!(raw.contains("afterShellExecution"));
+        assert!(raw.contains("preCompact"));
+        assert!(raw.contains("postToolUse"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -449,7 +475,35 @@ mod tests {
         let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         let after = root["hooks"]["afterShellExecution"].as_array().unwrap();
         assert!(after.iter().any(|e| e["command"] == post_cmd()), "{root}");
+        let mcp = root["hooks"]["postToolUse"].as_array().unwrap();
+        assert!(
+            mcp.iter()
+                .any(|e| e["command"] == post_cmd() && e["matcher"] == "MCP:"),
+            "{root}"
+        );
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pre_compact_writes_a_checkpoint_note() {
+        let dir = tmp("precompact");
+        let mut c = Config::default();
+        c.hook.host = "cursor".into();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        let pre = serde_json::json!({
+            "conversation_id": "cur-compact",
+            "trigger": "auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &c);
+        assert_eq!(out, b"{}");
+        let note = crate::store::Store::open(&c.core.db_path)
+            .unwrap()
+            .latest_note("checkpoint:cur-compact")
+            .unwrap();
+        assert!(note.is_some(), "preCompact must save a checkpoint");
         let _ = fs::remove_dir_all(dir);
     }
 }

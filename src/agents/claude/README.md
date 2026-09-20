@@ -8,7 +8,7 @@ keep separate files, so each selected app installs on its own (`--cli` / `--desk
   macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` elsewhere. The app starts without a
   shell PATH, so the MCP entry carries the absolute `rtok` binary.
 
-Every file is copied to `<name>.bak-<ts>` before the first write; an unchanged file is not
+Every file is copied to `_backup/<name>.bak-<ts>` before the first write; an unchanged file is not
 copied twice.
 
 ## Modules

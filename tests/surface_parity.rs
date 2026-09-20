@@ -41,7 +41,7 @@ fn web_pages(cfg: &Config) -> Vec<String> {
         .as_object()
         .expect("frame is an object")
         .keys()
-        .filter(|key| *key != "type") // the wire envelope, not a page
+        .filter(|key| *key != "type" && *key != "ref_ids") // envelope / T60.4 expand map, not pages
         .map(|key| {
             model::pages()
                 .iter()
@@ -84,6 +84,122 @@ fn every_model_page_has_a_tui_body() {
 /// T19.4: the Slint WASM UI's tab bar is `model::pages()`, not a second list. The webui
 /// crate is outside the workspace (wasm toolchain), so this reads its `PAGE_IDS` from
 /// source — the same pin `rtok-webui`'s own `page_ids_cover_the_d23_set` holds locally.
+/// T60.3: both surfaces render session drill-down from the same model accessor.
+#[test]
+fn session_detail_exists_on_both_surfaces() {
+    let model = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs"));
+    let tui = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs"));
+    let web = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    ));
+    let slint = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    ));
+    assert!(
+        model.contains("pub fn session_detail"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("model::session_detail"),
+        "the TUI renders model::session_detail"
+    );
+    assert!(
+        web.contains("fn session_detail"),
+        "the web UI rebuilds the same snapshot filter"
+    );
+    assert!(
+        slint.contains("selected-session.detail"),
+        "the web Sessions page has a detail pane"
+    );
+}
+
+/// The five sources every "both surfaces" case reads: model, TUI view and app, the web
+/// crate and its Slint UI.
+struct Surfaces {
+    model: &'static str,
+    tui: &'static str,
+    app: &'static str,
+    web: &'static str,
+    slint: &'static str,
+}
+
+const SURFACES: Surfaces = Surfaces {
+    model: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/model.rs")),
+    tui: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/view.rs")),
+    app: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/tui/app.rs")),
+    web: include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/src/lib.rs"
+    )),
+    slint: include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/crates/rtok-webui/ui/app.slint"
+    )),
+};
+
+/// T60.4: both surfaces render archive expand from the same model accessor.
+#[test]
+fn expand_payload_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        app,
+        web,
+        slint,
+    } = SURFACES;
+    let inbound = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/web/mod.rs"));
+    assert!(
+        model.contains("pub fn expand_payload"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("expand_pane") && app.contains("open_expand"),
+        "the TUI opens model::expand_payload"
+    );
+    assert!(
+        inbound.contains(r#""expand""#) && inbound.contains("expand_payload"),
+        "web inbound answers expand through expand_payload"
+    );
+    assert!(
+        web.contains("on_expand_archive") && slint.contains("CallArchive"),
+        "the web Calls page has an expand button and pane"
+    );
+}
+
+/// T63.1: both surfaces render the skills page from the same model accessor.
+#[test]
+fn skills_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        app,
+        web,
+        slint,
+    } = SURFACES;
+    assert!(
+        model.contains("pub fn skills_from"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        model.contains("(\"skills\", \"skills\")"),
+        "pages() offers skills"
+    );
+    assert!(
+        tui.contains("\"skills\" =>") && app.contains("skills_key"),
+        "the TUI renders the skills page"
+    );
+    assert!(
+        web.contains("skills_of") && slint.contains("page-id == \"skills\""),
+        "the web Skills page renders the same rows"
+    );
+    assert!(
+        slint.contains("never invoked only"),
+        "web filter matches TUI n"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -154,6 +270,10 @@ const EXEMPT: &[(&str, &str)] = &[
     ("filter", "filters stdin without executing"),
     ("expand", "prints one archived payload"),
     (
+        "guard check",
+        "prints the plugins::guard allow/deny verdict (T70.5)",
+    ),
+    (
         "archive rewrite",
         "rewrites a pi `context` array on stdin to stdout (T70.2)",
     ),
@@ -178,10 +298,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "agents install",
         "installs hooks, MCP and the proxy into a host",
     ),
-    ("agents remove", "takes rtok back out of a host"),
+    ("agents uninstall", "takes rtok back out of a host"),
     (
         "agents list",
         "lists known hosts with app type, version, install state and modules",
+    ),
+    (
+        "agents info",
+        "lists one host with app type, version, install state and modules",
     ),
     ("setup", "deprecated spelling of `rtok agents install`"),
     ("config init", "writes the annotated reference file"),
@@ -195,12 +319,20 @@ const EXEMPT: &[(&str, &str)] = &[
     ("memory pin", "flags a note row to lead recall (T69.1)"),
     ("memory unpin", "drops the recall lead flag (T69.1)"),
     ("memory revise", "replaces and retires note rows (T69.1)"),
+    (
+        "memory sync",
+        "writes a managed CLAUDE.md / AGENTS.md block (T69.6)",
+    ),
     ("graph index", "walks a tree and inserts symbol rows"),
     ("demon start", "starts the supervisor"),
     ("demon stop", "asks the supervisor and its child to exit"),
     ("demon restart", "stop, then start"),
     ("demon kill", "SIGKILL and drop the state file"),
     ("demon supervise", "the detached half of `demon start`"),
+    (
+        "demon upgrade",
+        "stops live surfaces, replaces the binary, starts the same set",
+    ),
     ("otel flush", "posts rows past the watermarks"),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
@@ -236,6 +368,18 @@ const EXEMPT: &[(&str, &str)] = &[
     ("stats", "renders model::stats_report; no snapshot page yet"),
     (
         "graph dead",
+        "reads the symbol index on demand; no snapshot page yet",
+    ),
+    (
+        "graph status",
+        "index health on demand (T68.3); no snapshot page yet",
+    ),
+    (
+        "graph impact",
+        "symbol impact on demand (T68.4); no snapshot page yet",
+    ),
+    (
+        "graph affected",
         "reads the symbol index on demand; no snapshot page yet",
     ),
     (
@@ -310,6 +454,49 @@ fn every_command_is_exempt_or_renders_a_page_of_the_model() {
         assert!(
             !EXEMPT.iter().any(|(exempt, _)| exempt == path),
             "`{path}` is both mapped to a page and exempt"
+        );
+    }
+}
+
+/// Table-printing readers must accept `--json` and serialize the model page (T60.1).
+const JSON_READERS: &[&str] = &[
+    "stats",
+    "info",
+    "config show",
+    "doctor",
+    "plugins",
+    "agents list",
+    "agents info",
+    "agents sessions",
+    "logs",
+    "demon status",
+    "otel status",
+    "memory status",
+];
+
+fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {
+    let mut cur = root;
+    for part in path.split(' ') {
+        cur = cur
+            .find_subcommand(part)
+            .unwrap_or_else(|| panic!("no command `{path}`"));
+    }
+    cur
+}
+
+#[test]
+fn reading_commands_accept_json() {
+    let root = Cli::command();
+    for path in JSON_READERS {
+        let ok = command_at(&root, path)
+            .get_arguments()
+            .any(|a| a.get_long() == Some("json"));
+        assert!(ok, "reading command `{path}` has no --json (T60.1)");
+    }
+    for (path, _) in COMMAND_PAGES {
+        assert!(
+            JSON_READERS.contains(path),
+            "reading command `{path}` renders a model page but is not gated for --json (T60.1)"
         );
     }
 }

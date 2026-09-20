@@ -1,6 +1,6 @@
 //! PreCompact checkpoint + compact restore (plan T2.5).
 
-use rtok_plugin_sdk::{Class, Ctx, Injection};
+use rtok_plugin_sdk::{Class, Ctx, Injection, Measurement};
 use serde_json::Value;
 use std::collections::{BTreeSet, VecDeque};
 use std::path::Path;
@@ -15,6 +15,10 @@ pub struct Checkpoint {
     /// (plan T62.2): the body is gone after compaction and the model must know what it
     /// had, not re-invoke everything.
     pub skills: Vec<(String, u64)>,
+    /// Archive ids of this session's live-window tool results, newest first (T58.2).
+    pub ids: Vec<String>,
+    /// `(tool, bytes)` aligned with [`Self::ids`].
+    id_meta: Vec<(String, u64)>,
 }
 
 impl Checkpoint {
@@ -43,6 +47,15 @@ impl Checkpoint {
         for e in &self.errors {
             s.push_str("err ");
             s.push_str(e);
+            s.push('\n');
+        }
+        for (id, (tool, bytes)) in self.ids.iter().zip(&self.id_meta) {
+            s.push_str("id ");
+            s.push_str(id);
+            s.push(' ');
+            s.push_str(tool);
+            s.push(' ');
+            s.push_str(&bytes.to_string());
             s.push('\n');
         }
         s
@@ -84,6 +97,7 @@ pub fn extract(jsonl: &str) -> Checkpoint {
         paths: paths.into_iter().collect(),
         errors: errors.into(),
         skills,
+        ..Default::default()
     }
 }
 
@@ -171,19 +185,102 @@ fn kind(cx: &Ctx) -> String {
 
 /// Read `transcript_path`, store a `notes` row `kind=checkpoint:<session>`.
 pub fn save(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
-    let cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
-    cx.insert_note(Some("rtok"), &kind(cx), "compact", &cp.render())?;
+    write(transcript_path, cx, &kind(cx), Some("rtok"))
+}
+
+/// SessionEnd: same extractor and render as [`save`], kind `session:<session>`.
+pub fn save_session(transcript_path: &str, cx: &Ctx) -> anyhow::Result<Checkpoint> {
+    let project = project_of_cx(cx);
+    write(
+        transcript_path,
+        cx,
+        &format!("session:{}", cx.session()),
+        project.as_deref(),
+    )
+}
+
+fn write(
+    transcript_path: &str,
+    cx: &Ctx,
+    kind: &str,
+    project: Option<&str>,
+) -> anyhow::Result<Checkpoint> {
+    let mut cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
+    attach_ids(&mut cp, cx);
+    cx.insert_note(project, kind, "compact", &cp.render())?;
     Ok(cp)
+}
+
+fn project_of_cx(cx: &Ctx) -> Option<String> {
+    crate::config::layers::git_root(Path::new(cx.cwd()?))?
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+}
+
+fn checkpoint_cap(cx: &Ctx) -> u32 {
+    cx.plugin_config::<crate::config::Memory>("memory")
+        .checkpoint_tokens
+        .max(1)
+}
+
+/// Newest live archive ids that still fit `plugins.memory.checkpoint_tokens`.
+fn attach_ids(cp: &mut Checkpoint, cx: &Ctx) {
+    let db: std::path::PathBuf = cx.config("core.db_path");
+    if db.as_os_str().is_empty() {
+        return;
+    }
+    let Ok(store) = crate::store::Store::open(&db) else {
+        return;
+    };
+    let Ok(rows) = store.session_live_archives(cx.session()) else {
+        return;
+    };
+    let cap = checkpoint_cap(cx);
+    for (id, tool, bytes) in rows {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        cp.ids.push(id);
+        cp.id_meta.push((tool, bytes));
+        if cx.estimate(&cp.render(), Class::Prose) > cap {
+            cp.ids.pop();
+            cp.id_meta.pop();
+            break;
+        }
+    }
 }
 
 /// Latest checkpoint of this session as an injection, capped at
 /// `plugins.memory.checkpoint_tokens`.
 pub fn offer(cx: &Ctx) -> Option<Injection> {
-    let text = cx.latest_note(&kind(cx)).ok().flatten()?;
-    let cap = cx
-        .plugin_config::<crate::config::Memory>("memory")
-        .checkpoint_tokens
-        .max(1);
+    render_offer(cx, cx.latest_note(&kind(cx)).ok().flatten()?)
+}
+
+/// Newest `session:*` note of the hook cwd's project, same render and budget as [`offer`].
+pub fn offer_session(cx: &Ctx) -> Option<Injection> {
+    let db: std::path::PathBuf = cx.config("core.db_path");
+    if db.as_os_str().is_empty() {
+        return None;
+    }
+    let store = crate::store::Store::open(&db).ok()?;
+    let raw = store
+        .latest_session_note(project_of_cx(cx).as_deref())
+        .ok()
+        .flatten()?;
+    let inj = render_offer(cx, raw.clone())?;
+    let _ = cx.record(&Measurement {
+        plugin: "memory",
+        kind: "handoff",
+        before_bytes: raw.len() as u64,
+        after_bytes: inj.text.len() as u64,
+        est_before: cx.estimate(&raw, Class::Prose),
+        est_after: cx.estimate(&inj.text, Class::Prose),
+        ref_id: None,
+        call_id: None,
+    });
+    Some(inj)
+}
+
+fn render_offer(cx: &Ctx, text: String) -> Option<Injection> {
+    let cap = checkpoint_cap(cx);
     let text = crate::plugin::fit_budget(cx, &text, Class::Prose, cap);
     (!text.is_empty()).then_some(Injection {
         plugin: "inject",
@@ -286,6 +383,73 @@ mod tests {
         assert_eq!(cp.errors[7], "Error 11");
     }
 
+    #[test]
+    fn three_archived_results_yield_id_lines_on_restore() {
+        let dir = std::env::temp_dir().join("rtok-t582-three-ids");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.core.archive_dir = dir.join("archive");
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let mut ids = Vec::new();
+        for (i, body) in [b"one-result".as_slice(), b"two-result", b"three-result"]
+            .into_iter()
+            .enumerate()
+        {
+            let id = store
+                .put_archive("t582", body, &cfg.core.archive_dir)
+                .unwrap();
+            store
+                .put_archive_decision(&format!("tu{i}"), &id, "t582", "ptr")
+                .unwrap();
+            ids.push(id);
+        }
+        ids.reverse(); // newest first
+        let pre = serde_json::json!({
+            "hook_event_name":"PreCompact",
+            "session_id":"t582",
+            "transcript_path":dir.join("t.jsonl").to_str().unwrap(),
+            "trigger":"auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
+        assert_eq!(out, b"{}");
+        let body = crate::store::Store::open(&cfg.core.db_path)
+            .unwrap()
+            .latest_note("checkpoint:t582")
+            .unwrap()
+            .expect("note");
+        for id in &ids {
+            let line = format!("id {id} - {}", /* bytes filled below */ 0);
+            let _ = line;
+            assert!(
+                body.lines().any(|l| l.starts_with(&format!("id {id} - "))),
+                "missing {id} in {body}"
+            );
+        }
+        assert_eq!(
+            body.lines().filter(|l| l.starts_with("id ")).count(),
+            3,
+            "{body}"
+        );
+        let start = serde_json::json!({
+            "hook_event_name":"SessionStart","session_id":"t582","source":"compact"
+        });
+        out.clear();
+        crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, &cfg);
+        let text = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["hookSpecificOutput"]
+            ["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        for id in &ids {
+            assert!(text.contains(&format!("id {id} - ")), "{text}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The cap is a hard ceiling whatever the text size, and the cut is not one pop per char.
     #[test]
     fn offer_fits_checkpoint_tokens() {
@@ -298,5 +462,133 @@ mod tests {
         let inj = offer(&ctx).expect("injection");
         assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
         assert!(inj.text.starts_with("checkpoint\n"), "{}", inj.text);
+
+        let mut many = Checkpoint {
+            prompts: vec!["x".repeat(80)],
+            ..Default::default()
+        };
+        for i in 0..200 {
+            many.ids.push(format!("id{i:04}"));
+            many.id_meta.push(("Read".into(), 9999));
+            if cx.estimate(&many.render(), Class::Prose) > cap {
+                many.ids.pop();
+                many.id_meta.pop();
+                break;
+            }
+        }
+        assert!(!many.ids.is_empty());
+        assert!(cx.estimate(&many.render(), Class::Prose) <= cap);
+        ctx.insert_note(Some("rtok"), &kind(&ctx), "compact", &many.render())
+            .unwrap();
+        let inj = offer(&ctx).expect("capped ids");
+        assert!(cx.estimate(&inj.text, Class::Prose) <= cap);
+    }
+
+    /// T70.6: pi/OpenCode plugins call the same PreCompact/SessionStart path as Claude,
+    /// so restore bytes match for the same store. T58.2 covers hook hosts only.
+    #[test]
+    fn pi_and_opencode_compact_restore_bytes_match_claude() {
+        let dir = std::env::temp_dir().join("rtok-t706-host-bytes");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes.clear();
+        let pre = serde_json::json!({
+            "hook_event_name":"PreCompact",
+            "session_id":"t706",
+            "transcript_path":dir.join("t.jsonl").to_str().unwrap(),
+            "trigger":"auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &cfg);
+        let mut restore = |host: &str| {
+            cfg.hook.host = host.into();
+            let start = serde_json::json!({
+                "hook_event_name":"SessionStart",
+                "session_id":"t706",
+                "source":"compact"
+            });
+            let mut buf = Vec::new();
+            crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut buf, &cfg);
+            serde_json::from_slice::<serde_json::Value>(&buf).unwrap()["hookSpecificOutput"]
+                ["additionalContext"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        };
+        let claude = restore("claude");
+        let pi = restore("pi");
+        let opencode = restore("opencode");
+        assert!(!claude.is_empty(), "{claude}");
+        assert_eq!(claude, pi);
+        assert_eq!(claude, opencode);
+    }
+
+    fn additional(out: &[u8]) -> String {
+        serde_json::from_slice::<serde_json::Value>(out).unwrap()["hookSpecificOutput"]
+            ["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// T71.2: SessionEnd writes `session:<id>`; startup restore stays off until the key.
+    #[test]
+    fn session_end_note_and_startup_recall() {
+        let dir = std::env::temp_dir().join(format!("rtok-t712-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join("t.jsonl"), FIXTURE).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        let cwd = dir.to_str().unwrap();
+        let end = serde_json::json!({
+            "hook_event_name": "SessionEnd",
+            "session_id": "t712",
+            "transcript_path": dir.join("t.jsonl").to_str().unwrap(),
+            "cwd": cwd,
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("SessionEnd", end.to_string().as_bytes(), &mut out, &cfg);
+        assert_eq!(out, b"{}");
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let body = store
+            .latest_note("session:t712")
+            .unwrap()
+            .expect("session note");
+        assert!(body.contains("src/a.rs"), "{body}");
+        let start = serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "t712b",
+            "source": "startup",
+            "cwd": cwd,
+        });
+        let run = |cfg: &crate::config::Config| {
+            let mut out = Vec::new();
+            crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, cfg);
+            additional(&out)
+        };
+        let off = run(&cfg);
+        let off2 = run(&cfg);
+        assert_eq!(off, off2);
+        assert!(!off.contains("src/a.rs"), "{off}");
+        cfg.plugins.memory.startup_recall = true;
+        let on = run(&cfg);
+        let on2 = run(&cfg);
+        assert_eq!(on, on2);
+        assert!(on.contains("src/a.rs"), "{on}");
+        let cx = crate::plugin::Runtime::in_memory("t712b").unwrap();
+        assert!(cx.estimate(&on, Class::Prose) <= cfg.plugins.memory.checkpoint_tokens);
+        let kinds: Vec<_> = crate::store::Store::open(&cfg.core.db_path)
+            .unwrap()
+            .list_measurements("memory")
+            .unwrap()
+            .into_iter()
+            .map(|m| m.kind)
+            .collect();
+        assert!(kinds.iter().any(|k| k == "handoff"), "{kinds:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

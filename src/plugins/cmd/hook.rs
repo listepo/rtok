@@ -4,12 +4,7 @@ use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 use serde_json::json;
 
 fn skip_wrap(cmd: &str, cfg: &crate::config::Cmd) -> bool {
-    skip_wrap_host(
-        cfg!(windows),
-        cmd,
-        &cfg.never_wrap,
-        &cfg.interactive_stems,
-    )
+    skip_wrap_host(cfg!(windows), cmd, &cfg.never_wrap, &cfg.interactive_stems)
 }
 
 /// True when `-i` on this command should skip wrapping (REPL / TTY stems only).
@@ -57,15 +52,13 @@ fn skip_wrap_host(
     if windows && cmd.contains('\'') {
         return true;
     }
-    if tokens.iter().any(|t| *t == "&") {
+    if tokens.contains(&"&") {
         return true;
     }
-    if tokens.iter().any(|t| *t == "--interactive") {
+    if tokens.contains(&"--interactive") {
         return true;
     }
-    if tokens.iter().any(|t| *t == "-i")
-        && interactive_i_skip(base, &tokens[1..], interactive_stems)
-    {
+    if tokens.contains(&"-i") && interactive_i_skip(base, &tokens[1..], interactive_stems) {
         return true;
     }
     // AGENTS: trailing `&` (background) — also `sleep 10&` with no space before `&`.
@@ -199,7 +192,12 @@ mod tests {
         assert!(skip_wrap_host(true, "jq '.' data.json", &[], &stems));
         // A POSIX host keeps wrapping apostrophe commands: sh quoting round-trips.
         assert!(!skip_wrap_host(false, "echo it's fine", &[], &stems));
-        assert!(!skip_wrap_host(false, "git commit -m 'fix it'", &[], &stems));
+        assert!(!skip_wrap_host(
+            false,
+            "git commit -m 'fix it'",
+            &[],
+            &stems
+        ));
     }
 
     #[test]

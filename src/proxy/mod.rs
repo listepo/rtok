@@ -57,6 +57,7 @@ pub use live::LiveCall;
 pub mod openai_chat;
 pub mod openai_responses;
 pub mod semantic_cache;
+pub mod tools_rewrite;
 pub mod wire;
 
 /// Request bodies are JSON and bounded by the Anthropic/OpenAI API limits; cap the
@@ -236,6 +237,10 @@ async fn handle(state: Arc<ProxyState>, req: Request<Body>) -> AxumResponse {
         };
         if context_armed && let Some(r) = recorded.as_ref() {
             record_context_path(&state, r, &request_body);
+        }
+        let (request_body, tools_delta) = rewrite_tools(&state, request_body);
+        if let (Some(delta), Some(r)) = (tools_delta, recorded.as_ref()) {
+            record_tools_rewrite(&state, r, delta);
         }
         (request_body, recorded, context_armed)
     };
@@ -483,6 +488,52 @@ fn record_context_path(state: &ProxyState, r: &Recorded, request_body: &[u8]) {
             Some(r.call_id),
             "error",
             &format!("context path: {e:#}"),
+        );
+    }
+}
+
+/// T59.5: truncate / drop `tools[]` when enabled. Fail open; unchanged bodies keep original bytes.
+fn rewrite_tools(state: &ProxyState, original: Bytes) -> (Bytes, Option<tools_rewrite::Delta>) {
+    if !state.cfg.proxy.tools_rewrite.enabled {
+        return (original, None);
+    }
+    let Ok(mut body) = serde_json::from_slice::<Value>(&original) else {
+        return (original, None);
+    };
+    let Some(delta) = tools_rewrite::rewrite(
+        &mut body,
+        &state.cfg.proxy.tools_rewrite,
+        &state.cfg.estimator,
+    ) else {
+        return (original, None);
+    };
+    if !delta.changed {
+        return (original, Some(delta));
+    }
+    match serde_json::to_vec(&body) {
+        Ok(b) => (Bytes::from(b), Some(delta)),
+        Err(_) => (original, None),
+    }
+}
+
+fn record_tools_rewrite(state: &ProxyState, r: &Recorded, delta: tools_rewrite::Delta) {
+    let m = Measurement {
+        plugin: "proxy",
+        kind: "tools_rewrite",
+        before_bytes: delta.before_bytes,
+        after_bytes: delta.after_bytes,
+        est_before: delta.est_before,
+        est_after: delta.est_after,
+        ref_id: None,
+        call_id: Some(r.call_id),
+    };
+    if let Err(e) = state.store.insert_measurement(&r.session, &m) {
+        log(
+            state,
+            &r.session,
+            Some(r.call_id),
+            "error",
+            &format!("tools rewrite: {e:#}"),
         );
     }
 }

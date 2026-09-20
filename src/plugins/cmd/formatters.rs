@@ -11,12 +11,25 @@ pub fn compress(
     archive_id: &str,
 ) -> (String, &'static str) {
     let argv = family_argv(argv);
+    let rule = settings.pick(bin(&argv));
+    // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
+    // reach the compact pass instead of a NAME/STATUS parser.
+    if rules::is_json_body(output) {
+        let s = rules::apply(settings, output, exit, &rule, archive_id);
+        let kind = if s.len() < output.len() {
+            "rule"
+        } else {
+            "raw"
+        };
+        return (s, kind);
+    }
     if let Some(s) = format(&argv, output) {
         return (s, "formatter");
     }
-    let rule = settings.pick(bin(&argv));
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if s.len() < output.len() {
+    let kind = if bin(&argv) == "skill" {
+        "skill"
+    } else if s.len() < output.len() {
         "rule"
     } else {
         "raw"
@@ -50,6 +63,22 @@ pub fn family(argv: &[String]) -> String {
 /// shared with `measure::stats::bash_family` and `agents::is_rtok_bin` (T55.10).
 pub(crate) use crate::agents::cmd_stem;
 
+/// Stems with a Rust formatter (any subcommand). `rtok stats` labels the whole stem.
+const FORMATTER_STEMS: &[&str] = &[
+    "cargo", "git", "pytest", "jest", "vitest", "tree", "go", "docker", "kubectl", "ps",
+];
+
+/// T50.1: how `rtok stats` labels a Bash family — `formatter`, named `rule`, or `default`.
+pub fn filter_kind(settings: &rules::Settings, stem: &str) -> &'static str {
+    if FORMATTER_STEMS.contains(&stem) {
+        return "formatter";
+    }
+    if settings.pick(stem).match_cmd == stem {
+        return "rule";
+    }
+    "default"
+}
+
 fn bin(argv: &[String]) -> &str {
     argv.first().map(|a| cmd_stem(a)).unwrap_or("")
 }
@@ -77,8 +106,10 @@ fn format(argv: &[String], output: &str) -> Option<String> {
         )),
         ("jest", _) | ("vitest", _) => Some(keep(output, &["FAIL", "PASS", "Tests:", "● "])),
         ("go", "test") => Some(keep(output, &["FAIL", "PASS", "ok  ", "--- FAIL"])),
-        ("ls", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
-        ("find", _) | ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("tree", _) => Some(output.lines().take(40).collect::<Vec<_>>().join("\n")),
+        ("docker", "ps") => docker_ps(output),
+        ("kubectl", "get") => kubectl_get(output),
+        ("ps", "aux") => ps_aux(output),
         _ => None,
     }
 }
@@ -162,6 +193,164 @@ fn is_porcelain(line: &str) -> bool {
         )
     };
     b.len() > 3 && column(b[0]) && column(b[1]) && b[2] == b' '
+}
+
+/// `docker ps`: one compact row per container. Padding, bind-all, container-side
+/// port/proto, registry host and `N days`/`N hours` units are alignment noise; the
+/// name, status, host port and image tag are the objects the rule's head/tail cut drops.
+fn docker_ps(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let u = header.to_ascii_uppercase();
+    if !u.contains("CONTAINER ID") && !(u.contains("IMAGE") && u.contains("NAMES")) {
+        return None;
+    }
+    let rows: Vec<String> = lines
+        .map(compact_docker_row)
+        .filter(|r| !r.is_empty())
+        .collect();
+    if rows.is_empty() {
+        None
+    } else {
+        Some(rows.join("\n"))
+    }
+}
+
+fn compact_docker_row(line: &str) -> String {
+    let joined = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let no_bind = joined.replace("0.0.0.0:", "");
+    shorten_ago(&drop_registry_host(&drop_arrow_port(&no_bind)))
+}
+
+fn drop_arrow_port(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '-' && chars.peek() == Some(&'>') {
+            chars.next();
+            while matches!(chars.peek(), Some(d) if d.is_ascii_digit()) {
+                chars.next();
+            }
+            if chars.peek() == Some(&'/') {
+                chars.next();
+                while matches!(chars.peek(), Some(d) if d.is_ascii_alphabetic()) {
+                    chars.next();
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn drop_registry_host(s: &str) -> String {
+    s.split_whitespace()
+        .map(|tok| match tok.split_once('/') {
+            Some((host, rest)) if host.contains('.') && !host.contains(':') => rest,
+            _ => tok,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn shorten_ago(s: &str) -> String {
+    let mut out = s.to_string();
+    for (from, to) in [
+        (" days", "d"),
+        (" day", "d"),
+        (" hours", "h"),
+        (" hour", "h"),
+        (" minutes", "m"),
+        (" minute", "m"),
+        (" seconds", "s"),
+        (" second", "s"),
+        (" weeks", "w"),
+        (" week", "w"),
+    ] {
+        out = out.replace(from, to);
+    }
+    out
+}
+
+/// `kubectl get`: one row per object, dropping wide columns (AGE, NODE, RESTARTS)
+/// that the default rule keeps in the head/tail while omitting the middle objects.
+fn kubectl_get(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let cols: Vec<&str> = header.split_whitespace().collect();
+    if cols.first().copied() != Some("NAME") {
+        return None;
+    }
+    if !cols
+        .iter()
+        .any(|c| matches!(*c, "STATUS" | "READY" | "AGE"))
+    {
+        return None;
+    }
+    const KEEP: &[&str] = &["NAME", "READY", "STATUS", "IP"];
+    let idx: Vec<usize> = cols
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| KEEP.contains(c))
+        .map(|(i, _)| i)
+        .collect();
+    if idx.is_empty() {
+        return None;
+    }
+    let mut out = vec![idx.iter().map(|&i| cols[i]).collect::<Vec<_>>().join(" ")];
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        let picked: Vec<&str> = idx.iter().filter_map(|&i| fields.get(i).copied()).collect();
+        if !picked.is_empty() {
+            out.push(picked.join(" "));
+        }
+    }
+    if out.len() < 2 {
+        None
+    } else {
+        Some(out.join("\n"))
+    }
+}
+
+/// `ps aux`: one row per process. TTY/TIME padding is noise; PID plus the
+/// command basename (and its last arg when that is a distinct worker id) is the object.
+fn ps_aux(output: &str) -> Option<String> {
+    let mut lines = output.lines().filter(|l| !l.is_empty());
+    let header = lines.next()?;
+    let u = header.to_ascii_uppercase();
+    if !u.contains("PID") || !(u.contains("CMD") || u.contains("COMMAND")) {
+        return None;
+    }
+    let mut rows = Vec::new();
+    for line in lines {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let pid = fields.first()?;
+        if !pid.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let cmd = fields
+            .iter()
+            .copied()
+            .find(|t| t.starts_with('/') || t.starts_with("./"))
+            .or_else(|| fields.last().copied())
+            .unwrap_or("");
+        let base = cmd.rsplit('/').next().unwrap_or(cmd);
+        let tail = fields.last().copied().unwrap_or("");
+        if tail != base && tail != *pid {
+            rows.push(format!("{pid} {base} {tail}"));
+        } else {
+            rows.push(format!("{pid} {base}"));
+        }
+    }
+    if rows.is_empty() {
+        None
+    } else {
+        Some(rows.join("\n"))
+    }
 }
 
 fn keep(output: &str, needles: &[&str]) -> String {
@@ -313,5 +502,183 @@ mod tests {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert_eq!(family(&argv(&[r"C:\tools\git.exe", "status"])), "git");
         assert_eq!(family(&argv(&["cargo.exe", "test"])), "cargo");
+    }
+
+    #[test]
+    fn table_formatter_beats_default_rule_and_keeps_every_object() {
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for (file, argv0, prefix) in [
+            ("docker_ps.in", ["docker", "ps"], "web-"),
+            ("kubectl_get.in", ["kubectl", "get"], "web-deploy-"),
+            ("ps_aux.in", ["ps", "aux"], "worker-"),
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (_, exit, output) = parse_in(&raw);
+            let argv = argv0.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+            let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
+            assert_eq!(kind, "formatter", "{file}");
+            let rule_out = rules::apply(
+                &settings,
+                &output,
+                exit,
+                &rules::Rule::default(),
+                "deadbeef",
+            );
+            assert!(
+                got.len() < rule_out.len(),
+                "{file}: formatter {} vs rule {}",
+                got.len(),
+                rule_out.len()
+            );
+            for i in 0..40 {
+                let name = match prefix {
+                    "web-" => format!("web-{i:02}"),
+                    "web-deploy-" => format!("web-deploy-{i:02}-abcd"),
+                    _ => format!("worker-{i}"),
+                };
+                assert!(got.contains(&name), "{file} dropped {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn table_formatter_stands_down_on_unrecognized() {
+        let settings = rules::Settings::builtin();
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["docker", "ps"]),
+            "Cannot connect to the Docker daemon
+",
+            0,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("Cannot connect"), "{got}");
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["kubectl", "get"]),
+            "error: the server doesn't have a resource type \"pods\"
+",
+            1,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("doesn't have a resource type"), "{got}");
+        let (got, kind) = compress(
+            &settings,
+            &argv(&["ps", "aux"]),
+            "ps: invalid option -- z
+",
+            1,
+            "deadbeef",
+        );
+        assert_ne!(kind, "formatter", "{got}");
+        assert!(got.contains("invalid option"), "{got}");
+    }
+
+    #[test]
+    fn group_goldens_beat_the_same_rule_without_group() {
+        use super::rules::Group;
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for file in [
+            "ls.in",
+            "find.in",
+            "rg.in",
+            "tsc_dup.in",
+            "eslint_dup.in",
+            "cargo_check.in",
+            "dotnet_dup.in",
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (argv, exit, output) = parse_in(&raw);
+            let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
+            let mut off = settings.pick(bin(&family_argv(&argv)));
+            off.group = Group::Off;
+            let ungrouped = rules::apply(&settings, &output, exit, &off, "deadbeef");
+            assert!(
+                got.len() < ungrouped.len(),
+                "{file}: grouped {} B vs ungrouped {} B
+{got}",
+                got.len(),
+                ungrouped.len()
+            );
+        }
+    }
+
+    #[test]
+    fn json_goldens_beat_the_line_cut_and_stand_down_from_table_formatters() {
+        let settings = rules::Settings::builtin();
+        let dir = goldens();
+        for (file, kept) in [
+            ("gh_json.in", "https://github.com/o/r/pull/20"),
+            ("aws_json.in", "i-00000013"),
+            ("kubectl_json.in", "web-deploy-19-abcd"),
+        ] {
+            let raw = fs::read_to_string(dir.join(file)).unwrap();
+            let (argv, exit, output) = parse_in(&raw);
+            let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
+            assert_ne!(kind, "formatter", "{file} should skip table formatters");
+            assert!(
+                got.len() < output.len(),
+                "{file}: compact {} vs raw {}",
+                got.len(),
+                output.len()
+            );
+            assert!(got.contains("… +5 more"), "{file}: {got}");
+            assert!(
+                got.contains(kept),
+                "{file} dropped {kept} (line-cut keeps the opening):
+{got}"
+            );
+            let rule = settings.pick(bin(&family_argv(&argv)));
+            let head = rule.head.min(rule.max_lines) as usize;
+            let pretty_head: String = output.lines().take(head).collect::<Vec<_>>().join(
+                "
+",
+            );
+            assert!(
+                !pretty_head.contains(kept),
+                "{file}: {kept} already in the pretty head — fixture too small"
+            );
+        }
+        let table = fs::read_to_string(dir.join("kubectl_get.in")).unwrap();
+        let (_, exit, output) = parse_in(&table);
+        let (_, kind) = compress(
+            &settings,
+            &["kubectl".into(), "get".into(), "pods".into()],
+            &output,
+            exit,
+            "deadbeef",
+        );
+        assert_eq!(kind, "formatter");
+    }
+
+    #[test]
+    fn skill_rule_keeps_headings_and_names_kind() {
+        let settings = rules::Settings::builtin();
+        assert_eq!(settings.pick("skill").head, 30);
+        assert_eq!(settings.pick("skill").tail, 5);
+        let mut lines = vec!["# Title".to_string()];
+        lines.extend((0..60).map(|i| format!("body {i}")));
+        lines.push("## Middle".into());
+        lines.extend((60..120).map(|i| format!("body {i}")));
+        let body = lines.join(
+            "
+",
+        );
+        let (out, kind) = compress(&settings, &["skill".into(), "demo".into()], &body, 0, "id1");
+        assert_eq!(kind, "skill");
+        assert!(out.contains("# Title"), "{out}");
+        assert!(out.contains("## Middle"), "{out}");
+        assert!(out.len() < body.len(), "expected a cut");
+        let small = "# Tiny
+ok
+";
+        let (s, k) = compress(&settings, &["skill".into()], small, 0, "id1");
+        assert_eq!(k, "skill");
+        assert!(s.contains("# Tiny"), "{s}");
     }
 }

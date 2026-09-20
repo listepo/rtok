@@ -37,6 +37,12 @@ enum Cmd {
     },
     /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
     Mcp {
+        /// Call one listed tool and print the text result (pi `registerTool` shim, T70.3)
+        #[arg(long, value_name = "TOOL")]
+        call: Option<String>,
+        /// JSON arguments for `--call`
+        #[arg(long, value_name = "ARGS")]
+        json: Option<String>,
         /// Foreign stdio MCP server to wrap losslessly (`rtok mcp -- npx some-server`)
         #[arg(last = true)]
         wrap: Vec<String>,
@@ -115,12 +121,18 @@ enum Cmd {
         /// Per-run timeout in seconds
         #[arg(long)]
         timeout: Option<u64>,
+        /// Task suite (`graph` = with/without rtok MCP)
+        #[arg(long)]
+        suite: Option<String>,
     },
     /// Inspect hooks, MCP servers and the proxy chain
     Doctor {
         /// Also run the instruction-file audit (T7.2)
         #[arg(long)]
         instructions: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
     },
     /// Version, effective paths, disk usage, error count and proxy status
     Info {
@@ -128,7 +140,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Agent hosts (`rtok agents install|remove|list …`)
+    /// Agent hosts (`rtok agents install|uninstall|list|info …`)
     #[command(visible_alias = "agent")]
     Agents {
         #[command(subcommand)]
@@ -150,6 +162,9 @@ enum Cmd {
         /// Command family hint (`git status`, `cargo test`, …)
         #[arg(long)]
         cmd: Option<String>,
+        /// Archive stdin and print the expand trailer (same path as `run`)
+        #[arg(long)]
+        archive: bool,
     },
     /// Print an archived payload
     Expand {
@@ -178,7 +193,11 @@ enum Cmd {
     /// Print the man page (roff) to stdout
     Man,
     /// List plugins: id, enabled, surfaces
-    Plugins,
+    Plugins {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// The one config file
     Config {
         #[command(subcommand)]
@@ -195,6 +214,12 @@ enum Cmd {
     Graph {
         #[command(subcommand)]
         action: GraphCmd,
+    },
+    /// Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
+    #[cfg(feature = "guard")]
+    Guard {
+        #[command(subcommand)]
+        action: GuardCmd,
     },
     /// Deprecated spelling of `rtok web`; still runs, still prints where to go
     #[command(hide = true)]
@@ -221,6 +246,9 @@ enum Cmd {
         /// Override `[log] lines`
         #[arg(long, global = true)]
         lines: Option<usize>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
     },
     /// The operator model as one document (D24): Markdown, HTML and PDF
     Report {
@@ -264,8 +292,16 @@ enum DemonCmd {
     Stop { service: Vec<Service> },
     /// Stop, then start
     Restart { service: Vec<Service> },
+    /// Stop live surfaces, replace the binary, start the same set
+    #[command(hide = true)]
+    Upgrade,
     /// State, pids, uptime, restarts and log path; every service when none is named
-    Status { service: Vec<Service> },
+    Status {
+        service: Vec<Service>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// SIGKILL instead of SIGTERM, and drop the state file
     Kill { service: Vec<Service> },
     /// The detached half; `demon start` runs this, you do not
@@ -278,7 +314,11 @@ enum OtelCmd {
     /// Post rows past the watermarks to the endpoint, once
     Flush,
     /// Endpoint, watermarks, pending rows, last exporter log line
-    Status,
+    Status {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -345,6 +385,24 @@ enum MemoryCmd {
         #[arg(long)]
         body: String,
     },
+    /// Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)
+    Sync {
+        /// CLAUDE.md or AGENTS.md
+        #[arg(long, default_value = "CLAUDE.md")]
+        file: std::path::PathBuf,
+        /// Token budget; default `[plugins.memory] sync_tokens`
+        #[arg(long)]
+        budget: Option<u32>,
+        /// Print the unified diff and write nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Delete the managed block and nothing else
+        #[arg(long)]
+        remove: bool,
+        /// Overwrite a hand-edited block
+        #[arg(long)]
+        force: bool,
+    },
     /// Notes live/pinned/retired, recall and MCP call counts (T69.4)
     Status {
         /// Only notes of this project
@@ -386,6 +444,39 @@ enum GraphCmd {
         to: Option<String>,
         path: Option<PathBuf>,
     },
+    /// Tests that reach files changed in git (`git diff --name-only`)
+    Affected {
+        /// Diff against this ref
+        #[arg(long, conflicts_with = "staged")]
+        since: Option<String>,
+        /// Staged files only (`git diff --cached --name-only`)
+        #[arg(long)]
+        staged: bool,
+        /// JSON instead of `file ← via symbol` lines
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// `rtok guard check` — the same allow/deny `plugins::guard` returns on PreToolUse.
+#[cfg(feature = "guard")]
+#[derive(Subcommand)]
+enum GuardCmd {
+    /// Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+    Check {
+        /// Host tool name (`bash`, `Read`, …)
+        #[arg(long)]
+        tool: String,
+        /// Tool arguments as JSON
+        #[arg(long, value_name = "INPUT")]
+        json: String,
+        /// Host session id (the cache is per session)
+        #[arg(long)]
+        session: Option<String>,
+        /// Overlay `[hook] host`
+        #[arg(long)]
+        host: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -394,14 +485,30 @@ enum AgentCmd {
     #[command(alias = "setup")]
     Install(SetupArgs),
     /// Take rtok back out of a host: hooks, MCP entry, proxy variable, plugin link
-    Remove(RemoveArgs),
+    #[command(visible_alias = "remove")]
+    Uninstall(RemoveArgs),
     /// Every known app: kind and name, path and version, config files, rtok modules
-    List,
+    List {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
+    /// One host: the same block `agents list` prints, just for that app
+    Info {
+        /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
+        host: String,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
     /// What is running in this project: host, provider, model, tokens, start, run time
     Sessions {
         /// Also show sessions that have ended
         #[arg(long, global = true)]
         all: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
         #[command(subcommand)]
         action: Option<SessionsCmd>,
     },
@@ -419,7 +526,7 @@ enum SessionsCmd {
 
 #[derive(clap::Args)]
 struct RemoveArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
     host: String,
     /// Print what would be removed and exit
     #[arg(long)]
@@ -429,12 +536,12 @@ struct RemoveArgs {
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
 #[derive(clap::Args)]
 struct SetupArgs {
-    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`)
+    /// Host(s), comma-separated (`claude`, `cursor`, `codex`, `opencode`, `pi`, `zcode`, `kimi`, `copilot`, `aider`, `windsurf`, `zed`, `vscode`)
     host: String,
     /// Print the planned edits and exit
     #[arg(long)]
     dry_run: bool,
-    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents remove <host>`
+    /// Remove rtok from the host (hooks, MCP, proxy, plugin link); prefer `rtok agents uninstall <host>`
     #[arg(long)]
     remove: bool,
     /// Enable prompt modes (`terse,yagni`)
@@ -464,7 +571,7 @@ struct SetupArgs {
 }
 
 impl SetupArgs {
-    /// `rtok agents remove <host>` is the install run backwards; nothing else about it differs.
+    /// `rtok agents uninstall <host>` is the install run backwards; nothing else about it differs.
     fn removing(args: RemoveArgs) -> Self {
         Self {
             host: args.host,
@@ -525,16 +632,21 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let config_file = cli.config.clone();
     match cli.cmd {
-        Cmd::Plugins => {
+        Cmd::Plugins { json } => {
             let config = Config::load_with(config_file.as_deref(), None)?;
             // The command renders the model's Plugins page (T15.11); the registry keeps
             // the same formatter for library users.
-            let rows: Vec<(&str, bool, Vec<&str>)> = crate::web::model::Model::new(&config, None)
-                .plugins()
-                .into_iter()
-                .map(|p| (p.id, p.enabled, p.surfaces))
-                .collect();
-            print!("{}", crate::render::plugins_table(&rows));
+            let store = crate::store::Store::open(&config.core.db_path).ok();
+            let pages = model::Model::new(&config, store.as_ref()).plugins();
+            if json {
+                print_json(&pages)?;
+            } else {
+                let rows: Vec<(&str, bool, Vec<&str>)> = pages
+                    .iter()
+                    .map(|p| (p.id, p.enabled, p.surfaces.clone()))
+                    .collect();
+                print!("{}", crate::render::plugins_table(&rows));
+            }
         }
         Cmd::Config { action } => {
             let home = Config::home_dir();
@@ -678,22 +790,28 @@ pub fn run() -> Result<()> {
             runs,
             dry_run,
             timeout,
+            suite,
         } => {
             let cfg = Config::load_with(
                 config_file.as_deref(),
-                bench_flags(tasks, runs, dry_run, timeout),
+                bench_flags(tasks, runs, dry_run, timeout, suite),
             )?;
             print!("{}", crate::bench::run(&cfg)?);
         }
-        Cmd::Doctor { instructions } => {
+        Cmd::Doctor { instructions, json } => {
             let cfg = Config::load_with(config_file.as_deref(), doctor_flags(instructions))?;
-            print!("{}", model::doctor(&cfg)?.to_console());
+            let report = model::doctor(&cfg)?;
+            if json {
+                print_json(&report)?;
+            } else {
+                print!("{}", report.to_console());
+            }
         }
         Cmd::Info { json } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let info = crate::info::collect(&cfg, config_file.as_deref());
             if json {
-                println!("{}", serde_json::to_string_pretty(&info)?);
+                print_json(&info)?;
             } else {
                 print!("{}", info.to_text());
             }
@@ -736,18 +854,37 @@ pub fn run() -> Result<()> {
         }
         Cmd::Agents { action } => match action {
             AgentCmd::Install(args) => setup_host(config_file.as_deref(), args)?,
-            AgentCmd::Remove(args) => {
+            AgentCmd::Uninstall(args) => {
                 setup_host(config_file.as_deref(), SetupArgs::removing(args))?
             }
-            AgentCmd::List => {
+            AgentCmd::List { json } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
-                print!("{}", crate::agents::list(&cfg));
+                if json {
+                    let rows = with_loader("listing hosts", || model::agents_list(&cfg));
+                    print_json(&rows)?;
+                } else {
+                    let text = with_loader("listing hosts", || crate::agents::list(&cfg));
+                    print!("{text}");
+                }
+            }
+            AgentCmd::Info { host, json } => {
+                let cfg = Config::load_with(config_file.as_deref(), None)?;
+                let hosts = parse_hosts(&host)?;
+                if json {
+                    let agents = crate::agents::resolve(&hosts)?;
+                    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+                    let rows = with_loader("reading host", || model::agents_listed(&cfg, &ids));
+                    print_json(&rows)?;
+                } else {
+                    let text = with_loader("reading host", || crate::agents::info(&cfg, &hosts))?;
+                    print!("{text}");
+                }
             }
             // The command renders the model's Sessions page (T25.2): newest first, live
             // only unless `--all`. `since = 0` because the default view's window is
             // liveness itself — a `started_at` floor could hide a session that began
             // before it and is still running, which is the row this command exists for.
-            AgentCmd::Sessions { all, action } => {
+            AgentCmd::Sessions { all, json, action } => {
                 let cfg = Config::load_with(config_file.as_deref(), None)?;
                 // T25.3: live repaint through T24.3's `watch_loop` — no second loop.
                 // The loop only writes characters (no raw mode, no alternate screen),
@@ -782,10 +919,18 @@ pub fn run() -> Result<()> {
                     return Ok(());
                 }
                 let rows = model::sessions(&cfg, 0)?;
-                print!(
-                    "{}",
-                    crate::render::sessions_table(&rows, all, crate::log::now() as i64)
-                );
+                if json {
+                    let rows: Vec<_> = rows
+                        .into_iter()
+                        .filter(|r| all || r.ended_at.is_none())
+                        .collect();
+                    print_json(&rows)?;
+                } else {
+                    print!(
+                        "{}",
+                        crate::render::sessions_table(&rows, all, crate::log::now() as i64)
+                    );
+                }
             }
         },
         Cmd::Setup(args) => {
@@ -802,16 +947,43 @@ pub fn run() -> Result<()> {
             std::process::exit(code);
         }
         #[cfg(feature = "cmd")]
-        Cmd::Filter { stdin: _, cmd } => {
+        Cmd::Filter {
+            stdin: _,
+            cmd,
+            archive,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let hint = cmd.unwrap_or(cfg.filter.cmd);
-            let mut buf = String::new();
-            let _ = io::stdin().read_to_string(&mut buf);
-            print!("{}", crate::plugins::cmd::filter::run(&hint, &buf));
+            let hint = cmd.unwrap_or_else(|| cfg.filter.cmd.clone());
+            if archive {
+                let mut buf = Vec::new();
+                let _ = io::stdin().read_to_end(&mut buf);
+                let argv: Vec<String> = hint.split_whitespace().map(str::to_string).collect();
+                crate::plugins::cmd::run::emit_filtered(&cfg, &argv, &buf, 0);
+            } else {
+                let mut buf = String::new();
+                let _ = io::stdin().read_to_string(&mut buf);
+                print!(
+                    "{}",
+                    crate::plugins::cmd::filter::run_with_store(&cfg, &hint, &buf)
+                );
+            }
         }
-        Cmd::Mcp { wrap } => {
+        Cmd::Mcp { call, json, wrap } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            if wrap.is_empty() {
+            if let Some(name) = call {
+                if !wrap.is_empty() {
+                    bail!("rtok mcp --call does not wrap a foreign server");
+                }
+                let raw = json.as_deref().unwrap_or("{}");
+                let args: serde_json::Value = serde_json::from_str(raw)?;
+                match crate::mcp::call(&cfg, &name, &args) {
+                    Ok(text) => print!("{text}"),
+                    Err(e) => {
+                        print!("{e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else if wrap.is_empty() {
                 crate::mcp::run(&cfg)?;
             } else {
                 #[cfg(feature = "cmd")]
@@ -902,6 +1074,13 @@ pub fn run() -> Result<()> {
                         None => println!("updated note {new} in place"),
                     }
                 }
+                MemoryCmd::Sync {
+                    file,
+                    budget,
+                    dry_run,
+                    remove,
+                    force,
+                } => crate::plugins::memory::sync::run(&cfg, file, budget, dry_run, remove, force)?,
                 MemoryCmd::Status {
                     project,
                     since,
@@ -949,21 +1128,50 @@ pub fn run() -> Result<()> {
                 GraphCmd::Status { path, json } => {
                     crate::plugins::graph::status::run(&cfg, path, json)?;
                 }
-                GraphCmd::Impact { name, depth, to, path } => {
+                GraphCmd::Impact {
+                    name,
+                    depth,
+                    to,
+                    path,
+                } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
                     let ctx = crate::plugin::Ctx::new(&cx);
                     print!(
                         "{}",
-                        crate::plugins::graph::impact(
-                            &ctx,
+                        crate::plugins::graph::impact(&ctx, &root, &name, depth, to.as_deref(),)?
+                    );
+                }
+                GraphCmd::Affected {
+                    since,
+                    staged,
+                    json,
+                } => {
+                    let root = std::env::current_dir()?;
+                    print!(
+                        "{}",
+                        crate::plugins::graph::affected(
+                            &crate::plugin::Ctx::new(&cx),
                             &root,
-                            &name,
-                            depth,
-                            to.as_deref(),
+                            since.as_deref(),
+                            staged,
+                            json,
                         )?
                     );
                 }
             }
+        }
+        #[cfg(feature = "guard")]
+        Cmd::Guard { action } => {
+            let GuardCmd::Check {
+                tool,
+                json,
+                session,
+                host,
+            } = action;
+            let cfg = Config::load_with(config_file.as_deref(), hook_host_flag(host))?;
+            let sid = session.unwrap_or_else(|| "guard-check".into());
+            let cx = crate::plugin::Runtime::open(cfg, sid)?;
+            println!("{}", crate::plugins::guard::check(&tool, &json, &cx));
         }
         Cmd::Demon { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
@@ -974,9 +1182,14 @@ pub fn run() -> Result<()> {
                 DemonCmd::Start { service } => crate::demon::start(&cfg, c, &service)?,
                 DemonCmd::Stop { service } => crate::demon::stop(&cfg, &service, false)?,
                 DemonCmd::Restart { service } => crate::demon::restart(&cfg, c, &service)?,
-                DemonCmd::Status { service } => {
+                DemonCmd::Upgrade => crate::demon::upgrade(&cfg, c)?,
+                DemonCmd::Status { service, json } => {
                     let rows = model::Model::new(&cfg, None).demon(&service)?;
-                    print!("{}", crate::demon::table(&rows));
+                    if json {
+                        print_json(&rows)?;
+                    } else {
+                        print!("{}", crate::demon::table(&rows));
+                    }
                 }
                 DemonCmd::Kill { service } => crate::demon::stop(&cfg, &service, true)?,
                 DemonCmd::Supervise { service } => crate::demon::supervise(&cfg, c, service)?,
@@ -984,13 +1197,26 @@ pub fn run() -> Result<()> {
         }
         Cmd::Otel { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let cx = crate::plugin::Runtime::open(cfg, "otel")?;
             match action {
-                OtelCmd::Flush => println!("{}", crate::otel::export::flush_blocking(&cx)),
-                OtelCmd::Status => print!("{}", crate::otel::export::status(&cx)?),
+                OtelCmd::Flush => {
+                    let cx = crate::plugin::Runtime::open(cfg, "otel")?;
+                    println!("{}", crate::otel::export::flush_blocking(&cx));
+                }
+                OtelCmd::Status { json } => {
+                    if json {
+                        print_json(&model::otel_status(&cfg)?)?;
+                    } else {
+                        let cx = crate::plugin::Runtime::open(cfg, "otel")?;
+                        print!("{}", crate::otel::export::status(&cx)?);
+                    }
+                }
             }
         }
-        Cmd::Logs { action, lines } => {
+        Cmd::Logs {
+            action,
+            lines,
+            json,
+        } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             let out = match action {
                 // T24.3: runs until Ctrl-C. The loop only ever writes characters — no raw
@@ -1006,6 +1232,10 @@ pub fn run() -> Result<()> {
                 None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
                 Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };
+            if json {
+                print_json(&model::Model::new(&cfg, None).log_lines(lines))?;
+                return Ok(());
+            }
             if out.is_empty() {
                 println!("no logs yet");
             } else {
@@ -1095,8 +1325,9 @@ fn bench_flags(
     runs: Option<u32>,
     dry_run: bool,
     timeout: Option<u64>,
+    suite: Option<String>,
 ) -> Option<figment::value::Dict> {
-    if tasks.is_none() && runs.is_none() && !dry_run && timeout.is_none() {
+    if tasks.is_none() && runs.is_none() && !dry_run && timeout.is_none() && suite.is_none() {
         return None;
     }
     use figment::value::{Dict, Value};
@@ -1119,12 +1350,34 @@ fn bench_flags(
             Value::from(i64::try_from(s).unwrap_or(i64::MAX)),
         );
     }
+    if let Some(s) = suite {
+        bench.insert("suite".into(), Value::from(s));
+    }
     let mut flags = Dict::new();
     flags.insert("bench".into(), Value::from(bench));
     Some(flags)
 }
 
-/// The host installers, one call site for `rtok agents install|remove` and the deprecated
+fn with_loader<T>(msg: &str, f: impl FnOnce() -> T) -> T {
+    let pb = crate::render::loader(msg);
+    let out = f();
+    pb.finish_and_clear();
+    out
+}
+
+fn parse_hosts(host: &str) -> Result<Vec<String>> {
+    let hosts: Vec<String> = host
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if hosts.is_empty() {
+        bail!("unknown host: {host}");
+    }
+    Ok(hosts)
+}
+
+/// The host installers, one call site for `rtok agents install|uninstall` and the deprecated
 /// `rtok setup`. Unknown hosts are refused before any backup is taken.
 fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<()> {
     let SetupArgs {
@@ -1142,14 +1395,7 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
     } = args;
     let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
     // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
-    let hosts: Vec<String> = host
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if hosts.is_empty() {
-        bail!("unknown host: {host}");
-    }
+    let hosts = parse_hosts(&host)?;
     let mode = if remove {
         crate::agents::Mode::Remove
     } else if replace {
@@ -1164,7 +1410,8 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         desktop,
         all,
     };
-    print!("{}", crate::agents::run(&mut cfg, &req)?);
+    let out = with_loader("updating host", || crate::agents::run(&mut cfg, &req))?;
+    print!("{out}");
     Ok(())
 }
 
@@ -1279,10 +1526,14 @@ fn report_flags(
     Some(flags)
 }
 
+fn print_json(value: &(impl serde::Serialize + ?Sized)) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
 fn show(rows: &[model::ConfigEntry], sources: bool, json: bool) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string_pretty(rows)?);
-        return Ok(());
+        return print_json(rows);
     }
     for r in rows {
         if sources {

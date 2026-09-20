@@ -1,0 +1,1 @@
+TS2322 ×20: Type 'string' is not assignable to type 'number'. (src/f0.ts:0, src/f1.ts:1, src/f2.ts:2, …)

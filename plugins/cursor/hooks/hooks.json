@@ -15,6 +15,19 @@
       {
         "command": "rtok hook SessionStart --host cursor"
       }
+    ],
+    "preCompact": [
+      {
+        "command": "rtok hook PreCompact --host cursor"
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "rtok hook AfterMCPExecution --host cursor"
+      }
+    ],
+    "postToolUse": [
+      { "command": "rtok hook PostToolUse --host cursor", "matcher": "MCP:" }
     ]
   }
 }

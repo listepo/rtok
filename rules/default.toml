@@ -8,6 +8,7 @@ drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
 
+
 [rg]
 max_lines = 40
 head = 10
@@ -15,6 +16,8 @@ tail = 10
 drop = ["Binary file"]
 keep = ["error|warning"]
 dedupe = true
+group = "dir"
+
 
 [sed]
 max_lines = 40
@@ -71,3 +74,146 @@ tail = 16
 drop = []
 keep = ["Error|error"]
 dedupe = true
+
+[gh]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|Error|fatal|HTTP 4|gh:"]
+dedupe = true
+
+[pip]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|ERROR|Could not|No matching|Requirement"]
+dedupe = true
+
+[uv]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|ERROR|Failed|Could not"]
+dedupe = true
+
+[python]
+max_lines = 40
+head = 5
+tail = 15
+keep = ["Traceback|Error|SyntaxError|IndentationError|ModuleNotFoundError"]
+dedupe = true
+
+[python3]
+max_lines = 40
+head = 5
+tail = 15
+keep = ["Traceback|Error|SyntaxError|IndentationError|ModuleNotFoundError"]
+dedupe = true
+
+[go]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|Error|panic|fatal|FAIL|cannot|undefined"]
+dedupe = true
+
+[aws]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|Error|An error occurred|AccessDenied|NotFound|Exception"]
+dedupe = true
+
+[mvn]
+max_lines = 40
+head = 8
+tail = 20
+keep = ['BUILD FAILURE|ERROR|FAILURE|\[ERROR\]']
+dedupe = true
+
+[gradle]
+max_lines = 40
+head = 8
+tail = 20
+keep = ["BUILD FAILED|FAILURE|error:|Error|What went wrong"]
+dedupe = true
+
+[dotnet]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error CS|error MSB|error NU|Build FAILED"]
+dedupe = true
+group = "diag"
+
+
+[tsc]
+max_lines = 40
+head = 8
+tail = 16
+keep = ['error TS|Found \d+ error']
+dedupe = true
+group = "diag"
+
+
+[eslint]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error|warning|✖|problems"]
+dedupe = true
+group = "diag"
+
+
+[brew]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["Error:|error:|failed|Warning:"]
+dedupe = true
+
+[apt]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["^E:|error|failed|Unable to"]
+dedupe = true
+
+[cmake]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["CMake Error|error:|FAILED|Error"]
+dedupe = true
+
+[ls]
+max_lines = 40
+head = 10
+tail = 10
+group = "dir"
+dedupe = true
+
+[find]
+max_lines = 40
+head = 10
+tail = 10
+group = "dir"
+dedupe = true
+
+[cargo]
+max_lines = 40
+head = 8
+tail = 16
+keep = ["error[|error:|warning:"]
+group = "diag"
+dedupe = true
+
+[skill]
+max_lines = 80
+head = 30
+tail = 5
+drop = []
+keep = ["# "]
+dedupe = false
+collapse_columns = false
+

@@ -10,7 +10,7 @@
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
 //! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,14 +19,15 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use rtok_plugin_sdk::{
-    Class, Ctx, DashboardPage, Manifest, Measurement, Plugin, PostToolUse, Surface, ToolDef,
+    Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PostToolUse, SessionStart,
+    Surface, ToolDef,
 };
 
 pub mod index;
 pub mod lsp;
-pub mod watch;
-pub mod walk;
 pub mod status;
+pub mod walk;
+pub mod watch;
 
 #[cfg(test)]
 thread_local! {
@@ -39,7 +40,7 @@ impl Plugin for Graph {
     fn manifest(&self) -> Manifest {
         Manifest {
             id: "graph",
-            surfaces: &[Surface::Mcp],
+            surfaces: &[Surface::Mcp, Surface::Hook],
             default_on: true,
         }
     }
@@ -62,6 +63,10 @@ impl Plugin for Graph {
         None
     }
 
+    fn session_start(&self, _ev: &SessionStart, cx: &Ctx) -> Option<Injection> {
+        repo_map(cx)
+    }
+
     fn mcp_tools(&self) -> Vec<ToolDef> {
         let named_path = json!({"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"}},"required":["name"]});
         vec![
@@ -77,8 +82,8 @@ impl Plugin for Graph {
             },
             ToolDef {
                 name: "impact",
-                description: "What breaks if a symbol changes: callers up to depth. Optional to: chains reaching it.",
-                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"to":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}},"required":["name"]}),
+                description: "What breaks if a symbol changes: callers up to depth. Optional to: chains reaching it. Empty name + path lists affected tests.",
+                input_schema: json!({"type":"object","properties":{"name":{"type":"string"},"to":{"type":"string"},"depth":{"type":"integer"},"path":{"type":"string"}}}),
             },
             ToolDef {
                 name: "outline",
@@ -149,7 +154,6 @@ pub fn index_for(cx: &Ctx, root: &Path) -> Result<index::Report> {
     }
 }
 
-
 /// Pending re-index paths: hook marks, stat drift and the watcher queue (T68.3).
 pub(crate) fn pending_paths(cx: &Ctx, root: &Path) -> Result<Vec<String>> {
     let key = index::canon(root);
@@ -173,8 +177,13 @@ fn stale_banner(cx: &Ctx, root: &Path) -> Result<String> {
         let show = pending.len().min(5);
         let listed = pending[..show].join(", ");
         let tail = if pending.len() > 5 { ", …" } else { "" };
-        return Ok(format!("stale: {} files pending ({}{})
-", pending.len(), listed, tail));
+        return Ok(format!(
+            "stale: {} files pending ({}{})
+",
+            pending.len(),
+            listed,
+            tail
+        ));
     }
     Ok(String::new())
 }
@@ -199,14 +208,33 @@ pub fn call(cx: &Ctx, name: &str, args: &Value) -> Result<String> {
     match name {
         "symbol" => symbol_filtered(cx, &root, arg("name"), &filter),
         "callers" => callers_filtered(cx, &root, arg("name"), &filter),
-        "impact" => impact_filtered(
-            cx,
-            &root,
-            arg("name"),
-            args["depth"].as_u64().unwrap_or(2) as u32,
-            &filter,
-            args["to"].as_str(),
-        ),
+        "impact" => {
+            let name = arg("name");
+            if name.is_empty() {
+                let path = arg("path");
+                let paths = if path.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![rel_of(&root, path)]
+                };
+                affected_from_paths(
+                    cx,
+                    &root,
+                    &paths,
+                    args["depth"].as_u64().unwrap_or(3) as u32,
+                    false,
+                )
+            } else {
+                impact_filtered(
+                    cx,
+                    &root,
+                    name,
+                    args["depth"].as_u64().unwrap_or(2) as u32,
+                    &filter,
+                    args["to"].as_str(),
+                )
+            }
+        }
         "outline" => outline(cx, arg("path")),
         "explore" => explore(cx, &root, arg("query"), &filter),
         _ => anyhow::bail!("unknown tool: {name}"),
@@ -232,7 +260,11 @@ pub fn symbol_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> Re
         .filter(|(path, kind, ..)| filter.path_ok(path) && filter.kind_ok(kind))
         .collect();
     if rows.is_empty() {
-        return with_stale(cx, root, format!("no definition of {name}{}", filter.scope_note()));
+        return with_stale(
+            cx,
+            root,
+            format!("no definition of {name}{}", filter.scope_note()),
+        );
     }
     let key = index::canon(root);
     let callees = cx.symbol_callees(&key, name)?;
@@ -264,12 +296,20 @@ fn mark_ambiguous_lines(out: &str) -> String {
     if out.is_empty() {
         return String::new();
     }
-    out.lines().map(|line| format!("{line} ?")).collect::<Vec<_>>().join("\n") + "\n"
+    out.lines()
+        .map(|line| format!("{line} ?"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
 }
 
 fn annotate_ambiguous(cx: &Ctx, root: &Path, name: &str, out: String) -> Result<String> {
     if cx.symbol_defs(&index::canon(root), name)?.len() > 1 {
-        Ok(format!("{}{}", ambiguous_banner(1), mark_ambiguous_lines(&out)))
+        Ok(format!(
+            "{}{}",
+            ambiguous_banner(1),
+            mark_ambiguous_lines(&out)
+        ))
     } else {
         Ok(out)
     }
@@ -285,7 +325,10 @@ fn defs_text(
     let cap = budget / 2;
     let mut by_def: HashMap<(String, i32), Vec<String>> = HashMap::new();
     for (path, line, callee, _) in callees {
-        by_def.entry((path.clone(), *line)).or_default().push(callee.clone());
+        by_def
+            .entry((path.clone(), *line))
+            .or_default()
+            .push(callee.clone());
     }
     let mut out = String::new();
     let mut cached: Option<(String, String)> = None;
@@ -293,9 +336,17 @@ fn defs_text(
         out.push_str(&format!("{path}:{line} {kind}\n"));
         if !cached.as_ref().is_some_and(|(p, _)| p == path) {
             symbol_src_reads_add(1);
-            cached = Some((path.clone(), std::fs::read_to_string(root.join(path)).unwrap_or_default()));
+            cached = Some((
+                path.clone(),
+                std::fs::read_to_string(root.join(path)).unwrap_or_default(),
+            ));
         }
-        out.push_str(&body_lines(&cached.as_ref().unwrap().1, *line, *end_line, budget));
+        out.push_str(&body_lines(
+            &cached.as_ref().unwrap().1,
+            *line,
+            *end_line,
+            budget,
+        ));
         if let Some(names) = by_def.get(&(path.clone(), *line)) {
             out.push_str(&calls_line(names, cap));
         }
@@ -339,11 +390,24 @@ pub fn callers_filtered(cx: &Ctx, root: &Path, name: &str, filter: &Filter) -> R
         .filter(|(path, ..)| filter.path_ok(path))
         .collect();
     if rows.is_empty() {
-        return with_stale(cx, root, annotate_ambiguous(cx, root, name, format!("no references to {name}{}", filter.scope_note()))?);
+        return with_stale(
+            cx,
+            root,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("no references to {name}{}", filter.scope_note()),
+            )?,
+        );
     }
     let mut out = String::new();
     for (path, scope, n, line) in rows {
-        let scope = if scope.is_empty() { String::new() } else { format!("  {scope}") };
+        let scope = if scope.is_empty() {
+            String::new()
+        } else {
+            format!("  {scope}")
+        };
         out.push_str(&format!("{path}{scope} ×{n} (L{line})\n"));
     }
     with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, out)?)?)
@@ -384,10 +448,16 @@ pub fn impact_filtered(
                 format!("no path from {name} to {target} within depth {depth}"),
             );
         }
-        let body = chains.join("
-") + "
+        let body = chains.join(
+            "
+",
+        ) + "
 ";
-        return with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, body)?)?);
+        return with_stale(
+            cx,
+            root,
+            cap(cx, annotate_ambiguous(cx, root, name, body)?)?,
+        );
     }
     let rows: Vec<_> = cx
         .symbol_impact(&index::canon(root), name, depth)?
@@ -398,10 +468,22 @@ pub fn impact_filtered(
         return with_stale(
             cx,
             root,
-            annotate_ambiguous(cx, root, name, format!("nothing reaches {name}{}", filter.scope_note()))?,
+            annotate_ambiguous(
+                cx,
+                root,
+                name,
+                format!("nothing reaches {name}{}", filter.scope_note()),
+            )?,
         );
     }
-    with_stale(cx, root, cap(cx, annotate_ambiguous(cx, root, name, impact_lines_text(&rows))?)?)
+    with_stale(
+        cx,
+        root,
+        cap(
+            cx,
+            annotate_ambiguous(cx, root, name, impact_lines_text(&rows))?,
+        )?,
+    )
 }
 
 /// `symbol_paths` walks callers; `impact --to` prints callee chains, so reverse the arrows.
@@ -548,13 +630,175 @@ fn collect_impls(
         collect_impls(child, src, out);
     }
 }
-/// T8.7 BFS, kept as the T8.14 baseline. Not used on the tool path after T8.13.
-#[cfg(test)]
+const EMPTY_AFFECTED: &str = "no indexed test reaches the change; run the suite";
+
+fn rel_of(root: &Path, path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let path = path.strip_prefix("./").unwrap_or(&path);
+    match (
+        dunce::canonicalize(root.join(path)),
+        dunce::canonicalize(root),
+    ) {
+        (Ok(abs), Ok(root)) => abs
+            .strip_prefix(root)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| path.to_string()),
+        _ => path.to_string(),
+    }
+}
+
+/// Tests that reach files changed in git (`git diff --name-only`). No Measurement.
+pub fn affected(
+    cx: &Ctx,
+    root: &Path,
+    since: Option<&str>,
+    staged: bool,
+    json: bool,
+) -> Result<String> {
+    affected_from_paths(cx, root, &git_changed_files(root, since, staged), 3, json)
+}
+
+pub(crate) fn affected_from_paths(
+    cx: &Ctx,
+    root: &Path,
+    paths: &[String],
+    depth: u32,
+    json: bool,
+) -> Result<String> {
+    index_for(cx, root)?;
+    let key = index::canon(root);
+    let mut hits = BTreeSet::new();
+    let mut starts = HashSet::new();
+    for raw in paths {
+        let rel = rel_of(root, raw);
+        for name in defs_in_path(cx, root, &key, &rel)? {
+            if is_test_path(&rel) {
+                hits.insert((rel.clone(), name.clone()));
+            }
+            starts.insert(name);
+        }
+    }
+    for name in &starts {
+        for (_, path, scope) in impact_bfs(cx, &key, name, depth)? {
+            if is_test_path(&path) {
+                let via = if scope.is_empty() {
+                    name.clone()
+                } else {
+                    scope
+                };
+                hits.insert((path, via));
+            }
+        }
+    }
+    Ok(format_affected(&hits, json))
+}
+
+fn defs_in_path(cx: &Ctx, root: &Path, key: &str, rel: &str) -> Result<Vec<String>> {
+    let abs = root.join(rel);
+    let src = std::fs::read_to_string(&abs).unwrap_or_default();
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    for hit in crate::plugins::read::outline::tags(&abs, &src)? {
+        if hit.is_def
+            && seen.insert(hit.name.clone())
+            && cx
+                .symbol_defs(key, &hit.name)?
+                .iter()
+                .any(|(p, ..)| p == rel)
+        {
+            names.push(hit.name);
+        }
+    }
+    Ok(names)
+}
+
+fn git_changed_files(root: &Path, since: Option<&str>, staged: bool) -> Vec<String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(root)
+        .args(["diff", "--name-only", "--relative", "-z"]);
+    if staged {
+        cmd.arg("--cached");
+    }
+    if let Some(rev) = since {
+        cmd.arg(rev);
+    }
+    let Ok(out) = cmd.output() else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    out.stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| String::from_utf8(s.to_vec()).ok())
+        .collect()
+}
+
+fn test_command(path: &str, name: &str) -> Option<String> {
+    match Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+    {
+        "rs" => Some(format!("cargo test {name}")),
+        "py" => Some(format!("pytest {path}::{name}")),
+        "go" => Some(format!("go test -run {name}")),
+        "ts" | "tsx" | "js" | "mjs" | "cjs" | "jsx" => Some(format!("vitest {path}")),
+        _ => None,
+    }
+}
+
+fn format_affected(hits: &BTreeSet<(String, String)>, json: bool) -> String {
+    if json {
+        let tests: Vec<Value> = hits
+            .iter()
+            .map(|(file, symbol)| {
+                json!({
+                    "file": file,
+                    "symbol": symbol,
+                    "command": test_command(file, symbol),
+                })
+            })
+            .collect();
+        return if tests.is_empty() {
+            json!({"tests": [], "message": EMPTY_AFFECTED}).to_string()
+        } else {
+            json!({"tests": tests}).to_string()
+        };
+    }
+    if hits.is_empty() {
+        return EMPTY_AFFECTED.to_string();
+    }
+    let mut out = String::new();
+    for (file, symbol) in hits {
+        out.push_str(&format!("{file} ← via {symbol}\n"));
+        if let Some(cmd) = test_command(file, symbol) {
+            out.push_str(&format!("{cmd}\n"));
+        }
+    }
+    out
+}
+
+/// T8.7 BFS (T8.14 baseline). T68.5 walks it from each changed file's definitions.
+/// `follow_imports` (default true, T68.6) takes one extra hop from an import row
+/// to that file's definitions.
 pub(crate) fn impact_bfs(
-    store: &crate::store::Store,
+    cx: &Ctx,
     root: &str,
     name: &str,
     depth: u32,
+) -> Result<Vec<(u32, String, String)>> {
+    impact_bfs_follow(cx, root, name, depth, true)
+}
+
+pub(crate) fn impact_bfs_follow(
+    cx: &Ctx,
+    root: &str,
+    name: &str,
+    depth: u32,
+    follow_imports: bool,
 ) -> Result<Vec<(u32, String, String)>> {
     let mut seen: HashSet<String> = HashSet::from([name.to_string()]);
     let mut frontier = vec![name.to_string()];
@@ -562,12 +806,20 @@ pub(crate) fn impact_bfs(
     for d in 1..=depth.clamp(1, 4) {
         let mut next = Vec::new();
         for from in &frontier {
-            for (path, scope, ..) in store.symbol_ref_groups(root, from)? {
+            for (path, scope, ..) in cx.symbol_ref_groups(root, from)? {
                 if scope.is_empty() {
                     out.push((d, path, String::new()));
                 } else if seen.insert(scope.clone()) {
                     out.push((d, path, scope.clone()));
                     next.push(scope);
+                }
+            }
+            if follow_imports {
+                for (path, def) in cx.symbol_import_follow(root, from)? {
+                    if seen.insert(def.clone()) {
+                        out.push((d, path, def.clone()));
+                        next.push(def);
+                    }
                 }
             }
         }
@@ -784,6 +1036,43 @@ impl ExploreParts for TagsExplore<'_> {
     }
 }
 
+/// T52.3: ranked repo map from existing `symbols` rows. `map_tokens = 0` is off;
+/// a missing index does not walk the tree (hook path).
+fn repo_map(cx: &Ctx) -> Option<Injection> {
+    let cap = cx.plugin_config::<crate::config::Graph>("graph").map_tokens;
+    if cap == 0 {
+        return None;
+    }
+    let cwd = cx
+        .cwd()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())?;
+    let rows = cx
+        .symbol_top_refs(&index::canon(&cwd), i64::from(cap))
+        .ok()?;
+    if rows.is_empty() {
+        return None;
+    }
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    lines.push("repo map".into());
+    for (name, refs, path, line) in &rows {
+        lines.push(format!("{name} {path}:{line} {refs}"));
+    }
+    let mut text = lines.join("\n");
+    while cx.estimate(&text, Class::Prose) > cap && lines.len() > 1 {
+        lines.pop();
+        text = lines.join("\n");
+    }
+    if lines.len() == 1 {
+        return None;
+    }
+    Some(Injection {
+        plugin: "graph",
+        text,
+        priority: 1,
+    })
+}
+
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
 /// Always records one measurement; `ref_id` when truncated. `before_bytes` is the
 /// uncapped text for the four plain tools, and the sum of the calls `explore`
@@ -998,11 +1287,14 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-
     #[test]
     fn symbol_lists_callees_on_impact_fixture() {
         let (cx, dir) = cx("callees");
-        fs::write(dir.join("chain.rs"), "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n").unwrap();
+        fs::write(
+            dir.join("chain.rs"),
+            "fn a() {\n    b();\n}\nfn b() {\n    c();\n}\nfn c() {}\n",
+        )
+        .unwrap();
         let ctx = Ctx::new(&cx);
         assert!(symbol(&ctx, &dir, "a").unwrap().contains("calls: b"));
         assert!(symbol(&ctx, &dir, "b").unwrap().contains("calls: c"));
@@ -1020,7 +1312,11 @@ mod tests {
         let new = callers(&ctx, &dir, "new").unwrap();
         assert!(new.starts_with("1 names ambiguous"));
         assert!(new.contains(" ?\n"));
-        assert!(impact(&ctx, &dir, "new", 1, None).unwrap().starts_with("1 names ambiguous"));
+        assert!(
+            impact(&ctx, &dir, "new", 1, None)
+                .unwrap()
+                .starts_with("1 names ambiguous")
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1039,7 +1335,7 @@ mod tests {
         index::run(&Ctx::new(&cx), &dir, false).unwrap();
         let key = index::canon(&dir);
         let mut cte: Vec<_> = cx.store.symbol_impact(&key, "sink", 4).unwrap();
-        let mut bfs = impact_bfs(&cx.store, &key, "sink", 4).unwrap();
+        let mut bfs = impact_bfs(&Ctx::new(&cx), &key, "sink", 4).unwrap();
         cte.sort();
         bfs.sort();
         assert!(!cte.is_empty(), "fan-out-10 must reach sink");
@@ -1527,6 +1823,238 @@ fn c() {}
         assert!(
             cx.store.symbol_paths(&key, "f", "g", 3).unwrap().is_empty(),
             "e → f cycles; g is never a caller here"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn affected_fixture(tag: &str) -> (crate::plugin::Runtime, PathBuf) {
+        let (cx, dir) = cx(tag);
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(
+            dir.join("lib.rs"),
+            "fn add() {
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("other.rs"),
+            "fn other() {
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("tests/add.rs"),
+            "fn test_add() {
+    add();
+}
+",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("tests/other.rs"),
+            "fn test_other() {
+    other();
+}
+",
+        )
+        .unwrap();
+        (cx, dir)
+    }
+
+    /// T68.5: two tests, only the one that calls the changed symbol is listed.
+    #[test]
+    fn affected_two_tests_one_reaches_the_change() {
+        let (cx, dir) = affected_fixture("affected");
+        let ctx = Ctx::new(&cx);
+        let out = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, false).unwrap();
+        assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
+        assert!(out.contains("cargo test test_add"), "{out}");
+        assert!(!out.contains("test_other"), "{out}");
+        assert_eq!(cx.store.measurement_count("graph").unwrap(), 0);
+        let js = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, true).unwrap();
+        assert!(js.contains("tests/add.rs"), "{js}");
+        assert_eq!(
+            affected_from_paths(&ctx, &dir, &["nope.rs".into()], 3, false).unwrap(),
+            EMPTY_AFFECTED
+        );
+        assert_eq!(test_command("t.py", "n").as_deref(), Some("pytest t.py::n"));
+        assert_eq!(test_command("t.go", "N").as_deref(), Some("go test -run N"));
+        assert_eq!(test_command("t.ts", "n").as_deref(), Some("vitest t.ts"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T68.5: changed files come from `git diff --name-only`, not a library.
+    #[test]
+    fn affected_reads_git_diff_name_only() {
+        let (cx, dir) = affected_fixture("affected-git");
+        let git = |args: &[&str]| {
+            assert!(
+                std::process::Command::new("git")
+                    .current_dir(&dir)
+                    .env("GIT_AUTHOR_NAME", "t")
+                    .env("GIT_AUTHOR_EMAIL", "t@t")
+                    .env("GIT_COMMITTER_NAME", "t")
+                    .env("GIT_COMMITTER_EMAIL", "t@t")
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success(),
+                "{args:?}"
+            );
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "init"]);
+        fs::write(
+            dir.join("lib.rs"),
+            "fn add() {
+    let _ = 1;
+}
+",
+        )
+        .unwrap();
+        let out = affected(&Ctx::new(&cx), &dir, None, false, false).unwrap();
+        assert!(out.contains("tests/add.rs ← via test_add"), "{out}");
+        assert!(!out.contains("test_other"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T68.6: a test that only `use`s the changed name is reached; imports are not refs.
+    #[test]
+    fn import_edge_reaches_import_only_test_and_is_not_a_reference() {
+        let (cx, dir) = cx("import-edge");
+        fs::create_dir_all(dir.join("tests")).unwrap();
+        fs::write(dir.join("lib.rs"), "fn add() {}\n").unwrap();
+        fs::write(
+            dir.join("tests/only.rs"),
+            "use crate::add;\nfn test_via_import() {}\n",
+        )
+        .unwrap();
+        let ctx = Ctx::new(&cx);
+        index::run(&ctx, &dir, false).unwrap();
+        let key = index::canon(&dir);
+        let names: Vec<_> = cx
+            .store
+            .symbol_imports(&key, "tests/only.rs")
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.contains(&"add".to_string()), "{names:?}");
+        let importers: Vec<_> = cx
+            .store
+            .symbol_importers(&key, "add")
+            .unwrap()
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
+        assert_eq!(importers, vec!["tests/only.rs".to_string()]);
+        assert!(
+            cx.store.symbol_refs(&key, "add").unwrap().is_empty(),
+            "imports must not count as references"
+        );
+        let out = affected_from_paths(&ctx, &dir, &["lib.rs".into()], 3, false).unwrap();
+        assert!(out.contains("tests/only.rs ← via test_via_import"), "{out}");
+        let mut cte = cx.store.symbol_impact(&key, "add", 1).unwrap();
+        let mut bfs = impact_bfs(&ctx, &key, "add", 1).unwrap();
+        cte.sort();
+        bfs.sort();
+        assert_eq!(cte, bfs, "query vs BFS with imports");
+        assert!(
+            impact_bfs_follow(&ctx, &key, "add", 1, false)
+                .unwrap()
+                .is_empty(),
+            "follow_imports=false must not walk the import"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn seed_map(rt: &crate::plugin::Runtime, dir: &Path) {
+        let root = index::canon(dir);
+        rt.store
+            .replace_symbols(
+                &root,
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    ("hot".into(), "function".into(), 1, true, 1, String::new()),
+                    ("mid".into(), "function".into(), 2, true, 2, String::new()),
+                    ("cold".into(), "function".into(), 3, true, 3, String::new()),
+                    (
+                        "hot".into(),
+                        "function".into(),
+                        10,
+                        false,
+                        10,
+                        String::new(),
+                    ),
+                    (
+                        "hot".into(),
+                        "function".into(),
+                        11,
+                        false,
+                        11,
+                        String::new(),
+                    ),
+                    (
+                        "mid".into(),
+                        "function".into(),
+                        12,
+                        false,
+                        12,
+                        String::new(),
+                    ),
+                ],
+            )
+            .unwrap();
+    }
+
+    fn start(rt: &crate::plugin::Runtime) -> Option<Injection> {
+        Graph.session_start(&SessionStart { source: "startup" }, &Ctx::new(rt))
+    }
+
+    #[test]
+    fn repo_map_off_by_default_and_empty_index() {
+        let (mut rt, dir) = cx("map-off");
+        rt.cwd = Some(dir.to_string_lossy().into_owned());
+        seed_map(&rt, &dir);
+        assert!(start(&rt).is_none(), "map_tokens=0 must not inject");
+        rt.config.plugins.graph.map_tokens = 200;
+        let (empty, empty_dir) = cx("map-empty");
+        let mut empty = empty;
+        empty.config.plugins.graph.map_tokens = 200;
+        empty.cwd = Some(empty_dir.to_string_lossy().into_owned());
+        assert!(start(&empty).is_none(), "empty index must not inject");
+        let _ = fs::remove_dir_all(dir);
+        let _ = fs::remove_dir_all(empty_dir);
+    }
+
+    #[test]
+    fn repo_map_ranked_byte_stable_and_trimmed() {
+        let (mut rt, dir) = cx("map-on");
+        rt.cwd = Some(dir.to_string_lossy().into_owned());
+        rt.config.plugins.graph.map_tokens = 2000;
+        seed_map(&rt, &dir);
+        let a = start(&rt).expect("map on");
+        let b = start(&rt).expect("map on again");
+        assert_eq!(a, b);
+        assert_eq!(a.priority, 1);
+        let lines: Vec<_> = a.text.lines().collect();
+        assert_eq!(lines[0], "repo map");
+        assert!(lines[1].starts_with("hot a.rs:1 2"), "{lines:?}");
+        assert!(lines[2].starts_with("mid a.rs:2 1"), "{lines:?}");
+        assert!(lines[3].starts_with("cold a.rs:3 0"), "{lines:?}");
+        let full = rt.estimate(&a.text, Class::Prose);
+        rt.config.plugins.graph.map_tokens = full.saturating_sub(1).max(1);
+        let trimmed = start(&rt).expect("trimmed map");
+        assert!(
+            trimmed.text.lines().count() < a.text.lines().count(),
+            "cap must drop a line\nfull={}\ntrim={}",
+            a.text,
+            trimmed.text
         );
         let _ = fs::remove_dir_all(dir);
     }

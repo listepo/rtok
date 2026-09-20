@@ -6,8 +6,7 @@ use std::path::PathBuf;
 const WASM_SIZE_GATE: u64 = 4_500_000;
 
 fn wasm_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("crates/rtok-webui/pkg/rtok_webui_bg.wasm")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg/rtok_webui_bg.wasm")
 }
 
 #[test]

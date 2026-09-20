@@ -114,7 +114,7 @@ fn stats_table_is_unchanged_on_a_fixture_store() {
     assert_eq!(
         rtok(&["stats"], &h),
         "\
-sessions 2  lines 6  malformed 0
+sessions 2  compact 0  checkpoint 0  no_checkpoint 2  lines 6  malformed 0
 usage input=42 cache_create=3 cache_read=80 output=5  hit=64.0%  median_context=100
 api                         input cache_create cache_read output    hit
 anthropic                      10            1          2      3  15.4%
@@ -123,8 +123,8 @@ archive replay (estimate) ctt 14 → 14  -0.0%  over 0 results
 tool                       count        bytes     mean      p95      max   est_tokens          ctt
 Bash                           1           13       13       13       13            4            8
 Read                           1           12       12       12       12            3            6
-bash                       count        bytes     mean      p95      max   est_tokens          ctt
-git                            1           13       13       13       13            4            8
+bash                     filter      count        bytes     mean      p95      max   est_tokens          ctt
+git                      formatter       1           13       13       13       13            4            8
 mcp                        count        bytes     mean      p95      max   est_tokens          ctt
 "
     );
@@ -139,6 +139,7 @@ fn stats_json_is_unchanged_on_a_fixture_store() {
         rtok(&["stats", "--json"], &h),
         r#"{
   "sessions": 2,
+  "no_checkpoint": 2,
   "lines": 6,
   "malformed": 0,
   "tools": {
@@ -171,6 +172,9 @@ fn stats_json_is_unchanged_on_a_fixture_store() {
       "est_tokens": 4,
       "ctt": 8
     }
+  },
+  "bash_filter": {
+    "git": "formatter"
   },
   "mcp_groups": {},
   "usage_input": 42,
