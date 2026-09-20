@@ -39,6 +39,8 @@ pub struct Snapshot {
     /// selection `rtok logs` screens ([`Model::log_lines`], T15.11). Riding the snapshot
     /// makes the page both surfaces' (D23); `[log] lines` is the frame's bound too.
     pub logs: Vec<String>,
+    /// Skills page (T63.1): T61.3 listing joined to T61.1 resident/invocations.
+    pub skills: SkillsPage,
     /// Archive ids keyed by `calls[].id` (T60.4). Both surfaces read this map; neither
     /// queries the store for an expand handle (D23 / D27).
     #[serde(default)]
@@ -155,6 +157,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("sessions", "sessions"),
         ("doctor", "doctor"),
         ("logs", "logs"),
+        ("skills", "skills"),
     ]
 }
 
@@ -680,6 +683,97 @@ fn doctor_for_snapshot(cfg: &Config) -> Option<doctor::Report> {
     report
 }
 
+/// T63.1: T61.3 listing × T61.1 resident. One accessor, two UIs (D23). Does not walk skill files.
+pub fn skills_from(
+    listing: Option<&doctor::SkillsAudit>,
+    stats: Option<&BTreeMap<String, stats::SkillRow>>,
+    usage_input: u64,
+    stats_scanned: bool,
+) -> SkillsPage {
+    let mut rows: Vec<SkillPageRow> = listing
+        .map(|a| a.rows.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .map(|r| {
+            let st = stats.and_then(|m| m.get(&r.name));
+            let invocations = r.invocations.or_else(|| st.map(|s| s.count)).unwrap_or(0);
+            let never = r
+                .invocations
+                .map(|n| n == 0)
+                .unwrap_or(stats_scanned && invocations == 0);
+            SkillPageRow {
+                name: r.name.clone(),
+                source: r.source.clone(),
+                desc_chars: r.desc_chars,
+                body_bytes: r.body_bytes,
+                invocations,
+                resident: st.map(|s| s.resident).unwrap_or(0),
+                last_invoked: if never { "never".into() } else { "—".into() },
+                never,
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| b.resident.cmp(&a.resident).then(a.name.cmp(&b.name)));
+    let desc_bytes = listing.map(|a| a.desc_bytes).unwrap_or(0);
+    let resident_bytes: u64 = rows.iter().map(|r| r.resident).sum();
+    let desc_tokens = desc_bytes / 4;
+    let share = if usage_input == 0 {
+        0.0
+    } else {
+        100.0 * (resident_bytes / 4) as f64 / usage_input as f64
+    };
+    SkillsPage {
+        header: format!(
+            "{} skills · {} desc bytes ≈ {} tok/req · {} resident · {:.1}% of input",
+            rows.len(),
+            desc_bytes,
+            desc_tokens,
+            resident_bytes,
+            share
+        ),
+        rows,
+    }
+}
+
+fn stats_skills(cfg: &Config) -> (Option<BTreeMap<String, stats::SkillRow>>, u64, bool) {
+    if cfg!(test) {
+        return (None, 0, false);
+    }
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+    struct Entry {
+        at: Instant,
+        key: String,
+        skills: Option<BTreeMap<String, stats::SkillRow>>,
+        usage_input: u64,
+        scanned: bool,
+    }
+    static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
+    let key = format!("{}{}", cfg.stats.transcripts_dir.display(), cfg.stats.since);
+    let lock = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = lock.lock()
+        && let Some(e) = guard.as_ref()
+        && e.key == key
+        && e.at.elapsed() < DOCTOR_SNAPSHOT_TTL
+    {
+        return (e.skills.clone(), e.usage_input, e.scanned);
+    }
+    let (skills, usage_input, scanned) = match stats_report(cfg) {
+        Ok(r) => (r.skills, r.usage_input, true),
+        Err(_) => (None, 0, false),
+    };
+    if let Ok(mut guard) = lock.lock() {
+        *guard = Some(Entry {
+            at: Instant::now(),
+            key,
+            skills: skills.clone(),
+            usage_input,
+            scanned,
+        });
+    }
+    (skills, usage_input, scanned)
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -723,6 +817,14 @@ impl<'a> Model<'a> {
                     .ok()
             })
             .unwrap_or_default();
+        let doctor = doctor_for_snapshot(self.cfg);
+        let (st, usage, scanned) = stats_skills(self.cfg);
+        let skills = skills_from(
+            doctor.as_ref().and_then(|d| d.skills.as_ref()),
+            st.as_ref(),
+            usage,
+            scanned,
+        );
         Snapshot {
             kind: "snapshot",
             usage: self.overview(),
@@ -732,8 +834,9 @@ impl<'a> Model<'a> {
             // The one doctor query (D27): the snapshot carries what `rtok doctor`
             // renders, so neither surface grows a probe of its own. Cached briefly —
             // a failed or in-flight tick is `None`, never a failed snapshot.
-            doctor: doctor_for_snapshot(self.cfg),
+            doctor,
             logs: self.log_lines(None),
+            skills,
             ref_ids,
         }
     }
@@ -1514,5 +1617,76 @@ mod tests {
         assert_eq!(pct(&[2.0, 4.0], 0.95), Some(4.0));
         assert_eq!(pct(&[10.0], 0.5), Some(10.0));
         assert_eq!(pct(&[10.0], 0.95), Some(10.0));
+    }
+
+    fn listed(
+        name: &str,
+        source: &str,
+        desc: usize,
+        body: u64,
+        calls: Option<u64>,
+    ) -> doctor::SkillRow {
+        doctor::SkillRow {
+            name: name.into(),
+            source: source.into(),
+            desc_chars: desc,
+            body_bytes: body,
+            invocations: calls,
+            warn_desc: false,
+            warn_body: false,
+            warn_never: calls == Some(0),
+        }
+    }
+
+    #[test]
+    fn skills_from_joins_listing_and_resident_without_stats_rows() {
+        let listing = doctor::SkillsAudit {
+            rows: vec![
+                listed("hot", "user", 40, 100, Some(3)),
+                listed("cold", "project", 10, 20, Some(0)),
+                listed("plug", "plugin:x", 8, 50, Some(1)),
+            ],
+            desc_bytes: 58,
+        };
+        let mut stats = BTreeMap::new();
+        stats.insert(
+            "hot".into(),
+            stats::SkillRow {
+                count: 3,
+                bytes: 100,
+                mean: 33,
+                p95: 100,
+                max: 100,
+                est_tokens: 25,
+                resident: 800,
+            },
+        );
+        stats.insert(
+            "plug".into(),
+            stats::SkillRow {
+                count: 1,
+                bytes: 50,
+                mean: 50,
+                p95: 50,
+                max: 50,
+                est_tokens: 12,
+                resident: 200,
+            },
+        );
+        let page = skills_from(Some(&listing), Some(&stats), 10_000, true);
+        assert_eq!(
+            page.rows
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            ["hot", "plug", "cold"]
+        );
+        assert!(page.rows[2].never && page.rows[2].last_invoked == "never");
+        assert_eq!(page.rows[0].resident, 800);
+        assert!(page.header.contains("3 skills"));
+        assert!(page.header.contains("58 desc bytes ≈ 14 tok/req"));
+        let empty = skills_from(None, None, 0, false);
+        assert!(empty.rows.is_empty());
+        assert!(empty.header.starts_with("0 skills"));
     }
 }
