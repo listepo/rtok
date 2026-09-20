@@ -8,10 +8,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, PluginLink, edit_json, object_at};
+use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
+use super::plugin::HostPlugin;
+use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
 /// OpenCode: `env.OPENAI_BASE_URL`, `mcp.rtok` and a linked plugin. The CLI and the desktop
@@ -117,7 +118,7 @@ impl Agent for OpenCode {
         }
         // T75: only what remove will take back counts as installed — a foreign
         // directory at the plugin dest must not hold the green mark.
-        if link(&c).ours() {
+        if PLUGIN.ours(&c) {
             out.push("plugin");
         }
         out
@@ -132,7 +133,7 @@ impl Agent for OpenCode {
         } else if c.setup.mcp {
             lines.push(register_mcp(&c)?);
         }
-        lines.push(offer_plugin(&c, remove)?);
+        lines.push(PLUGIN.offer(&c, remove)?);
         lines.push(super::skill::sync("opencode", &c, remove)?);
         Ok(lines)
     }
@@ -159,7 +160,14 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_server(&apply(cfg), &cfg.setup.opencode.config_path, "mcp", NAME)
 }
 
-const PLUGIN_SRC_REL: &str = "plugins/opencode/rtok.ts";
+/// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
+/// offer name `plugins/opencode` and `ketch install listepo/rtok`.
+pub static PLUGIN: HostPlugin = HostPlugin {
+    src_rel: "plugins/opencode/rtok.ts",
+    host: "OpenCode",
+    label: None,
+    dest: plugin_dest,
+};
 
 /// Plugin dest: `<config dir>/plugins/rtok.ts` — OpenCode loads every `*.ts` there.
 pub fn plugin_dest(cfg: &Config) -> PathBuf {
@@ -170,22 +178,6 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
         .unwrap_or_else(|| Path::new("."))
         .join("plugins")
         .join("rtok.ts")
-}
-
-fn link(cfg: &Config) -> PluginLink<'static> {
-    PluginLink {
-        src_rel: PLUGIN_SRC_REL,
-        src: plugin_src(PLUGIN_SRC_REL),
-        dest: plugin_dest(cfg),
-        label: None,
-        host: "OpenCode",
-    }
-}
-
-/// Offer / link / unlink `plugins/opencode/rtok.ts` (D21, T44.5). Dry-run and the unaccepted
-/// offer name `plugins/opencode` and `ketch install listepo/rtok`.
-pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    link(cfg).run(&apply(cfg), remove)
 }
 
 /// Set, dry-run, or remove `env.OPENAI_BASE_URL` in OpenCode's JSON config.
@@ -296,13 +288,13 @@ mod tests {
     #[test]
     fn plugin_offer_links_one_file_beside_the_config() {
         let (mut c, path) = cfg("plugin", true);
-        let dry = offer_plugin(&c, false).unwrap();
+        let dry = PLUGIN.offer(&c, false).unwrap();
         assert!(dry.contains("plugins/opencode"), "{dry}");
         assert!(dry.contains("ketch install listepo/rtok"), "{dry}");
         assert!(!plugin_dest(&c).exists());
         c.setup.dry_run = false;
         c.setup.yes = true;
-        assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
+        assert!(PLUGIN.offer(&c, false).unwrap().starts_with("+ plugin"));
         let dest = plugin_dest(&c);
         assert_eq!(dest, path.parent().unwrap().join("plugins").join("rtok.ts"));
         assert!(
@@ -311,8 +303,8 @@ mod tests {
                 .contains("tool.execute.after")
         );
         assert_eq!(OpenCode.installed(&c, Kind::Cli), ["plugin"]);
-        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
-        assert!(offer_plugin(&c, true).unwrap().starts_with("- plugin"));
+        assert_eq!(PLUGIN.offer(&c, false).unwrap(), NO_CHANGES);
+        assert!(PLUGIN.offer(&c, true).unwrap().starts_with("- plugin"));
         assert!(!dest.exists());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

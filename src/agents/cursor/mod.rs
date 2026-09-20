@@ -10,10 +10,11 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, PluginLink, array_at, edit_json, object_at};
+use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
-use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
+use super::plugin::HostPlugin;
+use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
 /// Cursor: shell hooks in `hooks.json`, MCP in `mcp.json` or through the linked plugin.
@@ -87,7 +88,7 @@ impl Agent for Cursor {
         // T75: `ours`, not any metadata — a foreign directory at the plugin dest is not
         // an rtok install, so it cannot keep the green mark alive after an uninstall
         // that (rightly) left it alone.
-        let plugin = link(cfg).ours();
+        let plugin = PLUGIN.ours(cfg);
         let mut out = Vec::new();
         if h.contains("rtok hook") {
             out.push("hooks");
@@ -153,8 +154,14 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_mcp(&apply(cfg), &mcp_path(cfg), "rtok")
 }
 
-const PLUGIN_SRC_REL: &str = "plugins/cursor";
-const PLUGIN_LOCAL: &str = "~/.cursor/plugins/local";
+/// The linked Cursor plugin (D21, T10.5). Dry-run and the unaccepted offer MUST contain the
+/// substrings `plugins/cursor` and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
+pub static PLUGIN: HostPlugin = HostPlugin {
+    src_rel: "plugins/cursor",
+    host: "Cursor",
+    label: Some("~/.cursor/plugins/local"),
+    dest: plugin_dest,
+};
 
 /// Local Cursor plugin dest: sibling of hooks.json → `<cursor-dir>/plugins/local/rtok`.
 pub fn plugin_dest(cfg: &Config) -> PathBuf {
@@ -168,26 +175,13 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
         .join("rtok")
 }
 
-fn link(cfg: &Config) -> PluginLink<'static> {
-    PluginLink {
-        src_rel: PLUGIN_SRC_REL,
-        src: plugin_src(PLUGIN_SRC_REL),
-        dest: plugin_dest(cfg),
-        label: Some(PLUGIN_LOCAL),
-        host: "Cursor",
-    }
-}
-
-/// Offer / link / unlink `plugins/cursor` (D21, T10.5).
-/// Dry-run and the unaccepted offer MUST contain the substrings `plugins/cursor`
-/// and `~/.cursor/plugins/local` and `ketch install listepo/rtok`.
+/// [`PLUGIN`]'s offer plus Cursor's singleton rule: the plugin *is* the MCP, so a previous
+/// `mcpServers.rtok` entry from a plain install must go, else two writers serve one store.
+/// Cleared on every run while the plugin is linked — not only on the first `+ plugin` — so a
+/// leftover from a declined earlier offer is not kept.
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let report = link(cfg).run(&apply(cfg), remove)?;
-    // Singleton (D21): the plugin is the MCP, so a previous `mcpServers.rtok`
-    // entry from a plain install must go, else two writers serve one store.
-    // Clear on every run while the plugin is linked — not only on the first
-    // `+ plugin` — so a leftover from a declined earlier offer is not kept.
-    if !remove && link(cfg).linked() {
+    let report = PLUGIN.offer(cfg, remove)?;
+    if !remove && PLUGIN.linked(cfg) {
         let _ = unregister_mcp(cfg);
     }
     Ok(report)
@@ -199,7 +193,7 @@ pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
 /// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked
 /// yet and must still show what `mcp.json` would do if the offer is declined.
 pub fn plugin_is_mcp(cfg: &Config, remove: bool) -> bool {
-    !remove && link(cfg).linked()
+    !remove && PLUGIN.linked(cfg)
 }
 
 fn insert_ours(root: &mut Value) -> String {
@@ -317,7 +311,7 @@ mod tests {
         c.setup.backup = false;
         let first = offer_plugin(&c, false).unwrap();
         assert!(first.starts_with("+ plugin"), "{first}");
-        assert!(link(&c).linked());
+        assert!(PLUGIN.linked(&c));
         assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
@@ -336,7 +330,7 @@ mod tests {
         )
         .unwrap();
         assert!(offer_plugin(&c, false).unwrap().starts_with("+ plugin"));
-        assert!(link(&c).linked());
+        assert!(PLUGIN.linked(&c));
         let body = fs::read_to_string(&mcp).unwrap();
         assert!(
             !body.contains("\"rtok\""),

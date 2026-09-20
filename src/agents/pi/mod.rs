@@ -8,11 +8,10 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
-use rtok_agent_sdk::PluginLink;
-
-use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
+use super::plugin::HostPlugin;
+use super::{Agent, Kind, Mode, Support, Variant};
 use crate::config::Config;
+use anyhow::Result;
 
 /// pi: one linked extension under `~/.pi/agent/extensions`, nothing else.
 pub struct Pi;
@@ -65,7 +64,7 @@ impl Agent for Pi {
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         // T75: only what remove will take back counts as installed — a foreign
         // directory at the plugin dest must not hold the green mark.
-        if link(cfg).ours() {
+        if PLUGIN.ours(cfg) {
             vec!["plugin"]
         } else {
             Vec::new()
@@ -73,33 +72,25 @@ impl Agent for Pi {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        Ok(vec![offer_plugin(cfg, mode == Mode::Remove)?])
+        Ok(vec![PLUGIN.offer(cfg, mode == Mode::Remove)?])
     }
 }
 
-const PLUGIN_SRC_REL: &str = "plugins/pi";
 const PLUGIN_DIR_NAME: &str = "rtok";
-
-/// Extension dest: `<extensions_path>/rtok` (default `~/.pi/agent/extensions/rtok`).
-pub fn plugin_dest(cfg: &Config) -> PathBuf {
-    cfg.setup.pi.extensions_path.join(PLUGIN_DIR_NAME)
-}
-
-fn link(cfg: &Config) -> PluginLink<'static> {
-    PluginLink {
-        src_rel: PLUGIN_SRC_REL,
-        src: plugin_src(PLUGIN_SRC_REL),
-        dest: plugin_dest(cfg),
-        label: None,
-        host: "pi",
-    }
-}
 
 /// Offer / link / unlink `plugins/pi` (D21, T10.6).
 /// Dry-run and the unaccepted offer MUST contain the substrings `plugins/pi`
 /// and `ketch install listepo/rtok`.
-pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    link(cfg).run(&apply(cfg), remove)
+pub static PLUGIN: HostPlugin = HostPlugin {
+    src_rel: "plugins/pi",
+    host: "pi",
+    label: None,
+    dest: plugin_dest,
+};
+
+/// Extension dest: `<extensions_path>/rtok` (default `~/.pi/agent/extensions/rtok`).
+pub fn plugin_dest(cfg: &Config) -> PathBuf {
+    cfg.setup.pi.extensions_path.join(PLUGIN_DIR_NAME)
 }
 
 #[cfg(test)]
@@ -127,7 +118,7 @@ mod tests {
     fn dry_run_offer_names_plugin_and_ketch() {
         let dir = tmp("offer-dry");
         let c = cfg(dir.join("extensions"), true);
-        let s = offer_plugin(&c, false).unwrap();
+        let s = PLUGIN.offer(&c, false).unwrap();
         assert!(s.contains("plugins/pi"), "{s}");
         assert!(s.contains("ketch install listepo/rtok"), "{s}");
         assert!(!plugin_dest(&c).exists());
@@ -140,15 +131,15 @@ mod tests {
         let mut c = cfg(dir.join("extensions"), false);
         c.setup.yes = true;
         c.setup.backup = false;
-        let first = offer_plugin(&c, false).unwrap();
+        let first = PLUGIN.offer(&c, false).unwrap();
         assert!(first.starts_with("+ plugin"), "{first}");
-        assert!(link(&c).linked());
-        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        assert!(PLUGIN.linked(&c));
+        assert_eq!(PLUGIN.offer(&c, false).unwrap(), NO_CHANGES);
         assert_eq!(
-            offer_plugin(&c, true).unwrap(),
+            PLUGIN.offer(&c, true).unwrap(),
             format!("- plugin {}", plugin_dest(&c).display())
         );
-        assert!(!link(&c).linked());
+        assert!(!PLUGIN.linked(&c));
         let _ = fs::remove_dir_all(dir);
     }
 }
