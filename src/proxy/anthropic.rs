@@ -2,8 +2,6 @@
 
 use serde_json::Value;
 
-use rtok_plugin_sdk::SkillRef;
-
 use super::wire::{
     BlobRef, SkillRef, ToolResultRef, ToolResults, Usage, UsageFields, Wire, collect_skill_refs,
     find_usage, turn_setup,
