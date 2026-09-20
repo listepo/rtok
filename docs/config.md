@@ -117,17 +117,6 @@ context_management = false            # Anthropic /v1/messages only: add clear_t
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
 # TLS: Mozilla webpki roots (`use_preconfigured_tls`). Corporate CAs: SSL_CERT_FILE (PEM, curl). See "TLS and corporate CAs".
 
-[proxy.tools_rewrite]                 # T59.5; max_description_tokens = 0 is off
-max_description_tokens = 0
-allow = []
-deny  = []
-
-[proxy.tools_rewrite]                 # T59.5; off: request bytes stay identical
-enabled = false
-max_description_tokens = 60           # 0 = no truncate; sentence boundary; estimator Class::Prose
-allow = []                            # empty = keep all names not in deny
-deny = []                             # drop these names from tools[]; later calls still forward
-
 [web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
@@ -184,7 +173,6 @@ tasks    = "bench/tasks.toml"
 runs     = 3
 dry_run  = false
 timeout_s = 900                       # per task run
-suite    = ""                         # "" = T9.1 six tasks; "graph" = T68.9 with/without MCP
 [bench.configs]                       # name = settings file passed to `claude --settings`
 a = "bench/configs/legacy.json"
 b = "bench/configs/rtok.json"
@@ -198,10 +186,10 @@ mcp_timeout_ms  = 15000               # per MCP server tools/list (uvx/npx serve
 instruction_warn_tokens = 1000        # --instructions: flag files above this
 instructions    = false               # run the instruction audit by default (--instructions)
 
-[setup]                               # rtok agents install / uninstall <host>
+[setup]                               # rtok agents install / remove <host>
 dry_run      = false
 yes          = false                  # required by --replace
-backup       = true                   # <name>.bak-<ts> in sibling _backup/, before install and uninstall touch it
+backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
 hook_timeout_s = 5                    # timeout written into each hook entry
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)
@@ -216,14 +204,10 @@ config_path   = "~/.codex/config.toml"
 config_path   = "~/.config/opencode/opencode.json"
 [setup.pi]
 extensions_path = "~/.pi/agent/extensions"
-tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)
 [setup.zcode]
 config_path   = "~/.zcode/cli/config.json"
 [setup.kimi]
 config_path   = "~/.kimi-code/config.toml"  # mcp.json is read beside it
-[setup.vscode]
-code_user_dir = ""                   # empty = OS default Code user dir (T48.8)
-insiders_user_dir = ""               # empty = OS default Code - Insiders user dir
 [setup.copilot]
 dir           = "~/.copilot"                # mcp-config.json, hooks/rtok.json
 [setup.aider]
@@ -232,9 +216,6 @@ config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--
 config_path   = "~/.codeium/windsurf/mcp_config.json"
 [setup.zed]
 config_path   = "~/.config/zed/settings.json"
-[setup.vscode]
-config_path   = ""                         # empty: Code/User/mcp.json per OS
-insiders_path = ""                         # empty: Code - Insiders/User/mcp.json per OS
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
@@ -276,8 +257,6 @@ allow_paths      = []                 # extra roots outside cwd
 search_max       = 50
 search_max_bytes = 1048576             # search skips files larger than this (T55.5)
 tree_depth       = 2
-delta            = true               # T58.1: changed re-read → unified diff vs last archive (7.3 % of Read bytes, 2026-09-18, `rtok stats --since 90d`)
-delta_max_ratio  = 0.6                # full file when the diff is not below this fraction
 
 [plugins.archive]
 enabled    = true
@@ -287,7 +266,6 @@ head_lines = 8
 tail_lines = 4
 tiers      = false                    # opt-in tiered loading (default off); OpenViking L0/L1/L2 behaviour spec is AGPL-3.0 — rtok does not vendor, link, or subprocess it (D6); gates native impl in T33.2
 live_blobs = false                    # shrink nested JSON dumps + data: blobs in user blocks, never results/system/tools/last-2-turns (T51.1, opt-in)
-skills     = false                    # opt-in skill body archiving outside the live zone (T61.2)
 
 [plugins.proxy]
 enabled = true                        # the proxy plugin (usage capture); the server itself is [proxy]
@@ -341,9 +319,6 @@ recall_tokens  = 200
 prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
-sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
-startup_recall = false                # SessionStart(startup): newest session:* note of the project, same budget as checkpoint_tokens (T71.2). Off until A/B.
-handoff        = false                # T59.6 sub-agent digest MCP tool
 
 [plugins.memory.embed]
 enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
@@ -355,7 +330,6 @@ hybrid     = true                     # when enabled: RRF(fts5, knn); false = kn
 [plugins.graph]
 enabled    = true
 max_tokens = 2000                     # per response; beyond it: head + "N more, expand <id>"
-map_tokens = 0                        # SessionStart repo map cap (D5 share next to memory.recall_tokens); 0 = off until a P7 A/B passes
 body_lines = 40                       # symbol(): source lines shown per definition
 auto_index = true                     # true = every call walks the tree; false = index once, then `rtok graph index` or the watcher (a hook-staled file reads as missing until then)
 backend    = "tags"                   # tags | lsp: index backend; default tags; lsp spawns rust-analyzer/clangd/tsserver from PATH (P30)
@@ -420,19 +394,17 @@ Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 |-----------|------|-----|
 | global | `--config <path>` | (selects the file; not a key) |
 | global | `RTOK_HOME` | (selects the directory; env only, not a clap flag) |
-| reading | `--json` | `stats.format` on `stats`; otherwise an action (the `web::model` page as JSON, not a stored key). On `stats`, `info`, `config show`, `doctor`, `plugins`, `agents list`, `agents info`, `agents sessions`, `logs`, `demon status`, `otel status` |
 | `hook` | `--host` | `hook.host` |
 | `proxy` | `--port`, `--upstream`, `--mode`, `--dry-run` | `proxy.port`, `proxy.upstream`, `proxy.mode`, `proxy.dry_run` |
 | `web` | `--host`, `--port` | `web.host`, `web.port` (`rtok dashboard` is the deprecated spelling) |
 | `tui` | `--tab`, `--tick-secs` | `tui.tab`, `tui.tick_secs` |
-| `stats` | `--since`, `--plugin`, `--compare`, `--calibrate`, `--cache`, `--price` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`), `stats.price` (`stats.prices.*` are data) |
+| `stats` | `--since`, `--json`, `--plugin`, `--compare`, `--calibrate`, `--cache`, `--price` | `stats.since`, `stats.format`, `stats.plugin`, `stats.baseline`, (`--calibrate`, `--cache` are actions; their knobs are `stats.calibrate_samples`), `stats.price` (`stats.prices.*` are data) |
 | `report` | `--format`, `--out`, `--since`, `--ai` | `report.format`, `report.out`, `report.since`, `report.ai` (`report.budget_tokens` caps `--ai`) |
-| `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout`, `--suite` | `bench.*` |
+| `bench` | `--tasks`, `--runs`, `--dry-run`, `--timeout` | `bench.*` |
 | `doctor` | `--instructions` | `doctor.instructions` |
 | `agents install` | `--dry-run`, `--yes`, `--mode`, `--mcp`, `--proxy`, `--remove`, `--replace`, `--cli`, `--desktop`, `--all` | `setup.*` (`--remove`, `--replace`, `--cli`, `--desktop`, `--all` are actions) |
-| `agents uninstall` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
-| `agents list` | — | reads the host configs and `<bin> --version` (`--json` is the reading row) |
-| `agents info` | — | same as `agents list` for one host (`--json` is the reading row) |
+| `agents remove` | `--dry-run` | `setup.dry_run` (the command itself is the `--remove` action) |
+| `agents list` | (no flags) | — (reads the host configs and `<bin> --version`) |
 | `expand` | `--lines`, `--grep` (regex, literal fallback; hits print as `N:line`), `--context N` (lines around each grep hit, windows merged with `--`) | per call (no key); `expand.max_lines` caps; `expand.max_rate` is the report ceiling (T22.5) |
 | `filter` | `--cmd` | `filter.cmd` |
 | `config init`, `config set`, `memory import`, `graph index` | `--dry-run` | (action: renders the change as a git diff and writes nothing) |
