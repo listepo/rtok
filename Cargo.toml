@@ -89,7 +89,7 @@ clap_complete = "4.6" # `rtok completions` (T53.2)
 clap_mangen = "0.3" # `rtok man` (T53.2)
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
-libsqlite3-sys = { version = "0.30", features = ["bundled"] } # FTS5 in the SQLite bundle
+libsqlite3-sys = { version = "0.38", features = ["bundled"] } # FTS5 in the SQLite bundle
 rtok-sys = { path = "crates/rtok-sys" } # demon kill/setsid + flock (Windows-safe shims; rustix stays inside rtok-sys on Unix)
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
