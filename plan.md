@@ -6,33 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T74 | todo | P2 | 1 | — | — |
-| T75 | todo | P1 | 2 | — | — |
-
-### T74. Make the two load-sensitive gate tests deterministic
-
-Two tests fail a full `just check` under parallel CPU load and pass standalone, so a green gate still rerolls dice:
-- `tui::app::tests::space_toggles_the_selected_plugin_through_config_set` — nextest `terminate-after = 3` killed it at 180 s once on 2026-09-20 (full gate on a loaded machine); the immediately following full run and every scoped run passed. The key-injection → frame-assert waits carry no internal deadline, so contention turns into a suite-level timeout.
-- `otel::hooks_stay_fast_with_an_unreachable_endpoint` — latency budget; failed two gates on 2026-09-17, passed standalone every time.
-
-(Related, both fixed 2026-09-20/21: (a) `rtok::cli_trycmd cli` "panicked" after every release bump because `tests/trycmd/version.stdout` / `man.stdout` pinned the literal version — now wildcarded `rtok [..] ([..])` / `v[..] ([..])`; (b) the same test drifted 3× under full-suite parallel load (green standalone/CI) — isolated via a `binary(cli_trycmd)` `threads-required` override in `.config/nextest.toml`, the sanctioned heavy-test mechanism, since it spawns the real binary per case.)
-
-Done when both tests bound their own waiting (deadline + tolerant retry to that deadline in the tui TestBackend loop and in the otel latency assert) so a loaded runner slows them instead of failing them — no `--test-threads` masking: the point is the wait, not the machine. Check: two full suites running concurrently on one busy machine — zero flakes across three runs.
-
-### T75. `agents uninstall` leaves the host marked installed (green check stuck)
-
-Creator 2026-09-21. After `rtok agents uninstall <host>` (reported with a "cloud" plugin uninstall), the host/plugin is either not actually removed or the UI still shows it as installed — the green checkmark stays on.
-
-**Repro.** Run `rtok agents uninstall <host>` (example path: uninstall involving a "cloud" plugin / host install). Open the agents/plugins UI (TUI or web) and look at that row.
-
-**Expected.** The host/plugin is uninstalled: hooks/MCP/proxy/plugin link gone, and the green installed checkmark is cleared.
-
-**Actual.** The entry still looks installed — green checkmark stuck — and/or the uninstall did not take effect on disk.
-
-**Plan.** Trace `AgentCmd::Uninstall` → `setup_host(..., SetupArgs::removing)` and whatever feeds the agents/plugins list `enabled` / installed mark. Make uninstall write the same source the UI reads (config + on-disk host files), then refresh or re-read so the checkmark clears. Add a regression test: uninstall → list/UI snapshot shows not installed.
-
-Check: uninstall a previously installed host; UI checkmark off; `rtok agents list` / info agree; `just check`.
-
 
 ## Reference
 
