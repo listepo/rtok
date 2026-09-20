@@ -7,21 +7,23 @@
 use std::fs::File;
 use std::io;
 
-use fs4::fs_std::FileExt;
-
 /// Block until an exclusive lock is held on `file`.
 pub fn lock_exclusive(file: &File) -> io::Result<()> {
-    FileExt::lock_exclusive(file)
+    file.lock()
 }
 
 /// Non-blocking exclusive lock. `Ok(true)` acquired; `Ok(false)` held elsewhere.
 pub fn try_lock_exclusive(file: &File) -> io::Result<bool> {
-    FileExt::try_lock_exclusive(file)
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(false),
+        Err(std::fs::TryLockError::Error(err)) => Err(err),
+    }
 }
 
 /// Release a previously acquired exclusive lock.
 pub fn unlock(file: &File) -> io::Result<()> {
-    FileExt::unlock(file)
+    file.unlock()
 }
 
 /// True while `pid` names a live process.

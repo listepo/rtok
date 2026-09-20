@@ -22,11 +22,42 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Content-hash repeats (T65.1, 2026-09-18, `rtok stats --since 30d`, 924 sessions) | 6,649 later tool_results whose SHA-256 equalled an earlier result in the same session; 1.83 MB of 95.25 MB result bytes (**1.9 %**) — above the 1 % gate, so `cmd::run` and `read` return a pointer at the earlier archive instead of the body. |
 | Extra `read` modes (T50.3, 2026-09-18, this repo's 38–68 K char sources) | 11 Rust files, 534 894 B → tree-sitter comments-stripped 433 997 B (**18.9 %**, ~25 K est. tokens) with function/type bodies kept. imports-only is 0.1–2.1 % of each file and drops those bodies. `app.slint` (38 064 B, no grammar) stays `full`. |
 | Edit `old_string` (T58.3, 2026-09-17, `rtok stats --since 90d`, 925 sessions) | 5,990 Edit/MultiEdit calls; `old_string` 1.61 MB, `new_string` 3.60 MB; `old_string` = 3.8 % of tool-input bytes, ≈ 1.3 % of output tokens (bytes/4 against API output) — under the 10 % gate, so the anchored `patch` tool (T58.4) was not built. Caveat: this machine already routes many edits through lean-ctx `ctx_patch`, so the share is a lower bound for a plain-`Edit` workload. |
+| Compactions (T58.2, 2026-09-18, `rtok stats --since 30d`) | 923 transcript sessions, 271 `subtype=compact_boundary` events (75 sessions compacted at least once). T2.5 fixture checkpoint body = 144 B before archive-id lines; `plugins.memory.checkpoint_tokens` = 400. Command: `rtok stats --since 30d` (header `sessions N  compact N`); detector is `compact_boundary` only so the paired `isCompactSummary` line is not double-counted. |
+| Sub-agents Agent/Task (T59.6, 2026-09-18, `rtok stats --since 30d`, 939 sessions) | `rtok stats --since 30d` (2026-09-18): 42 of 939 sessions used `Agent` (449 calls); `Task` 0. Agent in 1,042,386 B / out 632,586 B (158,299 est. tokens); table line `result/tool_tokens 0.7%  input/tool_input 2.7%` (JSON 0.662 % of 23,905,777 tool-result tokens; 2.699 % of 38,626,178 tool-input bytes). Under the 5 % gate, so the `handoff` MCP tool was not built. |
+| Session checkpoints (T71.2, 2026-09-18, `rtok stats --since 30d`) | 939 transcript sessions, 0 with a `checkpoint:<id>` or `session:<id>` note, 939 without. Store has 25 legacy `kind=checkpoint` rows (no session suffix, not joinable to a stem). Header `sessions N  compact N  checkpoint N  no_checkpoint N`. Command: `rtok stats --since 30d`. |
 | Foreign MCP results (T59.4, 2026-09-17, `rtok stats --since 30d`, 885 sessions) | `rtok stats --since 30d` (2026-09-17, 885 sessions), `mcp` table: lean-ctx 8,232 calls, 19.66 MB result bytes, mean 2.4 KB, p95 45.7 KB (≈ 4.9 M est. tokens) — ≈ 27 % of the 71.8 MB in the tool table; rtok 579 KB, engram 279 KB, t3-code 73 KB (mean 18 KB), Claude_Browser 45 KB. lean-ctx is above the 5 % gate, so the wrapper is justified for this workload; caveat: lean-ctx already compresses its own results, so the win is in the p95 tail, not the mean. |
+| MCP description tokens × turns (T59.5, 2026-09-18, host without Tool Search) | `rtok doctor` (2026-09-18): 11 MCP servers, 8,951 description tokens (caveman 485, code-review-graph 2,295, engram 1,865, mobile 1,555, serena 1,494, lean-ctx 697, headroom 161, rtok 143+143, jscpd 113, codebase-memory-mcp 0); `mcp_tool_search likely disabled` because `ANTHROPIC_BASE_URL` is set. Transcripts `~/.claude/projects/**/*.jsonl` mtime ≥ 30 d, unique `message.id` (same rule as `measure::jsonl`): 936 sessions, 40,402 API turns, session input 5.834 B (uncached 0.670 M + cache_create 147.1 M + cache_read 5.686 B). 8,951 × 40,402 / 5.834 B = **6.2 %** of session input. Above the 3 % gate → `proxy.tools_rewrite` ships, off by default. Native-tool descriptions are extra, so 6.2 % is a lower bound. |
 | Cache | read 1,367 M, creation 26.7 M, uncached input 42 K → 98.1 % hit rate |
 | Median final context | 167 K tokens per session |
 | rtk-wrapped commands visible in transcripts | 3 of 3,658 (the PreToolUse rewrite happens after the transcript records the call, so this under-counts) |
 
+### `guard` read-only stems (T57.1, 2026-09-18)
+
+Dated command: `measure::stats::collect` walk (`jsonl_paths` over `[stats] transcripts_dir`, default `~/.claude/projects`, 968 `*.jsonl`). Repeat = the same Bash `command` string (whitespace-collapsed) inside `plugins.guard.window_turns` (default 8) transcript turns. First-word family is `bash_family` (the `collect` path). Flag/subcommand counts are a token scan of those commands, not a shell grammar.
+
+| Stem / marker | All Bash | Exact repeats in window | Action |
+|---------------|----------|-------------------------|--------|
+| `sed` | 2,417 | 5 | **add** (`sed -n` 2,238; `sed -i` 169 stay mutating) |
+| `jq` | 20 | 0 | **add** (repeats are path/filter variants; the stem is present) |
+| `awk` | 359 | 0 | **add** |
+| `git rev-parse` | 8 | 0 | **add** (`git` all 1,370 / repeats 53, mostly `status` 285) |
+| `cargo metadata` | 9 | 0 | **add** (`cargo` all 216 / repeats 2, none metadata) |
+| `ls` `cat` `head` `tail` `grep` `rg` `find` `wc` | 1,072 / 1,793 / 147 / 308 / 3,646 / 28 / 343 / 206 | 3 / 9 / 0 / 3 / 8 / 0 / 0 / 5 | keep |
+| `find -delete` / `-exec` | 0 / 12 | — | writer marker |
+| `tail -f` | 8 | — | writer marker |
+| `\| tee` | 44 | — | writer marker |
+| redirect `>` / `>>` (token) | 13,802 | — | writer marker (greedy: fail-open vs false deny) |
+
+No existing stem was removed: each still has a count. `tree` is 0 on this machine and stays in the list (already shipped).
+
+Hook e2e fixture (one session, `window_turns = 64` so the fixture is not capped; PostToolUse then PreToolUse of each command, plus `ls` → `find . -delete` → `ls`). `Measurement` rows `plugin = guard`, `kind = guard`:
+
+| | count | `before_bytes` sum |
+|---|---|---|
+| before (stem list, flags ignored) | 9 | 52 |
+| after (flag-aware) | 8 | 32 |
+
+Before denied writers (`find -delete`, `cat a > b`, `grep x > out`, `ls \| xargs rm`, `tail -f`) and false-denied the follow-up `ls`. After those take the mutating path (0 denies) and the new read-only repeats (`sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`) deny. `cat a \| grep b` and `cat f \| wc -l` deny in both. `sed -i` is never keyed.
 
 ### Extra `read` modes (T50.3, 2026-09-18)
 
@@ -69,6 +100,40 @@ The reference number is a property of the tree-sitter Rust tags query, not of rt
 captures plain calls, field-expression method calls, macro invocations and `impl` items, nothing
 else. `src/plugins/graph/PLAN.md` lists the constructs under "Known misses".
 
+### `graph` import-edge index time (T68.6, 2026-09-18)
+
+Same tree (this repo checkout, 172 tagged files). Release `rtok graph index` into a fresh
+`RTOK_HOME`, twice each; the second run is the comparable pair (CPU warm, still a cold store).
+
+Command: `RTOK_HOME=$(mktemp -d) <bin> graph index <repo>`
+
+| | Binary | Files | Rows | Cold s (1st / 2nd) |
+|---|---|---|---|---|
+| Before | t68.5 release | 172 | 33 312 | 0.437 / 0.270 |
+| After | t68.6 release | 172 | 35 017 | 0.922 / 0.325 |
+
+T8.8 `tests/graph_truth.rs` `labelled_symbols_are_found` (2026-09-18, after): definition recall
+1.000, precision 1.000; reference recall 0.305 (floor 0.30). Imports are `kind = import` and
+are excluded from `symbol_refs`.
+
+### `graph` extra grammars and index payload size (T52.2, 2026-09-18)
+
+This-repo debug `rtok graph index` into a fresh `RTOK_HOME` (172 tagged files, 35 231 symbol rows). The new grammars add no rows here — the tree has no Java/Kotlin/Swift/C#/Ruby/PHP sources.
+
+Command (2026-09-18): `RTOK_HOME=/tmp/t52.2-index-home rtok graph index <worktree>` then `stat`, `sqlite3` `dbstat` / `LENGTH(...)`, `gzip -n`.
+
+| | Bytes |
+|---|---|
+| `rtok.db` | 14 077 952 |
+| VACUUM copy | 13 402 112 |
+| `symbols` table pages | 7 503 872 |
+| `symbols` indexes | 6 356 992 |
+| Concatenated TEXT columns | 6 067 201 |
+| gzip -n of those columns (one stream) | 197 682 |
+| gzip -n of the whole db | 1 150 703 |
+
+Most TEXT bytes are `file_sha` (2 254 784) and `root` (1 972 936) repeated on every row. One-stream gzip looks like a 30× win because it shares a dictionary across 35 231 rows; per-row gzip would grow those short fields (64-byte sha + gzip header). Live payload compression is skipped.
+
 ### `graph` v0.2 surface and latency (Gate P8b, 2026-09-04; surface re-measured 2026-09-18, T68.1)
 
 Release build. The 3 000-file repo is generated, each file one function calling two others.
@@ -83,6 +148,13 @@ Release build. The 3 000-file repo is generated, each file one function calling 
 
 The fourth clause — fewer tool calls per multi-file task on the P9 set — is not measured, so
 the gate is open. `callers("estimate")` on this repo fell from 1 959 bytes at v0.1 to 793.
+
+T68.9 (2026-09-18) adds `rtok bench --suite graph`: 12 architecture questions, three repos
+(this tree, `bench/repos/mini-rs`, `bench/repos/mini-py`), each run twice (rtok MCP on vs
+native Read/Grep only) through the T9.1 `claude -p` harness. Dry-run (no spend):
+`rtok bench --suite graph --runs 1 --dry-run`. The live API run is not done (needs the
+creator's go); until a dated live result lands here, codegraph's −88 % tool calls / −62 %
+tokens stay a vendor claim in the §4 matrix, not an rtok number.
 
 ### `graph` composite-query chains (T52.1, 2026-09-17)
 
@@ -123,7 +195,7 @@ Numbers from `cargo test --release --test graph_bench -- --ignored --nocapture`.
 | (1) `tests/graph_contract.rs` | 3 passed | 3 passed | unchanged, both |
 | (2) `rtok hook PostToolUse` p95, n=100 | 8.07 ms | 96.6 ms | ≤ 10 ms |
 | (3) warm `symbol` / `callers` / `impact(2)` | 17.9 / 17.5 / 26.8 ms | 797 / 776 / 873 ms | < 100 ms |
-| (3) cold index, 3 000 files | 13.8 s; 341 ms after T35.1, 172 ms after T35.2 (2026-09-11) | 33.7 s | not gated |
+| (3) cold index, 3 000 files | 13.8 s; 341 ms after T35.1, 172 ms after T35.2 (2026-09-11); **T59.3** batches 200 files/txn (was 64) — re-run `cargo test --release --test graph_bench -- --ignored` when the tree compiles | 33.7 s | not gated |
 | (4) `impact(4)` on fan-out fixture | CTE 28.5 s | path 371 ms (**77×**) | lbug ≥ 2× CTE |
 | (4) same fixture, Rust BFS | 2.61 s | 2.35 s | baseline |
 | (5) `just check` (liblbug already built) | 16.9 s | same command (clippy `--all-features`) | ≤ 2× default |
@@ -262,6 +334,14 @@ trace with an `invoke_agent` root and `chat {model}` spans — this ledger has n
 and no proxy traffic, and rtok is not on this machine's PATH — and for SigNoz and Maple, which
 need an account or an API key.
 
+
+### WASM bundle (`rtok web`, T60.7, 2026-09-18)
+
+| What (date, command) | Result |
+| --- | --- |
+| Before (`ls -l crates/rtok-webui/pkg/rtok_webui_bg.wasm`, 2026-09-17) | 10,560,601 B, default `wasm-pack --release`, no `wasm-opt` |
+| After (`wasm-pack --release` + wasm-opt -Oz, 2026-09-18) | 4,130,017 B |
+
 ### Build size (T17.1, Gate P17, 2026-09-04)
 
 macOS arm64, this machine. Every "before" is a cold build of the same commit with the profile
@@ -342,6 +422,37 @@ more). Nothing on the hook path uses them. Dropping the link means a different T
 for `proxy` and `otel` — an `ideas.md` entry (I-32), not a P17 task. Config loading and the
 store are already small; `WAL` costs 0.3 ms per short-lived process over `TRUNCATE`, kept
 because `mcp` and `proxy` write concurrently with hooks.
+
+**T53.3 (2026-09-18).** Decision D30: one binary, webpki Mozilla roots via
+`ClientBuilder::use_preconfigured_tls` — not a second hook binary. reqwest
+0.13.4's `rustls` feature still references `rustls_platform_verifier::Verifier::new`
+ungated under `__rustls`, so the verifier is never-called-but-linked.
+
+`otool -L` on release `rtok`, `cargo build --release --bin rtok`, this machine:
+
+| Binary | bytes | Security.framework |
+|---|---|---|
+| before (`533d68a`, pre-webpki) | 25,124,800 | linked (also CoreFoundation, CoreServices) |
+| after (HEAD `0731efd` + T53.3 crates already in tree) | 25,562,032 | linked (same dylib set) |
+
+`nm -u` on the after binary still lists `SecTrustCreateWithCertificates` and
+the other `SecTrust*` imports. Security.framework did **not** disappear.
+
+Hook spawn, n=200, nearest-rank p95, fresh `RTOK_HOME`, same spawn-to-exit
+harness as `tests/latency.rs`, sequential arms, 2026-09-18, 1-minute load 50
+(other agents compiling — not a P17 quiet run):
+
+| Event | before p50 / p95 | after p50 / p95 |
+|---|---|---|
+| `PreToolUse` | 34.14 / 79.71 ms | 32.91 / 80.82 ms |
+| `PostToolUse` | 28.99 / 66.47 ms | 47.33 / 92.60 ms |
+
+No dyld win, as expected while the frameworks stay linked. Absolute p95 is
+scheduler noise against the quiet P17 row (2026-09-07: Pre 5.79–6.94 ms, Post
+7.24–8.17 ms). `cargo test --release --test latency -- --nocapture --test-threads=1`
+on the after binary during the same compile storm: Pre p95 235 ms, Post 336 ms
+(gate fail; load, not the hook path). Corporate CAs: `SSL_CERT_FILE`
+(`docs/config.md`, TLS and corporate CAs).
 
 **Dev, `--features graph-lbug` (archived; feature removed P39).** The whole debug footprint was one C++ library. `lbug` builds
 `liblbug` through `cmake-rs`, which reads `OPT_LEVEL`/`DEBUG` from the profile: at cargo's dev
@@ -481,8 +592,59 @@ platform. Security work forces Minimum even when `speculative` is set.
 |------|------------:|------:|-----|
 | `terse.md` | 162 | 679 | ≤ 250 |
 | `yagni.md` | 145 | 613 | ≤ 250 |
+| `nudges.md` | 114 | 476 | ≤ 250 |
 
 Aliases `cave`→`terse`, `pony`→`yagni` resolve to the same builtins at SessionStart.
+`nudges` has no alias; it is opt-in via `[plugins.inject] modes` (default `[]`).
+
+#### Coaching nudges A/B (T53.1, 2026-09-18)
+
+I-18: short nudges (do not re-read, use `expand`, outline-first, search before Grep) may
+cut waste, but they are re-read every turn. Data lives in `modes/nudges.md` (D7). Isolated
+store, `[plugins.memory] recall_titles = 0`. Command:
+
+```bash
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"t531","source":"startup"}' \
+  | rtok --config <tmp>/rtok.toml hook SessionStart
+```
+
+| arm | `[plugins.inject] modes` | SessionStart `additionalContext` bytes | est. tokens (prose 4.2) |
+|-----|--------------------------|---------------------------------------:|------------------------:|
+| off (default) | `[]` | 0 | 0 |
+| on | `["nudges"]` | 478 | 114 |
+
+On-arm bytes are identical across two consecutive runs. The same config's
+UserPromptSubmit `additionalContext` does not contain `# nudges`.
+
+`rtok bench` both arms without `RTOK_BENCH_LIVE` (live `claude -p` **not** run):
+
+| config | mean input | mean cache | mean output | mean cost USD | pass | live |
+|--------|------------|------------|-------------|---------------|------|------|
+| off | 0 | 0 | 0 | 0.0000 | 6/6 | false |
+| on | 0 | 0 | 0 | 0.0000 | 6/6 | false |
+
+Pass parity holds; cost is zeros.
+
+**Live A/B (2026-09-18).** Creator approved API spend. Intended harness: `RTOK_BENCH_LIVE=1`
+`rtok bench --runs 1` on the existing six-task suite, two arms (default `modes = []` vs
+`modes = ["nudges"]`), same `claude -p` path and host default model, then
+`rtok stats --price` per isolated store. Stopped before that pass:
+
+```bash
+claude --version
+# 2.1.236 (Claude Code)
+claude auth status
+# {"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}
+claude -p "Reply with the single word ok and nothing else." --output-format json --max-turns 1
+# is_error true; result: Failed to authenticate: OAuth session expired and could not be refreshed
+# usage all zeros; total_cost_usd 0
+```
+
+`ANTHROPIC_API_KEY` was unset. `claude` CLI was present. A second probe with the
+environment's gateway key against the already-set `ANTHROPIC_BASE_URL` returned HTTP 401
+`Invalid API key`. No live token, cache, or USD rows. Cost per passed task cannot be
+compared; the gate is **do not enable**. `nudges` stays **off** by default
+(`config/default.toml` `[plugins.inject] modes = []`).
 
 **Reading vs §4 vendor claims.** We still do **not** claim caveman's 65 % or ponytail's
 −54 % LOC against a live bill. This gate shows the native path wins the re-runnable
@@ -628,16 +790,16 @@ Grounded in §2 (this workload: tool results 2.83 M est. tokens, Bash 35 %, Read
 
 | Category | rtok better | rtok worse | Missing, and whether it is worth building |
 |----------|-------------|------------|-------------------------------------------|
-| Command output | lossless (`expand`), measured per family, one process ≤ 10 ms; a default rule (40 lines, head/tail, dedupe) caps every stem, so nothing passes through whole | 9 TOML rules + 10 formatters keep signal by meaning; every other family (docker, kubectl, gh, aws, pip, mvn, gradle, dotnet, tsc, eslint) is cut by position, so its error lines can fall in the gap; rtk has 100+ per-command filters | Per-family rules chosen by measured after-bytes — **T50.1** (data only); formatters for table/grouped outputs — **T58.5**. |
+| Command output | lossless (`expand`), measured per family, one process ≤ 10 ms; a default rule (40 lines, head/tail, dedupe) caps every stem, so nothing passes through whole | 24 TOML rules + 13 formatters keep signal by meaning; remaining families are cut by position, so an error line can fall in the gap; rtk has 100+ per-command filters | Per-family rules chosen by measured after-bytes — **T50.1**; table formatters (`docker ps` 3147→1190, `kubectl get` 4542→1731, `ps aux` 2341→870, each beating `Rule::default()` on the same fixture) — **T58.5**. |
 | Reads | 4 modes, sha256 dedup, root guard, ~223 desc tokens for 12 tools (`rtok doctor`, 2026-09-18); no banner | lean-ctx: `diff` mode; token-optimizer: delta reads; lean-ctx re-read 13 tokens (rtok's "unchanged since" line is comparable) | **Delta since last read**: rtok already keeps the sha256 and archive id of the previous read, so a changed file can return a unified diff against that archive instead of 9.5–17 K tokens again — **T58.1**. |
 | Model output (the code it writes) | typed `yagni` ladder 14/14 on fixtures; modes inside the 800-token budget | nothing targets the 96 % tool-input share | **Measured 2026-09-17 (T58.3):** `old_string` is 3.8 % of tool-input bytes and ≈ 1.3 % of output tokens, so an anchored `patch` tool (serena `replace_symbol_body`, lean-ctx `ctx_patch`) would move at most ~1 % of the output slice; not built (I-43 keeps the number). The output lever that remains is fewer and smaller writes — modes (T53.1) and the read side. |
 | Injection / compaction | byte-stable 800-token budget; progressive-disclosure memory; on Claude Code a `PreCompact` checkpoint (prompts, paths, errors) and modes re-injected after the summary (T2.5) — rtk, headroom and caveman have nothing here | the checkpoint exists on Claude Code only (Codex, Cursor, Gemini, Copilot events are not registered); it carries no archive ids, so `expand` of a summarized-away result depends on the model remembering the id | Register the compaction events on every host that has them and add the live archive ids to the checkpoint — **T58.2**. |
 | Foreign MCP results | old ones shrink in the proxy live zone like any `tool_result` | fresh results of other servers pass whole (atlassian mcp-compressor wraps any server) | Not worth it on this workload: MCP results were 15 K of 2.83 M (§2). Idea I-44. |
-| Tool descriptions | 12 tools / ~223 tokens (`rtok doctor`, 2026-09-18); `doctor` prices every server | — | Portkey-style description compression is redundant with Tool Search deferral. Idea I-45, parked. |
+| Tool descriptions | 12 tools / ~223 tokens (`rtok doctor`, 2026-09-18); `doctor` prices every server | — | **Measured 2026-09-18 (T59.5):** on this host Tool Search is off (`ANTHROPIC_BASE_URL` set); MCP description tokens × API turns = **6.2 %** of session input (§2) → `proxy.tools_rewrite` ships, off by default. |
 | Memory | agent-written, FTS5, no model calls, titles-first | claude-mem/mem0 have vectors (P29 landed hash-embed; no ONNX); Claude Code auto-memory is free on that host | `doctor` should say when auto-memory makes rtok recall a duplicate injection. Idea I-47. |
 | Code graph | 5 tools / 127 tokens (2026-09-18, T68.1 added `explore`), SQLite only, hook ≤ 10 ms | reference recall 0.351 vs LSP-grade (serena, codebase-memory-mcp hybrid LSP) | Already T52.5 / T30.2 (LSP optional). jCodeMunch's measured 96.5 % vs grep-read is the same claim class as `graph`; no new task. |
 | Learning from history | `stats`, `report` rules (D24), `doctor --instructions` | caveman `learn`, lean-ctx mode predictor, context-budget plugin rank *sinks* and *recommend* | `report` already renders recommendations; a per-file / per-command sink ranking is idea I-48 until `stats` shows a sink the existing rows do not name. |
-| Sub-agents | — | lean-ctx `ctx_handoff`/`ctx_agent`; theme "sub-agent isolation" | Agent results were 23 K of 2.83 M here (§2): not a lever. Idea I-46, parked with the number. |
+| Sub-agents | — | lean-ctx `ctx_handoff`/`ctx_agent`; theme "sub-agent isolation" | Agent+Task results were 0.7 % of tool-result tokens on 30d (T59.6, §2); not a lever. Idea I-46, parked with the number. |
 | Gateways / caches | 4 wires, usage capture, semantic cache off (P31: 0 hits at 0.99) | — | Nothing to add; bifrost/Portkey/LiteLLM are routing products. |
 | Hosts | 11 hosts with a reversible installer; per-host `support()` table | rtk/caveman list 30+ hosts (Windsurf/Cline/Aider/Qwen/OpenClaw/Hermes) | T48.8 (VS Code) is the only one with a measured user; the rest wait for a request. |
 
@@ -686,6 +848,7 @@ the conversation for every later request of that session.
 | Invocations (30 d to 2026-09-17, 890 transcripts, 81 sessions) | 26 `Skill` tool calls, 8 distinct skills (`slint` 8, `artifact-design` 7, `update-config` 4, `claude-api` 3, four × 1); 12 of 81 sessions (15 %) invoked any skill; 8 direct `Read`s of a `SKILL.md`; 115 slash-command messages (`<command-name>`), median 143 B — negligible. |
 | Where the body lands (2026-09-17, `skillinj.py` over 173 transcripts in `~/.claude/projects`) | The `Skill` tool_result is 22 B (`Launching skill: <n>`); the body arrives as the **next user message** (`Base directory for this skill: …`): 17 bodies, median 8,863 B (≈ 2.2 K tokens), max 248,175 B (`update-config`, ≈ 62 K tokens in one message). `rtok stats` counts tool results, so it sees 2.5 KB where ≈ 150 KB entered. |
 | What `rtok stats` now folds (2026-09-18, `rtok stats --json --since 30d`, T61.1 skills section over `~/.claude/projects`) | 24 injected bodies, 792,820 B (≈ 198 K tokens); `update-config` 391,824 B over 2 invocations, `claude-api` 248,816 B, `slint` 35,997 B over 8. The `resident` column — body bytes × the API requests that carried them — totals ≈ 96.8 MB over the 30 d window (the context-token-turns view of §10.3's "heavy tail"). |
+| rtok hub skill (2026-09-18, `skills/rtok/SKILL.md` frontmatter; T71.3) | description **112 chars** (≤ 120); body **780 B** (≤ 2 KB); `disable-model-invocation` unset. `doctor` lists it from the same §10.1 user roots as any other skill once `rtok agents install <host>` has copied the hub. |
 
 ### 10.3 Where the cost is, ranked for this workload
 
@@ -739,9 +902,12 @@ the conversation for every later request of that session.
 
 ### 10.6 Open questions
 
-- Claude Code's "~100 tokens per skill" is the docs' figure; measured descriptions here
-  average 194 chars ≈ 49 tokens, so the per-skill overhead beyond the description (name,
-  path, framing) is unknown until a captured system prompt is measured through the proxy (T71.4).
+- **T71.4 (2026-09-18):** `cargo test --test skill_listing` on
+  `tests/fixtures/proxy/skills_listing_request.json` captured through `rtok proxy`
+  (`call_io`): `<available_skills>` block **452 B** for **3** listed skills;
+  **92 B** framing per skill beyond its description (name + `fullPath` + tags; not the
+  docs' "~100 tokens per skill"). `doctor::SKILL_LISTING_FRAMING_BYTES` carries the
+  constant; listing bytes per request = description bytes + `N × 92`.
 - Whether hosts other than Claude Code and Cursor honour `disable-model-invocation` in the
   listing is not documented (10.1).
 
@@ -799,14 +965,14 @@ in `src/plugins/cmd/{rules,formatters}.rs`, `src/plugins/guard/mod.rs`, `src/age
 
 | Their feature | rtok today | Gap | Task |
 | --- | --- | --- | --- |
-| rtk smart filtering (noise, comments, boilerplate) | `keep`/`drop` patterns per rule, `BUILTIN_KEEP`, 10 formatters, raw archived first | Coverage, not mechanism: 9 rules + 10 formatters vs ~80 (rtk) / 45+ (sqz) | T50.1, T58.5 |
+| rtk smart filtering (noise, comments, boilerplate) | `keep`/`drop` patterns per rule, `BUILTIN_KEEP`, 13 formatters, raw archived first | Coverage, not mechanism: 24 rules + 13 formatters vs ~80 (rtk) / 45+ (sqz) | T50.1, T58.5 |
 | rtk grouping (files by directory, errors by type) | none — `ls`/`find`/`tree` take 40 lines | generic grouping pass | T64.1 |
 | rtk truncation | `max_lines`/`head`/`tail`, lossless (`expand <id>`) | rtok is ahead: rtk drops, rtok archives | — |
 | rtk / sqz dedup of repeated log lines | `dedupe` folds adjacent identical lines to `(×N)` | non-adjacent, timestamp-normalised | T64.2 |
 | rtk "does not break the prompt cache" paragraph | byte-stable inject, live-zone proxy rewrites, `report` cache section, 98.1 % hit rate on this machine | no page says it | T64.3 |
 | sqz content-hash dedup (`§ref:HASH§`, 13 tokens) | `guard` dedups by input key only | same bytes from a different call paid twice | T65.1 (1.9 % of result bytes, 2026-09-18, `rtok stats --since 30d`, 924 sessions — above the 1 % gate) |
 | sqz structural summaries (imports + signatures, ~70 %) | `read` modes via tree-sitter (`map`, `signatures`) | none | — |
-| sqz JSON pipeline (nulls, arrays) | line cut; `toon` is wire-side and off | JSON-aware cut in the hook path | T65.2 (gated) |
+| sqz JSON pipeline (nulls, arrays) | JSON compact then line cut (0.21 % of Bash bytes, 30 d, this machine) | — | T65.2 |
 | sqz table compaction | none | padding collapse | T65.3 |
 | sqz safe mode (traces, secrets pass whole) | single `panic`/`traceback` lines kept, frames cut; secrets never redacted | keep the block | T65.4 |
 | sqz hosts: Windsurf, Cline, Gemini CLI, Kiro, Zed, Copilot CLI; browser and IDE extensions | 12 hosts in `src/agents/` (no Cline, Kiro, Gemini); no extensions | hosts on request; extensions out of scope (one binary, D21) | — |
@@ -816,6 +982,13 @@ Order by expected effect on this workload (§2: Bash 35 % of result tokens): T65
 are cheap and close a correctness / documentation hole; T65.1 measured **1.9 %** of result
 bytes as same-session SHA-256 repeats (`rtok stats --since 30d`, 924 sessions, 2026-09-18)
 and proceeds; T65.2 still starts with a measured share; T64.1, T64.2, T65.3 are fixture-gated.
+
+T65.2 gate (2026-09-18, this machine, 30 d): `measurements` where `plugin = 'cmd'` and
+`before_bytes > 0`, body = archive file named by `ref_id` after the first `:`,
+`json.loads` of the UTF-8 body. 4 / 200 rows, 5 776 / 2 792 960 B = **0.21 %**.
+(`~/.rtok/rtok.db`, read-only; the same window’s whole `archive` table is 18.66 % JSON —
+MCP/read blobs, not Bash.) The rewrite still ships: the Done line is the compact pass, not
+a share floor.
 
 ## 12. recursive-llm (RLM), against rtok (2026-09-18)
 
@@ -836,7 +1009,7 @@ forbids answering before searching the context. Library only: no CLI, no MCP, no
 | Context outside the prompt, a pointer with its size in the prompt | `cmd` trailer `[rtok <id> · N lines]`, `archive` live-zone pointer with head/tail and est. tokens, `read` cap | same shape | — |
 | `re.search` over the context | `expand --grep` is a substring match that prints bare lines | a hit has no position, so nothing can follow but a full expand | T67.1 |
 | Slice around a hit (`context[i-500:i+500]`) | `expand --lines a-b` | with T67.1 it takes two calls; every call is a turn that re-reads the prompt | T67.2 |
-| Child model on a slice (`rlm_query`) | the host's Agent tool plus `expand <id>`; `handoff` (T59.6) parked at 23 K of 2.83 M | nothing on rtok's side — rtok is not the agent loop; RLM's accuracy-up / tokens-down result is the reason to re-measure the sub-agent share when T59.6 reopens | — |
+| Child model on a slice (`rlm_query`) | the host's Agent tool plus `expand <id>`; `handoff` (T59.6) closed at 0.7 % of tool-result tokens | nothing on rtok's side — rtok is not the agent loop; re-open T59.6 only if a later `rtok stats` Agent/Task share is ≥ 5 % | — |
 | `RunBudget` hard/soft caps on calls, tokens, cost, time | none; hosts auto-compact; `stats --price`, `report` | not a saving lever for a tool outside the loop; parked as I-55 | — |
 | "Search before you answer" system prompt | `inject` modes and T53.1 nudges; the T62.1 skill digest tells the model to `expand --grep <heading>` | none | — |
 | REPL snapshot cap (1 MB) | `mcp.max_result_chars`, `read` cap with archive id | none | — |
@@ -857,7 +1030,7 @@ is useful. engram's own docs carry no token-saving number; its value is recall, 
 | --- | --- | --- | --- |
 | `topic_key` upsert: same `project + scope + topic_key` updates the row, `revision_count++` | every `mem_save` inserts; a re-saved decision leaves two rows with one title in the 5-title recall | adopt, zero-LLM, no schema: the title is the key, upsert on `(project, kind, title)` | T66.1 |
 | Git Sync: gzipped JSONL chunks + manifest, `engram sync --import` | `memory import <file.jsonl>` exists (T6.3); nothing produces that file from `rtok.db` | adopt the missing half: `memory export` in the shape `import` reads; no chunk manifest (a file in git is the manifest) | T66.2 |
-| `mem_context` at session start: pinned + recent observations + sessions + prompts, 16 KiB default budget | SessionStart recall: 5 titles + ids ≤ 200 tokens; compaction checkpoint ≤ 400 tokens, same session only | keep rtok's shape (D5 budget, titles not bodies); cross-session handoff off by default behind an A/B | I-56 → T71.2 |
+| `mem_context` at session start: pinned + recent observations + sessions + prompts, 16 KiB default budget | SessionStart recall: 5 titles + ids ≤ 200 tokens; compaction checkpoint ≤ 400 tokens, same session only; SessionEnd writes `session:<id>` (T71.2); `startup_recall` restores the newest project note on `source=startup`, off by default | keep rtok's shape (D5 budget, titles not bodies); handoff stays off until a P7-style A/B. Measured 2026-09-18: `rtok stats --since 30d` → 0/939 sessions with a joinable checkpoint note (25 legacy unscoped `checkpoint` rows) | T71.2 |
 | `pinned` observations first in context | recency only | parked; `kind = "pin"` would do it without a column | I-57 |
 | project identity from the normalised `origin` remote, `.engram/config.json` override, child-repo scan | git-root basename | parked; one checkout per repo is the workflow here | I-58 |
 | `mem_update(id)` | none | covered by T66.1: re-save the same title | — |
@@ -887,15 +1060,15 @@ Its claims: tokens per session against full-history injection ~80 → ~80 (1 ses
 ~630 → ~550 (10), ~1 880 → ~550 (30), ~6 960 → ~670 (100, "90 %"); a fact planted 96 sessions
 ago retrieved 83 % of the time; superseded facts returned 0 %. The baseline is "re-inject the
 whole history", which no coding host does, so the 90 % is not a bill delta; the two recall
-numbers are the useful ones, because rtok has none for `memory`.
+numbers are the useful ones. rtok's own plant-and-recall numbers are the T69.3 table below — never graymatter's 83 %.
 
 | Their feature | rtok today | Gap | Task |
 | --- | --- | --- | --- |
 | Hybrid recall: vector + keyword + recency, top-8, per-signal receipts | FTS5 BM25; optional hash-embed RRF (P29); SessionStart = newest 5 ids of the project; no recency, no receipts | ranking by age and use | T69.2 |
 | 30-day decay half-life; never hard-delete; pinned facts exempt | none: every note is live forever, no pin | lifecycle | T69.1 (pin, retire), T69.2 (decay) |
 | `revise` / `forget` as tombstones; corrections recorded | insert-only; the in-place update by title is the memory card "`mem_save` updates a note in place" | retire + supersede | T69.1 |
-| Benchmark: tokens/session vs full injection, plant-and-recall, superseded = 0 | none for `memory` (T8.8 exists for `graph`) | a recall-quality number | T69.3 |
-| Claude Code hooks: SessionStart facts + conventions; UserPromptSubmit top-3 + `remember:`; PreCompact checkpoint; SessionEnd checkpoint + consolidation; errors to `hooks.log`, never break the session | SessionStart titles (T6.2); PreCompact checkpoint (T2.5); fail open ≤ 10 ms; nothing on UserPromptSubmit; SessionEnd registered, unhandled | `remember:`; per-turn recall (A/B); SessionEnd | T69.5; I-56 (engram `mem_context`) |
+| Benchmark: tokens/session vs full injection, plant-and-recall, superseded = 0 | FTS5 and P29 hybrid 20/20 at N=1/10/30/100; superseded 0; SessionStart 100 B vs 371 866 B full injection at N=100 (`tests/memory_bench.rs`, 2026-09-18) | — | T69.3 |
+| Claude Code hooks: SessionStart facts + conventions; UserPromptSubmit top-3 + `remember:`; PreCompact checkpoint; SessionEnd checkpoint + consolidation; errors to `hooks.log`, never break the session | SessionStart titles (T6.2); PreCompact checkpoint (T2.5); SessionEnd `session:<id>` note (T71.2, restore off by default); fail open ≤ 10 ms; nothing on UserPromptSubmit | `remember:`; per-turn recall (A/B) | T69.5; I-56 (engram `mem_context`) |
 | `context-sync`: budgeted managed block in CLAUDE.md / AGENTS.md, hand-edit detection, backup | none (hook injection only; hosts without a SessionStart hook get no recall) | a sync command | T69.6 |
 | `status` / 4-tab `tui`: facts, KB, recall counts, health, weights | Memory page shows two config keys; no `memory status` | store rows on the page | T69.4 |
 | Knowledge graph: entities, co-mentions, Obsidian export, HTML force graph | `graph` is the code index | — | I-72 |
@@ -906,6 +1079,21 @@ numbers are the useful ones, because rtok has none for `memory`.
 | Security: loopback + bearer on network surfaces; recalled facts fenced, never in the system prompt | `rtok mcp` is stdio; recall is `id title` lines in the hook's `additionalContext`, bodies only via `mem_get` | — | — |
 | Go library in three lines | `rtok-plugin-sdk` (D25) | — | — |
 
+### T69.3 memory recall bench (2026-09-18)
+
+`cargo test --test memory_bench -- --nocapture`. Seeded in-memory store: N sessions × 6 filler notes of realistic length, 20 planted facts at known offsets, 5 revised later (T69.1). Query = eight content words from the live body. `search_limit` = 5. No network, no LLM.
+
+`half_life_days = 30` is N/A: T69.2 closed without ranking code (0 live notes on that machine; no `uses` / `last_used` columns, no scorer). P29 hybrid (`embed.enabled`, hash-embed RRF) ran.
+
+| N | FTS5 hit | hybrid hit | superseded returned | SessionStart recall bytes | full live-body injection bytes |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 20/20 | 20/20 | 0 | 95 | 6 331 |
+| 10 | 20/20 | 20/20 | 0 | 95 | 39 566 |
+| 30 | 20/20 | 20/20 | 0 | 100 | 113 240 |
+| 100 | 20/20 | 20/20 | 0 | 100 | 371 866 |
+
+T69.2's default stays off: FTS5 already hits 20/20 at N=100 without extra recall bytes, and there is no scorer to turn on. Floors are the FTS5/hybrid columns in `tests/memory_bench.rs`; a drop fails the test.
+
 Where rtok is ahead: one ledger — `Measurement` rows plus proxy `usage` — where graymatter's
 numbers are its own bench; FTS5 in the same SQLite file as every other plugin (D8) and three
 memory tools inside the measured 12-tool / ~223-token surface (`docs/comparison.md` §2,
@@ -914,8 +1102,21 @@ memory tools inside the measured 12-tool / ~223-token surface (`docs/comparison.
 where graymatter injects the top-K bodies.
 
 Order by expected effect: T69.1 first (a wrong fact recalled is worse than a missing one),
-T69.3 (the number Gate P6 lacks), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
+T69.3 (landed 2026-09-18: FTS5/hybrid 20/20, Gate P6 now has a floor), T69.4 (cheap; feeds T69.2 step 1), then T69.2 / T69.5 /
 T69.6 behind their gates.
+
+### 14.1 Live notes vs `recall_titles` (T69.2, 2026-09-18)
+
+Installed `rtok 0.1.1` (`dbcc7a162`) has no `memory status`. Counted with T69.4's
+`Store::memory_note_aggs` query (`kind NOT LIKE 'checkpoint%'`) on this machine:
+
+`sqlite3 ~/.rtok/rtok.db "SELECT COALESCE(project, '-'), SUM(CASE WHEN retired IS NULL THEN 1 ELSE 0 END) FROM notes WHERE kind NOT LIKE 'checkpoint%' GROUP BY project;"`
+
+Result: **0 rows**. Live notes: **0**. Projects with more than `[plugins.memory] recall_titles` (5): **0**.
+The same file holds 25 `checkpoint` rows under project `rtok` (title `compact`, none retired);
+T69.4 excludes them from the live count. SessionStart still injects those titles
+(`list_note_titles` does not filter kind). Ranking order among live facts never matters here,
+so T69.2 ships no scorer and no `uses` / `last_used` columns.
 
 ## 15. What a host plugin can do that rtok's own surfaces cannot (2026-09-18)
 
@@ -974,3 +1175,34 @@ Reading: two of the three constraints are host-plugin-shaped, and pi is the host
 gap is widest — it reaches two plugins today and its extension API is the most capable of
 the three. The proxy stays the only path on Codex, Claude Desktop, Windsurf, Zed, ZCode,
 Kimi and Copilot, which have neither a plugin directory nor the events.
+
+### T50.1 default-rule families (2026-09-18)
+
+Command: `rtok stats` on this machine (916 Claude Code sessions, `since` default). The `bash` table now has a `filter` column (`formatter` / `rule` / `default`). The `bash_default` table ranks stems where `cmd` `Measurement.kind = rule` still used `Rule::default()` (before the T50.1 rules landed), sorted by summed `after_bytes`.
+
+Top 20 `bash_default` stems by filtered after-bytes:
+
+| # | stem | `cmd` rule rows | after B |
+| --- | --- | ---: | ---: |
+| 1 | mise | 37 | 41,423 |
+| 2 | gh | 4 | 13,809 |
+| 3 | bash | 13 | 12,484 |
+| 4 | cd | 4 | 6,334 |
+| 5 | H=$(ls | 5 | 5,777 |
+| 6 | awk | 4 | 4,954 |
+| 7 | just | 2 | 4,018 |
+| 8 | df | 3 | 3,451 |
+| 9 | # | 3 | 3,094 |
+| 10 | for | 3 | 2,881 |
+| 11 | bv0thal3q.output; | 1 | 2,629 |
+| 12 | head | 4 | 2,643 |
+| 13 | lean-ctx | 2 | 1,552 |
+| 14 | mkdir | 1 | 2,435 |
+| 15 | sqlite3 | 20 | 8,556 |
+| 16 | printf | 1 | 493 |
+| 17 | if | 1 | 602 |
+| 18 | diff | 1 | 150 |
+| 19 | build.rs | 1 | 136 |
+| 20 | rmcp-3.2.0 | 1 | 101 |
+
+T50.1 added `[stem]` rules (and golden fixtures) for: `gh`, `pip`, `uv`, `python`, `python3`, `go`, `aws`, `mvn`, `gradle`, `dotnet`, `tsc`, `eslint`, `brew`, `apt`, `cmake`. T58.5 shipped table formatters (one row per object, `kind = formatter`) that beat `Rule::default()` on those fixtures: `docker ps` 3147→1190 vs rule 1311, `kubectl get` 4542→1731 vs rule 1770, `ps aux` 2341→870 vs rule 990 (`tests/cmd_golden/{docker_ps,kubectl_get,ps_aux}`).

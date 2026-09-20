@@ -27,11 +27,28 @@ pub struct BlobRef<'a> {
     pub turn: usize,
 }
 
+/// Injected skill body in a user message (T61.2).
+pub struct SkillRef<'a> {
+    /// Preceding `Skill` tool_use id.
+    pub id: String,
+    /// Last path component of the skill directory.
+    pub name: String,
+    /// Mutable skill body text block.
+    pub content: &'a mut Value,
+    /// User turns since this block was injected.
+    pub turn: usize,
+}
+
 /// The one thing [`WireRequest`] needs from a provider dialect. The host implements it;
 /// a plugin never names it.
 pub trait ToolResults: Send + Sync {
     /// Every mutable tool-result payload in `req`, with its id and turn distance.
     fn tool_results<'a>(&self, req: &'a mut Value) -> Vec<ToolResultRef<'a>>;
+
+    /// Skill bodies the archive plugin may shrink (T61.2). Empty by default.
+    fn skills<'a>(&self, _req: &'a mut Value) -> Vec<SkillRef<'a>> {
+        Vec::new()
+    }
 
     /// Large non-result payloads a proxy pass may shrink losslessly (T51.1).
     /// Empty by default; wires with user content blocks override it.
@@ -58,6 +75,11 @@ impl<'a> WireRequest<'a> {
     /// Every tool result in the request, mutable.
     pub fn tool_results(&mut self) -> Vec<ToolResultRef<'_>> {
         self.wire.tool_results(self.body)
+    }
+
+    /// Mutable skill bodies in the request.
+    pub fn skills(&mut self) -> Vec<SkillRef<'_>> {
+        self.wire.skills(self.body)
     }
 
     /// Every shrinkable non-result payload in the request, mutable.

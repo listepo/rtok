@@ -43,6 +43,9 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0013.sql", include_str!("../../migrations/0013.sql")),
     ("0014.sql", include_str!("../../migrations/0014.sql")),
     ("0015.sql", include_str!("../../migrations/0015.sql")),
+    ("0016.sql", include_str!("../../migrations/0016.sql")),
+    ("0017.sql", include_str!("../../migrations/0017.sql")),
+    ("0018.sql", include_str!("../../migrations/0018.sql")),
 ];
 
 pub struct Store {
@@ -103,6 +106,12 @@ impl Store {
     /// `ALTER TABLE … ADD COLUMN`, so a run interrupted between the two used to leave a
     /// column added with no version row, and every later `Store::open` failed on
     /// `duplicate column name` — a store nothing could repair but deletion.
+    ///
+    /// The check and the apply share one `BEGIN EXCLUSIVE` for the same reason across
+    /// processes: hooks, the MCP server and the proxy all open this file, and on a fresh
+    /// store two of them landed in the gap between the `SELECT` and the `ALTER`, so the
+    /// loser died on `duplicate column name`. The read-only pre-check keeps the settled
+    /// case — every open after the first — off the write lock.
     pub fn migrate(&self) -> Result<usize> {
         let mut conn = self.lock()?;
         conn.batch_execute(
@@ -110,27 +119,37 @@ impl Store {
                 name TEXT PRIMARY KEY,
                 applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
         )?;
-        let mut applied = 0;
-        for (name, sql) in MIGRATIONS {
-            let rows: Vec<Count> =
-                sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
-                    .bind::<Text, _>(*name)
-                    .load(&mut *conn)?;
-            if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
-                continue;
-            }
-            conn.transaction::<_, anyhow::Error, _>(|conn| {
+        let done: Vec<Count> =
+            sql_query("SELECT COUNT(*) AS n FROM schema_migrations").load(&mut *conn)?;
+        if done.first().map(|r| r.n).unwrap_or(0) >= MIGRATIONS.len() as i64 {
+            return Ok(0);
+        }
+        // Only a fresh or upgraded store reaches here, and everything else opening it in the
+        // same moment queues behind this one transaction. `open`'s 1 s is the steady-state
+        // bound for a hook; one migration run plus that queue outlives it, and the losers
+        // came back "database is locked". Restored below, so the bound still holds after.
+        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        let applied = conn.exclusive_transaction::<_, anyhow::Error, _>(|conn| {
+            let mut applied = 0;
+            for (name, sql) in MIGRATIONS {
+                let rows: Vec<Count> =
+                    sql_query("SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?")
+                        .bind::<Text, _>(*name)
+                        .load(&mut *conn)?;
+                if rows.first().map(|r| r.n).unwrap_or(0) > 0 {
+                    continue;
+                }
                 conn.batch_execute(sql)
                     .with_context(|| format!("migration {name}"))?;
                 sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
                     .bind::<Text, _>(*name)
                     .execute(conn)?;
-                Ok(())
-            })
-            .with_context(|| format!("migration {name}"))?;
-            applied += 1;
-        }
-        Ok(applied)
+                applied += 1;
+            }
+            Ok(applied)
+        });
+        conn.batch_execute("PRAGMA busy_timeout = 1000;")?;
+        applied
     }
 
     /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
@@ -290,6 +309,58 @@ impl Store {
             .first::<(Option<String>, Option<String>)>(&mut *conn)
             .optional()?
             .unwrap_or((None, None)))
+    }
+
+    /// Archive ids a Calls row can expand (T60.4): spilled `call_io` body first,
+    /// else a `measurements.ref_id` on that call. One pair of queries for the
+    /// page, so the snapshot does not N+1 on a tick.
+    pub fn archive_ref_ids(
+        &self,
+        call_ids: &[i32],
+    ) -> Result<std::collections::BTreeMap<i32, String>> {
+        let mut out = std::collections::BTreeMap::new();
+        if call_ids.is_empty() {
+            return Ok(out);
+        }
+        let list = call_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut conn = self.lock()?;
+        #[derive(QueryableByName)]
+        struct Io {
+            #[diesel(sql_type = Integer)]
+            call_id: i32,
+            #[diesel(sql_type = Nullable<Text>)]
+            request_archive: Option<String>,
+            #[diesel(sql_type = Nullable<Text>)]
+            response_archive: Option<String>,
+        }
+        let io: Vec<Io> = sql_query(format!(
+            "SELECT call_id, request_archive, response_archive FROM call_io WHERE call_id IN ({list})"
+        ))
+        .load(&mut *conn)?;
+        for row in io {
+            if let Some(id) = row.response_archive.or(row.request_archive) {
+                out.insert(row.call_id, id);
+            }
+        }
+        #[derive(QueryableByName)]
+        struct Meas {
+            #[diesel(sql_type = Integer)]
+            call_id: i32,
+            #[diesel(sql_type = Text)]
+            ref_id: String,
+        }
+        let ms: Vec<Meas> = sql_query(format!(
+            "SELECT call_id, ref_id FROM measurements WHERE call_id IN ({list}) AND ref_id IS NOT NULL"
+        ))
+        .load(&mut *conn)?;
+        for row in ms {
+            out.entry(row.call_id).or_insert(row.ref_id);
+        }
+        Ok(out)
     }
 
     pub fn token_phases(&self, call_id: i32) -> Result<Vec<String>> {
@@ -527,6 +598,30 @@ impl Store {
         Ok(())
     }
 
+    /// This session's archived tool results still in the live window, newest first (T58.2).
+    pub fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            id: String,
+            #[diesel(sql_type = Text)]
+            tool: String,
+            #[diesel(sql_type = BigInt)]
+            bytes: i64,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT a.id AS id, COALESCE(NULLIF(a.tool, ''), '-') AS tool, a.bytes AS bytes
+             FROM archive_decisions d
+             JOIN archive a ON a.id = d.archive_id
+             WHERE d.session = ?1
+             ORDER BY a.ts DESC, a.id DESC",
+        )
+        .bind::<Text, _>(session)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| (r.id, r.tool, r.bytes)).collect())
+    }
+
     /// Any pointer text for one archive id (T36.2: attribute expand rows to toon vs archive;
     /// T55.11: the expander — CLI session `expand`, MCP `mcp-<pid>` — never shares a session
     /// with the proxy that wrote the decision, so the lookup is by archive id alone).
@@ -704,8 +799,8 @@ impl Store {
         Ok((self.insert_note(project, kind, title, body)?, false))
     }
 
-    /// Every note but the session-local `checkpoint:*` rows, id order (`memory export`,
-    /// T66.2): `(project, kind, title, body)`.
+    /// Every note but the session-local `checkpoint:*` / `session:*` rows, id order
+    /// (`memory export`, T66.2 / T71.2): `(project, kind, title, body)`.
     #[allow(clippy::type_complexity)]
     pub fn list_notes(
         &self,
@@ -714,6 +809,7 @@ impl Store {
         let mut conn = self.lock()?;
         let mut q = notes::table
             .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"))
             .order(notes::id.asc())
             .select((notes::project, notes::kind, notes::title, notes::body))
             .into_boxed();
@@ -721,6 +817,25 @@ impl Store {
             q = q.filter(notes::project.eq(p));
         }
         q.load(&mut *conn).map_err(Into::into)
+    }
+
+    pub fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        let mut q = notes::table
+            .filter(notes::kind.like(format!("{kind_prefix}%")))
+            .order(notes::id.desc())
+            .select(notes::body)
+            .into_boxed();
+        if let Some(p) = project {
+            q = q.filter(notes::project.eq(p));
+        } else {
+            q = q.filter(notes::project.is_null());
+        }
+        q.first(&mut *conn).optional().map_err(Into::into)
     }
 
     /// Newest note body for `kind`, if any.
@@ -735,6 +850,44 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Session ids that already have a compaction (`checkpoint:<id>`) or handoff
+    /// (`session:<id>`) note. Suffixes only; a session with both kinds is one id.
+    pub fn checkpoint_session_ids(&self) -> Result<Vec<String>> {
+        let mut conn = self.lock()?;
+        let kinds: Vec<String> = notes::table
+            .filter(
+                notes::kind
+                    .like("checkpoint:%")
+                    .or(notes::kind.like("session:%")),
+            )
+            .select(notes::kind)
+            .load(&mut *conn)?;
+        Ok(kinds
+            .into_iter()
+            .filter_map(|k| {
+                k.strip_prefix("checkpoint:")
+                    .or_else(|| k.strip_prefix("session:"))
+                    .filter(|id| !id.is_empty())
+                    .map(str::to_string)
+            })
+            .collect())
+    }
+
+    /// Newest `session:*` note body for `project` (`None` = unbound), id order.
+    pub fn latest_session_note(&self, project: Option<&str>) -> Result<Option<String>> {
+        let mut conn = self.lock()?;
+        let mut q = notes::table
+            .filter(notes::kind.like("session:%"))
+            .order(notes::id.desc())
+            .select(notes::body)
+            .into_boxed();
+        q = match project {
+            Some(p) => q.filter(notes::project.eq(p)),
+            None => q.filter(notes::project.is_null()),
+        };
+        q.first(&mut *conn).optional().map_err(Into::into)
+    }
+
     /// Remember a Read/Bash result so `guard` can deny the duplicate (T2.6).
     /// Newest note titles for SessionStart recall (T6.2). Never bodies. Retired notes
     /// never recall; pinned ones lead (then newest-first) and both orders are id-stable.
@@ -747,6 +900,8 @@ impl Store {
         let lim = i64::from(limit.max(1));
         let mut q = notes::table
             .filter(notes::retired.is_null())
+            .filter(notes::kind.not_like("checkpoint:%"))
+            .filter(notes::kind.not_like("session:%"))
             .order((notes::pinned.desc(), notes::id.desc()))
             .limit(lim)
             .select((notes::id, notes::title))
@@ -790,6 +945,40 @@ impl Store {
             ))
             .execute(&mut *conn)?;
         Ok(n == 1)
+    }
+
+    /// Last-written `rtok memory sync` block digest (T69.6 hand-edit guard).
+    pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            value: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query("SELECT value FROM kv WHERE key = ?")
+            .bind::<Text, _>(key)
+            .load(&mut *conn)?;
+        Ok(rows.into_iter().next().map(|r| r.value))
+    }
+
+    pub fn kv_set(&self, key: &str, value: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query(
+            "INSERT INTO kv (key, value) VALUES (?, ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind::<Text, _>(key)
+        .bind::<Text, _>(value)
+        .execute(&mut *conn)?;
+        Ok(())
+    }
+
+    pub fn kv_delete(&self, key: &str) -> Result<()> {
+        let mut conn = self.lock()?;
+        sql_query("DELETE FROM kv WHERE key = ?")
+            .bind::<Text, _>(key)
+            .execute(&mut *conn)?;
+        Ok(())
     }
 
     /// Pin or unpin `id`; pinned notes lead recall (T69.1). Returns `false` for an
@@ -966,6 +1155,103 @@ impl Store {
             ))
             .load::<MeasRow>(&mut *conn)
             .map_err(Into::into)
+    }
+
+    /// Per `(project, kind)` note counts for `memory status` (T69.4).
+    pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
+        let mut conn = self.lock()?;
+        let base = "SELECT project, kind,
+                SUM(CASE WHEN retired IS NULL THEN 1 ELSE 0 END) AS live,
+                SUM(CASE WHEN retired IS NULL AND pinned != 0 THEN 1 ELSE 0 END) AS pinned,
+                SUM(CASE WHEN retired IS NOT NULL THEN 1 ELSE 0 END) AS retired,
+                SUM(length(body)) AS body_bytes,
+                MIN(ts) AS oldest_ts,
+                MAX(ts) AS newest_ts
+         FROM notes
+         WHERE kind NOT LIKE 'checkpoint%'";
+        let rows: Vec<MemoryNoteKindAggRow> = match project {
+            Some(p) => sql_query(format!(
+                "{base} AND project = ? GROUP BY project, kind ORDER BY project, kind"
+            ))
+            .bind::<Text, _>(p)
+            .load(&mut *conn)?,
+            None => sql_query(format!(
+                "{base} GROUP BY project, kind ORDER BY project, kind"
+            ))
+            .load(&mut *conn)?,
+        };
+        Ok(rows
+            .into_iter()
+            .map(|r| MemoryNoteKindAgg {
+                project: r.project,
+                kind: r.kind,
+                live: u64::try_from(r.live).unwrap_or(0),
+                pinned: u64::try_from(r.pinned).unwrap_or(0),
+                retired: u64::try_from(r.retired).unwrap_or(0),
+                body_bytes: r.body_bytes,
+                oldest_ts: r.oldest_ts,
+                newest_ts: r.newest_ts,
+            })
+            .collect())
+    }
+
+    /// SessionStart recall measurements in a time window (T69.4).
+    pub fn memory_recall_totals(&self, since_unix: i64) -> Result<(u64, i64, i64)> {
+        let mut conn = self.lock()?;
+        let rows: Vec<MemoryRecallAggRow> = sql_query(
+            "SELECT COUNT(*) AS recalls,
+                    COALESCE(SUM(before_bytes), 0) AS stood_for_bytes,
+                    COALESCE(SUM(after_bytes), 0) AS injected_bytes
+             FROM measurements
+             WHERE plugin = 'memory' AND kind = 'recall' AND ts >= ?",
+        )
+        .bind::<BigInt, _>(since_unix)
+        .load(&mut *conn)?;
+        let r = rows.first().map_or((0, 0, 0), |x| {
+            (x.recalls, x.stood_for_bytes, x.injected_bytes)
+        });
+        Ok((u64::try_from(r.0).unwrap_or(0), r.1, r.2))
+    }
+
+    /// MCP `mem_search` / `mem_get` calls in a time window (T69.4).
+    pub fn memory_mcp_calls(&self, since_unix: i64) -> Result<(u64, u64)> {
+        let mut conn = self.lock()?;
+        let rows: Vec<MemoryMcpCallsRow> = sql_query(
+            "SELECT COALESCE(SUM(CASE WHEN name = 'mem_search' THEN 1 ELSE 0 END), 0) AS mem_search,
+                    COALESCE(SUM(CASE WHEN name = 'mem_get' THEN 1 ELSE 0 END), 0) AS mem_get
+             FROM calls
+             WHERE plugin = 'memory' AND surface = 'mcp' AND kind = 'mcp_call' AND ts >= ?",
+        )
+        .bind::<BigInt, _>(since_unix)
+        .load(&mut *conn)?;
+        let r = rows.first().map_or((0, 0), |x| (x.mem_search, x.mem_get));
+        Ok((
+            u64::try_from(r.0).unwrap_or(0),
+            u64::try_from(r.1).unwrap_or(0),
+        ))
+    }
+
+    /// Last `ref_id` on a measurement row for one session (T69.5 prompt_recall dedup).
+    pub fn last_measurement_ref(
+        &self,
+        session: &str,
+        plugin: &str,
+        kind: &str,
+    ) -> Result<Option<String>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Nullable<Text>)]
+            ref_id: Option<String>,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT ref_id FROM measurements WHERE session = ? AND plugin = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind::<Text, _>(session)
+        .bind::<Text, _>(plugin)
+        .bind::<Text, _>(kind)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().next().and_then(|r| r.ref_id))
     }
 
     pub fn insert_tokens(
@@ -1510,6 +1796,57 @@ impl NoteRow {
     }
 }
 
+/// One `(project, kind)` row from [`Store::memory_note_aggs`].
+#[derive(Debug, Clone)]
+pub struct MemoryNoteKindAgg {
+    pub project: Option<String>,
+    pub kind: String,
+    pub live: u64,
+    pub pinned: u64,
+    pub retired: u64,
+    pub body_bytes: i64,
+    pub oldest_ts: i64,
+    pub newest_ts: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryNoteKindAggRow {
+    #[diesel(sql_type = Nullable<Text>)]
+    project: Option<String>,
+    #[diesel(sql_type = Text)]
+    kind: String,
+    #[diesel(sql_type = BigInt)]
+    live: i64,
+    #[diesel(sql_type = BigInt)]
+    pinned: i64,
+    #[diesel(sql_type = BigInt)]
+    retired: i64,
+    #[diesel(sql_type = BigInt)]
+    body_bytes: i64,
+    #[diesel(sql_type = BigInt)]
+    oldest_ts: i64,
+    #[diesel(sql_type = BigInt)]
+    newest_ts: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryRecallAggRow {
+    #[diesel(sql_type = BigInt)]
+    recalls: i64,
+    #[diesel(sql_type = BigInt)]
+    stood_for_bytes: i64,
+    #[diesel(sql_type = BigInt)]
+    injected_bytes: i64,
+}
+
+#[derive(Debug, QueryableByName)]
+struct MemoryMcpCallsRow {
+    #[diesel(sql_type = BigInt)]
+    mem_search: i64,
+    #[diesel(sql_type = BigInt)]
+    mem_get: i64,
+}
+
 /// One `measurements` row for `stats --plugin`.
 #[derive(Debug, Queryable)]
 pub struct MeasRow {
@@ -1720,6 +2057,28 @@ mod tests {
         .load(&mut *conn)
         .unwrap();
         assert_eq!(rows[0].n, 6);
+    }
+
+    /// Every surface opens the same file, so a fresh store is migrated by whichever of them
+    /// starts first — and the others start at the same moment. Each `Store::open` is its own
+    /// connection, so these threads race exactly as separate processes do: before the
+    /// exclusive transaction, the losers failed on `duplicate column name: mtime` (0007).
+    #[test]
+    fn concurrent_opens_of_a_fresh_store_all_migrate() {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("rtok.db");
+        let errs: Vec<String> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| s.spawn(|| Store::open(&path).map(|_| ()).map_err(|e| format!("{e:#}"))))
+                .collect();
+            handles
+                .into_iter()
+                .filter_map(|h| h.join().unwrap().err())
+                .collect()
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(errs.is_empty(), "{errs:?}");
     }
 
     /// T69.1: a `rtok.db` of the previous schema (0001–0014, one note) migrates in place —
@@ -2472,7 +2831,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rtok-t651-sess-{}", std::process::id()));
         let store = Store::open_in_memory().unwrap();
         let sha = store.put_archive("a", b"same-bytes", &dir).unwrap();
-        let hit = store.archive_in_session("a", &sha).unwrap().expect("writer");
+        let hit = store
+            .archive_in_session("a", &sha)
+            .unwrap()
+            .expect("writer");
         assert_eq!(hit.0, sha);
         assert_eq!(store.archive_in_session("b", &sha).unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);

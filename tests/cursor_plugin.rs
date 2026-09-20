@@ -4,10 +4,11 @@
 //! `~/.cursor/plugins/local`; `--yes` links the plugin and does not add a second
 //! `rtok` entry to `mcp.json`; second apply is `no changes`.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/cursor")
@@ -236,5 +237,60 @@ fn setup_cursor_clears_leftover_mcp_when_plugin_already_linked() {
         body.contains("other"),
         "foreign MCP servers must remain: {body}"
     );
+    let _ = fs::remove_dir_all(&home);
+}
+
+#[test]
+fn post_tool_use_shortens_long_mcp_results_and_skips_small_and_rtok() {
+    let home = tmp("mcp-hook");
+    let rtok_home = home.join(".rtok");
+    fs::create_dir_all(&rtok_home).unwrap();
+    let long: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+    let hook = |server: &str, tool: &str, text: &str| -> Value {
+        let result = serde_json::json!({"content":[{"type":"text","text": text}]});
+        let stdin = serde_json::json!({
+            "hook_event_name": "postToolUse",
+            "tool_name": tool,
+            "tool_input": {},
+            "tool_output": result.to_string(),
+            "conversation_id": "e2e",
+            "mcp_server_name": server
+        });
+        let mut child = Command::new(bin())
+            .args(["hook", "PostToolUse", "--host", "cursor"])
+            .env("RTOK_HOME", &rtok_home)
+            .env("HOME", &home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(&serde_json::to_vec(&stdin).unwrap())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let big = hook("linear", "MCP:list_issues", &long);
+    let printed = big["updated_mcp_tool_output"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or("");
+    assert!(printed.contains("expand: rtok expand "), "{big}");
+    assert!(printed.len() < long.len());
+    let rows = rtok::store::Store::open(&rtok_home.join("rtok.db"))
+        .unwrap()
+        .list_measurements("archive")
+        .unwrap();
+    assert_eq!(rows.iter().filter(|r| r.kind == "mcp").count(), 1);
+    assert_eq!(hook("linear", "MCP:list_issues", "ok\n"), json!({}));
+    assert_eq!(hook("rtok", "MCP:search", &long), json!({}));
     let _ = fs::remove_dir_all(&home);
 }

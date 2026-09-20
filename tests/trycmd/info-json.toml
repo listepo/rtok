@@ -1,0 +1,63 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml info --json"
+stdout = """
+{
+  "version": "[..]",
+  "binary": {
+    "path": "[..]",
+    "bytes": [..]
+  },
+  "home": "[..]",
+  "config": {
+    "path": "[..]",
+    "bytes": 62
+  },
+  "db": {
+    "path": "[..]",
+    "bytes": [..]
+  },
+  "db_wal": {
+    "path": "[..]",
+    "bytes": [..]
+  },
+  "db_shm": {
+    "path": "[..]",
+    "bytes": [..]
+  },
+  "archive": {
+    "path": "[..]",
+    "files": [..],
+    "bytes": [..]
+  },
+  "log": {
+    "path": "[..]",
+    "bytes": 0,
+    "lines": 0,
+    "errors": 0
+  },
+  "proxy": {
+    "enabled": true,
+    "mode": "passthrough",
+    "bind": "127.0.0.1",
+    "port": 8790,
+    "upstream": "https://api.anthropic.com",
+    "status": "[..]"
+  },
+  "otel": {
+    "enabled": false,
+    "endpoint": ""
+  },
+  "store": {
+...
+  },
+  "total_bytes": [..]
+}
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-info-json"
+RTOK_HOME = "target/tmp/t60-2-info-json"

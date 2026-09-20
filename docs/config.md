@@ -115,6 +115,7 @@ timeout_s       = 600                 # upstream request timeout
 include_usage   = true                # OpenAI streaming: add stream_options.include_usage when missing (T11.2)
 context_management = false            # Anthropic /v1/messages only: add clear_tool_uses edit + beta header (T51.2, opt-in)
 dry_run         = false               # --dry-run: print effective [proxy] settings and exit, don't serve
+# TLS: Mozilla webpki roots (`use_preconfigured_tls`). Corporate CAs: SSL_CERT_FILE (PEM, curl). See "TLS and corporate CAs".
 
 [web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
@@ -317,6 +318,7 @@ skill_max_bytes = 8192           # bodies at or under this load whole; so does a
 enabled        = true
 recall_titles  = 5                    # SessionStart: last N titles + ids
 recall_tokens  = 200
+prompt_recall  = 0                    # UserPromptSubmit: 0 = off; N = ranked titles per turn (T69.5; A/B gated)
 checkpoint_tokens = 400               # PreCompact → SessionStart(compact): prompts, skills loaded (name + KB, T62.2), paths, errors
 search_limit   = 5
 
@@ -372,6 +374,16 @@ the flag is visible in `rtok config show --sources` but has no loader.
 `backend = "lsp"` routes `symbol` / `callers` / `impact` / `outline` / `explore` through a
 language server from `PATH` instead of the tags index. Setup walkthrough for
 Rust (rust-analyzer) and Dart (Dart SDK): `docs/lsp.md`.
+
+## TLS and corporate CAs
+
+`rtok proxy` and OpenTelemetry export share one rustls client config: Mozilla
+roots via `webpki-roots`, handed to reqwest with `use_preconfigured_tls`. They
+do not use the macOS Security.framework verifier. Corporate or private CAs:
+set `SSL_CERT_FILE` to a PEM bundle (curl's convention). Those certificates
+extend the Mozilla set. If the variable is set, a missing, empty, or
+unparsable file fails startup with the path in the error (curl parity).
+Unset keeps Mozilla roots only. `rtok hook` never opens TLS.
 
 ## OpenTelemetry
 

@@ -10,6 +10,7 @@
 //! implements only the surfaces it declares in its [`Manifest`].
 
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 
@@ -94,6 +95,8 @@ pub struct Runtime {
     /// Host process cwd, when the surface knows it (the hook surface sets this from the
     /// event's own `cwd`, T25.0). `project` is derived from it at write time.
     pub cwd: Option<String>,
+    /// Files the graph watcher has queued but not yet re-indexed (T68.3).
+    pub graph_watch_pending: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Runtime {
@@ -117,6 +120,7 @@ impl Runtime {
             call_id: None,
             host_id,
             cwd: None,
+            graph_watch_pending: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -271,6 +275,23 @@ impl Host for Runtime {
     fn call_id(&self) -> Option<i32> {
         self.call_id
     }
+
+    fn graph_watch_pending(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .graph_watch_pending
+            .lock()
+            .map(|p| p.iter().cloned().collect())
+            .unwrap_or_default();
+        out.sort();
+        out
+    }
+
+    fn publish_graph_watch_pending(&self, paths: &[String]) {
+        if let Ok(mut guard) = self.graph_watch_pending.lock() {
+            guard.clear();
+            guard.extend(paths.iter().cloned());
+        }
+    }
 }
 
 impl Archive for Runtime {
@@ -317,6 +338,19 @@ impl Archive for Runtime {
 }
 
 impl Notes for Runtime {
+    fn upsert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        let (id, _) = self.store.upsert_note(project, kind, title, body)?;
+        self.store
+            .upsert_note_embedding(id, title, body, &self.config.plugins.memory.embed)?;
+        Ok(id)
+    }
+
     fn insert_note(
         &self,
         project: Option<&str>,
@@ -329,6 +363,14 @@ impl Notes for Runtime {
 
     fn latest_note(&self, kind: &str) -> Result<Option<String>> {
         self.store.latest_note(kind)
+    }
+
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>> {
+        self.store.latest_note_for_project(project, kind_prefix)
     }
 
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>> {
@@ -360,6 +402,10 @@ impl ReadCache for Runtime {
 }
 
 impl Ledger for Runtime {
+    fn last_measurement_ref(&self, plugin: &str, kind: &str) -> Result<Option<String>> {
+        self.store.last_measurement_ref(&self.session, plugin, kind)
+    }
+
     fn recent_hook_inputs(&self, limit: i64) -> Result<Vec<String>> {
         self.store.recent_hook_inputs(&self.session, limit)
     }
@@ -432,6 +478,10 @@ impl Symbols for Runtime {
         self.store.symbol_ref_groups(root, name)
     }
 
+    fn symbol_callees(&self, root: &str, name: &str) -> Result<Vec<(String, i32, String, i32)>> {
+        self.store.symbol_callees(root, name)
+    }
+
     fn symbol_impact(
         &self,
         root: &str,
@@ -451,6 +501,38 @@ impl Symbols for Runtime {
 
     fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
         self.store.symbol_paths(root, from, to, depth)
+    }
+
+    fn symbol_file_count(&self, root: &str) -> Result<i64> {
+        self.store.symbol_file_count(root)
+    }
+
+    fn symbol_pending(&self, root: &str, root_path: &std::path::Path) -> Result<Vec<String>> {
+        self.store.symbol_pending(root, root_path)
+    }
+
+    fn symbol_indexed_at(&self, root: &str) -> Result<Option<i64>> {
+        self.store.symbol_indexed_at(root)
+    }
+
+    fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
+        self.store.touch_symbol_indexed_at(root, ts)
+    }
+
+    fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        self.store.symbol_imports(root, path)
+    }
+
+    fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        self.store.symbol_importers(root, module)
+    }
+
+    fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        self.store.symbol_import_follow(root, name)
+    }
+
+    fn symbol_top_refs(&self, root: &str, limit: i64) -> Result<Vec<(String, i64, String, i32)>> {
+        self.store.symbol_top_refs(root, limit)
     }
 }
 

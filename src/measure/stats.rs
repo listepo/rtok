@@ -34,6 +34,12 @@ pub struct Report {
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
     pub bash_families: BTreeMap<String, SizeRow>,
+    /// T50.1: `formatter`, named `rule`, or `default` per Bash stem (transcripts).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bash_filter: BTreeMap<String, String>,
+    /// T50.1: `cmd` measurements with `kind = rule` on stems still on [`Rule::default()`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bash_default_rule: BTreeMap<String, SizeRow>,
     pub mcp_groups: BTreeMap<String, SizeRow>,
     pub usage_input: u64,
     pub usage_cache_create: u64,
@@ -285,7 +291,10 @@ impl Report {
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
-        s.push_str(&format_section("bash", &self.bash_families));
+        s.push_str(&format_bash_section(&self.bash_families, &self.bash_filter));
+        if !self.bash_default_rule.is_empty() {
+            s.push_str(&format_section("bash_default", &self.bash_default_rule));
+        }
         s.push_str(&format_section("mcp", &self.mcp_groups));
         if let Some(skills) = &self.skills {
             s.push_str(&skills_section(skills));
@@ -294,6 +303,84 @@ impl Report {
     }
 }
 
+
+fn format_bash_section(
+    rows: &BTreeMap<String, SizeRow>,
+    kinds: &BTreeMap<String, String>,
+) -> String {
+    let cols = [
+        Col::left(24),
+        Col::left(8),
+        Col::right(7),
+        Col::right(12),
+        Col::right(8),
+        Col::right(8),
+        Col::right(8),
+        Col::right(12),
+        Col::right(12),
+    ];
+    let mut out = vec![vec![
+        "bash".to_string(),
+        "filter".into(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "ctt".into(),
+    ]];
+    for (name, r) in rows {
+        out.push(vec![
+            name.clone(),
+            kinds
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| "default".to_string()),
+            r.count.to_string(),
+            r.total_bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.ctt.to_string(),
+        ]);
+    }
+    table(&cols, &out)
+}
+
+/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
+pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
+    let settings = crate::plugins::cmd::rules::Settings::builtin();
+    for name in report.bash_families.keys() {
+        let kind = crate::plugins::cmd::formatters::filter_kind(&settings, name);
+        report.bash_filter.insert(name.clone(), kind.to_string());
+    }
+    for r in store.list_measurements("cmd")? {
+        if r.kind != "rule" {
+            continue;
+        }
+        let fam = r
+            .ref_id
+            .as_deref()
+            .and_then(|id| id.split(':').next())
+            .unwrap_or("");
+        if fam.is_empty()
+            || crate::plugins::cmd::formatters::filter_kind(&settings, fam) != "default"
+        {
+            continue;
+        }
+        add(
+            &mut report.bash_default_rule,
+            fam,
+            r.after_bytes.max(0) as u64,
+            est_tokens(r.after_bytes.max(0) as u64),
+            0,
+        );
+    }
+    finish_rows(&mut report.bash_default_rule);
+    Ok(())
+}
 fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
     // The section's own title sits in the first column of its header line; the fixed
     // widths are floors now (`render::table`, T25.2), bytes unchanged.

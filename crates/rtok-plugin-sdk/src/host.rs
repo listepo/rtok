@@ -122,6 +122,16 @@ pub trait Host: Send + Sync {
     fn call_id(&self) -> Option<i32> {
         None
     }
+
+    /// Watcher debounce window: relative paths not yet re-indexed (T68.3).
+    fn graph_watch_pending(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Publish the watcher's in-flight pending set for staleness banners (T68.3).
+    fn publish_graph_watch_pending(&self, paths: &[String]) {
+        let _ = paths;
+    }
 }
 
 /// Everything a plugin may touch, in one object-safe bound. [`Ctx`] derefs to it, so a
@@ -217,6 +227,15 @@ pub trait Archive {
 
 /// Durable notes the host can search — what a plugin remembers between sessions.
 pub trait Notes {
+    /// Upsert on `(project, kind, title)` and return the note id (T69.5 `remember:` path).
+    fn upsert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32>;
+
     /// Save a note and return its id. `project` scopes it; `None` means "not project-bound".
     fn insert_note(
         &self,
@@ -228,6 +247,13 @@ pub trait Notes {
 
     /// The body of the most recent note of `kind`.
     fn latest_note(&self, kind: &str) -> Result<Option<String>>;
+
+    /// Newest note body whose kind starts with `kind_prefix` for `project`.
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>>;
 
     /// The `limit` most recent `(id, title)` pairs, newest first.
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>>;
@@ -262,6 +288,9 @@ pub trait Ledger {
 
     /// How many calls this session has made since the unix timestamp `ts`.
     fn calls_since(&self, ts: i64) -> Result<i64>;
+
+    /// The newest `ref_id` on a measurement row for this session (T69.5 dedup).
+    fn last_measurement_ref(&self, plugin: &str, kind: &str) -> Result<Option<String>>;
 }
 
 /// Symbol rows for one indexed file.
@@ -310,6 +339,30 @@ pub trait Symbols {
     /// Drop what was indexed for one absolute path — the file changed under the index.
     fn mark_symbols_stale(&self, abs_path: &str) -> Result<()>;
 
+    /// Distinct indexed files under `root` (T68.3 `graph status`).
+    fn symbol_file_count(&self, root: &str) -> Result<i64> {
+        let _ = root;
+        Ok(0)
+    }
+
+    /// Pending re-index paths for `root` (T68.3).
+    fn symbol_pending(&self, root: &str, root_path: &std::path::Path) -> Result<Vec<String>> {
+        let _ = (root, root_path);
+        Ok(Vec::new())
+    }
+
+    /// Unix seconds of the last successful index for `root` (T68.3).
+    fn symbol_indexed_at(&self, root: &str) -> Result<Option<i64>> {
+        let _ = root;
+        Ok(None)
+    }
+
+    /// Record the last successful index time for `root` (T68.3).
+    fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
+        let _ = (root, ts);
+        Ok(())
+    }
+
     /// Extractor fingerprint stored for `root`, if any (T35.5).
     fn extractor_fingerprint(&self, root: &str) -> Result<Option<String>> {
         let _ = root;
@@ -327,6 +380,12 @@ pub trait Symbols {
 
     /// References to `name` grouped by location: `(path, kind, count, line)`.
     fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>>;
+
+    /// Callees per definition of `name`: `(def_path, def_line, callee, first_line)` (T68.2).
+    fn symbol_callees(&self, root: &str, name: &str) -> Result<Vec<(String, i32, String, i32)>> {
+        let _ = (root, name);
+        Ok(Vec::new())
+    }
 
     /// What `name` reaches within `depth` hops: `(depth, path, name)`.
     fn symbol_impact(
@@ -355,6 +414,31 @@ pub trait Symbols {
     /// hops, shortest first (T68.1 `explore`; T68.4 `impact --to` reuses it).
     fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
         let _ = (root, from, to, depth);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: import rows of `path` as `(name, line)`.
+    fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, path);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: files that import `module` as `(path, line)`.
+    fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, module);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: definitions in files that import `name` (the extra impact hop).
+    fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        let _ = (root, name);
+        Ok(Vec::new())
+    }
+
+    /// T52.3: names ranked by reference count with one def site:
+    /// `(name, refs, path, line)`, `ORDER BY refs DESC, name ASC`.
+    fn symbol_top_refs(&self, root: &str, limit: i64) -> Result<Vec<(String, i64, String, i32)>> {
+        let _ = (root, limit);
         Ok(Vec::new())
     }
 }

@@ -68,7 +68,10 @@ fn decide(cx: &Ctx, name: &str, body: &str, cap: u64) -> Option<PreToolDecision>
     let id = cx.put_archive(body.as_bytes()).ok()?;
     let lines = body.lines().count();
     // The whole reason stays within the cap it enforces: map + intro + trailer.
-    let map = truncate(outline(body), (cap as usize).saturating_sub(512));
+    let map = truncate(
+        crate::plugins::read::outline::markdown_digest(body),
+        (cap as usize).saturating_sub(512),
+    );
     let reason = format!(
         "rtok kept the map of skill {name} ({} KB); the full body is archived, not loaded:\n{map}\
          [rtok {id} · {lines} lines · expand: rtok expand {id}]\n\
@@ -100,31 +103,6 @@ fn host_keys(body: &str) -> bool {
                 .is_some_and(|r| r.trim_start().starts_with(':'))
         })
     })
-}
-
-/// Every heading with the first non-empty line under it, fenced blocks skipped. The
-/// `read` plugin outlines code with tree-sitter only, so this is the one markdown
-/// outliner in the tree (T62.1 close-out).
-fn outline(body: &str) -> String {
-    let mut out = String::new();
-    let (mut fenced, mut want_line) = (false, false);
-    for line in body.lines() {
-        let t = line.trim();
-        if t.starts_with("```") {
-            fenced = !fenced;
-        } else if fenced {
-        } else if t.starts_with('#') {
-            out.push_str(t);
-            out.push('\n');
-            want_line = true;
-        } else if want_line && !t.is_empty() {
-            out.push_str("  ");
-            out.push_str(t);
-            out.push('\n');
-            want_line = false;
-        }
-    }
-    out
 }
 
 /// Cut at a char boundary with an ellipsis.

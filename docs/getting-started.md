@@ -46,7 +46,7 @@ on every turn.
 ```bash
 rtok agents install claude --dry-run
 rtok agents install claude
-rtok agents remove claude
+rtok agents uninstall claude
 ```
 
 `--dry-run` prints the hook entries and touches nothing. Install backs up every
