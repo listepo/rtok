@@ -471,7 +471,10 @@ mod tests {
         assert!(report.contains("- preCompact"), "{report}");
         let left = fs::read_to_string(&path).unwrap();
         assert!(!left.contains("rtok hook"), "{left}");
-        assert!(left.contains("preCompact"), "foreign-safe shape stays: {left}");
+        assert!(
+            left.contains("preCompact"),
+            "foreign-safe shape stays: {left}"
+        );
         assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }

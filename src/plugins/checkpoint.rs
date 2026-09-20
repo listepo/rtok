@@ -499,8 +499,8 @@ mod tests {
         let mut on2 = Vec::new();
         crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut on2, &cfg);
         assert_eq!(on1, on2, "byte-stable for an unchanged store");
-        let text = serde_json::from_slice::<serde_json::Value>(&on1).unwrap()
-            ["hookSpecificOutput"]["additionalContext"]
+        let text = serde_json::from_slice::<serde_json::Value>(&on1).unwrap()["hookSpecificOutput"]
+            ["additionalContext"]
             .as_str()
             .unwrap_or("")
             .to_string();
