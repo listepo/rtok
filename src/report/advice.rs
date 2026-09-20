@@ -242,11 +242,13 @@ fn archive_window(ledgers: &ReportLedgers, cfg: &Config, push: Push<'_>) {
     }
 }
 
-
 /// (7) Top token sinks: which paths, stems or MCP tools cost the most bytes.
 fn top_sinks(ledgers: &ReportLedgers, push: Push<'_>) {
     for s in &ledgers.sinks.rows {
-        if s.before_bytes < 1 {
+        // Only the classes `sink_switch` can name a switch for (docs/report.md): an
+        // `archive` or `inject` row is already shortened, so ranking it reads as advice
+        // with no action attached.
+        if s.before_bytes < 1 || !matches!(s.class.as_str(), "read" | "cmd" | "mcp") {
             continue;
         }
         push(
@@ -272,7 +274,9 @@ fn top_sinks(ledgers: &ReportLedgers, push: Push<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::web::model::{ReportBust, ReportCache, ReportLedgers, ReportSink, ReportSinksSection};
+    use crate::web::model::{
+        ReportBust, ReportCache, ReportLedgers, ReportSink, ReportSinksSection,
+    };
 
     #[test]
     fn top_sinks_ranks_largest_sink_first() {

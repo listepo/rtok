@@ -1,0 +1,25 @@
+ok 0
+ok 1
+ok 2
+ok 3
+ok 4
+… 10 lines omitted (expand deadbeef)
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+NameError: name x is not defined
+… 15 lines omitted (expand deadbeef)
+ok 30
+ok 31
+ok 32
+ok 33
+ok 34
+ok 35
+ok 36
+ok 37
+ok 38
+ok 39
+ok 40
+ok 41
+ok 42
+ok 43
+ok 44

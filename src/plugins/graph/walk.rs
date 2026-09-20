@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use ignore::overrides::{Override, OverrideBuilder};
 use ignore::WalkBuilder;
+use ignore::overrides::{Override, OverrideBuilder};
 
 use crate::config::Graph;
 use crate::plugins::read::outline;
@@ -38,7 +38,9 @@ impl Matcher {
             };
             let _ = ob.add(&glob);
         }
-        let overrides = ob.build().unwrap_or_else(|_| OverrideBuilder::new(root).build().unwrap());
+        let overrides = ob
+            .build()
+            .unwrap_or_else(|_| OverrideBuilder::new(root).build().unwrap());
         Self {
             root: root.to_path_buf(),
             overrides,
@@ -72,12 +74,7 @@ impl Matcher {
     }
 
     fn has_supported_ext(&self, path: &Path) -> bool {
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if let Some(grammar) = self.extensions.get(ext) {
-                return outline::grammar_available(grammar);
-            }
-        }
-        outline::supported(path)
+        outline::supported_with(path, &self.extensions)
     }
 
     /// Whether a file path should be indexed: `exclude`, then built-in or mapped extension.
@@ -108,14 +105,21 @@ mod tests {
     use crate::config::Graph;
     use std::fs;
 
-    fn matcher(dir: &Path, exclude: &[&str], include: &[&str], extensions: &[(&str, &str)]) -> Matcher {
-        let mut cfg = Graph::default();
-        cfg.exclude = exclude.iter().map(|s| s.to_string()).collect();
-        cfg.include = include.iter().map(|s| s.to_string()).collect();
-        cfg.extensions = extensions
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
+    fn matcher(
+        dir: &Path,
+        exclude: &[&str],
+        include: &[&str],
+        extensions: &[(&str, &str)],
+    ) -> Matcher {
+        let cfg = Graph {
+            exclude: exclude.iter().map(|s| s.to_string()).collect(),
+            include: include.iter().map(|s| s.to_string()).collect(),
+            extensions: extensions
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ..Default::default()
+        };
         Matcher::new(dir, &cfg)
     }
 

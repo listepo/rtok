@@ -138,21 +138,6 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
     serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
 }
 
-
-/// Cursor session/prompt hooks read a flat object: `{additional_context}`.
-pub fn cursor_output(out: &HookOutput) -> Vec<u8> {
-    let mut o = serde_json::Map::new();
-    if let Some(h) = &out.hook_specific_output {
-        if let Some(c) = &h.additional_context {
-            o.insert("additional_context".into(), c.as_str().into());
-        }
-    }
-    if o.is_empty() {
-        return b"{}".to_vec();
-    }
-    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
-}
-
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
@@ -162,6 +147,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
+        "AfterMCPExecution" => after_mcp(input, cx),
         "SessionStart" | "UserPromptSubmit" | "PostCompact" => inject_event(input, cx, &registry),
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
@@ -173,6 +159,13 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
             HookOutput::default()
         }
         "SessionEnd" => {
+            #[cfg(feature = "inject")]
+            {
+                let path = input.transcript_path.as_deref().unwrap_or("");
+                let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+                    let _ = crate::plugins::checkpoint::save_session(path, &Ctx::new(cx));
+                }));
+            }
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
@@ -198,6 +191,96 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         crate::otel::export::spawn_child(cx);
     }
     bytes
+}
+
+#[cfg(not(feature = "cmd"))]
+fn after_mcp(_input: &HookInput, _cx: &Runtime) -> HookOutput {
+    HookOutput::default()
+}
+
+#[cfg(feature = "cmd")]
+fn after_mcp(input: &HookInput, cx: &Runtime) -> HookOutput {
+    if input.hook_event_name != "AfterMCPExecution" {
+        return HookOutput::default();
+    }
+    let server = input.mcp_server_name().unwrap_or("");
+    if server.eq_ignore_ascii_case("rtok") {
+        return HookOutput::default();
+    }
+    let tool = input.tool_name.as_deref().unwrap_or("mcp");
+    let raw = input
+        .tool_response
+        .as_ref()
+        .and_then(|v| v.as_str())
+        .or_else(|| input.extra.get("result_json").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    if raw.is_empty() {
+        return HookOutput::default();
+    }
+    let modified = shorten_mcp_result(cx, server, tool, raw);
+    modified
+        .map(|m| HookOutput {
+            updated_mcp_tool_output: Some(serde_json::json!({"modified": m})),
+            ..HookOutput::default()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "cmd")]
+fn shorten_mcp_result(
+    cx: &Runtime,
+    _server: &str,
+    _tool: &str,
+    result_json: &str,
+) -> Option<String> {
+    use crate::plugins::cmd::rules::{self, Settings};
+    use serde_json::Value;
+    let mut v: Value = serde_json::from_str(result_json).ok()?;
+    let text = mcp_result_text(&v)?;
+    let max = cx.config.mcp.max_result_chars as usize;
+    if text.chars().count() <= max {
+        return None;
+    }
+    let id = rtok_plugin_sdk::Archive::put_archive(cx, text.as_bytes()).ok()?;
+    let settings = Settings::from_config(&cx.config);
+    let rule = settings.pick("mcp");
+    let cut = rules::apply(&settings, &text, 0, &rule, &id);
+    let printed = format!("{cut}\n[rtok {id} · expand: rtok expand {id}]");
+    set_mcp_result_text(&mut v, printed);
+    serde_json::to_string(&v).ok()
+}
+
+#[cfg(feature = "cmd")]
+fn mcp_result_text(v: &serde_json::Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(arr) = v.get("content").and_then(|c| c.as_array()) {
+        let mut parts = Vec::new();
+        for block in arr {
+            if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
+                parts.push(t);
+            }
+        }
+        if !parts.is_empty() {
+            return Some(parts.join("\n"));
+        }
+    }
+    None
+}
+
+#[cfg(feature = "cmd")]
+fn set_mcp_result_text(v: &mut serde_json::Value, text: String) {
+    if v.is_string() {
+        *v = serde_json::Value::String(text);
+        return;
+    }
+    if let Some(arr) = v.get_mut("content").and_then(|c| c.as_array_mut())
+        && let Some(first) = arr.first_mut()
+        && first.get("text").is_some()
+    {
+        first["text"] = serde_json::Value::String(text);
+    }
 }
 
 fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
@@ -252,17 +335,106 @@ fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput
         }
     }
     let text = cap_budget(cx, &parts.join("\n"));
-    if text.is_empty() {
+    let updated = cursor_mcp_output(input, cx);
+    if text.is_empty() && updated.is_none() {
         return HookOutput::default();
     }
     HookOutput {
         hook_specific_output: Some(HookSpecificOutput {
             hook_event_name: "PostToolUse".into(),
-            additional_context: Some(text),
+            additional_context: (!text.is_empty()).then_some(text),
+            updated_mcp_tool_output: updated,
             ..HookSpecificOutput::default()
         }),
         ..HookOutput::default()
     }
+}
+
+/// Cursor reads a flat object: `{updated_mcp_tool_output}` after an MCP tool,
+/// `{additional_context}` on session/prompt hooks. Anything else (a guard deny, a
+/// shell hook with no replacement) keeps the Claude `hookSpecificOutput` shape.
+pub fn cursor_output(out: &HookOutput) -> Vec<u8> {
+    let nested = || serde_json::to_vec(out).unwrap_or_else(|_| b"{}".to_vec());
+    let Some(h) = &out.hook_specific_output else {
+        return nested();
+    };
+    let mut o = serde_json::Map::new();
+    if let Some(updated) = &h.updated_mcp_tool_output {
+        o.insert("updated_mcp_tool_output".into(), updated.clone());
+    }
+    if let Some(c) = &h.additional_context {
+        o.insert("additional_context".into(), c.as_str().into());
+    }
+    if o.is_empty() {
+        return nested();
+    }
+    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
+}
+
+fn is_rtok_mcp(input: &HookInput) -> bool {
+    if input
+        .extra
+        .get("mcp_server_name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|s| s.eq_ignore_ascii_case("rtok"))
+    {
+        return true;
+    }
+    let raw = input.tool_name.as_deref().unwrap_or("");
+    raw.strip_prefix("MCP:").unwrap_or(raw) == "expand"
+}
+
+fn mcp_result(response: &serde_json::Value) -> Option<serde_json::Value> {
+    if response
+        .get("content")
+        .and_then(serde_json::Value::as_array)
+        .is_some()
+    {
+        return Some(response.clone());
+    }
+    if response
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(serde_json::Value::as_array)
+        .is_some()
+    {
+        return Some(response["result"].clone());
+    }
+    None
+}
+
+fn cursor_mcp_output(input: &HookInput, cx: &Runtime) -> Option<serde_json::Value> {
+    if cx.config.hook.host != "cursor" || is_rtok_mcp(input) {
+        return None;
+    }
+    // `shorten_result` rewrites it in place; without the `cmd` plugin nothing does.
+    #[cfg_attr(not(feature = "cmd"), allow(unused_mut))]
+    let mut result = mcp_result(input.tool_response.as_ref()?)?;
+    #[cfg(feature = "cmd")]
+    {
+        let settings = crate::plugins::cmd::rules::Settings::from_config(&cx.config);
+        let server = input
+            .extra
+            .get("mcp_server_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("mcp");
+        let raw = input.tool_name.as_deref().unwrap_or("tool");
+        let tool = raw.strip_prefix("MCP:").unwrap_or(raw);
+        if crate::mcp::wrap::shorten_result(
+            cx,
+            &settings,
+            server,
+            tool,
+            &mut result,
+            "archive",
+            "mcp",
+        ) {
+            return Some(result);
+        }
+    }
+    #[cfg(not(feature = "cmd"))]
+    let _ = result;
+    None
 }
 
 fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput {
@@ -373,6 +545,7 @@ mod tests {
                 permission_decision_reason: Some("rtok".into()),
                 updated_input: Some(serde_json::json!({"command": "rtok cmd -- git status"})),
                 additional_context: None,
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -623,9 +796,113 @@ mod tests {
         );
         let cv: serde_json::Value = serde_json::from_slice(&claude_out).unwrap();
         let cursor_ctx = v["additional_context"].as_str().unwrap_or("");
-        let claude_ctx = cv["hookSpecificOutput"]["additionalContext"].as_str().unwrap_or("");
+        let claude_ctx = cv["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap_or("");
         assert_eq!(cursor_ctx, claude_ctx);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    fn cursor_cfg(dir: &std::path::Path) -> Config {
+        let mut c = Config::default();
+        c.hook.host = "cursor".into();
+        c.core.db_path = dir.join("rtok.db");
+        c.core.archive_dir = dir.join("archive");
+        c
+    }
+
+    fn mcp_stdin(server: &str, tool: &str, text: &str) -> Vec<u8> {
+        let result = serde_json::json!({"content":[{"type":"text","text": text}]});
+        serde_json::to_vec(&serde_json::json!({
+            "hook_event_name": "postToolUse",
+            "tool_name": tool,
+            "tool_input": {},
+            "tool_output": result.to_string(),
+            "conversation_id": "s-mcp",
+            "mcp_server_name": server
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn cursor_output_emits_snake_case_mcp_replacement() {
+        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
+        assert_eq!(
+            json(cursor_output(&HookOutput::default())),
+            serde_json::json!({})
+        );
+        let out = HookOutput {
+            hook_specific_output: Some(HookSpecificOutput {
+                hook_event_name: "PostToolUse".into(),
+                updated_mcp_tool_output: Some(serde_json::json!({"content":[]})),
+                additional_context: Some("note".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let v = json(cursor_output(&out));
+        assert_eq!(
+            v["updated_mcp_tool_output"]["content"],
+            serde_json::json!([])
+        );
+        assert_eq!(v["additional_context"], "note");
+        assert!(v.get("hookSpecificOutput").is_none());
+    }
+
+    #[test]
+    fn cursor_mcp_post_tool_use_shortens_only_foreign_long_results() {
+        let dir = std::env::temp_dir().join(format!(
+            "rtok-hook-mcp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let cfg = cursor_cfg(&dir);
+        let long: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+        let out = dispatch_owned_strict(
+            &mcp_stdin("linear", "MCP:list_issues", &long),
+            "PostToolUse",
+            &cfg,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let printed = v["updated_mcp_tool_output"]["content"][0]["text"]
+            .as_str()
+            .unwrap_or("");
+        assert!(printed.contains("expand: rtok expand "), "{v}");
+        assert!(printed.len() < long.len(), "{printed}");
+        let store = crate::store::Store::open(&cfg.core.db_path).unwrap();
+        let rows = store.list_measurements("archive").unwrap();
+        assert_eq!(
+            rows.iter().filter(|r| r.kind == "mcp").count(),
+            1,
+            "{rows:?}"
+        );
+
+        let small = dispatch_owned_strict(
+            &mcp_stdin("linear", "MCP:list_issues", "ok\n"),
+            "PostToolUse",
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(small, b"{}");
+
+        let own =
+            dispatch_owned_strict(&mcp_stdin("rtok", "MCP:search", &long), "PostToolUse", &cfg)
+                .unwrap();
+        assert_eq!(own, b"{}", "rtok MCP results must not be rewritten");
+        assert_eq!(
+            store
+                .list_measurements("archive")
+                .unwrap()
+                .iter()
+                .filter(|r| r.kind == "mcp")
+                .count(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

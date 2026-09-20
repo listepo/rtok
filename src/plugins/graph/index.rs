@@ -204,7 +204,8 @@ fn run_changed_with(
     let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let rk = canon(&root);
     let mut report = Report::default();
-    let matcher = super::walk::Matcher::new(&root, &cx.plugin_config::<crate::config::Graph>("graph"));
+    let matcher =
+        super::walk::Matcher::new(&root, &cx.plugin_config::<crate::config::Graph>("graph"));
     let mut jobs = Vec::new();
     for event_path in changed {
         let abs = changed_abs(&root, event_path);
@@ -371,9 +372,9 @@ fn each_parsed(jobs: &[Job], mut write: impl FnMut(&Job, Parsed) -> Result<()>) 
 }
 
 /// Bump when [`scoped`] changes (T35.5).
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 3;
 
-/// Hex sha256 of `INDEX_VERSION` and every query string [`outline::config`] compiles —
+/// Hex sha256 of `INDEX_VERSION` and every query string [`outline::tags`] compiles —
 /// tags **and** locals, because a language whose locals query changed produces different
 /// rows. The TypeScript pair was hashed twice, which hid a `LOCALS_QUERY` bump for
 /// ts/tsx/js/dart behind an unchanged fingerprint.
@@ -385,26 +386,51 @@ fn extractor_fingerprint() -> String {
     {
         bytes.extend_from_slice(tree_sitter_dart::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_dart::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::DART_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-go")]
-    bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_go::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::GO_IMPORT.as_bytes());
+    }
     #[cfg(feature = "lang-js")]
     {
         bytes.extend_from_slice(tree_sitter_javascript::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_javascript::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::JS_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-python")]
-    bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
+    {
+        bytes.extend_from_slice(tree_sitter_python::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::PYTHON_IMPORT.as_bytes());
+    }
     #[cfg(feature = "lang-rust")]
     {
         bytes.extend_from_slice(tree_sitter_rust::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(outline::RUST_SCOPED_CALL.as_bytes());
+        bytes.extend_from_slice(outline::RUST_IMPORT.as_bytes());
     }
     #[cfg(feature = "lang-ts")]
     {
         bytes.extend_from_slice(tree_sitter_typescript::TAGS_QUERY.as_bytes());
         bytes.extend_from_slice(tree_sitter_typescript::LOCALS_QUERY.as_bytes());
+        bytes.extend_from_slice(outline::JS_IMPORT.as_bytes());
     }
+    #[cfg(feature = "lang-java")]
+    bytes.extend_from_slice(tree_sitter_java::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-kotlin")]
+    bytes.extend_from_slice(outline::KOTLIN_TAGS.as_bytes());
+    #[cfg(feature = "lang-swift")]
+    bytes.extend_from_slice(tree_sitter_swift::TAGS_QUERY.as_bytes());
+    #[cfg(feature = "lang-csharp")]
+    bytes.extend_from_slice(outline::CSHARP_TAGS.as_bytes());
+    #[cfg(feature = "lang-ruby")]
+    {
+        bytes.extend_from_slice(tree_sitter_ruby::TAGS_QUERY.as_bytes());
+        bytes.extend_from_slice(tree_sitter_ruby::LOCALS_QUERY.as_bytes());
+    }
+    #[cfg(feature = "lang-php")]
+    bytes.extend_from_slice(tree_sitter_php::TAGS_QUERY.as_bytes());
     store::hex_sha256(&bytes)
 }
 
@@ -419,7 +445,7 @@ fn scoped(hits: &[outline::TagHit]) -> Vec<Row> {
         .collect();
     hits.iter()
         .map(|h| {
-            let scope = if h.is_def {
+            let scope = if h.is_def || h.kind == "import" {
                 String::new()
             } else {
                 defs.iter()

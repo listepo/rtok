@@ -26,6 +26,10 @@ const ALLOW: &[&str] = &[
     "grep",    // expand filter; not a stored setting (T3.5)
     "context", // expand grep context window; per call like --grep (T67.2)
     "stdin",   // action: rtok filter reads stdin (T10.2)
+    "archive", // action: rtok filter --archive (T62.3)
+    "tool",    // action: rtok guard check --tool (T70.5)
+    "call",    // action: rtok mcp --call (T70.3)
+    "session", // action: rtok guard check --session (T70.5)
     "all",     // action: agent sessions also lists ended sessions (T25.2); not a setting
     "cli",     // action: agent setup variant filter (T37.0); not a setting
     "desktop", // action: agents install variant filter (T37.0); not a setting
@@ -37,10 +41,14 @@ const ALLOW: &[&str] = &[
 const ALLOW_KEYS: &[&str] = &[
     "config.init.dry_run",
     "config.set.dry_run",
+    "guard.check.host", // overlay `[hook] host` on the plugin CLI path (T70.5)
     "memory.import.dry_run",
     "graph.index.dry_run",
     "graph.impact.depth",
     "graph.impact.to",
+    // `graph affected` (T68.x): which diff to read on one call, not a stored setting.
+    "graph.affected.since",
+    "graph.affected.staged",
     // `memory export --project` narrows one dump; the store, not a setting, decides it.
     "memory.export.project",
     // `memory retire/revise` (T69.1): one-shot lifecycle values on a single call, not settings.

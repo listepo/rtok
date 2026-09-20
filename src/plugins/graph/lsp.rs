@@ -664,9 +664,16 @@ pub(crate) fn impact(
                     format!("no path from {name} to {target} within depth {depth}"),
                 );
             }
-            return finish(cx, "impact", t0, chains.join("
-") + "
-");
+            return finish(
+                cx,
+                "impact",
+                t0,
+                chains.join(
+                    "
+",
+                ) + "
+",
+            );
         }
         let rows = impact_walk(s, name, depth, filter)?;
         if rows.is_empty() {

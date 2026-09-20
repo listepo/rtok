@@ -1,0 +1,100 @@
+.ie /n(.g .ds Aq /(aq
+.el .ds Aq '
+.TH rtok 1  "rtok [..]" 
+.SH NAME
+rtok /- Token/-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods
+.SH SYNOPSIS
+/fBrtok/fR [/fB/-/-config/fR] [/fB/-h/fR|/fB/-/-help/fR] [/fB/-V/fR|/fB/-/-version/fR] </fIsubcommands/fR>
+.SH DESCRIPTION
+Token/-reduction CLI for AI coding agents: hooks, MCP server and API proxy with pluggable methods
+.SH OPTIONS
+.TP
+/fB/-/-config/fR /fI<PATH>/fR
+User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+.TP
+/fB/-h/fR, /fB/-/-help/fR
+Print help
+.TP
+/fB/-V/fR, /fB/-/-version/fR
+Print version
+.SH SUBCOMMANDS
+.TP
+rtok/-hook(1)
+Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
+.TP
+rtok/-mcp(1)
+Serve MCP tools over stdio; `/-/- <server argv>` wraps a foreign server instead
+.TP
+rtok/-proxy(1)
+Local API proxy for ANTHROPIC_BASE_URL
+.TP
+rtok/-web(1)
+Local web UI over the same data as `rtok tui` (WebSocket API + Slint/WASM)
+.TP
+rtok/-tui(1)
+Terminal UI over the same data as `rtok web` (D23: one model, two renderings)
+.TP
+rtok/-stats(1)
+Measurements from session logs and the proxy
+.TP
+rtok/-bench(1)
+A/B benchmark of host configurations
+.TP
+rtok/-doctor(1)
+Inspect hooks, MCP servers and the proxy chain
+.TP
+rtok/-info(1)
+Version, effective paths, disk usage, error count and proxy status
+.TP
+rtok/-agents(1)
+Agent hosts (`rtok agents install|uninstall|list|info …`)
+.TP
+rtok/-run(1)
+Execute a command, archive its raw output, print the filtered version
+.TP
+rtok/-filter(1)
+Filter text from stdin without executing
+.TP
+rtok/-expand(1)
+Print an archived payload
+.TP
+rtok/-archive(1)
+The archive live zone (`rtok archive rewrite` — pi `context` carrier, T70.2)
+.TP
+rtok/-completions(1)
+Print shell completions for `bash`, `zsh`, `fish` or `powershell`
+.TP
+rtok/-man(1)
+Print the man page (roff) to stdout
+.TP
+rtok/-plugins(1)
+List plugins: id, enabled, surfaces
+.TP
+rtok/-config(1)
+The one config file
+.TP
+rtok/-memory(1)
+Notes (`mem_save` / import / export)
+.TP
+rtok/-graph(1)
+Symbol index (`rtok graph index`)
+.TP
+rtok/-guard(1)
+Duplicate/-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
+.TP
+rtok/-demon(1)
+Keep `rtok proxy` (or `mcp` / `web`) running in the background
+.TP
+rtok/-otel(1)
+OpenTelemetry export (`rtok otel flush | status`)
+.TP
+rtok/-logs(1)
+rtok/*(Aqs own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)
+.TP
+rtok/-report(1)
+The operator model as one document (D24): Markdown, HTML and PDF
+.TP
+rtok/-help(1)
+Print this message or the help of the given subcommand(s)
+.SH VERSION
+v0.3.0 ([..])

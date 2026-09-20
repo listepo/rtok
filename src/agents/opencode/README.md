@@ -29,8 +29,8 @@ prints the ketch install line once.
 The proxy carries `proxy`, MCP carries `mcp`, and the linked plugin carries the bash call
 path (`cli`). Nothing carries `hook`.
 
-Reachable: measure, cmd, read, archive, proxy, memory, graph, toon, compress
-Not reachable: inject, guard
+Reachable: measure, cmd, read, archive, proxy, guard, memory, graph, toon, compress
+Not reachable: inject
 
 ## Docs
 
@@ -38,5 +38,5 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Config (`~/.config/opencode/opencode.json`): https://opencode.ai/docs/config/
 - MCP (`mcp.<name>` with `type: "local"`, `command` array, `enabled`): https://opencode.ai/docs/mcp-servers/
-- Plugins (`~/.config/opencode/plugins/`, `.opencode/plugins/`, `tool.execute.after`): https://opencode.ai/docs/plugins/
+- Plugins (`~/.config/opencode/plugins/`, `.opencode/plugins/`, `tool.execute.before` throw, `tool.execute.after`): https://opencode.ai/docs/plugins/
 - Skills (`skills/<name>/` beside config): https://opencode.ai/docs/skills

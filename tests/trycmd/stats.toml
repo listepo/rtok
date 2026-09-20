@@ -1,0 +1,17 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml stats"
+stdout = """
+sessions 0  compact 0  checkpoint 0  no_checkpoint 0  lines 0  malformed 0
+usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
+tool                       count        bytes     mean      p95      max   est_tokens          ctt
+bash                     filter     count        bytes     mean      p95      max   est_tokens          ctt
+mcp                        count        bytes     mean      p95      max   est_tokens          ctt
+"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-stats"
+RTOK_HOME = "target/tmp/t60-2-stats"

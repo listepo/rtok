@@ -1,4 +1,5 @@
-import { HorizontalBox, VerticalBox, ListView, ScrollView } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ListView, ScrollView, LineEdit } from "std-widgets.slint";
+
 import { RtokTheme } from "theme.slint";
 
 // Bundled IBM Plex Mono (OFL) — weights 400 / 600 / 700
@@ -37,6 +38,51 @@ export struct CallRow {
     tokens: string,
     subtitle: string,
     detail: string,
+    ref-id: string,
+}
+
+component CallArchive inherits VerticalBox {
+    in property <string> ref-id;
+    in-out property <string> view;
+    in-out property <string> filter;
+    callback expand-archive(string);
+    callback filter-expand(string);
+    spacing: RtokTheme.space-2;
+    if ref-id != "": TouchArea {
+        accessible-role: button;
+        accessible-label: "expand " + ref-id;
+        clicked => { root.expand-archive(root.ref-id); }
+        Text {
+            text: "expand " + ref-id;
+            color: RtokTheme.accent;
+            font-family: "IBM Plex Mono";
+            font-size: 12px;
+        }
+    }
+    LineEdit {
+        placeholder-text: "filter";
+        text <=> root.filter;
+        edited => { root.filter-expand(self.text); }
+    }
+    Text {
+        text: root.view;
+        wrap: word-wrap;
+        color: RtokTheme.ink-muted;
+        font-family: "IBM Plex Mono";
+        font-size: 12px;
+    }
+}
+
+export struct SkillRow {
+    name: string,
+    source: string,
+    desc-chars: string,
+    body-bytes: string,
+    invocations: string,
+    resident: string,
+    last-invoked: string,
+    never: bool,
+    summary: string,
 }
 
 export struct SessionRow {
@@ -52,6 +98,7 @@ export struct SessionRow {
     status: string,
     activity: string,
     summary: string,
+    detail: string,
 }
 
 component MetricCell inherits VerticalBox {
@@ -149,7 +196,28 @@ component PageIcon inherits Image {
         page-id == "sessions" ? @image-url("icons/sessions.svg") :
         page-id == "doctor" ? @image-url("icons/doctor.svg") :
         page-id == "logs" ? @image-url("icons/logs.svg") :
+        page-id == "skills" ? @image-url("icons/doctor.svg") :
         @image-url("icons/overview.svg");
+}
+
+/// Same toggle as the TUI Plugins tab (T60.5): click sends `plugins.<id>.enabled`.
+component PluginEnableToggle inherits Rectangle {
+    in property <bool> on;
+    in property <string> plugin-id;
+    callback toggled(bool);
+    height: 24px;
+    TouchArea {
+        accessible-role: button;
+        accessible-label: "toggle " + plugin-id;
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+    Text {
+        text: on ? "enabled" : "disabled";
+        color: on ? RtokTheme.success : RtokTheme.ink-subtle;
+        font-family: "IBM Plex Mono";
+    }
 }
 
 /// Nav row used in full sidebar, rail, and mobile icon bar.
@@ -217,13 +285,24 @@ export component MainWindow inherits Window {
     out property <CallRow> selected-call: calls[call-cursor];
 
     in-out property <[SessionRow]> sessions;
+    in-out property <int> session-cursor: 0;
+    out property <SessionRow> selected-session: sessions[session-cursor];
     in property <string> doctor-text;
     in-out property <[string]> logs;
+    in property <string> skills-header;
+    in-out property <[SkillRow]> skills;
+    in-out property <bool> skills-never-only: false;
     in property <string> status: "connecting";
     in property <string> error: "";
     in-out property <bool> dark: true;
     changed dark => { RtokTheme.dark = dark; }
     callback theme-toggle();
+    callback toggle-plugin(string, bool);
+    callback expand-archive(string);
+    callback filter-expand(string);
+    in-out property <string> expand-text;
+    in-out property <string> expand-view;
+    in-out property <string> expand-filter;
 
     // --- Responsive shell derived from tracked window width ---
     // Use `changed width` (not a live binding to root.width) to avoid
@@ -528,10 +607,12 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                                 font-family: "IBM Plex Mono";
                             }
-                            Text {
-                                text: selected-plugin.enabled ? "enabled" : "disabled";
-                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
-                                font-family: "IBM Plex Mono";
+                            PluginEnableToggle {
+                                on: selected-plugin.enabled;
+                                plugin-id: selected-plugin.id;
+                                toggled(value) => {
+                                    root.toggle-plugin(selected-plugin.id, value);
+                                }
                             }
                             Text {
                                 text: selected-plugin.summary;
@@ -611,10 +692,12 @@ export component MainWindow inherits Window {
                                 font-weight: 700;
                                 font-family: "IBM Plex Mono";
                             }
-                            Text {
-                                text: selected-plugin.enabled ? "enabled" : "disabled";
-                                color: selected-plugin.enabled ? RtokTheme.success : RtokTheme.ink-subtle;
-                                font-family: "IBM Plex Mono";
+                            PluginEnableToggle {
+                                on: selected-plugin.enabled;
+                                plugin-id: selected-plugin.id;
+                                toggled(value) => {
+                                    root.toggle-plugin(selected-plugin.id, value);
+                                }
                             }
                             Text {
                                 text: selected-plugin.summary;
@@ -705,12 +788,21 @@ export component MainWindow inherits Window {
                                 font-family: "IBM Plex Mono";
                             }
                             if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: Text {
-                                text: selected-call.detail;
-                                color: RtokTheme.ink-muted;
-                                wrap: word-wrap;
-                                font-size: body-size;
-                                font-family: "IBM Plex Mono";
+                            if calls.length > 0: VerticalBox {
+                                Text {
+                                    text: selected-call.detail;
+                                    color: RtokTheme.ink-muted;
+                                    wrap: word-wrap;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                CallArchive {
+                                    ref-id: selected-call.ref-id;
+                                    view <=> root.expand-view;
+                                    filter <=> root.expand-filter;
+                                    expand-archive(id) => { root.expand-archive(id); }
+                                    filter-expand(s) => { root.filter-expand(s); }
+                                }
                             }
                         }
                     }
@@ -779,60 +871,97 @@ export component MainWindow inherits Window {
                                 font-family: "IBM Plex Mono";
                             }
                             if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: Text {
-                                text: selected-call.detail;
-                                color: RtokTheme.ink-muted;
-                                wrap: word-wrap;
-                                font-size: body-size;
-                                font-family: "IBM Plex Mono";
+                            if calls.length > 0: VerticalBox {
+                                Text {
+                                    text: selected-call.detail;
+                                    color: RtokTheme.ink-muted;
+                                    wrap: word-wrap;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                                CallArchive {
+                                    ref-id: selected-call.ref-id;
+                                    view <=> root.expand-view;
+                                    filter <=> root.expand-filter;
+                                    expand-archive(id) => { root.expand-archive(id); }
+                                    filter-expand(s) => { root.filter-expand(s); }
+                                }
                             }
                         }
                     }
                 }
 
-                if page-id == "sessions": ScrollView {
-                    VerticalBox {
-                        spacing: RtokTheme.space-2;
-                        max-width: content-max;
-                        Text {
-                            text: "sessions";
-                            color: RtokTheme.ink;
-                            font-size: title-size;
-                            font-weight: 700;
-                            font-family: "IBM Plex Mono";
+                if page-id == "sessions": HorizontalBox {
+                    spacing: shell-gap;
+                    Rectangle {
+                        width: calls-list-w;
+                        border-radius: RtokTheme.radius-lg;
+                        background: RtokTheme.surface-1;
+                        border-width: 1px;
+                        border-color: RtokTheme.hairline;
+                        VerticalBox {
+                            padding: RtokTheme.space-2;
+                            Text {
+                                text: "sessions";
+                                color: RtokTheme.ink;
+                                font-size: title-size;
+                                font-weight: 700;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if sessions.length == 0: Text {
+                                text: "no sessions yet";
+                                color: RtokTheme.ink-muted;
+                                font-family: "IBM Plex Mono";
+                            }
+                            ListView {
+                                for s[i] in sessions: Rectangle {
+                                    height: 56px;
+                                    border-radius: RtokTheme.radius-md;
+                                    background: i == session-cursor ? RtokTheme.accent-muted : transparent;
+                                    TouchArea {
+                                        accessible-role: button;
+                                        accessible-label: "session " + s.id;
+                                        clicked => { session-cursor = i; }
+                                        VerticalBox {
+                                            padding-left: RtokTheme.space-2;
+                                            spacing: 0;
+                                            Text {
+                                                text: s.summary;
+                                                color: i == session-cursor ? RtokTheme.accent : RtokTheme.ink;
+                                                font-weight: 600;
+                                                font-size: body-size;
+                                                font-family: "IBM Plex Mono";
+                                            }
+                                            Text {
+                                                text: s.activity;
+                                                color: RtokTheme.ink-muted;
+                                                font-size: 11px;
+                                                font-family: "IBM Plex Mono";
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        if sessions.length == 0: Text {
-                            text: "no sessions yet";
-                            color: RtokTheme.ink-muted;
-                            font-family: "IBM Plex Mono";
-                        }
-                        for s in sessions: Rectangle {
-                            border-radius: RtokTheme.radius-md;
-                            background: RtokTheme.surface-1;
-                            border-width: 1px;
-                            border-color: RtokTheme.hairline;
-                            VerticalBox {
-                                padding: wide ? RtokTheme.space-3 : 10px;
-                                spacing: 2px;
-                                Text {
-                                    text: s.summary;
-                                    color: RtokTheme.ink;
-                                    font-weight: 600;
-                                    font-size: body-size;
-                                    font-family: "IBM Plex Mono";
-                                }
-                                Text {
-                                    text: s.activity;
-                                    color: RtokTheme.ink-muted;
-                                    font-size: 11px;
-                                    font-family: "IBM Plex Mono";
-                                }
-                                Text {
-                                    text: s.status;
-                                    color: RtokTheme.ink-muted;
-                                    font-size: 12px;
-                                    font-family: "IBM Plex Mono";
-                                }
+                    }
+                    ScrollView {
+                        horizontal-stretch: 1;
+                        VerticalBox {
+                            spacing: RtokTheme.space-2;
+                            max-width: content-max;
+                            Text {
+                                text: "detail";
+                                color: RtokTheme.ink-muted;
+                                font-size: 11px;
+                                font-family: "IBM Plex Mono";
+                            }
+                            if sessions.length == 0: Text { text: ""; }
+                            if sessions.length > 0: Text {
+                                text: selected-session.detail;
+                                color: RtokTheme.ink-muted;
+                                wrap: word-wrap;
+                                font-size: body-size;
+                                font-family: "IBM Plex Mono";
                             }
                         }
                     }
@@ -881,6 +1010,58 @@ export component MainWindow inherits Window {
                             wrap: word-wrap;
                             font-size: ultrawide ? 13px : 12px;
                             font-family: "IBM Plex Mono";
+                        }
+                    }
+                }
+
+                if page-id == "skills": ScrollView {
+                    VerticalBox {
+                        spacing: RtokTheme.space-2;
+                        max-width: content-max;
+                        Text {
+                            text: "skills";
+                            color: RtokTheme.ink;
+                            font-size: title-size;
+                            font-weight: 700;
+                            font-family: "IBM Plex Mono";
+                        }
+                        Text {
+                            text: skills-header;
+                            color: RtokTheme.ink-muted;
+                            wrap: word-wrap;
+                            font-size: body-size;
+                            font-family: "IBM Plex Mono";
+                        }
+                        TouchArea {
+                            accessible-role: checkbox;
+                            accessible-label: "never invoked only";
+                            clicked => { skills-never-only = !skills-never-only; }
+                            Text {
+                                text: (skills-never-only ? "[x] " : "[ ] ") + "never invoked only";
+                                color: RtokTheme.accent;
+                                font-family: "IBM Plex Mono";
+                                font-size: body-size;
+                            }
+                        }
+                        if skills.length == 0: Text {
+                            text: "no skills listed";
+                            color: RtokTheme.ink-muted;
+                            font-family: "IBM Plex Mono";
+                        }
+                        for s in skills: Rectangle {
+                            property <bool> shown: !skills-never-only || s.never;
+                            height: shown ? 48px : 0px;
+                            border-radius: RtokTheme.radius-md;
+                            if shown: TouchArea {
+                                accessible-role: button;
+                                accessible-label: "skill " + s.name;
+                                Text {
+                                    text: s.summary;
+                                    color: s.never ? RtokTheme.ink-muted : RtokTheme.ink;
+                                    font-size: body-size;
+                                    font-family: "IBM Plex Mono";
+                                }
+                            }
                         }
                     }
                 }

@@ -39,7 +39,7 @@ lands as a `cmd` / `wrap` measurement with `ref_id = <server>/<tool>:<id>`.
 | `tail` | integer ≥ 0 | 10 | lines always kept from the end |
 | `drop` | array of strings | `[]` | case-insensitive substrings to remove (`\|` separates alternatives) |
 | `keep` | array of strings | `[]` | substrings that are never dropped and never cut by the cap; built-in keeps are `error`, `warning`, `panic`, `fail`, `traceback` |
-| `dedupe` | bool or `"normalized"` | true | `true` folds adjacent identical lines into `line (×N)`; `"normalized"` keys lines with timestamps, ids, pids and durations replaced by placeholders and folds non-adjacent matches into `line (×N, also lines k, l, …)` |
+| `dedupe` | bool | true | collapse runs of identical lines into `line (×N)` |
 
 Any other field, a wrong type, or broken TOML is malformed. A non-zero exit
 ignores all of this: the last `[plugins.cmd] fail_tail_lines` lines (default
@@ -79,3 +79,37 @@ rtok config validate   # names rules.d/*.toml files that do not parse
 plus the single `rules` file and every `rules.d/*.toml` it resolves to. A
 reported file is skipped at runtime until fixed; everything else keeps
 filtering.
+
+## Families (T50.1)
+
+Measured on the golden fixtures in `tests/cmd_golden/` (`rtok filter --stdin`, `Rule` vs
+`Rule::default()` on the same body; est tokens = bytes/4).
+
+| Family | `keep` highlights | before B | after B | est saved |
+| --- | --- | ---: | ---: | ---: |
+| `gh` | `error`, `HTTP 4`, `gh:` | 325 | 277 | 12 |
+| `pip` | `ERROR`, `Could not` | 389 | 341 | 12 |
+| `uv` | `error`, `Failed` | 292 | 244 | 12 |
+| `python` / `python3` | `Traceback`, `Error` | 367 | 299 | 17 |
+| `go` | `error`, `panic`, `cannot` | 290 | 242 | 12 |
+| `aws` | `An error occurred`, `AccessDenied` | 349 | 301 | 12 |
+| `mvn` | `BUILD FAILURE`, `[ERROR]` | 419 | 395 | 6 |
+| `gradle` | `BUILD FAILED`, `What went wrong` | 357 | 302 | 13 |
+| `dotnet` | `error CS`, `Build FAILED` | 285 | 237 | 12 |
+| `tsc` | `error TS`, `Found N error` | 373 | 325 | 12 |
+| `eslint` | `error`, `warning`, `problems` | 298 | 250 | 12 |
+| `brew` | `Error:`, `failed` | 310 | 262 | 12 |
+| `apt` | `^E:`, `Unable to` | 293 | 245 | 12 |
+| `cmake` | `CMake Error`, `FAILED` | 317 | 255 | 15 |
+
+## Formatters (T58.5)
+
+Measured on the same golden bodies (`formatters::compress`, `Measurement.kind = formatter`
+vs `Rule::default()` on the same fixture; est tokens = bytes/4). Each formatter keeps one
+row per object and returns `None` on unrecognized output so the rule path stays the fallback.
+
+| Family | keeps | before B | rule after B | formatter after B | est saved vs rule |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `docker ps` | one row per container | 3147 | 1311 | 1190 | 30 |
+| `kubectl get` | one row per object (`NAME READY STATUS IP`) | 4542 | 1770 | 1731 | 9 |
+| `ps aux` | one row per process | 2341 | 990 | 870 | 30 |

@@ -31,7 +31,9 @@ fn memory_page_carries_store_counts() {
         .find(|p| p.id == "memory")
         .unwrap();
     assert!(
-        mem.fields.iter().any(|(k, v)| k == "notes live" && v == "3"),
+        mem.fields
+            .iter()
+            .any(|(k, v)| k == "notes live" && v == "3"),
         "{:?}",
         mem.fields
     );

@@ -60,6 +60,15 @@ pub struct ArchiveDecision {
     pub expanded: bool,
 }
 
+/// A same-session archive row whose sha256 matched a later payload (T65.1).
+#[derive(Clone, Debug)]
+pub struct ArchiveHit {
+    /// Handle for [`Archive::get_archive`] and for `rtok expand <id>`.
+    pub id: String,
+    /// Measurement rows in this session after the original archive; 0 if none yet.
+    pub turns: u64,
+}
+
 /// The host, as a plugin sees it.
 ///
 /// This is the part every plugin gets: estimate what text will cost, record what you saved,
@@ -208,6 +217,12 @@ pub trait Archive {
 
     /// Mark an archived blob as expanded by the user; returns how many rows changed.
     fn mark_expanded(&self, archive_id: &str) -> Result<usize>;
+
+    /// The archive row for `sha256` written in this session, if any. Default `Ok(None)`
+    /// so a host that cannot look it up fails open (the caller prints the body).
+    fn archive_in_session(&self, _sha256: &str) -> Result<Option<ArchiveHit>> {
+        Ok(None)
+    }
 }
 
 /// Durable notes the host can search — what a plugin remembers between sessions.
@@ -232,6 +247,13 @@ pub trait Notes {
 
     /// The body of the most recent note of `kind`.
     fn latest_note(&self, kind: &str) -> Result<Option<String>>;
+
+    /// Newest note body whose kind starts with `kind_prefix` for `project`.
+    fn latest_note_for_project(
+        &self,
+        project: Option<&str>,
+        kind_prefix: &str,
+    ) -> Result<Option<String>>;
 
     /// The `limit` most recent `(id, title)` pairs, newest first.
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>>;
@@ -360,11 +382,7 @@ pub trait Symbols {
     fn symbol_ref_groups(&self, root: &str, name: &str) -> Result<Vec<(String, String, i64, i32)>>;
 
     /// Callees per definition of `name`: `(def_path, def_line, callee, first_line)` (T68.2).
-    fn symbol_callees(
-        &self,
-        root: &str,
-        name: &str,
-    ) -> Result<Vec<(String, i32, String, i32)>> {
+    fn symbol_callees(&self, root: &str, name: &str) -> Result<Vec<(String, i32, String, i32)>> {
         let _ = (root, name);
         Ok(Vec::new())
     }
@@ -396,6 +414,31 @@ pub trait Symbols {
     /// hops, shortest first (T68.1 `explore`; T68.4 `impact --to` reuses it).
     fn symbol_paths(&self, root: &str, from: &str, to: &str, depth: u32) -> Result<Vec<String>> {
         let _ = (root, from, to, depth);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: import rows of `path` as `(name, line)`.
+    fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, path);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: files that import `module` as `(path, line)`.
+    fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        let _ = (root, module);
+        Ok(Vec::new())
+    }
+
+    /// T68.6: definitions in files that import `name` (the extra impact hop).
+    fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        let _ = (root, name);
+        Ok(Vec::new())
+    }
+
+    /// T52.3: names ranked by reference count with one def site:
+    /// `(name, refs, path, line)`, `ORDER BY refs DESC, name ASC`.
+    fn symbol_top_refs(&self, root: &str, limit: i64) -> Result<Vec<(String, i64, String, i32)>> {
+        let _ = (root, limit);
         Ok(Vec::new())
     }
 }

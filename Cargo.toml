@@ -7,7 +7,7 @@ exclude = ["crates/rtok-webui"]
 
 [package]
 name = "rtok"
-version = "0.1.6"
+version = "0.3.0"
 edition = "2024"
 repository = "https://github.com/listepo/rtok" # cargo-dist hosting (T10.4)
 # Both fields are also what dist reads when it builds a Homebrew formula — off today, kept
@@ -24,7 +24,7 @@ publish = false
 dist = true
 # Host plugins must ship beside the binary: setup resolves `plugins/<host>` next
 # to `current_exe()` for installed archives (Windows zip / unix tarballs).
-include = ["plugins/"]
+include = ["plugins/", "skills/"]
 
 [[bin]]
 name = "rtok"
@@ -39,7 +39,7 @@ harness = false
 default = ["measure", "cmd", "read", "archive", "proxy", "inject", "guard", "memory", "graph", "toon", "compress"]
 measure = []
 cmd = []
-read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go"]
+read = ["dep:tree-sitter", "dep:tree-sitter-tags", "lang-rust", "lang-ts", "lang-js", "lang-python", "lang-dart", "lang-c", "lang-go", "lang-java", "lang-kotlin", "lang-swift", "lang-csharp", "lang-ruby", "lang-php"]
 archive = []
 proxy = []
 inject = []
@@ -59,6 +59,12 @@ lang-python = ["dep:tree-sitter-python"]
 lang-dart = ["dep:tree-sitter-dart"]
 lang-c = ["dep:tree-sitter-c"]
 lang-go = ["dep:tree-sitter-go"]
+lang-java = ["dep:tree-sitter-java"]
+lang-kotlin = ["dep:tree-sitter-kotlin-ng"]
+lang-swift = ["dep:tree-sitter-swift"]
+lang-csharp = ["dep:tree-sitter-c-sharp"]
+lang-ruby = ["dep:tree-sitter-ruby"]
+lang-php = ["dep:tree-sitter-php"]
 
 [lints.rust]
 # Hand-written `unsafe` is forbidden. rustc only reports `UserProvided` blocks —
@@ -83,7 +89,7 @@ clap_complete = "4.6" # `rtok completions` (T53.2)
 clap_mangen = "0.3" # `rtok man` (T53.2)
 figment = { version = "0.10", features = ["toml", "env"] } # config layering + per-key provenance (D14)
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
-libsqlite3-sys = { version = "0.30", features = ["bundled"] } # FTS5 in the SQLite bundle
+libsqlite3-sys = { version = "0.38", features = ["bundled"] } # FTS5 in the SQLite bundle
 rtok-sys = { path = "crates/rtok-sys" } # demon kill/setsid + flock (Windows-safe shims; rustix stays inside rtok-sys on Unix)
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -104,7 +110,7 @@ printpdf = "0.12.8" # paged-PDF renderer for `rtok report --format pdf` (T22.0 s
 regex = "1" # search pattern (T4.5)
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time"] }
 axum = { version = "0.8.9", features = ["ws"] } # dashboard WebSocket (P19); proxy HTTP unchanged
-tower-http = { version = "0.6", features = ["fs"] } # ServeDir for Slint WASM assets
+tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM assets
 futures-util = "0.3.34"
 ratatui = "0.30.2" # `rtok tui`, the terminal rendering of the D23 model (T15.1); default backend is crossterm
 crossterm = "0.29" # key and tick events for the TUI loop (T15.1); same major as ratatui 0.30's backend, so one copy links
@@ -121,6 +127,12 @@ tree-sitter-python = { version = "0.25", optional = true } # lang-python tags (T
 tree-sitter-c = { version = "0.24", optional = true } # lang-c tags (T4.3)
 tree-sitter-go = { version = "0.25", optional = true } # lang-go tags (T4.3)
 tree-sitter-dart = { version = "0.2", optional = true } # lang-dart tags (T4.3)
+tree-sitter-java = { version = "0.23.5", optional = true } # lang-java tags (T52.2)
+tree-sitter-kotlin-ng = { version = "1.1.0", optional = true } # lang-kotlin tags (T52.2); fwcd 0.3.8 needs tree-sitter <0.23
+tree-sitter-swift = { version = "0.7.3", optional = true } # lang-swift tags (T52.2)
+tree-sitter-c-sharp = { version = "0.23.5", optional = true } # lang-csharp tags (T52.2)
+tree-sitter-ruby = { version = "0.23.1", optional = true } # lang-ruby tags (T52.2)
+tree-sitter-php = { version = "0.24.2", optional = true } # lang-php tags (T52.2)
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)

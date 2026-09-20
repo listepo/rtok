@@ -1068,6 +1068,35 @@ mod tests {
         assert!(none.rows.iter().all(|r| !r.warn_never));
     }
 
+    /// T71.3: the hub skill is a user skill like any other — same roots, same row shape.
+    #[test]
+    fn skills_audit_lists_the_rtok_hub_skill_like_any_other() {
+        let hub = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/skills/rtok/SKILL.md"));
+        let mut vfs = crate::testutil::Vfs::new();
+        vfs.write("home/.claude/skills/rtok/SKILL.md", hub);
+        vfs.write(
+            "home/.claude/skills/other/SKILL.md",
+            "---\ndescription: other\n---\n# o\n",
+        );
+        let read = |p: &str| vfs.read_str(p).map(str::to_string);
+        let subdirs = |d: &str| {
+            vfs.paths_under(d)
+                .iter()
+                .filter_map(|p| p.strip_suffix("/SKILL.md").map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        };
+        let roots = vec![("user".to_string(), vec!["home/.claude/skills".to_string()])];
+        let audit = audit_from(&roots, &read, &subdirs, &None);
+        let rtok = audit.rows.iter().find(|r| r.name == "rtok").unwrap();
+        assert!(
+            audit.rows.iter().any(|r| r.name == "other"),
+            "foreign skills stay in the listing"
+        );
+        assert_eq!(rtok.source, "user");
+        assert_eq!(rtok.desc_chars, 112);
+        assert!(!rtok.warn_desc && !rtok.warn_body, "{rtok:?}");
+    }
+
     /// T59.7: the three duplicate checks fire only when both sides are on, name
     /// the rtok config key, and never claim a saving.
     #[test]

@@ -1,5 +1,3 @@
--- T69.6: last-written `rtok memory sync` block sha256 (hand-edit guard).
-CREATE TABLE IF NOT EXISTS kv (
-    key TEXT PRIMARY KEY NOT NULL,
-    value TEXT NOT NULL
-);
+-- T69.2: recall ranking uses / last_used.
+ALTER TABLE notes ADD COLUMN uses INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE notes ADD COLUMN last_used INTEGER NULL;

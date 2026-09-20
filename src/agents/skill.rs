@@ -53,80 +53,116 @@ pub fn sync(host: &str, cfg: &Config, remove: bool) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
-    use rtok_agent_sdk::{Apply, NO_CHANGES, OWNED_MARKER, SkillCopy};
+    use crate::agents::HOSTS;
+    use crate::testutil::Vfs;
+    use rtok_agent_sdk::{NO_CHANGES, OWNED_MARKER, SkillPlan, skill_plan};
 
-    fn apply() -> Apply {
-        Apply {
-            dry_run: false,
-            backup: false,
-            yes: false,
-        }
+    const HUB: &str = "src/SKILL.md";
+    const DEST: &str = "skills/rtok";
+    const DEST_MD: &str = "skills/rtok/SKILL.md";
+    const FOREIGN: &str = "skills/other/SKILL.md";
+
+    fn marker() -> String {
+        format!("{DEST}/{OWNED_MARKER}")
     }
 
-    fn fixture() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
-        let root = crate::testutil::tmp_dir("skill");
-        let src = root.join("src");
-        let skills = root.join("skills");
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("SKILL.md"), "hub body\n").unwrap();
-        (root, src, skills)
+    fn dest_exists(vfs: &Vfs) -> bool {
+        !vfs.paths_under(DEST).is_empty() || vfs.exists(DEST)
+    }
+
+    fn vfs_sync(vfs: &mut Vfs, remove: bool) -> String {
+        match skill_plan(remove, dest_exists(vfs), vfs.exists(&marker())) {
+            SkillPlan::NoChanges => NO_CHANGES.into(),
+            SkillPlan::LeaveForeign => {
+                format!("leave {DEST} (not an rtok skill; remove by hand)")
+            }
+            SkillPlan::Copy => {
+                if let Some(body) = vfs.read(HUB).map(ToOwned::to_owned) {
+                    vfs.write(DEST_MD, body);
+                }
+                vfs.write(marker(), b"");
+                format!("+ skill → {DEST}")
+            }
+            SkillPlan::Remove => {
+                let keep: Vec<(String, Vec<u8>)> = vfs
+                    .paths()
+                    .filter(|p| p != DEST && !p.starts_with("skills/rtok/"))
+                    .filter_map(|p| vfs.read(&p).map(|b| (p, b.to_vec())))
+                    .collect();
+                *vfs = Vfs::new();
+                for (p, b) in keep {
+                    vfs.write(p, b);
+                }
+                format!("- skill {DEST}")
+            }
+        }
     }
 
     #[test]
     fn install_reinstall_remove_keeps_foreign() {
-        let (root, src, skills) = fixture();
-        let dest = skills.join("rtok");
-        let foreign = skills.join("other");
-        fs::create_dir_all(&foreign).unwrap();
-        fs::write(foreign.join("SKILL.md"), "# other\n").unwrap();
+        let mut vfs = Vfs::new();
+        vfs.write(HUB, "hub body\n");
+        vfs.write(FOREIGN, "# other\n");
 
-        let copy = SkillCopy {
-            src,
-            dest: dest.clone(),
-            label: None,
-        };
-        let first = copy.run(&apply(), false).unwrap();
+        let first = vfs_sync(&mut vfs, false);
         assert!(first.starts_with("+ skill"), "{first}");
-        assert!(dest.join(OWNED_MARKER).is_file());
-        assert_eq!(copy.run(&apply(), false).unwrap(), NO_CHANGES);
-        assert_eq!(copy.run(&apply(), true).unwrap(), format!("- skill {}", dest.display()));
-        assert_eq!(copy.run(&apply(), true).unwrap(), NO_CHANGES);
-        assert!(foreign.join("SKILL.md").is_file());
-        let _ = fs::remove_dir_all(root);
+        assert!(vfs.exists(&marker()));
+        assert_eq!(vfs.read_str(DEST_MD), Some("hub body\n"));
+        let before = vfs.read(DEST_MD).unwrap().to_vec();
+        assert_eq!(vfs_sync(&mut vfs, false), NO_CHANGES);
+        assert_eq!(vfs.read(DEST_MD), Some(before.as_slice()));
+        assert!(vfs_sync(&mut vfs, true).starts_with("- skill"));
+        assert_eq!(vfs_sync(&mut vfs, true), NO_CHANGES);
+        assert_eq!(vfs.read_str(FOREIGN), Some("# other\n"));
+        assert!(!vfs.exists(DEST_MD));
+        assert!(!vfs.exists(&marker()));
     }
 
     #[test]
     fn leaves_a_foreign_skill_tree() {
-        let (root, src, skills) = fixture();
-        let dest = skills.join("rtok");
-        fs::create_dir_all(&dest).unwrap();
-        fs::write(dest.join("SKILL.md"), "# foreign\n").unwrap();
+        let mut vfs = Vfs::new();
+        vfs.write(HUB, "hub body\n");
+        vfs.write(DEST_MD, "# foreign\n");
 
-        let out = SkillCopy {
-            src,
-            dest: dest.clone(),
-            label: None,
-        }
-        .run(&apply(), false)
-        .unwrap();
+        let out = vfs_sync(&mut vfs, false);
         assert!(out.contains("leave"), "{out}");
-        assert_eq!(fs::read_to_string(dest.join("SKILL.md")).unwrap(), "# foreign\n");
-        let _ = fs::remove_dir_all(root);
+        assert_eq!(vfs.read_str(DEST_MD), Some("# foreign\n"));
+        assert!(!vfs.exists(&marker()));
     }
 
     #[test]
-    fn dest_maps_documented_roots() {
+    fn dest_maps_documented_roots_and_skips_the_rest() {
         let cfg = Config::default();
-        assert!(dest("claude", &cfg).unwrap().ends_with(".claude/skills/rtok"));
-        assert!(dest("cursor", &cfg).unwrap().ends_with(".cursor/skills/rtok"));
+        for id in HOSTS {
+            match *id {
+                "claude" | "cursor" | "codex" | "opencode" | "copilot" => {
+                    assert!(dest(id, &cfg).is_some(), "{id} has a §10.1 skill root");
+                }
+                _ => assert!(dest(id, &cfg).is_none(), "{id} has no skill format"),
+            }
+        }
+        assert!(dest("gemini", &cfg).is_none(), "no gemini host installer");
+        assert!(
+            dest("claude", &cfg)
+                .unwrap()
+                .ends_with(".claude/skills/rtok")
+        );
+        assert!(
+            dest("cursor", &cfg)
+                .unwrap()
+                .ends_with(".cursor/skills/rtok")
+        );
         assert!(dest("codex", &cfg).unwrap().ends_with(".codex/skills/rtok"));
-        assert!(dest("opencode", &cfg)
-            .unwrap()
-            .ends_with("opencode/skills/rtok"));
-        assert!(dest("copilot", &cfg).unwrap().ends_with(".copilot/skills/rtok"));
-        assert!(dest("pi", &cfg).is_none());
+        assert!(
+            dest("opencode", &cfg)
+                .unwrap()
+                .ends_with("opencode/skills/rtok")
+        );
+        assert!(
+            dest("copilot", &cfg)
+                .unwrap()
+                .ends_with(".copilot/skills/rtok")
+        );
     }
 }

@@ -1,21 +1,46 @@
 //! Codex installer (`rtok agents install codex`, plan T10.3).
 //!
 //! Codex reads MCP servers from `~/.codex/config.toml` as `[mcp_servers.<name>]`
-//! tables with `command` and `args`. It has no shell hooks, so MCP plus proxy
-//! wiring (T11.5) is the whole install. Edits go through `toml_edit` so the
-//! user's comments and other servers survive.
+//! tables with `command` and `args`, and lifecycle hooks from `hooks.json` (or
+//! inline `[hooks]`). Compaction events `PreCompact`/`PostCompact` (T58.2) plus
+//! MCP and proxy wiring (T11.5) are the install. Edits go through `toml_edit` so
+//! the user's comments and other servers survive.
 
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use rtok_agent_sdk::NO_CHANGES;
+use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
 use crate::config::Config;
 
 const NAME: &str = "rtok";
+
+const COMPACT: &[(&str, &str)] = &[("PreCompact", ""), ("PostCompact", "")];
+
+/// Sibling of `config.toml`: `~/.codex/hooks.json` (Codex also reads inline `[hooks]`).
+pub fn hooks_path(cfg: &Config) -> std::path::PathBuf {
+    cfg.setup.codex.config_path.with_file_name("hooks.json")
+}
+
+/// Register `PreCompact` → `pre_compact` and `PostCompact` → `session_start` source=compact.
+pub fn run_hooks(cfg: &Config, remove: bool) -> Result<String> {
+    edit_json(&apply(cfg), &hooks_path(cfg), |root| {
+        if remove {
+            super::claude::strip_ours(root.get_mut("hooks"))
+        } else {
+            super::claude::insert_ours(
+                object_at(root, "hooks"),
+                COMPACT,
+                &super::rtok_hook_bin(),
+                "timeout",
+                cfg.setup.hook_timeout_s,
+            )
+        }
+    })
+}
 
 /// Codex CLI: `[mcp_servers.rtok]` and, with `--proxy`, `[model_providers.rtok]`.
 pub struct Codex;
@@ -44,7 +69,7 @@ impl Agent for Codex {
         match module {
             "mcp" => Support::Yes,
             "proxy" => Support::Flag("--proxy"),
-            "hooks" => Support::No("Codex has no shell hook events"),
+            "hooks" => Support::Yes,
             _ => Support::No(
                 "Codex loads MCP from config.toml; there is no plugin directory to link",
             ),
@@ -52,7 +77,7 @@ impl Agent for Codex {
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<std::path::PathBuf> {
-        vec![cfg.setup.codex.config_path.clone()]
+        vec![cfg.setup.codex.config_path.clone(), hooks_path(cfg)]
     }
 
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
@@ -64,12 +89,15 @@ impl Agent for Codex {
         if s.contains("[model_providers.rtok]") {
             out.push("proxy");
         }
+        if super::read(&hooks_path(cfg)).contains(" hook PreCompact") {
+            out.push("hooks");
+        }
         out
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?];
+        let mut lines = vec![run(cfg, remove)?, run_hooks(cfg, remove)?];
         // On the way out the provider block goes whether or not `--proxy` asked for it.
         if remove || cfg.setup.proxy {
             lines.push(register_proxy(cfg, remove)?);
@@ -366,6 +394,51 @@ mod tests {
         let gone = fs::read_to_string(&path).unwrap();
         assert!(!gone.contains("model_providers.rtok"), "{gone}");
         assert!(gone.contains("# keep me"), "{gone}");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn compact_hooks_save_and_post_restores() {
+        let (mut c, path) = cfg("compact", false);
+        c.core.db_path = path.parent().unwrap().join("rtok.db");
+        c.core.archive_dir = path.parent().unwrap().join("archive");
+        let report = run_hooks(&c, false).unwrap();
+        assert!(report.contains("PreCompact"), "{report}");
+        assert!(report.contains("PostCompact"), "{report}");
+        let raw = fs::read_to_string(hooks_path(&c)).unwrap();
+        assert!(raw.contains("hook PreCompact"), "{raw}");
+        assert!(raw.contains("hook PostCompact"), "{raw}");
+        assert_eq!(Codex.installed(&c, Kind::Cli), ["hooks"]);
+
+        let pre = serde_json::json!({
+            "hook_event_name":"PreCompact",
+            "session_id":"cdx",
+            "transcript_path":"",
+            "trigger":"auto"
+        });
+        let mut out = Vec::new();
+        crate::hooks::run("PreCompact", pre.to_string().as_bytes(), &mut out, &c);
+        assert_eq!(out, b"{}");
+        assert!(
+            crate::store::Store::open(&c.core.db_path)
+                .unwrap()
+                .latest_note("checkpoint:cdx")
+                .unwrap()
+                .is_some()
+        );
+        let post = serde_json::json!({
+            "hook_event_name":"PostCompact",
+            "session_id":"cdx",
+            "trigger":"auto"
+        });
+        out.clear();
+        crate::hooks::run("PostCompact", post.to_string().as_bytes(), &mut out, &c);
+        let text = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["hookSpecificOutput"]
+            ["additionalContext"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(text.contains("checkpoint"), "{text}");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

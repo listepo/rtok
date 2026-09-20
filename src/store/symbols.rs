@@ -27,6 +27,62 @@ fn note_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResul
     Ok(())
 }
 
+/// One file's rows, inside the caller's transaction: drop what the file had, insert the
+/// new tags in chunks, and return how many landed. A tagless file still gets a row so the
+/// `file_sha` stands and the next run skips it on the stat alone.
+fn replace_one(
+    conn: &mut SqliteConnection,
+    root: &str,
+    path: &str,
+    file_sha: &str,
+    stat: (i64, i64),
+    rows: &[(String, String, i32, bool, i32, String)],
+) -> QueryResult<usize> {
+    diesel::delete(symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))))
+        .execute(conn)?;
+    if rows.is_empty() {
+        diesel::insert_into(symbols::table)
+            .values((
+                symbols::root.eq(root),
+                symbols::path.eq(path),
+                symbols::name.eq(""),
+                symbols::kind.eq(""),
+                symbols::line.eq(0),
+                symbols::is_def.eq(0),
+                symbols::file_sha.eq(file_sha),
+                symbols::mtime.eq(stat.0),
+                symbols::size.eq(stat.1),
+            ))
+            .execute(conn)?;
+        return Ok(0);
+    }
+    for chunk in rows.chunks(INSERT_CHUNK) {
+        let values: Vec<_> = chunk
+            .iter()
+            .map(|(name, kind, line, is_def, end_line, scope)| {
+                (
+                    symbols::root.eq(root),
+                    symbols::path.eq(path),
+                    symbols::name.eq(name),
+                    symbols::kind.eq(kind),
+                    symbols::line.eq(line),
+                    symbols::is_def.eq(i32::from(*is_def)),
+                    symbols::file_sha.eq(file_sha),
+                    symbols::mtime.eq(stat.0),
+                    symbols::size.eq(stat.1),
+                    symbols::end_line.eq(end_line),
+                    symbols::scope.eq(scope),
+                )
+            })
+            .collect();
+        diesel::insert_into(symbols::table)
+            .values(&values)
+            .execute(conn)?;
+    }
+    clear_stale(conn, root, path)?;
+    Ok(rows.len())
+}
+
 fn clear_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
     sql_query("DELETE FROM symbol_stale WHERE root = ? AND path = ?")
         .bind::<Text, _>(root)
@@ -65,9 +121,10 @@ impl Store {
             path: String,
         }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
-            .bind::<Text, _>(root)
-            .load(&mut *conn)?;
+        let rows: Vec<Row> =
+            sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
+                .bind::<Text, _>(root)
+                .load(&mut *conn)?;
         Ok(rows.into_iter().map(|r| r.path).collect())
     }
 
@@ -148,51 +205,7 @@ impl Store {
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
             let mut inserted = 0usize;
             for (path, file_sha, stat, rows) in files {
-                diesel::delete(
-                    symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(&path))),
-                )
-                .execute(conn)?;
-                if rows.is_empty() {
-                    diesel::insert_into(symbols::table)
-                        .values((
-                            symbols::root.eq(root),
-                            symbols::path.eq(&path),
-                            symbols::name.eq(""),
-                            symbols::kind.eq(""),
-                            symbols::line.eq(0),
-                            symbols::is_def.eq(0),
-                            symbols::file_sha.eq(&file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                        ))
-                        .execute(conn)?;
-                    continue;
-                }
-                for chunk in rows.chunks(INSERT_CHUNK) {
-                    let values: Vec<_> = chunk
-                        .iter()
-                        .map(|(name, kind, line, is_def, end_line, scope)| {
-                            (
-                                symbols::root.eq(root),
-                                symbols::path.eq(&path),
-                                symbols::name.eq(name),
-                                symbols::kind.eq(kind),
-                                symbols::line.eq(line),
-                                symbols::is_def.eq(i32::from(*is_def)),
-                                symbols::file_sha.eq(&file_sha),
-                                symbols::mtime.eq(stat.0),
-                                symbols::size.eq(stat.1),
-                                symbols::end_line.eq(end_line),
-                                symbols::scope.eq(scope),
-                            )
-                        })
-                        .collect();
-                    diesel::insert_into(symbols::table)
-                        .values(&values)
-                        .execute(conn)?;
-                }
-                clear_stale(conn, root, &path)?;
-                inserted += rows.len();
+                inserted += replace_one(conn, root, path, file_sha, *stat, rows)?;
             }
             Ok(inserted)
         })?)
@@ -213,52 +226,7 @@ impl Store {
         // one transaction per batch of files. Why: ~140 single-row INSERTs per file. Not yet
         // measured apart from the parse — measure before changing.
         Ok(conn.transaction::<usize, diesel::result::Error, _>(|conn| {
-            diesel::delete(
-                symbols::table.filter(symbols::root.eq(root).and(symbols::path.eq(path))),
-            )
-            .execute(conn)?;
-            if rows.is_empty() {
-                // Keep file_sha so an unchanged tagless file is skipped next run.
-                diesel::insert_into(symbols::table)
-                    .values((
-                        symbols::root.eq(root),
-                        symbols::path.eq(path),
-                        symbols::name.eq(""),
-                        symbols::kind.eq(""),
-                        symbols::line.eq(0),
-                        symbols::is_def.eq(0),
-                        symbols::file_sha.eq(file_sha),
-                        symbols::mtime.eq(stat.0),
-                        symbols::size.eq(stat.1),
-                    ))
-                    .execute(conn)?;
-                return Ok(0);
-            }
-            for chunk in rows.chunks(INSERT_CHUNK) {
-                let values: Vec<_> = chunk
-                    .iter()
-                    .map(|(name, kind, line, is_def, end_line, scope)| {
-                        (
-                            symbols::root.eq(root),
-                            symbols::path.eq(path),
-                            symbols::name.eq(name),
-                            symbols::kind.eq(kind),
-                            symbols::line.eq(line),
-                            symbols::is_def.eq(i32::from(*is_def)),
-                            symbols::file_sha.eq(file_sha),
-                            symbols::mtime.eq(stat.0),
-                            symbols::size.eq(stat.1),
-                            symbols::end_line.eq(end_line),
-                            symbols::scope.eq(scope),
-                        )
-                    })
-                    .collect();
-                diesel::insert_into(symbols::table)
-                    .values(&values)
-                    .execute(conn)?;
-            }
-            clear_stale(conn, root, path)?;
-            Ok(rows.len())
+            replace_one(conn, root, path, file_sha, stat, rows)
         })?)
     }
 
@@ -402,7 +370,8 @@ impl Store {
                 symbols::root
                     .eq(root)
                     .and(symbols::name.eq(name))
-                    .and(symbols::is_def.eq(0)),
+                    .and(symbols::is_def.eq(0))
+                    .and(symbols::kind.ne("import")),
             )
             .order((symbols::path.asc(), symbols::line.asc()))
             .select((symbols::path, symbols::line))
@@ -461,7 +430,8 @@ impl Store {
                 symbols::root
                     .eq(root)
                     .and(symbols::name.eq(name))
-                    .and(symbols::is_def.eq(0)),
+                    .and(symbols::is_def.eq(0))
+                    .and(symbols::kind.ne("import")),
             )
             .group_by((symbols::path, symbols::scope))
             .order((symbols::path.asc(), symbols::scope.asc()))
@@ -486,6 +456,51 @@ impl Store {
         Ok(self.symbol_refs(root, name)?.len() as i64)
     }
 
+    /// T52.3: names under `root` ranked by reference count, with one def site
+    /// `(path, line)`. `ORDER BY refs DESC, name ASC` (byte-stable). The def
+    /// site is first by `path ASC, line ASC`. Import rows are not refs.
+    pub fn symbol_top_refs(
+        &self,
+        root: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, i64, String, i32)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            name: String,
+            #[diesel(sql_type = BigInt)]
+            refs: i64,
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Integer)]
+            line: i32,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.name AS name,
+                    (SELECT COUNT(*) FROM symbols r
+                      WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
+                        AND r.kind != 'import') AS refs,
+                    d.path AS path,
+                    d.line AS line
+             FROM symbols d
+             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
+               AND NOT EXISTS (
+                 SELECT 1 FROM symbols e
+                  WHERE e.root = d.root AND e.name = d.name AND e.is_def = 1
+                    AND (e.path < d.path OR (e.path = d.path AND e.line < d.line)))
+             ORDER BY refs DESC, name ASC
+             LIMIT ?",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(limit as i32)
+        .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.name, r.refs, r.path, r.line))
+            .collect())
+    }
+
     /// T52.4: definitions with no same-name reference row under `root`,
     /// as `(path, name, kind, line)`. Name-based, like `callers`: a shared
     /// name keeps every same-named definition live. Callers filter pub,
@@ -508,7 +523,8 @@ impl Store {
              FROM symbols d
              WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
                AND NOT EXISTS (SELECT 1 FROM symbols r
-                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0)
+                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
+                   AND r.kind != 'import')
              ORDER BY d.path, d.line",
         )
         .bind::<Text, _>(root)
@@ -541,14 +557,30 @@ impl Store {
             "WITH RECURSIVE walk(depth, path, scope, seen) AS (
                 SELECT 1, path, scope, ',' || scope || ','
                 FROM symbols
-                WHERE root = ? AND name = ? AND is_def = 0 AND name != ''
+                WHERE root = ? AND name = ? AND is_def = 0 AND name != '' AND kind != 'import'
+                UNION ALL
+                SELECT 1, d.path, d.name, ',' || d.name || ','
+                FROM symbols i
+                JOIN symbols d
+                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+                WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
                 UNION ALL
                 SELECT w.depth + 1, s.path, s.scope, w.seen || s.scope || ','
                 FROM walk w
                 JOIN symbols s
                   ON s.root = ? AND s.name = w.scope AND s.is_def = 0 AND s.name != ''
+                 AND s.kind != 'import'
                 WHERE w.depth < ? AND w.scope != ''
                   AND instr(w.seen, ',' || s.scope || ',') = 0
+                UNION ALL
+                SELECT w.depth + 1, d.path, d.name, w.seen || d.name || ','
+                FROM walk w
+                JOIN symbols i
+                  ON i.root = ? AND i.name = w.scope AND i.kind = 'import' AND i.is_def = 0
+                JOIN symbols d
+                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+                WHERE w.depth < ? AND w.scope != ''
+                  AND instr(w.seen, ',' || d.name || ',') = 0
             )
             SELECT MIN(depth) AS depth, path, scope
             FROM walk
@@ -557,6 +589,10 @@ impl Store {
         )
         .bind::<Text, _>(root)
         .bind::<Text, _>(name)
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .bind::<Text, _>(root)
+        .bind::<Integer, _>(depth)
         .bind::<Text, _>(root)
         .bind::<Integer, _>(depth)
         .load(&mut *conn)?;
@@ -584,7 +620,8 @@ impl Store {
         let rows: Vec<Row> = sql_query(
             "SELECT d.name AS name,
                     (SELECT COUNT(*) FROM symbols r
-                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0) AS refs
+                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0
+                        AND r.kind != 'import') AS refs
              FROM symbols d
              WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
                AND d.name LIKE ? ESCAPE '\\'
@@ -631,6 +668,7 @@ impl Store {
                 FROM walk w
                 JOIN symbols s ON s.root = ? AND s.name = w.tip
                               AND s.is_def = 0 AND s.scope != ''
+                              AND s.kind != 'import'
                 WHERE w.depth < ? AND w.tip != ?
                   AND instr(w.seen, ',' || s.scope || ',') = 0
             )
@@ -646,5 +684,142 @@ impl Store {
         .bind::<Text, _>(to)
         .load(&mut *conn)?;
         Ok(rows.into_iter().map(|r| r.chain).collect())
+    }
+
+    /// T68.6: import rows of `path` as `(name, line)`, first-seen order.
+    pub fn symbol_imports(&self, root: &str, path: &str) -> Result<Vec<(String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::path.eq(path))
+                    .and(symbols::kind.eq("import"))
+                    .and(symbols::is_def.eq(0)),
+            )
+            .order(symbols::line.asc())
+            .select((symbols::name, symbols::line))
+            .load(&mut *conn)?)
+    }
+
+    /// T68.6: files that import `module` as `(path, line)`.
+    pub fn symbol_importers(&self, root: &str, module: &str) -> Result<Vec<(String, i32)>> {
+        let mut conn = self.lock()?;
+        Ok(symbols::table
+            .filter(
+                symbols::root
+                    .eq(root)
+                    .and(symbols::name.eq(module))
+                    .and(symbols::kind.eq("import"))
+                    .and(symbols::is_def.eq(0)),
+            )
+            .order((symbols::path.asc(), symbols::line.asc()))
+            .select((symbols::path, symbols::line))
+            .load(&mut *conn)?)
+    }
+
+    /// T68.6: definitions in files that import `name` — the extra impact hop.
+    pub fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
+        #[derive(QueryableByName)]
+        struct Row {
+            #[diesel(sql_type = Text)]
+            path: String,
+            #[diesel(sql_type = Text)]
+            name: String,
+        }
+        let mut conn = self.lock()?;
+        let rows: Vec<Row> = sql_query(
+            "SELECT d.path AS path, d.name AS name
+             FROM symbols i
+             JOIN symbols d
+               ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
+             WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
+             ORDER BY d.path, d.line",
+        )
+        .bind::<Text, _>(root)
+        .bind::<Text, _>(name)
+        .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|r| (r.path, r.name)).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(name: &str, line: i32, is_def: bool) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "function".into(),
+            line,
+            is_def,
+            line,
+            String::new(),
+        )
+    }
+
+    fn import(name: &str, line: i32) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "import".into(),
+            line,
+            false,
+            line,
+            String::new(),
+        )
+    }
+
+    #[test]
+    fn top_refs_rank_by_count_then_name() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    row("foo", 1, true),
+                    row("bar", 2, true),
+                    row("aaa", 3, true),
+                    row("zed", 4, true),
+                    row("foo", 10, false),
+                    row("foo", 11, false),
+                    row("bar", 12, false),
+                    row("bar", 13, false),
+                    row("aaa", 14, false),
+                    import("foo", 20),
+                ],
+            )
+            .unwrap();
+        let got = store.symbol_top_refs("/r", 10).unwrap();
+        assert_eq!(
+            got.iter().map(|r| (r.0.as_str(), r.1)).collect::<Vec<_>>(),
+            [("bar", 2), ("foo", 2), ("aaa", 1), ("zed", 0)]
+        );
+        assert_eq!(store.symbol_top_refs("/r", 10).unwrap(), got);
+    }
+
+    #[test]
+    fn top_refs_picks_first_def_site() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols("/r", "b.rs", "s", (0, 0), &[row("dup", 5, true)])
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[
+                    row("dup", 9, true),
+                    row("dup", 3, true),
+                    row("dup", 1, false),
+                ],
+            )
+            .unwrap();
+        let got = store.symbol_top_refs("/r", 4).unwrap();
+        assert_eq!(got, vec![("dup".into(), 1, "a.rs".into(), 3)]);
     }
 }

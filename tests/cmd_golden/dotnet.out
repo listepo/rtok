@@ -1,0 +1,27 @@
+ok 0
+ok 1
+ok 2
+ok 3
+ok 4
+ok 5
+ok 6
+ok 7
+… 7 lines omitted (expand deadbeef)
+error CS1002: ; expected
+… 14 lines omitted (expand deadbeef)
+ok 29
+ok 30
+ok 31
+ok 32
+ok 33
+ok 34
+ok 35
+ok 36
+ok 37
+ok 38
+ok 39
+ok 40
+ok 41
+ok 42
+ok 43
+ok 44
