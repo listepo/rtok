@@ -902,6 +902,20 @@ pub fn call_linked_tokens(c: &CallRow) -> i64 {
         + c.output.unwrap_or(0)
 }
 
+/// Session drill-down (T60.3, D23): the snapshot's `SessionTotals` row plus the
+/// snapshot's calls filtered by that id. Both surfaces render this pair; neither
+/// grows a second session type or a second query (D27).
+pub fn session_detail<'a>(
+    snapshot: &'a Snapshot,
+    id: &str,
+) -> Option<(&'a SessionTotals, Vec<&'a CallRow>)> {
+    let session = snapshot.sessions.iter().find(|s| s.id == id)?;
+    Some((
+        session,
+        snapshot.calls.iter().filter(|c| c.session == id).collect(),
+    ))
+}
+
 fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
     let p = &cfg.plugins;
     match id {
@@ -1327,6 +1341,77 @@ mod tests {
         };
         assert_eq!(call_size_label(&row), want);
     }
+
+    #[test]
+    fn session_detail_filters_snapshot_calls_by_id() {
+        let mut snap = Model::new(&Config::default(), None).snapshot();
+        snap.sessions = vec![SessionTotals {
+            id: "a".into(),
+            host: None,
+            project: Some("rtok".into()),
+            provider: None,
+            api: Some("anthropic".into()),
+            model: None,
+            input: 30,
+            cache_create: 1,
+            cache_read: 7,
+            output: 7,
+            started_at: 1,
+            last_activity: 2,
+            ended_at: None,
+        }];
+        snap.calls = vec![
+            CallRow {
+                id: 1,
+                ts: 1,
+                session: "a".into(),
+                surface: "proxy".into(),
+                kind: "api_request".into(),
+                plugin: None,
+                name: Some("/v1/messages".into()),
+                parent_id: None,
+                ms: None,
+                ok: 1,
+                error: None,
+                host: None,
+                provider: None,
+                model: None,
+                api: None,
+                input: None,
+                cache_create: None,
+                cache_read: None,
+                output: None,
+            },
+            CallRow {
+                id: 2,
+                ts: 2,
+                session: "other".into(),
+                surface: "hook".into(),
+                kind: "hook".into(),
+                plugin: None,
+                name: Some("Skip".into()),
+                parent_id: None,
+                ms: None,
+                ok: 1,
+                error: None,
+                host: None,
+                provider: None,
+                model: None,
+                api: None,
+                input: None,
+                cache_create: None,
+                cache_read: None,
+                output: None,
+            },
+        ];
+        let (session, calls) = session_detail(&snap, "a").expect("session a");
+        assert_eq!(session.project.as_deref(), Some("rtok"));
+        assert_eq!(session.api.as_deref(), Some("anthropic"));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name.as_deref(), Some("/v1/messages"));
+        assert!(session_detail(&snap, "missing").is_none());
+    }
+
     /// The report's percentile, pinned where it is defined: nearest rank, so
     /// `tests/report.rs` can assert the p50/p95 the fixture's ms values must produce.
     #[test]
