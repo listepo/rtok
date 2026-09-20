@@ -28,6 +28,8 @@ pub(crate) const KEYS: &[(&str, &str, &str)] = &[
     ("sessions", "↑/↓", "move selection"),
     ("sessions", "Enter", "detail pane"),
     ("sessions", "l", "live-only filter"),
+    ("skills", "↑/↓", "move selection"),
+    ("skills", "n", "never-invoked only"),
 ];
 
 /// The key rows for one page: globals first, then the page's own.
@@ -59,6 +61,7 @@ pub struct App {
     /// The Sessions page's own state (T60.10): which row is selected and whether the
     /// live-only filter is on.
     sessions: SessionsState,
+    skills: SkillsState,
     /// Whether the `?` help overlay is up (T60.8).
     help: bool,
 }
@@ -93,6 +96,12 @@ struct SessionsState {
     detail: bool,
 }
 
+#[derive(Default)]
+struct SkillsState {
+    selected: usize,
+    never_only: bool,
+}
+
 impl App {
     pub fn new(cfg: &Config) -> Self {
         let tabs = model::pages();
@@ -112,6 +121,7 @@ impl App {
             plugin_status: String::new(),
             calls: CallsState::default(),
             sessions: SessionsState::default(),
+            skills: SkillsState::default(),
             help: false,
         }
     }
@@ -162,6 +172,10 @@ impl App {
             .sessions
             .selected
             .min(self.visible_sessions(&snapshot).saturating_sub(1));
+        self.skills.selected = self
+            .skills
+            .selected
+            .min(self.visible_skills(&snapshot).saturating_sub(1));
         self.snapshot = snapshot;
         self.updated = crate::log::now();
     }
@@ -241,6 +255,54 @@ impl App {
     /// Whether the `?` help overlay is up (T60.8).
     pub fn help_open(&self) -> bool {
         self.help
+    }
+
+    fn visible_skills(&self, snapshot: &Snapshot) -> usize {
+        snapshot
+            .skills
+            .rows
+            .iter()
+            .filter(|r| !self.skills.never_only || r.never)
+            .count()
+    }
+
+    pub fn skills_selected(&self) -> usize {
+        self.skills
+            .selected
+            .min(self.visible_skills(&self.snapshot).saturating_sub(1))
+    }
+
+    pub fn skills_never_only(&self) -> bool {
+        self.skills.never_only
+    }
+
+    fn skills_key(&mut self, code: KeyCode) -> bool {
+        let last = self.visible_skills(&self.snapshot).saturating_sub(1);
+        match code {
+            KeyCode::Up => {
+                self.skills.selected = self.skills.selected.saturating_sub(1);
+                true
+            }
+            KeyCode::Down => {
+                self.skills.selected = (self.skills.selected + 1).min(last);
+                true
+            }
+            KeyCode::Char('n') => {
+                self.skills.never_only = !self.skills.never_only;
+                self.skills.selected = self
+                    .skills
+                    .selected
+                    .min(self.visible_skills(&self.snapshot).saturating_sub(1));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::tui) fn set_skills(&mut self, skills: model::SkillsPage) {
+        self.snapshot.skills = skills;
+        self.skills.selected = 0;
     }
 
     /// The Sessions page's keys (T60.10 / T60.3): `Up`/`Down` walk the visible rows,
@@ -384,6 +446,9 @@ impl App {
             return false;
         }
         if self.page() == "sessions" && self.sessions_key(code) {
+            return false;
+        }
+        if self.page() == "skills" && self.skills_key(code) {
             return false;
         }
         match code {

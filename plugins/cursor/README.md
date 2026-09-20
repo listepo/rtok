@@ -8,7 +8,9 @@ Files:
 
 - `.cursor-plugin/plugin.json` — Cursor manifest: `hooks` → `hooks/hooks.json`, `mcpServers` → `mcp.json`.
 - `hooks/hooks.json` — `beforeShellExecution` → `rtok hook PreToolUse --host cursor`,
-  `afterShellExecution` → `rtok hook PostToolUse --host cursor`.
+  `afterShellExecution` → `rtok hook PostToolUse --host cursor`, `afterMCPExecution` →
+  `rtok hook AfterMCPExecution --host cursor`, `postToolUse` (matcher `MCP:`) →
+  `rtok hook PostToolUse --host cursor` (replaces long MCP results via `updated_mcp_tool_output`).
 - `mcp.json` — `mcpServers.rtok` → `rtok mcp`.
 - `plugin.json` — Agent Plugins manifest (root `plugin.json`) for other hosts of that spec.
 - `scripts/mcp.sh`, `scripts/mcp.cmd` — `rtok mcp` launchers that print the ketch install hint
@@ -20,6 +22,6 @@ Host documentation this plugin is written against. Re-check every link when the 
 
 - Plugins (manifest `.cursor-plugin/plugin.json`, local install `~/.cursor/plugins/local/<name>`): https://cursor.com/docs/plugins
 - Manifest reference (`hooks` and `mcpServers` accept file paths; defaults `hooks/hooks.json`, `mcp.json`): https://cursor.com/docs/reference/plugins
-- Hooks (`"version": 1`, `beforeShellExecution`, `afterShellExecution`): https://cursor.com/docs/agent/hooks
+- Hooks (`"version": 1`, `beforeShellExecution`, `afterShellExecution`, `afterMCPExecution`, `postToolUse` / `updated_mcp_tool_output`): https://cursor.com/docs/agent/hooks
 - MCP (`mcpServers.<name>.command` / `args`, `~/.cursor/mcp.json`): https://cursor.com/docs/context/mcp
 - Agent Plugins spec (root `plugin.json`, `$schema`, `mcp.json`): https://agent-plugins.org/specification

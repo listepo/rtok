@@ -1,0 +1,86 @@
+# T68.9 — architecture questions with vs without rtok graph MCP.
+# Live spend is gated on RTOK_BENCH_LIVE; dry-run prints the schedule only.
+
+[[repos]]
+id = "rtok"
+path = "."
+
+[[repos]]
+id = "mini-rs"
+path = "bench/repos/mini-rs"
+
+[[repos]]
+id = "mini-py"
+path = "bench/repos/mini-py"
+
+[[questions]]
+id = "plugin"
+repo = "rtok"
+prompt = "How does rtok register a plugin? Name the type or file."
+expect = "(?i)plugin"
+
+[[questions]]
+id = "fail-open"
+repo = "rtok"
+prompt = "What happens when an rtok hook errors? One sentence."
+expect = "(?i)fail.?open|exit 0|unmodified"
+
+[[questions]]
+id = "expand"
+repo = "rtok"
+prompt = "How is a shortened tool result retrieved later?"
+expect = "(?i)expand"
+
+[[questions]]
+id = "graph-tools"
+repo = "rtok"
+prompt = "Which MCP tools does the rtok graph plugin expose?"
+expect = "(?i)symbol"
+
+[[questions]]
+id = "store"
+repo = "rtok"
+prompt = "Where does rtok persist measurements and the symbol index?"
+expect = "(?i)sqlite|rtok\\.db"
+
+[[questions]]
+id = "surfaces"
+repo = "rtok"
+prompt = "What are rtok's three host surfaces?"
+expect = "(?i)hook|mcp|proxy"
+
+[[questions]]
+id = "sink-def"
+repo = "mini-rs"
+prompt = "Where is function sink defined?"
+expect = "sink"
+
+[[questions]]
+id = "sink-callers"
+repo = "mini-rs"
+prompt = "Which functions call sink?"
+expect = "alpha|beta"
+
+[[questions]]
+id = "sink-impact"
+repo = "mini-rs"
+prompt = "What breaks if sink changes?"
+expect = "alpha|gamma"
+
+[[questions]]
+id = "render-callers"
+repo = "mini-py"
+prompt = "Who calls render?"
+expect = "handler"
+
+[[questions]]
+id = "main-flow"
+repo = "mini-py"
+prompt = "What does main call?"
+expect = "handler"
+
+[[questions]]
+id = "config-class"
+repo = "mini-py"
+prompt = "Where is class Config defined?"
+expect = "Config"

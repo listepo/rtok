@@ -57,6 +57,24 @@ async fn web_health_and_index() {
 }
 
 #[tokio::test]
+async fn snapshot_error_when_store_path_is_a_directory() {
+    let dir = std::env::temp_dir().join(format!("rtok-web-store-err-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cfg = Config::load_from(&dir).expect("config");
+    cfg.core.db_path = dir.join("not-a-db");
+    std::fs::create_dir_all(&cfg.core.db_path).unwrap();
+    cfg.doctor.settings_path = dir.join("missing-settings.json");
+    cfg.doctor.claude_json = dir.join("missing-claude.json");
+    cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+    let snap = rtok::web::model::snapshot(&cfg);
+    assert!(snap.error.is_some(), "{:?}", snap.error);
+    let v = serde_json::to_value(&snap).unwrap();
+    assert!(v.get("error").is_some(), "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn ws_set_accepts_plugin_enabled() {
     let (_addr, state, dir, task) = serve("set-ok").await;
     let before: serde_json::Value = serde_json::from_str(&state.snapshot_json()).expect("snap");
@@ -127,7 +145,10 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     let v: serde_json::Value = serde_json::from_str(&reply).expect("json");
     assert_eq!(v["type"], "expand", "{reply}");
     assert_eq!(v["id"], id, "{reply}");
-    assert!(v["text"].as_str().unwrap_or("").contains("NEEDLE"), "{reply}");
+    assert!(
+        v["text"].as_str().unwrap_or("").contains("NEEDLE"),
+        "{reply}"
+    );
 
     let missing = state
         .inbound(r#"{"expand":"no-such-id"}"#)
@@ -135,7 +156,10 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     let v: serde_json::Value = serde_json::from_str(&missing).expect("json");
     assert_eq!(v["type"], "message", "{missing}");
     assert!(
-        v["text"].as_str().unwrap_or("").contains("unknown archive id"),
+        v["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unknown archive id"),
         "{missing}"
     );
 

@@ -12,7 +12,7 @@ Commands:
   bench        A/B benchmark of host configurations
   doctor       Inspect hooks, MCP servers and the proxy chain
   info         Version, effective paths, disk usage, error count and proxy status
-  agents       Agent hosts (`rtok agents install|remove|list …`) [alias: agent]
+  agents       Agent hosts (`rtok agents install|uninstall|list|info …`) [alias: agent]
   run          Execute a command, archive its raw output, print the filtered version
   filter       Filter text from stdin without executing
   expand       Print an archived payload
@@ -23,6 +23,7 @@ Commands:
   config       The one config file
   memory       Notes (`mem_save` / import / export)
   graph        Symbol index (`rtok graph index`)
+  guard        Duplicate-call verdict (`rtok guard check` — pi / OpenCode plugin path, T70.5)
   demon        Keep `rtok proxy` (or `mcp` / `web`) running in the background
   otel         OpenTelemetry export (`rtok otel flush | status`)
   logs         rtok's own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)
