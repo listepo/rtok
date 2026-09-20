@@ -1,0 +1,1 @@
+- T79. `agents install zed` aborts on a real settings.json (JSONC)

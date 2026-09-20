@@ -1,5 +1,21 @@
 # rtok — completed tasks
 
+### T77. One descriptor for the host-plugin offer
+
+Do (2026-09-21): Cursor, OpenCode and pi each repeated the same four items around `rtok_agent_sdk::PluginLink` — a `PLUGIN_SRC_REL` const, a `plugin_dest(cfg)`, a private `link(cfg)` respelling every `PluginLink` field, and an `offer_plugin(cfg, remove)` that only forwarded — plus `link(cfg).ours()` in `installed()` (T75). Nothing but the four values differed. New `src/agents/plugin.rs`: `HostPlugin { src_rel, host, label, dest: fn(&Config) -> PathBuf }` with `path` / `linked` / `ours` / `offer`, one per thing a host asks of a link. Each host now declares one `static PLUGIN` and keeps only what is genuinely its own — Cursor's `offer_plugin` still wraps `PLUGIN.offer` for the D21 singleton rule (a linked plugin *is* the MCP, so `mcpServers.rtok` is cleared). `PluginLink` keeps owning backup, the `--yes` question and the remove rules (D28); this only stops spelling them three times. `src/` net **−78 / +57** lines.
+
+Check: `just check` green, with the three host plugin integration tests (`cursor_plugin`, `opencode_plugin`, `pi_plugin`) unchanged — they are the behaviour contract, so an untouched pass is the proof the extraction is behaviour-free.
+
+Check result (2026-09-21): `just check` green — `just test` 1070 passed, 4 skipped, and the three plugin test files were not edited. Two units added in `plugin.rs`: distinct `src_rel` per declared host, and `path` resolving from the handed config rather than the real home.
+
+### T78. Host installers against real copies of the machine's own agent configs
+
+Do (2026-09-21): Every agents test wrote a synthetic config — a couple of keys, all of them ours — so nothing exercised what install actually meets: a 25 KB `settings.json`, a `hooks.json` already holding other tools' hooks, an `mcp.json` with a dozen foreign servers. `tests/common/agents.rs` gained `real_config(rel)` (the invoking user's own file, `None` when absent **or** `CI` is set), `real_config_from(ci, home, rel)` — the gate with its inputs handed in, because `unsafe` is denied in this crate so a test cannot set `CI` — plus `seed_real` and `skip`. New `tests/agents_real_config.rs` copies each host's real config into a throwaway `HOME` (the original is never opened for writing), runs `agents install <host> --yes`, installs again, then `agents remove`, and at each stage holds every **foreign** entry — anything not naming rtok — to its seeded value: objects by key, arrays by containment (rtok appends, so foreign indices shift), falling back to trimmed-line containment for TOML. Local-only by construction: no such file, or a CI runner, and the test prints a skip line instead of failing.
+
+Check: on this machine the tests run and pass against the real `.cursor/hooks.json`, `.cursor/mcp.json`, `.claude/settings.json`, `.codex/config.toml`, `.config/opencode/opencode.json`, `.kimi-code/config.toml`, `.zcode/cli/config.json`, `Library/Application Support/Code/User/settings.json`, `.codeium/windsurf/mcp_config.json`; `ci_hides_what_this_machine_really_has` proves both sides of the gate; `just check` green.
+
+Check result (2026-09-21): `--test agents_real_config` 9 passed, 1 ignored; `just check` green (1070 passed, 4 skipped — the fourth skip is the new ignore below). The suite found a real bug on its first run: `agents install zed` aborts on a Zed-written `settings.json` (JSONC) with `trailing comma at line 44 column 3`, because `read_json` is strict `serde_json`. Not fixed here — out of this card's scope; filed as T79 with the reproduction kept as the `#[ignore]`d `zed_keeps_the_real_settings_json`. VS Code shares the risk in principle; this machine's file is strict JSON, so its test passes and proves nothing either way.
+
 ### T74. Make the two load-sensitive gate tests deterministic
 
 Do (2026-09-21): The card's assumed mechanism ("key-injection → frame-assert waits with no internal deadline") does not exist — both tests are synchronous. The real mechanism, found by timing and `sample`:
