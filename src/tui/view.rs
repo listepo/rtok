@@ -22,10 +22,12 @@ use crate::web::model::{self, PluginPage};
 /// (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
     let alert = app.snapshot().usage.alerts.first().cloned();
-    let [header, alert_area, tabs, body, footer] = Layout::vertical([
+    let store_error = app.snapshot().error.clone();
+    let [header, alert_area, error_area, tabs, body, footer] = Layout::vertical([
         Constraint::Length(1),
-        // Alert row: height 0 when absent, same five slots either way.
+        // Alert row: height 0 when absent, same slots either way.
         Constraint::Length(u16::from(alert.is_some())),
+        Constraint::Length(u16::from(store_error.is_some())),
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(1),
@@ -36,6 +38,12 @@ pub(super) fn draw(frame: &mut Frame, app: &App) {
         frame.render_widget(
             Paragraph::new(format!("⚠ {msg}")).style(Style::new().bold()),
             alert_area,
+        );
+    }
+    if let Some(msg) = store_error {
+        frame.render_widget(
+            Paragraph::new(format!("✕ {msg}")).style(Style::new().bold()),
+            error_area,
         );
     }
     frame.render_widget(tab_bar(app), tabs);
@@ -1509,6 +1517,25 @@ mod tests {
         );
         app.key(KeyCode::Char('?'), KeyModifiers::NONE);
         assert!(!screen(&app).contains("keys —"), "? closes the overlay");
+    }
+
+    /// T60.6: an unreadable store renders an error line instead of a silent empty page.
+    #[test]
+    fn unreadable_store_shows_an_error_banner() {
+        let dir = std::env::temp_dir().join(format!("rtok-tui-store-err-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::load_from(&dir).expect("config");
+        cfg.core.db_path = dir.join("not-a-db");
+        std::fs::create_dir_all(&cfg.core.db_path).unwrap();
+        cfg.doctor.settings_path = dir.join("missing-settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let app = App::new(&cfg);
+        assert!(app.snapshot().error.is_some(), "{:?}", app.snapshot().error);
+        let screen = screen(&app);
+        assert!(screen.contains('✕'), "error banner: {screen}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T60.8: `r` re-reads the model immediately, before the next tick.

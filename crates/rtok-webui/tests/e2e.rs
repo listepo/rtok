@@ -10,7 +10,7 @@
 //! derived bindings and the tab clicks.
 
 use i_slint_backend_testing::ElementHandle;
-use rtok_webui::{MainWindow, PAGE_IDS, apply_snapshot};
+use rtok_webui::{MainWindow, PAGE_IDS, apply_snapshot, init_theme};
 use serde_json::json;
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::rc::Rc;
@@ -28,6 +28,7 @@ fn window() -> MainWindow {
             })
             .collect::<Vec<_>>(),
     ))));
+    init_theme(&ui);
     ui
 }
 
@@ -159,6 +160,25 @@ fn cursors_follow_selected_rows() {
     ui.set_call_cursor(0);
     assert_eq!(ui.get_selected_call().name.as_str(), "/v1/messages");
 }
+
+#[test]
+fn theme_toggle_flips_palette() {
+    let ui = window();
+    assert!(ui.get_dark());
+    ui.invoke_theme_toggle();
+    assert!(!ui.get_dark());
+    ui.invoke_theme_toggle();
+    assert!(ui.get_dark());
+}
+
+#[test]
+fn snapshot_error_reaches_the_banner() {
+    let ui = window();
+    apply_snapshot(
+        &ui,
+        &json!({"type":"snapshot","usage":{},"plugins":[],"calls":[],"sessions":[],"logs":[],"doctor":null,"error":"store unreadable"}),
+    );
+    assert_eq!(ui.get_error().as_str(), "store unreadable");
 
 #[test]
 fn session_click_opens_detail() {

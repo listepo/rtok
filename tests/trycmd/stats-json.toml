@@ -1,0 +1,29 @@
+bin.name = "rtok"
+args = "--config tests/trycmd/input/json-readers.toml stats --json"
+stdout = """
+{
+  "sessions": 0,
+  "lines": 0,
+  "malformed": 0,
+  "tools": {},
+  "bash_families": {},
+  "mcp_groups": {},
+  "usage_input": 0,
+  "usage_cache_create": 0,
+  "usage_cache_read": 0,
+  "usage_output": 0,
+  "cache_hit_rate": 0.0,
+  "median_final_context": 0,
+  "ctt_total": 0,
+  "ctt_archive": 0,
+  "archive_candidates": 0,
+  "api": {}
+}"""
+
+# Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.
+[env]
+inherit = false
+
+[env.add]
+HOME = "target/tmp/t60-2-stats-json"
+RTOK_HOME = "target/tmp/t60-2-stats-json"

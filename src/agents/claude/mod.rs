@@ -275,21 +275,29 @@ impl Agent for Claude {
     }
 
     fn apply(&self, cfg: &Config, kind: Kind, mode: Mode) -> Result<Vec<String>> {
+        let remove = mode == Mode::Remove;
         if kind == Kind::Desktop {
             let (a, path) = (apply(cfg), desktop_path());
             // `--replace` is about Claude Code's hooks; on the desktop it is a plain install.
-            return Ok(vec![if mode == Mode::Remove {
-                rtok_agent_sdk::unregister_mcp(&a, &path, "rtok")?
-            } else {
-                rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?
-            }]);
+            return Ok(vec![
+                if remove {
+                    rtok_agent_sdk::unregister_mcp(&a, &path, "rtok")?
+                } else {
+                    rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"])?
+                },
+                super::skill::sync("claude", cfg, remove)?,
+            ]);
         }
         match mode {
-            Mode::Replace => Ok(vec![migrate::run(cfg)?]),
+            Mode::Replace => Ok(vec![
+                migrate::run(cfg)?,
+                super::skill::sync("claude", cfg, false)?,
+            ]),
             Mode::Remove => Ok(vec![
                 run(cfg, true)?,
                 unregister_mcp(cfg)?,
                 crate::proxy::cli::unregister_proxy(cfg)?,
+                super::skill::sync("claude", cfg, true)?,
             ]),
             Mode::Install => {
                 let mut lines = vec![run(cfg, false)?];
@@ -299,6 +307,7 @@ impl Agent for Claude {
                 if cfg.setup.proxy {
                     lines.push(crate::proxy::cli::register_proxy(cfg)?);
                 }
+                lines.push(super::skill::sync("claude", cfg, false)?);
                 Ok(lines)
             }
         }

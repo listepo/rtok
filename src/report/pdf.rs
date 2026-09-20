@@ -757,6 +757,7 @@ mod tests {
                     total_saved: savings_rows as i64 * 5,
                     kinds: vec!["filter".into()],
                 },
+                sinks: ReportSinksSection { rows: vec![] },
                 calls: ReportCallsSection {
                     rows: vec![ReportCalls {
                         surface: "hook".into(),

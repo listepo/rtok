@@ -293,6 +293,10 @@ export component MainWindow inherits Window {
     in-out property <[SkillRow]> skills;
     in-out property <bool> skills-never-only: false;
     in property <string> status: "connecting";
+    in property <string> error: "";
+    in-out property <bool> dark: true;
+    changed dark => { RtokTheme.dark = dark; }
+    callback theme-toggle();
     callback toggle-plugin(string, bool);
     callback expand-archive(string);
     callback filter-expand(string);
@@ -334,6 +338,22 @@ export component MainWindow inherits Window {
         spacing: shell-gap;
         alignment: stretch;
 
+        if error != "": Rectangle {
+            border-radius: RtokTheme.radius-md;
+            background: RtokTheme.surface-2;
+            border-width: 1px;
+            border-color: RtokTheme.delta;
+            height: 32px;
+            Text {
+                text: error;
+                color: RtokTheme.delta;
+                font-size: 12px;
+                font-family: "IBM Plex Mono";
+                x: RtokTheme.space-3;
+                y: parent.height / 2 - self.height / 2;
+            }
+        }
+
         // Mobile: horizontal icon bar (icons only, ≥44px hits)
         if compact: Rectangle {
             height: 52px;
@@ -364,7 +384,7 @@ export component MainWindow inherits Window {
                     height: 44px;
                     border-radius: RtokTheme.radius-md;
                     TouchArea {
-                        clicked => { RtokTheme.dark = !RtokTheme.dark; }
+                        clicked => { root.dark = !root.dark; root.theme-toggle(); }
                     }
                     Image {
                         source: @image-url("icons/theme.svg");
@@ -452,7 +472,7 @@ export component MainWindow inherits Window {
                         border-radius: RtokTheme.radius-md;
                         background: transparent;
                         TouchArea {
-                            clicked => { RtokTheme.dark = !RtokTheme.dark; }
+                            clicked => { root.dark = !root.dark; root.theme-toggle(); }
                         }
                         HorizontalBox {
                             padding-left: full-nav ? RtokTheme.space-2 : 0;

@@ -650,9 +650,31 @@ pub(crate) fn impact(
     name: &str,
     depth: u32,
     filter: &super::Filter,
+    to: Option<&str>,
 ) -> Result<String> {
     let t0 = Instant::now();
     with_session(root, |s| {
+        if let Some(target) = to.filter(|s| !s.is_empty()) {
+            let chains = call_paths(s, name, target, depth)?;
+            if chains.is_empty() {
+                return finish(
+                    cx,
+                    "impact",
+                    t0,
+                    format!("no path from {name} to {target} within depth {depth}"),
+                );
+            }
+            return finish(
+                cx,
+                "impact",
+                t0,
+                chains.join(
+                    "
+",
+                ) + "
+",
+            );
+        }
         let rows = impact_walk(s, name, depth, filter)?;
         if rows.is_empty() {
             return finish(
@@ -766,6 +788,10 @@ impl super::ExploreParts for LspExplore<'_> {
         }
         let n = rows.len();
         Ok((super::impact_lines_text(&rows), n))
+    }
+
+    fn def_count(&mut self, _name: &str) -> Result<usize> {
+        Ok(1)
     }
 }
 

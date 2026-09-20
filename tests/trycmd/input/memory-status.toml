@@ -1,0 +1,5 @@
+[stats]
+since = "30d"
+
+[core]
+db_path = "rtok.db"

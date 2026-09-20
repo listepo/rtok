@@ -81,7 +81,8 @@ pub fn app(state: Arc<DashState>) -> Router {
         .with_state(state);
     let pkg = pkg_dir();
     if pkg.is_dir() {
-        r = r.nest_service("/pkg", ServeDir::new(pkg));
+        let service = ServeDir::new(pkg).precompressed_br().precompressed_gzip();
+        r = r.nest_service("/pkg", service);
     }
     r
 }
