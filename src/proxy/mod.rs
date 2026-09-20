@@ -170,7 +170,12 @@ pub fn serve_blocking(cfg: Config) -> Result<()> {
 /// [`app`] directly instead.
 pub async fn serve(cfg: &Config) -> Result<()> {
     let state = Arc::new(ProxyState::new(cfg)?);
-    state.store.run_retention(cfg.core.retain_calls_days)?;
+    // Retention is housekeeping with a next-start retry: the listener must not die on a
+    // contended store (T75) — requests still proxy while another process writes, and
+    // the purge queues behind it under the maintenance busy window.
+    if let Err(e) = state.store.run_retention(cfg.core.retain_calls_days) {
+        eprintln!("rtok proxy: retention skipped until next start: {e:#}");
+    }
     // A plain thread, not a task: a flush is blocking SQLite plus a blocking `flock`, and on
     // this runtime it stalled whichever worker also served live requests.
     crate::otel::export::spawn_ticker(cfg);

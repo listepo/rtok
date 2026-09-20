@@ -33,7 +33,12 @@ fn expand_def() -> ToolDef {
 #[cfg_attr(not(feature = "graph"), allow(unused_variables))]
 pub fn run(cfg: &Config) -> Result<()> {
     let server = Server::new(cfg)?;
-    server.cx.store.run_retention(cfg.core.retain_calls_days)?;
+    // Retention is housekeeping with a next-start retry: the server must not die on a
+    // contended store (T75) — WAL reads keep every tool serving while another process
+    // writes, and the purge queues behind it under the maintenance busy window.
+    if let Err(e) = server.cx.store.run_retention(cfg.core.retain_calls_days) {
+        eprintln!("rtok mcp: retention skipped until next start: {e:#}");
+    }
     crate::otel::export::spawn_ticker(cfg);
     // P8d watcher (T8.16): a thread inside this process, never a second writer.
     // Any value but `off` arms it; `watchman` gets its own backend in T8.17.
