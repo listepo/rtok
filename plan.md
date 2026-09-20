@@ -6,19 +6,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T73 | in progress | P1 | 2 | 0% | Cursor / grok 4.6 |
 | T74 | todo | P2 | 1 | — | — |
 | T75 | todo | P1 | 2 | — | — |
-
-### T73. Cycle demon surfaces around a binary replace
-
-Creator 2026-09-19. `ketch upgrade` kills PIDs holding the binary but does not write the demon stop marker, so the supervisor can respawn mid-replace and keep SQLite (`rtok.db` WAL) locked. `rtok-update` does not stop anything. HTTP+WS are `web`; MCP is `mcp`; SQLite is released when those processes exit.
-
-**Plan.** Hidden `rtok demon upgrade`: snapshot kernel-live services (`rows` flock), `stop` them (marker + wait), run `ketch upgrade rtok --yes` (or `rtok-update`, or `RTOK_UPDATE_CMD` in tests), `start` the same set even if replace failed. Reuse `stop`/`start`. Do not revive T40 `demon update`. Spawn the supervisor from the on-disk path when `current_exe` is gone after replace.
-
-Check: `tests/demon.rs` — live mcp is down during the replace command (no state file), up afterwards; a failing replace still leaves mcp running; `just check`.
-
-**Evidence (2026-09-20).** The Check's first clause is live: one full gate failed `upgrade_stops_before_replace_and_starts_after` — the replace stub's guard `[ ! -f $RTOK_HOME/demon/mcp.json ] || exit 2` fired (`tests/demon.rs:197`, `update command failed (exit status: 2)`), i.e. the update command ran while the mcp state file still existed. Six other runs the same day passed (two local full suites, PR-CI ×2, push-CI ×2, release verify ×2). Harden the stop-wait: wait for the state file to be gone and re-check immediately before invoking the update command, not just for the stop marker.
 
 ### T74. Make the two load-sensitive gate tests deterministic
 

@@ -212,6 +212,41 @@ pub fn restart(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> R
     start(cfg, config_file, &services)
 }
 
+/// Keep what [`stop`] stopped down until the replace runs. A supervisor that lost the race
+/// between its child's death and its own signal can still have respawned the surface — the
+/// respawn rewrites its state file and re-locks the store the replace is about to touch
+/// (T73). Retire the respawn with the same this-boot guard as [`start`], drop the state
+/// file, and return only once every stopped service's file is gone and stays gone; a
+/// surface that will not stay down fails the upgrade instead of racing the replace.
+fn quiesce(cfg: &Config, services: &[Service]) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        let mut rogue = false;
+        for service in services {
+            let Some(st) = read(cfg, *service) else {
+                continue;
+            };
+            rogue = true;
+            if boot_time().is_some_and(|boot| st.since >= boot) {
+                println!(
+                    "{service}: respawned during the replace window, retiring pid {}",
+                    st.child
+                );
+                rtok_sys::process_kill(st.supervisor);
+                rtok_sys::process_kill(st.child);
+            }
+            let _ = fs::remove_file(file(cfg, *service, "json"));
+        }
+        if !rogue {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            anyhow::bail!("demon surfaces did not stay down for the replace");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Stop every live surface (HTTP/WS `web`, `mcp`, `proxy` — SQLite drops with them),
 /// replace the on-disk binary, then start the same set. A failed replace still starts.
 pub fn upgrade(cfg: &Config, config_file: Option<&Path>) -> Result<()> {
@@ -220,10 +255,15 @@ pub fn upgrade(cfg: &Config, config_file: Option<&Path>) -> Result<()> {
         .filter(|r| r.running)
         .map(|r| r.service)
         .collect();
-    if !up.is_empty() {
-        stop(cfg, &up, false)?;
-    }
-    let replaced = replace_binary();
+    // The stop folds into `replaced` so a surface that will not stay down still gets its
+    // restart: returning before `start` would leave the machine without what was up.
+    let replaced = (|| -> Result<()> {
+        if !up.is_empty() {
+            stop(cfg, &up, false)?;
+            quiesce(cfg, &up)?;
+        }
+        replace_binary()
+    })();
     let started = if up.is_empty() {
         Ok(())
     } else {
@@ -556,6 +596,39 @@ fn next_backoff(cur: u64, healthy: bool, d: &crate::config::Demon) -> (u64, u64)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiesce_retires_a_late_respawn_state_file() {
+        let mut cfg = Config::default();
+        cfg.demon.state_dir = crate::testutil::tmp_dir("demon-quiesce");
+        // A respawned state from this boot with already-dead pids: quiesce must take the
+        // rogue path (kill is a no-op on a reaped pid), drop the file, and return on the
+        // next pass once nothing rewrites it.
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let dead = child.id() as i32;
+        child.wait().unwrap();
+        fs::write(
+            file(&cfg, Service::Mcp, "json"),
+            serde_json::to_vec(&State {
+                service: Service::Mcp,
+                supervisor: dead,
+                child: dead,
+                since: now(),
+                restarts: 1,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        quiesce(&cfg, &[Service::Mcp]).unwrap();
+        assert!(!file(&cfg, Service::Mcp, "json").exists());
+    }
+
+    #[test]
+    fn quiesce_is_ok_when_nothing_respawned() {
+        let mut cfg = Config::default();
+        cfg.demon.state_dir = crate::testutil::tmp_dir("demon-quiesce-empty");
+        quiesce(&cfg, &[Service::Mcp, Service::Web]).unwrap();
+    }
 
     #[test]
     fn the_first_crash_waits_backoff_ms_then_doubles_to_the_cap() {
