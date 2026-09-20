@@ -115,7 +115,9 @@ impl Agent for OpenCode {
         if s.contains("\"rtok\"") {
             out.push("mcp");
         }
-        if link(&c).linked() {
+        // T75: only what remove will take back counts as installed — a foreign
+        // directory at the plugin dest must not hold the green mark.
+        if link(&c).ours() {
             out.push("plugin");
         }
         out

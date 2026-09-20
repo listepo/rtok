@@ -905,10 +905,7 @@ mod tests {
             DIR.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        let mut cfg = Config::load_from(&dir).expect("config");
-        cfg.doctor.settings_path = dir.join("missing-settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let cfg = crate::tui::app::tests::hermetic(Config::load_from(&dir).expect("config"), &dir);
         let store = crate::store::Store::open(&cfg.core.db_path).expect("seed store");
         (cfg, store)
     }
@@ -1050,11 +1047,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(&cfg.log.path, format!("{body}\n")).unwrap();
-        // Hermetic doctor paths — App::new ticks the snapshot (T15.6).
-        cfg.doctor.settings_path = dir.join("missing-settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
-        cfg
+        // Hermetic probes — App::new ticks the snapshot (T15.6).
+        crate::tui::app::tests::hermetic(cfg, &dir)
     }
 
     /// T15.5: the Calls tab lists the ledger's rows newest first — surface, kind,
@@ -1528,9 +1522,7 @@ mod tests {
         let mut cfg = Config::load_from(&dir).expect("config");
         cfg.core.db_path = dir.join("not-a-db");
         std::fs::create_dir_all(&cfg.core.db_path).unwrap();
-        cfg.doctor.settings_path = dir.join("missing-settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let cfg = crate::tui::app::tests::hermetic(cfg, &dir);
         let app = App::new(&cfg);
         assert!(app.snapshot().error.is_some(), "{:?}", app.snapshot().error);
         let screen = screen(&app);

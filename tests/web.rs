@@ -18,10 +18,13 @@ async fn serve(
     let dir = std::env::temp_dir().join(format!("rtok-dash-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut cfg = Config::load_from(&dir).expect("config");
-    // Hermetic doctor probes: a snapshot ticks `rtok doctor` (T15.6).
+    // Hermetic probes: a snapshot ticks `rtok doctor` (T15.6) — and `read_share` parses
+    // `stats.transcripts_dir`, which `load_from` leaves at this machine's real
+    // `~/.claude/projects` (T74: ~30 s CPU per snapshot on a heavy history).
     cfg.doctor.settings_path = dir.join("missing-settings.json");
     cfg.doctor.claude_json = dir.join("missing-claude.json");
     cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -67,6 +70,9 @@ async fn snapshot_error_when_store_path_is_a_directory() {
     cfg.doctor.settings_path = dir.join("missing-settings.json");
     cfg.doctor.claude_json = dir.join("missing-claude.json");
     cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+    // T74: same transcripts leak as `serve` — the snapshot must not parse this
+    // machine's real session JSONL.
+    cfg.stats.transcripts_dir = dir.join("missing-transcripts");
     let snap = rtok::web::model::snapshot(&cfg);
     assert!(snap.error.is_some(), "{:?}", snap.error);
     let v = serde_json::to_value(&snap).unwrap();

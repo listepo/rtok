@@ -84,7 +84,10 @@ impl Agent for Cursor {
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let h = super::read(&cfg.setup.cursor.hooks_path);
         let m = super::read(&mcp_path(cfg));
-        let plugin = plugin_dest(cfg).symlink_metadata().is_ok();
+        // T75: `ours`, not any metadata — a foreign directory at the plugin dest is not
+        // an rtok install, so it cannot keep the green mark alive after an uninstall
+        // that (rightly) left it alone.
+        let plugin = link(cfg).ours();
         let mut out = Vec::new();
         if h.contains("rtok hook") {
             out.push("hooks");

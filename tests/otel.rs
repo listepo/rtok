@@ -522,23 +522,41 @@ fn hooks_stay_fast_with_an_unreachable_endpoint() {
         start.elapsed()
     };
     let n = if cfg!(debug_assertions) { 20 } else { 100 };
-    let mut samples = [Vec::with_capacity(n), Vec::with_capacity(n)];
-    once(&dirs[0]);
-    once(&dirs[1]);
-    for _ in 0..n {
-        for (i, dir) in dirs.iter().enumerate() {
-            samples[i].push(once(dir));
+    // T74: one sample set decided the gate, and a load spike that lands on only one of
+    // the two interleaved configs says nothing about the endpoint. Re-measure both to a
+    // deadline: a load blip hits both sides of a retry, a real regression fails every
+    // attempt and still fails here.
+    let deadline = std::time::Instant::now()
+        + if cfg!(debug_assertions) {
+            std::time::Duration::from_secs(60)
+        } else {
+            std::time::Duration::from_secs(120)
+        };
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let mut samples = [Vec::with_capacity(n), Vec::with_capacity(n)];
+        once(&dirs[0]);
+        once(&dirs[1]);
+        for _ in 0..n {
+            for (i, dir) in dirs.iter().enumerate() {
+                samples[i].push(once(dir));
+            }
         }
+        samples.iter_mut().for_each(|s| s.sort());
+        let (endpoint, baseline) = (common::p95(&samples[0]), common::p95(&samples[1]));
+        // A closed port refuses at once, so the unreachable endpoint may cost a connect
+        // attempt — never a timeout, and never the same order as the run itself.
+        let bar = baseline + baseline.max(std::time::Duration::from_millis(10));
+        if endpoint < bar {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "p95 {endpoint:?} with the endpoint vs {baseline:?} without it, bar {bar:?} — \
+             over the bar in all {attempt} attempts"
+        );
     }
-    samples.iter_mut().for_each(|s| s.sort());
-    let (endpoint, baseline) = (common::p95(&samples[0]), common::p95(&samples[1]));
-    // A closed port refuses at once, so the unreachable endpoint may cost a connect
-    // attempt — never a timeout, and never the same order as the run itself.
-    let bar = baseline + baseline.max(std::time::Duration::from_millis(10));
-    assert!(
-        endpoint < bar,
-        "p95 {endpoint:?} with the endpoint vs {baseline:?} without it, bar {bar:?}"
-    );
     dirs.iter().for_each(|d| {
         let _ = std::fs::remove_dir_all(d);
     });

@@ -1,5 +1,27 @@
 # rtok — completed tasks
 
+### T74. Make the two load-sensitive gate tests deterministic
+
+Do (2026-09-21): The card's assumed mechanism ("key-injection → frame-assert waits with no internal deadline") does not exist — both tests are synchronous. The real mechanism, found by timing and `sample`:
+- `space_toggles_the_selected_plugin_through_config_set` was **not hermetic**: `Config::load_from` expands `~` against the real `$HOME` (`expand` → `env_user_home`), so `stats.transcripts_dir` stayed `~/.claude/projects` and every `model::snapshot` in the test parsed the developer's real session JSONL — ≈30 s CPU per snapshot, ≈150 s for the test standalone, >180 s under suite load (the observed nextest kill). New shared helper `tui::app::tests::hermetic` points the doctor paths **and `stats.transcripts_dir`** at the temp home; used by `config()`, `cursor_on_plugin`, the toggle test, `fresh_store`, `logged`, and the unreadable-store test. All 36 tui tests: 0.18 s total (toggle alone was 150 s).
+- `otel::hooks_stay_fast_with_an_unreachable_endpoint` now re-measures both interleaved configs to a deadline (60 s debug / 120 s release) instead of deciding on one sample set: a load blip lands on both sides of a retry, a real regression still fails every attempt.
+
+The same leak sat in `tests/web.rs` (`serve`, `snapshot_error_when_store_path_is_a_directory`) — both now hermetic too; `ws_set_accepts_plugin_enabled` dropped from >120 s to 87 s (its remaining cost is the snapshot-TTL wait, green before and after).
+
+Follow-up filed as I-87: the same transcripts parse makes production `rtok tui`/`rtok web` freeze ~36 s per 30 s doctor-TTL window on a heavy history (out of T74 scope; plan change proposed, not implemented).
+
+Check: both tests green repeatedly; tui suite sub-second; `just check`.
+
+Check result (2026-09-21): full `just check` green in the isolation worktree — 1060 passed, 3 skipped, EXIT=0; tui:: 36/36 in 0.183 s, otel latency test 1/1.
+
+### T75. `agents uninstall` leaves the host marked installed (green check stuck)
+
+Do (2026-09-21): Reproduced the class end-to-end (all 12 hosts install→uninstall in isolated HOMEs): the plain flow is clean; the stuck shape is the **plugin module**. `PluginLink::run(remove)` unlinks symlinks and wipes copies carrying `.rtok-owned`, but a directory a host *materialized* from our symlink (same bytes, no marker) was refused as foreign — while `installed()` counted *any* metadata at the dest, so the green check stayed on exactly as reported ("uninstall did not take effect on disk" + checkmark stuck). Fix, both sides of the card's Plan: (1) `PluginLink::ours()` — a dest is rtok's when it is a link/file, or a dir holding `OWNED_MARKER`, **or a byte-complete copy of our own tree** (`tree_copies`: every `src` file present with the same bytes, extras allowed); `run(remove)` wipes exactly that. (2) cursor/opencode/pi `installed()` now read `ours()` — the mark the UI renders can never outlive an uninstall: what remove takes back is what reads installed, and what it leaves foreign reads not installed.
+
+Check: uninstall a previously installed host; `rtok agents info --json` marks off; files gone. Regression: `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` (install --yes → replace the link with a marker-less copy → uninstall → 0 installed marks, copy gone). SDK units: `remove_wipes_a_materialized_copy_of_our_tree`, `a_directory_that_differs_by_a_byte_is_not_ours`.
+
+Check result (2026-09-21): full `just check` green in the isolation worktree — 1060 passed, 3 skipped, EXIT=0; SDK 19/19, `--test agent_remove` 14/14, `agents::` lib 104/104; the 12-host isolated matrix shows marks on after install and 0 after uninstall everywhere.
+
 ### T76. Offer to restart the host after `agents install` / `uninstall`
 
 Do: After successful `rtok agents install|uninstall <host>` config writes, ask whether to restart that host. Yes → stop then start; No → leave alone. Config `[setup].restart_prompt_timeout_seconds` defaults to `0` (wait forever); positive → silence = No. Interactive TTY shows a left in-place spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` ~80ms, ASCII `-\|/` fallback). Skip under `--dry-run` and non-TTY stdin.

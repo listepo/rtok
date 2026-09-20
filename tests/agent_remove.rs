@@ -371,3 +371,59 @@ fn dry_run_remove_writes_nothing() {
         "dry-run takes no copy either; only the install's"
     );
 }
+
+/// T75: after `agents uninstall` the row the agents/plugins UI renders must read not
+/// installed — the green check may not outlive the command. The shape that used to
+/// stick: a host materializes our plugin symlink into a plain copy, so the dest holds
+/// our tree with no marker and no link; `installed()` counted any metadata there, so
+/// the mark stayed on while remove left the "foreign" directory in place.
+#[test]
+fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
+    let home = tmp("cursor-marks");
+    let cfg = write_cfg(&home);
+    rtok(&["agents", "install", "cursor", "--yes"], &cfg, &home);
+    // The host "materialized" the link: replace it with a plain copy of the tree —
+    // same bytes, no OWNED_MARKER, the exact shape the check got stuck on.
+    let dest = home.join(".cursor/plugins/local/rtok");
+    let src = fs::read_link(&dest).expect("install linked the plugin");
+    fs::remove_file(&dest).unwrap();
+    copy_tree(std::path::Path::new(&src), &dest);
+
+    let installed_marks = |cfg: &std::path::Path, home: &std::path::Path| -> usize {
+        let out = rtok(&["agents", "info", "cursor", "--json"], cfg, home);
+        serde_json::from_str::<serde_json::Value>(&out)
+            .expect("info json")
+            .as_array()
+            .expect("rows")
+            .iter()
+            .flat_map(|r| r["modules"].as_array().cloned().unwrap_or_default())
+            .filter(|m| m["state"] == "installed")
+            .count()
+    };
+    assert!(
+        installed_marks(&cfg, &home) > 0,
+        "sanity: the copy still reads as our install"
+    );
+
+    rtok(&["agents", "remove", "cursor"], &cfg, &home);
+    assert_eq!(
+        installed_marks(&cfg, &home),
+        0,
+        "no module may read installed after uninstall"
+    );
+    assert!(!dest.exists(), "the materialized copy was taken back");
+}
+
+/// `fs::copy` has no directory form; the tree here is small and shallow enough.
+fn copy_tree(src: &std::path::Path, dest: &std::path::Path) {
+    fs::create_dir_all(dest).unwrap();
+    for entry in fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let to = dest.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &to);
+        } else {
+            fs::copy(entry.path(), &to).unwrap();
+        }
+    }
+}
