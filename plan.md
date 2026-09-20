@@ -48,22 +48,24 @@ Check: uninstall a previously installed host; UI checkmark off; `rtok agents lis
 
 ### T76. Offer to restart the host after `agents install` / `uninstall`
 
-Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit. If the user does not answer within a timeout (default **30 seconds**, configurable), take the default **no restart** and continue — do not hang the CLI.
+Creator 2026-09-21. After `rtok agents install <host>` or `rtok agents uninstall <host>` finishes (hooks/MCP/proxy/plugin link already written or removed), ask whether to restart that application or agent. Yes → stop it, then start it again so the new config is live. No → leave the process alone and exit. If the user does not answer within a timeout, take the default **no restart** and continue — do not hang the CLI.
 
-**Repro / flow.** Run install or uninstall for a host that is currently running. When the config change has completed, rtok prompts (interactive stdin / TUI confirm — not a silent restart) and waits up to the timeout for yes/no.
+**Timeout source.** Duration comes from the rtok **config file**, not a hardcoded constant in code: e.g. `restart_prompt_timeout_seconds` (exact nesting to match existing config style). If the key is **absent**, fall back to **60 seconds** (one minute). If present, use that value (document `0` meaning: wait forever vs skip prompt — pick one). Optional CLI override is fine later; the task gate is config-file configurability + 60s fallback.
+
+**Repro / flow.** Run install or uninstall for a host that is currently running. When the config change has completed, rtok prompts (interactive stdin / TUI confirm — not a silent restart) and waits up to the configured timeout for yes/no.
 
 **Expected.**
-- Prompt: something like "Restart <host> now so the change takes effect? [y/N] (auto-no in 30s)" with a yes/no branch.
+- Prompt: something like "Restart <host> now so the change takes effect? [y/N] (auto-no in 60s)" — the parenthetical uses the effective timeout (config or 60s fallback).
 - Yes: stop the host/agent process, then start it again (post-config-change only — never restart before the install/uninstall writes finish).
 - No: do nothing further; print that a manual restart is still needed if the host caches config.
 - Timeout / no answer: same as No — default no restart, print that the timeout elapsed and a manual restart may still be needed; then exit the command successfully.
-- Timeout duration is configurable (config key and/or flag, e.g. `--restart-timeout 30`; `0` may mean wait forever or skip the prompt — pick one and document it).
+- Changing `restart_prompt_timeout_seconds` in config changes the wait without a rebuild.
 
 **Actual (today).** Install/uninstall edit files and return; no restart offer and no timed prompt, so a running host keeps the old hooks/MCP until the user restarts it by hand.
 
-**Plan.** Hook the prompt at the end of `setup_host` (both install and remove paths) with a timed read (select/poll or equivalent), defaulting to no on expiry. Per-host restart: prefer an existing host helper if one exists; otherwise document the stop/start command matrix (Claude Code, Cursor, …) and implement the ones we can drive safely. Skip the prompt under `--dry-run` and non-interactive CI (`!stdin.isatty()` or an explicit `--no-restart` / `--yes` policy — pick one and test it). Regression: install/uninstall with a stub host process; yes path stops then starts after the config write; no path and timeout path never touch the process.
+**Plan.** Add the config field; read it in `setup_host` (install and remove paths) with a timed read (select/poll or equivalent), defaulting to no on expiry and to 60s when the key is missing. Per-host restart: prefer an existing host helper if one exists; otherwise document the stop/start command matrix (Claude Code, Cursor, …) and implement the ones we can drive safely. Skip the prompt under `--dry-run` and non-interactive CI (`!stdin.isatty()` or an explicit `--no-restart` / `--yes` policy — pick one and test it). Regression: install/uninstall with a stub host process; yes path stops then starts after the config write; no path and timeout path never touch the process; missing key → 60s; set key → that many seconds.
 
-Check: interactive yes/no and timeout→no branches covered in tests (prompt/timer stubbed); dry-run never restarts; `just check`.
+Check: interactive yes/no and timeout→no branches covered in tests (prompt/timer stubbed); config key overrides fallback; dry-run never restarts; `just check`.
 
 
 ## Reference
