@@ -1,3 +1,4 @@
 - T70.2. pi `context` hook: the `archive` live zone without a proxy
 - T73. Cycle demon surfaces around a binary replace
 - T74. Make the two load-sensitive gate tests deterministic (tui timeout, otel latency)
+- T75. `agents uninstall` leaves the host marked installed (green check stuck)

@@ -8,6 +8,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T73 | in progress | P1 | 2 | 0% | Cursor / grok 4.6 |
 | T74 | todo | P2 | 1 | — | — |
+| T75 | todo | P1 | 2 | — | — |
 
 ### T73. Cycle demon surfaces around a binary replace
 
@@ -28,6 +29,21 @@ Two tests fail a full `just check` under parallel CPU load and pass standalone, 
 (Related but different, fixed 2026-09-20: `rtok::cli_trycmd cli` "panics" after every release bump — `tests/trycmd/version.stdout` / `man.stdout` pinned the literal version. Now wildcarded `rtok [..] ([..])` / `v[..] ([..])`, so a bump can't break the gate again.)
 
 Done when both tests bound their own waiting (deadline + tolerant retry to that deadline in the tui TestBackend loop and in the otel latency assert) so a loaded runner slows them instead of failing them — no `--test-threads` masking: the point is the wait, not the machine. Check: two full suites running concurrently on one busy machine — zero flakes across three runs.
+
+### T75. `agents uninstall` leaves the host marked installed (green check stuck)
+
+Creator 2026-09-21. After `rtok agents uninstall <host>` (reported with a "cloud" plugin uninstall), the host/plugin is either not actually removed or the UI still shows it as installed — the green checkmark stays on.
+
+**Repro.** Run `rtok agents uninstall <host>` (example path: uninstall involving a "cloud" plugin / host install). Open the agents/plugins UI (TUI or web) and look at that row.
+
+**Expected.** The host/plugin is uninstalled: hooks/MCP/proxy/plugin link gone, and the green installed checkmark is cleared.
+
+**Actual.** The entry still looks installed — green checkmark stuck — and/or the uninstall did not take effect on disk.
+
+**Plan.** Trace `AgentCmd::Uninstall` → `setup_host(..., SetupArgs::removing)` and whatever feeds the agents/plugins list `enabled` / installed mark. Make uninstall write the same source the UI reads (config + on-disk host files), then refresh or re-read so the checkmark clears. Add a regression test: uninstall → list/UI snapshot shows not installed.
+
+Check: uninstall a previously installed host; UI checkmark off; `rtok agents list` / info agree; `just check`.
+
 
 ## Reference
 
