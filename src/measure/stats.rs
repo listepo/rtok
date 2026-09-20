@@ -10,7 +10,7 @@ use crate::store::Store;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
@@ -33,25 +33,10 @@ pub struct Report {
     /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub compact: u64,
-    /// Transcript sessions that already have a `checkpoint:*` or `session:*` note (T71.2).
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub checkpoint: u64,
-    /// Transcript sessions with no such note.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub no_checkpoint: u64,
-    /// File stems of counted sessions; matched against notes. Not in JSON.
-    #[serde(skip)]
-    session_stems: Vec<String>,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
     pub bash_families: BTreeMap<String, SizeRow>,
-    /// T50.1: `formatter`, named `rule`, or `default` per Bash stem (transcripts).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub bash_filter: BTreeMap<String, String>,
-    /// T50.1: `cmd` measurements with `kind = rule` on stems still on [`Rule::default()`].
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub bash_default_rule: BTreeMap<String, SizeRow>,
     pub mcp_groups: BTreeMap<String, SizeRow>,
     pub usage_input: u64,
     pub usage_cache_create: u64,
@@ -76,14 +61,6 @@ pub struct Report {
     /// Absent from `--json` when no session edited anything, so the T15.11 goldens hold.
     #[serde(default, skip_serializing_if = "EditRow::is_empty")]
     pub edits: EditRow,
-    /// T58.1: native Read of a path already read in-session with Edit/Write/MultiEdit
-    /// of that path in between. Absent when none, so the goldens hold.
-    #[serde(default, skip_serializing_if = "ReadDeltaRow::is_empty")]
-    pub read_delta: ReadDeltaRow,
-    /// T65.1: tool_result bytes whose SHA-256 matches an earlier result in the
-    /// same session. Absent when none, so the goldens hold.
-    #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
-    pub repeat: RepeatRow,
     /// T59.6: Claude Code `Agent` and Cursor/legacy `Task` inputs vs results.
     /// Absent when no session used either, so the T15.11 goldens hold.
     #[serde(default, skip_serializing_if = "AgentRow::is_empty")]
@@ -106,38 +83,6 @@ pub struct EditRow {
 }
 
 impl EditRow {
-    fn is_empty(&self) -> bool {
-        self.calls == 0
-    }
-}
-
-/// Re-reads that a unified diff could shorten (plan T58.1). `bytes` is those
-/// tool-result payloads; `read_bytes` is every native `Read` result in the same
-/// window — the denominator of "share of Read bytes".
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ReadDeltaRow {
-    pub calls: u64,
-    pub bytes: u64,
-    pub read_bytes: u64,
-}
-
-impl ReadDeltaRow {
-    fn is_empty(&self) -> bool {
-        self.calls == 0
-    }
-}
-
-/// Content-hash repeats within a session (plan T65.1). `bytes` is those
-/// tool-result payloads; `result_bytes` is every tool_result in the same
-/// window — the denominator of "share of result bytes".
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepeatRow {
-    pub calls: u64,
-    pub bytes: u64,
-    pub result_bytes: u64,
-}
-
-impl RepeatRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
@@ -243,13 +188,8 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  compact {}  checkpoint {}  no_checkpoint {}  lines {}  malformed {}\n",
-            self.sessions,
-            self.compact,
-            self.checkpoint,
-            self.no_checkpoint,
-            self.lines,
-            self.malformed
+            "sessions {}  compact {}  lines {}  malformed {}\n",
+            self.sessions, self.compact, self.lines, self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -313,26 +253,6 @@ impl Report {
                 pct(est_tokens(e.old_bytes), self.usage_output)
             ));
         }
-        if self.read_delta.calls > 0 {
-            let d = &self.read_delta;
-            s.push_str(&format!(
-                "read delta calls {}  bytes {}  of Read bytes {}  {:.1}%\n",
-                d.calls,
-                d.bytes,
-                d.read_bytes,
-                pct(d.bytes, d.read_bytes)
-            ));
-        }
-        if self.repeat.calls > 0 {
-            let d = &self.repeat;
-            s.push_str(&format!(
-                "repeat calls {}  bytes {}  of result bytes {}  {:.1}%\n",
-                d.calls,
-                d.bytes,
-                d.result_bytes,
-                pct(d.bytes, d.result_bytes)
-            ));
-        }
         if !self.agents.is_empty() {
             let a = &self.agents;
             let sub_tokens = self.tools.get("Agent").map(|r| r.est_tokens).unwrap_or(0)
@@ -350,10 +270,7 @@ impl Report {
             ));
         }
         s.push_str(&format_section("tool", &self.tools));
-        s.push_str(&format_bash_section(&self.bash_families, &self.bash_filter));
-        if !self.bash_default_rule.is_empty() {
-            s.push_str(&format_section("bash_default", &self.bash_default_rule));
-        }
+        s.push_str(&format_section("bash", &self.bash_families));
         s.push_str(&format_section("mcp", &self.mcp_groups));
         if let Some(skills) = &self.skills {
             s.push_str(&skills_section(skills));
@@ -362,154 +279,80 @@ impl Report {
     }
 }
 
-/// A second column: its header, and the value for one row's name.
-type ExtraCol<'a> = (&'a str, &'a dyn Fn(&str) -> String);
-
-/// One `name  count bytes mean p95 max est_tokens <last>` section. `extra` inserts a
-/// second column (its header plus a per-name value) — the Bash section's filter label.
-/// `last` is the trailing column's header and its width floor.
-fn size_section(
-    title: &str,
-    last: (&str, usize),
-    extra: Option<ExtraCol<'_>>,
-    rows: &[(String, [u64; 7])],
-) -> String {
+fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
     // The section's own title sits in the first column of its header line; the fixed
     // widths are floors now (`render::table`, T25.2), bytes unchanged.
-    let mut cols = vec![Col::left(24)];
-    if extra.is_some() {
-        cols.push(Col::left(8));
-    }
-    cols.extend([
+    let cols = [
+        Col::left(24),
         Col::right(7),
         Col::right(12),
         Col::right(8),
         Col::right(8),
         Col::right(8),
         Col::right(12),
-        Col::right(last.1),
-    ]);
-    let mut head = vec![title.to_string()];
-    if let Some((h, _)) = extra {
-        head.push(h.to_string());
-    }
-    head.extend(["count", "bytes", "mean", "p95", "max", "est_tokens", last.0].map(str::to_string));
-    let mut out = vec![head];
-    for (name, vals) in rows {
-        let mut row = vec![name.clone()];
-        if let Some((_, value)) = extra {
-            row.push(value(name));
-        }
-        row.extend(vals.iter().map(u64::to_string));
-        out.push(row);
+        Col::right(12),
+    ];
+    let mut out = vec![vec![
+        title.to_string(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "ctt".into(),
+    ]];
+    for (name, r) in rows {
+        out.push(vec![
+            name.clone(),
+            r.count.to_string(),
+            r.total_bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.ctt.to_string(),
+        ]);
     }
     table(&cols, &out)
-}
-
-fn size_cells(rows: &BTreeMap<String, SizeRow>) -> Vec<(String, [u64; 7])> {
-    rows.iter()
-        .map(|(name, r)| {
-            (
-                name.clone(),
-                [
-                    r.count,
-                    r.total_bytes,
-                    r.mean,
-                    r.p95,
-                    r.max,
-                    r.est_tokens,
-                    r.ctt,
-                ],
-            )
-        })
-        .collect()
-}
-
-fn format_bash_section(
-    rows: &BTreeMap<String, SizeRow>,
-    kinds: &BTreeMap<String, String>,
-) -> String {
-    let filter = |name: &str| {
-        kinds
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| "default".to_string())
-    };
-    size_section(
-        "bash",
-        ("ctt", 12),
-        Some(("filter", &filter)),
-        &size_cells(rows),
-    )
-}
-
-/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
-/// Without the `cmd` plugin there are no rules to label a family against, so the
-/// report keeps the families and leaves the filter column empty (T0.4: one plugin
-/// feature must build alone).
-#[cfg(not(feature = "cmd"))]
-pub fn attach_bash_cmd(_report: &mut Report, _store: &Store) -> Result<()> {
-    Ok(())
-}
-
-/// T50.1: label each transcript Bash family and rank default-rule `cmd` savings.
-#[cfg(feature = "cmd")]
-pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
-    let settings = crate::plugins::cmd::rules::Settings::builtin();
-    for name in report.bash_families.keys() {
-        let kind = crate::plugins::cmd::formatters::filter_kind(&settings, name);
-        report.bash_filter.insert(name.clone(), kind.to_string());
-    }
-    for r in store.list_measurements("cmd")? {
-        if r.kind != "rule" {
-            continue;
-        }
-        let fam = r
-            .ref_id
-            .as_deref()
-            .and_then(|id| id.split(':').next())
-            .unwrap_or("");
-        if fam.is_empty()
-            || crate::plugins::cmd::formatters::filter_kind(&settings, fam) != "default"
-        {
-            continue;
-        }
-        add(
-            &mut report.bash_default_rule,
-            fam,
-            r.after_bytes.max(0) as u64,
-            est_tokens(r.after_bytes.max(0) as u64),
-            0,
-        );
-    }
-    finish_rows(&mut report.bash_default_rule);
-    Ok(())
-}
-fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
-    size_section(title, ("ctt", 12), None, &size_cells(rows))
 }
 
 /// T61.1: the injected skill bodies, one row per skill, `resident` = the bytes the
 /// later API requests of the same session actually carried.
 fn skills_section(skills: &BTreeMap<String, SkillRow>) -> String {
-    let cells: Vec<(String, [u64; 7])> = skills
-        .iter()
-        .map(|(name, r)| {
-            (
-                name.clone(),
-                [
-                    r.count,
-                    r.bytes,
-                    r.mean,
-                    r.p95,
-                    r.max,
-                    r.est_tokens,
-                    r.resident,
-                ],
-            )
-        })
-        .collect();
-    size_section("skill", ("resident", 14), None, &cells)
+    let cols = [
+        Col::left(24),
+        Col::right(7),
+        Col::right(12),
+        Col::right(8),
+        Col::right(8),
+        Col::right(8),
+        Col::right(12),
+        Col::right(14),
+    ];
+    let mut out = vec![vec![
+        "skill".to_string(),
+        "count".into(),
+        "bytes".into(),
+        "mean".into(),
+        "p95".into(),
+        "max".into(),
+        "est_tokens".into(),
+        "resident".into(),
+    ]];
+    for (name, r) in skills {
+        out.push(vec![
+            name.clone(),
+            r.count.to_string(),
+            r.bytes.to_string(),
+            r.mean.to_string(),
+            r.p95.to_string(),
+            r.max.to_string(),
+            r.est_tokens.to_string(),
+            r.resident.to_string(),
+        ]);
+    }
+    table(&cols, &out)
 }
 
 pub fn parse_since(s: &str) -> Result<Duration> {
@@ -550,21 +393,6 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
             },
         );
     }
-    Ok(())
-}
-
-/// Match counted transcript stems to `checkpoint:<id>` / `session:<id>` notes (T71.2).
-pub fn attach_checkpoint_notes(report: &mut Report, store: &Store) -> Result<()> {
-    let ids: std::collections::BTreeSet<String> =
-        store.checkpoint_session_ids()?.into_iter().collect();
-    let mut with = 0u64;
-    for stem in &report.session_stems {
-        if ids.contains(stem) {
-            with += 1;
-        }
-    }
-    report.checkpoint = with;
-    report.no_checkpoint = report.sessions.saturating_sub(with);
     Ok(())
 }
 
@@ -707,12 +535,8 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             continue;
         };
         report.compact += compact_events(&p);
-        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-            report.session_stems.push(stem.to_string());
-        }
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
-    report.no_checkpoint = report.sessions;
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
     finish_rows(&mut report.mcp_groups);
@@ -777,8 +601,6 @@ fn fold_session(
         fold_edits(&mut report.edits, u);
         used_subagent |= fold_agent_input(&mut report.agents, u);
     }
-    fold_read_delta(&mut report.read_delta, parsed);
-    fold_repeat(&mut report.repeat, parsed);
     for r in &parsed.tool_results {
         let name = id_name
             .get(r.tool_use_id.as_str())
@@ -897,83 +719,6 @@ fn fold_edits(row: &mut EditRow, u: &jsonl::ToolUse) {
         row.old_bytes += len("old_string");
         row.new_bytes += len("new_string");
     }
-}
-
-/// T65.1: SHA-256 of each tool_result in order. A later result whose digest
-/// equals an earlier one in the same session is a repeat — its bytes are the
-/// content-hash dedup surface. Guard's input-key cache is a different axis.
-fn fold_repeat(row: &mut RepeatRow, parsed: &Parsed) {
-    let mut seen = BTreeSet::new();
-    for r in &parsed.tool_results {
-        let bytes = r.content.len() as u64;
-        row.result_bytes += bytes;
-        let sha = crate::store::hex_sha256(r.content.as_bytes());
-        if !seen.insert(sha) {
-            row.calls += 1;
-            row.bytes += bytes;
-        }
-    }
-}
-
-/// T58.1: walk this session's tool uses in order. A native `Read` of a path that
-/// was already read, with an `Edit` / `Write` / `MultiEdit` of that path in
-/// between, is a changed re-read — its result bytes are the delta-read surface.
-fn fold_read_delta(row: &mut ReadDeltaRow, parsed: &Parsed) {
-    let sizes: BTreeMap<&str, u64> = parsed
-        .tool_results
-        .iter()
-        .map(|r| (r.tool_use_id.as_str(), r.content.len() as u64))
-        .collect();
-    let mut paths: Vec<(String, bool, bool)> = Vec::new();
-    for u in &parsed.tool_uses {
-        let Some(path) = tool_path(&u.input) else {
-            continue;
-        };
-        match u.name.as_str() {
-            "Read" => {
-                let bytes = sizes.get(u.id.as_str()).copied().unwrap_or(0);
-                row.read_bytes += bytes;
-                if let Some((_, seen, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path))
-                {
-                    if *seen && *dirty {
-                        row.calls += 1;
-                        row.bytes += bytes;
-                    }
-                    *seen = true;
-                    *dirty = false;
-                } else {
-                    paths.push((path.to_string(), true, false));
-                }
-            }
-            "Edit" | "Write" | "MultiEdit" => {
-                if let Some((_, _, dirty)) = paths.iter_mut().find(|(p, ..)| same_path(p, path)) {
-                    *dirty = true;
-                } else {
-                    paths.push((path.to_string(), false, true));
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn tool_path(input: &Value) -> Option<&str> {
-    input
-        .get("file_path")
-        .or_else(|| input.get("path"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|p| !p.is_empty())
-}
-
-/// Exact match, or relative-vs-absolute (`src/a.rs` vs `/repo/src/a.rs`).
-fn same_path(a: &str, b: &str) -> bool {
-    if a == b {
-        return true;
-    }
-    let a = Path::new(a);
-    let b = Path::new(b);
-    a.ends_with(b) || b.ends_with(a)
 }
 
 /// T59.6: count `Agent` / `Task` tool_use bytes. Returns whether this call is a sub-agent.
@@ -1437,78 +1182,6 @@ mod tests {
     }
 
     #[test]
-    fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
-        let dir = tempfile_dir();
-        let path = dir.join("d.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
-        // Read /a.rs (10 B) → Edit /a.rs → Read /a.rs (20 B, counts) → Read /a.rs
-        // again with no edit (does not count) → Read /b.rs only once (does not).
-        let lines = [
-            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"0123456789"}]}}),
-            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/proj/src/a.rs","old_string":"x","new_string":"y"}}]}}),
-            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"01234567890123456789"}]}}),
-            json!({"type":"assistant","message":{"id":"m4","content":[{"type":"tool_use","id":"t4","name":"Read","input":{"file_path":"src/a.rs"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t4","content":"same"}]}}),
-            json!({"type":"assistant","message":{"id":"m5","content":[{"type":"tool_use","id":"t5","name":"Read","input":{"file_path":"/b.rs"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"bbbb"}]}}),
-        ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
-        let d = &r.read_delta;
-        assert_eq!((d.calls, d.bytes, d.read_bytes), (1, 20, 10 + 20 + 4 + 4));
-        let table = r.to_table();
-        assert!(
-            table.contains("read delta calls 1  bytes 20  of Read bytes 38  52.6%"),
-            "{table}"
-        );
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn repeat_counts_identical_bodies_from_different_tools() {
-        let dir = tempfile_dir();
-        let path = dir.join("r.jsonl");
-        let mut f = fs::File::create(&path).unwrap();
-        // Bash then Read, same 20-byte body; a third distinct body does not count.
-        let lines = [
-            json!({"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cat a"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"01234567890123456789"}]}}),
-            json!({"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"a"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"01234567890123456789"}]}}),
-            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"head -1000 a"}}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"different-output"}]}}),
-        ];
-        for line in &lines {
-            writeln!(f, "{line}").unwrap();
-        }
-        let r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
-        let d = &r.repeat;
-        assert_eq!((d.calls, d.bytes, d.result_bytes), (1, 20, 20 + 20 + 16));
-        let table = r.to_table();
-        assert!(
-            table.contains("repeat calls 1  bytes 20  of result bytes 56  35.7%"),
-            "{table}"
-        );
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
     fn archive_replay_keeps_young_turns_and_shrinks_old_ones() {
         let rp = Replay {
             keep_turns: 2,
@@ -1547,49 +1220,7 @@ mod tests {
         assert_eq!(r.sessions, 1);
         assert_eq!(r.compact, 1);
         assert!(
-            r.to_table()
-                .starts_with("sessions 1  compact 1  checkpoint 0  no_checkpoint 1  lines 3"),
-            "{}",
-            r.to_table()
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn checkpoint_notes_split_sessions_with_and_without() {
-        let dir = std::env::temp_dir().join(format!("rtok-stats-t712-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("has.jsonl"),
-            r#"{"type":"user","message":{"content":"a"}}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("miss.jsonl"),
-            r#"{"type":"user","message":{"content":"b"}}"#,
-        )
-        .unwrap();
-        let mut r = collect(
-            &dir,
-            Duration::from_secs(86400 * 60),
-            "",
-            Replay::from_cfg(&Config::default()),
-        )
-        .unwrap();
-        assert_eq!(r.sessions, 2);
-        assert_eq!(r.checkpoint, 0);
-        assert_eq!(r.no_checkpoint, 2);
-        let store = Store::open_in_memory().unwrap();
-        store
-            .insert_note(Some("rtok"), "checkpoint:has", "compact", "checkpoint\n")
-            .unwrap();
-        attach_checkpoint_notes(&mut r, &store).unwrap();
-        assert_eq!(r.checkpoint, 1);
-        assert_eq!(r.no_checkpoint, 1);
-        assert!(
-            r.to_table()
-                .starts_with("sessions 2  compact 0  checkpoint 1  no_checkpoint 1"),
+            r.to_table().starts_with("sessions 1  compact 1  lines 3"),
             "{}",
             r.to_table()
         );
@@ -1597,14 +1228,8 @@ mod tests {
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!(
-            "rtok-stats-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let p = std::env::temp_dir().join(format!("rtok-stats-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p
     }
