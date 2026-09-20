@@ -190,16 +190,23 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
 
 /// Stems whose output only changes when something else ran in between. Looks past the
 /// `cd <dir> &&` prefix [`norm_cmd`] keeps: only the command after it is keyed.
+/// T57.1: first-word + marker scan, no shell grammar. Keyed only when every `|`
+/// segment's stem is read-only and no writer marker is present (`>`/`>>`, `| tee`,
+/// pipe into a non-read-only stem, `find -delete`/`-exec`, `sed -i`, `tail -f`).
 fn read_only(cmd: &str) -> bool {
-    let cmd = after_cd_prefix(cmd);
-    if has_writer_marker(cmd) {
-        return false;
-    }
-    cmd.split('|').all(|seg| read_only_stem(seg.trim()))
+    after_cd_prefix(cmd)
+        .split('|')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .all(segment_read_only)
 }
 
-fn read_only_stem(cmd: &str) -> bool {
-    let mut w = cmd.split_whitespace();
+fn segment_read_only(seg: &str) -> bool {
+    stem_read_only(seg) && !writer_marker(seg)
+}
+
+fn stem_read_only(seg: &str) -> bool {
+    let mut w = seg.split_whitespace();
     match super::cmd::formatters::cmd_stem(w.next().unwrap_or("")) {
         "ls" | "cat" | "head" | "tail" | "grep" | "rg" | "find" | "tree" | "wc" | "sed" | "jq"
         | "awk" => true,
@@ -212,34 +219,31 @@ fn read_only_stem(cmd: &str) -> bool {
     }
 }
 
-fn has_writer_marker(cmd: &str) -> bool {
-    let tokens: Vec<&str> = cmd.split_whitespace().collect();
-    if tokens.windows(2).any(|w| w[0] == "|" && w[1] == "tee") {
-        return true;
-    }
-    for (i, tok) in tokens.iter().enumerate() {
-        if tok.starts_with('>') {
-            return true;
-        }
-        if *tok == "-delete" || *tok == "-exec" {
-            return true;
-        }
-        if *tok == "-i" || *tok == "--in-place" {
-            return true;
-        }
-        if *tok == "-f" && i > 0 && super::cmd::formatters::cmd_stem(tokens[0]) == "tail" {
-            return true;
-        }
-    }
-    let parts: Vec<&str> = cmd.split('|').collect();
-    if parts.len() > 1 {
-        for seg in parts.iter().skip(1) {
-            if !read_only_stem(seg.trim()) {
-                return true;
-            }
-        }
-    }
-    false
+/// Writer markers take the mutating path and clear `bash` keys (fail-open vs false deny).
+fn writer_marker(seg: &str) -> bool {
+    let toks: Vec<&str> = seg.split_whitespace().collect();
+    let stem = super::cmd::formatters::cmd_stem(toks.first().copied().unwrap_or(""));
+    toks.iter().copied().any(is_redirect)
+        || (stem == "find"
+            && toks
+                .iter()
+                .any(|t| *t == "-delete" || *t == "-exec" || t.starts_with("-exec")))
+        || (stem == "sed" && toks.iter().copied().any(sed_in_place))
+        || (stem == "tail"
+            && toks
+                .iter()
+                .any(|t| *t == "-f" || *t == "--follow" || t.starts_with("--follow=")))
+}
+
+fn is_redirect(t: &str) -> bool {
+    let t = t.trim_start_matches(|c: char| c.is_ascii_digit());
+    t.starts_with('>') || t.starts_with("&>")
+}
+
+fn sed_in_place(t: &str) -> bool {
+    t == "--in-place"
+        || t.starts_with("--in-place=")
+        || (t.starts_with("-i") && !t.starts_with("--"))
 }
 
 /// Normalized Bash key body: whitespace collapsed, the `rtok run --` wrap stripped,
@@ -778,15 +782,70 @@ mod tests {
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
     }
 
+    /// T57.1: flag-aware read-only keys — writer markers take the mutating path.
     #[test]
-    fn read_only_flag_aware_stems() {
-        assert!(read_only("sed -n '1,40p' file"));
-        assert!(!read_only("sed -i 's/a/b/' file"));
-        assert!(!read_only("find . -name x -delete"));
-        assert!(!read_only("cat a > b"));
-        assert!(!read_only("tail -f log"));
-        assert!(read_only("cat a | grep b"));
-        assert!(!read_only("ls | xargs rm"));
+    fn flag_aware_read_only_keys() {
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}));
+        assert!(k("sed -n 1,40p f").is_some(), "sed -n is read-only");
+        assert!(k("sed -i s/a/b/ f").is_none(), "sed -i is mutating");
+        assert!(
+            k("find . -name x -delete").is_none(),
+            "find -delete is mutating"
+        );
+        assert!(k("cat a > b").is_none(), "redirect is mutating");
+        assert!(k("tail -f log").is_none(), "tail -f is never keyed");
+        assert!(k("cat a | grep b").is_some(), "pipe of readers is keyed");
+        assert!(
+            k("ls | xargs rm").is_none(),
+            "pipe into a writer is mutating"
+        );
+        assert!(k("jq . f").is_some());
+        assert!(k("awk '{print $1}' f").is_some());
+        assert!(k("git rev-parse HEAD").is_some());
+        assert!(k("cargo metadata").is_some());
+        assert!(k("cargo test").is_none());
+    }
+
+    /// T57.1 false-deny Check: a writer that shares a read-only stem must clear bash keys.
+    #[test]
+    fn find_delete_allows_the_next_ls() {
+        let cx = setup();
+        let g = Guard;
+        let resp = json!({"stdout": "out"});
+        let post = |cmd: &str| {
+            let input = json!({"command": cmd});
+            assert!(
+                g.post_tool(
+                    &PostToolUse {
+                        tool_name: "Bash",
+                        tool_input: &input,
+                        tool_response: &resp,
+                    },
+                    &Ctx::new(&cx),
+                )
+                .is_none()
+            );
+        };
+        let denied = |cmd: &str| {
+            let input = json!({"command": cmd});
+            matches!(
+                g.pre_tool(
+                    &PreToolUse {
+                        tool_name: "Bash",
+                        tool_input: &input,
+                    },
+                    &Ctx::new(&cx),
+                ),
+                Some(PreToolDecision::Deny { .. })
+            )
+        };
+        post("ls");
+        assert!(denied("ls"));
+        post("find . -delete");
+        assert!(
+            !denied("ls"),
+            "find -delete must drop bash keys so the next ls is allowed"
+        );
     }
 
     #[test]

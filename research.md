@@ -31,6 +31,33 @@ Estimator: 4 chars/token (heuristic). Usage counters are real API numbers.
 | Median final context | 167 K tokens per session |
 | rtk-wrapped commands visible in transcripts | 3 of 3,658 (the PreToolUse rewrite happens after the transcript records the call, so this under-counts) |
 
+### `guard` read-only stems (T57.1, 2026-09-18)
+
+Dated command: `measure::stats::collect` walk (`jsonl_paths` over `[stats] transcripts_dir`, default `~/.claude/projects`, 968 `*.jsonl`). Repeat = the same Bash `command` string (whitespace-collapsed) inside `plugins.guard.window_turns` (default 8) transcript turns. First-word family is `bash_family` (the `collect` path). Flag/subcommand counts are a token scan of those commands, not a shell grammar.
+
+| Stem / marker | All Bash | Exact repeats in window | Action |
+|---------------|----------|-------------------------|--------|
+| `sed` | 2,417 | 5 | **add** (`sed -n` 2,238; `sed -i` 169 stay mutating) |
+| `jq` | 20 | 0 | **add** (repeats are path/filter variants; the stem is present) |
+| `awk` | 359 | 0 | **add** |
+| `git rev-parse` | 8 | 0 | **add** (`git` all 1,370 / repeats 53, mostly `status` 285) |
+| `cargo metadata` | 9 | 0 | **add** (`cargo` all 216 / repeats 2, none metadata) |
+| `ls` `cat` `head` `tail` `grep` `rg` `find` `wc` | 1,072 / 1,793 / 147 / 308 / 3,646 / 28 / 343 / 206 | 3 / 9 / 0 / 3 / 8 / 0 / 0 / 5 | keep |
+| `find -delete` / `-exec` | 0 / 12 | — | writer marker |
+| `tail -f` | 8 | — | writer marker |
+| `\| tee` | 44 | — | writer marker |
+| redirect `>` / `>>` (token) | 13,802 | — | writer marker (greedy: fail-open vs false deny) |
+
+No existing stem was removed: each still has a count. `tree` is 0 on this machine and stays in the list (already shipped).
+
+Hook e2e fixture (one session, `window_turns = 64` so the fixture is not capped; PostToolUse then PreToolUse of each command, plus `ls` → `find . -delete` → `ls`). `Measurement` rows `plugin = guard`, `kind = guard`:
+
+| | count | `before_bytes` sum |
+|---|---|---|
+| before (stem list, flags ignored) | 9 | 52 |
+| after (flag-aware) | 8 | 32 |
+
+Before denied writers (`find -delete`, `cat a > b`, `grep x > out`, `ls \| xargs rm`, `tail -f`) and false-denied the follow-up `ls`. After those take the mutating path (0 denies) and the new read-only repeats (`sed -n`, `jq`, `awk`, `git rev-parse`, `cargo metadata`) deny. `cat a \| grep b` and `cat f \| wc -l` deny in both. `sed -i` is never keyed.
 
 ### Extra `read` modes (T50.3, 2026-09-18)
 
