@@ -1206,3 +1206,78 @@ Top 20 `bash_default` stems by filtered after-bytes:
 | 20 | rmcp-3.2.0 | 1 | 101 |
 
 T50.1 added `[stem]` rules (and golden fixtures) for: `gh`, `pip`, `uv`, `python`, `python3`, `go`, `aws`, `mvn`, `gradle`, `dotnet`, `tsc`, `eslint`, `brew`, `apt`, `cmake`. T58.5 shipped table formatters (one row per object, `kind = formatter`) that beat `Rule::default()` on those fixtures: `docker ps` 3147→1190 vs rule 1311, `kubectl get` 4542→1731 vs rule 1770, `ps aux` 2341→870 vs rule 990 (`tests/cmd_golden/{docker_ps,kubectl_get,ps_aux}`).
+
+## 16. Token savings beyond the shipped surface (2026-09-21)
+
+Creator request: what else can save LLM tokens in an agent product like rtok (AirTalk), after inventorying what already ships. Sources: `plan.md` plugin catalogue, `ideas.md`, §§2/4/6/9–15 of this file, and the in-tree plugins under `src/plugins/`. Vendor % claims stay claims unless marked *measured*.
+
+### 16.1 What rtok already does (short)
+
+| Lever | Where | Mechanism |
+| --- | --- | --- |
+| Tool-output trim (lossless) | `cmd`, `read`, MCP wrap | Family formatters + TOML rules; archive raw → pointer + `expand` |
+| Re-read / refetch dedup | `read`, `guard` | sha256 / identical read-or-command within N turns → deny or skip full body |
+| Live-zone rewrite | `archive` + `proxy` | Old large `tool_result`s → head/tail + pointer; system/tools/last-2-turns untouched |
+| Budgeted injection | `inject` | SessionStart / UserPromptSubmit under a token cap; modes as markdown data |
+| Memory without stuffing | `memory` | FTS5 notes; SessionStart injects `id title` only; bodies via `mem_get` |
+| Code navigation instead of dumps | `graph` | `symbol` / `callers` / `outline` / `impact` from tree-sitter-tags in SQLite |
+| Measurement | `measure`, proxy usage | Context-token-turns + provider usage; `stats` / `report` / doctor |
+| Optional tabular encode | `toon` | JSON tables → TOON (off by default) |
+| Optional extractive shrink | `compress` | P28 gate; off until semantic compress clears a bench |
+| Host install surface | `agents install` | Hooks + MCP + proxy so the above actually see traffic |
+
+Routing (D9), WASM plugins (P32), embeddings (P29), semantic cache (P31), and tiered context (P33) are **decisions or Later**, not the default v0.1 path.
+
+### 16.2 Already tracked but not the default product yet
+
+These are **not** greenfield — they live in `ideas.md` / `plan.md`. Listed so this scan does not reinvent them. Priority here is “still open for savings,” not “new invention.”
+
+| Priority | Idea / task | Rough impact | Effort | Why |
+| --- | --- | --- | --- | --- |
+| P0 | **T59.5** tools[] description rewrite (I-45) | *measured* ~6.2 % of session **input** when Tool Search is off | M | High repeat tax every turn; off-by-default rewrite is the right shape |
+| P0 | **T61.2** live-zone skill bodies (I-51) | High when a large skill stays in every later request (§10.3) | M | Same archive path as tool results; gated on skill stats (T61.1) |
+| P1 | **T58.1** delta re-read (I-41) | Medium on Read-heavy sessions (Read ≈ 15 % of tool-result tokens §2) | M | Needs changed-file share count first |
+| P1 | **T58.2** compaction checkpoint + archive ids (I-42) | Medium on long sessions that compact | M | Survives host summarization; half is host-plugin work (T70.x) |
+| P1 | **T59.1** per-stem `skip_wrap` (I-39) | Medium for curl/ffmpeg-class Bash if currently unwrapped | S–M | Fail-open; needs hang Check |
+| P2 | **P28 / I-21** LLMLingua-style / extractive `compress` on | High *if* bench beats lossless; quality risk on code | L | Default off; costs tokens to save tokens |
+| P2 | **P31 / I-23** semantic response cache | High on repeated asks; dangerous false hits | L | Needs false-hit Check |
+| P2 | **P33 / I-25** OpenViking-style tiered context | High on very long threads | L | License + model path |
+| P2 | **T51.1** (I-09) compress nested JSON / `data:` inside live zone | Medium when blobs dominate | M | Complementary to tool_result archive |
+| P3 | **I-55** session token/cost budget deny | Process control, not compression | S | Hosts already auto-compact |
+| P3 | **I-71** HTML→text curl formatter | *measured* &lt; 1 % Bash bytes here — parked | S | Re-open only above gate |
+
+### 16.3 Further options not yet a first-class rtok idea (or only as a Decision)
+
+Prioritized for an agent product like AirTalk. Effort: S &lt; 1 week, M ~1–3 weeks, L multi-phase. Impact is expected **input** token or CTT reduction unless noted.
+
+| # | Option | Impact | Effort | Notes / sources |
+| --- | --- | --- | --- | --- |
+| 1 | **Explicit prompt-cache breakpoints + sticky routing** | High $ (cache-read vs input); modest unique-token cut | M | Providers bill cache hits cheaply (rtok already prices cache in T49.1). Pin stable prefix (system + tools + modes) and keep the same backend pod/region so the KV/prompt cache hits. Anthropic prompt caching docs; OpenAI prompt caching. Not the same as I-23 semantic cache. |
+| 2 | **Deferred / dynamic tool declarations** | High when many MCP tools | M | Ship short tool stubs; load full schemas on first use (host Tool Search / deferred tools — doctor already warns when `ANTHROPIC_BASE_URL` disables search). Related to I-45 but schema-level, not only shorter text. |
+| 3 | **Model / tier routing by job** (D9) | High $; small raw-token change | M–L | Cheap model for format/classify/expand-prep; mid for edit; expensive only after confirm. Needs a router policy + measurement so “savings” are $. |
+| 4 | **Thinking / reasoning strip on replay** | Medium–High on reasoning models | S–M | Do not re-send prior chain-of-thought blocks into the next turn when the host attaches them; keep final answers + tool I/O. Host- and provider-specific. |
+| 5 | **Native context-editing APIs** (I-10 / T51.2) | Medium–High | M | Let the platform shrink history (Anthropic context editing / host compaction hooks) *and* keep rtok archive ids in the checkpoint (ties to T58.2). |
+| 6 | **Structured tool I/O (JSON Schema / strict)** | Medium output + easier trim | M | Force tools to return compact tables/fields instead of prose; then `toon` / formatters win more often. |
+| 7 | **Sub-agent isolation + budgeted handoff** (I-46) | Medium when Task/Agent traffic grows | M | Child context starts small; parent gets a digest with archive ids — not a full transcript paste. |
+| 8 | **Identifier / path dictionary in-session** | Low–Medium | L | Replace repeated long paths with short codes in tool results; expand on demand. Easy to break models; needs A/B. |
+| 9 | **Multimodal token gate** | High $ when screenshots dominate | S–M | Prefer OCR/text or downscale; refuse or summarize images in the live zone. Separate from text CTT. |
+| 10 | **Speculative local draft → verify** | Mixed | L | Local small model proposes; cloud model verifies — can cut cloud **output** tokens, adds complexity and wrong-draft risk. |
+
+### 16.4 Sources (non-obvious)
+
+- Workload + technique ranking: this file §§2, 6, 9–15; comparison matrix §4.
+- Parking lot (do not re-file duplicates): `ideas.md` Open / Later / Promoted.
+- Plugin contracts: `plan.md` catalogue; each `src/plugins/*/PLAN.md`.
+- Prompt caching (provider): Anthropic “Prompt caching”; OpenAI “Prompt caching” (billing ≠ semantic cache).
+- Tool-description tax: Portkey / LiteLLM claims cited under I-45; rtok *measured* 6.2 % input (2026-09-18).
+- External context + grep/slice: recursive-llm notes in §12 (I-53/I-54).
+- Tiered memory / L0–L2: OpenViking row in §4 / I-25.
+- Extractive / LLM compress: LLMLingua-2 family under I-21 / P28; in-tree `compress` is the off-by-default hook.
+- HTML Readable path: tinyjuice / TokenJuice under I-71 (below rtok’s 1 % gate on the measured corpus).
+- Host plugin ceilings: §15 (pi/Cursor/OpenCode events rtok cannot see via proxy alone).
+
+### 16.5 Recommended next moves
+
+1. Ship or schedule **T59.5** and **T61.2** — highest *measured* or structurally recurring input taxes.
+2. Add a plan card for **prompt-cache-stable prefixes + sticky proxy upstream** if `$` savings matter as much as raw tokens (pairs with existing `stats --price` cache rates).
+3. Keep P28/P31/P33 in Later until a bench beats the lossless archive lane on *code* sessions.

@@ -25,6 +25,17 @@ mention it in `plan.md` §6.
 
 ## Open
 
+### Research note (2026-09-21)
+
+Inventory of shipped levers vs further options: [`research.md` §16](research.md#16-token-savings-beyond-the-shipped-surface-2026-09-21). New greenfield rows below only if not already filed.
+
+| ID | Inspired by | Area | Proposition | Why it is not in the plan |
+|----|-------------|------|-------------|---------------------------|
+| I-84 | Anthropic / OpenAI prompt caching; `stats --price` cache rates (T49.1) | `proxy` / hosts | Stable byte-prefix for system+tools+modes and sticky upstream routing so provider **prompt-cache hits** dominate billed input. Not semantic cache (I-23). | Decision-shaped; needs a Check on cache-hit rate before/after and a false “sticky” routing failure mode. |
+| I-85 | Host Tool Search / deferred tools; doctor `mcp_tool_search` | `proxy` / MCP | Deferred full tool schemas: short stubs every turn, expand schema on first call. Complements I-45 text rewrite. | Overlaps host-native Tool Search; only worth it when search is off and tools[] still dominate input. |
+| I-86 | Reasoning-model transcripts; provider “thinking” blocks | `archive` / `proxy` | Strip or pointer prior reasoning/thinking blocks on replay; keep finals + tool I/O. | Host/provider specific; risk if the model needs its own traces — needs an A/B on a reasoning-heavy corpus. |
+
+
 Inspired by the comparison matrix (`research.md` §4) and stack gaps (`research.md` §5)
 that v0.1 does not schedule.
 
