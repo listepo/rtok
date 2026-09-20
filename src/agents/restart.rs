@@ -329,14 +329,14 @@ fn stop_desktop(app_name: &str) -> Result<()> {
             .with_context(|| format!("osascript quit {app_name}"))?;
         // Non-zero is fine when the app was not running.
         let _ = status;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "windows")]
     {
         let _ = std::process::Command::new("taskkill")
             .args(["/IM", &format!("{app_name}.exe"), "/F"])
             .status();
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -354,7 +354,7 @@ fn start_desktop(app_name: &str, _path: &std::path::Path) -> Result<()> {
             .arg(app_name)
             .status()
             .with_context(|| format!("open -a {app_name}"))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "windows")]
     {
@@ -362,7 +362,7 @@ fn start_desktop(app_name: &str, _path: &std::path::Path) -> Result<()> {
             .args(["/C", "start", "", path.to_str().unwrap_or(app_name)])
             .status()
             .with_context(|| format!("start {app_name}"))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
