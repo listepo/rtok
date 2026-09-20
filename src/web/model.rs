@@ -341,6 +341,7 @@ pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
     if let Ok(store) = Store::open(&cfg.core.db_path) {
         let _ = stats::attach_api(&mut report, &store);
         let _ = stats::attach_bash_cmd(&mut report, &store);
+        let _ = stats::attach_checkpoint_notes(&mut report, &store);
         if cfg.stats.price {
             let _ = stats::attach_costs(&mut report, &store, &cfg.stats.prices);
         }
@@ -1185,6 +1186,19 @@ impl<'a> Model<'a> {
             .into_iter()
             .map(|(m, enabled, mut page)| {
                 page.fields.extend(config_fields(m.id, self.cfg));
+                if m.id == "memory"
+                    && let Some(store) = self.store
+                    && let Ok(aggs) = store.memory_note_aggs(None)
+                {
+                    let live: u64 = aggs.iter().map(|r| r.live).sum();
+                    let pinned: u64 = aggs.iter().map(|r| r.pinned).sum();
+                    let retired: u64 = aggs.iter().map(|r| r.retired).sum();
+                    page.fields.push(("notes live".into(), live.to_string()));
+                    page.fields
+                        .push(("notes pinned".into(), pinned.to_string()));
+                    page.fields
+                        .push(("notes retired".into(), retired.to_string()));
+                }
                 PluginPage {
                     id: m.id,
                     enabled,
@@ -1340,6 +1354,8 @@ fn config_fields(id: &str, cfg: &Config) -> Vec<(String, String)> {
         "memory" => vec![
             kv("recall_titles", p.memory.recall_titles),
             kv("recall_tokens", p.memory.recall_tokens),
+            kv("prompt_recall", p.memory.prompt_recall),
+            kv("sync_tokens", p.memory.sync_tokens),
         ],
         "graph" => vec![kv("max_tokens", p.graph.max_tokens)],
         "toon" => vec![kv("min_rows", p.toon.min_rows)],

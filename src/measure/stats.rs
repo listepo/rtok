@@ -30,6 +30,18 @@ pub struct SizeRow {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Report {
     pub sessions: u64,
+    /// Transcript compaction events (`subtype=compact_boundary`), T58.2.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub compact: u64,
+    /// Transcript sessions that already have a `checkpoint:*` or `session:*` note (T71.2).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub checkpoint: u64,
+    /// Transcript sessions with no such note.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub no_checkpoint: u64,
+    /// File stems of counted sessions; matched against notes. Not in JSON.
+    #[serde(skip)]
+    session_stems: Vec<String>,
     pub lines: u64,
     pub malformed: u64,
     pub tools: BTreeMap<String, SizeRow>,
@@ -93,6 +105,10 @@ impl EditRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Re-reads that a unified diff could shorten (plan T58.1). `bytes` is those
@@ -205,8 +221,13 @@ impl Report {
     pub fn to_table(&self) -> String {
         let mut s = String::new();
         s.push_str(&format!(
-            "sessions {}  lines {}  malformed {}\n",
-            self.sessions, self.lines, self.malformed
+            "sessions {}  compact {}  checkpoint {}  no_checkpoint {}  lines {}  malformed {}\n",
+            self.sessions,
+            self.compact,
+            self.checkpoint,
+            self.no_checkpoint,
+            self.lines,
+            self.malformed
         ));
         s.push_str(&format!(
             "usage input={} cache_create={} cache_read={} output={}  hit={:.1}%  median_context={}\n",
@@ -497,6 +518,21 @@ pub fn attach_api(report: &mut Report, store: &Store) -> Result<()> {
     Ok(())
 }
 
+/// Match counted transcript stems to `checkpoint:<id>` / `session:<id>` notes (T71.2).
+pub fn attach_checkpoint_notes(report: &mut Report, store: &Store) -> Result<()> {
+    let ids: std::collections::BTreeSet<String> =
+        store.checkpoint_session_ids()?.into_iter().collect();
+    let mut with = 0u64;
+    for stem in &report.session_stems {
+        if ids.contains(stem) {
+            with += 1;
+        }
+    }
+    report.checkpoint = with;
+    report.no_checkpoint = report.sessions.saturating_sub(with);
+    Ok(())
+}
+
 /// Codex CLI sessions as one more `api` row (T49.2), read from `dir` with the same `since`
 /// window as the Claude Code transcripts. Absent dir or no `token_count` line → no row.
 pub fn attach_codex(report: &mut Report, dir: &Path, since: Duration) {
@@ -635,8 +671,13 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             report.malformed += 1;
             continue;
         };
+        report.compact += compact_events(&p);
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            report.session_stems.push(stem.to_string());
+        }
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
     }
+    report.no_checkpoint = report.sessions;
     finish_rows(&mut report.tools);
     finish_rows(&mut report.bash_families);
     finish_rows(&mut report.mcp_groups);
@@ -653,6 +694,22 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         finals[finals.len() / 2]
     };
     Ok(report)
+}
+
+/// One Claude Code / Codex compaction: a `system` line with `subtype=compact_boundary`.
+/// `isCompactSummary` rides the same event and is not counted again.
+fn compact_events(path: &Path) -> u64 {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    text.lines().filter(|line| is_compact_line(line)).count() as u64
+}
+
+fn is_compact_line(line: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return false;
+    };
+    v.get("subtype").and_then(Value::as_str) == Some("compact_boundary")
 }
 
 fn fold_session(
@@ -1341,6 +1398,76 @@ mod tests {
         let pointer = est_tokens(51 + 51 + 64); // head line, tail line, pointer line
         assert_eq!(after, tokens * 2 + pointer * 3);
         assert!(after < tokens * 5);
+    }
+
+    #[test]
+    fn compact_boundary_counts_once_per_event() {
+        let dir = tempfile_dir();
+        std::fs::write(
+            dir.join("s.jsonl"),
+            r#"{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}
+{"type":"user","isCompactSummary":true,"message":{"content":"summary"}}
+{"type":"assistant","message":{"content":"ok"}}
+"#,
+        )
+        .unwrap();
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 1);
+        assert_eq!(r.compact, 1);
+        assert!(
+            r.to_table()
+                .starts_with("sessions 1  compact 1  checkpoint 0  no_checkpoint 1  lines 3"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checkpoint_notes_split_sessions_with_and_without() {
+        let dir = std::env::temp_dir().join(format!("rtok-stats-t712-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("has.jsonl"),
+            r#"{"type":"user","message":{"content":"a"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("miss.jsonl"),
+            r#"{"type":"user","message":{"content":"b"}}"#,
+        )
+        .unwrap();
+        let mut r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay::from_cfg(&Config::default()),
+        )
+        .unwrap();
+        assert_eq!(r.sessions, 2);
+        assert_eq!(r.checkpoint, 0);
+        assert_eq!(r.no_checkpoint, 2);
+        let store = Store::open_in_memory().unwrap();
+        store
+            .insert_note(Some("rtok"), "checkpoint:has", "compact", "checkpoint\n")
+            .unwrap();
+        attach_checkpoint_notes(&mut r, &store).unwrap();
+        assert_eq!(r.checkpoint, 1);
+        assert_eq!(r.no_checkpoint, 1);
+        assert!(
+            r.to_table()
+                .starts_with("sessions 2  compact 0  checkpoint 1  no_checkpoint 1"),
+            "{}",
+            r.to_table()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
