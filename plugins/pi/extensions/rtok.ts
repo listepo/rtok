@@ -1,9 +1,10 @@
-// rtok pi extension (T10.6, D21): the single bash call path, no MCP.
+// rtok pi extension (T10.6, T70.1, D21): one spawn helper, no MCP.
 //
 // pi philosophy is no MCP: bash still goes through `rtok run` / `rtok filter`.
-// When `[setup.pi] tools = true`, `pi.registerTool` exposes the measured MCP
-// set as thin `rtok mcp --call` wrappers (T70.3) — one call path, not a second
-// read/search. Off by default so those descriptions do not ride every request.
+// File/search results go through `rtok filter --cmd` (T70.1). When `[setup.pi]
+// tools = true`, `pi.registerTool` exposes the measured MCP set as thin
+// `rtok mcp --call` wrappers (T70.3) — one call path, not a second read/search.
+// Off by default so those descriptions do not ride every request.
 // Every shortened payload carries an `expand <id>` trailer (D4). Missing `rtok`
 // fails open and names the ketch install (D21).
 //
@@ -23,6 +24,8 @@ const KETCH_HINT = [
   "  ketch install listepo/rtok",
 ].join("\n");
 
+const FILE_TOOLS = new Set(["read", "grep", "find", "ls"]);
+
 function rtok(args, input, signal) {
   return new Promise((resolve) => {
     const child = execFile("rtok", args, { signal }, (error, stdout, stderr) => {
@@ -40,6 +43,21 @@ function rtok(args, input, signal) {
     }
     child.stdin.end();
   });
+}
+
+function hintMissing(pi) {
+  if (pi._rtokHinted) return;
+  pi._rtokHinted = true;
+  pi.appendEntry?.("system", KETCH_HINT);
+}
+
+/** `rtok filter` argv for this result, or null when the tool is left alone. */
+function filterArgs(event) {
+  if (event.toolName === "bash") return ["filter", "--stdin"];
+  if (!FILE_TOOLS.has(event.toolName)) return null;
+  const arg = event.input?.path ?? event.input?.pattern;
+  const hint = typeof arg === "string" && arg ? `${event.toolName} ${arg}` : event.toolName;
+  return ["filter", "--stdin", "--cmd", hint];
 }
 
 export default function (pi) {
@@ -85,8 +103,9 @@ export default function (pi) {
     event.input.command = `rtok run -- ${quoted}`;
   });
 
-  // Bash results: `rtok filter` compresses oversized output; the trailer
-  // carries `expand <id>` for the full text. Small output passes through.
+  // Bash results: `rtok filter` compresses oversized output. File/search
+  // tools pass `--cmd "<tool> <path-or-pattern>"` so the cmd family matches.
+  // The trailer carries `expand <id>` for the full text. Small output passes through.
   pi.on("tool_result", async (event, ctx) => {
     const text = (event.content ?? [])
       .map((c) => (typeof c?.text === "string" ? c.text : ""))
@@ -105,10 +124,14 @@ export default function (pi) {
         }),
       );
     }
-    if (event.toolName !== "bash") return;
-    if (!text) return;
-    const r = await rtok(["filter", "--stdin"], text, undefined);
-    if (r.missing || !r.stdout) return;
+    const args = filterArgs(event);
+    if (!args || !text) return;
+    const r = await rtok(args, text, undefined);
+    if (r.missing) {
+      hintMissing(pi);
+      return;
+    }
+    if (!r.stdout) return;
     const out = r.stdout.trimEnd();
     if (out && out !== text.trimEnd()) {
       return { content: [{ type: "text", text: out }] };

@@ -129,9 +129,9 @@ refs = ["src/plugins/checkpoint.rs", "src/plugins/memory/import.rs"]
 [[symbol]]
 name = "upsert_note"
 kind = "fn"
-# T66.1: the store's only definition; `mem_save` is the only caller (the capability trait
-# in `src/plugin.rs` still exposes `insert_note` alone).
-defs = ["src/store/mod.rs"]
+# The store's inherent method, the `Notes` trait declaration, and its two impls — T69.5
+# added the capability, so the name is defined in all four files, not just the store.
+defs = ["src/store/mod.rs", "src/plugin.rs", "crates/rtok-plugin-sdk/src/host.rs", "crates/rtok-plugin-sdk/src/testing.rs"]
 refs = ["src/plugins/memory/mod.rs"]
 
 [[symbol]]

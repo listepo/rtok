@@ -93,11 +93,7 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
         Err(e) => (e.to_string(), false),
     };
     let _ = record(&server.cx, plugin, name, &args, &text);
-    if ok {
-        Ok(text)
-    } else {
-        bail!("{text}")
-    }
+    if ok { Ok(text) } else { bail!("{text}") }
 }
 
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
@@ -262,6 +258,8 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "mem_get" => mem_get(cx, args),
         #[cfg(feature = "memory")]
         "mem_update" => mem_update(cx, args),
+        #[cfg(feature = "memory")]
+        "handoff" => handoff(cx, args),
         #[cfg(feature = "read")]
         "read" => read_file(cx, args),
         #[cfg(feature = "read")]
@@ -365,8 +363,7 @@ fn mem_get(cx: &Runtime, args: &Value) -> Result<String> {
         .as_i64()
         .and_then(|n| i32::try_from(n).ok())
         .ok_or_else(|| anyhow::anyhow!("invalid note id: {}", args["id"]))?;
-    crate::plugins::memory::mem_get(cx, id)?
-        .ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
+    crate::plugins::memory::mem_get(cx, id)?.ok_or_else(|| anyhow::anyhow!("unknown note id: {id}"))
 }
 
 #[cfg(feature = "memory")]
@@ -415,6 +412,15 @@ fn record(cx: &Runtime, plugin: &str, name: &str, args: &Value, result: &str) ->
     cx.store
         .insert_tokens(call_id, Some(plugin), "mcp", "estimate", after)?;
     Ok(())
+}
+
+#[cfg(feature = "memory")]
+fn handoff(cx: &Runtime, args: &Value) -> Result<String> {
+    let budget = args["budget_tokens"].as_u64().unwrap_or(800) as u32;
+    Ok(crate::plugins::memory::handoff::handoff(
+        &crate::plugin::Ctx::new(cx),
+        budget,
+    ))
 }
 
 #[cfg(test)]

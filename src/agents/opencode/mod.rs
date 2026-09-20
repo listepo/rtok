@@ -131,6 +131,7 @@ impl Agent for OpenCode {
             lines.push(register_mcp(&c)?);
         }
         lines.push(offer_plugin(&c, remove)?);
+        lines.push(super::skill::sync("opencode", &c, remove)?);
         Ok(lines)
     }
 }

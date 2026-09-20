@@ -44,12 +44,24 @@ const ALLOW_KEYS: &[&str] = &[
     "guard.check.host", // overlay `[hook] host` on the plugin CLI path (T70.5)
     "memory.import.dry_run",
     "graph.index.dry_run",
+    "graph.impact.depth",
+    "graph.impact.to",
+    // `graph affected` (T68.x): which diff to read on one call, not a stored setting.
+    "graph.affected.since",
+    "graph.affected.staged",
     // `memory export --project` narrows one dump; the store, not a setting, decides it.
     "memory.export.project",
     // `memory retire/revise` (T69.1): one-shot lifecycle values on a single call, not settings.
     "memory.retire.superseded_by",
     "memory.revise.title",
     "memory.revise.body",
+    // `memory sync` (T69.6): per-call file/budget/dry-run; `sync_tokens` is the setting.
+    "memory.sync.file",
+    "memory.sync.budget",
+    "memory.sync.dry_run",
+    // `memory status` (T69.4): one-shot filters, not settings.
+    "memory.status.project",
+    "memory.status.since",
 ];
 
 #[test]

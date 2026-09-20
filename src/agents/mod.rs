@@ -15,6 +15,8 @@ pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 pub mod pi;
+pub mod skill;
+pub mod vscode;
 pub mod windsurf;
 pub mod zcode;
 pub mod zed;
@@ -29,8 +31,8 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "copilot", "aider", "windsurf",
-    "zed",
+    "claude", "cursor", "codex", "opencode", "pi", "zcode", "kimi", "vscode", "copilot", "aider",
+    "windsurf", "zed",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -46,6 +48,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "pi" => Some(&pi::Pi),
         "zcode" => Some(&zcode::Zcode),
         "kimi" => Some(&kimi::Kimi),
+        "vscode" => Some(&vscode::Vscode),
         "copilot" => Some(&copilot::Copilot),
         "windsurf" => Some(&windsurf::Windsurf),
         "aider" => Some(&aider::Aider),
@@ -627,21 +630,47 @@ fn apply_all(
     Ok((out, changed))
 }
 
+/// Walk each requested host's variants. Hosts run in parallel; output stays in `ids` order.
+pub fn visit_hosts<T: Send>(ids: &[&str], f: impl Fn(&dyn Agent, &Variant) -> T + Sync) -> Vec<T> {
+    std::thread::scope(|scope| {
+        let mut joins = Vec::with_capacity(ids.len());
+        for &id in ids {
+            let Some(a) = host(id) else { continue };
+            let f = &f;
+            joins.push(
+                scope.spawn(move || a.variants().iter().map(|v| f(a, v)).collect::<Vec<_>>()),
+            );
+        }
+        joins
+            .into_iter()
+            .flat_map(|j| j.join().expect("host listing thread"))
+            .collect()
+    })
+}
+
 /// `rtok agents list`: every known host × variant as a [`block`], nothing written.
 pub fn list(cfg: &Config) -> String {
-    let mut out = String::new();
-    for id in HOSTS {
-        let Some(a) = host(id) else { continue };
-        for v in a.variants() {
-            let outcome = if present(a, v, cfg) {
-                Outcome::Listed
-            } else {
-                Outcome::NotFound
-            };
-            out.push_str(&block(a, v, cfg, outcome));
-        }
-    }
-    out
+    list_ids(cfg, HOSTS)
+}
+
+/// Same blocks as [`list`], only for `ids` (already-resolved host ids).
+pub fn list_ids(cfg: &Config, ids: &[&str]) -> String {
+    visit_hosts(ids, |a, v| {
+        let outcome = if present(a, v, cfg) {
+            Outcome::Listed
+        } else {
+            Outcome::NotFound
+        };
+        block(a, v, cfg, outcome)
+    })
+    .concat()
+}
+
+/// `rtok agents info <host>`: [`list`] filtered to the named host(s).
+pub fn info(cfg: &Config, hosts: &[String]) -> Result<String> {
+    let agents = resolve(hosts)?;
+    let ids: Vec<&str> = agents.iter().map(|a| a.id()).collect();
+    Ok(list_ids(cfg, &ids))
 }
 
 /// The `[setup]` flags an installer acts on, as the SDK spells them.
@@ -790,6 +819,18 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
         env!("CARGO_PKG_VERSION"),
     )
+}
+
+/// The hub skill tree this repo ships (`skills/rtok/`).
+///
+/// Prefer the top-level hub. Older ketch archives only shipped
+/// `plugins/` (no `skills/`), so fall back to the pi-bundled copy.
+pub(crate) fn skill_src() -> std::path::PathBuf {
+    let hub = plugin_src("skills/rtok");
+    if hub.exists() {
+        return hub;
+    }
+    plugin_src("plugins/pi/skills/rtok")
 }
 
 /// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).
@@ -948,6 +989,36 @@ mod tests {
             !quoted.contains("\\\""),
             "bash-style escape must not appear: {quoted}"
         );
+    }
+
+    #[test]
+    fn skill_src_falls_back_to_pi_skill_in_ketch_store() {
+        let root = std::env::temp_dir().join(format!("rtok-skill-fallback-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("bin");
+        let store = root.join("store/rtok/v0.2.0");
+        let pi_skill = store.join("plugins/pi/skills/rtok");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&pi_skill).unwrap();
+        std::fs::write(pi_skill.join("SKILL.md"), b"pi\n").unwrap();
+        let exe = bin.join("rtok");
+        std::fs::write(&exe, b"x").unwrap();
+        // No top-level skills/ in the store — only the pi copy.
+        let got = resolve_plugin_src(
+            "skills/rtok",
+            Some(&exe),
+            &root.join("missing-cargo"),
+            "0.2.0",
+        );
+        assert!(!got.exists(), "hub must be absent: {}", got.display());
+        let fallback = resolve_plugin_src(
+            "plugins/pi/skills/rtok",
+            Some(&exe),
+            &root.join("missing-cargo"),
+            "0.2.0",
+        );
+        assert_eq!(fallback, pi_skill);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

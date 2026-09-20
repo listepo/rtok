@@ -83,6 +83,11 @@ fn pi_extension_owns_the_single_bash_call_path() {
     assert!(ts.contains("rtok filter"), "filter path");
     assert!(ts.contains("expand"), "expand trailer");
     assert!(ts.contains("ketch install listepo/rtok"), "ketch hint");
+    assert!(ts.contains("\"read\""), "filters pi read results (T70.1)");
+    assert!(ts.contains("\"grep\""), "filters pi grep results");
+    assert!(ts.contains("\"find\""), "filters pi find results");
+    assert!(ts.contains("\"ls\""), "filters pi ls results");
+    assert!(ts.contains("--cmd"), "file/search tools pass --cmd");
     assert!(ts.contains("guard"), "T70.5 guard check");
     assert!(ts.contains("block: true"), "deny returns a reasoned block");
     assert!(ts.contains("registerTool"), "T70.3 pi.registerTool");

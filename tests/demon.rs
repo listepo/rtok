@@ -159,3 +159,66 @@ fn a_second_start_is_refused_and_status_names_every_service() {
     rtok(&["demon", "stop", "mcp"], &h);
     let _ = fs::remove_dir_all(&h);
 }
+
+#[cfg(unix)]
+fn write_script(path: &Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(path, body).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(unix)]
+fn upgrade(home: &Path, cmd: &Path) -> std::process::Output {
+    Command::new(bin())
+        .args(["demon", "upgrade"])
+        .env("RTOK_HOME", home)
+        .env("HOME", home)
+        .env("RTOK_UPDATE_CMD", cmd)
+        .output()
+        .unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn upgrade_stops_before_replace_and_starts_after() {
+    let h = home("upgrade-ok");
+    rtok(&["demon", "start"], &h);
+    wait_restarts(&h, 1);
+    let script = h.join("replace.sh");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\n[ ! -f '{}/demon/mcp.json' ] || exit 2\ntouch '{}'\n",
+            h.display(),
+            h.join("replaced").display()
+        ),
+    );
+    let out = upgrade(&h, &script);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(h.join("replaced").exists(), "replace did not run");
+    wait_restarts(&h, 1);
+    rtok(&["demon", "stop"], &h);
+    let _ = fs::remove_dir_all(&h);
+}
+
+#[cfg(unix)]
+#[test]
+fn upgrade_starts_again_when_replace_fails() {
+    let h = home("upgrade-fail");
+    rtok(&["demon", "start"], &h);
+    wait_restarts(&h, 1);
+    let script = h.join("replace.sh");
+    write_script(&script, "#!/bin/sh\nexit 1\n");
+    let out = upgrade(&h, &script);
+    assert!(
+        !out.status.success(),
+        "failed replace must fail the command"
+    );
+    wait_restarts(&h, 1);
+    rtok(&["demon", "stop"], &h);
+    let _ = fs::remove_dir_all(&h);
+}

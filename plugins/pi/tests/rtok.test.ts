@@ -37,10 +37,41 @@ test("bash calls are rewritten to one quoted `rtok run --`", async () => {
 
 test("other tools are left alone", async () => {
   const { on } = load(filterPrints("x"));
-  const event = { toolName: "read", input: { command: "echo hi" } };
+  const event = { toolName: "write", input: { command: "echo hi" } };
   await on.tool_call(event);
   assert.equal(event.input.command, "echo hi");
-  assert.equal(await on.tool_result({ toolName: "read", content: [{ text: "a" }] }), undefined);
+  assert.equal(await on.tool_result({ toolName: "write", content: [{ text: "a" }] }), undefined);
+});
+
+test("a large read result is replaced and carries an expand trailer", async () => {
+  const { on } = load(
+    `if (args.join(" ").indexOf("filter --stdin --cmd read src/lib.rs") < 0) process.exit(9);
+process.stdout.write("short [rtok expand abc]");`,
+  );
+  const result = await on.tool_result({
+    toolName: "read",
+    input: { path: "src/lib.rs" },
+    content: [{ type: "text", text: "line\n".repeat(80) }],
+  });
+  assert.deepEqual(result, { content: [{ type: "text", text: "short [rtok expand abc]" }] });
+});
+
+test("a small read result stays byte-identical", async () => {
+  const { on } = load(filterPrints("echo"));
+  assert.equal(
+    await on.tool_result({ toolName: "read", input: { path: "tiny.rs" }, content: [{ text: "small\n" }] }),
+    undefined,
+  );
+});
+
+test("a spawn failure on read returns the original", async () => {
+  const { on, entries } = load(null);
+  assert.equal(
+    await on.tool_result({ toolName: "read", input: { path: "x.rs" }, content: [{ text: "whole file" }] }),
+    undefined,
+  );
+  assert.equal(entries.length, 1);
+  assert.match(entries[0][1], /ketch install listepo\/rtok/);
 });
 
 test("missing rtok fails open and names ketch", async () => {

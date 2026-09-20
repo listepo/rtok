@@ -1,0 +1,12 @@
+Write pinned-then-newest titles into a managed CLAUDE.md / AGENTS.md block (T69.6)
+
+Usage: rtok memory sync [OPTIONS]
+
+Options:
+      --config <PATH>    User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --file <FILE>      CLAUDE.md or AGENTS.md [default: CLAUDE.md]
+      --budget <BUDGET>  Token budget; default `[plugins.memory] sync_tokens`
+      --dry-run          Print the unified diff and write nothing
+      --remove           Delete the managed block and nothing else
+      --force            Overwrite a hand-edited block
+  -h, --help             Print help

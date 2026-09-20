@@ -112,10 +112,10 @@ impl Plugin for Guard {
 pub fn check(tool: &str, raw_input: &str, cx: &crate::plugin::Runtime) -> String {
     let tool = crate::hooks::types::canonical_tool_name(tool);
     let mut input: Value = serde_json::from_str(raw_input).unwrap_or(Value::Null);
-    if let Some(obj) = input.as_object_mut() {
-        if let Some(fp) = obj.remove("filePath") {
-            obj.entry("file_path").or_insert(fp);
-        }
+    if let Some(obj) = input.as_object_mut()
+        && let Some(fp) = obj.remove("filePath")
+    {
+        obj.entry("file_path").or_insert(fp);
     }
     let ev = PreToolUse {
         tool_name: &tool,
@@ -332,6 +332,35 @@ fn payload(v: &Value) -> Vec<u8> {
     serde_json::to_vec(v).unwrap_or_default()
 }
 
+/// `rtok guard check` — same verdict as the hook path (T70.5).
+pub fn check_json(
+    cfg: &crate::config::Config,
+    tool: &str,
+    input: &serde_json::Value,
+) -> serde_json::Value {
+    use rtok_plugin_sdk::PreToolUse;
+    let cx = match crate::plugin::Runtime::open(
+        cfg.clone(),
+        format!("guard-check-{}", std::process::id()),
+    ) {
+        Ok(c) => c,
+        Err(_) => return serde_json::json!({"decision": "allow"}),
+    };
+    let ev = PreToolUse {
+        tool_name: tool,
+        tool_input: input,
+    };
+    match Guard.pre_tool(&ev, &crate::plugin::Ctx::new(&cx)) {
+        Some(PreToolDecision::Deny { reason }) => {
+            serde_json::json!({"decision": "deny", "reason": reason})
+        }
+        Some(PreToolDecision::Rewrite { input, reason }) => {
+            serde_json::json!({"decision": "rewrite", "input": input, "reason": reason})
+        }
+        None => serde_json::json!({"decision": "allow"}),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,13 +543,19 @@ mod tests {
             )
             .is_none()
         );
-        crate::plugins::read::cache::invalidate(
-            &PostToolUse {
-                tool_name: "Edit",
-                tool_input: &path,
-                tool_response: &json!({}),
-            },
-            &Ctx::new(&cx),
+        // The guard owns its keys (T55.8): with `read.delta` on, the read plugin keeps
+        // its cache so a re-read can answer with a diff, so the guard's own Edit
+        // invalidation is what has to clear `read\t{path}` here.
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Edit",
+                    tool_input: &path,
+                    tool_response: &json!({}),
+                },
+                &Ctx::new(&cx),
+            )
+            .is_none()
         );
         let read = PreToolUse {
             tool_name: "Read",
@@ -810,6 +845,48 @@ mod tests {
         assert!(
             !denied("ls"),
             "find -delete must drop bash keys so the next ls is allowed"
+        );
+    }
+
+    #[test]
+    fn mutating_bash_clears_then_allows_repeat_ls() {
+        let cx = setup();
+        let g = Guard;
+        let ctx = || Ctx::new(&cx);
+        let ls = json!({"command": "ls"});
+        let ls_resp = json!({"stdout": "a"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                    tool_response: &ls_resp,
+                },
+                &ctx(),
+            )
+            .is_none()
+        );
+        let mutating = json!({"command": "find . -delete"});
+        assert!(
+            g.post_tool(
+                &PostToolUse {
+                    tool_name: "Bash",
+                    tool_input: &mutating,
+                    tool_response: &json!({"stdout": ""}),
+                },
+                &ctx(),
+            )
+            .is_none()
+        );
+        assert!(
+            g.pre_tool(
+                &PreToolUse {
+                    tool_name: "Bash",
+                    tool_input: &ls,
+                },
+                &ctx(),
+            )
+            .is_none()
         );
     }
 

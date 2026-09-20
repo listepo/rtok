@@ -1,0 +1,317 @@
+[
+  {
+    "id": "measure",
+    "enabled": true,
+    "surfaces": [
+      "cli",
+      "proxy"
+    ],
+    "title": "Measure",
+    "summary": "Only Measurement rows count as savings. Stats from transcripts and proxy usage.",
+    "saves_tokens": false,
+    "fields": [
+      [
+        "since",
+        "30d"
+      ]
+    ],
+    "stats": null
+  },
+  {
+    "id": "cmd",
+    "enabled": true,
+    "surfaces": [
+      "hook",
+      "cli"
+    ],
+    "title": "Bash / cmd",
+    "summary": "Archive and filter command output; expand the original by id.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "rewrite",
+        "true"
+      ],
+      [
+        "trailer_min_lines",
+        "40"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "read",
+    "enabled": true,
+    "surfaces": [
+      "mcp",
+      "hook"
+    ],
+    "title": "Read",
+    "summary": "Outline, map, and search instead of dumping full files into context.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "default_mode",
+        "full"
+      ],
+      [
+        "max_chars",
+        "20000"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "archive",
+    "enabled": true,
+    "surfaces": [
+      "proxy",
+      "mcp",
+      "cli"
+    ],
+    "title": "Archive",
+    "summary": "Shrink old tool results in the live zone; pointers expand on demand.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "keep_turns",
+        "4"
+      ],
+      [
+        "min_tokens",
+        "1500"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "proxy",
+    "enabled": true,
+    "surfaces": [
+      "proxy"
+    ],
+    "title": "Proxy usage",
+    "summary": "Record provider usage; compress mode runs plugin proxy_filter.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "enabled",
+        "true"
+      ],
+      [
+        "mode",
+        "passthrough"
+      ],
+      [
+        "port",
+        "8790"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "inject",
+    "enabled": true,
+    "surfaces": [
+      "hook"
+    ],
+    "title": "Inject",
+    "summary": "Budgeted SessionStart / prompt context that stays byte-stable.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "budget_tokens",
+        "800"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "guard",
+    "enabled": true,
+    "surfaces": [
+      "hook",
+      "cli"
+    ],
+    "title": "Guard",
+    "summary": "Deny duplicate reads and commands inside a sliding window.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "window_turns",
+        "8"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "memory",
+    "enabled": true,
+    "surfaces": [
+      "mcp",
+      "hook"
+    ],
+    "title": "Memory",
+    "summary": "Recall notes and titles without an LLM extraction step.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "recall_titles",
+        "5"
+      ],
+      [
+        "recall_tokens",
+        "200"
+      ],
+      [
+        "prompt_recall",
+        "0"
+      ],
+      [
+        "sync_tokens",
+        "300"
+      ],
+      [
+        "notes live",
+        "0"
+      ],
+      [
+        "notes pinned",
+        "0"
+      ],
+      [
+        "notes retired",
+        "0"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "graph",
+    "enabled": true,
+    "surfaces": [
+      "mcp",
+      "hook"
+    ],
+    "title": "Graph",
+    "summary": "symbol / callers / impact from a tree-sitter-tags index.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "max_tokens",
+        "2000"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "toon",
+    "enabled": false,
+    "surfaces": [
+      "proxy",
+      "mcp"
+    ],
+    "title": "TOON",
+    "summary": "Compact tabular JSON. Off by default until it beats the corpus.",
+    "saves_tokens": true,
+    "fields": [
+      [
+        "min_rows",
+        "5"
+      ]
+    ],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  },
+  {
+    "id": "compress",
+    "enabled": false,
+    "surfaces": [
+      "proxy"
+    ],
+    "title": "Compress",
+    "summary": "Extractive summaries for archived tool output. Off until Gate P28.",
+    "saves_tokens": true,
+    "fields": [],
+    "stats": {
+      "input": 0,
+      "output": 0,
+      "cache_create": 0,
+      "cache_read": 0,
+      "est_before": 0,
+      "est_after": 0,
+      "rows": 0
+    }
+  }
+]
