@@ -375,7 +375,11 @@ mod tests {
                 "missing {id} in {body}"
             );
         }
-        assert_eq!(body.lines().filter(|l| l.starts_with("id ")).count(), 3, "{body}");
+        assert_eq!(
+            body.lines().filter(|l| l.starts_with("id ")).count(),
+            3,
+            "{body}"
+        );
         let start = serde_json::json!({
             "hook_event_name":"SessionStart","session_id":"t582","source":"compact"
         });

@@ -303,7 +303,6 @@ impl Report {
     }
 }
 
-
 fn format_bash_section(
     rows: &BTreeMap<String, SizeRow>,
     kinds: &BTreeMap<String, String>,
