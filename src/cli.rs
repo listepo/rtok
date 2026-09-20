@@ -479,6 +479,27 @@ enum GuardCmd {
     },
 }
 
+/// `rtok guard check` — the same allow/deny `plugins::guard` returns on PreToolUse.
+#[cfg(feature = "guard")]
+#[derive(Subcommand)]
+enum GuardCmd {
+    /// Print `{"allow":true}` or `{"allow":false,"reason":…}` (fail open: bad input allows)
+    Check {
+        /// Host tool name (`bash`, `Read`, …)
+        #[arg(long)]
+        tool: String,
+        /// Tool arguments as JSON
+        #[arg(long, value_name = "INPUT")]
+        json: String,
+        /// Host session id (the cache is per session)
+        #[arg(long)]
+        session: Option<String>,
+        /// Overlay `[hook] host`
+        #[arg(long)]
+        host: Option<String>,
+    },
+}
+
 #[derive(Subcommand)]
 enum AgentCmd {
     /// Install hooks, MCP server and proxy into a host
