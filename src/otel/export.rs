@@ -10,7 +10,8 @@
 
 use std::fmt;
 use std::fmt::Write as _;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -88,21 +89,54 @@ pub async fn flush(cx: &Runtime) -> Report {
     };
     let _guard = match flush_lock(cx) {
         Ok(g) => g,
+        Err(e) => return lock_error(cx, "flush lock", e),
+    };
+    run_flush(cx, &ep).await
+}
+
+/// Hook-spawned flushes only (T143): coalesces a burst of `Stop`/`SessionEnd` events into at
+/// most one running + one queued flush, instead of one blocked `rtok otel flush` process per
+/// event piling up against the (blocking) [`flush_lock`]. `try_queue` claims the queued slot
+/// without blocking; a caller that finds it already claimed exits at once — the flush already
+/// queued started later and will still see any row written before it begins, so nothing is
+/// lost. The queued slot is released as soon as the flush lock is held (before flushing), so a
+/// new hook-spawned flush can start queuing behind this one right away.
+pub async fn flush_coalesced(cx: &Runtime) -> Report {
+    let Some(ep) = cx.config.otel.resolve() else {
+        return Report::default();
+    };
+    let queued = match try_queue(cx) {
+        Ok(Some(g)) => g,
+        Ok(None) => return Report::default(),
+        Err(e) => return lock_error(cx, "queue lock", e),
+    };
+    let _guard = match flush_lock(cx) {
+        Ok(g) => g,
         Err(e) => {
-            let msg = format!("flush lock: {e}");
-            cx.log("error", "otel", "flush", &msg);
-            return Report {
-                enabled: true,
-                error: Some(msg),
-                ..Report::default()
-            };
+            drop(queued);
+            return lock_error(cx, "flush lock", e);
         }
     };
+    drop(queued);
+    run_flush(cx, &ep).await
+}
+
+fn lock_error(cx: &Runtime, what: &str, e: std::io::Error) -> Report {
+    let msg = format!("{what}: {e}");
+    cx.log("error", "otel", "flush", &msg);
+    Report {
+        enabled: true,
+        error: Some(msg),
+        ..Report::default()
+    }
+}
+
+async fn run_flush(cx: &Runtime, ep: &Endpoint) -> Report {
     let mut rep = Report {
         enabled: true,
         ..Report::default()
     };
-    if let Err(e) = flush_into(cx, &ep, &mut rep).await {
+    if let Err(e) = flush_into(cx, ep, &mut rep).await {
         let msg = e.to_string();
         cx.log("error", "otel", "flush", &msg);
         rep.error = Some(msg);
@@ -112,28 +146,71 @@ pub async fn flush(cx: &Runtime) -> Report {
     rep
 }
 
-/// Advisory lock file next to the DB. Held for the whole flush; dropped on return.
-fn flush_lock(cx: &Runtime) -> std::io::Result<FlushLock> {
-    let path = cx.config.core.db_path.with_extension("otel-flush.lock");
+fn otel_lock_path(cx: &Runtime, suffix: &str) -> PathBuf {
+    cx.config.core.db_path.with_extension(suffix)
+}
+
+fn open_lock_file(path: &Path) -> std::io::Result<File> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let file = OpenOptions::new()
+    OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
-        .open(&path)?;
+        .open(path)
+}
+
+/// Advisory lock file next to the DB. Held for the whole flush; dropped on return.
+fn flush_lock(cx: &Runtime) -> std::io::Result<FlushLock> {
+    let file = open_lock_file(&otel_lock_path(cx, "otel-flush.lock"))?;
     rtok_sys::lock_exclusive(&file)?;
     Ok(FlushLock { file })
 }
 
 struct FlushLock {
-    file: std::fs::File,
+    file: File,
 }
 
 impl Drop for FlushLock {
     fn drop(&mut self) {
         let _ = rtok_sys::unlock(&self.file);
+    }
+}
+
+/// T143: non-blocking "one flush is already queued behind the running one" marker.
+pub(crate) struct QueuedLock {
+    file: File,
+}
+
+impl Drop for QueuedLock {
+    fn drop(&mut self) {
+        let _ = rtok_sys::unlock(&self.file);
+    }
+}
+
+/// `Ok(Some(guard))` when this caller claimed the queued slot; `Ok(None)` when another
+/// hook-spawned flush already holds it. `pub(crate)` so `testutil` can simulate one for
+/// integration tests (`tests/otel.rs`) without duplicating the lock file's path logic.
+pub(crate) fn try_queue(cx: &Runtime) -> std::io::Result<Option<QueuedLock>> {
+    let file = open_lock_file(&otel_lock_path(cx, "otel-flush-queued.lock"))?;
+    Ok(rtok_sys::try_lock_exclusive(&file)?.then_some(QueuedLock { file }))
+}
+
+/// Cheap non-blocking check for `spawn_child`: true while some other process holds the
+/// queued slot, so the hook does not even spawn a process that would just exit at once.
+/// Any error here fails open (spawns as before) rather than blocking the hook.
+fn queued_lock_held(cx: &Runtime) -> bool {
+    let Ok(file) = open_lock_file(&otel_lock_path(cx, "otel-flush-queued.lock")) else {
+        return false;
+    };
+    match rtok_sys::try_lock_exclusive(&file) {
+        Ok(true) => {
+            let _ = rtok_sys::unlock(&file);
+            false
+        }
+        Ok(false) => true,
+        Err(_) => false,
     }
 }
 
@@ -285,13 +362,50 @@ async fn post(
     Ok(true)
 }
 
-/// `flush` on a current-thread runtime: the CLI, `mcp`'s thread and the hook-spawned child.
+/// `flush` on a current-thread runtime: the CLI and `mcp`'s ticker thread. Never coalesced —
+/// a manual `rtok otel flush` (or the ticker) always runs, queued slot or not.
 pub fn flush_blocking(cx: &Runtime) -> Report {
+    block_on_current_thread(flush(cx))
+}
+
+/// `flush_coalesced` on a current-thread runtime: only the hook-spawned child (T143).
+pub fn flush_coalesced_blocking(cx: &Runtime) -> Report {
+    let _trace = FlushTrace::new();
+    block_on_current_thread(flush_coalesced(cx))
+}
+
+/// T143 test hook only: when `RTOK_OTEL_FLUSH_TRACE` names a directory, mark this process's
+/// whole lifetime with `<dir>/<pid>.run` so `tests/otel.rs` can count concurrent hook-spawned
+/// flush children by reading a directory it owns, instead of querying the host process table
+/// (`ps`/`kill` are off-limits for tests — see the T143 task notes). The env var is unset in
+/// every real run, so the only production cost is one `var_os` lookup.
+struct FlushTrace(Option<PathBuf>);
+
+impl FlushTrace {
+    fn new() -> Self {
+        let Some(dir) = std::env::var_os("RTOK_OTEL_FLUSH_TRACE") else {
+            return Self(None);
+        };
+        let path = PathBuf::from(dir).join(format!("{}.run", std::process::id()));
+        let _ = File::create(&path);
+        Self(Some(path))
+    }
+}
+
+impl Drop for FlushTrace {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn block_on_current_thread(fut: impl std::future::Future<Output = Report>) -> Report {
     match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
     {
-        Ok(rt) => rt.block_on(flush(cx)),
+        Ok(rt) => rt.block_on(fut),
         Err(e) => Report {
             enabled: true,
             error: Some(e.to_string()),
@@ -350,17 +464,23 @@ pub fn spawn_ticker(cfg: &Config) {
     });
 }
 
-/// Hooks (`Stop`, `SessionEnd`): hand the flush to a detached `rtok otel flush` and return
-/// in about a millisecond. The child inherits the environment; `RTOK_HOME` names the config.
+/// Hooks (`Stop`, `SessionEnd`): hand the flush to a detached `rtok otel flush --coalesce`
+/// and return in about a millisecond. T143: skipped outright when a flush is already queued
+/// (cheap non-blocking check) — that one will post whatever this event wrote, so spawning
+/// here would just be a process that exits at once. The child inherits the environment;
+/// `RTOK_HOME` names the config.
 pub fn spawn_child(cx: &Runtime) {
     if cx.config.otel.resolve().is_none() {
+        return;
+    }
+    if queued_lock_held(cx) {
         return;
     }
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
     let mut cmd = Command::new(exe);
-    cmd.args(["otel", "flush"])
+    cmd.args(["otel", "flush", "--coalesce"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -503,5 +623,116 @@ mod tests {
             rep.to_string(),
             "otel: 0 spans · 0 logs · 0 metric points · 0 posts\notel: error: /v1/traces: a; /v1/logs: b"
         );
+    }
+
+    /// T143: the queued slot is a plain non-blocking lock — first caller wins, later callers
+    /// back off while it is held, and it frees for the next caller once dropped. Held whether
+    /// or not a flush is actually running (the flush lock is independent).
+    #[test]
+    fn queued_slot_first_attempt_wins_the_rest_back_off_until_released() {
+        let (cfg, dir) = testutil::config("otel-queue");
+        let cx = Runtime::open(cfg, "otel-queue").unwrap();
+        let first = try_queue(&cx).unwrap();
+        assert!(first.is_some(), "the first attempt claims the slot");
+        assert!(
+            try_queue(&cx).unwrap().is_none(),
+            "a second attempt backs off while the slot is held"
+        );
+        assert!(
+            try_queue(&cx).unwrap().is_none(),
+            "a third attempt also backs off"
+        );
+        drop(first);
+        let fourth = try_queue(&cx).unwrap();
+        assert!(fourth.is_some(), "the slot frees once the guard drops");
+        assert!(
+            otel_lock_path(&cx, "otel-flush-queued.lock").exists(),
+            "the lock file lives next to the DB"
+        );
+        drop(fourth);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T143: `spawn_child`'s pre-check mirrors `try_queue`'s state without taking the slot.
+    #[test]
+    fn queued_lock_held_reports_the_slot_without_taking_it() {
+        let (cfg, dir) = testutil::config("otel-queue-held");
+        let cx = Runtime::open(cfg, "otel-queue-held").unwrap();
+        assert!(!queued_lock_held(&cx), "nothing queued yet");
+        let guard = try_queue(&cx).unwrap().expect("free to claim");
+        assert!(queued_lock_held(&cx), "now held by `guard`");
+        // Checking must not itself claim the slot: a real queuer can still claim it after.
+        assert!(queued_lock_held(&cx), "checking again does not release it");
+        drop(guard);
+        assert!(!queued_lock_held(&cx), "released once the guard drops");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T143: `flush_lock` and the queued slot are independent files — holding one never
+    /// blocks the other, which is what lets a queued flush wait for the running one.
+    #[test]
+    fn the_queued_slot_and_the_flush_lock_are_independent() {
+        let (cfg, dir) = testutil::config("otel-queue-indep");
+        let cx = Runtime::open(cfg, "otel-queue-indep").unwrap();
+        let _flush_guard = flush_lock(&cx).unwrap();
+        let queued = try_queue(&cx).unwrap();
+        assert!(
+            queued.is_some(),
+            "the flush lock being held must not block the queued slot"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// T143: a collector that accepts the connection and never answers must not hold the
+    /// flush lock forever — the client's own timeout (`otel.flush_secs`, already the
+    /// documented POST timeout) bounds every stream, so the flush errors out and a later
+    /// flush can still proceed.
+    #[test]
+    fn a_hung_collector_still_releases_the_lock_within_the_timeout() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop2 = stop.clone();
+        listener.set_nonblocking(true).unwrap();
+        let acceptor = std::thread::spawn(move || {
+            let mut held = Vec::new();
+            while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                if let Ok((s, _)) = listener.accept() {
+                    held.push(s); // never read or write: the client hangs waiting for a reply
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+
+        let (mut cfg, dir) = testutil::config("otel-hung");
+        cfg.otel.endpoint = format!("http://{addr}");
+        cfg.otel.flush_secs = 1; // also the POST timeout (config/default.toml)
+        let cx = Runtime::open(cfg, "otel-hung").unwrap();
+        cx.log("info", "test", "seed", "one log row");
+
+        let start = std::time::Instant::now();
+        let r = flush_blocking(&cx);
+        let elapsed = start.elapsed();
+        assert!(
+            r.error.is_some(),
+            "a hang must surface as an error, not succeed silently: {r:?}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(10),
+            "the flush must bound itself well under 'forever', took {elapsed:?}"
+        );
+
+        // The lock released: a second flush is not blocked behind the first.
+        let start2 = std::time::Instant::now();
+        let r2 = flush_blocking(&cx);
+        assert!(r2.error.is_some());
+        assert!(
+            start2.elapsed() < Duration::from_secs(10),
+            "the lock from the first flush must already be released"
+        );
+
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        acceptor.join().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

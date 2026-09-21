@@ -29,6 +29,14 @@ filter = 'test(/p8c_numbers|p8c_one_edit_reads_one_file_under_10ms/)'
 threads-required = "num-test-threads"
 
 
+# T143: fires 20 real `rtok hook Stop` subprocesses against a delayed collector and samples
+# how many stay alive (via a trace dir the test owns, not `ps`). A loaded box can genuinely
+# push concurrency past the coalescing bound by starving the queued child's `flock` wait, not
+# just skew a measurement — isolate it like the benches above so the sample means something.
+[[profile.default.overrides]]
+filter = 'test(/hook_spawned_flushes_coalesce_to_at_most_two_processes/)'
+threads-required = "num-test-threads"
+
 # trycmd spawns the real rtok binary for every case; under a full-suite parallel run its
 # output drifted 3x on 2026-09-20/21 (fast, load-only failures; green standalone and in
 # CI). Isolate the runner on the machine like the heavy benches above -- each case still

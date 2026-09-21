@@ -3446,7 +3446,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__otel__subcmd__flush)
-            opts="-h --config --help"
+            opts="-h --coalesce --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
