@@ -47,9 +47,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T127 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T151 | in progress | P1 | 3 | 5% | Claude Code / claude-fable-5-1 |
 | T152 | todo | P1 | 2 | 0% | |
-| T153 | todo | P2 | 4 | 0% | |
+| T153 | in progress | P2 | 4 | 0% | Claude Code / claude-fable-5-1 |
 | T154 | todo | P2 | 3 | 0% | |
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
@@ -333,16 +332,6 @@ Split from T122. `plugin::identical_result` (T65.1) matches on the host session;
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
 
-### T151. `rtok worktree list`: source size, cache size and orphans in one table
-
-Depends on T150. All of the measured weight was tagged build cache (19–29 MB of source against 1.4–18 GB of `target/`), and the largest consumer was an orphan git could not see: a directory whose `.git` file points at an admin entry that no longer exists (`research.md` §18.1).
-
-Plan: `rtok worktree list [--json]`. Per worktree from T150: source bytes and cache bytes, where a cache is a directory holding a `CACHEDIR.TAG` with the standard signature (cargo writes it into `target/`; no hardcoded directory names), walked with the already-approved `walkdir`, never descending into a nested worktree. Orphan scan: in the parent directories of the known worktrees plus `<repo>/.claude/worktrees`, a directory with a `.git` *file* whose `gitdir:` target is missing, or that the inventory does not list, is reported as `orphan` with its sizes. Columns: path, branch, owner, state (`active`/`idle`/`merged`/`dirty`/`orphan`/`stale`), source, cache, last modified. `stale` is the mirror of `orphan`: a record whose directory is gone — detected by the missing path, not by git's `prunable` flag, because git never flags a locked record (T153). Sizes are logical bytes; say so in `--help` (APFS clones are double-counted). Read-only: this command deletes nothing.
-
-Check: `assert_fs` integration test — a repo with a clean worktree, a dirty one, one with a tagged cache, one with an untagged directory of the same name (not counted as cache) and one orphan (admin entry removed by hand); `trycmd` snapshot of the table and of `--json`; `just check`.
-
-Do (Claude Code / claude-fable-5-1): `Cmd::Worktree { action: WorktreeCmd::List { json } }` in `src/cli.rs`, run from any checkout of the repository (git resolves the main one). `src/worktree/list.rs` — `usage(dir)`: one recursive `std::fs` walk (no new dependency; `walkdir` is not a direct one), symlinks not followed, everything under a directory with a valid `CACHEDIR.TAG` counts as cache, a nested directory with its own `.git` entry is skipped (a nested worktree is its own row), newest mtime kept; `orphans(entries)`: children of the known worktrees' parent directories and of `<main>/.claude/worktrees` whose `.git` *file* names a `…/worktrees/<id>` admin directory that does not exist; rows rendered through `render::table` with `info::human_bytes` and `render::duration`, `--json` through serde. The state column is T150's `State` plus `orphan`; `active`/`idle` is a threshold on the `modified` column and belongs to T152, which owns `--idle`. Sizes and ages are not snapshot material, so `trycmd` covers `--help` and the not-a-repository error, and the fixture test asserts on parsed `--json`. Tests use `testutil::tmp_dir` (no `assert_fs` in `Cargo.toml`). README command table, completions snapshots.
-
 ### T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
 
 Depends on T151. The always-safe operation: a tagged cache holds no source and the next build recreates it, while `git worktree remove` refuses the whole worktree when anything is uncommitted (`graph-perf`: 18.1 GB of cache next to 23 uncommitted files; deleting only the cache freed 17 GiB and lost nothing).
@@ -362,6 +351,8 @@ Stale records are part of the job, not a footnote. A worktree deleted with `rm -
 Known limit of T150's merged check, seen on 2026-09-22 with this plan's own branch: after the squash merge, `main` gained another row next to the same lines (T160), so `git merge-tree --write-tree origin/main plan-worktrees` ended in a textual conflict and the merged branch read as `Unmerged`. The error is on the safe side — the branch is kept and reported — but every long-lived plan branch will hit it. Add a second, also git-only signal before trusting `Unmerged`: the branch's whole diff as one commit (`git commit-tree <branch>^{tree} -p <merge-base>`) checked with `git cherry <base> <that>` — `-` means a patch-equivalent commit is already in the base, whatever was added around it later. Either signal says merged. Neither sees a PR that was merged after `main` was merged into it with hand-resolved conflicts; that case stays `Unmerged`, and `gc` prints the `gh pr view <branch>` command instead of guessing.
 
 Check: integration test over a fixture repo — merged+clean+idle is removed with its branch; each of dirty, unmerged, foreign-locked, locked-without-reason and non-idle survives with its reason printed; a worktree whose directory was removed by hand is dropped from `git worktree list` and its merged branch deleted, both when unlocked and when locked by `--owner`, and survives when locked by someone else; after every case `.git/worktrees/` holds no entry without a directory that `gc` was allowed to drop; dry run changes nothing; the main checkout can never be selected; `just check`.
+
+Do (Claude Code / claude-fable-5-1): `WorktreeCmd::Gc { yes, owner, idle, json }`. `src/worktree/gc.rs` — `decide(entry, usage, owner, idle, now) -> Verdict` is a pure function returning `Remove`, `DropRecord` or `Keep(reason)`, tested as a table; the runner applies verdicts one worktree at a time through new `git.rs` calls (`unlock`, `remove` without `--force`, `delete_branch`) and prints every row with its verdict, so a dry run and a real run read the same. Idle is T151's `modified` against `--idle`, parsed by the existing `measure::stats::parse_since` (`30d`, `24h`); T152 reuses the same flag and default rather than defining its own. The second merged signal goes into `git::is_merged` (`commit-tree` + `cherry`), so `list` gains it too. The worktree the command runs from and the main checkout are never selected. A failed git step keeps the worktree, prints git's message and moves on; the exit code is non-zero when any removal failed. Fixture cases extend `tests/worktree.rs`.
 
 ### T154. Ownership ledger: SessionStart records which session worked in which worktree
 
