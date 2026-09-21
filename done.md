@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T114. Claude Code plugin tree (`plugins/claude`)
+
+Claude Code has a plugin system (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, `skills/`, `${CLAUDE_PLUGIN_ROOT}`), loaded by the CLI and the desktop Code tab alike; `support("plugin")` still says "there is no plugin directory to link", which is stale. This task ships the tree only; T115 installs it.
+
+Do: `plugins/claude/.claude-plugin/plugin.json` (`name` `rtok`); `hooks/hooks.json` with the nine `claude::ENTRIES` as `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh <Event>`, `timeout` = the default `hook_timeout_s`; `.mcp.json` → `scripts/mcp.sh` (fail loud with the ketch hint); `scripts/hook.sh`, `scripts/mcp.sh` as in `plugins/zcode` (the desktop app may have no shell PATH). `support(Cli, "plugin")` still says no, but its reason now names the manual install instead of "no plugin directory" (doctor/report fixtures follow); the directory is its own marketplace (`.claude-plugin/marketplace.json`, `source` `./`, so `plugins/` gains no non-host directory) and `claude plugin marketplace add <plugins/claude>` works; `README.md` with `## Docs`. `claude::tests::plugin_tree_matches_the_installer` pins `hooks.json` to `claude::ENTRIES` and the marketplace entry.
+
+Check: `claude plugin validate plugins/claude` (if the CLI has it) or `claude --plugin-dir plugins/claude` loads with no error; the new unit test and `tests/host_docs.rs` green.
+
+Check result (2026-09-21): `claude plugin validate` passes for the plugin and the marketplace; in a scratch `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add plugins/claude` + `claude plugin install rtok@rtok` succeed and `claude plugin details rtok@rtok` lists 7 hook events and 1 MCP server; the cache copy keeps the scripts executable; `hook.sh UserPromptSubmit` pipes through `rtok hook` (exit 0); `just check` green. Not verified: a live Claude Code session with the plugin installed.
+
 ### T113. `rtok tui` freezes on start and on tab switches
 
 Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
