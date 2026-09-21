@@ -211,7 +211,6 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.pi.extensions_path | ~/.pi/agent/extensions | default |
 | setup.pi.tools | false | default |
 | setup.proxy | false | default |
-| setup.restart_prompt_timeout_seconds | 0 | default |
 | setup.vscode.code_user_dir |  | default |
 | setup.vscode.insiders_user_dir |  | default |
 | setup.windsurf.config_path | ~/.codeium/windsurf/mcp_config.json | default |

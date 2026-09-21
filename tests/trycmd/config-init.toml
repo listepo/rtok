@@ -145,7 +145,6 @@ target/tmp/t60-2-config-init.toml
 +yes          = false                  # required by --replace
 +backup       = true                   # _backup/<name>.bak-<ts> beside each file, before install and uninstall touch it
 +hook_timeout_s = 5                    # timeout written into each hook entry
-+restart_prompt_timeout_seconds = 0    # T76: wait forever for restart y/n; >0 = silence means No
 +modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 +mcp          = true                   # also register the MCP server   (--mcp)
 +proxy        = false                  # also set the base URL          (--proxy)

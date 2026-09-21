@@ -37,5 +37,4 @@
 - T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
-- T138. Interactive prompts go through `inquire`
 

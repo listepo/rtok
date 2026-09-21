@@ -198,7 +198,6 @@ dry_run      = false
 yes          = false                  # required by --replace
 backup       = true                   # <name>.bak-<ts> beside each file, before setup and remove touch it
 hook_timeout_s = 5                    # timeout written into each hook entry
-restart_prompt_timeout_seconds = 0    # T76: wait forever for restart y/n; >0 = silence means No
 modes        = []                     # e.g. ["terse", "yagni"]   (--mode)
 mcp          = true                   # also register the MCP server   (--mcp)
 proxy        = false                  # also set the base URL          (--proxy)
@@ -456,3 +455,7 @@ per configuration, not a shell history.
 `plugins.inject.budget_tokens` (T12.1). `core.log_file` / `log_level` / `log_to_db` fold into
 `[log].path` / `level` / `to_db` (T24.5, D26). Each prints one warning on load and is then
 dropped; `rtok config validate` rejects them because they are absent from the reference schema.
+
+`setup.restart_prompt_timeout_seconds` is retired (T138): the post-install restart question is an
+`inquire` confirm that waits for an answer (Enter, Esc or Ctrl-C mean No). A file that still sets
+it gets the unknown-key warning on load and an error from `rtok config validate`.

@@ -348,9 +348,6 @@ section! {
         yes: bool = false,
         backup: bool = true,
         hook_timeout_s: u64 = 5,
-        /// Seconds to wait for the post-install/uninstall restart prompt (T76).
-        /// `0` (default) waits forever; a positive value treats silence as No.
-        restart_prompt_timeout_seconds: u64 = 0,
         modes: Vec<String> = Vec::new(),
         mcp: bool = true,
         proxy: bool = false,
