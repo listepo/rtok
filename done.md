@@ -4361,3 +4361,13 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+### T125. `rtok stats`: thinking-block share — the gate for I-86
+
+I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
+
+Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
+
+Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
+
+Done: T125 measured 825 sessions (30 days): 48 thinking blocks, 99,491 bytes ≈ 24,873 est. tokens, **3.7% of session input** (above the 3% gate). Added thinking block counting to jsonl.rs (ThinkingBlock struct, ingest_block handling with duplicate filtering) and stats.rs (ThinkingRow, fold_thinking, text/JSON output). Anthropic API drops thinking blocks from prior assistant turns in context window; replay cost ~0. Updated I-86 in ideas.md with the measured share and left it open for promotion. Unit tests added and pass; cli_trycmd snapshot updated with TRYCMD=overwrite. Implementation: 102 LOC added to measure module.

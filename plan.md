@@ -29,7 +29,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
-| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -240,14 +239,6 @@ Check: unit tests on `Report::render` for the four conditions (line present only
 6.2 % (T59.5) is the ceiling, not a saving: no dated row shows what `[proxy.tools_rewrite]` removes with the default `max_description_tokens = 60`. Precondition, by the creator: turn it on for this machine's proxy for at least 20 sessions. Then sum the `kind = tools_rewrite` Measurement rows against session input for the same window (`rtok stats` / `rtok gain`, dated command in the row), and write one row into `research.md` §2 next to the T59.5 row; update `docs/comparison.md` only if it cites the number. If the realized share is under the 3 % gate, say so in the row and leave the default off.
 
 Check: the row cites the command, date, sessions, before/after tokens and the share; no number in prose without it.
-
-### T125. `rtok stats`: thinking-block share — the gate for I-86
-
-I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
-
-Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
-
-Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
 
 ### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
 

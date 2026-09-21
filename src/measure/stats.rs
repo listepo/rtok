@@ -84,6 +84,9 @@ pub struct Report {
     /// same session. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
     pub repeat: RepeatRow,
+    /// T125: assistant thinking blocks in the session.
+    #[serde(default, skip_serializing_if = "ThinkingRow::is_empty")]
+    pub thinking: ThinkingRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,6 +143,20 @@ pub struct RepeatRow {
 impl RepeatRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
+    }
+}
+
+/// T125: thinking blocks (type="thinking" or type="redacted_thinking") in assistant messages.
+/// `blocks` is the count of thinking content blocks; `bytes` is their total thinking text/data.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThinkingRow {
+    pub blocks: u64,
+    pub bytes: u64,
+}
+
+impl ThinkingRow {
+    fn is_empty(&self) -> bool {
+        self.blocks == 0
     }
 }
 
@@ -299,6 +316,22 @@ impl Report {
                 d.bytes,
                 d.read_bytes,
                 pct(d.bytes, d.read_bytes)
+            ));
+        }
+        if self.thinking.blocks > 0 {
+            let est_toks = est_tokens(self.thinking.bytes);
+            let share = if self.usage_input > 0 {
+                100.0 * est_toks as f64 / self.usage_input as f64
+            } else {
+                0.0
+            };
+            s.push_str(&format!(
+                "thinking blocks {} bytes {} est. tokens {} {:.1}% of input
+",
+                self.thinking.blocks,
+                self.thinking.bytes,
+                est_toks,
+                share
             ));
         }
         if self.repeat.calls > 0 {
@@ -784,6 +817,9 @@ fn fold_session(
             add(&mut report.mcp_groups, grp, bytes, tokens, ctt);
         }
     }
+
+    fold_thinking(parsed, report);
+
     fold_skills(parsed, &id_skill, report);
     for u in &parsed.usages {
         report.usage_input += u64::from(u.input_tokens);
@@ -804,6 +840,12 @@ fn fold_session(
 /// the `Skill` tool_use's `input.skill`. `resident` multiplies the body bytes by the
 /// API requests of this session at or after the injection turn — what the context
 /// actually carried.
+/// T125: count thinking blocks per session.
+fn fold_thinking(parsed: &Parsed, report: &mut Report) {
+    report.thinking.blocks = parsed.thinking.len() as u64;
+    report.thinking.bytes = parsed.thinking.iter().map(|t| t.bytes).sum();
+}
+
 fn fold_skills(parsed: &Parsed, id_skill: &BTreeMap<&str, String>, report: &mut Report) {
     if parsed.injected.is_empty() {
         return;
@@ -1199,7 +1241,29 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level
+    #[test]
+    fn thinking_blocks_counted_per_session() {
+        let dir = tempfile_dir();
+        let path = dir.join("t.jsonl");
+        let mut f = fs::File::create(&path).unwrap();
+        let lines = vec![
+            json!({"type": "assistant", "message": {"id": "m1", "content": [
+                {"type": "thinking", "thinking": "reason 123"}], "usage": {"input_tokens": 10, "output_tokens": 1}}}),
+            json!({"type": "assistant", "message": {"id": "m2", "content": [
+                {"type": "redacted_thinking", "data": "x"}], "usage": {"input_tokens": 11, "output_tokens": 1}}}),
+            json!({"type": "assistant", "message": {"id": "m1", "content": [
+                {"type": "text", "text": "answer"}], "usage": {"input_tokens": 10, "output_tokens": 1}}}),
+        ];
+        for line in lines {
+            writeln!(f, "{}", line).unwrap();
+        }
+        drop(f);
+        let r = collect(&dir, Duration::from_secs(0), "", Replay { keep_turns: 0, min_tokens: 0, head_lines: 0, tail_lines: 0 }).unwrap();
+        assert_eq!(r.thinking.blocks, 2);
+        assert_eq!(r.thinking.bytes, 11);
+    }
+
+        /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level
     /// `sourceToolUseID`; the fold keys them by the `Skill` tool_use's `input.skill`
     /// and `resident` multiplies the body bytes by the API requests at or after the
     /// injection turn. One 3-line and one 3,000-line body.
