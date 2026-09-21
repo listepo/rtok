@@ -245,8 +245,9 @@ Every effective key with its origin — the `config show --sources` page.
 | tui.tick_secs | 2 | default |
 | web.host | 127.0.0.1 | default |
 | web.port | 3333 | default |
+| worktree.root |  | default |
 
-200 keys.
+201 keys.
 
 ## Doctor
 

@@ -337,3 +337,87 @@ fn gc_removes_only_finished_worktrees_and_never_opens_a_foreign_lock() {
     );
     assert!(after.contains(&format!("locked {theirs}")), "{after}");
 }
+
+/// T158: `rtok worktree add` — the path is the only stdout line, the lock reason
+/// round-trips through T150's parser, the branch has no upstream, and a second `add`
+/// for the same task touches nothing.
+#[test]
+fn add_creates_one_locked_worktree_per_task_from_a_fresh_base() {
+    let tmp = rtok::testutil::tmp_dir("worktree-add");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "apps/rtok"]);
+    let work = tmp.join("apps/rtok");
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+    // Only on the remote: a stale local `origin/main` would branch from the wrong commit.
+    run(&tmp, &["clone", "-q", "origin.git", "other"]);
+    commit(&tmp.join("other"), "b.txt");
+    run(&tmp.join("other"), &["push", "-q", "origin", "main"]);
+    let tip = run(&tmp.join("other"), &["rev-parse", "HEAD"]);
+    let root = tmp.join("_worktrees");
+    std::fs::create_dir_all(&root).unwrap();
+
+    let owner = "Claude Code / sonnet";
+    let out = rtok(
+        &work,
+        &["worktree", "add", "T158", "Worktree-Add", "--owner", owner],
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let printed = String::from_utf8_lossy(&out.stdout);
+    let path = Path::new(printed.trim_end());
+    assert_eq!(printed.lines().count(), 1, "{printed}");
+    // git reports the main checkout canonicalized (`/private/var` on macOS), and the
+    // root follows it.
+    let expected = root.join("rtok-t158").canonicalize().unwrap();
+    assert_eq!(path.canonicalize().unwrap(), expected);
+    assert_eq!(run(path, &["rev-parse", "HEAD"]), tip);
+    assert_eq!(
+        run(path, &["branch", "--show-current"]).trim(),
+        "t158-worktree-add"
+    );
+    let upstream = Command::new("git")
+        .args([
+            "-C",
+            printed.trim_end(),
+            "rev-parse",
+            "--abbrev-ref",
+            "@{upstream}",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !upstream.status.success(),
+        "the new branch must have no upstream"
+    );
+
+    let entries = inventory(&work).unwrap();
+    let added = find(&entries, "rtok-t158");
+    let parsed = added.record.owner().expect("the lock reason parses");
+    assert_eq!(
+        (parsed.owner.as_str(), parsed.task.as_str()),
+        (owner, "t158")
+    );
+    assert!(!added.record.held_against(Some(owner)));
+
+    let again = rtok(&work, &["worktree", "add", "t158", "--owner", owner]);
+    assert!(!again.status.success());
+    let err = String::from_utf8_lossy(&again.stderr);
+    assert!(err.contains("one worktree per task"), "{err}");
+    assert_eq!(inventory(&work).unwrap().len(), 2);
+
+    // `[worktree] root` wins over discovery; `~` expands.
+    let home = tmp.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.toml"), "[worktree]\nroot = \"~/wt\"\n").unwrap();
+    let cfg = home.join("config.toml").display().to_string();
+    let out = rtok(
+        &work,
+        &["--config", &cfg, "worktree", "add", "t2", "--owner", owner],
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let printed = String::from_utf8_lossy(&out.stdout);
+    assert!(printed.trim_end().ends_with("/wt/rtok-t2"), "{printed}");
+}
