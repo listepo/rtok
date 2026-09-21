@@ -233,7 +233,7 @@ fn link_target(path: &Path) -> PathBuf {
 /// would) then made every update of a read-only host config fail; clear it on
 /// the destination instead. Temp names include a nanos suffix so two writes in
 /// the same process cannot share one leftover `.rtok-tmp-*` file.
-fn write_atomic(target: &Path, body: &str) -> Result<()> {
+pub fn write_atomic(target: &Path, body: &str) -> Result<()> {
     let dir = target.parent().unwrap_or(Path::new("."));
     let name = target.file_name().unwrap_or_default().to_string_lossy();
     let nanos = SystemTime::now()

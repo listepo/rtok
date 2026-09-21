@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T106. `otel/export.rs` unit tests
+
+`src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
+
+Check: `just test` green; no new dependency.
+
+Do (2026-09-21): a `tests` module in `src/otel/export.rs`, six units, no new dependency. `resource()` pins the four attributes with a custom `service_name`. An unreachable collector (a loopback port bound then dropped, so the connect is refused at once): `flush_blocking` returns one error naming all three streams, posts nothing, skips nothing, leaves every mark (`calls`, `logs`, `sessions`, `sessions_tail`) at 0, writes one `otel` `error`/`flush` log row and does not panic. No endpoint: the report is `Report::default()` and prints `otel: no endpoint`. Ticker: the thread has no stop handle and dies with the process, so the units pin what callers rely on — `spawn_ticker` returns at once, does not flush before its first period, and spawns nothing without an endpoint. `push_error` joins stream errors into one report line. The 404, 500 and happy paths stay in `tests/otel.rs`.
+
+Check result (2026-09-21): `cargo nextest run --lib otel::export` 6/6 green; `just check` green.
+
 ### T121. Codex plugin tree (`plugins/codex/`)
 
 Creator request 2026-09-21: every host in `src/agents/` whose host has a plugin format gets a `plugins/<host>/` package. Audit: kilo and omp reuse `plugins/opencode` / `plugins/pi` (T97, T92); windsurf → Devin (T88), Copilot (T116), VS Code (T117) are planned; aider has no plugin system; Zed has only WASM extensions (MCP, no hooks). Codex was the one host with a plugin format and no task. Creator decision: Codex only, one PR. Codex plugin format (fetched 2026-09-21, https://developers.openai.com/plugins/build/plugins, https://learn.chatgpt.com/docs/hooks; matches `engram` and `claude-mem` in this machine's `~/.codex/plugins/cache/`): `.codex-plugin/plugin.json` naming `hooks` and `mcpServers` files, a local marketplace at `.agents/plugins/marketplace.json`, loaded by the CLI and the desktop app.
@@ -4371,6 +4381,12 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+### T122. A ranged `read` answers with a pointer to the whole file
+
+Seen 2026-09-21: MCP `read` with `mode=lines`, ranges `14-30` and `1230-1260` of one file, both answered `[rtok <id> · identical to a result 1 turns ago …]` with one id, and `expand <id>` returned the whole file. Root cause: `read_with` (`src/plugins/read/mod.rs`) passed the raw file bytes to `plugin::identical_result` for `full`/`lines` reads even when a range was given, so any earlier whole-file archive in the session (the native Read hook's) matched every range. Fix: a ranged read is keyed on the bytes it returns; unranged `full` stays on raw bytes so the T58.1 delta cache keeps diffing the file, not its numbered view. The second half of the original card — a sub-agent and its parent share the host session, so a pointer can name a body the caller never saw — is split out as T127.
+
+Check: `ranged_read_is_not_a_pointer_to_the_whole_file` archives the whole file first, then reads two ranges; it fails on the old code (pointer returned) and passes with the fix; `cargo nextest run --lib read:: plugin::` 78 passed.
 
 **T126** `roadmap.md` and `research.md` §16.2 list shipped work as open
 

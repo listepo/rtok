@@ -79,9 +79,12 @@ fn read(cfg: &Config, service: Service) -> Option<State> {
     serde_json::from_str(&fs::read_to_string(file(cfg, service, "json")).ok()?).ok()
 }
 
+/// Atomic swap, never truncate-then-write: `status`, `upgrade` and `quiesce` read this file while
+/// the supervisor rewrites it on every restart, and a half-written file parses as "not running".
 fn write(cfg: &Config, st: &State) -> Result<()> {
     let path = file(cfg, st.service, "json");
-    fs::write(&path, serde_json::to_vec_pretty(st)?).with_context(|| path.display().to_string())
+    rtok_agent_sdk::write_atomic(&path, &serde_json::to_string_pretty(st)?)
+        .with_context(|| path.display().to_string())
 }
 
 /// True while `pid` is a live process. A state file left behind by a supervisor that was

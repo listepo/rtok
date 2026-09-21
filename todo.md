@@ -13,11 +13,12 @@
 - T101. Hook fail-open matrix over every `--host`
 - T102. Lossless round-trip for every plugin that shortens
 - T105. Report renderers: edge-case snapshots
-- T106. `otel/export.rs` unit tests
 - T107. CLI bad-argument fixtures
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
+- T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+
 - T122. A dedup pointer reaches a context that never saw the body
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
 - T125. `rtok stats`: thinking-block share — the gate for I-86
@@ -32,4 +33,6 @@
 - T135. `doctor::read_share` stops re-parsing every transcript
 - T136. `rtok stats`: whole-file native Reads that `outline` would have answered
 - T137. `rtok stats`: image blocks row
+
+- T127. A dedup pointer reaches a sub-agent that never saw the body
 
