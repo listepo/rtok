@@ -4372,6 +4372,22 @@ Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
 
+**T126** `roadmap.md` and `research.md` §16.2 list shipped work as open
+
+Do: Every task in `roadmap.md` is checked against `done.md` headings (exact match: `## T59.5 —`, `## T58.1 —`, `## T61.2 —`) and open PR branches (`git branch -r` / `gh pr list --state open`); shipped ids are removed from table rows (T59.5, T61.2, T58.1 from the `read` and `proxy`/`archive` lanes). `research.md` §16.2 table gains a `Status` column (values: `shipped`, `shipped (off by default)`, `open`) and a dated line "Status as of 2026-09-21."; T58.1's Why text is fixed to note the 7.3 % re-read delta (from §2) that gates it. Docs only; no code changes.
+
+Check: no shipped id remains in `roadmap.md`; every row in §16.2 has a Status value; `just site` builds; user's shell-generated command list finds no stale task references.
+
+Complexity: 1/5 — docs only, table edits.
+
+Status: done 2026-09-21
+
+Check result: `roadmap.md` rows cleaned: T59.5 removed from `proxy`/`archive` lane (1 row), T61.2 removed (1 row), T58.1 removed from `read` lane (1 row); §16.2 Status column added; T59.5/T61.2 marked `shipped (off by default)` per `config/default.toml` defaults (`enabled=false`, `skills=false`), T58.1 marked `shipped` (delta on by default); `research.md` Why text updated; `just site` not tested (disk nearly full, hugo not available). Verification: `grep` over roadmap.md confirms no T59.5/T58.1/T61.2 remain.
+
+Model: Claude Code / claude-haiku-4-5
+
+Also: the whole `roadmap.md` lane table was stale — all 67 listed ids are in `done.md` (T71.1 dropped, I-71); replaced with a dated note.
+
 ### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
 `research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.

@@ -29,7 +29,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -239,14 +238,6 @@ I-86 (strip or pointer prior reasoning blocks on replay) has no number. First re
 Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
 
 Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
-
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
 
 ## Reference
 
