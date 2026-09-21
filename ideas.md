@@ -33,7 +33,6 @@ Inventory of shipped levers vs further options: [`research.md` §16](research.md
 |----|-------------|------|-------------|---------------------------|
 | I-84 | Anthropic / OpenAI prompt caching; `stats --price` cache rates (T49.1) | `proxy` / hosts | Stable byte-prefix for system+tools+modes and sticky upstream routing so provider **prompt-cache hits** dominate billed input. Not semantic cache (I-23). | Decision-shaped; needs a Check on cache-hit rate before/after and a false “sticky” routing failure mode. |
 | I-85 | Host Tool Search / deferred tools; doctor `mcp_tool_search` | `proxy` / MCP | Deferred full tool schemas: short stubs every turn, expand schema on first call. Complements I-45 text rewrite. | Overlaps host-native Tool Search; only worth it when search is off and tools[] still dominate input. |
-| I-86 | Reasoning-model transcripts; provider “thinking” blocks | `archive` / `proxy` | Strip or pointer prior reasoning/thinking blocks on replay; keep finals + tool I/O. | Host/provider specific; risk if the model needs its own traces — needs an A/B on a reasoning-heavy corpus. Share measured first by T125. |
 | I-87 | T74 investigation (2026-09-21) | `doctor` / `tui` / `web` | `doctor::read_share` synchronously parses the whole `stats.transcripts_dir` JSONL on the snapshot path (`Model::snapshot` → `doctor_for_snapshot`, 30 s TTL). On a machine with a heavy Claude Code history that is ~36 s CPU per cache miss (measured via `sample` on `rtok doctor`), i.e. `rtok tui` / `rtok web` freeze for most of every TTL window. Bound it: parse budget, persisted aggregates, or move `read_share` off the tick path. | Not a task in plan.md; needs a decision on where read-share numbers belong (D19 keeps observability a projection of ledgers — this parser is a second recorder). |
 
 
@@ -139,7 +138,9 @@ Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 d
 
 ## Rejected
 
-Nothing permanently rejected. Scope by version (Open / Later), do not discard.
+Scope by version (Open / Later) first; this list is only for ideas that will never ship.
+
+- **I-86** strip prior reasoning/thinking blocks on replay — T125 (2026-09-21): 0.0297 % of session input over 827 sessions, and the Anthropic API already strips earlier turns' thinking blocks (https://docs.claude.com/en/docs/build-with-claude/extended-thinking). Nothing left to save.
 
 ---
 

@@ -255,7 +255,7 @@ Live probes (the `rtok doctor` page), not store rows.
 ```text
 hooks 0
 mcp
-  rtok (14 tools, ~257 desc tokens) /Users/listepo/GitHub/listepo/apps/rtok/target/debug/rtok
+  rtok (14 tools, ~257 desc tokens) [CWD]/target/debug/rtok
 proxy 
 proxy openai 
 BASH_MAX_OUTPUT_LENGTH (unset)

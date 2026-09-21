@@ -320,18 +320,16 @@ impl Report {
         }
         if self.thinking.blocks > 0 {
             let est_toks = est_tokens(self.thinking.bytes);
-            let share = if self.usage_input > 0 {
-                100.0 * est_toks as f64 / self.usage_input as f64
+            // Share of session input: uncached + cache writes + cache reads (research.md §2).
+            let input = self.usage_input + self.usage_cache_create + self.usage_cache_read;
+            let share = if input > 0 {
+                100.0 * est_toks as f64 / input as f64
             } else {
                 0.0
             };
             s.push_str(&format!(
-                "thinking blocks {} bytes {} est. tokens {} {:.1}% of input
-",
-                self.thinking.blocks,
-                self.thinking.bytes,
-                est_toks,
-                share
+                "thinking blocks {} bytes {} est. tokens {} {:.4}% of session input\n",
+                self.thinking.blocks, self.thinking.bytes, est_toks, share
             ));
         }
         if self.repeat.calls > 0 {
@@ -842,8 +840,8 @@ fn fold_session(
 /// actually carried.
 /// T125: count thinking blocks per session.
 fn fold_thinking(parsed: &Parsed, report: &mut Report) {
-    report.thinking.blocks = parsed.thinking.len() as u64;
-    report.thinking.bytes = parsed.thinking.iter().map(|t| t.bytes).sum();
+    report.thinking.blocks += parsed.thinking.len() as u64;
+    report.thinking.bytes += parsed.thinking.iter().map(|t| t.bytes).sum::<u64>();
 }
 
 fn fold_skills(parsed: &Parsed, id_skill: &BTreeMap<&str, String>, report: &mut Report) {
@@ -1258,12 +1256,23 @@ mod tests {
             writeln!(f, "{}", line).unwrap();
         }
         drop(f);
-        let r = collect(&dir, Duration::from_secs(0), "", Replay { keep_turns: 0, min_tokens: 0, head_lines: 0, tail_lines: 0 }).unwrap();
+        let r = collect(
+            &dir,
+            Duration::from_secs(86400 * 60),
+            "",
+            Replay {
+                keep_turns: 0,
+                min_tokens: 0,
+                head_lines: 0,
+                tail_lines: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(r.thinking.blocks, 2);
         assert_eq!(r.thinking.bytes, 11);
     }
 
-        /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level
+    /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level
     /// `sourceToolUseID`; the fold keys them by the `Skill` tool_use's `input.skill`
     /// and `resident` multiplies the body bytes by the API requests at or after the
     /// injection turn. One 3-line and one 3,000-line body.
