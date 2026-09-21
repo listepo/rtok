@@ -1230,21 +1230,23 @@ Routing (D9), WASM plugins (P32), embeddings (P29), semantic cache (P31), and ti
 
 ### 16.2 Already tracked but not the default product yet
 
+Status as of 2026-09-21.
+
 These are **not** greenfield — they live in `ideas.md` / `plan.md`. Listed so this scan does not reinvent them. Priority here is “still open for savings,” not “new invention.”
 
-| Priority | Idea / task | Rough impact | Effort | Why |
-| --- | --- | --- | --- | --- |
-| P0 | **T59.5** tools[] description rewrite (I-45) | *measured* ~6.2 % of session **input** when Tool Search is off | M | High repeat tax every turn; off-by-default rewrite is the right shape |
-| P0 | **T61.2** live-zone skill bodies (I-51) | High when a large skill stays in every later request (§10.3) | M | Same archive path as tool results; gated on skill stats (T61.1) |
-| P1 | **T58.1** delta re-read (I-41) | Medium on Read-heavy sessions (Read ≈ 15 % of tool-result tokens §2) | M | Needs changed-file share count first |
-| P1 | **T58.2** compaction checkpoint + archive ids (I-42) | Medium on long sessions that compact | M | Survives host summarization; half is host-plugin work (T70.x) |
-| P1 | **T59.1** per-stem `skip_wrap` (I-39) | Medium for curl/ffmpeg-class Bash if currently unwrapped | S–M | Fail-open; needs hang Check |
-| P2 | **P28 / I-21** LLMLingua-style / extractive `compress` on | High *if* bench beats lossless; quality risk on code | L | Default off; costs tokens to save tokens |
-| P2 | **P31 / I-23** semantic response cache | High on repeated asks; dangerous false hits | L | Needs false-hit Check |
-| P2 | **P33 / I-25** OpenViking-style tiered context | High on very long threads | L | License + model path |
-| P2 | **T51.1** (I-09) compress nested JSON / `data:` inside live zone | Medium when blobs dominate | M | Complementary to tool_result archive |
-| P3 | **I-55** session token/cost budget deny | Process control, not compression | S | Hosts already auto-compact |
-| P3 | **I-71** HTML→text curl formatter | *measured* &lt; 1 % Bash bytes here — parked | S | Re-open only above gate |
+| Priority | Idea / task | Rough impact | Effort | Status | Why |
+| --- | --- | --- | --- | --- | --- |
+| P0 | **T59.5** tools[] description rewrite (I-45) | *measured* ~6.2 % of session **input** when Tool Search is off | M | shipped (off by default) | High repeat tax every turn; off-by-default rewrite is the right shape |
+| P0 | **T61.2** live-zone skill bodies (I-51) | High when a large skill stays in every later request (§10.3) | M | shipped (off by default) | Same archive path as tool results; gated on skill stats (T61.1) |
+| P1 | **T58.1** delta re-read (I-41) | Medium on Read-heavy sessions (Read ≈ 15 % of tool-result tokens §2) | M | shipped | MCP `read` returns unified diff when file changed since last read (§2: 7.3 % of reads) |
+| P1 | **T58.2** compaction checkpoint + archive ids (I-42) | Medium on long sessions that compact | M | open | Survives host summarization; half is host-plugin work (T70.x) |
+| P1 | **T59.1** per-stem `skip_wrap` (I-39) | Medium for curl/ffmpeg-class Bash if currently unwrapped | S–M | open | Fail-open; needs hang Check |
+| P2 | **P28 / I-21** LLMLingua-style / extractive `compress` on | High *if* bench beats lossless; quality risk on code | L | open | Default off; costs tokens to save tokens |
+| P2 | **P31 / I-23** semantic response cache | High on repeated asks; dangerous false hits | L | open | Needs false-hit Check |
+| P2 | **P33 / I-25** OpenViking-style tiered context | High on very long threads | L | open | License + model path |
+| P2 | **T51.1** (I-09) compress nested JSON / `data:` inside live zone | Medium when blobs dominate | M | open | Complementary to tool_result archive |
+| P3 | **I-55** session token/cost budget deny | Process control, not compression | S | open | Hosts already auto-compact |
+| P3 | **I-71** HTML→text curl formatter | *measured* &lt; 1 % Bash bytes here — parked | S | open | Re-open only above gate |
 
 ### 16.3 Further options not yet a first-class rtok idea (or only as a Decision)
 
