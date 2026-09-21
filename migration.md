@@ -73,7 +73,7 @@ Nothing in lean-ctx needs a **new plugin**; the two partial rows land in `cmd` a
 
 ## 2. Gaps to fill in rtok before the switch (proposed `plan.md` changes)
 
-Each is a candidate task in the CLAUDE.md shape (≤ 200 LOC, ≤ 3 files, a Check). None exists in
+Each is a candidate task in the CLAUDE.md shape (≤ 200 LOC, ≤ 10 files, a Check). None exists in
 `plan.md` yet; promote the ones the user wants, in this order.
 
 **G1 `cmd` — runner prefixes (this repo's blind spot).** `formatters::format` matches on
