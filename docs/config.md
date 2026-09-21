@@ -215,6 +215,9 @@ config_path   = "~/.config/kilo/kilo.json"      # kilo.jsonc is merged by Kilo, 
 [setup.pi]
 extensions_path = "~/.pi/agent/extensions"
 tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)
+[setup.omp]
+extensions_path = "~/.omp/agent/extensions" # oh my pi: plugins/pi is linked here (T92)
+mcp_path        = "~/.omp/agent/mcp.json"
 [setup.zcode]
 config_path   = "~/.zcode/cli/config.json"
 [setup.kimi]

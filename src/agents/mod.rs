@@ -15,6 +15,7 @@ pub mod copilot;
 pub mod cursor;
 pub mod kilo;
 pub mod kimi;
+pub mod omp;
 pub mod opencode;
 pub mod pi;
 pub mod plugin;
@@ -35,8 +36,8 @@ use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "kilo", "pi", "zcode", "kimi", "vscode", "copilot",
-    "aider", "windsurf", "zed",
+    "claude", "cursor", "codex", "opencode", "kilo", "pi", "omp", "zcode", "kimi", "vscode",
+    "copilot", "aider", "windsurf", "zed",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -51,6 +52,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "opencode" => Some(&opencode::OpenCode),
         "kilo" => Some(&kilo::Kilo),
         "pi" => Some(&pi::Pi),
+        "omp" => Some(&omp::Omp),
         "zcode" => Some(&zcode::Zcode),
         "kimi" => Some(&kimi::Kimi),
         "vscode" => Some(&vscode::Vscode),
@@ -1306,14 +1308,15 @@ mod tests {
         cfg.setup.yes = true;
         cfg.setup.mcp = false;
         assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "proxy"]);
+        // `--yes` also expects Claude Code's plugin (T115).
         assert_eq!(
             expected(&claude::Claude, Kind::Cli, &cfg),
-            ["hooks", "proxy"]
+            ["hooks", "proxy", "plugin"]
         );
         assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
         assert_eq!(
             missing(&claude::Claude, Kind::Cli, &cfg),
-            ["hooks", "proxy"]
+            ["hooks", "proxy", "plugin"]
         );
         assert_eq!(
             missing(&claude::Claude, Kind::Desktop, &cfg),
@@ -1364,16 +1367,13 @@ mod tests {
                 ("hooks", ModuleState::Installed),
                 ("mcp", ModuleState::NotInstalled),
                 ("proxy", ModuleState::Installed),
-                ("plugin", ModuleState::NotSupported),
+                ("plugin", ModuleState::NotInstalled),
             ]
         );
         let console = module_lines(&rows, "  ", true);
         assert!(console.contains("✓ hooks   installed"), "{console}");
         assert!(console.contains("✗ mcp     not installed"), "{console}");
-        assert!(
-            console.contains("− plugin  not supported: Claude Code"),
-            "{console}"
-        );
+        assert!(console.contains("✗ plugin  not installed"), "{console}");
         let plain = module_lines(&rows, "  ", false);
         assert!(
             plain.contains("  proxy   installed") && !plain.contains('✓'),

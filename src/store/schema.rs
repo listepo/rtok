@@ -64,6 +64,9 @@ diesel::table! {
         retired -> Nullable<BigInt>,
         superseded_by -> Nullable<Integer>,
         pinned -> Integer,
+        // 0017 (T69.2); written with `sql_query`, listed so T104's drift guard holds.
+        uses -> Integer,
+        last_used -> Nullable<BigInt>,
     }
 }
 

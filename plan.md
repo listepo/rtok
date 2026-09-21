@@ -13,7 +13,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
 | T91 | todo | P1 | 3 | 0% | |
-| T92 | todo | P1 | 3 | 40% | |
 | T94 | todo | P1 | 3 | 0% | |
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
@@ -21,11 +20,12 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T100 | todo | P1 | 3 | 0% | |
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T103 | todo | P2 | 2 | 0% | |
-| T104 | todo | P2 | 2 | 0% | |
 | T105 | todo | P2 | 2 | 0% | |
 | T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
+| T116 | todo | P2 | 3 | 0% | |
+| T117 | todo | P2 | 3 | 0% | |
+| T118 | todo | P2 | 4 | 0% | |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -105,26 +105,6 @@ Over the ≤200 LOC / ≤3 files limit as written — split into T91.1 (host + p
 
 Check: the unit tests above; `rtok agents list` shows `antigravity`; `agents_doc`, `host_docs`, `config_coverage` green; `just check`.
 
-### T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
-
-Creator request 2026-09-21: a host plugin for oh my pi CLI + desktop. oh my pi (https://github.com/can1357/oh-my-pi, binary `omp`) is a fork of pi with no desktop app — a TUI plus Zed ACP, which runs the same binary and config — so the host has one CLI variant. Its extension loader accepts `package.json` `omp.extensions` **or legacy `pi.extensions`**, treats symlinked directories as discovery targets, scans `~/.omp/agent/extensions` (not `~/.pi/agent/extensions`), and delivers the events `plugins/pi/extensions/rtok.ts` already subscribes to (`tool_call`, `tool_result`, `context`, `session_start`, `session_compact`); the extension imports nothing from upstream pi. So `plugins/pi` is reused as is — no `plugins/omp/` tree. Unlike pi, omp has native MCP (`~/.omp/agent/mcp.json`, `mcpServers.{command,args,env}`). Evidence: `docs/extension-loading.md`, `docs/extensions.md`, `docs/mcp-config.md` in that repo (fetched 2026-09-21).
-
-Creator decision 2026-09-21: extension + native MCP. The extension owns the bash call path, context and compaction; tools come from `rtok mcp` registered in `mcp.json`; `registerTool` stays off under omp — one call path per capability (D21).
-
-Plan:
-1. `src/agents/omp/mod.rs` + `README.md` (`## Docs`: extensions, extension loading, hooks, MCP config, skills, marketplace): `HostPlugin { src_rel: "plugins/pi", host: "oh my pi", dest: <extensions_path>/rtok }` and `rtok_agent_sdk::register_mcp` on `mcp_path`; `support`: `plugin` → `Flag("--yes")`, `mcp` → yes, `hooks` → `No` (omp hooks are in-process TS modules; the extension owns that path), `proxy` → `No` (`models.yml` is not edited by setup, the pi rule). `[setup.omp] extensions_path = "~/.omp/agent/extensions"`, `mcp_path = "~/.omp/agent/mcp.json"` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md` (a named profile is a path override). Registered in `HOSTS` and `host()`.
-2. `plugins/pi/README.md` gains the omp section and links; `tests/pi_plugin.rs` asserts the manifest still declares `pi.extensions` (the key omp's loader falls back to).
-3. Unit tests: offer names `plugins/pi` and the ketch line; `--yes` links and writes `mcpServers.rtok`, second apply `NO_CHANGES`, remove takes back exactly ours and leaves foreign servers; `docs/agents.md` blessed; `tests/trycmd/agents-list*.toml` re-blessed.
-Verified 2026-09-21 on omp 18.1.14 (probe extension in a scratch `PI_CODING_AGENT_DIR`, nothing written to `~/.omp`): (a) a **symlinked** directory whose `package.json` declares only legacy `pi.extensions` is discovered and its factory runs — the exact mechanism `plugins/pi` uses; (b) host signal: omp injects its SDK as `pi.pi` (an object with `getAgentDir()` and `VERSION`; `process.title` is `omp`), upstream pi's `ExtensionAPI` has no `pi` member — so `registerPiTools` returns early when `pi.pi` is an object, because that host has native MCP; without it a machine with pi (`[setup.pi] tools = true`) and omp would get every tool twice under omp (D21); (c) by source (`src/capability/mcp.ts` `key: server => server.name`, `src/capability/index.ts` first-wins dedupe in provider-priority order, native config highest): a native `rtok` entry and one imported from a Claude Code / Cursor config collapse into **one** server. Not verified: a real model turn whose bash call goes through `rtok run` — the only model key in this environment has no credit (`credit_balance_exhausted`); the creator runs one `omp -p` turn after install.
-Also found by reading omp's source (`src/session/agent-session.ts` `#beforeToolCall`, `src/extensibility/extensions/wrapper.ts`): omp applies a revised input only when the handler **returns** `{ input }`; upstream pi documents mutating `event.input` in place. The bash rewrite reaches omp today only because omp hands `bash` handlers the live args object — an undocumented alias.
-
-Split (each ≤200 LOC / ≤3 files):
-- T92.1 (done, see `done.md`) — `plugins/pi/extensions/rtok.ts`: the bash rewrite mutates `event.input` in place **and** returns `{ input: event.input }` (pi ignores the extra field; omp's documented path); `registerPiTools` returns early when `pi.pi` is an object (omp — native MCP owns the tools). `plugins/pi/tests/rtok.test.ts`: two cases pin both. Check: `pi_plugin` green (it runs the Node test file).
-- T92.2 — host `src/agents/omp/` (`mod.rs` + `README.md`), `HOSTS` / `host()` in `src/agents/mod.rs`, `[setup.omp]` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`, unit tests from Plan step 3.
-- T92.3 — `docs/agents.md` bless, `tests/trycmd/*` re-bless, `plugins/pi/README.md` omp section.
-
-Check: the unit tests above; `rtok agents list` shows `omp`; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin` green; `just check`.
-
 ### T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
 
 Creator request 2026-09-21: a host plugin for Cline CLI + desktop (the VS Code / JetBrains extension), like Claude's and Cursor's. Creator decisions 2026-09-21: (1) hooks go through Cline's **file hooks**, not a TS Cline plugin — Cline plugins (`~/.cline/plugins`, `cline plugin install`) load in the SDK, CLI and Kanban only ("not applicable on VSCode and JetBrains Extension for now", https://docs.cline.bot/customization/plugins), while core adapts file hooks onto the same runtime hook layer, so they are the one hook path both surfaces have (D21); (2) MCP is written directly into `cline_mcp_settings.json` (T96), not shipped as an agent-plugins.org package. A file hook is an executable named after its event. stdin is JSON: `hookName` (`tool_call` / `tool_result` / `agent_start` …), `taskId`, `workspaceRoots`, and `tool_call: {id, name, input}` or `tool_result: {id, name, input, output, error, durationMs}`. stdout is JSON: `cancel`, `review`, `context` (injected into the next turn), `errorMessage`, `overrideInput` (replaces the tool input; PreToolUse only); `{}` means do nothing. Neither direction is Claude-shaped, so unlike Devin (T87) the adapter translates both ways. The shell tool is `run_commands` with `input.commands: string[]`. Evidence (cline/cline `main`, fetched 2026-09-21): `sdk/examples/hooks/README.md`, `sdk/packages/shared/src/hooks/contracts.ts` (`HookControl`), `sdk/packages/shared/src/agent.ts` (`AgentBeforeToolResult.input` / `appendContext`), `sdk/packages/shared/src/storage/paths.ts`.
@@ -198,18 +178,6 @@ Rule: anything shortened is retrievable via `expand <id>`. Today each plugin che
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
 
-### T103. Unit tests for untested store queries
-
-No test calls `Store::memory_recall_totals` (`src/store/mod.rs`) or `call_io_archives`. Add unit tests on an in-memory store: empty store, one row, many sessions, rows outside the window.
-
-Check: both functions covered by `src/store` unit tests; `just test` green.
-
-### T104. Migration and `schema.rs` drift guard
-
-`MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
-
-Check: deleting a line from `MIGRATIONS` or a column from `schema.rs` fails the test; `just test` green.
-
 ### T105. Report renderers: edge-case snapshots
 
 `src/report/markdown.rs` and `src/report/html.rs` have no unit tests; `tests/report.rs` covers one fixture and the empty store. `insta` snapshots on a fixed model: zero savings, one row, very large numbers, text with `<`, `|`, backticks and newlines. Done when no table breaks, no HTML is injected, and no `NaN` or `inf` is printed.
@@ -227,6 +195,24 @@ Check: `just test` green; no new dependency.
 `tests/trycmd/` pins help and happy output. Add fixtures for a bad value or missing argument on each subcommand (exit 2, clap message) and for `parse_since` rejects (`--since 5x`, `--since -1d`, empty).
 
 Check: one fixture per subcommand; `just test` green.
+
+### T116. Copilot CLI plugin
+
+Copilot CLI plugins bundle hooks and MCP (`plugin.json`); local install is `copilot plugin marketplace add <path>` (https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating). First verify whether Copilot reads the T114 Claude-format marketplace as is; if yes, reuse it (one tree), otherwise a `plugins/copilot` tree with `--host copilot` hook commands. Installer mirrors T115 through the `copilot` CLI; D21 singleton against `mcp-config.json` and `hooks/rtok.json`.
+
+Check: fake `copilot` e2e like T115; `just check` green.
+
+### T117. VS Code agent plugins
+
+VS Code agent plugins carry hooks and MCP and are registered by path in the `chat.pluginLocations` setting (https://code.visualstudio.com/docs/agent-customization/agent-plugins). Verify the accepted format (Claude-format plugins?) and the hook event names first. `rtok agents install vscode --yes` adds the plugin path to `chat.pluginLocations` in the user `settings.json` (JSONC — see T79 before writing it) and strips its own MCP entry while the plugin is listed (D21).
+
+Check: settings round-trip test (add, idempotent, remove keeps foreign entries); `just check` green.
+
+### T118. Gemini CLI host with an extension
+
+New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
+
+Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
 
 ## Reference
 

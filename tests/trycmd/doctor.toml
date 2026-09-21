@@ -14,7 +14,7 @@ agents
     ✗ hooks   not installed
     ✗ mcp     not installed
     ✗ proxy   not installed (--proxy)
-    − plugin  not supported: Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link
+    ✗ plugin  not installed (--yes)
   claude (desktop)
     − hooks   not supported: Claude Desktop has no hook events
     ✗ mcp     not installed
@@ -59,6 +59,11 @@ agents
     − hooks   not supported: pi has no hook events; the extension owns the bash call path
     − mcp     not supported: pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true
     − proxy   not supported: pi provider base URLs live in its models config, which setup does not edit
+    ✗ plugin  not installed (--yes)
+  omp (cli)
+    − hooks   not supported: omp hooks are in-process TS modules; the linked pi extension owns that path
+    ✗ mcp     not installed
+    − proxy   not supported: omp provider base URLs live in models.yml, which setup does not edit
     ✗ plugin  not installed (--yes)
   zcode (desktop)
     ✗ hooks   not installed

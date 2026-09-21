@@ -38,3 +38,5 @@ Keep this file under 350 tokens; it is loaded into every session.
 Run tests with `just test` — the default locally and in CI (`just check`): `-j` = logical CPUs (`--test-threads {{cpus}}`). Heavy tests (cold repo index, 100-session memory bench, 3 000-file graph bench) run alone via `threads-required = "num-test-threads"` in `.config/nextest.toml`; add a matching `[[profile.default.overrides]]` there for new resource-hungry tests, never `--test-threads=1` in the test.
 
 Prefer `crate::testutil::Vfs` (in-memory path → bytes) over host `TempDir` for unit tests that only need path/content/size. See plan D29 / T56.
+
+JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no `vitest` import); never `node:test`/`node:assert`. Prefer `toMatchInlineSnapshot` for structured output. See T119.

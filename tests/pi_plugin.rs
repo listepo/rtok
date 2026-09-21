@@ -6,6 +6,8 @@
 //! extension owns the single bash call path with no `read`/`search`
 //! duplication; pi's own loader loads the linked directory once (T48.1).
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -66,6 +68,8 @@ fn pi_package_is_extension_and_skill_without_tools() {
     let dir = root();
     let pkg: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(dir.join("package.json")).unwrap()).unwrap();
+    // `pi.extensions` is also the key oh my pi's loader falls back to — `rtok agents install
+    // omp` links this directory as is (T92), so renaming it breaks two hosts.
     let exts = pkg["pi"]["extensions"].as_array().expect("pi.extensions");
     assert_eq!(exts.len(), 1, "one extension entry");
     assert!(exts[0].as_str().unwrap().ends_with("rtok.ts"), "{exts:?}");
@@ -101,24 +105,7 @@ fn pi_extension_owns_the_single_bash_call_path() {
 /// fail-open with the ketch hint, and the filter result — against a fake `rtok` on PATH.
 #[test]
 fn pi_extension_unit_test_with_fake_rtok() {
-    node_test("plugins/pi/tests/rtok.test.ts", None);
-}
-
-/// Run one Node test file; `agent_dir` becomes `RTOK_PI_AGENT_DIR`.
-fn node_test(file: &str, agent_dir: Option<&Path>) {
-    let mut cmd = Command::new("node");
-    cmd.args([
-        "--experimental-strip-types",
-        "--disable-warning=ExperimentalWarning",
-        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-        "--test",
-        file,
-    ])
-    .current_dir(env!("CARGO_MANIFEST_DIR"));
-    if let Some(dir) = agent_dir {
-        cmd.env("RTOK_PI_AGENT_DIR", dir);
-    }
-    assert!(cmd.status().expect("node").success(), "{file}");
+    common::vitest("plugins/pi/tests/rtok.test.ts", &[]);
 }
 
 #[test]
@@ -149,7 +136,10 @@ fn setup_pi_yes_links_remove_unlinks() {
     let meta = fs::symlink_metadata(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
     assert!(meta.file_type().is_symlink() || dest.is_dir(), "{dest:?}");
     // T48.1: pi's own loader (skipped without pi) runs the extension from the linked dir.
-    node_test("plugins/pi/tests/load.test.ts", Some(&home));
+    common::vitest(
+        "plugins/pi/tests/load.test.ts",
+        &[("RTOK_PI_AGENT_DIR", &home)],
+    );
     let (again, stderr2, code2) = setup(&["agents", "install", "pi", "--yes"], &cfg, &home);
     assert_eq!(code2, 0, "stderr={stderr2}");
     assert!(again.contains("already installed"), "second apply: {again}");

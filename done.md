@@ -10,6 +10,77 @@ Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` —
 
 Status: done September 21, 2026
 
+### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
+
+After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).
+
+Check: e2e with a fake `claude` binary records the four commands in order; second `--yes` says `already installed`; remove restores; `just check` green.
+
+Check result (2026-09-21): `tests/claude_plugin.rs` — dry-run prints `claude plugin marketplace add …/plugins/claude && claude plugin install rtok@rtok` and calls nothing; `--yes` after a plain install calls add then install, strips the settings hooks and `mcpServers.rtok`; a second `--yes` says `already installed`; remove calls `uninstall` then `marketplace remove`. `docs/agents.md` re-blessed, doctor/report fixtures updated; `just check` green (1108 passed). The real CLI path was checked by hand in T114 (scratch `CLAUDE_CONFIG_DIR`). Unix only: the fake is a shell script, and the Windows job already skips the install matrix.
+
+### T114. Claude Code plugin tree (`plugins/claude`)
+
+Claude Code has a plugin system (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, `skills/`, `${CLAUDE_PLUGIN_ROOT}`), loaded by the CLI and the desktop Code tab alike; `support("plugin")` still says "there is no plugin directory to link", which is stale. This task ships the tree only; T115 installs it.
+
+Do: `plugins/claude/.claude-plugin/plugin.json` (`name` `rtok`); `hooks/hooks.json` with the nine `claude::ENTRIES` as `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh <Event>`, `timeout` = the default `hook_timeout_s`; `.mcp.json` → `scripts/mcp.sh` (fail loud with the ketch hint); `scripts/hook.sh`, `scripts/mcp.sh` as in `plugins/zcode` (the desktop app may have no shell PATH). `support(Cli, "plugin")` still says no, but its reason now names the manual install instead of "no plugin directory" (doctor/report fixtures follow); the directory is its own marketplace (`.claude-plugin/marketplace.json`, `source` `./`, so `plugins/` gains no non-host directory) and `claude plugin marketplace add <plugins/claude>` works; `README.md` with `## Docs`. `claude::tests::plugin_tree_matches_the_installer` pins `hooks.json` to `claude::ENTRIES` and the marketplace entry.
+
+Check: `claude plugin validate plugins/claude` (if the CLI has it) or `claude --plugin-dir plugins/claude` loads with no error; the new unit test and `tests/host_docs.rs` green.
+
+Check result (2026-09-21): `claude plugin validate` passes for the plugin and the marketplace; in a scratch `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add plugins/claude` + `claude plugin install rtok@rtok` succeed and `claude plugin details rtok@rtok` lists 7 hook events and 1 MCP server; the cache copy keeps the scripts executable; `hook.sh UserPromptSubmit` pipes through `rtok hook` (exit 0); `just check` green. Not verified: a live Claude Code session with the plugin installed.
+
+### T104. Migration and `schema.rs` drift guard
+
+`MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
+
+Check: deleting a line from `MIGRATIONS` or a column from `schema.rs` fails the test; `just test` green.
+
+Do (2026-09-21): two unit tests in `src/store/mod.rs`. `migrations_list_matches_the_directory` reads `migrations/*.sql`, sorts the names and compares them with `MIGRATIONS` in order. `schema_rs_matches_the_migrated_tables` parses every `diesel::table!` in `schema.rs` (`include_str!`, `#[sql_name]` resolved to the SQL name) and compares each column set with `pragma_table_info` on a fully migrated in-memory store. Its first run found real drift: `0017.sql` (T69.2) added `notes.uses` and `notes.last_used`, which `schema.rs` never listed — both added (`Integer`, `Nullable<BigInt>`). Every `notes` query selects columns by name, so nothing else changed.
+
+Check result (2026-09-21): mutation-checked — deleting the `0018.sql` line from `MIGRATIONS` fails `migrations_list_matches_the_directory` ("MIGRATIONS drifted"); deleting `notes.last_used` from `schema.rs` fails `schema_rs_matches_the_migrated_tables` ("schema.rs `notes` vs the migrated table"). Both green on the real tree; `just check` green.
+
+### T103. Unit tests for untested store queries
+
+No test calls `Store::memory_recall_totals` (`src/store/mod.rs`) or `call_io_archives`. Add unit tests on an in-memory store: empty store, one row, many sessions, rows outside the window.
+
+Check: both functions covered by `src/store` unit tests; `just test` green.
+
+Do (2026-09-21): two unit tests in `src/store/mod.rs` on `Store::open_in_memory`. `memory_recall_totals_sums_recalls_in_the_window_only`: empty store `(0, 0, 0)`; one row; three sessions summed while a `memory`/`save` row and a `read`/`recall` row stay out; one row backdated a day falls outside a one-hour window, and a window starting in the future is empty. `call_io_archives_names_only_spilled_bodies`: no `call_io` row → `(None, None)`; inline bodies → `(None, None)`; an over-cap request → its sha, which names a file in the archive dir, response `None`; both over cap → both ids; over cap with no archive dir (the hook path) → `(None, None)`.
+
+Check result (2026-09-21): both tests pass; `just check` green with the branch.
+
+### T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
+
+Creator request 2026-09-21: a host plugin for oh my pi CLI + desktop. oh my pi (https://github.com/can1357/oh-my-pi, binary `omp`) is a fork of pi with no desktop app — a TUI plus Zed ACP, which runs the same binary and config — so the host has one CLI variant. Its extension loader accepts `package.json` `omp.extensions` **or legacy `pi.extensions`**, treats symlinked directories as discovery targets, scans `~/.omp/agent/extensions` (not `~/.pi/agent/extensions`), and delivers the events `plugins/pi/extensions/rtok.ts` already subscribes to (`tool_call`, `tool_result`, `context`, `session_start`, `session_compact`); the extension imports nothing from upstream pi. So `plugins/pi` is reused as is — no `plugins/omp/` tree. Unlike pi, omp has native MCP (`~/.omp/agent/mcp.json`, `mcpServers.{command,args,env}`). Evidence: `docs/extension-loading.md`, `docs/extensions.md`, `docs/mcp-config.md` in that repo (fetched 2026-09-21).
+
+Creator decision 2026-09-21: extension + native MCP. The extension owns the bash call path, context and compaction; tools come from `rtok mcp` registered in `mcp.json`; `registerTool` stays off under omp — one call path per capability (D21).
+
+Plan:
+1. `src/agents/omp/mod.rs` + `README.md` (`## Docs`: extensions, extension loading, hooks, MCP config, skills, marketplace): `HostPlugin { src_rel: "plugins/pi", host: "oh my pi", dest: <extensions_path>/rtok }` and `rtok_agent_sdk::register_mcp` on `mcp_path`; `support`: `plugin` → `Flag("--yes")`, `mcp` → yes, `hooks` → `No` (omp hooks are in-process TS modules; the extension owns that path), `proxy` → `No` (`models.yml` is not edited by setup, the pi rule). `[setup.omp] extensions_path = "~/.omp/agent/extensions"`, `mcp_path = "~/.omp/agent/mcp.json"` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md` (a named profile is a path override). Registered in `HOSTS` and `host()`.
+2. `plugins/pi/README.md` gains the omp section and links; `tests/pi_plugin.rs` asserts the manifest still declares `pi.extensions` (the key omp's loader falls back to).
+3. Unit tests: offer names `plugins/pi` and the ketch line; `--yes` links and writes `mcpServers.rtok`, second apply `NO_CHANGES`, remove takes back exactly ours and leaves foreign servers; `docs/agents.md` blessed; `tests/trycmd/agents-list*.toml` re-blessed.
+Verified 2026-09-21 on omp 18.1.14 (probe extension in a scratch `PI_CODING_AGENT_DIR`, nothing written to `~/.omp`): (a) a **symlinked** directory whose `package.json` declares only legacy `pi.extensions` is discovered and its factory runs — the exact mechanism `plugins/pi` uses; (b) host signal: omp injects its SDK as `pi.pi` (an object with `getAgentDir()` and `VERSION`; `process.title` is `omp`), upstream pi's `ExtensionAPI` has no `pi` member — so `registerPiTools` returns early when `pi.pi` is an object, because that host has native MCP; without it a machine with pi (`[setup.pi] tools = true`) and omp would get every tool twice under omp (D21); (c) by source (`src/capability/mcp.ts` `key: server => server.name`, `src/capability/index.ts` first-wins dedupe in provider-priority order, native config highest): a native `rtok` entry and one imported from a Claude Code / Cursor config collapse into **one** server. Not verified: a real model turn whose bash call goes through `rtok run` — the only model key in this environment has no credit (`credit_balance_exhausted`); the creator runs one `omp -p` turn after install.
+Also found by reading omp's source (`src/session/agent-session.ts` `#beforeToolCall`, `src/extensibility/extensions/wrapper.ts`): omp applies a revised input only when the handler **returns** `{ input }`; upstream pi documents mutating `event.input` in place. The bash rewrite reaches omp today only because omp hands `bash` handlers the live args object — an undocumented alias.
+
+Split (each ≤200 LOC / ≤3 files):
+- T92.1 (done, see `done.md`) — `plugins/pi/extensions/rtok.ts`: the bash rewrite mutates `event.input` in place **and** returns `{ input: event.input }` (pi ignores the extra field; omp's documented path); `registerPiTools` returns early when `pi.pi` is an object (omp — native MCP owns the tools). `plugins/pi/tests/rtok.test.ts`: two cases pin both. Check: `pi_plugin` green (it runs the Node test file).
+- T92.2 (done) — host `src/agents/omp/` (`mod.rs` + `README.md`), `HOSTS` / `host()` in `src/agents/mod.rs`, `[setup.omp]` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`, unit tests from Plan step 3.
+- T92.3 (done) — `docs/agents.md` bless, `tests/trycmd/*` re-bless, `plugins/pi/README.md` omp section.
+
+Check: the unit tests above; `rtok agents list` shows `omp`; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin` green; `just check`.
+
+Do (2026-09-21): T92.2 — `src/agents/omp/` (`mod.rs` + `README.md` with the module table and `## Docs` linking omp's extensions, extension-loading, hooks, MCP config, skills and marketplace pages). One CLI variant (`omp`). `apply` is `HostPlugin { src_rel: "plugins/pi", host: "oh my pi" }` linked to `<extensions_path>/rtok` plus `mcpServers.rtok = {command, args}` through `rtok_agent_sdk::register_server` (omp's documented shape has no `type`, the Kimi call); remove unlinks and drops only our server. `installed()` reports `plugin` only when `PLUGIN.ours` (T75) and `mcp` from `mcp.json`. `support`: plugin `--yes`, mcp yes, hooks and proxy no. Registered in `HOSTS` (after `pi`) and `host()`; `[setup.omp] extensions_path`, `mcp_path` in `config/default.toml`, `src/config/mod.rs`, `docs/config.md`. T92.3 — `docs/agents.md` blessed, `tests/trycmd/{config-init,config-show,doctor,report-md}` re-blessed (the `windsurf` block `TRYCMD=overwrite` folded into `...` was put back by hand), `plugins/pi/README.md` gains an oh my pi section, and `tests/pi_plugin.rs` says why `pi.extensions` must stay.
+
+Check result (2026-09-21): unit tests `agents::omp::tests` (dry-run offer names `plugins/pi` and ketch, writes nothing; `--yes` links and registers with no `type`, second apply `NO_CHANGES` twice, remove keeps a foreign server; a foreign dest directory is not `installed`) pass; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin`, `cli_trycmd` green. On this machine (omp 18.1.14 at `~/.bun/bin/omp`) `rtok agents list` shows `CLI: oh my pi` and `rtok agents install omp --dry-run` offers `plugins/pi → ~/.omp/agent/extensions/rtok` and `mcpServers.rtok: rtok mcp`, writing nothing. `just check` green: 1109 passed, 4 skipped. Still open, as the card says: one real `omp -p` turn whose bash call goes through `rtok run` (no model credit here).
+
+### T119. TS plugin tests on vitest, with snapshots
+
+The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
+
+Do: vitest 5.0.1 as a mise `npm:` tool like oxlint/jscpd (no `package.json`), `globals: true` and `cacheDir: target/vitest` in `vitest.config.mjs` so tests need no `vitest` import; rewrite the three files to `test`/`expect`/`vi`; inline snapshots for the registered tool names, the context replacement array and the compaction/transform outputs; `tests/filter.rs` and `tests/pi_plugin.rs` run `vitest run <file>` instead of `node --test`; `toolchain.md` and the `mise.toml` comment.
+
+Check: `vitest run` green; `cargo nextest run --test filter --test pi_plugin` green; `just js` green.
+
+Check result (2026-09-21): `vitest run` 3 files, 42 tests green; `cargo nextest run --test filter --test pi_plugin` 7/7; `just js` green. Snapshots: the opencode PreCompact/SessionStart hook payloads, the pi `context` replacement array, the pi `mcp --call` line per registered tool. `tests/common::vitest` is the one runner both wrappers use (Windows: `vitest.cmd`).
 
 ### T110. oxlint and oxfmt for the JS/TS files
 
@@ -100,6 +171,7 @@ Do (2026-09-21): `demon::Row` gains `endpoint: Option<String>` — for `proxy`, 
 Check: unit `the_proxy_row_names_its_configured_endpoint_stopped_or_not` (row + table carry the configured address while stopped; mcp stays `None`); integration `tests/demon.rs::status_names_the_proxy_endpoint_running_or_stopped` (custom `[proxy] port = 8123` shows stopped, in `--json` with mcp `null`, and — after `demon start proxy` — the same address while a `TcpStream` actually reaches it); trycmd `demon-status` / `demon-json` refreshed. `just check`.
 
 Check result (2026-09-21): full `just check` green in the worktree — 1061 passed, 3 skipped, exit 0; demon units 9/9 (incl. the new one), `--test demon` 6/6, trycmd `cli` green over the refreshed `demon-status` / `demon-json` goldens.
+
 ### T81. Ship the WASM bundle with the release archive
 
 Do (2026-09-21): T80 taught an installed `rtok web` to explain a missing bundle; this puts the bundle in the archive. `Cargo.toml`'s `[package.metadata.dist] include` gains `crates/rtok-webui/pkg/`, so every archive carries `pkg/` beside the binary exactly as it already carries `plugins/` and `skills/` — and `pkg/` beside `current_exe()` is the first candidate `pkg_dir` tries. The open question (which targets pay the ~4.2 MB) was answered by the tool, not by taste: `include` is package-local with no per-target form, so it is every archive or none. `.github/build-setup.yml` — the hook dist injects into `build-local-artifacts` — installs wasm-pack via `taiki-e/install-action` (Linux/macOS/Windows) and runs the build before `dist build`; `.github/workflows/release.yml` was regenerated with `just dist-generate` (9 added lines, nothing hand-edited). The build itself moved into `tools/webui-bundle.sh` so `just web` and CI cannot drift: `--require` turns every skip into a failure (CI), `--compress` writes the `.br`/`.gz` `rtok web` negotiates (`just web` only — the archive serves loopback and does not need them). The script also refuses a bundle over the T60.7 gate, which is what a silent loss of wasm-opt would produce: `wasm-pack` runs wasm-opt itself when binaryen is reachable (measured 4,392,425 B; the explicit `-Oz` on top gives 4,232,904 B), and without it the bundle is ~10.5 MB — not something to discover after a release.
@@ -277,6 +349,7 @@ Done when:
 **Check:** docs-only close; no ranking code.
 
 ---
+
 ## T71.4 — Measure the per-skill listing overhead through the proxy
 
 From `research.md` §10.6 (open question). The docs say "~100 tokens per skill"; the measured description here averages 194 chars ≈ 49 tokens, so the framing per listed skill (name, path, wrapper text) is unknown, and T61.3 / T63.1 total "description bytes ≈ tokens per request" without it.
@@ -818,6 +891,7 @@ Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 
 **Result (2026-09-18).** `modes/nudges.md` is D7 data (re-read / expand / outline-first / search-before-Grep), wired as opt-in `builtin("nudges")` in inject (default `modes = []`). Est. **114** prose tokens (cap 250). SessionStart `additionalContext` **0 B off / 478 B on**, byte-stable, absent from UserPromptSubmit. Dry `rtok bench` without `RTOK_BENCH_LIVE`: off and on both **6/6** pass, cost **0** (`live: false`). Live A/B attempted 2026-09-18 after creator spend approval: `claude` 2.1.236 present, `claude auth status` `loggedIn: false`, OAuth expired and `ANTHROPIC_API_KEY` unset (gateway key 401). No live tokens or `stats --price` rows; gate stays **do not enable**. Default `modes` left off.
 
 ---
+
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
@@ -896,6 +970,7 @@ Deviation: the commit is not its own `T67.1:` commit. Another agent ran `git add
 Check: `cargo nextest run -p rtok` with the expand/mcp filter — 64 passed, including the new `grep_is_regex_numbered_by_archive_line_and_falls_back_to_literal` (regex hit, literal fallback on `[E0308`, numbering inside a range, no-grep unchanged) and `descriptions_at_most_60_tokens`. `cargo fmt` and `clippy -D warnings` clean. Three `agents install cursor` tests failed in that run with empty stdout/stderr and exit 1; the host had 1.5 GiB free while other agents were building. Re-run after freeing the scratch worktree: 3 passed.
 
 ---
+
 ## T66.1 — `mem_save` updates a note in place: project + kind + title is the topic key
 
 From the engram gap review (`research.md` §13, 2026-09-18). engram's `topic_key` upserts the observation for the same `project + scope + topic_key` and bumps a revision counter, so an evolving decision stays one row; rtok's `mem_save` always inserted, so re-saving "auth model" after a change left two rows with the same title, and SessionStart recall (5 titles) showed the stale one beside the new one. Zero-LLM, no schema change: the title already is the stable key.
@@ -1587,12 +1662,14 @@ Check: an archived `call_io` body carries its session; the recorded sha256 match
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test --lib store` — `spill_archive_carries_session`, `inline_sha256_matches_stored_text`, `insert_measurement_rejects_out_of_range_estimates` pass (rstest); T36.2 `live_zone_pointer` retained.
+
 **T36.9 `~` expands for every path key** · — · `src/config/mod.rs`
 Do: `report.out`, `bench.tasks`, `bench.configs.*` and `plugins.read.allow_paths` are missing from the expansion list, so `[report] out = "~/rtok-report.md"` fails with `No such file or directory` although `docs/config.md` says paths accept `~`.
 Check: a test walks every `PathBuf` leaf of `Config::default()` and fails if one is not expanded.
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test -p rtok --lib default_expands_every_pathbuf tilde_expands` — 6 passed (`default_expands_every_pathbuf`, four `tilde_expands_for_every_path_key` cases, `expand_covers_bare_tilde_and_rtok_home_dir`).
+
 **T36.8 legacy-key fold cannot outrank env or flags** · — · `src/config/mod.rs`, `src/config/layers.rs`
 Do: `[dashboard]`, `core.log_file`, `core.log_level`, `core.log_to_db` and `core.inject_budget_tokens` are folded after `extract()`, so a stale file key overrides `RTOK_*` and `--flags` (`rtok web --port 5555` binds the file's 4444), and `config show --sources` reports the pre-fold value and source. Fold inside the figment below project/env/flag, or apply a legacy value only while the new key is still at its default, and build `--sources` rows from the folded result.
 Check: a legacy file key loses to `RTOK_*` and to a flag; `show --sources` names the layer whose value is in effect.
@@ -3501,6 +3578,7 @@ Status: done 2026-09-02 · Check: `printf 'a\nb\n'` → stdout `a\nb\n` exit 0 n
 Do: pure function over `&str`: apply `Rule { match, max_lines, head, tail, drop = [regex], keep = [regex], dedupe }` to captured output. Keep-regexes always survive (`error|warning|panic|FAIL|Traceback` built in); drop-regexes remove lines; `dedupe` collapses consecutive repeats to `<line> (×N)`; then head/tail with `… N lines omitted (expand <id>)`. Non-zero exit → last 80 lines verbatim, no rule applied. No I/O, no subprocess.
 Check: unit tests: 300 `ok` lines + one `error:` line with `max_lines = 20` → ≤ 20 lines that include the error line; exit-3 input returns its last 80 lines untouched.
 Status: done 2026-09-02 · Check: `cargo test cmd::rules` both tests green. Deviation: keep/drop match `|`-split substrings, not the `regex` crate.
+
 **T3.5 `rtok expand <id>`** · T3.1 · `src/expand.rs`
 Do: print archived payload; `--lines a-b`; `--grep re`. Also exposed later as MCP tool (T4.1).
 Check: `rtok expand <id from T3.1>` prints the raw output; unknown id → exit 1 with message.
@@ -3730,6 +3808,7 @@ Status: done 2026-09-02 · Check: `fifty_then_reimport_then_malformed_exits_ok` 
 Do: copy the intent of caveman (terse output) and ponytail (YAGNI ladder) into ≤ 250-token markdown files under `~/.rtok/modes/`; `rtok setup --mode terse,yagni` enables; injected once per session via `inject` (priority 5), not per prompt.
 Check: `rtok hook SessionStart` output contains the mode text once; UserPromptSubmit output does not.
 Status: done 2026-09-02 · Check: SessionStart additionalContext contains `# terse` and `# yagni` once; UserPromptSubmit does not. Files ≤ 250 tokens. `make check` green. Deviation: `--mode` on `setup` maps to `setup.modes`; builtins via `include_str!`.
+
 **T7.2 instruction audit** · T1.4 · `src/doctor.rs`
 Do: `rtok doctor --instructions`: token count of `~/.claude/CLAUDE.md` + project CLAUDE.md + every enabled plugin's SessionStart text (lean-ctx, engram, ponytail, claude-mem, token-optimizer today); flag duplicates (same sentence in two files) and anything > 1,000 tokens.
 Check: on this machine, report lists ≥ 4 injectors and their token totals.
@@ -4242,6 +4321,7 @@ Complexity: 2/5 — data files and one integration test; no product code.
 Status: done 2026-09-21
 Check result: `grok_plugin` (3) and `host_docs` pass inside `just check` exit 0 — 1090 passed, 4 skipped. The expected hook list is written out in the test because `agents::claude::ENTRIES` is `pub(super)`; T100's `src/agents/grok` moves the check next to `ENTRIES`. Not verified on a live Grok session.
 Model: Claude Code / claude-opus-5
+
 **T77 ZCode plugin offered on install (--yes), singleton with the config surfaces** · `src/agents/zcode/{mod.rs,README.md}`, `plugins/zcode/`, `tests/agents_install.rs`, `tests/trycmd/{doctor,report-md}.toml`, `docs/agents.md`
 Do: `rtok agents install zcode --yes` links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` and lists it in `plugins.dirs` in `~/.zcode/cli/config.json` — read from the installed app (v0.2.0, `glm/zcode.cjs`): every `plugins.dirs` entry is an inline plugin root, enabled by default, marketplace id `inline`; `remove` unlinks and drops the entry. The plugin is hooks and MCP as one unit (D21): `.zcode-plugin/plugin.json` + auto-discovered `hooks/hooks.json` (the five documented entries, `type: "process"` via `${ZCODE_PLUGIN_ROOT}/scripts/hook.sh`) + `.mcp.json` (`scripts/mcp.sh`); the launchers resolve rtok from PATH or the ketch store, fail the hook open and the MCP loudly with the ketch hint. While the plugin is linked it is the only call path: setup strips its own `hooks.events` entries and `mcp.servers.rtok` instead of re-adding them; a declined offer adds no `plugins.dirs` entry and a stale one is dropped.
 Check: unit `dry_run_offer_names_plugin_and_local`, `yes_links_plugin_and_lists_dirs`, `linked_plugin_is_the_only_call_path`, `declined_offer_adds_no_dirs_entry_and_drops_a_stale_one`, `remove_unlinks_plugin_and_drops_dirs_entry`; `agents_install` / `agent_remove` with `--yes`; `host_docs`, blessed `agents_doc`; `just check`.
@@ -4249,3 +4329,11 @@ Complexity: 3/5 — mirrors the Cursor offer (T10.5) plus the `plugins.dirs` lis
 Status: done 2026-09-21
 Check result: 7/7 zcode unit tests; `agents_install` 9/9 and `agent_remove` green with `--yes`; `just check` green after updating the two trycmd snapshots (`doctor`, `report-md`) that carry the module line; smoke run under a temp HOME shows the first `--yes` run writing only `+ plugin` and `+ plugins.dirs +=`.
 Model: ZCode / GLM-5.3
+
+**T112 Restart prompt spinner no longer erases the typed answer** · `src/agents/restart.rs`
+Do: the `[y/N]` restart prompt after `agents install|uninstall` redrew its spinner every 80 ms with `\r\x1b[K` + the prompt, wiping the terminal echo of what the user was typing. Now the row is cleared once on the first paint; each frame swaps only the column-0 glyph under cursor save/restore (`ESC 7`/`ESC 8`); an answered prompt blanks the glyph one row up instead of reprinting the prompt, and an unanswered one ends the line.
+Check: `agents::restart` tests assert exactly one `\x1b[K` per prompt, in-place glyph frames, one trailing newline on timeout, and the answered-row cleanup; `just check`.
+Complexity: 1/5 — three small write helpers and test updates.
+Status: done 2026-09-21
+Check result: `agents::restart` 13/13 pass. Known limit: an answer that wraps past the terminal width puts the glyph on the wrong row (cosmetic).
+Model: Claude Code / claude-opus-5
