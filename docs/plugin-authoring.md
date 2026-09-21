@@ -135,6 +135,6 @@ in `tests/fixtures/hooks/` for realistic events. Then the task's Check from `pla
 
 ## 7. Ship
 
-Commit `<task-id>: <title>` on `main` (no feature branch). Same commit: mark the task done and
+Commit `<task-id>: <title>` on the task's own branch and open one PR for it (D16). Same PR: mark the task done and
 move it from `plan.md` to `done.md` with the date and the Check output. Implemented work still
 listed in `plan.md` is unfinished.
