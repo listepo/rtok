@@ -4370,4 +4370,4 @@ Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key
 
 Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
 
-Done: Added `tools_rewrite_advice: Option<String>` field to Report struct; created pure helper function `tools_rewrite_advice()` checking all four conditions; added `tools_rewrite_min_desc_tokens` config key (default 2000); integrated into Report construction and render output; 5 unit tests verify each condition independently; all tests pass (21 tests in doctor module); ~38 LOC of non-test code.
+Done: `Report.tools_rewrite_advice` + pure `tools_rewrite_advice()`; rtok counts as a hop when the chain (loopback hops print as the bare port) has `proxy.port` or `localhost:<port>`. New key `doctor.tools_rewrite_min_desc_tokens` (default 2000). Unit tests: the positive case (loopback and `localhost:`) and one per failing condition; `cargo nextest run --lib doctor report` 49 passed; clippy clean.

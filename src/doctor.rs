@@ -227,18 +227,20 @@ impl Report {
     }
 }
 
-
 /// Advice for enabling `[proxy.tools_rewrite]` when all four conditions hold.
 /// Returns the advice line, or None if conditions are not met.
 fn tools_rewrite_advice(
     mcp_tool_search_disabled: bool,
     proxy: &str,
+    rtok_port: u16,
     total_desc_tokens: u32,
     tools_rewrite_enabled: bool,
     threshold: u32,
 ) -> Option<String> {
     if mcp_tool_search_disabled
-        && proxy.contains("rtok")
+        && proxy
+            .split('→')
+            .any(|h| h == rtok_port.to_string() || h == format!("localhost:{rtok_port}"))
         && !tools_rewrite_enabled
         && total_desc_tokens >= threshold
     {
@@ -286,10 +288,11 @@ pub fn page(cfg: &Config) -> Result<Report> {
     let timeout = Duration::from_millis(cfg.doctor.probe_timeout_ms.max(300));
     let anthropic = anthropic_base(settings.as_ref(), std::env::var("ANTHROPIC_BASE_URL").ok());
     let total_desc_tokens: u32 = mcp.iter().map(|s| s.desc_tokens).sum();
-    let proxy_str = proxy_chain(anthropic.as_ref().map(|s| s.clone()), timeout);
+    let proxy_str = proxy_chain(anthropic.clone(), timeout);
     let tools_rewrite_adv = tools_rewrite_advice(
         anthropic.is_some(),
         &proxy_str,
+        cfg.proxy.port,
         total_desc_tokens,
         cfg.proxy.tools_rewrite.enabled,
         cfg.doctor.tools_rewrite_min_desc_tokens,
@@ -1430,38 +1433,41 @@ mod tests {
     #[test]
     fn tools_rewrite_advice_all_conditions_met() {
         // All four conditions: tool search disabled, rtok in proxy, tools_rewrite disabled, high desc_tokens
-        let advice = tools_rewrite_advice(true, "rtok", 2500, false, 2000);
-        assert!(advice.is_some());
-        assert!(advice.unwrap().contains("2500"));
-        assert!(advice.unwrap().contains("T59.5"));
+        let advice = tools_rewrite_advice(true, "8790→api.anthropic.com", 8790, 2500, false, 2000);
+        let advice = advice.expect("all four hold");
+        assert!(
+            advice.contains("2500") && advice.contains("T59.5"),
+            "{advice}"
+        );
+        let local = tools_rewrite_advice(true, "localhost:8790→x:443", 8790, 2500, false, 2000);
+        assert!(local.is_some());
     }
 
     #[test]
     fn tools_rewrite_advice_no_tool_search_disabled() {
         // No tool search disabled — advice should not appear
-        let advice = tools_rewrite_advice(false, "rtok", 2500, false, 2000);
+        let advice = tools_rewrite_advice(false, "8790→api.anthropic.com", 8790, 2500, false, 2000);
         assert!(advice.is_none());
     }
 
     #[test]
     fn tools_rewrite_advice_rtok_not_in_proxy() {
         // rtok not in proxy chain — advice should not appear
-        let advice = tools_rewrite_advice(true, "upstream", 2500, false, 2000);
+        let advice = tools_rewrite_advice(true, "8788→api.anthropic.com", 8790, 2500, false, 2000);
         assert!(advice.is_none());
     }
 
     #[test]
     fn tools_rewrite_advice_already_enabled() {
         // tools_rewrite already enabled — advice should not appear
-        let advice = tools_rewrite_advice(true, "rtok", 2500, true, 2000);
+        let advice = tools_rewrite_advice(true, "8790→api.anthropic.com", 8790, 2500, true, 2000);
         assert!(advice.is_none());
     }
 
     #[test]
     fn tools_rewrite_advice_below_threshold() {
         // desc_tokens below threshold — advice should not appear
-        let advice = tools_rewrite_advice(true, "rtok", 1500, false, 2000);
+        let advice = tools_rewrite_advice(true, "8790→api.anthropic.com", 8790, 1500, false, 2000);
         assert!(advice.is_none());
     }
-
 }
