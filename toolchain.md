@@ -10,6 +10,7 @@ Project programs and direct packages from the manifests.
 | cargo-cache | mise | `just cache` / `just cache-autoclean` (T17.2); the shared cargo home fills up | https://github.com/matthiaskrgr/cargo-cache |
 | binaryen | brew | wasm-opt for T60.7 webui bundle | https://github.com/WebAssembly/binaryen |
 | cargo-nextest | global (cargo install) | Parallel test runner | https://github.com/nextest-rs/nextest |
+| codeql | mise | `just codeql` (T119): local run of the code scanning in `.github/workflows/codeql.yml` | https://github.com/github/codeql-cli-binaries |
 | git-cliff | mise | Changelog | https://github.com/orhun/git-cliff |
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |

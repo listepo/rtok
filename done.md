@@ -4264,3 +4264,11 @@ Complexity: 3/5 — mirrors the Cursor offer (T10.5) plus the `plugins.dirs` lis
 Status: done 2026-09-21
 Check result: 7/7 zcode unit tests; `agents_install` 9/9 and `agent_remove` green with `--yes`; `just check` green after updating the two trycmd snapshots (`doctor`, `report-md`) that carry the module line; smoke run under a temp HOME shows the first `--yes` run writing only `+ plugin` and `+ plugins.dirs +=`.
 Model: ZCode / GLM-5.3
+
+**T119 CodeQL on GitHub and locally** · `.github/workflows/codeql.yml`, `justfile`, `mise.toml`, `toolchain.md`
+Do: creator request 2026-09-21. `codeql.yml` scans `actions`, `javascript-typescript`, `python` and `rust` on push/PR to main, weekly and on dispatch (`github/codeql-action@v4`, `build-mode: none`, `security-and-quality`); repo default setup is `not-configured`, so the advanced workflow does not collide with it. `codeql` 2.27.0 is pinned in `mise.toml`; `just codeql [langs…]` copies the tracked files (working-tree content) to `target/codeql/src`, builds one database per language, writes `target/codeql/<lang>.sarif` and fails on any result. Kept out of `just check` because it takes minutes.
+Check: `just codeql` runs all four languages; `actionlint` clean on the workflow; `just check`.
+Complexity: 2/5 — one workflow, one recipe, one pin.
+Status: done 2026-09-21
+Check result: local scan — actions 15 (13 `actions/unpinned-tag` across all workflows, 2 `actions/missing-workflow-permissions` in `ci.yml`), javascript-typescript 0, python 0, rust 1 (`rust/log-injection` in `tests/web.rs:223`, test code); 30 of 190 Rust files extract with errors under `build-mode: none`. Findings are left for a follow-up task. `just check` red only on load flakes (`claude_plugin` ×2, `cli_trycmd`, `graph::watch` watchman fallback, earlier ENOSPC at 2 GB free); each passes alone, none touches this change.
+Model: Claude Code / claude-opus-5

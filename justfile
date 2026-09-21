@@ -134,3 +134,26 @@ cache-autoclean:
 otel-check:
     tools/otel-check.sh
 
+
+# T119: the CodeQL scan of .github/workflows/codeql.yml, run locally on the tracked files
+# (working-tree content, none of the ignored clutter). Not in `check`: it takes minutes.
+# SARIF lands in target/codeql/<lang>.sarif; any result fails the recipe.
+codeql *langs="actions javascript-typescript python rust":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out=target/codeql
+    rm -rf "$out/src" && mkdir -p "$out/src"
+    git ls-files -z | tar --null -T - -cf - | tar -xf - -C "$out/src"
+    fail=0
+    for lang in {{langs}}; do
+      pack=${lang%%-*}
+      mise exec -- codeql database create "$out/db-$lang" --overwrite --quiet \
+        --language="$lang" --build-mode=none --source-root="$out/src"
+      mise exec -- codeql database analyze "$out/db-$lang" --download --quiet \
+        "codeql/$pack-queries:codeql-suites/$pack-security-and-quality.qls" \
+        --format=sarif-latest --sarif-category="/language:$lang" --output="$out/$lang.sarif"
+      n=$(mise exec -- node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(s.runs.reduce((a,r)=>a+r.results.length,0))' "$PWD/$out/$lang.sarif")
+      echo "codeql $lang: $n result(s) → $out/$lang.sarif"
+      [ "$n" = 0 ] || fail=1
+    done
+    exit $fail
