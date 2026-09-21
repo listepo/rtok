@@ -155,7 +155,7 @@ replace an end-to-end `rtok bench` with a provider.
 ### Formats — TOON, LLMLingua-2
 
 TOON's −42.6 % on tabular JSON is a vendor bench that survived fact-checking, so rtok has a
-`toon` plugin — **off by default**, because most agent payloads are not tables. LLMLingua-2
+`toon` plugin — **on by default**, and it rewrites a block only when TOON is smaller, because most agent payloads are not tables. LLMLingua-2
 prunes tokens with a small model; on code that is a quality risk with no measured upside,
 so it is v0.2+ at the earliest.
 

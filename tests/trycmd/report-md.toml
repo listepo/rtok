@@ -114,7 +114,7 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.cmd.rules_dir | ~/.rtok/rules.d | default |
 | plugins.cmd.shell |  | default |
 | plugins.cmd.trailer_min_lines | 40 | default |
-| plugins.compress.enabled | false | default |
+| plugins.compress.enabled | true | default |
 | plugins.graph.auto_index | true | default |
 | plugins.graph.backend | tags | default |
 | plugins.graph.body_lines | 40 | default |
@@ -169,7 +169,7 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.read.search_max | 50 | default |
 | plugins.read.search_max_bytes | 1048576 | default |
 | plugins.read.tree_depth | 2 | default |
-| plugins.toon.enabled | false | default |
+| plugins.toon.enabled | true | default |
 | plugins.toon.min_rows | 5 | default |
 | plugins.wasm.dir | ~/.rtok/plugins | default |
 | plugins.wasm.enabled | false | default |

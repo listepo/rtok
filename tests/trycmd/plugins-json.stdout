@@ -270,13 +270,13 @@
   },
   {
     "id": "toon",
-    "enabled": false,
+    "enabled": true,
     "surfaces": [
       "proxy",
       "mcp"
     ],
     "title": "TOON",
-    "summary": "Compact tabular JSON. Off by default until it beats the corpus.",
+    "summary": "Compact tabular JSON in old tool results; expand returns the original.",
     "saves_tokens": true,
     "fields": [
       [
@@ -296,12 +296,12 @@
   },
   {
     "id": "compress",
-    "enabled": false,
+    "enabled": true,
     "surfaces": [
       "proxy"
     ],
     "title": "Compress",
-    "summary": "Extractive summaries for archived tool output. Off until Gate P28.",
+    "summary": "Extractive summaries for archived tool output; expand returns the original.",
     "saves_tokens": true,
     "fields": [],
     "stats": {

@@ -17,14 +17,14 @@ v0.1 already shrinks context losslessly (`archive` pointers, `cmd` formatters, `
 
 ## Mechanism
 
-**Archive-first semantic shrink (native, default off).**
+**Archive-first semantic shrink (native, default on since T127).**
 
 1. **Lossless lane (unchanged, always on):** Every filtered or archived payload is written to `~/.rtok/archive/` and indexed in SQLite; context shows `expand <id>` (D4). `cmd` formatters, `archive` age/size rules, and `toon` stay deterministic. No LLM runs on this path.
-2. **LLM lane (opt-in, `compress.enabled = false` until Gate P28):** Only after the lossless archive row exists, optionally replace **in-context** text for qualifying blobs (same eligibility as archive: e.g. older than 2 turns or > 4 KiB, never the cached prefix — T14.5) with a **structured summary** produced by a configured host LLM call (claude-mem-style fields: type, title, narrative, facts, files) or, in a later slice, a **native extractive ranker** trained/evaluated in-tree (LLMLingua-2 *idea*, not the Microsoft package). The summary is a **view**; `expand <id>` always returns the archived **original bytes**. For regenerable sources (re-runnable shell commands per D4), lossy display without expand is allowed only when explicitly tagged regenerable — same rule as v0.1 `cmd`.
+2. **Summary lane (`compress.enabled = true` by default since T127; runs only in `proxy.mode = "compress"`):** Only after the lossless archive row exists, optionally replace **in-context** text for qualifying blobs (same eligibility as archive: e.g. older than 2 turns or > 4 KiB, never the cached prefix — T14.5) with a **structured summary** produced by a configured host LLM call (claude-mem-style fields: type, title, narrative, facts, files) or, in a later slice, a **native extractive ranker** trained/evaluated in-tree (LLMLingua-2 *idea*, not the Microsoft package). The summary is a **view**; `expand <id>` always returns the archived **original bytes**. For regenerable sources (re-runnable shell commands per D4), lossy display without expand is allowed only when explicitly tagged regenerable — same rule as v0.1 `cmd`.
 3. **Measurement:** Each LLM shrink writes a `Measurement` row: `bytes_in`, `bytes_out`, `tokens_spent` on the compressor call, and `plugin = compress`. No banner ratios.
 4. **Memory hook (T28.2):** Optional observation extractor shares the same archive back-pointer so `memory` search returns titles while `expand` still serves full tool output — progressive disclosure without silent loss.
 
-This beats the table because it combines claude-mem’s **semantic** density with rtok’s **mandatory archive + expand** (headroom/LLMLingua/claude-mem do not), stays **native** (D6), and only ships if **`rtok bench`** proves the LLM lane lowers **cost per passed task** net of compressor spend — otherwise the flag stays off and lane A alone is the product.
+This beats the table because it combines claude-mem’s **semantic** density with rtok’s **mandatory archive + expand** (headroom/LLMLingua/claude-mem do not), stays **native** (D6), and only ships if **`rtok bench`** proves the LLM lane lowers **cost per passed task** net of compressor spend — the creator switched the extractive (no-LLM) ranker on by default in T127; an LLM lane still needs that bench.
 
 ## Rejected
 

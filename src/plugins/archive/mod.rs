@@ -321,7 +321,7 @@ fn is_base64_run(text: &str) -> bool {
 
 /// The text of a tool-result content: a string, or text blocks joined by newlines.
 /// `None` when any part is not text (images stay as they are).
-fn block_text(content: &Value) -> Option<String> {
+pub(crate) fn block_text(content: &Value) -> Option<String> {
     match content {
         Value::String(s) => Some(s.clone()),
         Value::Array(parts) => {
@@ -350,7 +350,7 @@ fn pointer_line(text: &str, id: &str, est: u32) -> String {
 /// in the archive, so the cut stays lossless.
 const LINE_CHARS: usize = 200;
 
-fn clip(line: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn clip(line: &str) -> std::borrow::Cow<'_, str> {
     match line.char_indices().nth(LINE_CHARS) {
         Some((at, _)) => format!("{}…", &line[..at]).into(),
         None => line.into(),
