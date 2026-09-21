@@ -349,10 +349,12 @@ pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> R
     })
 }
 
-/// Ask, unless the answer is already known. `--yes` accepts without asking; on a terminal
-/// dialoguer owns the prompt — it restores the terminal afterwards and reads Ctrl-C and EOF as a
-/// no. Anywhere without a terminal an unanswered question is a no, so `agent setup` stays
-/// non-interactive by default.
+/// Ask, unless the answer is already known. `--yes` accepts without asking; a terminal gets
+/// one plain line on stdout (`? {question} [Y/n] `) — no raw mode, no hidden cursor, and a
+/// redirected or busy stderr can never hide the question (T81). Enter takes the default
+/// (yes); EOF, a read error, or anything but y/yes is a no, so an unanswered question never
+/// acts. Anywhere without a terminal an unanswered question is a no, so `agents install`
+/// stays non-interactive by default.
 pub fn accepted(apply: &Apply, question: &str) -> bool {
     if apply.yes {
         return true;
@@ -360,11 +362,24 @@ pub fn accepted(apply: &Apply, question: &str) -> bool {
     if !std::io::stdin().is_terminal() {
         return false;
     }
-    dialoguer::Confirm::new()
-        .with_prompt(question)
-        .default(true)
-        .interact()
-        .unwrap_or(false)
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = write!(out, "? {question} [Y/n] ");
+    let _ = out.flush();
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    let _ = writeln!(out);
+    match read {
+        // 0 bytes is EOF: never act on a question nobody answered.
+        Ok(0) => false,
+        Ok(_) => line_is_yes(&line),
+        Err(_) => false,
+    }
+}
+
+/// Enter keeps the default (`y`); explicit y/yes accept; anything else declines.
+fn line_is_yes(line: &str) -> bool {
+    matches!(line.trim().to_ascii_lowercase().as_str(), "" | "y" | "yes")
 }
 
 /// A host plugin directory this repo ships, and where that host loads it from (D21 (6)).
@@ -718,6 +733,19 @@ mod tests {
         assert!(!accepted(&a, "install?"), "a headless run must not accept");
         a.yes = true;
         assert!(accepted(&a, "install?"), "--yes must accept without asking");
+    }
+
+    /// The one line `accepted` reads, judged: Enter keeps the default (yes — the old
+    /// dialoguer `.default(true)` contract), and only y/yes spell yes.
+    #[test]
+    fn the_answer_line_keeps_the_default_yes_contract() {
+        assert!(line_is_yes("\n"));
+        assert!(line_is_yes(""));
+        assert!(line_is_yes(" y \n"));
+        assert!(line_is_yes("YES\n"));
+        assert!(!line_is_yes("n\n"));
+        assert!(!line_is_yes("no\n"));
+        assert!(!line_is_yes("maybe\n"));
     }
 
     #[test]

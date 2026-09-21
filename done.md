@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T81. `agents install` read as hung: the plugin question ran under the "updating host" spinner
+
+Creator report 2026-09-21: `rtok agents install claude` (v0.6.2) printed "updating host" twice and then waited forever.
+
+Do (2026-09-21): Reproduced under a pty with a silent stdin (expect, isolated HOME): no readable output at all, process alive after 5 s. `sample` gave the stack: `setup_host → with_loader("updating host") → agents::run → Claude::apply → plugin → rtok_agent_sdk::accepted → dialoguer::Confirm → read_key → tcsetattr`. Two faults compose. (1) The indicatif loader ticks on stderr every 120 ms while `dialoguer::Confirm` draws its raw-mode prompt on the same stream — the spinner redraws over the question, so all that reads is "updating host" (twice, two painters) and never the question. (2) The key wait is unbounded raw mode — nothing readable, nothing terminating: the reported infinite hang. Fix, both sides: `accepted` prints one plain line on stdout (`? {question} [Y/n] `) and reads a line — no raw mode, no hidden cursor, a redirected or busy stderr can no longer hide it; Enter keeps the old `.default(true)` (yes), EOF / read error / anything but y/yes is a no, non-TTY stays a silent no. And `setup_host` renders no loader when stdin is a terminal, so a spinner never shares a terminal with a question; pipes and CI — which can never be asked — keep the loader. `dialoguer` leaves the SDK's dependencies; its only use was this prompt.
+
+Check: sdk unit `the_answer_line_keeps_the_default_yes_contract` beside the existing headless/`--yes` units; binary-level `tests/agents_install.rs::an_unanswered_offer_on_a_pipe_declines_itself_and_still_installs` (a pipe never sees a question, the offer declines, hooks still install, exit 0); the pty repro re-run against the fixed binary shows the question and completes on `n`. `just check`.
+
+Check result (2026-09-21): every `just check` step green in the worktree — fmt-check, clippy (both crates) and **1142 tests passed / 4 skipped** in one uninterrupted run, then `build-min` and `dup` green in the follow-up run (the one full-chain rerun between them died on a machine-wide full disk — every failure line `os error 28`, no code failure); sdk units 21/21 including the new one; `--test agents_install` 10/10; the expect pty repro against the fixed binary shows both questions, takes both answers, exits 0.
+
 ### T106. `otel/export.rs` unit tests
 
 `src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
