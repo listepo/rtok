@@ -1,0 +1,29 @@
+{
+  "name": "rtok",
+  "version": "0.0.1",
+  "description": "rtok hooks and MCP server for Kimi Code CLI and Desktop",
+  "homepage": "https://github.com/listepo/rtok",
+  "interface": {
+    "displayName": "rtok",
+    "shortDescription": "Token reduction: hooks and one MCP server",
+    "developerName": "listepo",
+    "websiteURL": "https://github.com/listepo/rtok"
+  },
+  "mcpServers": {
+    "rtok": {
+      "command": "rtok",
+      "args": ["mcp"]
+    }
+  },
+  "hooks": [
+    { "event": "PreToolUse", "matcher": "Bash", "command": "rtok hook PreToolUse", "timeout": 5 },
+    { "event": "PreToolUse", "matcher": "Read", "command": "rtok hook PreToolUse", "timeout": 5 },
+    { "event": "PreToolUse", "matcher": "Skill", "command": "rtok hook PreToolUse", "timeout": 5 },
+    { "event": "PostToolUse", "matcher": "*", "command": "rtok hook PostToolUse", "timeout": 5 },
+    { "event": "UserPromptSubmit", "command": "rtok hook UserPromptSubmit", "timeout": 5 },
+    { "event": "SessionStart", "command": "rtok hook SessionStart", "timeout": 5 },
+    { "event": "PreCompact", "command": "rtok hook PreCompact", "timeout": 5 },
+    { "event": "PostCompact", "command": "rtok hook PostCompact", "timeout": 5 },
+    { "event": "SessionEnd", "command": "rtok hook SessionEnd", "timeout": 5 }
+  ]
+}
