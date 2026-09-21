@@ -29,6 +29,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+| T127 | todo | P2 | 3 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -251,6 +252,12 @@ Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit tes
 Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
 
 Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
+
+### T127. A dedup pointer reaches a sub-agent that never saw the body
+
+Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
+
+Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
 
 ## Reference
 

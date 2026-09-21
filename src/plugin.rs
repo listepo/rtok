@@ -46,19 +46,12 @@ pub fn fit_budget(cx: &Ctx, text: &str, class: Class, budget: u32) -> String {
 
 /// T65.1: same-session content-hash hit. Looks up before the caller archives.
 /// Empty or shorter-than-the-pointer bodies stay as they are (fail open / no inflation).
-/// On surfaces without context (MCP: no cwd), bodies under the threshold are never deduplicated
-/// to avoid cross-context pointer issues when multiple agents share a session.
 pub fn identical_result(
     host: &dyn Capabilities,
     plugin: &'static str,
     body: &[u8],
 ) -> Option<String> {
     if body.is_empty() {
-        return None;
-    }
-    // Skip dedup on MCP (no cwd) for small bodies to avoid cross-context issues.
-    let has_context = host.cwd().is_some();
-    if !has_context && body.len() < 1024 {
         return None;
     }
     let sha = crate::store::hex_sha256(body);

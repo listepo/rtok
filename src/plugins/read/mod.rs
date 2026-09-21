@@ -128,9 +128,16 @@ pub(crate) fn read_with(
             .join("\n")
     };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
-    // Hash the bytes actually returned to the user, not the raw file. For ranged reads,
-    // `body` contains only the selected lines, so different ranges get different hashes.
-    let payload = body.as_bytes();
+    // T122: a ranged read is keyed on the bytes it returns, never the whole file.
+    let payload = if mode == "map"
+        || mode == "signatures"
+        || stripped_src.is_some()
+        || range.is_some()
+    {
+        body.as_bytes()
+    } else {
+        raw.as_bytes()
+    };
     if let Some(hit) = cache::hit(
         cx,
         &key,
@@ -141,7 +148,7 @@ pub(crate) fn read_with(
     ) {
         return Ok(hit);
     }
-    // Bytes of the actual returned content: a same-session content-hash hit is a pointer.
+    // A same-session content-hash hit on those bytes is a pointer.
     if let Some(msg) = crate::plugin::identical_result(&**cx, "read", payload) {
         let _ = cache::remember(cx, &key, payload);
         return Ok(msg);
@@ -681,89 +688,23 @@ pub(crate) mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// T122: a whole-file archive (the native Read hook's) never answers a ranged read.
     #[test]
-    fn different_ranges_return_different_ids() {
+    fn ranged_read_is_not_a_pointer_to_the_whole_file() {
         let (cx, dir) = cx("t122_ranges");
         let file = dir.join("multiline.txt");
-        let content = (1..=100).map(|i| format!("Line {}\n", i)).collect::<String>();
+        let content: String = (1..=100).map(|i| format!("Line {i}\n")).collect();
         fs::write(&file, &content).unwrap();
+        cx.store
+            .put_archive(&cx.session, content.as_bytes(), &cx.config.core.archive_dir)
+            .unwrap();
         let path = file.to_str().unwrap();
-
-        // Read two different ranges
         let out1 = read(&Ctx::new(&cx), path, "lines", Some("10-20")).unwrap();
         let out2 = read(&Ctx::new(&cx), path, "lines", Some("30-40")).unwrap();
-
-        // They should be different (different line content)
-        assert!(out1.contains("Line 10"), "{out1}");
-        assert!(out1.contains("Line 20"), "{out1}");
-        assert!(!out1.contains("Line 30"), "{out1}");
-        assert!(out2.contains("Line 30"), "{out2}");
-        assert!(out2.contains("Line 40"), "{out2}");
-        assert!(!out2.contains("Line 10"), "{out2}");
-
-        // Extract IDs if they were deduplicated
-        let get_id = |s: &str| -> Option<String> {
-            if s.contains("[rtok") && s.contains("identical to") {
-                // Format: "[rtok <id> · identical to a result N turns ago · ...]"
-                let start = s.find("[rtok ")? + 6;
-                let rest = &s[start..];
-                let end = rest.find(" ·")?;
-                Some(rest[..end].to_string())
-            } else {
-                None
-            }
-        };
-
-        let id1 = get_id(&out1);
-        let id2 = get_id(&out2);
-
-        // If both are deduplicated, they should have different IDs
-        if let (Some(id1), Some(id2)) = (&id1, &id2) {
-            assert_ne!(id1, id2, "Different ranges must have different dedup IDs");
-        }
-        // If only one is deduplicated, that's also wrong (the second read should see different bytes)
-        assert_eq!(
-            (id1.is_some(), id2.is_some()),
-            (false, false),
-            "Ranged reads should not be deduplicated as identical"
-        );
-
+        assert!(!out1.contains("identical to"), "{out1}");
+        assert!(out1.contains("10:Line 10") && !out1.contains("Line 30"), "{out1}");
+        assert!(out2.contains("30:Line 30") && !out2.contains("Line 10"), "{out2}");
         let _ = fs::remove_dir_all(dir);
     }
 
-    #[test]
-    fn archived_body_shared_by_different_contexts_returns_body_not_pointer() {
-        // This test simulates two different contexts (represented by different sessions/runtimes)
-        // accessing the same archive. Without a context-aware fix, the second one would get
-        // a pointer to a body it never directly archived.
-        let (cx1, dir) = cx("t122_ctx1");
-        let file = dir.join("shared.txt");
-        let content = "Shared content line 1\nShared content line 2\n";
-        fs::write(&file, content).unwrap();
-        let path = file.to_str().unwrap();
-
-        // First context reads and archives the file
-        let out1 = read(&Ctx::new(&cx1), path, "full", None).unwrap();
-
-        // Now simulate a different context reading the same file
-        // Create a new session/runtime to simulate sub-agent or parent context
-        let (cx2, dir2) = cx("t122_ctx2");
-        // Write the same file in the new dir so both contexts see it
-        let file2 = dir2.join("shared.txt");
-        fs::write(&file2, content).unwrap();
-        let path2 = file2.to_str().unwrap();
-
-        // Second context reads the same content
-        let out2 = read(&Ctx::new(&cx2), path2, "full", None).unwrap();
-
-        // Both should get the actual body, not pointers, because they're different contexts
-        // (different sessions in this test)
-        assert!(!out1.contains("[rtok"), "ctx1 should get body, not pointer: {out1}");
-        assert!(!out2.contains("[rtok"), "ctx2 should get body, not pointer: {out2}");
-        assert!(out1.contains("Shared content"), "{out1}");
-        assert!(out2.contains("Shared content"), "{out2}");
-
-        let _ = fs::remove_dir_all(dir);
-        let _ = fs::remove_dir_all(dir2);
-    }
 }
