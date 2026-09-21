@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T121. Codex plugin tree (`plugins/codex/`)
+
+Creator request 2026-09-21: every host in `src/agents/` whose host has a plugin format gets a `plugins/<host>/` package. Audit: kilo and omp reuse `plugins/opencode` / `plugins/pi` (T97, T92); windsurf → Devin (T88), Copilot (T116), VS Code (T117) are planned; aider has no plugin system; Zed has only WASM extensions (MCP, no hooks). Codex was the one host with a plugin format and no task. Creator decision: Codex only, one PR. Codex plugin format (fetched 2026-09-21, https://developers.openai.com/plugins/build/plugins, https://learn.chatgpt.com/docs/hooks; matches `engram` and `claude-mem` in this machine's `~/.codex/plugins/cache/`): `.codex-plugin/plugin.json` naming `hooks` and `mcpServers` files, a local marketplace at `.agents/plugins/marketplace.json`, loaded by the CLI and the desktop app.
+
+Do (2026-09-21): `plugins/codex/.codex-plugin/plugin.json`, `.mcp.json` (`rtok mcp` directly, I-37), `hooks/hooks.json` (`rtok hook PreCompact` / `PostCompact`, timeout 5 — the installer's `COMPACT` set), `.agents/plugins/marketplace.json` (one local entry at `./`), `README.md` (install, plugin XOR `rtok agents install codex`, limits, `## Docs`), `AGENTS.md`; row in `plugins/README.md`; `tests/codex_plugin.rs`. Installer offer, singleton and tool hooks → I-88.
+
+Check: `cargo nextest run --test codex_plugin --test host_docs`; `just check`.
+
 ### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
 
 After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).

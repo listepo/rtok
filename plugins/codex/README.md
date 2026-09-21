@@ -1,0 +1,53 @@
+# rtok Codex plugin
+
+One plugin directory for Codex (the `codex` CLI and the Codex desktop app): rtok's hooks and its
+MCP server as one unit (D21: plugin and MCP together, one `rtok mcp` per store). The layout is
+Codex's `.codex-plugin/plugin.json` manifest pointing at `hooks/hooks.json` and `.mcp.json`.
+
+Install:
+
+- `codex plugin marketplace add <path to this folder>` — the folder is its own local marketplace
+  (`.agents/plugins/marketplace.json`, one entry `rtok` at `./`). Then enable `rtok` in the
+  plugin directory (`/plugins` in the CLI, Plugins in the app) and trust its hooks when Codex
+  asks; plugin hooks do not run until trusted.
+- Remove: uninstall `rtok` in the plugin directory, then `codex plugin marketplace remove rtok`.
+
+`rtok` must be on `PATH`. If it is missing, both hooks fail open (Codex only blocks on an explicit
+decision) and the MCP server does not start; install it with ketch: `ketch install listepo/rtok`.
+
+Use the plugin **or** `rtok agents install codex`, not both. That installer writes the same two
+hooks to `~/.codex/hooks.json` and `[mcp_servers.rtok]` to `~/.codex/config.toml`; with both in
+place every event fires twice and two `rtok mcp` processes share one store. Run
+`rtok agents remove codex` before enabling the plugin (keep `--proxy` separately if you use it).
+
+Files:
+
+- `.codex-plugin/plugin.json` — manifest (name, version, metadata, `hooks` and `mcpServers` paths).
+- `hooks/hooks.json` — `rtok hook PreCompact` and `rtok hook PostCompact`, each `timeout: 5`: the
+  same events `rtok agents install codex` registers. Checked by `tests/codex_plugin.rs`.
+- `.mcp.json` — `mcpServers.rtok` → `rtok mcp`.
+- `.agents/plugins/marketplace.json` — the local marketplace that lists this folder.
+
+Known limits:
+
+- Only the compaction hooks. Codex's `PreToolUse` can rewrite a Bash command (`updatedInput`) and
+  `PostToolUse` can add context, but rtok's handling of Codex's tool payloads has not been checked
+  on a live session, so those events stay off here and in the installer until it is.
+- Not verified on a live Codex: that `marketplace add` accepts a marketplace whose only entry is
+  `./`, and the working directory Codex gives a plugin's stdio MCP server.
+
+## Docs
+
+Host documentation this plugin is written against. Re-check every link when the plugin changes.
+
+- Plugins (layout, `.codex-plugin/plugin.json`, `.mcp.json`, `hooks/hooks.json`, marketplaces, `codex plugin marketplace add`): https://developers.openai.com/plugins/build/plugins
+- Hooks (events, `matcher`, `timeout` in seconds, plugin-bundled hooks and trust review, `PLUGIN_ROOT`): https://learn.chatgpt.com/docs/hooks
+- MCP (`[mcp_servers.<name>]`, stdio servers): https://learn.chatgpt.com/docs/extend/mcp
+- Config reference (`~/.codex/config.toml`): https://learn.chatgpt.com/docs/config-file/config-reference
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- Installer and surface table: [`../../src/agents/codex/README.md`](../../src/agents/codex/README.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
