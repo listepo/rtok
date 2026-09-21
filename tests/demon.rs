@@ -160,6 +160,55 @@ fn a_second_start_is_refused_and_status_names_every_service() {
     let _ = fs::remove_dir_all(&h);
 }
 
+#[test]
+fn status_names_the_proxy_endpoint_running_or_stopped() {
+    let h = home("endpoint");
+    // A custom [proxy] port proves the row reads config, not a baked-in default.
+    fs::write(
+        h.join("config.toml"),
+        "[demon]\nservices = [\"mcp\"]\nbackoff_ms = 50\nmax_backoff_ms = 100\npoll_ms = 50\n\
+         [proxy]\nport = 8123\n",
+    )
+    .unwrap();
+
+    // The proxy was never started; its row must still say where it would listen.
+    let status = rtok(&["demon", "status"], &h);
+    assert!(status.contains("127.0.0.1:8123"), "{status}");
+
+    let json: Value = serde_json::from_str(&rtok(&["demon", "status", "--json"], &h)).unwrap();
+    let proxy = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["service"] == "proxy")
+        .unwrap();
+    assert_eq!(proxy["endpoint"], "127.0.0.1:8123");
+    let mcp = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["service"] == "mcp")
+        .unwrap();
+    assert!(mcp["endpoint"].is_null(), "mcp is stdio: {}", mcp);
+
+    // And the same address once it really is up: wait on the listener, not the state file.
+    rtok(&["demon", "start", "proxy"], &h);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8123));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "proxy never listened on 8123");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let up = rtok(&["demon", "status", "proxy"], &h);
+    assert!(up.contains("running"), "{up}");
+    assert!(up.contains("127.0.0.1:8123"), "{up}");
+    rtok(&["demon", "stop", "proxy"], &h);
+    let _ = fs::remove_dir_all(&h);
+}
+
 #[cfg(unix)]
 fn write_script(path: &Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;

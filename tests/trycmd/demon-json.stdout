@@ -2,6 +2,7 @@
   {
     "service": "proxy",
     "running": false,
+    "endpoint": "127.0.0.1:8790",
     "supervisor": null,
     "child": null,
     "uptime_secs": null,
@@ -11,6 +12,7 @@
   {
     "service": "mcp",
     "running": false,
+    "endpoint": null,
     "supervisor": null,
     "child": null,
     "uptime_secs": null,
@@ -20,6 +22,7 @@
   {
     "service": "web",
     "running": false,
+    "endpoint": null,
     "supervisor": null,
     "child": null,
     "uptime_secs": null,
