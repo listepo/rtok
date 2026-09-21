@@ -21,3 +21,5 @@
 - T122. A dedup pointer reaches a context that never saw the body
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
+
+- T125. `rtok stats`: thinking-block share — the gate for I-86

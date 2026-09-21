@@ -30,6 +30,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T124 | todo | P3 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 
+| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
 Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
@@ -238,6 +240,14 @@ Check: the row cites the command, date, sessions, before/after tokens and the sh
 Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
 
 Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
+
+### T125. `rtok stats`: thinking-block share — the gate for I-86
+
+I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
+
+Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
+
+Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
 
 ## Reference
 
