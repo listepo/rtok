@@ -26,6 +26,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
+| T127 | todo | P2 | 2 | 0% | |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -213,6 +214,14 @@ Check: settings round-trip test (add, idempotent, remove keeps foreign entries);
 New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
 
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
+
+### T127. Read advice: a small ranged native `Read` is the edit gate
+
+Creator request 2026-09-21: read file content through `rtok read` always. The host's `Edit` still demands a native `Read` of the file first, and an MCP read does not satisfy it. Today `src/plugins/read/hook.rs` decides on file size alone: it ignores `offset`/`limit`, so even `Read(limit=30)` of a file over `native_max_bytes` is denied, and the deny text promises "native Read allowed for files you are about to edit" while the hook only allows files edited in the last 5 tool calls — before the first edit of a large file the gate cannot be opened at all. Verified 2026-09-21 on Claude Code: a native `Read(limit=1)` satisfies the gate; an `Edit` of line 40 then succeeds.
+
+Do: in `pre_tool`, allow a native `Read` whose `tool_input.limit` is present and ≤ `read.gate_max_lines` (new config key, default 5) whatever the file size. Change `REASON` to name the way out: `use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate`. The `mode=diff` deny for a recently edited, cached file stays as is. Update `src/plugins/read/README.md` (advice bullet, config block). No MCP `patch` tool — I-43 stays dropped (T58.3).
+
+Check: unit tests in `hook.rs` — 100 KB file with `limit: 1` → no decision; `limit: 2000` → deny; no `limit` → deny with the new text; `just check` green.
 
 ## Reference
 
