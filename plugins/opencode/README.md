@@ -28,3 +28,11 @@ Host documentation this plugin is written against. Re-check every link when the 
 - MCP (`mcp.<name>` with `type: "local"`, `command` array, `enabled`): https://opencode.ai/docs/mcp-servers/
 - Config (`~/.config/opencode/opencode.json`, `plugin` array): https://opencode.ai/docs/config/
 - Kilo Code plugins (`~/.config/kilo/plugin/`, same `tool.execute.*` events): https://kilo.ai/docs/automate/extending/plugins
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

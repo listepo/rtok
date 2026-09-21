@@ -26,3 +26,11 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Hooks (events, stdin payload, `decision` contract — why this plugin ships none): https://antigravity.google/docs/hooks/
 - Skills (`SKILL.md` format and roots): https://antigravity.google/docs/skills
 - CLI install (`agy` binary): https://antigravity.google/docs/cli/install/
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

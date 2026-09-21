@@ -35,3 +35,11 @@ Host documentation this package is written against. Re-check every link when the
 - Packages (`package.json` `pi` key: `extensions`, `skills`, `prompts`, `themes`; `pi install <path>`): https://pi.dev/docs/latest/packages
 - Skills (`SKILL.md` frontmatter `name`, `description`): https://pi.dev/docs/latest/skills and https://agentskills.io/specification
 - Source of the docs: https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+
