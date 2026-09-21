@@ -1,23 +1,5 @@
 # rtok — completed tasks
 
-### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
-
-After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).
-
-Check: e2e with a fake `claude` binary records the four commands in order; second `--yes` says `already installed`; remove restores; `just check` green.
-
-Check result (2026-09-21): `tests/claude_plugin.rs` — dry-run prints `claude plugin marketplace add …/plugins/claude && claude plugin install rtok@rtok` and calls nothing; `--yes` after a plain install calls add then install, strips the settings hooks and `mcpServers.rtok`; a second `--yes` says `already installed`; remove calls `uninstall` then `marketplace remove`. `docs/agents.md` re-blessed, doctor/report fixtures updated; `just check` green (1108 passed). The real CLI path was checked by hand in T114 (scratch `CLAUDE_CONFIG_DIR`). Unix only: the fake is a shell script, and the Windows job already skips the install matrix.
-
-### T114. Claude Code plugin tree (`plugins/claude`)
-
-Claude Code has a plugin system (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, `skills/`, `${CLAUDE_PLUGIN_ROOT}`), loaded by the CLI and the desktop Code tab alike; `support("plugin")` still says "there is no plugin directory to link", which is stale. This task ships the tree only; T115 installs it.
-
-Do: `plugins/claude/.claude-plugin/plugin.json` (`name` `rtok`); `hooks/hooks.json` with the nine `claude::ENTRIES` as `${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh <Event>`, `timeout` = the default `hook_timeout_s`; `.mcp.json` → `scripts/mcp.sh` (fail loud with the ketch hint); `scripts/hook.sh`, `scripts/mcp.sh` as in `plugins/zcode` (the desktop app may have no shell PATH). `support(Cli, "plugin")` still says no, but its reason now names the manual install instead of "no plugin directory" (doctor/report fixtures follow); the directory is its own marketplace (`.claude-plugin/marketplace.json`, `source` `./`, so `plugins/` gains no non-host directory) and `claude plugin marketplace add <plugins/claude>` works; `README.md` with `## Docs`. `claude::tests::plugin_tree_matches_the_installer` pins `hooks.json` to `claude::ENTRIES` and the marketplace entry.
-
-Check: `claude plugin validate plugins/claude` (if the CLI has it) or `claude --plugin-dir plugins/claude` loads with no error; the new unit test and `tests/host_docs.rs` green.
-
-Check result (2026-09-21): `claude plugin validate` passes for the plugin and the marketplace; in a scratch `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add plugins/claude` + `claude plugin install rtok@rtok` succeed and `claude plugin details rtok@rtok` lists 7 hook events and 1 MCP server; the cache copy keeps the scripts executable; `hook.sh UserPromptSubmit` pipes through `rtok hook` (exit 0); `just check` green. Not verified: a live Claude Code session with the plugin installed.
-
 ### T104. Migration and `schema.rs` drift guard
 
 `MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
@@ -62,7 +44,7 @@ Do (2026-09-21): T92.2 — `src/agents/omp/` (`mod.rs` + `README.md` with the mo
 
 Check result (2026-09-21): unit tests `agents::omp::tests` (dry-run offer names `plugins/pi` and ketch, writes nothing; `--yes` links and registers with no `type`, second apply `NO_CHANGES` twice, remove keeps a foreign server; a foreign dest directory is not `installed`) pass; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin`, `cli_trycmd` green. On this machine (omp 18.1.14 at `~/.bun/bin/omp`) `rtok agents list` shows `CLI: oh my pi` and `rtok agents install omp --dry-run` offers `plugins/pi → ~/.omp/agent/extensions/rtok` and `mcpServers.rtok: rtok mcp`, writing nothing. `just check` green: 1109 passed, 4 skipped. Still open, as the card says: one real `omp -p` turn whose bash call goes through `rtok run` (no model credit here).
 
-### T119. TS plugin tests on vitest, with snapshots
+### T111. TS plugin tests on vitest, with snapshots
 
 The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
 

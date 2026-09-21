@@ -23,9 +23,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T105 | todo | P2 | 2 | 0% | |
 | T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
-| T116 | todo | P2 | 3 | 0% | |
-| T117 | todo | P2 | 3 | 0% | |
-| T118 | todo | P2 | 4 | 0% | |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -195,24 +192,6 @@ Check: `just test` green; no new dependency.
 `tests/trycmd/` pins help and happy output. Add fixtures for a bad value or missing argument on each subcommand (exit 2, clap message) and for `parse_since` rejects (`--since 5x`, `--since -1d`, empty).
 
 Check: one fixture per subcommand; `just test` green.
-
-### T116. Copilot CLI plugin
-
-Copilot CLI plugins bundle hooks and MCP (`plugin.json`); local install is `copilot plugin marketplace add <path>` (https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating). First verify whether Copilot reads the T114 Claude-format marketplace as is; if yes, reuse it (one tree), otherwise a `plugins/copilot` tree with `--host copilot` hook commands. Installer mirrors T115 through the `copilot` CLI; D21 singleton against `mcp-config.json` and `hooks/rtok.json`.
-
-Check: fake `copilot` e2e like T115; `just check` green.
-
-### T117. VS Code agent plugins
-
-VS Code agent plugins carry hooks and MCP and are registered by path in the `chat.pluginLocations` setting (https://code.visualstudio.com/docs/agent-customization/agent-plugins). Verify the accepted format (Claude-format plugins?) and the hook event names first. `rtok agents install vscode --yes` adds the plugin path to `chat.pluginLocations` in the user `settings.json` (JSONC — see T79 before writing it) and strips its own MCP entry while the plugin is listed (D21).
-
-Check: settings round-trip test (add, idempotent, remove keeps foreign entries); `just check` green.
-
-### T118. Gemini CLI host with an extension
-
-New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
-
-Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
 
 ## Reference
 

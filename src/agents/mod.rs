@@ -1308,15 +1308,14 @@ mod tests {
         cfg.setup.yes = true;
         cfg.setup.mcp = false;
         assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "proxy"]);
-        // `--yes` also expects Claude Code's plugin (T115).
         assert_eq!(
             expected(&claude::Claude, Kind::Cli, &cfg),
-            ["hooks", "proxy", "plugin"]
+            ["hooks", "proxy"]
         );
         assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
         assert_eq!(
             missing(&claude::Claude, Kind::Cli, &cfg),
-            ["hooks", "proxy", "plugin"]
+            ["hooks", "proxy"]
         );
         assert_eq!(
             missing(&claude::Claude, Kind::Desktop, &cfg),
@@ -1367,13 +1366,16 @@ mod tests {
                 ("hooks", ModuleState::Installed),
                 ("mcp", ModuleState::NotInstalled),
                 ("proxy", ModuleState::Installed),
-                ("plugin", ModuleState::NotInstalled),
+                ("plugin", ModuleState::NotSupported),
             ]
         );
         let console = module_lines(&rows, "  ", true);
         assert!(console.contains("✓ hooks   installed"), "{console}");
         assert!(console.contains("✗ mcp     not installed"), "{console}");
-        assert!(console.contains("✗ plugin  not installed"), "{console}");
+        assert!(
+            console.contains("− plugin  not supported: Claude Code"),
+            "{console}"
+        );
         let plain = module_lines(&rows, "  ", false);
         assert!(
             plain.contains("  proxy   installed") && !plain.contains('✓'),
