@@ -266,7 +266,7 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not installed (--proxy)
-    plugin  not supported: Claude Code installs plugins/claude by hand (`claude plugin marketplace add` + `claude plugin install rtok@rtok`); `--yes` is T115
+    plugin  not installed (--yes)
   claude (desktop)
     hooks   not supported: Claude Desktop has no hook events
     mcp     not installed
