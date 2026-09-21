@@ -220,7 +220,11 @@ async fn web_without_a_bundle_says_so_instead_of_404() {
         .expect("pkg");
     assert_eq!(res.status(), 503);
     let body = res.text().await.expect("body");
-    assert!(body.contains("RTOK_WEB_PKG"), "{body}");
+    // A fixed message: echoing the response body into the panic is CodeQL `rust/log-injection`.
+    assert!(
+        body.contains("RTOK_WEB_PKG"),
+        "503 body does not name RTOK_WEB_PKG"
+    );
     let health = reqwest::get(format!("http://{addr}/health"))
         .await
         .expect("health");

@@ -18,6 +18,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only by default; `revert-on-failure` widens its own.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -33,8 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Installs the Rust version pinned in mise.toml — same toolchain as local.
-      - uses: jdx/mise-action@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           # Skip slow cache upload on PRs; restore still works from main keys.
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -59,8 +63,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: mise exec -- cargo nextest run --workspace --no-fail-fast

@@ -13,7 +13,7 @@
 # Developer ID Application identity out of it, matching ketch's release.yml.
 
 - name: Cache Cargo build
-  uses: Swatinem/rust-cache@v2
+  uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
   with:
     shared-key: release-dist
     # Release builds are rare; always save so the next cut is warm.
@@ -24,7 +24,7 @@
 # The bundle is platform-independent, but `include` is workspace-wide with no
 # per-target form, so each matrix job builds its own copy before `dist build`.
 - name: Install wasm-pack
-  uses: taiki-e/install-action@v2
+  uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
   with:
     tool: wasm-pack
 

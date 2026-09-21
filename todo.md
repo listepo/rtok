@@ -21,4 +21,3 @@
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
-- T120. Clear the CodeQL findings
