@@ -176,7 +176,25 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
                 .or_else(|| input.get("path"))?
                 .as_str()?
                 .trim();
-            (!p.is_empty()).then(|| format!("read\t{p}"))
+            if p.is_empty() {
+                return None;
+            }
+            // T98: a range is its own result — `offset`/`limit`/`pages` join the key, so
+            // one range never answers for another. A full read keeps `read\t{p}`; the
+            // Edit/Write prefix clear of `read\t{p}` still drops every ranged key.
+            let range: Vec<String> = ["offset", "limit", "pages"]
+                .iter()
+                .map(|k| match input.get(*k) {
+                    None | Some(Value::Null) => String::new(),
+                    Some(Value::String(s)) => s.trim().to_owned(),
+                    Some(v) => v.to_string(),
+                })
+                .collect();
+            Some(if range.iter().all(String::is_empty) {
+                format!("read\t{p}")
+            } else {
+                format!("read\t{p}\t{}", range.join("\t"))
+            })
         }
         "Bash" => {
             let c = norm_cmd(input.get("command")?.as_str()?);
@@ -524,6 +542,61 @@ mod tests {
         assert!(cx.store.measurement_count("guard").unwrap() >= 1);
         let rows = cx.store.list_measurements("guard").unwrap();
         assert!(rows.iter().any(|r| r.before_bytes > 0), "{rows:?}");
+    }
+
+    /// T93: ranged reads of one file are different results — a range never answers
+    /// for another, and each deny names the archive of its own range (lossless).
+    #[test]
+    fn ranged_reads_of_one_file_do_not_dedup_each_other() {
+        let cx = setup();
+        let g = Guard;
+        let p = "/Users/dev/notes.md";
+        let ranges = [(80, 50), (167, 70), (288, 20), (433, 85)];
+        let inputs: Vec<Value> = ranges
+            .iter()
+            .map(|(o, l)| json!({"file_path": p, "offset": o, "limit": l}))
+            .collect();
+        for (input, (o, _)) in inputs.iter().zip(ranges) {
+            let pre = PreToolUse {
+                tool_name: "Read",
+                tool_input: input,
+            };
+            assert!(g.pre_tool(&pre, &Ctx::new(&cx)).is_none(), "offset {o}");
+            let resp = json!({"type": "text", "file": {"filePath": p, "startLine": o}});
+            let post = PostToolUse {
+                tool_name: "Read",
+                tool_input: input,
+                tool_response: &resp,
+            };
+            g.post_tool(&post, &Ctx::new(&cx));
+        }
+        for (input, (o, _)) in inputs.iter().zip(ranges) {
+            let pre = PreToolUse {
+                tool_name: "Read",
+                tool_input: input,
+            };
+            let Some(PreToolDecision::Deny { reason }) = g.pre_tool(&pre, &Ctx::new(&cx)) else {
+                panic!("repeat of offset {o} should deny");
+            };
+            let id = reason.rsplit(' ').next().unwrap();
+            let body: Value =
+                serde_json::from_slice(&Ctx::new(&cx).get_archive(id).unwrap().unwrap()).unwrap();
+            assert_eq!(body["file"]["startLine"], o, "expand {id}");
+        }
+        let edit_in = json!({"file_path": p});
+        let edit = PostToolUse {
+            tool_name: "Edit",
+            tool_input: &edit_in,
+            tool_response: &json!({}),
+        };
+        g.post_tool(&edit, &Ctx::new(&cx));
+        for input in &inputs {
+            let pre = PreToolUse {
+                tool_name: "Read",
+                tool_input: input,
+            };
+            assert!(g.pre_tool(&pre, &Ctx::new(&cx)).is_none(), "{input}");
+        }
     }
 
     #[test]

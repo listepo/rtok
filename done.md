@@ -1,5 +1,22 @@
 # rtok — completed tasks
 
+### T98. guard: ranged Reads of one file must not dedup each other
+
+Bug seen 2026-09-21 (Claude Code, rtok hooks on): four parallel native `Read` calls on one 649-line file with `offset`/`limit` 80/50, 167/70, 288/20, 433/85. Two came back with content; the other two were denied with `duplicate; rtok expand <id>`, and `expand` of those ids returned the JSON of the *other* reads (`startLine` 80 and 288). Lines 167–236 and 433–517 were never delivered — a break of lossless-by-default.
+
+Cause: `cache_key` in `src/plugins/guard/mod.rs` keys `Read` as `read\t{path}` only. `offset`, `limit` (and `pages` for PDFs) are ignored, so any Read of a path denies every later Read of that path in the window, whatever the range, and the deny points at the last-stored range's archive. The `read` plugin is not involved; the `duplicate;` reply is the guard's.
+
+Plan:
+1. `cache_key` for `Read`: append the range when present — `read\t{path}\t{offset}\t{limit}\t{pages}` (absent field → empty); a plain full read keeps `read\t{path}`. Edit/Write invalidation needs no change: `clear_read_cache("read\t{p}")` already drops every `read\t{p}\t…` key.
+2. `src/plugins/guard/AGENTS.md` invariant: "never match different file paths" → "never match different file paths or ranges".
+3. Test `ranged_reads_of_one_file_do_not_dedup_each_other` (already in `src/plugins/guard/mod.rs`, failing on `main` at offset 167): each range is allowed once, its repeat is denied, and the archive behind each deny holds that range's `startLine`. Add one case: an Edit of the path re-allows every ranged read.
+
+Check: `cargo nextest run ranged_reads_of_one_file` and the existing guard tests green; `just check`.
+
+Do (2026-09-21): `cache_key` in `src/plugins/guard/mod.rs` appends `\t{offset}\t{limit}\t{pages}` to the `Read` key when any of them is set (absent/null → empty, strings trimmed); a full read keeps `read\t{path}`, so the Edit/Write prefix clear still covers every range. `src/plugins/guard/AGENTS.md` invariant now says "never match different file paths or Read ranges". The test also asserts that an Edit of the path re-allows all four ranged reads.
+
+Check result (2026-09-21): `cargo nextest run ranged_reads_of_one_file` failed before the fix (denied at offset 167) and passes after; `plugins::guard` 19 passed; `just check` exit 0, 1083 tests passed, 4 skipped.
+
 ### T90. Antigravity plugin tree (`plugins/antigravity/`)
 
 Creator request 2026-09-21: a host plugin for Google Antigravity CLI + desktop, like Claude's and Cursor's. Antigravity's plugin format is a directory: manifest `plugin.json` (only `name` is required, `^[a-zA-Z0-9-_]+$`), optional `mcp_config.json`, `hooks.json`, `skills/`, `agents/`, `rules/`. Global plugins live in `~/.gemini/config/plugins/` and are read by all three surfaces — Antigravity CLI (`agy`), Antigravity 2.0 and Antigravity IDE — so one tree is D21's "plugin and MCP as one unit" for CLI and desktop. Evidence: https://antigravity.google/docs/plugins/, https://antigravity.google/docs/mcp/ (fetched 2026-09-21).
