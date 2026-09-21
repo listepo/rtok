@@ -794,6 +794,7 @@ mod tests {
                 })
                 .collect(),
             doctor: crate::doctor::Report {
+                tools_rewrite_advice: None,
                 hooks_total: 0,
                 hooks_by_event: BTreeMap::new(),
                 mcp: vec![],

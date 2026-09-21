@@ -10,6 +10,16 @@ Do (2026-09-21): a `tests` module in `src/otel/export.rs`, six units, no new dep
 
 Check result (2026-09-21): `cargo nextest run --lib otel::export` 6/6 green; `just check` green.
 
+### T121. Codex plugin tree (`plugins/codex/`)
+
+Creator request 2026-09-21: every host in `src/agents/` whose host has a plugin format gets a `plugins/<host>/` package. Audit: kilo and omp reuse `plugins/opencode` / `plugins/pi` (T97, T92); windsurf → Devin (T88), Copilot (T116), VS Code (T117) are planned; aider has no plugin system; Zed has only WASM extensions (MCP, no hooks). Codex was the one host with a plugin format and no task. Creator decision: Codex only, one PR. Codex plugin format (fetched 2026-09-21, https://developers.openai.com/plugins/build/plugins, https://learn.chatgpt.com/docs/hooks; matches `engram` and `claude-mem` in this machine's `~/.codex/plugins/cache/`): `.codex-plugin/plugin.json` naming `hooks` and `mcpServers` files, a local marketplace at `.agents/plugins/marketplace.json`, loaded by the CLI and the desktop app.
+
+Do (2026-09-21): `plugins/codex/.codex-plugin/plugin.json`, `.mcp.json` (`rtok mcp` directly, I-37), `hooks/hooks.json` (`rtok hook PreCompact` / `PostCompact`, timeout 5 — the installer's `COMPACT` set), `.agents/plugins/marketplace.json` (one local entry at `./`), `README.md` (install, plugin XOR `rtok agents install codex`, limits, `## Docs`), `AGENTS.md`; row in `plugins/README.md`; `tests/codex_plugin.rs`. Installer offer, singleton and tool hooks → I-88.
+
+Check: `cargo nextest run --test codex_plugin --test host_docs`; `just check`.
+
+Check result (2026-09-21): full `cargo nextest run` 1093/1094 — the one failure is `cli_trycmd` `report-md` snapshotting the binary path under a borrowed `CARGO_TARGET_DIR` (disk full), unrelated. Live on codex-cli 0.155.1 with a scratch `CODEX_HOME`: `codex plugin marketplace add plugins/codex` accepts the `./` entry, `codex plugin add rtok@rtok` installs and enables it, `codex mcp list` shows `rtok` → `rtok mcp`. Hooks firing in a live session not run.
+
 ### T113. `rtok tui` freezes on start and on tab switches
 
 Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
@@ -4371,6 +4381,16 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+
+`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
+
+Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
+
+Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
+
+Done: `Report.tools_rewrite_advice` + pure `tools_rewrite_advice()`; rtok counts as a hop when the chain (loopback hops print as the bare port) has `proxy.port` or `localhost:<port>`. New key `doctor.tools_rewrite_min_desc_tokens` (default 2000). Unit tests: the positive case (loopback and `localhost:`) and one per failing condition; `cargo nextest run --lib doctor report` 49 passed; clippy clean.
 
 **T127 Read advice: a small ranged native `Read` is the edit gate** · `src/plugins/read/{hook.rs,README.md,AGENTS.md}`
 Do: creator request 2026-09-21 — read file content through `rtok read` always. The host's `Edit` demands a native `Read` first and an MCP read does not satisfy it; the hook decided on size alone, so even `Read(limit=30)` of a file over `native_max_bytes` was denied, and the deny text promised "native Read allowed for files you are about to edit" while only files edited in the last 5 tool calls passed. Verified 2026-09-21 on Claude Code: `Read(limit=1)` satisfies the gate; an `Edit` of line 40 then succeeds. `pre_tool` now passes a native `Read` with `limit` ≤ 5 (`GATE_MAX_LINES`, a constant — the planned `read.gate_max_lines` key was dropped as YAGNI) whatever the file size; `REASON` is `use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate`; the `mode=diff` deny stays.

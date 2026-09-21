@@ -58,6 +58,7 @@ See [`src/agents/claude/README.md`](../src/agents/claude/README.md) and [`docs/a
 | Directory | Host | Shape |
 | --- | --- | --- |
 | [`antigravity/`](antigravity/) | Antigravity | MCP-only plugin dir |
+| [`codex/`](codex/) | Codex (CLI + app) | `.codex-plugin` manifest + hooks + MCP + local marketplace |
 | [`cursor/`](cursor/) | Cursor | hooks + MCP + launchers |
 | [`grok/`](grok/) | Grok Build | Claude-layout plugin + MCP |
 | [`kimi/`](kimi/) | Kimi Code | single `kimi.plugin.json` |
