@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,293 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -186,9 +186,6 @@ target/tmp/t60-2-config-init.toml
 +
 +[filter]                              # rtok filter --stdin (T10.2)
 +cmd = ""                              # command family hint when the caller knows it (--cmd)
-+
-+[worktree]                            # rtok worktree add | list | gc
-+root = ""                             # where `rtok worktree add` creates worktrees; "" = the nearest `_worktrees/` above the main checkout, else one next to it
 +
 +[otel]                                # OpenTelemetry export (D19); off until endpoint resolves
 +endpoint      = ""                    # OTLP/HTTP base URL, e.g. "http://localhost:4318"; "" = $OTEL_EXPORTER_OTLP_ENDPOINT

@@ -430,16 +430,6 @@ enum MemoryCmd {
 
 #[derive(Subcommand)]
 enum WorktreeCmd {
-    /// Create the worktree for a task: one location, one name, one locked owner; prints its path
-    Add {
-        /// Task id, e.g. `t158`; directory `<repo>-<task>`, branch `<task>[-<slug>]`
-        task: String,
-        /// Optional branch suffix
-        slug: Option<String>,
-        /// Who holds it, as `<provider> / <model>`; written into the lock reason
-        #[arg(long)]
-        owner: String,
-    },
     /// Every worktree and orphan with its owner, state, source and build-cache bytes
     List {
         /// JSON instead of the table
@@ -852,15 +842,6 @@ pub fn run() -> Result<()> {
             } else {
                 print!("{}", report.to_console());
             }
-        }
-        Cmd::Worktree {
-            action: WorktreeCmd::Add { task, slug, owner },
-        } => {
-            let cfg = Config::load_with(config_file.as_deref(), None)?;
-            let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
-            let id = (task.as_str(), slug.as_deref());
-            let path = crate::worktree::add::run(&std::env::current_dir()?, root, id, &owner)?;
-            println!("{}", path.display());
         }
         Cmd::Worktree {
             action: WorktreeCmd::List { json },

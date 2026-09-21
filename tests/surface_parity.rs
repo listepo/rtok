@@ -338,10 +338,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "worktree gc",
         "removes finished git worktrees and their merged branches (T153)",
     ),
-    (
-        "worktree add",
-        "creates a locked git worktree and prints its path (T158)",
-    ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (

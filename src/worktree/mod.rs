@@ -2,7 +2,6 @@
 //! state it is in. Off the hot path — a CLI concern like `doctor`, never a hook.
 //! Parsing and classification are pure; [`git`] is the only module that spawns git.
 
-pub mod add;
 pub mod gc;
 pub mod git;
 pub mod list;

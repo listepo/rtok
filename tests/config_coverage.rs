@@ -70,8 +70,6 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.gc.yes",
     "worktree.gc.owner",
     "worktree.gc.idle",
-    // `worktree add --owner` (T158): who holds this one worktree; `[worktree] root` is the setting.
-    "worktree.add.owner",
 ];
 
 #[test]
