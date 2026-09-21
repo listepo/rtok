@@ -7,10 +7,9 @@ Codex's `.codex-plugin/plugin.json` manifest pointing at `hooks/hooks.json` and 
 Install:
 
 - `codex plugin marketplace add <path to this folder>` — the folder is its own local marketplace
-  (`.agents/plugins/marketplace.json`, one entry `rtok` at `./`). Then enable `rtok` in the
-  plugin directory (`/plugins` in the CLI, Plugins in the app) and trust its hooks when Codex
-  asks; plugin hooks do not run until trusted.
-- Remove: uninstall `rtok` in the plugin directory, then `codex plugin marketplace remove rtok`.
+  (`.agents/plugins/marketplace.json`, one entry `rtok` at `./`) — then `codex plugin add rtok@rtok`.
+  The plugin is enabled on install; Codex asks to trust its hooks before they run.
+- Remove: `codex plugin remove rtok@rtok`, then `codex plugin marketplace remove rtok`.
 
 `rtok` must be on `PATH`. If it is missing, both hooks fail open (Codex only blocks on an explicit
 decision) and the MCP server does not start; install it with ketch: `ketch install listepo/rtok`.
@@ -33,8 +32,10 @@ Known limits:
 - Only the compaction hooks. Codex's `PreToolUse` can rewrite a Bash command (`updatedInput`) and
   `PostToolUse` can add context, but rtok's handling of Codex's tool payloads has not been checked
   on a live session, so those events stay off here and in the installer until it is.
-- Not verified on a live Codex: that `marketplace add` accepts a marketplace whose only entry is
-  `./`, and the working directory Codex gives a plugin's stdio MCP server.
+- Verified on codex-cli 0.155.1 in a scratch `CODEX_HOME` (2026-09-21): `marketplace add` accepts
+  the `./` entry, `plugin add` copies the tree to `plugins/cache/rtok/rtok/0.0.1/` and enables it,
+  and `codex mcp list` shows `rtok` → `rtok mcp`. Not verified: the hooks firing in a live session
+  (trust prompt) and the working directory Codex gives a plugin's stdio MCP server.
 
 ## Docs
 
