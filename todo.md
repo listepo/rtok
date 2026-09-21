@@ -6,3 +6,4 @@
 - T95. Cline plugin tree (`plugins/cline/`)
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
+- T100. `rtok agents install grok` and the Read path under Grok

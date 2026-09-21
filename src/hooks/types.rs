@@ -184,6 +184,50 @@ impl HookInput {
         }
     }
 
+    /// Grok Build sends camelCase keys (`sessionId`, `toolName`, `toolInput`, `toolResult`,
+    /// `toolUseId`, `permissionMode`, `workspaceRoot`) and its own tool names; only
+    /// `hook_event_name` keeps Claude's key and value. The reply needs no mapping — Grok reads
+    /// `hookSpecificOutput` as Claude writes it. Only `run_terminal_command` becomes `Bash`:
+    /// Grok blocks a call whose `updatedInput` fails the tool schema, and a `Read` rewrite has
+    /// not been checked against `read_file`, so file reads keep Grok's name (plan T98, T100).
+    pub fn adapt_grok(&mut self, event: &str) {
+        let mut lift = |key: &str| self.extra.remove(key);
+        let session = lift("sessionId").and_then(as_string);
+        let name = lift("toolName").and_then(as_string);
+        let input = lift("toolInput");
+        let result = lift("toolResult");
+        let use_id = lift("toolUseId").and_then(as_string);
+        let mode = lift("permissionMode").and_then(as_string);
+        let root = lift("workspaceRoot").and_then(as_string);
+        if self.session_id.is_empty() {
+            self.session_id = session.unwrap_or_default();
+        }
+        self.tool_name = self.tool_name.take().or(name).map(|n| {
+            if n == "run_terminal_command" {
+                "Bash".into()
+            } else {
+                n
+            }
+        });
+        self.tool_input = self.tool_input.take().or(input);
+        self.tool_response = self.tool_response.take().or(result);
+        self.tool_use_id = self.tool_use_id.take().or(use_id);
+        self.permission_mode = self.permission_mode.take().or(mode);
+        self.cwd = self.cwd.take().or(root);
+        if let Some(Value::Object(resp)) = self.tool_response.as_mut()
+            && !resp.contains_key("stdout")
+            && let Some(out) = resp
+                .get("output_for_prompt")
+                .filter(|v| v.is_string())
+                .cloned()
+        {
+            resp.insert("stdout".into(), out);
+        }
+        if self.hook_event_name.is_empty() {
+            self.hook_event_name = event.to_string();
+        }
+    }
+
     pub fn pre_compact(&self) -> Option<PreCompact<'_>> {
         (self.hook_event_name == "PreCompact").then_some(PreCompact {
             trigger: self.trigger.as_deref().unwrap_or("auto"),
@@ -462,5 +506,57 @@ mod tests {
             "ok"
         );
         assert!(input.post_tool().is_some());
+    }
+
+    /// Payloads as Grok Build's hooks guide (`~/.grok/docs/user-guide/10-hooks.md`) gives them.
+    #[test]
+    fn grok_lifts_camel_case_and_maps_only_the_terminal() {
+        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
+            "hookEventName": "pre_tool_use",
+            "hook_event_name": "PreToolUse",
+            "sessionId": "abc-123",
+            "cwd": "/Users/you/project",
+            "workspaceRoot": "/Users/you/project",
+            "permissionMode": "default",
+            "toolName": "run_terminal_command",
+            "toolInput": {"command": "npm test"},
+            "toolUseId": "tu-1",
+            "timestamp": "2026-04-14T12:00:00Z"
+        }))
+        .unwrap();
+        pre.adapt_grok("PreToolUse");
+        assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.session_id, "abc-123");
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(pre.tool_input.as_ref().unwrap()["command"], "npm test");
+        assert_eq!(pre.tool_use_id.as_deref(), Some("tu-1"));
+        assert_eq!(pre.permission_mode.as_deref(), Some("default"));
+        assert_eq!(pre.cwd.as_deref(), Some("/Users/you/project"));
+        assert!(pre.extra.contains_key("timestamp"));
+        assert!(pre.pre_tool().is_some());
+
+        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "sessionId": "abc-123",
+            "workspaceRoot": "/w",
+            "toolName": "run_terminal_command",
+            "toolInput": {"command": "ls"},
+            "toolResult": {"type": "Bash", "command": "ls", "exit_code": 0, "output_for_prompt": "a\nb\n"}
+        }))
+        .unwrap();
+        post.adapt_grok("SessionStart");
+        assert_eq!(post.hook_event_name, "PostToolUse");
+        assert_eq!(post.cwd.as_deref(), Some("/w"));
+        assert_eq!(post.tool_response.as_ref().unwrap()["stdout"], "a\nb\n");
+        assert!(post.post_tool().is_some());
+
+        let mut read: HookInput = serde_json::from_value(serde_json::json!({
+            "toolName": "read_file",
+            "toolInput": {"path": "src/main.rs"}
+        }))
+        .unwrap();
+        read.adapt_grok("PreToolUse");
+        assert_eq!(read.hook_event_name, "PreToolUse");
+        assert_eq!(read.tool_name.as_deref(), Some("read_file"));
     }
 }
