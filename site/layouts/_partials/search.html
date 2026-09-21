@@ -1,0 +1,20 @@
+{{- /* rtok override: Algolia DocSearch replaces Hextra FlexSearch.
+       Credentials come from DocSearch approval (App ID + Search-Only key + index name).
+       Until then the button renders disabled and FlexSearch stays off (params.search.enable = false). */ -}}
+{{- $appId := site.Params.algolia.appId | default "" -}}
+{{- $apiKey := site.Params.algolia.apiKey | default "" -}}
+{{- $index := site.Params.algolia.indexName | default "" -}}
+{{- $placeholder := (T "searchPlaceholder") | default "Search..." -}}
+<div class="hextra-search-wrapper hx:relative hx:md:w-64">
+  {{- if and (ne $appId "") (ne $apiKey "") (ne $index "") -}}
+  <div id="docsearch"></div>
+  {{- else -}}
+  <div class="hx:relative hx:flex hx:items-center hx:text-gray-900 hx:dark:text-gray-300" title="Search is wired for Algolia DocSearch — add App ID, Search-Only key and index name to site params.">
+    <input
+      placeholder="{{ $placeholder }}"
+      aria-label="{{ $placeholder }}"
+      class="hx:block hx:w-full hx:appearance-none hx:rounded-lg hx:px-3 hx:py-2 hx:text-base hx:md:text-sm hx:bg-black/[.05] hx:dark:bg-gray-50/10 hx:placeholder:text-gray-500 hx:dark:placeholder:text-gray-400"
+      type="search" autocomplete="off" value="" spellcheck="false" disabled />
+  </div>
+  {{- end -}}
+</div>
