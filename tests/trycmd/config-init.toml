@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,294 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -138,6 +138,7 @@ target/tmp/t60-2-config-init.toml
 +mcp_timeout_ms  = 15000               # per MCP server tools/list (uvx/npx servers start slowly)
 +instruction_warn_tokens = 1000        # --instructions: flag files above this
 +instructions    = false               # run the instruction audit by default (--instructions)
++tools_rewrite_min_desc_tokens = 2000 # when [proxy.tools_rewrite] is suggested (T59.5)
 +
 +[setup]                               # rtok agents install / remove <host>
 +dry_run      = false

@@ -24,6 +24,7 @@ doctor.mcp_json = .mcp.json
 doctor.mcp_timeout_ms = 15000
 doctor.probe_timeout_ms = 500
 doctor.settings_path = ~/.claude/settings.json
+doctor.tools_rewrite_min_desc_tokens = 2000
 estimator.cjk = 1
 estimator.code = 3.5
 estimator.json = 3
