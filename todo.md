@@ -37,6 +37,16 @@
 - T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
-- T138. Interactive prompts go through `inquire`
 - T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
+- T150. Worktree inventory: one git helper that lists, attributes and classifies every worktree
+- T151. `rtok worktree list`: source size, cache size and orphans in one table
+- T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
+- T153. `rtok worktree gc`: remove finished worktrees and their merged branches
+- T154. Ownership ledger: SessionStart records which session worked in which worktree
+- T155. Ship the `worktrees` skill with rtok
+- T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
+- T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
+- T158. `rtok worktree add`: rtok creates the worktree — one location, one name, one owner
+- T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
+- T160. No expand trailer when shortening saved less than the trailer costs
 

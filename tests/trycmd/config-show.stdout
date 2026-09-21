@@ -164,7 +164,6 @@ setup.opencode.config_path = ~/.config/opencode/opencode.json
 setup.pi.extensions_path = ~/.pi/agent/extensions
 setup.pi.tools = false
 setup.proxy = false
-setup.restart_prompt_timeout_seconds = 0
 setup.vscode.code_user_dir = 
 setup.vscode.insiders_user_dir = 
 setup.windsurf.config_path = ~/.codeium/windsurf/mcp_config.json

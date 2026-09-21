@@ -12,6 +12,7 @@
 //! - [`measure`] — JSONL ingest, `rtok stats` (P1)
 //! - [`modes`]   — terse compress + YAGNI ladder helpers (D6/D7)
 //! - [`tui`]     — `rtok tui`, the terminal rendering of the operator model (D23)
+//! - [`worktree`] — git worktree inventory: records, owners, states (T150)
 
 pub mod agents;
 pub mod bench;
@@ -40,6 +41,7 @@ pub mod tls;
 pub mod tokens;
 pub mod tui;
 pub mod web;
+pub mod worktree;
 
 /// The plugin contract at the crate root, so an external plugin crate writes
 /// `use rtok::{Runtime, Manifest, Plugin, Surface};`.
