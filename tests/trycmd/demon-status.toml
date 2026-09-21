@@ -1,10 +1,10 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/json-readers.toml demon status"
 stdout = """
-service    state      supervisor  child     uptime    restarts  log
-proxy      stopped    -           -         -         -         [..]/demon/proxy.log
-mcp        stopped    -           -         -         -         [..]/demon/mcp.log
-web        stopped    -           -         -         -         [..]/demon/web.log
+service    state      endpoint          supervisor  child     uptime    restarts  log
+proxy      stopped    127.0.0.1:8790    -           -         -         -         [..]/demon/proxy.log
+mcp        stopped    -                 -           -         -         -         [..]/demon/mcp.log
+web        stopped    -                 -           -         -         -         [..]/demon/web.log
 """
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.

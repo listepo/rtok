@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T80. `demon status` names the proxy endpoint (bind:port)
+
+Creator 2026-09-21. `rtok demon status` said whether a service was running but never *where*: the proxy row carried no host/port, so answering "is the proxy up and on what address?" meant `rtok proxy --dry-run` or reading config by hand.
+
+Do (2026-09-21): `demon::Row` gains `endpoint: Option<String>` — for `proxy`, the effective `[proxy] bind:port` (so `127.0.0.1:8790` by default), `None` for the stdio surfaces (`mcp`, `web`'s row stays `-`). The value is config, not state, so a stopped proxy still names the address it would listen on; the doc comment on the field records the caveat that it is read from the status process's config, which can differ from a supervisor started with `--config`. `table()` renders it as an `endpoint` column after `state`; `--json` and the web model page (`Model::demon` returns the same rows, D27) pick the field up through the existing `Serialize`.
+
+Check: unit `the_proxy_row_names_its_configured_endpoint_stopped_or_not` (row + table carry the configured address while stopped; mcp stays `None`); integration `tests/demon.rs::status_names_the_proxy_endpoint_running_or_stopped` (custom `[proxy] port = 8123` shows stopped, in `--json` with mcp `null`, and — after `demon start proxy` — the same address while a `TcpStream` actually reaches it); trycmd `demon-status` / `demon-json` refreshed. `just check`.
+
+Check result (2026-09-21): full `just check` green in the worktree — 1061 passed, 3 skipped, exit 0; demon units 9/9 (incl. the new one), `--test demon` 6/6, trycmd `cli` green over the refreshed `demon-status` / `demon-json` goldens.
+
 ### T74. Make the two load-sensitive gate tests deterministic
 
 Do (2026-09-21): The card's assumed mechanism ("key-injection → frame-assert waits with no internal deadline") does not exist — both tests are synchronous. The real mechanism, found by timing and `sample`:

@@ -325,6 +325,10 @@ fn run_replace(mut cmd: Command) -> Result<()> {
 pub struct Row {
     pub service: Service,
     pub running: bool,
+    /// The address a service listens on: the proxy's configured `[proxy] bind:port`, named
+    /// whether it is running or not; `None` for a non-listening surface (`mcp`). Read from
+    /// this process's config — a supervisor started with `--config` may sit elsewhere.
+    pub endpoint: Option<String>,
     /// `None` when the service is down: the columns render `-`.
     pub supervisor: Option<i32>,
     pub child: Option<i32>,
@@ -360,9 +364,12 @@ pub fn rows(cfg: &Config, named: &[Service]) -> Result<Vec<Row>> {
             Some(s) => live(s),
             None => (None, None, None, None),
         };
+        let endpoint =
+            (service == Service::Proxy).then(|| format!("{}:{}", cfg.proxy.bind, cfg.proxy.port));
         out.push(Row {
             service,
             running: up,
+            endpoint,
             supervisor,
             child,
             uptime_secs,
@@ -383,6 +390,7 @@ pub fn table(rows: &[Row]) -> String {
     // Fixed floors keep the header readable; content can grow (pids, paths).
     const SERVICE: usize = 9;
     const STATE: usize = 9;
+    const ENDPOINT: usize = 16;
     const SUPERVISOR: usize = 10;
     const CHILD: usize = 8;
     const UPTIME: usize = 8;
@@ -403,10 +411,11 @@ pub fn table(rows: &[Row]) -> String {
     let dash = || "-".to_string();
     let sep = "  ";
     let mut out = format!(
-        "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}log\n",
+        "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}log\n",
         sep,
         pad_left("service", SERVICE),
         pad_left("state", STATE),
+        pad_left("endpoint", ENDPOINT),
         pad_left("supervisor", SUPERVISOR),
         pad_left("child", CHILD),
         pad_left("uptime", UPTIME),
@@ -414,10 +423,11 @@ pub fn table(rows: &[Row]) -> String {
     );
     for r in rows {
         out.push_str(&format!(
-            "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}\n",
+            "{1}{0}{2}{0}{3}{0}{4}{0}{5}{0}{6}{0}{7}{0}{8}\n",
             sep,
             pad_left(&r.service.to_string(), SERVICE),
             state_cell(r.running, STATE),
+            pad_left(r.endpoint.as_deref().unwrap_or("-"), ENDPOINT),
             pad_left(
                 &r.supervisor.map(|v| v.to_string()).unwrap_or_else(dash),
                 SUPERVISOR
@@ -662,6 +672,7 @@ mod tests {
         let rows = [Row {
             service: Service::Proxy,
             running: false,
+            endpoint: None,
             supervisor: None,
             child: None,
             uptime_secs: None,
@@ -697,6 +708,31 @@ mod tests {
             after_proxy[..stopped_at].chars().all(|c| c.is_whitespace()),
             "gap between proxy and stopped must be whitespace: {visible:?}"
         );
+    }
+
+    /// The proxy row names its `[proxy] bind:port` even while stopped — the address is
+    /// config, not state, so it is exactly what a stopped row should still tell you.
+    #[test]
+    fn the_proxy_row_names_its_configured_endpoint_stopped_or_not() {
+        let mut cfg = Config::default();
+        cfg.demon.state_dir = crate::testutil::tmp_dir("demon-endpoint");
+        cfg.proxy.bind = "127.0.0.2".into();
+        cfg.proxy.port = 8123;
+        let rows = rows(&cfg, &[]).unwrap();
+        let proxy = rows.iter().find(|r| r.service == Service::Proxy).unwrap();
+        assert!(!proxy.running);
+        assert_eq!(proxy.endpoint.as_deref(), Some("127.0.0.2:8123"));
+        assert!(
+            rows.iter()
+                .find(|r| r.service == Service::Mcp)
+                .unwrap()
+                .endpoint
+                .is_none(),
+            "mcp is stdio, it has no address"
+        );
+        let text = table(&rows);
+        assert!(text.contains("endpoint"), "{text}");
+        assert!(text.contains("127.0.0.2:8123"), "{text}");
     }
 
     /// The plumbing `supervise` wires up: a child's output, pumped through the channel and
