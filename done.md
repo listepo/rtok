@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T111. TS plugin tests on vitest, with snapshots
+
+The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
+
+Do: vitest 5.0.1 as a mise `npm:` tool like oxlint/jscpd (no `package.json`), `globals: true` and `cacheDir: target/vitest` in `vitest.config.mjs` so tests need no `vitest` import; rewrite the three files to `test`/`expect`/`vi`; inline snapshots for the registered tool names, the context replacement array and the compaction/transform outputs; `tests/filter.rs` and `tests/pi_plugin.rs` run `vitest run <file>` instead of `node --test`; `toolchain.md` and the `mise.toml` comment.
+
+Check: `vitest run` green; `cargo nextest run --test filter --test pi_plugin` green; `just js` green.
+
+Check result (2026-09-21): `vitest run` 3 files, 42 tests green; `cargo nextest run --test filter --test pi_plugin` 7/7; `just js` green. Snapshots: the opencode PreCompact/SessionStart hook payloads, the pi `context` replacement array, the pi `mcp --call` line per registered tool. `tests/common::vitest` is the one runner both wrappers use (Windows: `vitest.cmd`).
+
 ### T110. oxlint and oxfmt for the JS/TS files
 
 Asked for by the creator. The six TypeScript files (`plugins/opencode/*.ts`, `plugins/pi/**/*.ts`, `tests/node/fake-rtok.ts`) had no linter or formatter; their line widths and quoting differed file to file. mise pins `npm:oxlint` 1.83.0 and `npm:oxfmt` 0.68.0 (both released 2026-09-14, oxc-project — maintained). `just js` runs `oxlint --deny-warnings` and `oxfmt --check` over `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs'` and is part of `just check`, so CI's `check` job enforces it; `just js-fmt` rewrites. JSON is deliberately outside the file list: oxfmt would reformat the plugins' manifests (`hooks.json`, `package.json`), which tests compare byte for byte. Defaults, no config file.
