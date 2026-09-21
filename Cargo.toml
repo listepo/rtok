@@ -116,6 +116,7 @@ tower-http = { version = "0.7", features = ["fs"] } # ServeDir for Slint WASM as
 futures-util = "0.3.34"
 ratatui = "0.30.2" # `rtok tui`, the terminal rendering of the D23 model (T15.1); default backend is crossterm
 crossterm = "0.29" # key and tick events for the TUI loop (T15.1); same major as ratatui 0.30's backend, so one copy links
+inquire = { version = "0.9", default-features = false, features = ["crossterm"] } # interactive prompts (T138); crossterm backend shares the TUI's copy
 reqwest = { version = "0.13.4", default-features = false, features = ["stream", "rustls"] }
 rustls = "0.23" # preconfigured webpki TLS for proxy/otel (T53.3)
 rustls-pemfile = "2.2" # SSL_CERT_FILE bundle parsing (T53.3)
