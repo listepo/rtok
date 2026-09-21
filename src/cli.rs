@@ -134,6 +134,11 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Git worktrees of this repository: owner, state and disk cost
+    Worktree {
+        #[command(subcommand)]
+        action: WorktreeCmd,
+    },
     /// Version, effective paths, disk usage, error count and proxy status
     Info {
         /// JSON instead of the text lines
@@ -417,6 +422,41 @@ enum MemoryCmd {
         /// Window for recalls and MCP calls (`30d`, `24h`)
         #[arg(long)]
         since: Option<String>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorktreeCmd {
+    /// Create the worktree for a task: one location, one name, one locked owner; prints its path
+    Add {
+        /// Task id, e.g. `t158`; directory `<repo>-<task>`, branch `<task>[-<slug>]`
+        task: String,
+        /// Optional branch suffix
+        slug: Option<String>,
+        /// Who holds it, as `<provider> / <model>`; written into the lock reason
+        #[arg(long)]
+        owner: String,
+    },
+    /// Every worktree and orphan with its owner, state, source and build-cache bytes
+    List {
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
+    Gc {
+        /// Apply; without it this is a dry run that changes nothing
+        #[arg(long)]
+        yes: bool,
+        /// Open locks whose reason starts with this owner; every other lock is a hard stop
+        #[arg(long)]
+        owner: Option<String>,
+        /// Keep worktrees modified within this window (`24h`, `7d`)
+        #[arg(long, default_value = "24h")]
+        idle: String,
         /// JSON instead of the table
         #[arg(long)]
         json: bool,
@@ -818,6 +858,52 @@ pub fn run() -> Result<()> {
                 print_json(&report)?;
             } else {
                 print!("{}", report.to_console());
+            }
+        }
+        Cmd::Worktree {
+            action: WorktreeCmd::Add { task, slug, owner },
+        } => {
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let root = Some(cfg.worktree.root.as_path()).filter(|r| !r.as_os_str().is_empty());
+            let id = (task.as_str(), slug.as_deref());
+            let path = crate::worktree::add::run(&std::env::current_dir()?, root, id, &owner)?;
+            println!("{}", path.display());
+        }
+        Cmd::Worktree {
+            action: WorktreeCmd::List { json },
+        } => {
+            let rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
+            if json {
+                print_json(&rows)?;
+            } else {
+                let now = std::time::SystemTime::now();
+                print!("{}", crate::worktree::list::to_table(&rows, now));
+            }
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Gc {
+                    yes,
+                    owner,
+                    idle,
+                    json,
+                },
+        } => {
+            use crate::worktree::gc;
+            use anyhow::Context as _;
+            let policy = gc::Policy {
+                owner: owner.as_deref(),
+                idle: crate::measure::stats::parse_since(&idle).context("--idle")?,
+                now: std::time::SystemTime::now(),
+            };
+            let outcomes = gc::run(&std::env::current_dir()?, &policy, yes)?;
+            if json {
+                print_json(&outcomes)?;
+            } else {
+                print!("{}", gc::to_table(&outcomes, yes));
+            }
+            if outcomes.iter().any(|o| o.failed) {
+                bail!("some worktrees could not be removed");
             }
         }
         Cmd::Info { json } => {

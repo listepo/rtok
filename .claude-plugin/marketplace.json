@@ -1,0 +1,14 @@
+{
+  "name": "rtok",
+  "owner": {
+    "name": "listepo"
+  },
+  "description": "rtok plugins for Claude Code",
+  "plugins": [
+    {
+      "name": "rtok",
+      "source": "./plugins/claude",
+      "description": "rtok hooks and MCP for Claude Code"
+    }
+  ]
+}

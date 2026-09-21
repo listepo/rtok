@@ -334,6 +334,14 @@ const EXEMPT: &[(&str, &str)] = &[
         "stops live surfaces, replaces the binary, starts the same set",
     ),
     ("otel flush", "posts rows past the watermarks"),
+    (
+        "worktree gc",
+        "removes finished git worktrees and their merged branches (T153)",
+    ),
+    (
+        "worktree add",
+        "creates a locked git worktree and prints its path (T158)",
+    ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (
@@ -359,6 +367,10 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "otel status",
         "exporter echo: endpoint, watermarks, pending rows",
+    ),
+    (
+        "worktree list",
+        "reads git and the checkout's file system, not the store: no model data (T151)",
     ),
     // reading, but on-demand today (T15.11); the frame does not carry the page yet
     (
@@ -472,6 +484,7 @@ const JSON_READERS: &[&str] = &[
     "demon status",
     "otel status",
     "memory status",
+    "worktree list",
 ];
 
 fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {

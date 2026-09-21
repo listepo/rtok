@@ -7,9 +7,11 @@
 
 mod common;
 
-use common::agents::{backups, json, rtok, tmp, write_cfg};
+use common::agents::{backups, contains_hook, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
 
+/// No `claude` on PATH (T139: the plugin is the default once it is there), so this exercises
+/// the settings-file fallback: hooks, MCP and the proxy env var, all in `~/.claude/*`.
 #[test]
 fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
     let home = tmp("claude");
@@ -27,20 +29,17 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
     )
     .unwrap();
 
-    rtok(
+    rtok_without_claude(
         &["agents", "install", "claude", "--mcp", "--proxy"],
         &cfg,
         &home,
     );
     let after_setup = fs::read_to_string(&settings).unwrap();
-    assert!(
-        after_setup.contains("rtok hook PreToolUse"),
-        "{after_setup}"
-    );
+    assert!(contains_hook(&after_setup, "PreToolUse"), "{after_setup}");
     assert!(after_setup.contains("ANTHROPIC_BASE_URL"), "{after_setup}");
     assert!(json(&claude_json)["mcpServers"]["rtok"].is_object());
 
-    let out = rtok(&["agents", "remove", "claude"], &cfg, &home);
+    let out = rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
     assert!(out.contains("backup "), "remove reports its copies: {out}");
 
     let left = fs::read_to_string(&settings).unwrap();
@@ -66,7 +65,7 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
         "backup is the file as the command found it"
     );
 
-    let again = rtok(&["agents", "remove", "claude"], &cfg, &home);
+    let again = rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
@@ -324,6 +323,8 @@ fn zed_remove_keeps_comments_and_foreign_servers() {
     assert!(again.contains("no changes"), "second remove: {again}");
 }
 
+/// No `claude` on PATH (T139), so the install writes `settings.json` itself instead of
+/// handing it to the plugin — the file this test watches actually changes each run.
 #[test]
 fn setup_copies_the_config_before_it_writes() {
     let home = tmp("bak");
@@ -332,7 +333,7 @@ fn setup_copies_the_config_before_it_writes() {
     let before = r#"{"env":{"KEEP":"1"}}"#;
     fs::write(&settings, before).unwrap();
 
-    let out = rtok(&["agents", "install", "claude"], &cfg, &home);
+    let out = rtok_without_claude(&["agents", "install", "claude"], &cfg, &home);
     assert!(
         out.contains("backup "),
         "setup reports its copies too: {out}"
@@ -346,7 +347,7 @@ fn setup_copies_the_config_before_it_writes() {
     );
 
     // A second run inside the same second must not overwrite the first copy.
-    rtok(&["agents", "remove", "claude"], &cfg, &home);
+    rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
     assert_eq!(backups(&settings).len(), 2, "each run keeps its own copy");
 }
 

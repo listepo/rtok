@@ -66,6 +66,13 @@ const ALLOW_KEYS: &[&str] = &[
     // `otel flush --coalesce` (T143): hidden, hook-spawned-only mode switch for one call,
     // not a stored setting — a manual `rtok otel flush` never passes it.
     "otel.flush.coalesce",
+    // `worktree gc` (T153): deleting is decided per call — a stored `yes` or `owner`
+    // would turn a dry run into a removal, or open locks, without anyone typing it.
+    "worktree.gc.yes",
+    "worktree.gc.owner",
+    "worktree.gc.idle",
+    // `worktree add --owner` (T158): who holds this one worktree; `[worktree] root` is the setting.
+    "worktree.add.owner",
 ];
 
 #[test]

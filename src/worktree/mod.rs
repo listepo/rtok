@@ -2,7 +2,10 @@
 //! state it is in. Off the hot path — a CLI concern like `doctor`, never a hook.
 //! Parsing and classification are pure; [`git`] is the only module that spawns git.
 
+pub mod add;
+pub mod gc;
 pub mod git;
+pub mod list;
 
 use std::path::{Path, PathBuf};
 
@@ -97,6 +100,18 @@ pub enum State {
     Unmerged,
 }
 
+impl State {
+    pub fn label(self) -> &'static str {
+        match self {
+            State::Main => "main",
+            State::Stale => "stale",
+            State::Dirty => "dirty",
+            State::Merged => "merged",
+            State::Unmerged => "unmerged",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Facts {
     pub exists: bool,
@@ -118,6 +133,9 @@ pub fn classify(facts: Facts) -> State {
 pub struct Entry {
     pub record: Record,
     pub state: State,
+    /// Kept beside `state`: a worktree whose directory is gone still needs to know
+    /// whether its branch may go.
+    pub merged: bool,
 }
 
 /// Every worktree of the repository at `repo`, classified against its default base.
@@ -128,18 +146,25 @@ pub fn inventory(repo: &Path) -> anyhow::Result<Vec<Entry>> {
     let entries = git::list(repo)?.into_iter().enumerate();
     Ok(entries
         .map(|(i, record)| {
-            let state = if i == 0 || record.bare {
+            let main = i == 0 || record.bare;
+            let rev = record.branch.as_deref().or(record.head.as_deref());
+            let merged =
+                !main && rev.is_some_and(|r| git::is_merged(repo, &base, r).unwrap_or(false));
+            let state = if main {
                 State::Main
             } else {
                 let exists = record.path.is_dir();
-                let rev = record.branch.as_deref().or(record.head.as_deref());
                 classify(Facts {
                     exists,
                     dirty: exists && git::is_dirty(&record.path).unwrap_or(true),
-                    merged: rev.is_some_and(|r| git::is_merged(repo, &base, r).unwrap_or(false)),
+                    merged,
                 })
             };
-            Entry { record, state }
+            Entry {
+                record,
+                state,
+                merged,
+            }
         })
         .collect())
 }

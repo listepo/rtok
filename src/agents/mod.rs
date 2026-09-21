@@ -1317,11 +1317,15 @@ mod tests {
         assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "mcp"]);
         assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
         assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
+        // Claude Code's plugin is expected by default, without `--yes` (T139).
+        assert_eq!(
+            expected(&claude::Claude, Kind::Cli, &cfg),
+            ["hooks", "mcp", "plugin"]
+        );
         cfg.setup.proxy = true;
         cfg.setup.yes = true;
         cfg.setup.mcp = false;
         assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "proxy"]);
-        // `--yes` also expects Claude Code's plugin (T115).
         assert_eq!(
             expected(&claude::Claude, Kind::Cli, &cfg),
             ["hooks", "proxy", "plugin"]

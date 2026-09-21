@@ -45,16 +45,14 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
+| T140 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T151 | in progress | P1 | 3 | 5% | Claude Code / claude-fable-5-1 |
 | T152 | todo | P1 | 2 | 0% | |
-| T153 | todo | P2 | 4 | 0% | |
 | T154 | todo | P2 | 3 | 0% | |
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
-| T158 | todo | P1 | 3 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
 
 
@@ -333,16 +331,6 @@ Split from T122. `plugin::identical_result` (T65.1) matches on the host session;
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
 
-### T151. `rtok worktree list`: source size, cache size and orphans in one table
-
-Depends on T150. All of the measured weight was tagged build cache (19–29 MB of source against 1.4–18 GB of `target/`), and the largest consumer was an orphan git could not see: a directory whose `.git` file points at an admin entry that no longer exists (`research.md` §18.1).
-
-Plan: `rtok worktree list [--json]`. Per worktree from T150: source bytes and cache bytes, where a cache is a directory holding a `CACHEDIR.TAG` with the standard signature (cargo writes it into `target/`; no hardcoded directory names), walked with the already-approved `walkdir`, never descending into a nested worktree. Orphan scan: in the parent directories of the known worktrees plus `<repo>/.claude/worktrees`, a directory with a `.git` *file* whose `gitdir:` target is missing, or that the inventory does not list, is reported as `orphan` with its sizes. Columns: path, branch, owner, state (`active`/`idle`/`merged`/`dirty`/`orphan`/`stale`), source, cache, last modified. `stale` is the mirror of `orphan`: a record whose directory is gone — detected by the missing path, not by git's `prunable` flag, because git never flags a locked record (T153). Sizes are logical bytes; say so in `--help` (APFS clones are double-counted). Read-only: this command deletes nothing.
-
-Check: `assert_fs` integration test — a repo with a clean worktree, a dirty one, one with a tagged cache, one with an untagged directory of the same name (not counted as cache) and one orphan (admin entry removed by hand); `trycmd` snapshot of the table and of `--json`; `just check`.
-
-Do (Claude Code / claude-fable-5-1): `Cmd::Worktree { action: WorktreeCmd::List { json } }` in `src/cli.rs`, run from any checkout of the repository (git resolves the main one). `src/worktree/list.rs` — `usage(dir)`: one recursive `std::fs` walk (no new dependency; `walkdir` is not a direct one), symlinks not followed, everything under a directory with a valid `CACHEDIR.TAG` counts as cache, a nested directory with its own `.git` entry is skipped (a nested worktree is its own row), newest mtime kept; `orphans(entries)`: children of the known worktrees' parent directories and of `<main>/.claude/worktrees` whose `.git` *file* names a `…/worktrees/<id>` admin directory that does not exist; rows rendered through `render::table` with `info::human_bytes` and `render::duration`, `--json` through serde. The state column is T150's `State` plus `orphan`; `active`/`idle` is a threshold on the `modified` column and belongs to T152, which owns `--idle`. Sizes and ages are not snapshot material, so `trycmd` covers `--help` and the not-a-repository error, and the fixture test asserts on parsed `--json`. Tests use `testutil::tmp_dir` (no `assert_fs` in `Cargo.toml`). README command table, completions snapshots.
-
 ### T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
 
 Depends on T151. The always-safe operation: a tagged cache holds no source and the next build recreates it, while `git worktree remove` refuses the whole worktree when anything is uncommitted (`graph-perf`: 18.1 GB of cache next to 23 uncommitted files; deleting only the cache freed 17 GiB and lost nothing).
@@ -351,17 +339,7 @@ Plan: `rtok worktree clean [<path>…] [--idle <duration>] [--yes]`. Default is 
 
 Check: integration test — dry run deletes nothing and reports the bytes; `--yes` removes the tagged cache and leaves an untagged `target/`, a fresh (non-idle) cache and every source file in place; an orphan's cache is cleaned; exit code and output snapshot via `trycmd`; `just check`.
 
-### T153. `rtok worktree gc`: remove finished worktrees and their merged branches
-
-Depends on T151. Hosts clean up only unchanged worktrees, and squash merges make every merged branch look unmerged, so finished worktrees stay forever (`research.md` §18.1, §18.3).
-
-Plan: `rtok worktree gc [--yes]`, dry run by default. A worktree is removed only when all hold: merged per T150, clean, idle per T152, and its lock is absent or names the owner passed with `--owner` — a lock naming anyone else is a hard stop, as is any dirty file. Removal is `git worktree unlock` + `git worktree remove` (never `--force`) and `git branch -D` for the merged local branch; the remote branch is reported, not deleted. Orphans are reported, never removed.
-
-Stale records are part of the job, not a footnote. A worktree deleted with `rm -rf` (or purged from `/tmp`) leaves its record in `.git/worktrees/<id>`: git prunes it only after `gc.worktreePruneExpire` (3 months) when unlocked and **never when locked** — and the conventions (T155) lock every worktree. Until then the branch counts as checked out: it cannot be deleted or checked out elsewhere, and T150 would keep listing a worktree that does not exist. So `gc` treats "directory missing" as its own state: under the same owner rule (no lock, or a lock naming `--owner`; a lock with no reason is a foreign owner) it drops that one record with `git worktree unlock` + `git worktree remove <path>` — per record, never a blanket `git worktree prune`, which would also drop the records of another session's worktrees on a volume that is merely unmounted — and then applies the merged-branch rule. `rtok worktree clean`/`gc` never delete a worktree directory themselves, so they never create such a record.
-
-Known limit of T150's merged check, seen on 2026-09-22 with this plan's own branch: after the squash merge, `main` gained another row next to the same lines (T160), so `git merge-tree --write-tree origin/main plan-worktrees` ended in a textual conflict and the merged branch read as `Unmerged`. The error is on the safe side — the branch is kept and reported — but every long-lived plan branch will hit it. Add a second, also git-only signal before trusting `Unmerged`: the branch's whole diff as one commit (`git commit-tree <branch>^{tree} -p <merge-base>`) checked with `git cherry <base> <that>` — `-` means a patch-equivalent commit is already in the base, whatever was added around it later. Either signal says merged. Neither sees a PR that was merged after `main` was merged into it with hand-resolved conflicts; that case stays `Unmerged`, and `gc` prints the `gh pr view <branch>` command instead of guessing.
-
-Check: integration test over a fixture repo — merged+clean+idle is removed with its branch; each of dirty, unmerged, foreign-locked, locked-without-reason and non-idle survives with its reason printed; a worktree whose directory was removed by hand is dropped from `git worktree list` and its merged branch deleted, both when unlocked and when locked by `--owner`, and survives when locked by someone else; after every case `.git/worktrees/` holds no entry without a directory that `gc` was allowed to drop; dry run changes nothing; the main checkout can never be selected; `just check`.
+Already in the tree (T151, T153) — reuse, do not re-implement: `worktree::list::is_cache_dir` (the `CACHEDIR.TAG` signature check), `worktree::list::usage` (source/cache bytes and the newest mtime), `worktree::list::orphans`, and the `--idle` flag of `worktree gc` (default `24h`, parsed by `measure::stats::parse_since`) — `clean` takes the same flag with the same default. A new subcommand also needs a reason in `tests/surface_parity.rs` `EXEMPT`, its per-call flags in `tests/config_coverage.rs` `ALLOW_KEYS`, a `--help` case inside the fence of `tests/trycmd/help-subcommands.trycmd`, and re-blessed completion goldens — after `TRYCMD=overwrite`, restore the `v[..] ([..])` line of `tests/trycmd/man.stdout`.
 
 ### T154. Ownership ledger: SessionStart records which session worked in which worktree
 
@@ -395,14 +373,6 @@ Plan: in a scratch clone, enable `worktree.useRelativePaths`, add a worktree, th
 
 Check: `research.md` §18.2 gains a dated compatibility table; if every reader passes, the `worktrees` skill (T155) and `AGENTS.md` gain the one-line setting; if any fails, the finding is recorded and the setting stays off.
 
-### T158. `rtok worktree add`: rtok creates the worktree — one location, one name, one owner
-
-Creator request 2026-09-22: rtok owns the worktree lifecycle, creation included. Depends on T150. Every measured problem starts at creation: 28 worktrees in 5 locations, directory names that do not match their branch, locks without a reason (`research.md` §18.1). Cleaning up afterwards (T152, T153) treats the symptom; one creation path removes the cause, and it is the only moment the owner is known for certain.
-
-Plan: `rtok worktree add <task-id> [<slug>] --owner "<provider> / <model>"`, printing the created path on stdout and nothing else (scripts and T159 consume it). Rules, identical to the creator-local `wt.sh new` it replaces: root = `[worktree].root` if set, else the nearest ancestor of the main checkout that holds `_worktrees/`, else `_worktrees/` next to it; directory `<repo>-<task-id>`, branch `<task-id>[-<slug>]`, both lower case and validated against `[a-z0-9._-]`; refuse when the path exists (one worktree per task) or when the root resolves under a temp directory; `git fetch origin <default>` then `git worktree add --lock --reason "<owner> | <task-id> | <date>" --no-track -b <branch> <path> origin/<default>` — no upstream, so a bare `git push` cannot reach `main`; the reason stays ASCII (porcelain C-quotes anything else, T150 parses it back). Write the T154 ledger row at creation when that table exists. `[worktree].root` is a new config key: `docs/config.md` and the config coverage test in the same PR. No seeding of `target/` here — that waits for T156's numbers.
-
-Check: `assert_fs` integration test — the path and branch follow the rule and the path is the only stdout line; the lock reason round-trips through T150's parser; a second `add` for the same task fails without touching the first; invalid ids and a temp-directory root are rejected before git runs; the new branch has no upstream; `[worktree].root` overrides discovery; `trycmd` snapshot of `--help` and the error messages; `just check`.
-
 ### T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 
 Depends on T156 (the real payloads), T158 (create) and T153 (remove). A skill is advice an agent may skip; the host's own worktree hooks are the only place where the rules cannot be skipped: `claude --worktree`, the desktop app and sub-agent `isolation: worktree` all create worktrees without asking the agent, which is where the `agent-<hex>` directories and reason-less locks come from (`research.md` §18.1, §18.3).
@@ -419,6 +389,14 @@ Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` prints `
 Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
 
 Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
+
+### T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
+
+T139 did this for Claude Code (root `.claude-plugin/marketplace.json` + `claude plugin marketplace add`/`install`). Every other host with a `plugins/<host>/` tree still only offers a local path or a manual copy step, which shares T139's original problem: it breaks across a ketch upgrade and is never installed by default. Same shape, per host: install from GitHub `listepo/rtok` by default (no `--yes`) whenever the host's CLI is on `PATH` and the plugin is not already installed, checked first through that host's own list command or record (never a byte-guess) — no-op when already installed, fail open with an "offer … (host failed: …)" message when the CLI is missing or errors, `--dry-run` only prints.
+
+Plan: per host, follow its current plugin docs rather than copying Claude's marketplace shape verbatim: `pi` via `pi install git:github.com/listepo/rtok` if pi's installer supports a subdirectory (else keep the local-path offer and say so); `codex`, `kimi`, `grok`, `cursor`, `opencode`, `zcode`, `antigravity`, `copilot`, `gemini` each get the GitHub-based command their own current docs name, verified live against those docs before writing the installer branch (do not assume Claude's shape transfers); hosts with no CLI plugin-install command (UI-only, e.g. VS Code, Windsurf) keep today's local-path offer — GitHub install is not possible there. `support("plugin")` for a host converted this way moves from `Flag("--yes")` to `Yes`, mirroring T139's `src/agents/claude/mod.rs` change. Split per host into its own task/PR when claimed (≤200 LOC / ≤10 files each) rather than one large change.
+
+Check: per converted host, unit tests for the decision logic (installed → no-op; not installed → installs; missing/failing CLI → fail-open offer; dry-run text) without spawning a real host CLI, reusing T139's `raw_without_claude`-style pattern; `docs/agents.md` reblessed (`RTOK_BLESS=1`); `host_docs` and `readme_tables_match_support` green; `just check`.
 
 ## Reference
 

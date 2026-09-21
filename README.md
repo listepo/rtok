@@ -299,6 +299,9 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok doctor` | inspect hooks, MCP servers and the proxy chain |
+| `rtok worktree add <task-id> [<slug>] --owner "<provider> / <model>"` | create the task's worktree at `<root>/<repo>-<task-id>` on branch `<task-id>[-<slug>]` from a freshly fetched `origin/<default>`, locked with `<owner> \| <task-id> \| <date>`, no upstream; prints the path; refuses a second worktree for the same task or a root under a temp directory (`[worktree] root`) |
+| `rtok worktree list` | every git worktree of the repository with its owner, state, source bytes and tagged build-cache bytes, plus orphans git no longer lists (`--json`); read-only |
+| `rtok worktree gc [--yes] [--owner <owner>] [--idle 24h]` | dry run by default; removes worktrees that are merged (squash-aware), clean and idle, deletes their local branch, and drops the record of a worktree whose directory was deleted by hand; a lock naming anyone but `--owner` is a hard stop, nothing is forced |
 | `rtok run -- <cmd>` | run, archive, and format a command result |
 | `rtok filter --stdin` | filter a payload without executing it (OpenCode) |
 | `rtok expand <id>` | retrieve an archived original (`--lines`, `--grep`) |
