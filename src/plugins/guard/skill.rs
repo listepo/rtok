@@ -175,7 +175,14 @@ mod tests {
             "{reason}"
         );
         assert_eq!(rt.get_archive(id).unwrap().unwrap(), big.as_bytes());
-        let budget = if cfg!(debug_assertions) { 100 } else { 10 };
+        // The 10 ms gate is the release number. Debug only guards against a gross
+        // regression; the `windows-latest` runner took 270 ms here (ci run 35591648404),
+        // most of it the archive write on NTFS.
+        let budget = match (cfg!(debug_assertions), cfg!(windows)) {
+            (false, _) => 10,
+            (true, false) => 100,
+            (true, true) => 1000,
+        };
         assert!(ms < budget, "{ms} ms");
     }
 
