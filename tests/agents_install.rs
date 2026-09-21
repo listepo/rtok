@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 /// unanswered offer is a step that changed nothing, so `already installed` needs the link.
 fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)> {
     vec![
-        ("claude", vec![], Some(home.join(".claude/settings.json"))),
+        // T115: `--yes` installs the plugin (fake `claude`), which then serves hooks and MCP,
+        // so rtok itself writes no settings file there (D21).
+        ("claude", vec!["--yes"], None),
         (
             "cursor",
             vec!["--yes"],
