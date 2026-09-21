@@ -18,3 +18,8 @@
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
+- T128. `rtok stats`: sub-agent transcripts and the re-read share
+- T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
+- T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
+- T131. Measure the spawn brief: cost row and on/off re-read share
+- T132. Ship a Haiku scout agent definition with the Claude Code plugin

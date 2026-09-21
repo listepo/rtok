@@ -26,6 +26,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
+| T128 | todo | P1 | 3 | 0% | |
+| T129 | todo | P1 | 3 | 0% | |
+| T130 | todo | P2 | 4 | 0% | |
+| T131 | todo | P2 | 3 | 0% | |
+| T132 | todo | P2 | 2 | 0% | |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -213,6 +218,44 @@ Check: settings round-trip test (add, idempotent, remove keeps foreign entries);
 New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
 
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
+
+### T128. `rtok stats`: sub-agent transcripts and the re-read share
+
+Evidence gate for T130–T132 (`research.md` §17.1). T59.6 measured the `Agent` tool in the parent transcript only; what a sub-agent spends lives in `<session>/subagents/agent-<id>.jsonl` (+ `.meta.json`: `agentType`, `model`) and is attributed to nobody. An ad-hoc scan (2026-09-21) put re-reads at 48 % of sub-agent read bytes; that number is not citable until it is a `rtok stats` row.
+
+Plan: in `src/measure/` attribute `subagents/agent-*.jsonl` to the parent session (no double count as a session of its own); `Report` gains a `subagents` row next to `agents` (T59.6 `AgentRow`): sub-agent count, tool-result bytes vs parent, file-read bytes, read bytes of a path the parent read, of a path an earlier sibling read, usage tokens; split by `agentType` and `model` from the meta file. Reuse the existing JSONL parser and read-tool detection — no second parser. Fixture test: one parent + two sub-agents with overlapping reads.
+
+Check: fixture test asserts the three shares; `rtok stats --since 30d --json` has `subagents`; the dated result replaces the ad-hoc table in `research.md` §17.1; `just check` green.
+
+### T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
+
+`research.md` §17.3(1). Hooks fired inside a sub-agent carry the parent's `session_id` plus `agent_id`/`agent_type`; `src/hooks/types.rs` drops both, so `guard::pre_tool` denies a sub-agent's first Read of a file the parent read (`duplicate; rtok expand <id>`) — a body that context never saw, one extra round trip, and a `guard` Measurement row claiming a saving. Complements T122 (MCP side, no caller identity); reuse its context key if it lands one — do not add a second.
+
+Plan: parse optional `agent_id`/`agent_type` in `src/hooks/types.rs`; failing test first in `src/plugins/guard/mod.rs` (parent reads P, sub-agent reads P → allowed; sub-agent reads P twice → denied; parent again → denied); scope the guard's read-cache key by `agent_id` at the one place the key is built (`cache_key`), so every caller follows. Hosts without the field behave as today.
+
+Check: the three-case test; no `guard` Measurement row on the allowed path; hook fixture with `agent_id` still exits 0 within the 10 ms budget; `just check` green.
+
+### T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
+
+`research.md` §17.3(2). Off by default until T131 shows a net saving. At `PreToolUse` on `Agent`/`Task`, return `updatedInput` with the original `prompt` plus a brief built from the parent's ledger: paths the parent read or edited (most recent first, those named in the prompt first), each with its archive id and outline line ranges where the graph index has them, and two fixed lines of instruction (ranged `read`, `expand <id>`, answer with `path:line`). Pointers only — never file bodies. First step: verify on a live hook whether `SubagentStart` `additionalContext` reaches the sub-agent; pick **one** injection path (D21) and record the choice in the card.
+
+Plan: one builder shared with the `handoff` MCP tool (`src/plugins/memory/handoff.rs`) — the tool and the hook are two surfaces of one digest; config `[memory] spawn_brief = false`, `spawn_brief_tokens = 300`; deterministic order and byte-stable output for an unchanged ledger; fail open: any error → no `updatedInput`. The brief is archived and carries its own `expand <id>`.
+
+Check: `assert_cmd` hook test — `Agent` payload in → `updatedInput.prompt` starts with the original prompt, brief ≤ budget, identical bytes on a second run; flag off or empty ledger → passthrough; non-`Agent` tools untouched; ≤ 10 ms; `just check` green.
+
+### T131. Measure the spawn brief: cost row and on/off re-read share
+
+Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.
+
+Plan: T130's hook records a `Measurement` (`plugin: "memory"`, `kind: "brief"`) with the tokens it added (before = 0, after = brief) so the cost shows as negative saving; `rtok stats` `subagents` row splits the re-read share and sub-agent input tokens by "spawned with a brief" (the brief's archive id in the sub-agent's first user message) vs without.
+
+Check: fixture with one briefed and one plain sub-agent asserts the split; after a dated window with the flag on, `research.md` §17 gets the measured net; default flips to on only if net tokens saved > 0 — otherwise the card closes with the number and T130 stays off.
+
+### T132. Ship a Haiku scout agent definition with the Claude Code plugin
+
+`research.md` §17.3(4). Make the cheap path the default one: `plugins/claude/agents/rtok-scout.md` with `model: haiku`, `tools` limited to the rtok MCP `read`, `search`, `outline`, `explore`, `expand`, and a short system prompt — ranged reads only, never a whole file over the outline threshold, answer with `path:line` citations and no file dumps. Verify the plugin `agents/` directory format against the current Claude Code docs first and add the link to the `## Docs` list in `plugins/claude/README.md`.
+
+Check: `rtok agents install claude` offers the agent file and removal takes it away (host matrix e2e); `tests/host_docs.rs` and `tests/agents_doc.rs` (`RTOK_BLESS=1`) green; T128's per-`agentType` split is the measurement — record `rtok-scout` vs `Explore`/`general-purpose` read bytes per sub-agent in `research.md` §17 after a dated window.
 
 ## Reference
 
