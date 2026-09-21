@@ -770,4 +770,27 @@ Options:
       --ai               Model-shaped rendering of the same document instead of `--format` (T22.4)
   -h, --help             Print help
 
+$ rtok worktree --help
+Git worktrees of this repository: owner, state and disk cost
+
+Usage: rtok worktree [OPTIONS] <COMMAND>
+
+Commands:
+  list  Every worktree and orphan with its owner, state, source and build-cache bytes
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+  -h, --help           Print help
+
+$ rtok worktree list --help
+Every worktree and orphan with its owner, state, source and build-cache bytes
+
+Usage: rtok worktree list [OPTIONS]
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON instead of the table
+  -h, --help           Print help
+
 ```

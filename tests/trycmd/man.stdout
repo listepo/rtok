@@ -43,6 +43,9 @@ A/B benchmark of host configurations
 rtok/-doctor(1)
 Inspect hooks, MCP servers and the proxy chain
 .TP
+rtok/-worktree(1)
+Git worktrees of this repository: owner, state and disk cost
+.TP
 rtok/-info(1)
 Version, effective paths, disk usage, error count and proxy status
 .TP

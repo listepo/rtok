@@ -99,3 +99,79 @@ fn inventory_sees_a_squash_merge_a_foreign_lock_and_a_deleted_directory() {
         State::Unmerged
     );
 }
+
+fn rtok(cwd: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .current_dir(cwd)
+        .env("HOME", cwd)
+        .args(args)
+        .output()
+        .expect("rtok runs")
+}
+
+/// T151: `rtok worktree list` splits tagged build cache from source and finds the
+/// directory git no longer lists.
+#[test]
+fn list_splits_cache_from_source_and_reports_an_orphan() {
+    let tmp = rtok::testutil::tmp_dir("worktree-list");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    // Shared by every worktree of the repository, like a committed `.gitignore`.
+    std::fs::write(work.join(".git/info/exclude"), "target/\nout/\n").unwrap();
+    for name in ["cache", "dirty", "orphan"] {
+        let (branch, path) = (format!("t-{name}"), format!("../wt-{name}"));
+        run(&work, &["worktree", "add", "-q", "-b", &branch, &path]);
+    }
+    let cache = tmp.join("wt-cache");
+    std::fs::create_dir_all(cache.join("target/debug")).unwrap();
+    std::fs::create_dir_all(cache.join("out")).unwrap();
+    let tag = "Signature: 8a477f597d28d172789f06886806bc55\n";
+    std::fs::write(cache.join("target/CACHEDIR.TAG"), tag).unwrap();
+    std::fs::write(cache.join("target/debug/bin"), [0; 4096]).unwrap();
+    // Ignored like `target/`, but untagged: nothing says it is safe to delete.
+    std::fs::write(cache.join("out/report"), [0; 100]).unwrap();
+    std::fs::write(tmp.join("wt-dirty/new.txt"), "x").unwrap();
+    // The record is gone (pruned, or the repository moved); the directory stays.
+    std::fs::remove_dir_all(work.join(".git/worktrees/wt-orphan")).unwrap();
+
+    // From a linked worktree: git resolves the repository, whichever checkout we stand in.
+    let out = rtok(&cache, &["worktree", "list", "--json"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let row = |name: &str| {
+        let found = rows.as_array().unwrap().iter().find(|r| {
+            let path = r["path"].as_str().unwrap();
+            Path::new(path).ends_with(name)
+        });
+        found.unwrap_or_else(|| panic!("{name} missing in {rows}"))
+    };
+    assert_eq!(rows.as_array().unwrap().len(), 4, "{rows}");
+    assert_eq!(row("work")["state"], "main");
+    assert_eq!(row("work")["cache_bytes"], 0);
+    assert_eq!(row("wt-dirty")["state"], "dirty");
+
+    let cached = row("wt-cache");
+    assert_eq!(cached["state"], "unmerged");
+    assert_eq!(cached["branch"], "t-cache");
+    assert_eq!(cached["cache_bytes"], 4096 + tag.len() as u64);
+    let source = cached["source_bytes"].as_u64().unwrap();
+    assert!((100..4096).contains(&source), "{source}");
+    assert!(cached["modified_unix"].as_u64().unwrap() > 0);
+
+    let orphan = row("wt-orphan");
+    assert_eq!(orphan["state"], "orphan");
+    assert!(orphan["branch"].is_null() && orphan["owner"].is_null());
+
+    let table = rtok(&work, &["worktree", "list"]);
+    let table = String::from_utf8_lossy(&table.stdout);
+    assert!(table.starts_with("path "), "{table}");
+    assert!(table.contains(" orphan "), "{table}");
+    assert!(table.contains("4 worktrees: "), "{table}");
+
+    let outside = rtok(&tmp, &["worktree", "list"]);
+    assert!(!outside.status.success());
+    let err = String::from_utf8_lossy(&outside.stderr);
+    assert!(err.contains("not a git repository"), "{err}");
+}
