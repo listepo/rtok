@@ -68,7 +68,11 @@ process.stdout.write("short [rtok expand abc]");`,
 test("a small read result stays byte-identical", async () => {
   const { on } = load(filterPrints("echo"));
   assert.equal(
-    await on.tool_result({ toolName: "read", input: { path: "tiny.rs" }, content: [{ text: "small\n" }] }),
+    await on.tool_result({
+      toolName: "read",
+      input: { path: "tiny.rs" },
+      content: [{ text: "small\n" }],
+    }),
     undefined,
   );
 });
@@ -76,7 +80,11 @@ test("a small read result stays byte-identical", async () => {
 test("a spawn failure on read returns the original", async () => {
   const { on, entries } = load(null);
   assert.equal(
-    await on.tool_result({ toolName: "read", input: { path: "x.rs" }, content: [{ text: "whole file" }] }),
+    await on.tool_result({
+      toolName: "read",
+      input: { path: "x.rs" },
+      content: [{ text: "whole file" }],
+    }),
     undefined,
   );
   assert.equal(entries.length, 1);
@@ -188,19 +196,13 @@ test("session_before_compact calls PreCompact --host pi and returns nothing", as
     if (args.join(" ") !== "hook PreCompact --host pi") process.exit(9);
     process.stdout.write("{}");
   `);
-  const ret = await on.session_before_compact(
-    { reason: "threshold" },
-    { sessionId: "p1" },
-  );
+  const ret = await on.session_before_compact({ reason: "threshold" }, { sessionId: "p1" });
   assert.equal(ret, undefined, "must not replace the host summary");
 });
 
 test("after compact, the next context injects the checkpoint", async () => {
   const { on } = load(COMPACT);
-  assert.equal(
-    await on.session_before_compact({ reason: "auto" }, { sessionId: "p1" }),
-    undefined,
-  );
+  assert.equal(await on.session_before_compact({ reason: "auto" }, { sessionId: "p1" }), undefined);
   await on.session_compact({}, { sessionId: "p1" });
   const messages = piArray(false);
   const out = await on.context({ messages });
@@ -265,7 +267,16 @@ test("unparsable guard output fails open", async () => {
   assert.match(event.input.command, /rtok run/);
 });
 
-const PI_TOOL_NAMES = ["read", "search", "tree", "symbol", "callers", "expand", "mem_search", "mem_get"];
+const PI_TOOL_NAMES = [
+  "read",
+  "search",
+  "tree",
+  "symbol",
+  "callers",
+  "expand",
+  "mem_search",
+  "mem_get",
+];
 
 test("tools stay unregistered until setup.pi.tools is true", async () => {
   const off = load('process.stdout.write("false");');
@@ -282,7 +293,10 @@ test("each registered tool is one mcp --call", async () => {
     else process.stdout.write(args.join(" "));
   `);
   await on.session_start({});
-  assert.deepEqual(tools.map((t) => t.name), PI_TOOL_NAMES);
+  assert.deepEqual(
+    tools.map((t) => t.name),
+    PI_TOOL_NAMES,
+  );
   for (const t of tools) {
     const out = await t.execute("id1", { q: 1 });
     assert.equal(out.content[0].text, `mcp --call ${t.name} --json {"q":1}`);

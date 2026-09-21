@@ -8,14 +8,16 @@ cliff := env("CLIFF", "mise exec -- git-cliff")
 dist := env("DIST", "mise x cargo:cargo-dist@0.32.0 -- dist")
 hugo := env("HUGO", "mise exec -- hugo --source site")
 jscpd := env("JSCPD", "mise exec -- jscpd")
+oxlint := env("OXLINT", "mise exec -- oxlint")
+oxfmt := env("OXFMT", "mise exec -- oxfmt")
 
 # Logical CPUs, portable across the OSes rtok's CI runs on (Linux/macOS/BSD, getconf fallback).
 cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *) getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4;; esac`
 
 default: check
 
-# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector
-check: fmt-check lint test build-min dup
+# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format
+check: fmt-check lint test build-min dup js
 
 fmt:
     {{cargo}} fmt
@@ -33,6 +35,17 @@ lint:
 # non-zero past the threshold, which is what makes "don't duplicate logic" a gate and not a wish.
 dup:
     {{jscpd}}
+
+# T110: the TypeScript host plugins and tests/node. JS/TS files only — oxfmt would also
+# rewrite the plugins' JSON manifests, which tests compare byte for byte.
+js_files := `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' | tr '\n' ' '`
+
+js:
+    {{oxlint}} --deny-warnings {{js_files}}
+    {{oxfmt}} --check {{js_files}}
+
+js-fmt:
+    {{oxfmt}} {{js_files}}
 
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 # `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml

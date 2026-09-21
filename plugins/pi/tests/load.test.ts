@@ -40,7 +40,9 @@ test("pi loads the linked rtok directory once", { skip: !pkg && "pi not installe
     const plugin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     fs.symlinkSync(plugin, path.join(agentDir, "extensions", "rtok"), "junction");
   }
-  const { discoverAndLoadExtensions } = await import(pathToFileURL(path.join(pkg!, "dist/index.js")).href);
+  const { discoverAndLoadExtensions } = await import(
+    pathToFileURL(path.join(pkg!, "dist/index.js")).href
+  );
   const { extensions, errors } = await discoverAndLoadExtensions([], tmp, agentDir);
   assert.deepEqual(errors, []);
   assert.equal(extensions.length, 1, extensions.map((e: any) => e.path).join(", "));

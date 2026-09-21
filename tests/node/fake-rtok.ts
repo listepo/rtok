@@ -15,7 +15,8 @@ function bin(): string {
   const dir = mkdtempSync(join(tmpdir(), "rtok-fake-bin-"));
   const dest = join(dir, exe);
   try {
-    process.platform === "win32" ? linkSync(process.execPath, dest) : symlinkSync(process.execPath, dest);
+    if (process.platform === "win32") linkSync(process.execPath, dest);
+    else symlinkSync(process.execPath, dest);
   } catch {
     copyFileSync(process.execPath, dest);
   }

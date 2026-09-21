@@ -174,10 +174,7 @@ export default function (pi) {
       );
       const text = additionalContext(c.stdout);
       if (text) {
-        messages = [
-          ...messages,
-          { role: "user", content: [{ type: "text", text }] },
-        ];
+        messages = [...messages, { role: "user", content: [{ type: "text", text }] }];
       }
     }
     if (messages === event.messages) return;
@@ -226,49 +223,87 @@ function claudeTool(name) {
   return String(name ?? "");
 }
 
-
 const PI_TOOLS = [
   {
     name: "read",
     label: "Read",
     description: "Read a file; mode full|lines|map|signatures; range a-b for full|lines.",
-    parameters: { type: "object", properties: { path: { type: "string" }, mode: { type: "string" }, range: { type: "string" } }, required: ["path"] },
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, mode: { type: "string" }, range: { type: "string" } },
+      required: ["path"],
+    },
   },
   {
     name: "search",
     label: "Search",
     description: "Regex search files; path:line: snippet, max hits.",
-    parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, max: { type: "integer" } }, required: ["pattern"] },
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: { type: "string" },
+        path: { type: "string" },
+        max: { type: "integer" },
+      },
+      required: ["pattern"],
+    },
   },
   {
     name: "tree",
     label: "Tree",
     description: "Compact directory listing with sizes; depth cap.",
-    parameters: { type: "object", properties: { path: { type: "string" }, depth: { type: "integer" } } },
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, depth: { type: "integer" } },
+    },
   },
   {
     name: "symbol",
     label: "Symbol",
-    description: "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
-    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" }, kind: { type: "string" } }, required: ["name"] },
+    description:
+      "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string" }, path: { type: "string" }, kind: { type: "string" } },
+      required: ["name"],
+    },
   },
   {
     name: "callers",
     label: "Callers",
-    description: "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
-    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" } }, required: ["name"] },
+    description:
+      "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string" }, path: { type: "string" } },
+      required: ["name"],
+    },
   },
   {
     name: "expand",
     label: "Expand",
-    description: "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
-    parameters: { type: "object", properties: { id: { type: "string" }, lines: { type: "string" }, grep: { type: "string" }, context: { type: "integer" } }, required: ["id"] },
+    description:
+      "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        lines: { type: "string" },
+        grep: { type: "string" },
+        context: { type: "integer" },
+      },
+      required: ["id"],
+    },
   },
   {
     name: "mem_search",
     label: "Mem search",
     description: "Search notes by FTS5; ids, titles, snippets.",
-    parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+    parameters: {
+      type: "object",
+      properties: { query: { type: "string" }, limit: { type: "integer" } },
+      required: ["query"],
+    },
   },
   {
     name: "mem_get",
