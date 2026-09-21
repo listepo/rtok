@@ -4361,3 +4361,13 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+
+`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
+
+Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
+
+Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
+
+Done: Added `tools_rewrite_advice: Option<String>` field to Report struct; created pure helper function `tools_rewrite_advice()` checking all four conditions; added `tools_rewrite_min_desc_tokens` config key (default 2000); integrated into Report construction and render output; 5 unit tests verify each condition independently; all tests pass (21 tests in doctor module); ~38 LOC of non-test code.
