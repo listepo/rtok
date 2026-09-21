@@ -62,7 +62,7 @@ Do (2026-09-21): T92.2 — `src/agents/omp/` (`mod.rs` + `README.md` with the mo
 
 Check result (2026-09-21): unit tests `agents::omp::tests` (dry-run offer names `plugins/pi` and ketch, writes nothing; `--yes` links and registers with no `type`, second apply `NO_CHANGES` twice, remove keeps a foreign server; a foreign dest directory is not `installed`) pass; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin`, `cli_trycmd` green. On this machine (omp 18.1.14 at `~/.bun/bin/omp`) `rtok agents list` shows `CLI: oh my pi` and `rtok agents install omp --dry-run` offers `plugins/pi → ~/.omp/agent/extensions/rtok` and `mcpServers.rtok: rtok mcp`, writing nothing. `just check` green: 1109 passed, 4 skipped. Still open, as the card says: one real `omp -p` turn whose bash call goes through `rtok run` (no model credit here).
 
-### T111. TS plugin tests on vitest, with snapshots
+### T119. TS plugin tests on vitest, with snapshots
 
 The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
 
