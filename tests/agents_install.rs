@@ -385,6 +385,7 @@ fn a_missing_rtok_on_path_is_a_warning_at_the_top() {
             "agents",
             "setup",
             "codex",
+            "--no-restart",
         ])
         .env("HOME", &home)
         .env("USERPROFILE", &home)

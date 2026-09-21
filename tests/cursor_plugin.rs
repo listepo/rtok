@@ -47,10 +47,13 @@ fn write_cfg(home: &Path) -> PathBuf {
     cfg
 }
 
+/// Every call here is `agents install cursor …`; `--no-restart` (T141) keeps the test from
+/// ever probing or touching a real Cursor process on the machine running it.
 fn setup(args: &[&str], cfg: &Path, home: &Path) -> (String, String, i32) {
     let out = Command::new(bin())
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
+        .arg("--no-restart")
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("RTOK_HOME", home.join(".rtok"))

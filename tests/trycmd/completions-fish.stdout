@@ -144,12 +144,15 @@ complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcom
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l cli -d 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l desktop -d 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agents; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'
@@ -189,12 +192,15 @@ complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l cli -d 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l desktop -d 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from install" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from uninstall" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l dry-run -d 'Print what would be removed and exit'
+complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from remove" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand agent; and __fish_seen_subcommand_from list" -l json -d 'JSON instead of the table'
@@ -225,6 +231,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand setup" -l proxy -d 'Set `env.A
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l cli -d 'Only the CLI app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l desktop -d 'Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is all)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -l all -d 'All variants (the default when neither `--cli` nor `--desktop` is given)'
+complete -c rtok -n "__fish_rtok_using_subcommand setup" -l no-restart -d 'Skip closing/reopening a running desktop app around the write (T141)'
 complete -c rtok -n "__fish_rtok_using_subcommand setup" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand run" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand run" -s h -l help -d 'Print help'

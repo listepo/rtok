@@ -577,6 +577,9 @@ struct RemoveArgs {
     /// Print what would be removed and exit
     #[arg(long)]
     dry_run: bool,
+    /// Skip closing/reopening a running desktop app around the write (T141)
+    #[arg(long)]
+    no_restart: bool,
 }
 
 /// One definition behind `rtok agents install` and the deprecated `rtok setup`.
@@ -614,6 +617,9 @@ struct SetupArgs {
     /// All variants (the default when neither `--cli` nor `--desktop` is given)
     #[arg(long)]
     all: bool,
+    /// Skip closing/reopening a running desktop app around the write (T141)
+    #[arg(long)]
+    no_restart: bool,
 }
 
 impl SetupArgs {
@@ -631,6 +637,7 @@ impl SetupArgs {
             cli: false,
             desktop: false,
             all: true,
+            no_restart: args.no_restart,
         }
     }
 }
@@ -1489,6 +1496,7 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         cli,
         desktop,
         all,
+        no_restart,
     } = args;
     let mut cfg = Config::load_with(config_file, setup_flags(dry_run, yes, mcp, proxy, &mode))?;
     // Comma-separated hosts: `rtok agents install opencode,cursor` installs both.
@@ -1507,21 +1515,21 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         desktop,
         all,
     };
-    let hosts_for_restart = req.hosts.clone();
     // T81: `agents::run` may ask the plugin question mid-run, and a loader ticking on
     // stderr redraws right over a prompt — the question turns invisible and the wait for
     // its answer reads as a hang. A spinner must never share a terminal with a question,
     // so interactive runs render no loader; pipes and CI (which can never be asked) keep it.
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    // T141: closes a running desktop app before the write if it would change that host's
+    // config, and reopens it after; CLI-only hosts just get a "restart your session" note.
     let out = if interactive {
-        crate::agents::run(&mut cfg, &req)?
+        crate::agents::restart::run(&mut cfg, &req, no_restart)?
     } else {
-        with_loader("updating host", || crate::agents::run(&mut cfg, &req))?
+        with_loader("updating host", || {
+            crate::agents::restart::run(&mut cfg, &req, no_restart)
+        })?
     };
     print!("{out}");
-    // T76: after successful config writes, offer a stop→start so the host reloads.
-    // Skipped under --dry-run and when stdin is not a TTY (CI / pipes).
-    crate::agents::restart::offer_after_setup(&cfg, &hosts_for_restart)?;
     Ok(())
 }
 
