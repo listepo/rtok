@@ -4464,3 +4464,18 @@ Check: unit tests in `agents::restart` pin the inquire surface — `restart_conf
 Status: done 2026-09-21
 Check result: `cargo nextest run --lib agents::restart` 9 passed; `config-init` / `report-md` trycmd snapshots re-blessed (one key fewer: 293 lines, 200 keys); `just check` green.
 Model: Claude Code / claude-opus-5
+
+## T150 — Worktree inventory: one git helper that lists, attributes and classifies every worktree
+
+
+Creator request 2026-09-21; evidence in `research.md` §18. On that day the repo had 28 worktrees in 5 locations, the host disk had 220 MiB free, and nothing could say whose a worktree was or whether it was finished. Not a token saving: no `Measurement` row and no public number come out of T150–T157. The reason it lives in rtok is that rtok already runs in every session on every host (T154), and a full disk fakes rtok's own test failures. Blocker for T151–T155.
+
+Plan: a `worktree` module off the hot path (a CLI command like `doctor`, not a hook). One helper that runs `git worktree list --porcelain -z` and parses it into records: path, branch or detached, `locked` + reason, `prunable` + reason. No new dependency — `git2` lacks `move`/`repair`/checked `remove` and `gix` cannot mutate worktrees (§18.4). Per record: dirty (`git status --porcelain`), merged — squash-aware, `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}`, base = `origin/HEAD` — and owner parsed from a lock reason of the form `<owner> | <task-id> | <date>` (ASCII: porcelain C-quotes anything else). Parsing and classification are pure functions over strings; only the thin runner spawns git. Do not refactor `git_changed_files` or the two `git_root` copies here.
+
+Check: unit tests on captured porcelain — `-z` records with a path containing a space and a newline, locked with and without a reason, prunable, detached, bare main; classification table (merged/unmerged × dirty/clean × locked/unlocked); an integration test builds a real repository under `testutil::tmp_dir` with two worktrees, squash-merges one branch and sees it reported merged while `git branch --merged` does not; `just check`.
+
+Do (Claude Code / claude-fable-5-1): `pub mod worktree` in `src/lib.rs`. `src/worktree/mod.rs` — `Record` (path, head, branch, detached, bare, `locked`, `prunable`), `parse_porcelain(&[u8])` over NUL-separated records, `Owner::parse` for `<owner> | <task-id> | <date>` (a lock with no reason is an unknown owner, never "unlocked"), `State` + `classify` as a pure function of (exists, dirty, merged, lock). `src/worktree/git.rs` — the only place that spawns git: `list`, `is_dirty`, `is_merged` (`merge-tree --write-tree`), `default_base` (`origin/HEAD`, fallback `origin/main`). Unit tests beside the code, `tests/worktree.rs` for the real-git fixture. No CLI surface here — T151 adds it. Verify with `cargo nextest run --lib worktree` and `--test worktree`, `cargo clippy --all-targets`, `cargo fmt --check`; the full `just check` runs in CI while the host disk is under 10 GiB free.
+
+Status: done 2026-09-22 (#153)
+Check result: `cargo nextest run --lib --test worktree -E 'binary(worktree) + test(/worktree::/)'` 15 passed; `cargo fmt --check` and `cargo clippy -p rtok --lib --test worktree -- -D warnings` clean locally; the full `just check` was not run locally (host disk under 4 GiB free) and the PR was merged as a draft, so its first full run is the `main` CI after #153.
+Model: Claude Code / claude-fable-5-1
