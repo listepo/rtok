@@ -38,7 +38,6 @@
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
 - T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
-- T153. `rtok worktree gc`: remove finished worktrees and their merged branches
 - T154. Ownership ledger: SessionStart records which session worked in which worktree
 - T155. Ship the `worktrees` skill with rtok
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`

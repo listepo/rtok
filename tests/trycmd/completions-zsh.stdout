@@ -136,6 +136,17 @@ _arguments "${_arguments_options[@]}" : /
 '--help[Print help]' /
 && ret=0
 ;;
+(gc)
+_arguments "${_arguments_options[@]}" : /
+'--owner=[Open locks whose reason starts with this owner; every other lock is a hard stop]:OWNER:_default' /
+'--idle=[Keep worktrees modified within this window (/`24h/`, /`7d/`)]:IDLE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--yes[Apply; without it this is a dry run that changes nothing]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__worktree__subcmd__help_commands" /
@@ -149,6 +160,10 @@ _arguments "${_arguments_options[@]}" : /
         curcontext="${curcontext%:*:*}:rtok-worktree-help-command-$line[1]:"
         case $line[1] in
             (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(gc)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1402,6 +1417,10 @@ _arguments "${_arguments_options[@]}" : /
         curcontext="${curcontext%:*:*}:rtok-help-worktree-command-$line[1]:"
         case $line[1] in
             (list)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(gc)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -2701,8 +2720,14 @@ _rtok__subcmd__help__subcmd__web_commands() {
 _rtok__subcmd__help__subcmd__worktree_commands() {
     local commands; commands=(
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
+'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
     )
     _describe -t commands 'rtok help worktree commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__gc_commands] )) ||
+_rtok__subcmd__help__subcmd__worktree__subcmd__gc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help worktree gc commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__list_commands] )) ||
 _rtok__subcmd__help__subcmd__worktree__subcmd__list_commands() {
@@ -2974,17 +2999,29 @@ _rtok__subcmd__web_commands() {
 _rtok__subcmd__worktree_commands() {
     local commands; commands=(
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
+'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok worktree commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__gc_commands] )) ||
+_rtok__subcmd__worktree__subcmd__gc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree gc commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__help_commands] )) ||
 _rtok__subcmd__worktree__subcmd__help_commands() {
     local commands; commands=(
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
+'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok worktree help commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__gc_commands] )) ||
+_rtok__subcmd__worktree__subcmd__help__subcmd__gc_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree help gc commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__help_commands] )) ||
 _rtok__subcmd__worktree__subcmd__help__subcmd__help_commands() {

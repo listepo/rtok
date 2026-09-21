@@ -109,6 +109,22 @@ fn rtok(cwd: &Path, args: &[&str]) -> std::process::Output {
         .expect("rtok runs")
 }
 
+/// A successful `rtok … --json` run, parsed.
+fn json(cwd: &Path, args: &[&str]) -> serde_json::Value {
+    let out = rtok(cwd, args);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "rtok {args:?}: {err}");
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+fn by_name<'a>(rows: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    let found = rows.as_array().unwrap().iter().find(|r| {
+        let path = r["path"].as_str().unwrap();
+        Path::new(path).ends_with(name)
+    });
+    found.unwrap_or_else(|| panic!("{name} missing in {rows}"))
+}
+
 /// T151: `rtok worktree list` splits tagged build cache from source and finds the
 /// directory git no longer lists.
 #[test]
@@ -136,17 +152,8 @@ fn list_splits_cache_from_source_and_reports_an_orphan() {
     std::fs::remove_dir_all(work.join(".git/worktrees/wt-orphan")).unwrap();
 
     // From a linked worktree: git resolves the repository, whichever checkout we stand in.
-    let out = rtok(&cache, &["worktree", "list", "--json"]);
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "{err}");
-    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let row = |name: &str| {
-        let found = rows.as_array().unwrap().iter().find(|r| {
-            let path = r["path"].as_str().unwrap();
-            Path::new(path).ends_with(name)
-        });
-        found.unwrap_or_else(|| panic!("{name} missing in {rows}"))
-    };
+    let rows = json(&cache, &["worktree", "list", "--json"]);
+    let row = |name: &str| by_name(&rows, name);
     assert_eq!(rows.as_array().unwrap().len(), 4, "{rows}");
     assert_eq!(row("work")["state"], "main");
     assert_eq!(row("work")["cache_bytes"], 0);
@@ -174,4 +181,159 @@ fn list_splits_cache_from_source_and_reports_an_orphan() {
     assert!(!outside.status.success());
     let err = String::from_utf8_lossy(&outside.stderr);
     assert!(err.contains("not a git repository"), "{err}");
+}
+
+const ME: &str = "Claude Code / sonnet";
+
+fn add(work: &Path, name: &str, lock: Option<&str>) {
+    let (branch, path) = (format!("t-{name}"), format!("../wt-{name}"));
+    let mut args = vec!["worktree", "add", "-q"];
+    match lock {
+        Some("") => args.push("--lock"),
+        Some(reason) => args.extend(["--lock", "--reason", reason]),
+        None => {}
+    }
+    args.extend(["-b", &branch, &path]);
+    run(work, &args);
+}
+
+fn squash(work: &Path, branch: &str) {
+    run(work, &["merge", "-q", "--squash", branch]);
+    run(work, &["commit", "-q", "-m", branch]);
+}
+
+/// T153: `rtok worktree gc` removes what is finished, drops the records of deleted
+/// directories, and stops at every lock that is not the caller's.
+#[test]
+fn gc_removes_only_finished_worktrees_and_never_opens_a_foreign_lock() {
+    let tmp = rtok::testutil::tmp_dir("worktree-gc");
+    run(&tmp, &["init", "-q", "--bare", "origin.git"]);
+    run(&tmp, &["clone", "-q", "origin.git", "work"]);
+    let work = tmp.join("work");
+    std::fs::write(work.join("list.txt"), "1\n2\n3\n").unwrap();
+    run(&work, &["add", "list.txt"]);
+    commit(&work, "a.txt");
+    run(&work, &["push", "-q", "-u", "origin", "main"]);
+    run(&work, &["remote", "set-head", "origin", "main"]);
+
+    let mine = format!("{ME} | t1 | 2026-09-22");
+    let theirs = "Cursor / grok | t2 | 2026-09-22";
+    let plain = ["done", "adj", "dirty", "open", "gone"];
+    plain.iter().for_each(|name| add(&work, name, None));
+    add(&work, "mine", Some(&mine));
+    add(&work, "gone-mine", Some(&mine));
+    add(&work, "theirs", Some(theirs));
+    add(&work, "gone-theirs", Some(theirs));
+    add(&work, "bare-lock", Some(""));
+
+    commit(&tmp.join("wt-done"), "done.txt");
+    run(&tmp.join("wt-done"), &["push", "-q", "origin", "t-done"]);
+    commit(&tmp.join("wt-mine"), "mine.txt");
+    commit(&tmp.join("wt-open"), "open.txt");
+    std::fs::write(tmp.join("wt-dirty/new.txt"), "x").unwrap();
+    std::fs::write(tmp.join("wt-adj/list.txt"), "1\n2\n3\nx\n").unwrap();
+    run(&tmp.join("wt-adj"), &["commit", "-q", "-am", "x"]);
+    for branch in ["t-done", "t-mine", "t-adj"] {
+        squash(&work, branch);
+    }
+    // The base moves on next to the merged lines: the trial merge now conflicts, and
+    // only the patch-equivalence signal still sees the squash.
+    std::fs::write(work.join("list.txt"), "1\n2\n3\nx\ny\n").unwrap();
+    run(&work, &["commit", "-q", "-am", "y"]);
+    run(&work, &["push", "-q", "origin", "main"]);
+    for name in ["gone", "gone-mine", "gone-theirs"] {
+        std::fs::remove_dir_all(tmp.join(format!("wt-{name}"))).unwrap();
+    }
+    let listed = || run(&work, &["worktree", "list", "--porcelain"]);
+    let before = listed();
+
+    // Dry run from inside a finished worktree: a full plan, and nothing changes.
+    let idle0 = ["worktree", "gc", "--json", "--owner", ME, "--idle", "0h"];
+    let plan = json(&tmp.join("wt-done"), &idle0);
+    let planned = |name: &str| {
+        let row = by_name(&plan, name);
+        let (action, note) = (
+            row["action"].as_str().unwrap(),
+            row["note"].as_str().unwrap(),
+        );
+        format!("{action}: {note}")
+    };
+    assert_eq!(planned("work"), "keep: main checkout");
+    assert_eq!(
+        planned("wt-done"),
+        "keep: the worktree this command runs from"
+    );
+    assert_eq!(planned("wt-mine"), "remove: merged, clean and idle");
+    assert_eq!(planned("wt-adj"), "remove: merged, clean and idle");
+    assert_eq!(planned("wt-dirty"), "keep: uncommitted changes");
+    let open = "keep: not merged into the base; check `gh pr view t-open`";
+    assert_eq!(planned("wt-open"), open);
+    assert_eq!(planned("wt-theirs"), "keep: locked by Cursor / grok");
+    assert_eq!(planned("wt-bare-lock"), "keep: locked, owner unknown");
+    assert_eq!(planned("wt-gone"), "drop-record: directory is gone");
+    assert_eq!(planned("wt-gone-mine"), "drop-record: directory is gone");
+    assert_eq!(planned("wt-gone-theirs"), "keep: locked by Cursor / grok");
+    assert_eq!(listed(), before);
+
+    // No `--owner`, default idle window: only the unlocked stale record may go.
+    let cautious = json(&work, &["worktree", "gc", "--json", "--yes"]);
+    let note = |rows, name: &str| by_name(rows, name)["note"].as_str().unwrap().to_owned();
+    assert_eq!(
+        note(&cautious, "wt-done"),
+        "modified within the idle window"
+    );
+    assert_eq!(note(&cautious, "wt-mine"), format!("locked by {ME}"));
+    assert_eq!(note(&cautious, "wt-gone-mine"), format!("locked by {ME}"));
+    assert_eq!(note(&cautious, "wt-gone"), "removed with its branch");
+
+    let applied = json(&work, &[&idle0[..], &["--yes"]].concat());
+    let remote_left = "removed with its branch; remote left: git push origin --delete t-done";
+    assert_eq!(note(&applied, "wt-done"), remote_left);
+    let kept = [
+        "work",
+        "wt-dirty",
+        "wt-open",
+        "wt-theirs",
+        "wt-bare-lock",
+        "wt-gone-theirs",
+    ];
+    let after = listed();
+    let paths: Vec<&str> = after
+        .lines()
+        .filter(|l| l.starts_with("worktree "))
+        .collect();
+    assert_eq!(paths.len(), kept.len(), "{after}");
+    assert!(
+        kept.iter().all(|k| paths.iter().any(|p| p.ends_with(k))),
+        "{after}"
+    );
+    let branches = run(&work, &["branch", "--format=%(refname:short)"]);
+    let mut branches: Vec<&str> = branches.lines().collect();
+    branches.sort_unstable();
+    let survivors = [
+        "main",
+        "t-bare-lock",
+        "t-dirty",
+        "t-gone-theirs",
+        "t-open",
+        "t-theirs",
+    ];
+    assert_eq!(branches, survivors);
+    // Every admin entry left belongs to a directory, or to a lock gc may not open.
+    let admin = std::fs::read_dir(work.join(".git/worktrees")).unwrap();
+    let mut admin: Vec<String> = admin
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    admin.sort_unstable();
+    assert_eq!(
+        admin,
+        [
+            "wt-bare-lock",
+            "wt-dirty",
+            "wt-gone-theirs",
+            "wt-open",
+            "wt-theirs"
+        ]
+    );
+    assert!(after.contains(&format!("locked {theirs}")), "{after}");
 }

@@ -436,6 +436,21 @@ enum WorktreeCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
+    Gc {
+        /// Apply; without it this is a dry run that changes nothing
+        #[arg(long)]
+        yes: bool,
+        /// Open locks whose reason starts with this owner; every other lock is a hard stop
+        #[arg(long)]
+        owner: Option<String>,
+        /// Keep worktrees modified within this window (`24h`, `7d`)
+        #[arg(long, default_value = "24h")]
+        idle: String,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "graph")]
@@ -837,6 +852,32 @@ pub fn run() -> Result<()> {
             } else {
                 let now = std::time::SystemTime::now();
                 print!("{}", crate::worktree::list::to_table(&rows, now));
+            }
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Gc {
+                    yes,
+                    owner,
+                    idle,
+                    json,
+                },
+        } => {
+            use crate::worktree::gc;
+            use anyhow::Context as _;
+            let policy = gc::Policy {
+                owner: owner.as_deref(),
+                idle: crate::measure::stats::parse_since(&idle).context("--idle")?,
+                now: std::time::SystemTime::now(),
+            };
+            let outcomes = gc::run(&std::env::current_dir()?, &policy, yes)?;
+            if json {
+                print_json(&outcomes)?;
+            } else {
+                print!("{}", gc::to_table(&outcomes, yes));
+            }
+            if outcomes.iter().any(|o| o.failed) {
+                bail!("some worktrees could not be removed");
             }
         }
         Cmd::Info { json } => {
