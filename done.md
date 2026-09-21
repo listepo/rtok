@@ -1,5 +1,21 @@
 # rtok — completed tasks
 
+### T108. Guard tests for the Windows CI job
+
+Asked for by the creator on the T82/T93 PR. `tests/windows_ci.rs`, no new dependency (`regex`, `ignore` are already in `Cargo.toml`):
+
+1. `rtok_exe_reserves_an_8_mib_main_thread_stack` (`cfg(windows)`) reads `SizeOfStackReserve` from the PE optional header of `CARGO_BIN_EXE_rtok` and requires ≥ 8 MiB — dropping the T93 line from `build.rs` fails one named test instead of ~100 e2e crashes.
+2. `byte_compared_files_are_lf_in_the_working_tree` — no CR byte in `tests/trycmd/` or `skills/`; on a Windows checkout this is what `.gitattributes` (T82) guarantees.
+3. `windows_exclusion_list_names_only_existing_tests` — every `binary(x)` in the `cfg(windows)` `default-filter` is a `tests/x.rs`, every test name is a `fn name(` somewhere in `src/`, `tests/` or `crates/`, so a rename cannot leave a line that skips nothing and T83's list cannot look non-empty by accident.
+
+Check result (2026-09-21): macOS — 2 passed (the PE test is Windows-only); mutation: renaming `test(=cli)` to `test(=cli_renamed_away)` in `.config/nextest.toml` makes test 3 fail with `stale exclusions: ["test cli_renamed_away"]`. `rustfmt --check` and `clippy --test windows_ci -D warnings` clean. The Windows half is proved by the PR's `windows` job.
+
+### T109. `.editorconfig` matches the repository
+
+The file dated from T0.7: a `[Makefile]` section for a repo without one, and whitespace rules applied to byte-exact fixtures — `tests/trycmd/{config-show,man}.stdout`, `{doctor,report-md}.toml` and `help-subcommands.trycmd` carry trailing spaces, 18 `tests/cmd_golden/*.out` and the 3 proxy JSON fixtures end without a newline, so an editor honouring the old file broke a golden on first save. Now: 2-space indent also for ts/js/sh/html/css/gotmpl (their measured majority), whitespace/newline/indent rules unset for `tests/{trycmd,cmd_golden,fixtures}/**` and `**/snapshots/**`, everything unset for the vendored fonts (CRLF `OFL.txt`) and `*.svg`; `end_of_line = lf` stays in step with `.gitattributes`.
+
+Check: survey script over `git ls-files` (indent histogram per extension, trailing-whitespace and no-final-newline lists) — every file the old rules would have rewritten falls under an unset section.
+
 ### T82. Windows back in CI: green job with a named exclusion list
 
 The advisory `windows` job in `.github/workflows/ci.yml` has been commented out since `224b215` (2026-09-17) because `cargo nextest` hung for hours. The hang itself is already handled: with `slow-timeout = { period = "60s", terminate-after = 3 }` (`552ad01`) the last Windows run (35244082778) finished in ~10 min — 833 run, 808 passed, 22 failed, 3 timed out. A job that is red on every push hides regressions, so the job comes back green: the known Windows failures are skipped by name and everything else must pass.
