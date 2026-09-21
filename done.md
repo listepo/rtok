@@ -8,6 +8,8 @@ Do: `App::background` gives the running TUI a `Worker` thread that turns a confi
 
 Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` — tabs switch mid-read, the worker's snapshot lands, a tick mid-read is skipped; all `tui::` tests green; `just check` green.
 
+Status: done September 21, 2026
+
 
 ### T110. oxlint and oxfmt for the JS/TS files
 
