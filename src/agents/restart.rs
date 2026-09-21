@@ -108,7 +108,7 @@ pub fn offer_after_setup(cfg: &Config, host_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Blocking / timed yes-no read with a left-side spinner redrawn in place (`\\r` + clear).
+/// Blocking / timed yes-no read with a left-side spinner; only the glyph is redrawn, never the typed answer.
 ///
 /// `timeout = None` waits forever. Empty input / timeout / anything other than y/yes → No.
 pub fn prompt_with_spinner(
@@ -149,14 +149,15 @@ pub fn prompt_with_spinner_io<W: Write>(
     let started = Instant::now();
     let mut frame_i = 0usize;
     // First paint immediately so the prompt appears with the spinner.
-    paint_prompt_row(out, frames[0], prompt_label)?;
+    write!(out, "\r\x1b[K{} {prompt_label}", frames[0])?;
+    out.flush()?;
 
     let line = loop {
         let wait = match timeout {
             Some(limit) => {
                 let left = limit.saturating_sub(started.elapsed());
                 if left.is_zero() {
-                    clear_prompt_row(out, prompt_label)?;
+                    finish_unanswered(out)?;
                     return Ok(RestartChoice::No);
                 }
                 left.min(frame_period)
@@ -167,43 +168,50 @@ pub fn prompt_with_spinner_io<W: Write>(
             Ok(Ok(Some(line))) => break line,
             Ok(Ok(None)) => {
                 // EOF with no line → treat as No.
-                clear_prompt_row(out, prompt_label)?;
+                finish_unanswered(out)?;
                 return Ok(RestartChoice::No);
             }
             Ok(Err(e)) => {
-                clear_prompt_row(out, prompt_label)?;
+                finish_unanswered(out)?;
                 return Err(e.into());
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(limit) = timeout
                     && started.elapsed() >= limit
                 {
-                    clear_prompt_row(out, prompt_label)?;
+                    finish_unanswered(out)?;
                     return Ok(RestartChoice::No);
                 }
                 frame_i = (frame_i + 1) % frames.len();
-                paint_prompt_row(out, frames[frame_i], prompt_label)?;
+                paint_frame(out, frames[frame_i])?;
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                clear_prompt_row(out, prompt_label)?;
+                finish_unanswered(out)?;
                 return Ok(RestartChoice::No);
             }
         }
     };
 
-    clear_prompt_row(out, prompt_label)?;
+    finish_answered(out)?;
     Ok(parse_yes_no(&line))
 }
 
-fn paint_prompt_row(out: &mut impl Write, frame: char, prompt_label: &str) -> io::Result<()> {
-    // `[spinner] > ` / `[spinner] Your choice: ` — glyph, space, then the prompt text.
-    write!(out, "\r\x1b[K{frame} {prompt_label}")?;
+/// Swap only the glyph in column 0. Save/restore the cursor and never clear the line, so the
+/// answer the user is typing (echoed by the terminal after the prompt) stays visible.
+fn paint_frame(out: &mut impl Write, frame: char) -> io::Result<()> {
+    write!(out, "\x1b7\r{frame}\x1b8")?;
     out.flush()
 }
 
-fn clear_prompt_row(out: &mut impl Write, prompt_label: &str) -> io::Result<()> {
-    // Erase spinner; leave a clean prompt line (no glyph) then finish with newline after answer.
-    write!(out, "\r\x1b[K  {prompt_label}")?;
+/// No answer (timeout/EOF/error): blank the glyph, keep the prompt, and end the line.
+fn finish_unanswered(out: &mut impl Write) -> io::Result<()> {
+    write!(out, "\x1b7\r \x1b8\n")?;
+    out.flush()
+}
+
+/// The user pressed Enter, so the cursor is on the next row: blank the glyph one row up.
+fn finish_answered(out: &mut impl Write) -> io::Result<()> {
+    write!(out, "\x1b7\x1b[A\r \x1b8")?;
     out.flush()
 }
 
@@ -477,10 +485,14 @@ mod tests {
         .unwrap();
         assert_eq!(choice, RestartChoice::Yes);
         let s = String::from_utf8(buf.into_inner()).unwrap();
-        // Final clear leaves a space where the spinner was, never a stale frame alone.
-        assert!(s.contains('\r'));
-        assert!(s.contains("\x1b[K"));
-        assert!(s.contains("A > ") || s.contains("B > "));
+        assert!(s.contains("A > "));
+        // Answered: the glyph one row up is blanked; the typed answer is never cleared.
+        assert!(s.ends_with("\x1b7\x1b[A\r \x1b8"));
+        assert_eq!(
+            s.matches("\x1b[K").count(),
+            1,
+            "only the first paint clears: {s:?}"
+        );
     }
 
     #[test]
@@ -559,13 +571,18 @@ mod tests {
         };
         assert_eq!(choice, RestartChoice::No);
         let s = String::from_utf8(buf.lock().unwrap().get_ref().clone()).unwrap();
-        // Frames are painted with CR + clear, not one newline per tick.
+        // Frames swap the glyph in place (no clear, no newline); only the timeout ends the line.
         let newline_count = s.chars().filter(|c| *c == '\n').count();
         assert_eq!(
-            newline_count, 0,
+            newline_count, 1,
             "spinner frames must not print newlines: {s:?}"
         );
-        assert!(s.matches('\r').count() >= 2);
+        assert!(s.matches("\x1b7\r").count() >= 2);
+        assert_eq!(
+            s.matches("\x1b[K").count(),
+            1,
+            "frames must not clear typed input: {s:?}"
+        );
     }
 
     #[test]
