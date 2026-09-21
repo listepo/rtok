@@ -1328,3 +1328,46 @@ Caveats: path-level match (no range or sha), parent reads counted over the whole
 3. **It ships only with a number.** The brief costs tokens in every spawn. T128 makes the re-read share a `rtok stats` row; T131 splits it by brief on/off; default-on only if the net is positive.
 4. **A cheap scout by construction.** A shipped agent definition (`model: haiku`, tools limited to rtok MCP `read`/`search`/`outline`/`explore`/`expand`, answer = `path:line` citations) makes the cheap path the default one → T132; measured by T128's per-`agentType` split.
 5. Not pursued: `fork` (parent model, parent-sized context — the opposite of cheap); shrinking the `Agent` result (0.7 %, T59.6 stands). Parked as ideas: sibling cache-prefix sharing (I-89), sibling findings board (I-90), `updatedToolOutput` (I-91).
+
+## 18. Git worktrees: accumulation, ownership, build artifacts (2026-09-21)
+
+Creator question: worktrees pile up, nobody knows whose they are, names are random, and they fill the disk. Not a token saving — no `Measurement` row and no public number follows from this section.
+
+### 18.1 Measured on this repository (2026-09-21, `git worktree list --porcelain`, `du -sk`, `df -h /`)
+
+- The data volume had 220 MiB free of 926 GiB; a sub-agent's shell failed with `ENOSPC`. A full disk also fakes test failures (integration tests exit 1 with empty output).
+- 28 worktrees in 5 locations: 12 under `/private/tmp` (11 in Claude Code session scratchpads, which macOS purges), 7 as siblings `apps/rtok-*`, 5 in `.claude/worktrees/`, 3 in `_worktrees/` and `_ci-no-main-push/`, plus the main checkout.
+- A worktree is 19–29 MB of source. Six held a cargo `target/` of 1.4–7.2 GB, ≈ 27 GB together; `crates/rtok-webui/target` added 5.2 GB. **All of the weight is tagged build cache** (`CACHEDIR.TAG`).
+- The largest consumer was invisible to git: `.claude/worktrees/graph-perf`, 18.1 GB of `target/`, untouched since 2026-09-12. Its `.git` file pointed at `/Users/…/GitHub/rtok/.git/worktrees/graph-perf` — the repository had moved and the absolute link broke, so neither `git worktree list` nor `prune` sees it. It also held 23 edited source files that exist in no commit. Deleting only `target/` freed 17 GiB and lost nothing.
+- Names carry no information: `rtok-wt-t126` holds branch `t138-inquire-prompts`, `rtok-t103` holds `t106-otel-export-tests`, agent worktrees are `agent-<hex>`; the three locked ones had no lock reason.
+- `git branch --merged` cannot answer "is it merged": PRs are squash-merged, so merged branches (T138, T81) still show 1–2 commits ahead of `origin/main`.
+
+### 18.2 What git gives and does not give (https://git-scm.com/docs/git-worktree)
+
+Admin data is `$GIT_DIR/worktrees/<id>/` (`gitdir`, `HEAD`, `index`, `locked`); the worktree holds a `.git` *file*. No owner, description, TTL or size exists. Ignored files are never shared or cleaned. Free-text metadata fits in `git worktree lock --reason` (shown by `list --porcelain`; non-ASCII is C-quoted there, so keep it ASCII) or `git config --worktree` (needs `extensions.worktreeConfig`). `rm -rf` leaves the admin entry until `gc.worktreePruneExpire` (3 months) — and forever when the worktree was locked: checked 2026-09-22 with git 2.54, a locked worktree whose directory was deleted is not even reported `prunable`. Meanwhile its branch counts as checked out. `git worktree remove <path>` on the missing directory (after `unlock`) drops that single record → T153. `worktree.useRelativePaths` (git ≥ 2.48) would have kept `graph-perf` linked, but sets `extensions.relativeWorktrees`, which older git and possibly libgit2/gix-based tools refuse → T157.
+
+### 18.3 Hosts (vendor docs, fetched 2026-09-21, not re-verified by running each host)
+
+| Host | Location | Naming | Automatic cleanup |
+| --- | --- | --- | --- |
+| Claude Code (https://code.claude.com/docs/en/worktrees) | `<repo>/.claude/worktrees/<name>` | random words or `agent-<hex>`; branch `worktree-<name>` | only when unchanged; sub-agent worktrees by a `cleanupPeriodDays` sweep |
+| Cursor (https://cursor.com/docs/configuration/worktrees) | `~/.cursor/worktrees/` | undocumented | max 25, 6-hourly sweep, oldest evicted |
+| Codex (https://learn.chatgpt.com/docs/environments/git-worktrees) | `$CODEX_HOME/worktrees` | `thread-N`, detached HEAD | keeps the 15 most recent |
+| Conductor (https://www.conductor.build/docs/concepts/git-worktrees) | `~/conductor/workspaces/<repo>/` | workspace name | archive script only |
+
+No host accounts for build output. Claude Code exposes `WorktreeCreate`/`WorktreeRemove` hooks that replace the default create/remove (https://code.claude.com/docs/en/hooks) → T156. The same four complaints are filed upstream: anthropics/claude-code#46098 (names), #24207 (unbounded growth), #56639 (archive deletes uncommitted work).
+
+### 18.4 Libraries and tools
+
+- `git2` 0.21: add, list, lock, prune — no `move`, `repair`, or dirty-checked `remove`; adds libgit2. `gix` 0.87: worktrees read-only (create/move/remove/repair open in its `crate-status.md`). worktrunk and `git-worktree-runner` shell out to `git`. rtok already shells out to `git` (`git_changed_files`, `src/plugins/graph/mod.rs`) and has no shared git helper; `git_root` exists twice (`src/config/layers.rs`, `src/doctor.rs`). **Decision: `git worktree list --porcelain -z` through one helper, no new dependency.**
+- worktrunk (https://github.com/max-sixty/worktrunk): path templates, merge-and-remove, `--copy-ignored` reflink seeding of `target/`. It does not record owners, find orphans, or clean idle caches — the three things measured in §18.1.
+- Squash-aware "merged" needs no GitHub call: `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}` when merging the branch would change nothing.
+- A shared `CARGO_TARGET_DIR` is rejected: ~5 parallel agents would serialize on the build lock. `sccache` does not cache incremental builds. Reflink seeding (`reflink-copy`) only lowers the cost at creation; cleaning idle caches removes it → measure before adopting (T156).
+- First data point for T156 (2026-09-22, APFS, `cp -c -R <other-worktree>/target <new-worktree>/target`, disk delta from `df -k`, not `du`): an 8.1 GB `target/` cloned in 8.8 s for 17 MiB of physical disk; the first `cargo nextest run --lib --test worktree` in the seeded worktree (T150) rebuilt only the four workspace crates, 24 s, with no dependency recompiled. A cold build was not run for comparison — the disk had under 8 GiB free, which is why the clone was tried at all.
+
+### 18.5 What follows for rtok
+
+1. rtok's hooks already fire in every session on every host and carry `session_id` and `cwd`; that is an ownership record no worktree manager has, at no cost to the agent → T154.
+2. The always-safe operation is "delete tagged caches, keep the worktree"; `git worktree remove` cannot express it (it refuses the whole worktree when anything is uncommitted) → T152.
+3. Inventory first, then deletion: T150 → T151 → T152/T153. Conventions ship as a skill so they cost one description line, not `AGENTS.md` budget → T155.
+4. Every measured problem starts at creation (location, name, reason-less lock), and creation is the only moment the owner is known for certain. rtok creates the worktree itself → T158. A skill is advice; on Claude Code the `WorktreeCreate`/`WorktreeRemove` hooks are the one place the rules cannot be skipped, at the price of a decision on what fail-open and the 10 ms budget mean for a hook that must spawn git → T159.

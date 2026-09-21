@@ -40,7 +40,6 @@ Project programs and direct packages from the manifests.
 | clap_complete | local | https://crates.io/crates/clap_complete | `rtok completions` shell scripts (T53.2) |
 | clap_mangen | local | https://crates.io/crates/clap_mangen | `rtok man` roff page (T53.2) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
-| dialoguer | local | https://crates.io/crates/dialoguer | Rust dependency |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |

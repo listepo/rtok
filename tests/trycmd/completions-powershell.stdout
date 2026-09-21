@@ -878,6 +878,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         }
         'rtok;otel;flush' {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--coalesce', '--coalesce', [CompletionResultType]::ParameterName, 'T143: hook-spawned only. Coalesces concurrent hook flushes to at most one running + one queued process instead of one per `Stop`/`SessionEnd` event. A manual `rtok otel flush` never passes this — it always flushes')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break

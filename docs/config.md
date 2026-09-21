@@ -455,3 +455,7 @@ per configuration, not a shell history.
 `plugins.inject.budget_tokens` (T12.1). `core.log_file` / `log_level` / `log_to_db` fold into
 `[log].path` / `level` / `to_db` (T24.5, D26). Each prints one warning on load and is then
 dropped; `rtok config validate` rejects them because they are absent from the reference schema.
+
+`setup.restart_prompt_timeout_seconds` is retired (T138): the post-install restart question is an
+`inquire` confirm that waits for an answer (Enter, Esc or Ctrl-C mean No). A file that still sets
+it gets the unknown-key warning on load and an error from `rtok config validate`.

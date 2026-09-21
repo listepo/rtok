@@ -79,8 +79,23 @@ pub fn run(cfg: &Config) -> Result<()> {
     })
 }
 
+/// Guards a one-shot `--call` the way `run`'s stdin-EOF path guards a served session: drops
+/// the cached LSP child (T142) on every exit — success, `Err`, or an early `?` — since `call`
+/// has no end-of-loop point of its own to shut it down at.
+#[cfg(feature = "graph")]
+struct LspGuard;
+
+#[cfg(feature = "graph")]
+impl Drop for LspGuard {
+    fn drop(&mut self) {
+        crate::plugins::graph::lsp::shutdown();
+    }
+}
+
 /// One-shot `tools/call` for hosts that cannot speak MCP (`rtok mcp --call`, T70.3).
 pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
+    #[cfg(feature = "graph")]
+    let _lsp_guard = LspGuard;
     let server = Server::new(cfg)?;
     let plugin = server
         .listed
