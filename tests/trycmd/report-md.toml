@@ -246,7 +246,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.host | 127.0.0.1 | default |
 | web.port | 3333 | default |
 
-201 keys.
+200 keys.
 
 ## Doctor
 

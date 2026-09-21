@@ -43,12 +43,8 @@ pub fn offer_host_restart(cfg: &Config, host_id: &str) -> Result<RestartChoice> 
     if !should_prompt(cfg) {
         return Ok(RestartChoice::Skipped);
     }
-    let answer = inquire::Confirm::new(&format!(
-        "Restart {host_id} so the new config takes effect?"
-    ))
-    .with_default(false)
-    .with_render_config(render_config())
-    .prompt();
+    let question = restart_question(host_id);
+    let answer = restart_confirm(&question, stderr_has_colour()).prompt();
     match confirm_choice(answer)? {
         RestartChoice::Yes => {
             match restart_host(host_id) {
@@ -90,17 +86,33 @@ fn confirm_choice(answer: Result<bool, InquireError>) -> Result<RestartChoice> {
     }
 }
 
-/// inquire's colours on a colour terminal; plain text under the same rule the rest of rtok
-/// follows (owo-colors: tty, `NO_COLOR`, `CLICOLOR`, `TERM=dumb`). inquire draws on stderr.
-fn render_config() -> RenderConfig<'static> {
+fn restart_question(host_id: &str) -> String {
+    format!("Restart {host_id} so the new config takes effect?")
+}
+
+/// The restart question as an inquire confirm: default No, so Enter declines.
+fn restart_confirm(question: &str, colour: bool) -> inquire::Confirm<'_> {
+    inquire::Confirm::new(question)
+        .with_default(false)
+        .with_render_config(render_config(colour))
+}
+
+/// inquire's colours on a colour terminal; plain text otherwise.
+fn render_config(colour: bool) -> RenderConfig<'static> {
+    if colour {
+        RenderConfig::default()
+    } else {
+        RenderConfig::empty()
+    }
+}
+
+/// The rule the rest of rtok follows (owo-colors: tty, `NO_COLOR`, `CLICOLOR`, `TERM=dumb`),
+/// asked of stderr because inquire draws there.
+fn stderr_has_colour() -> bool {
     let probe = "x"
         .if_supports_color(Stream::Stderr, |t| t.bold())
         .to_string();
-    if probe == "x" {
-        RenderConfig::empty()
-    } else {
-        RenderConfig::default()
-    }
+    probe != "x"
 }
 
 /// Stop then start a host. Desktop apps get a real quit/reopen where we know how; CLI-only
@@ -298,6 +310,54 @@ mod tests {
         assert!(!should_prompt(&c));
         let choice = offer_host_restart(&c, "cursor").unwrap();
         assert_eq!(choice, RestartChoice::Skipped);
+    }
+
+    #[test]
+    fn non_interactive_stdin_skips_prompt() {
+        // nextest and CI give the process a non-TTY stdin — the piped case: never prompt.
+        // A plain `cargo test` from a terminal inherits a TTY and would really ask; skip there.
+        if std::io::stdin().is_terminal() {
+            return;
+        }
+        let mut c = Config::default();
+        c.setup.dry_run = false;
+        assert_eq!(
+            offer_host_restart(&c, "cursor").unwrap(),
+            RestartChoice::Skipped
+        );
+    }
+
+    #[test]
+    fn restart_confirm_asks_about_the_host_and_defaults_to_no() {
+        let question = restart_question("cursor");
+        let confirm = restart_confirm(&question, false);
+        assert_eq!(
+            confirm.message,
+            "Restart cursor so the new config takes effect?"
+        );
+        assert_eq!(confirm.default, Some(false));
+        // The hint inquire prints beside the question.
+        assert_eq!((confirm.default_value_formatter)(false), "y/N");
+    }
+
+    #[test]
+    fn restart_confirm_carries_the_colour_choice() {
+        let question = restart_question("cursor");
+        let plain = restart_confirm(&question, false).render_config;
+        let colour = restart_confirm(&question, true).render_config;
+        assert_eq!(plain.answer, RenderConfig::empty().answer);
+        assert_eq!(colour.answer, RenderConfig::default().answer);
+        assert_ne!(plain.answer, colour.answer);
+    }
+
+    #[test]
+    fn piped_stderr_renders_plain() {
+        // Captured stderr (nextest, CI) is not a terminal: no colour codes. A terminal or a
+        // forced-colour env legitimately says otherwise; skip there.
+        if std::io::stderr().is_terminal() || std::env::var_os("CLICOLOR_FORCE").is_some() {
+            return;
+        }
+        assert!(!stderr_has_colour());
     }
 
     #[test]
