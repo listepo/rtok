@@ -48,22 +48,27 @@ fn as_opencode(cfg: &Config) -> Config {
 }
 
 impl Agent for Kilo {
+    /// Return the stable host identifier used by `rtok agents` commands.
     fn id(&self) -> &'static str {
         "kilo"
     }
 
+    /// Return the CLI and VS Code surfaces that share Kilo's configuration.
     fn variants(&self) -> &'static [Variant] {
         &VARIANTS
     }
 
+    /// Return the bundled installation notes for Kilo Code.
     fn readme(&self) -> &'static str {
         include_str!("README.md")
     }
 
+    /// Report that both Kilo variants use the same installed files.
     fn shared(&self) -> bool {
         true
     }
 
+    /// Describe which rtok integration surfaces Kilo Code supports.
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
             "mcp" => Support::Yes,
@@ -77,14 +82,17 @@ impl Agent for Kilo {
         }
     }
 
+    /// Return the host surfaces served by Kilo's linked plugin.
     fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
         &[rtok_plugin_sdk::Surface::Cli]
     }
 
+    /// Return the Kilo configuration file managed by the installer.
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
         vec![cfg.setup.kilo.config_path.clone()]
     }
 
+    /// Detect the rtok MCP entry and linked plugin independently.
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let mut out = Vec::new();
         if super::read(&cfg.setup.kilo.config_path).contains("\"rtok\"") {
@@ -96,6 +104,7 @@ impl Agent for Kilo {
         out
     }
 
+    /// Install or remove Kilo's MCP entry and linked OpenCode plugin.
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
         let c = as_opencode(cfg);
@@ -131,6 +140,7 @@ mod tests {
     use serde_json::Value;
     use std::fs;
 
+    /// Build an isolated Kilo configuration rooted in a per-test directory.
     fn cfg(name: &str, dry: bool) -> (Config, PathBuf) {
         let dir = std::env::temp_dir().join(format!("rtok-kilo-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -142,10 +152,12 @@ mod tests {
         (c, dir)
     }
 
+    /// Read the test configuration written by an installer operation.
     fn json(c: &Config) -> Value {
         serde_json::from_str(&fs::read_to_string(&c.setup.kilo.config_path).unwrap()).unwrap()
     }
 
+    /// A dry run reports both installation aids without writing either file.
     #[test]
     fn dry_run_names_the_opencode_plugin_and_ketch_and_writes_nothing() {
         let (c, dir) = cfg("dry", true);
@@ -158,6 +170,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// Install and removal are idempotent and preserve unrelated MCP entries.
     #[test]
     fn yes_links_and_registers_second_apply_no_changes_remove_keeps_foreign() {
         let (mut c, dir) = cfg("yes", false);
@@ -220,6 +233,7 @@ mod tests {
         (c, dir)
     }
 
+    /// Dry-run install and removal leave every seeded byte unchanged.
     #[test]
     fn dry_run_leaves_the_tree_byte_for_byte() {
         let (c, dir) = seeded("dry-bytes", true);
@@ -230,6 +244,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// Install and removal preserve user-owned JSONC and plugin files.
     #[test]
     fn user_jsonc_and_foreign_plugin_survive_install_and_remove() {
         let (c, dir) = seeded("foreign", false);
@@ -244,6 +259,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// Installation replaces a stale plugin link with a working one.
     #[cfg(unix)]
     #[test]
     fn a_dangling_plugin_link_is_repaired() {
@@ -260,6 +276,7 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// Removing rtok from an untouched Kilo home is a no-op.
     #[test]
     fn remove_on_a_clean_home_changes_nothing() {
         let (c, dir) = cfg("clean", false);

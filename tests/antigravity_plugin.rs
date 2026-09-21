@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 
+/// Read and parse one file from the bundled Antigravity plugin.
 fn read(name: &str) -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("plugins/antigravity")
@@ -12,6 +13,7 @@ fn read(name: &str) -> Value {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
+/// The manifest uses Antigravity's documented portable plugin-name format.
 #[test]
 fn manifest_name_matches_the_documented_pattern() {
     let name = read("plugin.json")["name"].as_str().unwrap().to_owned();
@@ -23,6 +25,7 @@ fn manifest_name_matches_the_documented_pattern() {
     );
 }
 
+/// The plugin exposes exactly one MCP server that starts `rtok mcp`.
 #[test]
 fn mcp_config_is_exactly_rtok() {
     assert_eq!(

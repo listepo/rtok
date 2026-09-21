@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+/// Return the repository root used by each Windows CI guard.
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -91,6 +92,7 @@ fn windows_exclusion_list_names_only_existing_tests() {
     assert!(missing.is_empty(), "stale exclusions: {missing:?}");
 }
 
+/// Collect every Rust source file whose test names can appear in nextest filters.
 fn rust_sources() -> Vec<String> {
     let mut out = Vec::new();
     for dir in ["src", "tests", "crates"] {
@@ -104,6 +106,7 @@ fn rust_sources() -> Vec<String> {
     out
 }
 
+/// Read source text for exclusion-list matching, treating unreadable files as empty.
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
