@@ -37,7 +37,6 @@
 - T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
-- T138. Interactive prompts go through `inquire`
 - T150. Worktree inventory: one git helper that lists, attributes and classifies every worktree
 - T151. `rtok worktree list`: source size, cache size and orphans in one table
 - T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees

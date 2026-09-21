@@ -45,7 +45,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
-| T138 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T150 | in progress | P1 | 3 | 90% | Claude Code / claude-fable-5-1 |
 | T151 | todo | P1 | 3 | 0% | |
@@ -333,14 +332,6 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
-
-### T138. Interactive prompts go through `inquire`
-
-Creator request 2026-09-21 (that is the approval the dependency rule needs; `inquire 0.9` is current). After T81 the tree holds two hand-rolled prompt paths: the bare stdout line in `rtok_agent_sdk::accepted` — deliberately dependency-free, and its plain-stdout prompt is exactly what made the T81 hang visible — and `src/agents/restart.rs`'s `prompt_with_spinner` (T76: a custom spinner, a blocking line read, and a test suite of its own). Neither generalizes past yes/no, and the next interactive flow (picking hosts, modules, modes) would copy the spinner a third time.
-
-Plan: adopt `inquire` as the prompt layer of the `rtok` binary (one-line dependency reason in the commit message) and move `agents/restart.rs` onto `inquire::Confirm` with a `RenderConfig` that keeps the question readable; delete `prompt_with_spinner` / `read_line_async` and the tests that pin them. The SDK's `accepted` stays out of scope — it is the published contract and must prompt without a dependency. Two things to settle in the Do: (1) `[setup].restart_prompt_timeout_seconds` has no inquire-native timeout — either keep a thin wrapper for the non-zero silence-as-No case or retire the key (a D12 change; `docs/config.md` either way); (2) `toolchain.md` gains the `inquire` row and drops the `dialoguer` row (#147 removed its last use).
-
-Check: on a TTY the restart question renders through inquire and honours the timeout semantics as resolved; piped/CI runs never prompt (T81's `an_unanswered_offer_on_a_pipe_declines_itself_and_still_installs` stays green); `prompt_with_spinner` and its tests are gone; `just check`.
 
 ### T150. Worktree inventory: one git helper that lists, attributes and classifies every worktree
 
