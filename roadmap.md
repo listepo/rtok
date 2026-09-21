@@ -4,19 +4,7 @@ View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tas
 
 **Now (2026-09-18):** every lane below is implemented (v0.1 numbered work incl. T30.2 is in `done.md`); the open rows in `plan.md` are follow-ups per lane, listed here in the order the lane's card gates them. `plan.md` is the source; this list is the grouping.
 
-| Lane | Open rows in `plan.md` |
-|------|------------------------|
-| core / installers / tests | T53.3, T53.4, T55.12, T56.2, T56.3, T56.5 |
-| `measure` / `report` / docs | T61.1, T59.8, T64.3, T71.4 |
-| `inject` | T52.3, T58.2 |
-| `cmd` / `expand` | T50.1, T58.5, T59.1, T64.1, T64.2, T65.1, T65.2, T65.3, T65.4, T67.2, T71.1 |
-| `read` | T50.3, T68.8 |
-| `proxy` / `archive` | T51.1, T55.15 |
-| `memory` | T69.1, T69.3, T69.4, T69.2, T69.5, T69.6, T59.6, T71.2 |
-| `graph` | T52.2, T59.3, T68.3, T68.1, T68.2, T68.4, T68.5, T68.6, T68.7, T68.9, T68.10 |
-| `guard` / `doctor` | T57.1, T62.1, T59.7, T61.3 |
-| TUI / web | T60.10, T60.3, T60.4, T60.5, T60.6, T60.7, T60.8, T60.9, T63.1 |
-| host plugins (pi, OpenCode, Cursor) | T62.3, T70.1, T70.2, T70.3, T70.4, T70.5, T70.6, T70.7 |
+**Reconciled 2026-09-21 (T126):** every id this table listed (67) has a task heading in `done.md`, except T71.1, dropped under the 1 % gate (`ideas.md` I-71). No lane has an open row; open work is the `plan.md` table.
 
 Remaining approved-not-in-plan work is [Later (v0.2+)](#later-v02).
 

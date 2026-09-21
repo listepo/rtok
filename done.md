@@ -4375,3 +4375,5 @@ Status: done 2026-09-21
 Check result: `roadmap.md` rows cleaned: T59.5 removed from `proxy`/`archive` lane (1 row), T61.2 removed (1 row), T58.1 removed from `read` lane (1 row); §16.2 Status column added; T59.5/T61.2 marked `shipped (off by default)` per `config/default.toml` defaults (`enabled=false`, `skills=false`), T58.1 marked `shipped` (delta on by default); `research.md` Why text updated; `just site` not tested (disk nearly full, hugo not available). Verification: `grep` over roadmap.md confirms no T59.5/T58.1/T61.2 remain.
 
 Model: Claude Code / claude-haiku-4-5
+
+Also: the whole `roadmap.md` lane table was stale — all 67 listed ids are in `done.md` (T71.1 dropped, I-71); replaced with a dated note.
