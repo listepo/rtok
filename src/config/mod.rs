@@ -336,6 +336,8 @@ section! {
         mcp_timeout_ms: u64 = 15000,
         instruction_warn_tokens: u32 = 1000,
         instructions: bool = false,
+        /// Threshold (in MCP description tokens) for suggesting `[proxy.tools_rewrite]` when it applies (T59.5).
+        tools_rewrite_min_desc_tokens: u32 = 2000,
     }
 }
 
