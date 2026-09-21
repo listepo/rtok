@@ -3,6 +3,8 @@
 #![allow(dead_code)]
 
 pub mod agents;
+#[cfg(unix)]
+pub mod fake_lsp;
 
 use std::path::Path;
 use std::process::Command;
