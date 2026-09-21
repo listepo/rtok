@@ -2,27 +2,32 @@
 
 Claude Code's plugin form of rtok: the same hooks `rtok agents install claude` writes into
 `~/.claude/settings.json`, and one `rtok mcp`, as one unit (D21). Claude Code loads it in the CLI
-and in the desktop app's Code tab. This directory is also its own marketplace
-(`.claude-plugin/marketplace.json`: `rtok`, plugin `rtok`, source `./`). By hand:
+and in the desktop app's Code tab. `rtok agents install claude` installs it from the GitHub
+marketplace at the repo root (`.claude-plugin/marketplace.json`: `rtok`, plugin `rtok`, source
+`./plugins/claude`) — a local path broke across a ketch upgrade (T139). By hand:
 
 ```bash
-claude plugin marketplace add <rtok>/plugins/claude
+claude plugin marketplace add listepo/rtok
 claude plugin install rtok@rtok
 ```
 
 Remove with `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`.
-`rtok agents install claude --yes` runs both commands and, while the plugin is installed, strips
-rtok's own hooks from `~/.claude/settings.json` and `mcpServers.rtok` from `~/.claude.json`, so
-every event fires once (D21). `rtok agents remove claude` uninstalls it. Installing by hand and
-then running a plain `rtok agents install claude` leaves that singleton rule in force too.
+`rtok agents install claude` runs both commands by default — no `--yes` needed — once `claude`
+is on PATH, skipping `marketplace add` when Claude already knows the marketplace; while the
+plugin is installed it strips rtok's own hooks from `~/.claude/settings.json` and
+`mcpServers.rtok` from `~/.claude.json`, so every event fires once (D21). `rtok agents remove
+claude` uninstalls it. Installing by hand and then running a plain `rtok agents install claude`
+leaves that singleton rule in force too.
 
 Files:
 
 - `.claude-plugin/plugin.json` — manifest (`name` `rtok`); `hooks/hooks.json` and `.mcp.json` are
   found by convention. Claude copies the plugin into `~/.claude/plugins/cache/`, so the tree is
   self-contained.
-- `.claude-plugin/marketplace.json` — the one-plugin marketplace `claude plugin marketplace add`
-  reads.
+- `.claude-plugin/marketplace.json` — this directory's own one-plugin marketplace (source `./`),
+  kept for local/dev use (`claude plugin marketplace add plugins/claude`); the installer itself
+  now adds the repo-root marketplace (`../../.claude-plugin/marketplace.json`, source
+  `./plugins/claude`) by its GitHub shorthand `listepo/rtok`.
 - `hooks/hooks.json` — the installer's nine entries (`claude::ENTRIES`: PreToolUse Bash, Read,
   Skill; PostToolUse `*`; UserPromptSubmit; SessionStart; PreCompact; PostCompact; SessionEnd) →
   `rtok hook <event>` through `scripts/hook.sh`, `timeout` 5 s. A unit test in
