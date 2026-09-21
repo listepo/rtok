@@ -139,6 +139,21 @@ $99/year and a certificate to rotate.
 Never commit the `.p12` or the `.p8`. They belong in the login keychain locally and in repository
 secrets in CI.
 
+## The web UI rides in the archive
+
+Every archive carries `pkg/` — the Slint WASM bundle `rtok web` serves — beside the binary,
+the same way `plugins/` and `skills/` ship (`include` in `Cargo.toml`'s
+`[package.metadata.dist]`). `.github/build-setup.yml` installs wasm-pack and runs
+`tools/webui-bundle.sh --require` in each build job, so a missing bundle fails the release
+instead of shipping an archive whose `rtok web` has no UI.
+
+A **local** `dist build` does not run that hook: build the bundle first, or the copy step has
+nothing to copy.
+
+```bash
+just web-bundle
+```
+
 ## Locally
 
 Confirm the identity is installed and copy its exact name:

@@ -38,6 +38,9 @@ jobs:
           # Skip slow cache upload on PRs; restore still works from main keys.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: just check
+      # The webui crate is out of the workspace and builds for wasm only; nothing
+      # above compiles it (T81).
+      - run: just webui-check
       - run: just example
       # T23.6: `rtok-plugin-sdk` is published on release; a broken manifest fails here.
       - run: just publish-dry

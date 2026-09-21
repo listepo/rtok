@@ -24,7 +24,10 @@ publish = false
 dist = true
 # Host plugins must ship beside the binary: setup resolves `plugins/<host>` next
 # to `current_exe()` for installed archives (Windows zip / unix tarballs).
-include = ["plugins/", "skills/"]
+# T81: `pkg/` is the same deal for the web UI — `rtok web` looks for it beside the
+# executable first (src/web/mod.rs, T80). .github/build-setup.yml builds it before
+# `dist build`; a local `dist build` needs `just web-bundle` first.
+include = ["plugins/", "skills/", "crates/rtok-webui/pkg/"]
 
 [[bin]]
 name = "rtok"

@@ -139,6 +139,15 @@ jobs:
         with:
           "cache-on-failure": true
           "shared-key": "release-dist"
+      - name: "Install wasm-pack"
+        uses: "taiki-e/install-action@v2"
+        with:
+          "tool": "wasm-pack"
+      - name: "Build the Slint WASM bundle"
+        run: |
+          rustup target add wasm32-unknown-unknown
+          tools/webui-bundle.sh --require
+        shell: "bash"
       - name: "Discover macOS codesign identity"
         if: "runner.os == 'macOS'"
         run: |

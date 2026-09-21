@@ -19,6 +19,21 @@
     # Release builds are rare; always save so the next cut is warm.
     cache-on-failure: true
 
+# T81: every archive carries `pkg/` (Cargo.toml [package.metadata.dist] include),
+# so an installed `rtok web` has a UI instead of explaining its absence (T80).
+# The bundle is platform-independent, but `include` is workspace-wide with no
+# per-target form, so each matrix job builds its own copy before `dist build`.
+- name: Install wasm-pack
+  uses: taiki-e/install-action@v2
+  with:
+    tool: wasm-pack
+
+- name: Build the Slint WASM bundle
+  shell: bash
+  run: |
+    rustup target add wasm32-unknown-unknown
+    tools/webui-bundle.sh --require
+
 - name: Discover macOS codesign identity
   if: runner.os == 'macOS'
   env:
