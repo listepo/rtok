@@ -1,0 +1,20 @@
+@echo off
+REM Single MCP entry helper for Windows (D21 singleton / ketch message).
+where rtok >nul 2>&1
+if not errorlevel 1 (
+  rtok mcp
+  exit /b %ERRORLEVEL%
+)
+if exist "%USERPROFILE%\.ketch\bin\rtok.exe" (
+  "%USERPROFILE%\.ketch\bin\rtok.exe" mcp
+  exit /b %ERRORLEVEL%
+)
+echo rtok is not installed. 1>&2
+echo. 1>&2
+echo Install with ketch: 1>&2
+echo   ketch install listepo/rtok 1>&2
+echo. 1>&2
+echo If ketch is not installed: 1>&2
+echo   curl -fsSL https://raw.githubusercontent.com/listepo/ketch/main/install.sh ^| bash 1>&2
+echo   ketch install listepo/rtok 1>&2
+exit /b 1

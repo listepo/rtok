@@ -4100,3 +4100,11 @@ Complexity: 2/5 — one loop; reuses `read`/`boot_time`/`process_kill`.
 Status: done 2026-09-21
 Check result: e2e 10/10 standalone after the fix (3 failures on 2026-09-19–20 before); full gate green.
 Model: ZCode / GLM-5.3 (race fix + close-out; feature skeleton by Cursor / grok 4.6)
+
+**T77 ZCode plugin offered on install (--yes), singleton with the config surfaces** · `src/agents/zcode/{mod.rs,README.md}`, `plugins/zcode/`, `tests/agents_install.rs`, `tests/trycmd/{doctor,report-md}.toml`, `docs/agents.md`
+Do: `rtok agents install zcode --yes` links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` and lists it in `plugins.dirs` in `~/.zcode/cli/config.json` — read from the installed app (v0.2.0, `glm/zcode.cjs`): every `plugins.dirs` entry is an inline plugin root, enabled by default, marketplace id `inline`; `remove` unlinks and drops the entry. The plugin is hooks and MCP as one unit (D21): `.zcode-plugin/plugin.json` + auto-discovered `hooks/hooks.json` (the five documented entries, `type: "process"` via `${ZCODE_PLUGIN_ROOT}/scripts/hook.sh`) + `.mcp.json` (`scripts/mcp.sh`); the launchers resolve rtok from PATH or the ketch store, fail the hook open and the MCP loudly with the ketch hint. While the plugin is linked it is the only call path: setup strips its own `hooks.events` entries and `mcp.servers.rtok` instead of re-adding them; a declined offer adds no `plugins.dirs` entry and a stale one is dropped.
+Check: unit `dry_run_offer_names_plugin_and_local`, `yes_links_plugin_and_lists_dirs`, `linked_plugin_is_the_only_call_path`, `declined_offer_adds_no_dirs_entry_and_drops_a_stale_one`, `remove_unlinks_plugin_and_drops_dirs_entry`; `agents_install` / `agent_remove` with `--yes`; `host_docs`, blessed `agents_doc`; `just check`.
+Complexity: 3/5 — mirrors the Cursor offer (T10.5) plus the `plugins.dirs` listing and a hooks+MCP singleton.
+Status: done 2026-09-21
+Check result: 7/7 zcode unit tests; `agents_install` 9/9 and `agent_remove` green with `--yes`; `just check` green after updating the two trycmd snapshots (`doctor`, `report-md`) that carry the module line; smoke run under a temp HOME shows the first `--yes` run writing only `+ plugin` and `+ plugins.dirs +=`.
+Model: ZCode / GLM-5.3

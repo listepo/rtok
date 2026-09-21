@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "${ZCODE_PLUGIN_ROOT}/scripts/hook.sh",
+            "args": ["PreToolUse"],
+            "timeoutMs": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "${ZCODE_PLUGIN_ROOT}/scripts/hook.sh",
+            "args": ["PreToolUse"],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "${ZCODE_PLUGIN_ROOT}/scripts/hook.sh",
+            "args": ["PostToolUse"],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "${ZCODE_PLUGIN_ROOT}/scripts/hook.sh",
+            "args": ["UserPromptSubmit"],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "process",
+            "command": "${ZCODE_PLUGIN_ROOT}/scripts/hook.sh",
+            "args": ["SessionStart"],
+            "timeoutMs": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -54,7 +54,7 @@ agents
     ✗ hooks   not installed
     ✗ mcp     not installed
     − proxy   not supported: ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them
-    − plugin  not supported: ZCode plugins come from the Z.ai marketplace; there is no local plugin directory to link
+    ✗ plugin  not installed (--yes)
   kimi (cli)
     ✗ hooks   not installed
     ✗ mcp     not installed
