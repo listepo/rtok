@@ -556,14 +556,16 @@ mod tests {
         let buf_c = Arc::clone(&buf);
         let choice = {
             let mut guard = buf_c.lock().unwrap();
+            // No timeout: the reader's EOF ends the prompt, so a slow runner that oversleeps a
+            // frame still paints many before it — a 25 ms timeout left room for only one.
             prompt_with_spinner_io(
                 "> ",
-                Some(Duration::from_millis(25)),
+                None,
                 &['1', '2', '3'],
                 Duration::from_millis(5),
                 &mut *guard,
                 |_| {
-                    thread::sleep(Duration::from_millis(80));
+                    thread::sleep(Duration::from_millis(150));
                     Ok(None)
                 },
             )
