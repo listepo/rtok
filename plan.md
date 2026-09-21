@@ -45,6 +45,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
+| T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T150 | in progress | P1 | 3 | 90% | Claude Code / claude-fable-5-1 |
 | T151 | todo | P1 | 3 | 0% | |
@@ -416,6 +417,15 @@ Depends on T156 (the real payloads), T158 (create) and T153 (remove). A skill is
 Plan: `rtok hook WorktreeCreate` maps the host's `name` to T158's rules and prints the created path; `rtok hook WorktreeRemove` applies T153's single-worktree rules to `worktree_path` — never forced: a dirty worktree, or one locked by another owner, is left in place and reported, and its tagged caches are cleaned (T152) either way. Installed by `rtok agents install claude` with the plugin, removed with it, singleton per D21; the host docs link for these events joins `plugins/claude/README.md` `## Docs`; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`). **One decision to take before the Do, by the creator:** these hooks replace the host's default behaviour and must spawn git, so they cannot meet "exit 0 in ≤ 10 ms with unmodified input". Proposed reading: the 10 ms rule binds the per-tool-call hot path; `WorktreeCreate` fires once per worktree, and fail-open here means "on any rtok error, create the worktree exactly where the host would have (`<repo>/.claude/worktrees/<name>`) with plain git, print that path, exit 0" — the host never loses the ability to create a worktree because of rtok. Record the outcome as a decision row (D31 or the next free id) in this task's PR. Other hosts have no such hook today (§18.3); they keep the skill (T155).
 
 Check: hook fixture tests with T156's recorded payloads — create returns a path under the T158 root with the owner lock; a simulated failure of `rtok worktree add` still yields a usable worktree at the host default path and exit 0; remove deletes a merged clean worktree, keeps a dirty one and a foreign-locked one with the reason on stderr, and cleans the tagged cache in all three; host matrix e2e — install adds both hooks exactly once and removal takes them away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; `just check`.
+
+
+### T160. No expand trailer when shortening saved less than the trailer costs
+
+Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` prints `[rtok <id> · N lines · expand: …]` whenever `printed < raw`, even when the formatter dropped only a few bytes. Seen live: a 7-line `just check` summary got the ~110-byte trailer, so the call likely cost more tokens than raw output. What was dropped there is not yet known — reproduce it first (`rtok expand <id>` vs printed output). The rule "Lossless by default" still holds: if nothing a reader could miss was dropped, there is nothing to expand.
+
+Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
+
+Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
 
 ## Reference
 
