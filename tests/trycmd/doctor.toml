@@ -45,6 +45,16 @@ agents
     ✗ mcp     not installed
     ✗ proxy   not installed
     ✗ plugin  not installed (--yes)
+  kilo (cli)
+    − hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
+    ✗ mcp     not installed
+    − proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
+    ✗ plugin  not installed (--yes)
+  kilo (desktop)
+    − hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
+    ✗ mcp     not installed
+    − proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
+    ✗ plugin  not installed (--yes)
   pi (cli)
     − hooks   not supported: pi has no hook events; the extension owns the bash call path
     − mcp     not supported: pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true

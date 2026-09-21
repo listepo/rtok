@@ -2,3 +2,7 @@
 - T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
 - T91. `rtok agents install antigravity` — CLI and desktop, the plugin is the only unit
 - T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
+- T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
+- T95. Cline plugin tree (`plugins/cline/`)
+- T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
+- T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP

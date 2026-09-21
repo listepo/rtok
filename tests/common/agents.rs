@@ -80,6 +80,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".cursor",
         ".codex",
         ".config/opencode",
+        ".config/kilo",
         ".pi/agent",
         ".zcode/cli",
         ".kimi-code",
@@ -101,6 +102,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.cursor]\nhooks_path = \"{h}/.cursor/hooks.json\"\n\
              [setup.codex]\nconfig_path = \"{h}/.codex/config.toml\"\n\
              [setup.opencode]\nconfig_path = \"{h}/.config/opencode/opencode.json\"\n\
+             [setup.kilo]\nconfig_path = \"{h}/.config/kilo/kilo.json\"\n\
              [setup.pi]\nextensions_path = \"{h}/.pi/agent/extensions\"\n\
              [setup.zcode]\nconfig_path = \"{h}/.zcode/cli/config.json\"\n\
              [setup.kimi]\nconfig_path = \"{h}/.kimi-code/config.toml\"\n\

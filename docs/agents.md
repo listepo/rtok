@@ -18,6 +18,8 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`codex`](https://github.com/listepo/rtok/blob/main/src/agents/codex/README.md) | Codex | CLI | yes | yes | `--proxy` | — | measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon (off), compress (off) |
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode | CLI | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode Desktop | Desktop | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon (off), compress (off) |
+| [`kilo`](https://github.com/listepo/rtok/blob/main/src/agents/kilo/README.md) | Kilo Code CLI | CLI | — | yes | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon (off) |
+| [`kilo`](https://github.com/listepo/rtok/blob/main/src/agents/kilo/README.md) | Kilo Code for VS Code | Desktop | — | yes | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon (off) |
 | [`pi`](https://github.com/listepo/rtok/blob/main/src/agents/pi/README.md) | pi | CLI | — | — | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon (off) |
 | [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon (off) |

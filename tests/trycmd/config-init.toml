@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,288 @@
+@@ -0,0 +1,290 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -156,6 +156,8 @@ target/tmp/t60-2-config-init.toml
 +config_path   = "~/.codex/config.toml"
 +[setup.opencode]
 +config_path   = "~/.config/opencode/opencode.json"
++[setup.kilo]
++config_path   = "~/.config/kilo/kilo.json"      # kilo.jsonc is merged by Kilo, never rewritten
 +[setup.pi]
 +extensions_path = "~/.pi/agent/extensions"
 +tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)

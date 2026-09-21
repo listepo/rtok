@@ -153,6 +153,7 @@ setup.copilot.dir = ~/.copilot
 setup.cursor.hooks_path = ~/.cursor/hooks.json
 setup.dry_run = false
 setup.hook_timeout_s = 5
+setup.kilo.config_path = ~/.config/kilo/kilo.json
 setup.kimi.config_path = ~/.kimi-code/config.toml
 setup.mcp = true
 setup.modes = []
