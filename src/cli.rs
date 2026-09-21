@@ -134,6 +134,11 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Git worktrees of this repository: owner, state and disk cost
+    Worktree {
+        #[command(subcommand)]
+        action: WorktreeCmd,
+    },
     /// Version, effective paths, disk usage, error count and proxy status
     Info {
         /// JSON instead of the text lines
@@ -417,6 +422,16 @@ enum MemoryCmd {
         /// Window for recalls and MCP calls (`30d`, `24h`)
         #[arg(long)]
         since: Option<String>,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorktreeCmd {
+    /// Every worktree and orphan with its owner, state, source and build-cache bytes
+    List {
         /// JSON instead of the table
         #[arg(long)]
         json: bool,
@@ -811,6 +826,17 @@ pub fn run() -> Result<()> {
                 print_json(&report)?;
             } else {
                 print!("{}", report.to_console());
+            }
+        }
+        Cmd::Worktree {
+            action: WorktreeCmd::List { json },
+        } => {
+            let rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
+            if json {
+                print_json(&rows)?;
+            } else {
+                let now = std::time::SystemTime::now();
+                print!("{}", crate::worktree::list::to_table(&rows, now));
             }
         }
         Cmd::Info { json } => {

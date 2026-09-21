@@ -34,6 +34,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('stats', 'stats', [CompletionResultType]::ParameterValue, 'Measurements from session logs and the proxy')
             [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
             [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
+            [CompletionResult]::new('worktree', 'worktree', [CompletionResultType]::ParameterValue, 'Git worktrees of this repository: owner, state and disk cost')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
             [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
             [CompletionResult]::new('agent', 'agent', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
@@ -129,6 +130,32 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;worktree' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;worktree;list' {
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'rtok;worktree;help' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
+            [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
+            break
+        }
+        'rtok;worktree;help;list' {
+            break
+        }
+        'rtok;worktree;help;help' {
             break
         }
         'rtok;info' {
@@ -957,6 +984,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('stats', 'stats', [CompletionResultType]::ParameterValue, 'Measurements from session logs and the proxy')
             [CompletionResult]::new('bench', 'bench', [CompletionResultType]::ParameterValue, 'A/B benchmark of host configurations')
             [CompletionResult]::new('doctor', 'doctor', [CompletionResultType]::ParameterValue, 'Inspect hooks, MCP servers and the proxy chain')
+            [CompletionResult]::new('worktree', 'worktree', [CompletionResultType]::ParameterValue, 'Git worktrees of this repository: owner, state and disk cost')
             [CompletionResult]::new('info', 'info', [CompletionResultType]::ParameterValue, 'Version, effective paths, disk usage, error count and proxy status')
             [CompletionResult]::new('agents', 'agents', [CompletionResultType]::ParameterValue, 'Agent hosts (`rtok agents install|uninstall|list|info …`)')
             [CompletionResult]::new('setup', 'setup', [CompletionResultType]::ParameterValue, 'Deprecated spelling of `rtok agents install <host>`; still runs, still prints where to go')
@@ -1001,6 +1029,13 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;doctor' {
+            break
+        }
+        'rtok;help;worktree' {
+            [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
+            break
+        }
+        'rtok;help;worktree;list' {
             break
         }
         'rtok;help;info' {
