@@ -18,4 +18,3 @@
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
-- T127. Read advice: a small ranged native `Read` is the edit gate
