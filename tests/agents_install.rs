@@ -331,10 +331,11 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
 }
 
-/// T81: a pipe is the CI / agent shape. The plugin offer must decline itself — no question
-/// printed, nothing waited for — while the settings-file install still finishes green.
+/// T81 + T139: a pipe is the CI / agent shape. The plugin no longer asks a question at all —
+/// it installs by default once `claude` is on PATH — so a plain install on a pipe still
+/// finishes green, with the plugin as the only call path (D21: it serves hooks and MCP too).
 #[test]
-fn an_unanswered_offer_on_a_pipe_declines_itself_and_still_installs() {
+fn a_pipe_still_installs_the_plugin_without_asking() {
     let home = tmp("offer-pipe");
     let cfg = write_cfg(&home);
     let out = raw(&["agents", "install", "claude"], &cfg, &home);
@@ -344,8 +345,12 @@ fn an_unanswered_offer_on_a_pipe_declines_itself_and_still_installs() {
         !stdout.contains("[Y/n]"),
         "a pipe must never see a question: {stdout}"
     );
-    assert!(stdout.contains("accept with --yes"), "{stdout}");
+    assert!(
+        stdout.contains("+ plugin plugins/claude → rtok@rtok"),
+        "{stdout}"
+    );
     assert!(stdout.contains("✓ hooks   installed"), "{stdout}");
+    assert!(stdout.contains("✓ plugin  installed"), "{stdout}");
 }
 
 #[test]

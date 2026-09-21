@@ -121,10 +121,26 @@ pub fn write_cfg(home: &Path) -> PathBuf {
 /// `rtok --config <cfg> <args>` with `home` as HOME, USERPROFILE and APPDATA, so every
 /// platform's home-relative path lands inside the temp dir.
 pub fn raw(args: &[&str], cfg: &Path, home: &Path) -> Output {
+    raw_with_path(args, cfg, home, fake_claude_path(home))
+}
+
+/// [`raw`], but on a PATH with no `claude` at all (fake or real) — a machine that never
+/// installed the Claude Code CLI, so `rtok agents install claude` falls back to the
+/// settings-file surfaces instead of the plugin (T139).
+pub fn raw_without_claude(args: &[&str], cfg: &Path, home: &Path) -> Output {
+    let path = if cfg!(windows) {
+        std::ffi::OsString::from(r"C:\Windows\System32")
+    } else {
+        std::ffi::OsString::from("/usr/bin:/bin")
+    };
+    raw_with_path(args, cfg, home, path)
+}
+
+fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsString) -> Output {
     Command::new(bin())
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
-        .env("PATH", fake_claude_path(home))
+        .env("PATH", path)
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("APPDATA", home)
@@ -177,6 +193,18 @@ pub fn claude_log(home: &Path) -> String {
 /// [`raw`] that must succeed; returns stdout.
 pub fn rtok(args: &[&str], cfg: &Path, home: &Path) -> String {
     let out = raw(args, cfg, home);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "rtok {args:?} failed: {stderr}\n{stdout}"
+    );
+    stdout
+}
+
+/// [`rtok`] over [`raw_without_claude`].
+pub fn rtok_without_claude(args: &[&str], cfg: &Path, home: &Path) -> String {
+    let out = raw_without_claude(args, cfg, home);
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert!(

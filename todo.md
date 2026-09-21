@@ -38,4 +38,5 @@
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
 - T138. Interactive prompts go through `inquire`
+- T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
 

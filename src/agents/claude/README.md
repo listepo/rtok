@@ -3,8 +3,9 @@
 `rtok agents install claude` — the Claude Code CLI (`claude`) and the Claude Desktop app. They
 keep separate files, so each selected app installs on its own (`--cli` / `--desktop`).
 
-- CLI: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP). With `--yes` the
-  plugin (`plugins/claude`) carries hooks and MCP instead; its installed state is read from
+- CLI: `~/.claude/settings.json` (hooks, proxy) and `~/.claude.json` (MCP). By default, once
+  `claude` is on PATH, the plugin (`plugins/claude`, from the GitHub marketplace `listepo/rtok`)
+  carries hooks and MCP instead; its installed state is read from
   `~/.claude/plugins/installed_plugins.json`.
 - Desktop: `claude_desktop_config.json` under `~/Library/Application Support/Claude` on
   macOS, `%APPDATA%\Claude` on Windows, `~/.config/Claude` elsewhere. The app starts without a
@@ -20,7 +21,7 @@ copied twice.
 | hooks | yes | `rtok hook <event>` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`) |
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
-| plugin | `--yes` | runs `claude plugin marketplace add <plugins/claude>` and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path, so setup strips its own settings-file hooks and `mcpServers.rtok` |
+| plugin | yes | runs `claude plugin marketplace add listepo/rtok` (skipped once Claude already knows the `rtok` marketplace) and `claude plugin install rtok@rtok` (remove: `uninstall` + `marketplace remove`); installed by default once `claude` is on PATH — no `--yes` needed; Claude Code loads it in the CLI and the desktop Code tab; while it is installed it is the only call path, so setup strips its own settings-file hooks and `mcpServers.rtok`; a missing or failing `claude` leaves the offer open instead of failing the install |
 | hooks (desktop) | no | Claude Desktop has no hook events |
 | mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json` |
 | proxy (desktop) | no | Claude Desktop has no base-URL setting; its requests do not pass through the proxy |

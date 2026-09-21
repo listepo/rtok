@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use anyhow::Result;
-use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, accepted, array_at, edit_json, object_at};
+use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -165,6 +165,12 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 const PLUGIN_SRC: &str = "plugins/claude";
 const PLUGIN_ID: &str = "rtok@rtok";
 
+/// GitHub `owner/repo` shorthand `claude plugin marketplace add` resolves (T139): the repo
+/// root's `.claude-plugin/marketplace.json` names this one marketplace `rtok`, whose only
+/// plugin is `./plugins/claude` (relative to the repo root, not the marketplace file). A
+/// local path broke across a ketch upgrade (`store/rtok/vX.Y.Z/…`); GitHub does not move.
+const MARKETPLACE_REPO: &str = "listepo/rtok";
+
 /// Claude Code's config dir: the one `settings_path` lives in (`~/.claude`).
 fn config_dir(cfg: &Config) -> PathBuf {
     let s = &cfg.setup.claude.settings_path;
@@ -176,6 +182,13 @@ fn config_dir(cfg: &Config) -> PathBuf {
 pub(super) fn plugin_installed(cfg: &Config) -> bool {
     super::read(&config_dir(cfg).join("plugins/installed_plugins.json"))
         .contains(&format!("\"{PLUGIN_ID}\""))
+}
+
+/// True when Claude Code already knows the `rtok` marketplace. Read the same way
+/// `plugin_installed` reads its own file, so a rerun skips `marketplace add` instead of
+/// erroring on a marketplace that already exists (T139).
+fn marketplace_known(cfg: &Config) -> bool {
+    super::read(&config_dir(cfg).join("plugins/known_marketplaces.json")).contains("\"rtok\":")
 }
 
 /// One `claude plugin …` call; `CLAUDE_CONFIG_DIR` only when `settings_path` is not the default.
@@ -198,19 +211,27 @@ fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
 }
 
 /// Offer, install, or uninstall the plugin through the official `claude plugin` commands
-/// (T115, the creator's choice over writing Claude's plugin store). A failing `claude` keeps
-/// the offer open instead of failing the install: the settings-file hooks still go in.
+/// (T115), from the GitHub marketplace `listepo/rtok` (T139). Installed by default — no
+/// `--yes` needed — once `claude` is on PATH and the plugin is not already installed;
+/// already installed (or already removed) is a no-op. `marketplace add` is skipped once
+/// Claude already knows the marketplace, so a rerun never errors, and a failing or missing
+/// `claude` keeps the offer open instead of failing the install: the settings-file hooks
+/// still go in.
 fn plugin(cfg: &Config, remove: bool) -> Result<String> {
     let a = apply(cfg);
-    let src = super::plugin_src(PLUGIN_SRC).to_string_lossy().into_owned();
-    let steps: [&[&str]; 2] = if remove {
-        [
+    if remove != plugin_installed(cfg) {
+        return Ok(NO_CHANGES.into());
+    }
+    let steps: Vec<&[&str]> = if remove {
+        vec![
             &["plugin", "uninstall", PLUGIN_ID],
             &["plugin", "marketplace", "remove", "rtok"],
         ]
+    } else if marketplace_known(cfg) {
+        vec![&["plugin", "install", PLUGIN_ID]]
     } else {
-        [
-            &["plugin", "marketplace", "add", &src],
+        vec![
+            &["plugin", "marketplace", "add", MARKETPLACE_REPO],
             &["plugin", "install", PLUGIN_ID],
         ]
     };
@@ -219,9 +240,6 @@ fn plugin(cfg: &Config, remove: bool) -> Result<String> {
         .map(|s| format!("claude {}", s.join(" ")))
         .collect::<Vec<_>>()
         .join(" && ");
-    if remove != plugin_installed(cfg) {
-        return Ok(NO_CHANGES.into());
-    }
     if a.dry_run {
         return Ok(if remove {
             format!("- plugin {PLUGIN_ID} ({shown})")
@@ -229,9 +247,9 @@ fn plugin(cfg: &Config, remove: bool) -> Result<String> {
             format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
         });
     }
-    if !remove && !accepted(&a, &format!("install {PLUGIN_SRC} into Claude Code?")) {
+    if !remove && super::find_on_path("claude").is_none() {
         return Ok(format!(
-            "offer {PLUGIN_SRC} → {shown} (accept with --yes) {KETCH_INSTALL}"
+            "offer {PLUGIN_SRC} → {shown} (claude failed: claude not found on PATH) {KETCH_INSTALL}"
         ));
     }
     for step in steps {
@@ -308,8 +326,10 @@ impl Agent for Claude {
         match (kind, module) {
             (_, "mcp") | (Kind::Cli, "hooks") => Support::Yes,
             (Kind::Cli, "proxy") => Support::Flag("--proxy"),
-            // `plugin`: `plugins/claude` through `claude plugin install` (T115).
-            (Kind::Cli, _) => Support::Flag("--yes"),
+            // `plugin`: `plugins/claude` through `claude plugin install`, from the GitHub
+            // marketplace `listepo/rtok`, installed by default once `claude` is on PATH
+            // and not already installed (T139).
+            (Kind::Cli, _) => Support::Yes,
             (Kind::Desktop, "hooks") => Support::No("Claude Desktop has no hook events"),
             (Kind::Desktop, "proxy") => Support::No(
                 "Claude Desktop has no base-URL setting; its requests do not pass through the proxy",
@@ -678,5 +698,79 @@ mod tests {
         ));
         assert_eq!(market["plugins"][0]["name"], manifest["name"]);
         assert_eq!(market["plugins"][0]["source"], "./");
+    }
+
+    // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---
+
+    fn plugin_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("rtok-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("plugins")).unwrap();
+        dir
+    }
+
+    fn plugin_cfg(dir: &std::path::Path, dry: bool) -> Config {
+        let mut c = Config::default();
+        c.setup.claude.settings_path = dir.join("settings.json");
+        c.setup.dry_run = dry;
+        c.setup.backup = false;
+        c
+    }
+
+    /// Already installed → no-op, whether or not `--dry-run` is given.
+    #[test]
+    fn plugin_install_is_a_no_op_once_claude_already_has_it() {
+        let dir = plugin_dir("plugin-installed");
+        fs::write(
+            dir.join("plugins/installed_plugins.json"),
+            r#"{"rtok@rtok":{}}"#,
+        )
+        .unwrap();
+        assert_eq!(plugin(&plugin_cfg(&dir, false), false).unwrap(), NO_CHANGES);
+        assert_eq!(plugin(&plugin_cfg(&dir, true), false).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Not installed and not removing it either → no-op (nothing to uninstall).
+    #[test]
+    fn plugin_remove_is_a_no_op_when_not_installed() {
+        let dir = plugin_dir("plugin-remove-noop");
+        assert_eq!(plugin(&plugin_cfg(&dir, false), true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A known marketplace skips `marketplace add`: only the install step is offered.
+    #[test]
+    fn plugin_dry_run_skips_marketplace_add_when_already_known() {
+        let dir = plugin_dir("plugin-known-market");
+        fs::write(
+            dir.join("plugins/known_marketplaces.json"),
+            r#"{"rtok":{"source":"listepo/rtok"}}"#,
+        )
+        .unwrap();
+        let report = plugin(&plugin_cfg(&dir, true), false).unwrap();
+        assert!(
+            report.contains("claude plugin install rtok@rtok"),
+            "{report}"
+        );
+        assert!(!report.contains("marketplace add"), "{report}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Nothing known yet: both steps are offered, from the GitHub marketplace, not a local path.
+    #[test]
+    fn plugin_dry_run_offers_both_steps_from_a_clean_install() {
+        let dir = plugin_dir("plugin-fresh");
+        let report = plugin(&plugin_cfg(&dir, true), false).unwrap();
+        assert!(
+            report.contains("claude plugin marketplace add listepo/rtok"),
+            "{report}"
+        );
+        assert!(
+            report.contains("claude plugin install rtok@rtok"),
+            "{report}"
+        );
+        assert!(report.starts_with("offer plugins/claude → "), "{report}");
+        let _ = fs::remove_dir_all(dir);
     }
 }

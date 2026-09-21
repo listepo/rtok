@@ -14,7 +14,7 @@ agents
     ✗ hooks   not installed
     ✗ mcp     not installed
     ✗ proxy   not installed (--proxy)
-    ✗ plugin  not installed (--yes)
+    ✗ plugin  not installed
   claude (desktop)
     − hooks   not supported: Claude Desktop has no hook events
     ✗ mcp     not installed
