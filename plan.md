@@ -46,6 +46,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | T127 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
+| T161 | in progress | P1 | 2 | 10% | Claude Code / claude-opus-5 |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T152 | todo | P1 | 2 | 0% | |
 | T154 | todo | P2 | 3 | 0% | |
@@ -399,6 +400,14 @@ Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` prints `
 Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
 
 Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
+
+### T161. Deflake `hook_skips_spawning_when_a_flush_is_already_queued`
+
+T143's test (`tests/otel.rs`) failed on `check (ubuntu-latest)` for PR #157, a diff that does not touch otel: `queued lock held: no flush process should have been spawned at all — left: 1, right: 0`. Cause: the flush child writes its `<pid>.run` trace marker only once it runs, so the warm-up drain loop cannot tell "not started yet" from "already exited". On a loaded runner the drain passes at once, the late warm-up child then starts while the test holds the queued slot, and its marker is counted by the final assertion. The same blind spot sits in the burst test's drain.
+
+Plan: `spawn_child` writes `<child pid>.spawned` in the trace dir right after a successful spawn (test hook only, same env var); `FlushTrace` renames `.run` to `.done` on exit instead of deleting it. Tests count `.run` for "alive", wait until `.done` equals `.spawned` to drain, and assert the skip case by the `.spawned` count right after the hook exits — synchronous, so a spawn is caught even if the child never gets to run. Production behaviour unchanged.
+
+Check: `mise exec -- cargo nextest run --test otel` passes repeatedly (and under CPU load); the assertion fails if `spawn_child` drops its `queued_lock_held` pre-check; `just check`.
 
 ## Reference
 
