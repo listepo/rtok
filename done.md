@@ -4317,3 +4317,11 @@ Complexity: 2/5 — one workflow, one recipe, one pin.
 Status: done 2026-09-21
 Check result: local scan — actions 15 (13 `actions/unpinned-tag` across all workflows, 2 `actions/missing-workflow-permissions` in `ci.yml`), javascript-typescript 0, python 0, rust 1 (`rust/log-injection` in `tests/web.rs:223`, test code); 30 of 190 Rust files extract with errors under `build-mode: none`. Findings are left for a follow-up task. `just check` red only on load flakes (`claude_plugin` ×2, `cli_trycmd`, `graph::watch` watchman fallback, earlier ENOSPC at 2 GB free); each passes alone, none touches this change.
 Model: Claude Code / claude-opus-5
+
+**T120 Clear the CodeQL findings** · `.github/workflows/{bump,ci,docs,release-plz,release,verify}.yml`, `.github/build-setup.yml`, `tests/web.rs`
+Do: creator request 2026-09-21, after T119. Every third-party action is pinned to the commit its tag pointed at, tag kept as a comment (`jdx/mise-action` v4.3.0, `Swatinem/rust-cache` v2.9.2, `release-plz/action` v0.5.139, `taiki-e/install-action` v2.87.17) — no version bumps; `actions/*` are GitHub-owned and CodeQL does not flag them. `release.yml` gets its two pins from `.github/build-setup.yml` through `just dist-generate`, not by hand. `ci.yml` has a top-level `permissions: contents: read`; `revert-on-failure` keeps its own wider block. `tests/web.rs` asserts with a fixed message instead of echoing the HTTP body into the panic (`rust/log-injection`).
+Check: `just codeql` 0 results for all four languages; `actionlint` on every workflow; `just check`; next `ci` / `codeql` runs on `main`.
+Complexity: 2/5 — mechanical pins, one permissions block, one assert.
+Status: done 2026-09-21
+Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
+Model: Claude Code / claude-opus-5
