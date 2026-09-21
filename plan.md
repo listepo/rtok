@@ -20,7 +20,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T100 | todo | P1 | 3 | 0% | |
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T103 | todo | P2 | 2 | 0% | |
 | T104 | todo | P2 | 2 | 0% | |
 | T105 | todo | P2 | 2 | 0% | |
 | T106 | todo | P3 | 2 | 0% | |
@@ -176,12 +175,6 @@ Check: `just test` green; one case per host × event × stdin in the nextest lis
 Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
-
-### T103. Unit tests for untested store queries
-
-No test calls `Store::memory_recall_totals` (`src/store/mod.rs`) or `call_io_archives`. Add unit tests on an in-memory store: empty store, one row, many sessions, rows outside the window.
-
-Check: both functions covered by `src/store` unit tests; `just test` green.
 
 ### T104. Migration and `schema.rs` drift guard
 

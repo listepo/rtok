@@ -12,7 +12,6 @@
 - T100. `rtok agents install grok` and the Read path under Grok
 - T101. Hook fail-open matrix over every `--host`
 - T102. Lossless round-trip for every plugin that shortens
-- T103. Unit tests for untested store queries
 - T104. Migration and `schema.rs` drift guard
 - T105. Report renderers: edge-case snapshots
 - T106. `otel/export.rs` unit tests

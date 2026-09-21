@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T103. Unit tests for untested store queries
+
+No test calls `Store::memory_recall_totals` (`src/store/mod.rs`) or `call_io_archives`. Add unit tests on an in-memory store: empty store, one row, many sessions, rows outside the window.
+
+Check: both functions covered by `src/store` unit tests; `just test` green.
+
+Do (2026-09-21): two unit tests in `src/store/mod.rs` on `Store::open_in_memory`. `memory_recall_totals_sums_recalls_in_the_window_only`: empty store `(0, 0, 0)`; one row; three sessions summed while a `memory`/`save` row and a `read`/`recall` row stay out; one row backdated a day falls outside a one-hour window, and a window starting in the future is empty. `call_io_archives_names_only_spilled_bodies`: no `call_io` row → `(None, None)`; inline bodies → `(None, None)`; an over-cap request → its sha, which names a file in the archive dir, response `None`; both over cap → both ids; over cap with no archive dir (the hook path) → `(None, None)`.
+
+Check result (2026-09-21): both tests pass; `just check` green with the branch.
+
 ### T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
 
 Creator request 2026-09-21: a host plugin for oh my pi CLI + desktop. oh my pi (https://github.com/can1357/oh-my-pi, binary `omp`) is a fork of pi with no desktop app — a TUI plus Zed ACP, which runs the same binary and config — so the host has one CLI variant. Its extension loader accepts `package.json` `omp.extensions` **or legacy `pi.extensions`**, treats symlinked directories as discovery targets, scans `~/.omp/agent/extensions` (not `~/.pi/agent/extensions`), and delivers the events `plugins/pi/extensions/rtok.ts` already subscribes to (`tool_call`, `tool_result`, `context`, `session_start`, `session_compact`); the extension imports nothing from upstream pi. So `plugins/pi` is reused as is — no `plugins/omp/` tree. Unlike pi, omp has native MCP (`~/.omp/agent/mcp.json`, `mcpServers.{command,args,env}`). Evidence: `docs/extension-loading.md`, `docs/extensions.md`, `docs/mcp-config.md` in that repo (fetched 2026-09-21).
