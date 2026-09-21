@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::list::usage;
 use super::{Entry, State, git, inventory};
-use crate::render::{Col, table};
+use crate::render::Col;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
@@ -130,15 +130,9 @@ pub fn to_table(outcomes: &[Outcome], yes: bool) -> String {
         let branch = o.branch.clone().unwrap_or_else(dash);
         vec![o.action.into(), o.path.clone(), branch]
     }));
-    // The note is free text: appended per line, so the table still ends right-aligned.
     let cols = [Col::left(0), Col::left(0), Col::right(0)];
-    let body = table(&cols, &lines);
-    let notes = std::iter::once("note").chain(outcomes.iter().map(|o| o.note.as_str()));
-    let mut out: String = body
-        .lines()
-        .zip(notes)
-        .map(|(row, note)| format!("{row}  {note}\n"))
-        .collect();
+    let notes = outcomes.iter().map(|o| o.note.as_str());
+    let mut out = super::noted_table(&cols, &lines, notes);
     let planned = outcomes.iter().filter(|o| o.action != "keep").count();
     if !yes && planned > 0 {
         out.push_str(&format!(

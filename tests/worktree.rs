@@ -119,7 +119,7 @@ fn json(cwd: &Path, args: &[&str]) -> serde_json::Value {
 
 fn by_name<'a>(rows: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
     let found = rows.as_array().unwrap().iter().find(|r| {
-        let path = r["path"].as_str().unwrap();
+        let path = r["path"].as_str().or(r["worktree"].as_str()).unwrap();
         Path::new(path).ends_with(name)
     });
     found.unwrap_or_else(|| panic!("{name} missing in {rows}"))
@@ -420,4 +420,88 @@ fn add_creates_one_locked_worktree_per_task_from_a_fresh_base() {
     assert!(out.status.success(), "{err}");
     let printed = String::from_utf8_lossy(&out.stdout);
     assert!(printed.trim_end().ends_with("/wt/rtok-t2"), "{printed}");
+}
+
+/// T152: `rtok worktree clean` deletes idle tagged caches — and nothing else.
+#[test]
+fn clean_deletes_idle_tagged_caches_and_nothing_else() {
+    let tmp = rtok::testutil::tmp_dir("worktree-clean");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    std::fs::write(work.join(".git/info/exclude"), "target/\nout/\n").unwrap();
+    for name in ["idle", "fresh", "orphan"] {
+        add(&work, name, None);
+    }
+    std::fs::remove_dir_all(work.join(".git/worktrees/wt-orphan")).unwrap();
+    let tag = "Signature: 8a477f597d28d172789f06886806bc55\n";
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 86_400);
+    let cache = |dir: &Path, stale: bool| {
+        std::fs::create_dir_all(dir.join("target/debug")).unwrap();
+        let files = ["target/CACHEDIR.TAG", "target/debug/bin"];
+        std::fs::write(dir.join(files[0]), tag).unwrap();
+        std::fs::write(dir.join(files[1]), [0; 4096]).unwrap();
+        for file in files.iter().filter(|_| stale) {
+            let file = std::fs::File::options().write(true).open(dir.join(file));
+            file.unwrap().set_modified(old).unwrap();
+        }
+    };
+    let idle = tmp.join("wt-idle");
+    cache(&idle, true);
+    cache(&tmp.join("wt-fresh"), false);
+    cache(&tmp.join("wt-orphan"), true);
+    cache(&work, true);
+    // Same name, no tag: never touched.
+    std::fs::create_dir_all(idle.join("out")).unwrap();
+    std::fs::write(idle.join("out/report"), [0; 100]).unwrap();
+    let bytes = 4096 + tag.len() as u64;
+
+    // Dry run from the main checkout: its own cache is skipped, nothing is deleted.
+    let rows = json(&work, &["worktree", "clean", "--json"]);
+    let row = |name: &str| by_name(&rows, name);
+    assert_eq!(rows.as_array().unwrap().len(), 4, "{rows}");
+    assert_eq!(row("work")["action"], "keep");
+    assert!(row("work")["note"].as_str().unwrap().contains("runs from"));
+    assert_eq!(row("wt-idle")["action"], "clean");
+    assert_eq!(
+        (
+            row("wt-idle")["cache"].as_str(),
+            row("wt-idle")["bytes"].as_u64()
+        ),
+        (Some("target"), Some(bytes))
+    );
+    assert_eq!(row("wt-fresh")["action"], "keep");
+    assert_eq!(row("wt-orphan")["action"], "clean");
+    for dir in ["work", "wt-idle", "wt-fresh", "wt-orphan"] {
+        assert!(tmp.join(dir).join("target/debug/bin").exists(), "{dir}");
+    }
+    let table = rtok(&work, &["worktree", "clean"]);
+    let table = String::from_utf8_lossy(&table.stdout);
+    assert!(table.contains("dry run: 2 caches, "), "{table}");
+
+    let out = rtok(&work, &["worktree", "clean", "--yes"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!idle.join("target").exists());
+    assert!(!tmp.join("wt-orphan/target").exists());
+    assert!(tmp.join("wt-fresh/target/debug/bin").exists());
+    assert!(work.join("target/debug/bin").exists());
+    assert!(idle.join("out/report").exists() && idle.join("a.txt").exists());
+
+    // Named: the current worktree goes too; a stranger to the repository is refused.
+    let out = rtok(&work, &["worktree", "clean", "--yes", "."]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!work.join("target").exists() && work.join("a.txt").exists());
+    let out = rtok(&work, &["worktree", "clean", "--yes", ".."]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("not a worktree of this repository"), "{err}");
+    assert!(tmp.join("wt-fresh/target/debug/bin").exists());
 }

@@ -461,6 +461,20 @@ enum WorktreeCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`
+    Clean {
+        /// Only these worktrees; the one this command runs from is cleaned only when named
+        paths: Vec<PathBuf>,
+        /// Keep caches modified within this window (`24h`, `7d`)
+        #[arg(long, default_value = "24h")]
+        idle: String,
+        /// Apply; without it this is a dry run that changes nothing
+        #[arg(long)]
+        yes: bool,
+        /// JSON instead of the table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(feature = "graph")]
@@ -897,6 +911,31 @@ pub fn run() -> Result<()> {
             }
             if outcomes.iter().any(|o| o.failed) {
                 bail!("some worktrees could not be removed");
+            }
+        }
+        Cmd::Worktree {
+            action:
+                WorktreeCmd::Clean {
+                    paths,
+                    idle,
+                    yes,
+                    json,
+                },
+        } => {
+            use crate::worktree::clean;
+            use anyhow::Context as _;
+            let policy = clean::Policy {
+                idle: crate::measure::stats::parse_since(&idle).context("--idle")?,
+                now: std::time::SystemTime::now(),
+            };
+            let outcomes = clean::run(&std::env::current_dir()?, &paths, &policy, yes)?;
+            if json {
+                print_json(&outcomes)?;
+            } else {
+                print!("{}", clean::to_table(&outcomes, yes, policy.now));
+            }
+            if outcomes.iter().any(|o| o.failed) {
+                bail!("some caches could not be deleted");
             }
         }
         Cmd::Info { json } => {

@@ -72,6 +72,10 @@ const ALLOW_KEYS: &[&str] = &[
     "worktree.gc.idle",
     // `worktree add --owner` (T158): who holds this one worktree; `[worktree] root` is the setting.
     "worktree.add.owner",
+    // `worktree clean` (T152): same per-call rule as `gc` — a stored `yes` would delete
+    // without anyone typing it; `--idle` is T153's flag with T153's default.
+    "worktree.clean.yes",
+    "worktree.clean.idle",
 ];
 
 #[test]
