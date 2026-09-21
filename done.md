@@ -4149,3 +4149,11 @@ Complexity: 2/5 — one adapter beside `adapt_copilot` / `adapt_devin`, one disp
 Status: done 2026-09-21
 Check result: both tests pass; `just check` exit 0 — 1090 passed, 4 skipped. Not verified on a live Grok session (a headless run bills the creator's xAI account).
 Model: Claude Code / claude-opus-5
+
+**T99 Grok Build plugin tree (`plugins/grok/`)** · `plugins/grok/{.grok-plugin/plugin.json,hooks/hooks.json,.mcp.json,README.md}` (new), `tests/grok_plugin.rs` (new)
+Do: after T98. Grok plugins are Claude-compatible directories: optional `.grok-plugin/plugin.json`, `hooks/hooks.json` in Claude's nested shape, `.mcp.json`. Hooks: `rtok hook <event> --host grok` with `timeout: 5` (Grok's PostToolUse default is 600 s) on PreToolUse (Bash), PostToolUse (no matcher — Grok's matcher is a regex, so Claude's `*` is not used), UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd = Claude `ENTRIES` minus Read and Skill. `.mcp.json` → `rtok mcp` (D21: one unit). Install `grok plugin install <path> --trust` or `~/.grok/plugins/rtok/` + `[plugins].enabled`. README states the double-fire: Grok imports rtok's Claude hooks and `~/.claude.json` MCP by default, so keep either the plugin (with `[compat.claude] hooks = false`, `mcps = false`) or the Claude install; plus the limits (no Read/Skill, Grok drops UserPromptSubmit and SessionStart context, live load unverified) and `## Docs`.
+Check: `tests/grok_plugin.rs` — manifest name `rtok`, `.mcp.json` exactly `rtok`, hooks exactly the filtered set; `host_docs`; `just check`.
+Complexity: 2/5 — data files and one integration test; no product code.
+Status: done 2026-09-21
+Check result: `grok_plugin` (3) and `host_docs` pass inside `just check` exit 0 — 1090 passed, 4 skipped. The expected hook list is written out in the test because `agents::claude::ENTRIES` is `pub(super)`; T100's `src/agents/grok` moves the check next to `ENTRIES`. Not verified on a live Grok session.
+Model: Claude Code / claude-opus-5
