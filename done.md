@@ -4372,6 +4372,16 @@ Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit tes
 
 Done: `measure::jsonl` collects `thinking`/`redacted_thinking` blocks per unique `message.id`; `measure::stats` sums them over sessions (text line + JSON `thinking`), share against uncached + cache_create + cache_read input. 2026-09-21, `rtok stats --since 30d`, 827 sessions: 28,072 blocks, 7,266,318 B ≈ 1,816,580 est. tokens = 0.0297 % of session input → I-86 moved to Rejected in `ideas.md`; row in `research.md` §2.
 
+### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+
+`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
+
+Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
+
+Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
+
+Done: `Report.tools_rewrite_advice` + pure `tools_rewrite_advice()`; rtok counts as a hop when the chain (loopback hops print as the bare port) has `proxy.port` or `localhost:<port>`. New key `doctor.tools_rewrite_min_desc_tokens` (default 2000). Unit tests: the positive case (loopback and `localhost:`) and one per failing condition; `cargo nextest run --lib doctor report` 49 passed; clippy clean.
+
 **T127 Read advice: a small ranged native `Read` is the edit gate** · `src/plugins/read/{hook.rs,README.md,AGENTS.md}`
 Do: creator request 2026-09-21 — read file content through `rtok read` always. The host's `Edit` demands a native `Read` first and an MCP read does not satisfy it; the hook decided on size alone, so even `Read(limit=30)` of a file over `native_max_bytes` was denied, and the deny text promised "native Read allowed for files you are about to edit" while only files edited in the last 5 tool calls passed. Verified 2026-09-21 on Claude Code: `Read(limit=1)` satisfies the gate; an `Edit` of line 40 then succeeds. `pre_tool` now passes a native `Read` with `limit` ≤ 5 (`GATE_MAX_LINES`, a constant — the planned `read.gate_max_lines` key was dropped as YAGNI) whatever the file size; `REASON` is `use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate`; the `mode=diff` deny stays.
 Check: `hook.rs` unit tests — 100 KB file with `limit: 1` → no decision, `limit: 2000` → deny, no `limit` → deny with the new text; `just check` green.

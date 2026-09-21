@@ -401,6 +401,7 @@ mod tests {
                 source: "user".into(),
             }],
             doctor: crate::doctor::Report {
+                tools_rewrite_advice: None,
                 hooks_total: 2,
                 hooks_by_event: BTreeMap::from([
                     ("PreToolUse".to_string(), 1),
