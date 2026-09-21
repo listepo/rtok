@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T106. `otel/export.rs` unit tests
+
+`src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
+
+Check: `just test` green; no new dependency.
+
+Do (2026-09-21): a `tests` module in `src/otel/export.rs`, six units, no new dependency. `resource()` pins the four attributes with a custom `service_name`. An unreachable collector (a loopback port bound then dropped, so the connect is refused at once): `flush_blocking` returns one error naming all three streams, posts nothing, skips nothing, leaves every mark (`calls`, `logs`, `sessions`, `sessions_tail`) at 0, writes one `otel` `error`/`flush` log row and does not panic. No endpoint: the report is `Report::default()` and prints `otel: no endpoint`. Ticker: the thread has no stop handle and dies with the process, so the units pin what callers rely on — `spawn_ticker` returns at once, does not flush before its first period, and spawns nothing without an endpoint. `push_error` joins stream errors into one report line. The 404, 500 and happy paths stay in `tests/otel.rs`.
+
+Check result (2026-09-21): `cargo nextest run --lib otel::export` 6/6 green; `just check` green.
+
 ### T121. Codex plugin tree (`plugins/codex/`)
 
 Creator request 2026-09-21: every host in `src/agents/` whose host has a plugin format gets a `plugins/<host>/` package. Audit: kilo and omp reuse `plugins/opencode` / `plugins/pi` (T97, T92); windsurf → Devin (T88), Copilot (T116), VS Code (T117) are planned; aider has no plugin system; Zed has only WASM extensions (MCP, no hooks). Codex was the one host with a plugin format and no task. Creator decision: Codex only, one PR. Codex plugin format (fetched 2026-09-21, https://developers.openai.com/plugins/build/plugins, https://learn.chatgpt.com/docs/hooks; matches `engram` and `claude-mem` in this machine's `~/.codex/plugins/cache/`): `.codex-plugin/plugin.json` naming `hooks` and `mcpServers` files, a local marketplace at `.agents/plugins/marketplace.json`, loaded by the CLI and the desktop app.

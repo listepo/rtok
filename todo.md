@@ -13,7 +13,6 @@
 - T101. Hook fail-open matrix over every `--host`
 - T102. Lossless round-trip for every plugin that shortens
 - T105. Report renderers: edge-case snapshots
-- T106. `otel/export.rs` unit tests
 - T107. CLI bad-argument fixtures
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
