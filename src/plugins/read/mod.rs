@@ -128,11 +128,13 @@ pub(crate) fn read_with(
             .join("\n")
     };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
-    let payload = if mode == "map" || mode == "signatures" || stripped_src.is_some() {
-        body.as_bytes()
-    } else {
-        raw.as_bytes()
-    };
+    // T122: a ranged read is keyed on the bytes it returns, never the whole file.
+    let payload =
+        if mode == "map" || mode == "signatures" || stripped_src.is_some() || range.is_some() {
+            body.as_bytes()
+        } else {
+            raw.as_bytes()
+        };
     if let Some(hit) = cache::hit(
         cx,
         &key,
@@ -143,7 +145,7 @@ pub(crate) fn read_with(
     ) {
         return Ok(hit);
     }
-    // Raw file bytes (not the delta view): a same-session content-hash hit is a pointer.
+    // A same-session content-hash hit on those bytes is a pointer.
     if let Some(msg) = crate::plugin::identical_result(&**cx, "read", payload) {
         let _ = cache::remember(cx, &key, payload);
         return Ok(msg);
@@ -680,6 +682,31 @@ pub(crate) mod tests {
         let out = read(&Ctx::new(&cx), txt.to_str().unwrap(), "stripped", None).unwrap();
         assert!(out.contains("gone"), "{out}");
         assert!(out.contains("keep"), "{out}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T122: a whole-file archive (the native Read hook's) never answers a ranged read.
+    #[test]
+    fn ranged_read_is_not_a_pointer_to_the_whole_file() {
+        let (cx, dir) = cx("t122_ranges");
+        let file = dir.join("multiline.txt");
+        let content: String = (1..=100).map(|i| format!("Line {i}\n")).collect();
+        fs::write(&file, &content).unwrap();
+        cx.store
+            .put_archive(&cx.session, content.as_bytes(), &cx.config.core.archive_dir)
+            .unwrap();
+        let path = file.to_str().unwrap();
+        let out1 = read(&Ctx::new(&cx), path, "lines", Some("10-20")).unwrap();
+        let out2 = read(&Ctx::new(&cx), path, "lines", Some("30-40")).unwrap();
+        assert!(!out1.contains("identical to"), "{out1}");
+        assert!(
+            out1.contains("10:Line 10") && !out1.contains("Line 30"),
+            "{out1}"
+        );
+        assert!(
+            out2.contains("30:Line 30") && !out2.contains("Line 10"),
+            "{out2}"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

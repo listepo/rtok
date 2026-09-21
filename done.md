@@ -4382,6 +4382,12 @@ Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
 
+### T122. A ranged `read` answers with a pointer to the whole file
+
+Seen 2026-09-21: MCP `read` with `mode=lines`, ranges `14-30` and `1230-1260` of one file, both answered `[rtok <id> · identical to a result 1 turns ago …]` with one id, and `expand <id>` returned the whole file. Root cause: `read_with` (`src/plugins/read/mod.rs`) passed the raw file bytes to `plugin::identical_result` for `full`/`lines` reads even when a range was given, so any earlier whole-file archive in the session (the native Read hook's) matched every range. Fix: a ranged read is keyed on the bytes it returns; unranged `full` stays on raw bytes so the T58.1 delta cache keeps diffing the file, not its numbered view. The second half of the original card — a sub-agent and its parent share the host session, so a pointer can name a body the caller never saw — is split out as T127.
+
+Check: `ranged_read_is_not_a_pointer_to_the_whole_file` archives the whole file first, then reads two ranges; it fails on the old code (pointer returned) and passes with the fix; `cargo nextest run --lib read:: plugin::` 78 passed.
+
 **T126** `roadmap.md` and `research.md` §16.2 list shipped work as open
 
 Do: Every task in `roadmap.md` is checked against `done.md` headings (exact match: `## T59.5 —`, `## T58.1 —`, `## T61.2 —`) and open PR branches (`git branch -r` / `gh pr list --state open`); shipped ids are removed from table rows (T59.5, T61.2, T58.1 from the `read` and `proxy`/`archive` lanes). `research.md` §16.2 table gains a `Status` column (values: `shipped`, `shipped (off by default)`, `open`) and a dated line "Status as of 2026-09-21."; T58.1's Why text is fixed to note the 7.3 % re-read delta (from §2) that gates it. Docs only; no code changes.
