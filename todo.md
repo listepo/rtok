@@ -25,5 +25,16 @@
 
 - T125. `rtok stats`: thinking-block share — the gate for I-86
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
+- T128. `rtok stats`: sub-agent transcripts and the re-read share
+- T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
+- T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
+- T131. Measure the spawn brief: cost row and on/off re-read share
+- T132. Ship a Haiku scout agent definition with the Claude Code plugin
+- T133. Project identity survives git worktrees
+- T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
+- T135. `doctor::read_share` stops re-parsing every transcript
+- T136. `rtok stats`: whole-file native Reads that `outline` would have answered
+- T137. `rtok stats`: image blocks row
+
 - T127. A dedup pointer reaches a sub-agent that never saw the body
 

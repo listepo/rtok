@@ -1284,3 +1284,47 @@ Prioritized for an agent product like AirTalk. Effort: S &lt; 1 week, M ~1–3 w
 1. Ship or schedule **T59.5** and **T61.2** — highest *measured* or structurally recurring input taxes.
 2. Add a plan card for **prompt-cache-stable prefixes + sticky proxy upstream** if `$` savings matter as much as raw tokens (pairs with existing `stats --price` cache rates).
 3. Keep P28/P31/P33 in Later until a bench beats the lossless archive lane on *code* sessions.
+
+## 17. Sharing context between an agent and its sub-agents (2026-09-21)
+
+Creator request: a freshly spawned sub-agent gets none of the parent's context, reads the same files again and pays for them again. Find what rtok can apply; sub-agents stay cheap (Haiku). Method: two Haiku agents (repo inventory, web scan), one Haiku docs check, an ad-hoc scan of this machine's transcripts; synthesis in the main session. Vendor numbers stay claims.
+
+### 17.1 What T59.6 measured, and what it missed
+
+T59.6 closed `handoff` at 0.7 % because it measured the `Agent` tool's input and result **in the parent transcript**. The cost of a sub-agent is not there: it is in `<session>/subagents/agent-<id>.jsonl` (plus `agent-<id>.meta.json`: `agentType`, `model`, `toolUseId`, `spawnDepth`), which no rtok code attributes to a parent — `src/` has no `agent_id`, `agent_type` or sidechain handling.
+
+Ad-hoc scan, 2026-09-21, `~/.claude/projects/*/*/subagents/agent-*.jsonl` modified in the last 30 days, one Python pass over tool_use/tool_result blocks (script not in the repo — **T128 replaces this with a `rtok stats` row; until then these are not public numbers**):
+
+| Quantity | Value |
+| --- | --- |
+| Sessions with sub-agents / sub-agents | 46 / 501 |
+| Tool-result bytes: sub-agents vs their parents | 29,104,009 vs 40,604,776 (42 % of the tree) |
+| Sub-agent file-read result bytes | 12,985,961 (45 % of sub-agent tool-result bytes) |
+| … of a path the parent also read | 3,936,134 (30 % of sub-agent read bytes) |
+| … of a path an earlier sibling read | 2,235,446 (17 %) |
+| Re-read total | 6,171,580 B = 48 % of sub-agent read bytes, 21 % of sub-agent tool-result bytes, 8.9 % of the tree's |
+| Sub-agent usage (tokens) | input 70,198 · cache read 682,758,922 · cache write 33,236,176 · output 484,836 |
+
+Caveats: path-level match (no range or sha), parent reads counted over the whole session (before or after the spawn), bytes are JSON-encoded result sizes. Every re-read byte is also re-sent on each later sub-agent turn (the cache-read column), so the byte share understates the token share.
+
+### 17.2 What the host gives us (Claude Code)
+
+| Fact | Source | Status |
+| --- | --- | --- |
+| Hooks fired inside a sub-agent carry `agent_id` and `agent_type` | https://code.claude.com/docs/en/hooks | documented |
+| They carry the **parent's** `session_id` | sub-agent transcript lines: `sessionId` = parent, `agentId`, `isSidechain: true` | observed 2026-09-21; not documented |
+| `PreToolUse` may return `updatedInput`; `Agent` `tool_input` has `prompt`, `subagent_type` | https://code.claude.com/docs/en/hooks | documented (`model`, `description` in `tool_input`: unverified) |
+| `SubagentStart` exists, matcher = agent type; `additionalContext` reaches the sub-agent | same page / Agent SDK hooks page | stated generically — verify on a live hook before relying on it (T130) |
+| `SubagentStop` input: `agent_id`, `agent_type`, `agent_transcript_path`, `last_assistant_message` | same page | documented |
+| `fork` sub-agent inherits conversation, model and prompt cache | https://code.claude.com/docs/en/sub-agents , https://code.claude.com/docs/en/prompt-caching | documented — runs on the parent's model, so it is not a cheap-Haiku path |
+| Agent frontmatter: `model`, `tools`, `skills`, `memory`, `hooks`, `mcpServers`, `initialPrompt` | https://code.claude.com/docs/en/sub-agents | documented |
+| Haiku 4.5: cache read 0.1× input, minimum cacheable prefix 4,096 tokens, TTL 5 min / 1 h | https://platform.claude.com/docs/en/build-with-claude/prompt-caching | documented |
+| `PostToolUse` `updatedToolOutput` replaces any tool's output | Agent SDK hooks page | **unverified for CLI command hooks**; contradicts a standing rtok rule → I-91 |
+
+### 17.3 What follows for rtok
+
+1. **A context window is `(session_id, agent_id)`, not `session_id`.** Every "already seen" state in rtok is keyed by session: `guard::pre_tool` (`src/plugins/guard/mod.rs`), the read cache (`src/plugins/read/cache.rs`), `plugin::identical_result`. A sub-agent that reads a file its parent read inside the guard window is denied with `duplicate; rtok expand <id>` for a body it never saw: one extra round trip, the full body anyway, and a `guard` Measurement row that claims a saving. Observed: 22 such denial strings in 11 sub-agent transcripts over 30 days (how many were cross-context is unmeasured). T122 fixes the MCP `read` side with a size threshold because MCP cannot see the caller; the hook side **can** see `agent_id` → T129.
+2. **Content cannot be shared for free; pointers can.** A sub-agent needs the bytes in its own window. What rtok can remove is the *search and whole-file* cost: the parent's ledger already knows which paths matter, their archive ids, outlines and line ranges. A budgeted, byte-stable brief appended to the `Agent` prompt at spawn ("these files, these ranges, `read` with `range`, `expand <id>`") replaces the sub-agent's Glob/Grep/whole-file Read turns with ranged reads → T130. This is the Anthropic "pass references, not content" pattern (https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) and lean-ctx `ctx_handoff` (§9), built on the existing `handoff` digest — one call path (D21).
+3. **It ships only with a number.** The brief costs tokens in every spawn. T128 makes the re-read share a `rtok stats` row; T131 splits it by brief on/off; default-on only if the net is positive.
+4. **A cheap scout by construction.** A shipped agent definition (`model: haiku`, tools limited to rtok MCP `read`/`search`/`outline`/`explore`/`expand`, answer = `path:line` citations) makes the cheap path the default one → T132; measured by T128's per-`agentType` split.
+5. Not pursued: `fork` (parent model, parent-sized context — the opposite of cheap); shrinking the `Agent` result (0.7 %, T59.6 stands). Parked as ideas: sibling cache-prefix sharing (I-89), sibling findings board (I-90), `updatedToolOutput` (I-91).

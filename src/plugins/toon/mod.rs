@@ -1,5 +1,5 @@
-//! `toon` — tabular JSON → TOON encoding (vendor bench: −42.6 % tokens). Off by default
-//! until A/B measured.
+//! `toon` — tabular JSON → TOON encoding (vendor bench: −42.6 % tokens). On by default;
+//! a block is only rewritten when the encoding estimates fewer tokens than the original.
 //!
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here. Proxy rewrite respects the
@@ -22,14 +22,14 @@ impl Plugin for Toon {
         Manifest {
             id: "toon",
             surfaces: &[Surface::Proxy, Surface::Mcp],
-            default_on: false,
+            default_on: true,
         }
     }
 
     fn dashboard_page(&self) -> DashboardPage {
         DashboardPage::new(
             "TOON",
-            "Compact tabular JSON. Off by default until it beats the corpus.",
+            "Compact tabular JSON in old tool results; expand returns the original.",
             true,
         )
     }
@@ -50,30 +50,17 @@ fn rewrite(results: Vec<ToolResultRef<'_>>, cx: &Ctx) -> Vec<Measurement> {
         .collect()
 }
 
-/// The original tool-result text before TOON encoding — what `expand` must recover.
-fn original_text(content: &Value) -> Option<String> {
-    match content {
-        Value::String(s) => Some(s.clone()),
-        Value::Array(_) => serde_json::to_string(content).ok(),
-        _ => None,
-    }
-}
-
-fn parse_table(content: &Value) -> Option<Value> {
-    match content {
-        Value::Array(_) => Some(content.clone()),
-        Value::String(s) => serde_json::from_str(s).ok().filter(Value::is_array),
-        _ => None,
-    }
-}
-
 fn rewrite_block(
     tool_use_id: &str,
     content: &mut Value,
     cx: &Ctx,
     min_rows: usize,
 ) -> Option<Measurement> {
-    let orig = original_text(content)?;
+    // The tool-result text (a string, or text blocks as MCP tools return it) — what
+    // `expand` must recover; a bare array of rows is kept as its JSON. The table is parsed
+    // from this text.
+    let orig = crate::plugins::archive::block_text(content)
+        .or_else(|| content.is_array().then(|| content.to_string()))?;
 
     match cx.archive_decision(tool_use_id) {
         Ok(Some(d)) if d.expanded => return None,
@@ -101,14 +88,22 @@ fn rewrite_block(
         }
     }
 
-    let table = parse_table(content)?;
+    let table: Value = serde_json::from_str(&orig).ok()?;
     let keys = tabular_keys(&table, min_rows)?;
     let rows = table.as_array()?;
+    let encoded = encode(rows, &keys);
+    // The pointer carries the full archive id; a table that is already compact can come out
+    // larger than the JSON it replaces. Decide before anything is written, so a skipped block
+    // leaves no archive decision behind.
+    let est_before = cx.estimate(&orig, Class::Code);
+    let est_pointer = cx.estimate(&format!("{PREFIX}{}]\n", "0".repeat(64)), Class::Code);
+    if est_pointer + cx.estimate(&encoded, Class::Code) >= est_before {
+        return None;
+    }
     let archive_id = cx
         .put_archive(orig.as_bytes())
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("put: {e}")))
         .ok()?;
-    let encoded = encode(rows, &keys);
     let replacement = format!("{PREFIX}{archive_id}]\n{encoded}");
     cx.put_archive_decision(tool_use_id, &archive_id, &replacement)
         .map_err(|e| cx.log("error", "plugin", "toon", &format!("decision: {e}")))
@@ -118,7 +113,7 @@ fn rewrite_block(
         kind: "encode",
         before_bytes: orig.len() as u64,
         after_bytes: replacement.len() as u64,
-        est_before: cx.estimate(&orig, Class::Code),
+        est_before,
         est_after: cx.estimate(&replacement, Class::Code),
         ref_id: Some(archive_id),
         call_id: None,
@@ -140,6 +135,10 @@ pub(crate) fn tabular_keys(value: &Value, min_rows: usize) -> Option<Vec<String>
         return None;
     }
     let keys: Vec<String> = first.keys().cloned().collect();
+    // The header `{a,b,c}` has no quoting: a key with a delimiter would shift every column.
+    if keys.iter().any(|k| needs_quotes(k) || k.contains(':')) {
+        return None;
+    }
     for item in arr {
         let obj = item.as_object()?;
         if obj.len() != keys.len() {
@@ -435,6 +434,51 @@ mod tests {
         let original = body.clone();
         assert!(filter(&mut body, &Ctx::new(&cx)).is_empty());
         assert_eq!(body, original);
+    }
+
+    /// MCP tools return `content: [{type: text, text}]`; the table inside must encode, and
+    /// `expand` returns the text, not the wire's block array.
+    #[test]
+    fn text_block_content_encodes() {
+        let cx = cx("blocks", true, 3);
+        let text = serde_json::to_string_pretty(&rows_3x4()).unwrap();
+        let mut body = json!({"messages":[{"role":"user","content":[{"type":"tool_result",
+            "tool_use_id":"t","content":[{"type":"text","text": text}]}]}]});
+        let ms = filter(&mut body, &Ctx::new(&cx));
+        assert_eq!(ms.len(), 1);
+        let archived = cx
+            .store
+            .get_archive(
+                ms[0].ref_id.as_ref().unwrap(),
+                Some(&cx.config.core.archive_dir),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(archived, text.as_bytes());
+    }
+
+    /// Compact JSON with short cells is smaller than pointer + TOON: leave it, write nothing.
+    #[test]
+    fn a_table_that_would_grow_is_left_alone() {
+        use rtok_plugin_sdk::Archive;
+        let cx = cx("grow", true, 3);
+        let table = json!([{"a":1,"b":2,"c":3},{"a":4,"b":5,"c":6},{"a":7,"b":8,"c":9}]);
+        let mut body = json!({"messages":[{"role":"user","content":[{"type":"tool_result",
+            "tool_use_id":"t","content": table.to_string()}]}]});
+        let original = body.clone();
+        assert!(filter(&mut body, &Ctx::new(&cx)).is_empty());
+        assert_eq!(body, original);
+        assert!(cx.archive_decision("t").unwrap().is_none());
+    }
+
+    #[test]
+    fn keys_with_delimiters_do_not_encode() {
+        let table = json!([
+            {"a,b": 1, "c": 2, "d": 3},
+            {"a,b": 4, "c": 5, "d": 6},
+            {"a,b": 7, "c": 8, "d": 9},
+        ]);
+        assert!(tabular_keys(&table, 3).is_none());
     }
 
     #[test]

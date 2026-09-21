@@ -31,9 +31,16 @@ Inventory of shipped levers vs further options: [`research.md` §16](research.md
 
 | ID | Inspired by | Area | Proposition | Why it is not in the plan |
 |----|-------------|------|-------------|---------------------------|
-| I-84 | Anthropic / OpenAI prompt caching; `stats --price` cache rates (T49.1) | `proxy` / hosts | Stable byte-prefix for system+tools+modes and sticky upstream routing so provider **prompt-cache hits** dominate billed input. Not semantic cache (I-23). | Decision-shaped; needs a Check on cache-hit rate before/after and a false “sticky” routing failure mode. |
+| I-84 | Anthropic / OpenAI prompt caching; `stats --price` cache rates (T49.1) | `proxy` / hosts | Stable byte-prefix for system+tools+modes and sticky upstream routing so provider **prompt-cache hits** dominate billed input. Not semantic cache (I-23). | Decision-shaped; needs a Check on cache-hit rate before/after and a false “sticky” routing failure mode. Measured hit rate here is already 98.1 % (`research.md` §2, Cache row), so the head-room on this workload is small. |
 | I-85 | Host Tool Search / deferred tools; doctor `mcp_tool_search` | `proxy` / MCP | Deferred full tool schemas: short stubs every turn, expand schema on first call. Complements I-45 text rewrite. | Overlaps host-native Tool Search; only worth it when search is off and tools[] still dominate input. |
 | I-87 | T74 investigation (2026-09-21) | `doctor` / `tui` / `web` | `doctor::read_share` synchronously parses the whole `stats.transcripts_dir` JSONL on the snapshot path (`Model::snapshot` → `doctor_for_snapshot`, 30 s TTL). On a machine with a heavy Claude Code history that is ~36 s CPU per cache miss (measured via `sample` on `rtok doctor`), i.e. `rtok tui` / `rtok web` freeze for most of every TTL window. Bound it: parse budget, persisted aggregates, or move `read_share` off the tick path. | Not a task in plan.md; needs a decision on where read-share numbers belong (D19 keeps observability a projection of ledgers — this parser is a second recorder). |
+
+| I-86 | Reasoning-model transcripts; provider “thinking” blocks | `archive` / `proxy` | Strip or pointer prior reasoning/thinking blocks on replay; keep finals + tool I/O. | Host/provider specific; risk if the model needs its own traces — needs an A/B on a reasoning-heavy corpus. |
+| I-87 | T74 investigation (2026-09-21) | `doctor` / `tui` / `web` | **promoted T135** — `doctor::read_share` synchronously parses the whole `stats.transcripts_dir` JSONL on the snapshot path (`Model::snapshot` → `doctor_for_snapshot`, 30 s TTL). On a machine with a heavy Claude Code history that is ~36 s CPU per cache miss (measured via `sample` on `rtok doctor`), i.e. `rtok tui` / `rtok web` freeze for most of every TTL window. Bound it: parse budget, persisted aggregates, or move `read_share` off the tick path. | Not a task in plan.md; needs a decision on where read-share numbers belong (D19 keeps observability a projection of ledgers — this parser is a second recorder). |
+| I-89 | `research.md` §17; Anthropic prompt caching (min prefix, 5 min TTL) | `memory` / `proxy` | Sibling sub-agents spawned within one cache TTL share a byte-stable brief placed first in the prompt, so the second sibling's first request reads it from cache. | Unknown whether Claude Code's cache breakpoints let a prefix inside the first user message hit; needs a `rtok proxy` capture of `cache_read_input_tokens` on sibling first requests before it is worth a card. Depends on T130. |
+| I-90 | `research.md` §17.1 (17 % of sub-agent read bytes repeat a sibling's read) | `memory` | Findings board: at `SubagentStop` store the sub-agent's `last_assistant_message` pointers (`path:line`) under the session; later spawn briefs include them, so sibling N+1 starts from sibling N's findings. | Parallel siblings start together and cannot benefit; sequential share is unmeasured — T128 must split sibling re-reads by spawn order first. |
+| I-91 | Agent SDK hooks page: `PostToolUse` `updatedToolOutput` "works for any tool" (`research.md` §17.2) | hooks / `archive` / `compress` | **gate: T134** — If the CLI honours it for command hooks, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied. | Unverified for CLI command hooks; contradicts the standing rule "PostToolUse can only add context" — needs a live hook probe and a creator decision before any design. |
+
 
 
 Inspired by the comparison matrix (`research.md` §4) and stack gaps (`research.md` §5)
@@ -93,14 +100,14 @@ that v0.1 does not schedule.
 | I-61 | MemPalace AAAK (lossy abbreviation notation; 84.2 % R@5 vs 96.6 % verbatim on LongMemEval, −12.4 pt) (read 2026-09-18) | `memory` | Not proposed: AAAK is lossy by design and costs 12.4 points of recall by its own benchmark; rtok stores notes verbatim (D4). Recorded so the comparison does not re-open: the only transferable part is the method — publish retrieval recall for `mem_search` (FTS5 vs hybrid) on a committed fixture set, the way T8.8 did for `graph`. | Evidence only; belongs in `research.md` when `memory` has enough real notes for a labelled set (I-59). |
 | I-56 | engram `mem_context` (recent sessions + prompts at session start) (`research.md` §13) | `memory` | **promoted T71.2** — Cross-session handoff: save the PreCompact-style checkpoint at `SessionEnd` under `session:<project>` and inject the latest one on `SessionStart` with `source = startup`, inside `checkpoint_tokens`. | Costs up to 400 tokens on every startup for an unmeasured recall gain; needs a P7-style A/B before it can be on. `mem_search` already reaches the same notes on demand. MemPalace does the same save on its Stop hook every 15 human messages plus PreCompact (read 2026-09-18); rtok already installs and dispatches `SessionEnd`, so it is one call site. Size of the gap on the author's machine, 2026-09-18: 96 Claude sessions over 20 KB touched since the first checkpoint on 2026-09-14 (`find ~/.claude/projects -name '*.jsonl' -size +20k -newermt 2026-09-14`) against 18 checkpoints written — ≥ 80 % of sessions end with nothing in `notes`. Rough (mtime, not start time; several compactions per session possible); T58.2 gives the exact count. |
 | I-57 | engram `pinned` observations (`research.md` §13) | `memory` | **promoted T69.1** — Pinned notes listed first in SessionStart recall regardless of age (`kind = "pin"`, no schema change). | Recall is 5 titles by recency and no session showed a pinned title being displaced; add when a user asks for it. |
-| I-58 | engram project identity from the `origin` remote (`research.md` §13) | `memory` | `project_name` from the normalised `origin` repo name so two checkouts of one repo share notes; git-root basename as the fallback. | Basename works for one checkout per repo; a rename would need a `notes.project` migration. Parked until a second checkout is the workflow. |
+| I-58 | engram project identity from the `origin` remote (`research.md` §13) | `memory` | **promoted T133** — `project_name` from the normalised `origin` repo name so two checkouts of one repo share notes; git-root basename as the fallback. | Basename works for one checkout per repo; a rename would need a `notes.project` migration. Parked until a second checkout is the workflow. |
 | I-76 | codegraph route nodes (17 frameworks: Django, Flask, FastAPI, Express, Rails, Axum, …) and `navigates` edges (Next.js, React Router, …); review 2026-09-18 | `graph` | `route` rows linking a URL pattern to its handler so "what serves /api/x" is one `symbol` call. | Per-framework query data (D6 allows it), but no transcript on this machine shows the question; count route questions in `stats` first. T68.6 (import edges) is the same mechanism and comes first. |
 | I-77 | codegraph language bridges (Swift ↔ ObjC `@objc`, React Native `NativeModules` ↔ `RCT_EXPORT_METHOD`, Expo modules); review 2026-09-18 | `graph` | Cross-language edges keyed by literal names, tagged heuristic (T68.7's marker). | Needs Swift / Kotlin / ObjC grammars (T52.2 first) and a mobile repo in the T8.8 truth set. |
 | I-78 | graphify god nodes, surprising connections, Leiden communities, `GRAPH_REPORT.md`; review 2026-09-18 | `graph` / `report` | A `report` rule over the `symbols` rows: top-N by reference count, cross-directory edges, connected components as "subsystems" — no LLM labels. | T52.3 (ranked repo map) already covers the first; the other two have no measured question they answer. Revisit after T68.9 shows which questions the model still fails. |
 | I-79 | graphify non-code corpora (PDF, images, audio / video via whisper, Google Workspace) with LLM extraction; review 2026-09-18 | `graph` / `compress` | Index docs beyond Markdown. | LLM extraction is the P28 lane (Later, default off); Markdown headings are T68.8. Anything else is out of the token-reduction scope. |
 | I-80 | graphify exports (GraphML, Neo4j / FalkorDB Cypher, Obsidian vault, HTML force graph, Mermaid); review 2026-09-18 | `graph` | `rtok graph export --format graphml \| dot \| json` from the `symbols` rows. | Operator-facing, not a token saving; D27 says the web/TUI page is the surface. One `--json` on `graph status` / `affected` (T60.1, T68.3, T68.5) covers scripting. |
 | I-81 | graphify `global add / list` cross-project registry and `merge-graphs`; codegraph `list_repos`; review 2026-09-18 | `graph` | One store already holds many roots (T8.3); a `root = "*"` on `symbol` / `callers` would search them all. | No workload here spans repos in one session; add when a monorepo-of-repos user asks. |
-| I-82 | graphify strict mode (PreToolUse blocks the first raw source read and redirects to the graph); review 2026-09-18 | `guard` | Deny a native `Read` of a source file whose definitions are indexed, with a reason pointing at `symbol` / `outline`. | T50.4 does it for Grep / Glob; a Read deny risks a false deny on files the model needs whole (fail-open rule). Needs a measured share of Reads that `outline` would have answered, then an A/B like T53.1. |
+| I-82 | graphify strict mode (PreToolUse blocks the first raw source read and redirects to the graph); review 2026-09-18 | `guard` | **gate: T136** — Deny a native `Read` of a source file whose definitions are indexed, with a reason pointing at `symbol` / `outline`. | T50.4 does it for Grep / Glob; a Read deny risks a false deny on files the model needs whole (fail-open rule). Needs a measured share of Reads that `outline` would have answered, then an A/B like T53.1. |
 | I-83 | graphify `hook install` (post-commit / post-checkout re-extract) and git merge driver for the graph file; review 2026-09-18 | `graph` | A post-checkout hook that runs `rtok graph index` when no `rtok mcp` watcher is alive. | `auto_index = true` already walks on every call (stat gate), and the watcher covers the `mcp` case; the merge driver is moot because rtok's index is never committed. |
 
 ### Hosts and product
@@ -133,7 +140,6 @@ Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 d
 | I-24 | serena | `graph` | **promoted P30** — LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
 | I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | **promoted P33** — Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
 | I-26 | (architecture) | core | **promoted P32** — WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
-| I-30 | LadybugDB / P8c cost | `graph` | **done via P39 (2026-09-12)** — keep SQLite; delete `lbug` / `graph-lbug` / `symbols_lbug.rs`; Grafeo spike abandoned (PR #22). | C++/cmake cost + P8c (2)(3)(5); Grafeo measured worse on warm impact. |
 
 ---
 
@@ -147,7 +153,6 @@ Scope by version (Open / Later) first; this list is only for ideas that will nev
 
 ## Promoted
 
-| I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
 | I-27 | P20 T20.1 | `rtok demon` supervises `proxy`/`mcp`/`dashboard` (D22) | 2026-09-09 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 | I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
@@ -177,29 +182,6 @@ Scope by version (Open / Later) first; this list is only for ideas that will nev
 | I-32 | T53.3 | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook | 2026-09-17 |
 | I-35 | T48.1 | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/in | 2026-09-17 |
 | I-36 | T48.2 | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM cont | 2026-09-17 |
-| I-38 | T57.1 | Flag-aware `guard` read-only classes: writer markers (`>`, `-delete`, `sed -i`, `tail -f`, pipe into a writer) take the mutating path; new read-only stems only with transcript counts. | 2026-09-17 |
-| I-41 | T58.1 | `read` delta since last read: unified diff against the archived previous read; full fallback. | 2026-09-17 |
-| I-42 | T58.2 | Compaction hooks: re-inject the SessionStart budget after `PostCompact`, one memory note with live archive ids at `PreCompact`. | 2026-09-17 |
-| I-43 | T58.3 (T58.4 dropped) | `old_string` measured at 3.8 % of tool-input bytes / ≈ 1.3 % of output tokens over 925 sessions; the `patch` tool stays an idea with that number. | 2026-09-17 |
-| I-39 | T59.1 | Per-stem interactive table for `skip_wrap`: `-i` is interactive only for REPL stems, `ffmpeg -i` / `curl -i` / `ssh -i` get wrapped. | 2026-09-17 |
-| I-40 | T59.2 | Canonicalize `cwd` once per `search` / `tree` call instead of per row. | 2026-09-17 |
-| I-30 | T59.3 | Batch the cold `graph` index in one transaction per 200 files; re-run the T8.4 cold bench. | 2026-09-17 |
-| I-44 | T59.4 (done) | Lossless MCP wrapper landed as `rtok mcp -- <server argv>`; lean-ctx measured at ≈ 27 % of tool-result bytes over 30 d, above the 5 % gate. | 2026-09-17 |
-| I-45 | T59.5 | Byte-stable `tools[]` description rewrite in the proxy, off by default; 6.2 % of session input (2026-09-18). | 2026-09-18 |
-| I-46 | T59.6 | `handoff` MCP tool: budgeted digest for sub-agents, behind evidence. | 2026-09-17 |
-| I-47 | T59.7 | `doctor` names host-native features that duplicate a rtok surface. | 2026-09-17 |
-| I-48 | T59.8 | Token-sink ranking rule in `report`. | 2026-09-17 |
-| I-49 | T61.1 | `stats` counts injected skill bodies (`isMeta` + `sourceToolUseID`). | 2026-09-17 |
-| I-50 | T61.3 | `doctor` skill audit: listing cost, oversized bodies, never-invoked skills. | 2026-09-17 |
-| I-51 | T61.2 | Archive skill bodies outside the live zone, gated on T61.1. | 2026-09-17 |
-| I-53 | T67.1 | `expand --grep` as a regex with `N:line` hits (recursive-llm search-then-slice). | 2026-09-18 |
-| I-54 | T67.2 | `expand --context N` around grep hits. | 2026-09-18 |
-| I-67 | T70.1–T70.3 | pi extension: every tool result, the `context` live zone, tools without MCP. | 2026-09-18 |
-| I-68 | T70.4, T70.7 | Cursor plugin: host-launched MCP results; the session-start / prompt events `inject` needs. | 2026-09-18 |
-| I-69 | T70.5, T70.6 | `guard` and the compaction checkpoint on pi and OpenCode through their plugins. | 2026-09-18 |
-| I-71 | T71.1 (dropped) | HTML 0.06 % of Bash result bytes (7 curl/wget HTML calls, 26,963 B); formatter not added. | 2026-09-18 |
-| I-56 | T71.2 | `SessionEnd` checkpoint injected at the next `SessionStart`, off by default behind an A/B (engram `mem_context`). | 2026-09-18 |
-| I-52 | T71.3 | rtok's own hub skill per host, installed and removed with the host plugin. | 2026-09-18 |
 | I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
 
 | ID | Became | Date |

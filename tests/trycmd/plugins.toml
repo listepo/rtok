@@ -11,8 +11,8 @@ inject   on       hook
 guard    on       hook,cli
 memory   on       mcp,hook
 graph    on       mcp,hook
-toon     off      proxy,mcp
-compress off      proxy
+toon     on       proxy,mcp
+compress on       proxy
 """
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.

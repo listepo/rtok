@@ -1,8 +1,8 @@
 //! `compress` — optional semantic shrink after the lossless `archive` lane (P28).
 //!
-//! When `[plugins.compress] enabled = true`, blocks already archived by `archive` are
-//! replaced in-context with a deterministic extractive summary. The archive row is
-//! unchanged; `expand <id>` always returns the original bytes.
+//! On by default (`[plugins.compress] enabled`). In `proxy.mode = "compress"`, blocks
+//! already archived by `archive` are replaced in-context with a deterministic extractive
+//! summary. The archive row is unchanged; `expand <id>` always returns the original bytes.
 
 use serde_json::Value;
 
@@ -17,14 +17,14 @@ impl Plugin for Compress {
         Manifest {
             id: "compress",
             surfaces: &[Surface::Proxy],
-            default_on: false,
+            default_on: true,
         }
     }
 
     fn dashboard_page(&self) -> DashboardPage {
         DashboardPage::new(
             "Compress",
-            "Extractive summaries for archived tool output. Off until Gate P28.",
+            "Extractive summaries for archived tool output; expand returns the original.",
             true,
         )
     }
@@ -89,30 +89,39 @@ fn summarize_block(tool_use_id: &str, content: &mut Value, cx: &Ctx) -> Option<M
     Some(m)
 }
 
-/// Deterministic extractive ranker — no network, no LLM (D12).
+/// Deterministic extractive ranker — no network, no LLM (D12). Each source line shows up at
+/// most once, clipped like an archive pointer: a repeated or minified line used to outgrow the
+/// pointer, and the block then kept the pointer with no saving.
 fn extractive_summary(id: &str, text: &str) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
+    use crate::plugins::archive::clip;
+    let mut seen = std::collections::HashSet::new();
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.is_empty() && seen.insert(*l))
+        .collect();
     let title = lines
         .first()
         .map(|l| l.chars().take(80).collect::<String>());
-    let facts: Vec<&str> = lines
-        .iter()
-        .filter(|l| l.contains(':') || l.contains("error") || l.contains("Error"))
-        .take(3)
-        .copied()
-        .collect();
-    let files: Vec<&str> = lines
-        .iter()
-        .filter(|l| l.contains('/') || l.contains('\\'))
-        .take(3)
-        .copied()
-        .collect();
     let narrative = lines
         .iter()
-        .take(4)
+        .skip(1)
+        .take(3)
         .map(|l| l.chars().take(60).collect::<String>())
         .collect::<Vec<_>>()
         .join("; ");
+    let rest = || lines.iter().skip(4).copied();
+    let is_error = |l: &str| l.to_ascii_lowercase().contains("error");
+    // Errors first: nearly every line has a `:`, so they used to crowd errors out.
+    let facts: Vec<&str> = rest()
+        .filter(|l| is_error(l))
+        .chain(rest().filter(|l| !is_error(l) && l.contains(':')))
+        .take(3)
+        .collect();
+    let files: Vec<&str> = rest()
+        .filter(|l| !facts.contains(l) && (l.contains('/') || l.contains('\\')))
+        .take(3)
+        .collect();
     let short = &id[..id.len().min(12)];
     let mut s = format!(
         "[compress {short}]\ntype: tool_output\ntitle: {}\nnarrative: {}",
@@ -121,16 +130,16 @@ fn extractive_summary(id: &str, text: &str) -> String {
     );
     if !facts.is_empty() {
         s.push_str("\nfacts:");
-        for f in facts {
+        for f in facts.iter().copied() {
             s.push_str("\n- ");
-            s.push_str(f);
+            s.push_str(&clip(f));
         }
     }
     if !files.is_empty() {
         s.push_str("\nfiles:");
         for f in files {
             s.push_str("\n- ");
-            s.push_str(f);
+            s.push_str(&clip(f));
         }
     }
     s.push_str(&format!("\nexpand({id})"));
@@ -246,5 +255,17 @@ mod tests {
         assert!(s.contains("type: tool_output"));
         assert!(s.contains("title: title line"));
         assert!(s.contains("expand(abc123)"));
+    }
+
+    #[test]
+    fn summary_puts_errors_first_and_clips_each_line_once() {
+        let long = format!("src/big.rs: {}", "x".repeat(5000));
+        let text =
+            format!("head\nn1\nn2\nn3\na: 1\nb: 2\nc: 3\nERROR: boom\n{long}\n{long}\nsrc/z.rs");
+        let s = extractive_summary("id", &text);
+        let facts = s.split("\nfacts:").nth(1).unwrap();
+        assert!(facts.starts_with("\n- ERROR: boom"), "{s}");
+        assert!(s.len() < 1000, "long lines must be clipped: {}", s.len());
+        assert_eq!(s.matches("src/big.rs").count(), 1, "{s}");
     }
 }

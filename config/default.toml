@@ -283,11 +283,11 @@ include    = []                       # gitignore-style paths forced back in (T6
 extensions = {}                       # ext = "grammar" remap for custom suffixes (T68.10)
 
 [plugins.toon]
-enabled  = false
+enabled  = true
 min_rows = 5
 
 [plugins.compress]
-enabled = false                       # optional LLM compression lane (P28); off until Gate P28
+enabled = true                        # extractive summaries of archived tool output; runs only in proxy.mode = "compress"
 
 [plugins.wasm]
 enabled = false

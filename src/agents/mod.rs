@@ -1277,9 +1277,9 @@ mod tests {
         assert_eq!(state("inject"), ModuleState::NotInstalled);
         let text = plugin_lines(&rows, "", true);
         assert!(text.contains("✓ installed      "), "{text}");
-        assert!(text.contains("compress (off)"), "{text}");
+        assert!(!text.contains("compress (off)"), "{text}");
         assert!(
-            text.contains("✗ not installed  proxy, compress (off), cmd, inject, guard")
+            text.contains("✗ not installed  proxy, compress, cmd, inject, guard")
                 || (text.contains("cmd") && text.contains("inject") && text.contains("guard")),
             "{text}"
         );
