@@ -10,8 +10,8 @@ View of `plan.md` grouped by in-tree plugin (D6). `plan.md` is the source of tas
 | `measure` / `report` / docs | T61.1, T59.8, T64.3, T71.4 |
 | `inject` | T52.3, T58.2 |
 | `cmd` / `expand` | T50.1, T58.5, T59.1, T64.1, T64.2, T65.1, T65.2, T65.3, T65.4, T67.2, T71.1 |
-| `read` | T50.3, T58.1, T68.8 |
-| `proxy` / `archive` | T51.1, T55.15, T59.5, T61.2 |
+| `read` | T50.3, T68.8 |
+| `proxy` / `archive` | T51.1, T55.15 |
 | `memory` | T69.1, T69.3, T69.4, T69.2, T69.5, T69.6, T59.6, T71.2 |
 | `graph` | T52.2, T59.3, T68.3, T68.1, T68.2, T68.4, T68.5, T68.6, T68.7, T68.9, T68.10 |
 | `guard` / `doctor` | T57.1, T62.1, T59.7, T61.3 |
