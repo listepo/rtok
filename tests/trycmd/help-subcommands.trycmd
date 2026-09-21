@@ -160,6 +160,7 @@ Options:
       --desktop        Only the desktop app (`cursor`/`opencode` have CLI and desktop; default is
                        all)
       --all            All variants (the default when neither `--cli` nor `--desktop` is given)
+      --no-restart     Skip closing/reopening a running desktop app around the write (T141)
   -h, --help           Print help
 
 $ rtok agents uninstall --help
@@ -174,6 +175,7 @@ Arguments:
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
       --dry-run        Print what would be removed and exit
+      --no-restart     Skip closing/reopening a running desktop app around the write (T141)
   -h, --help           Print help
 
 $ rtok agents list --help

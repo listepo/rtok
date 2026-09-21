@@ -590,8 +590,21 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
     Ok(out)
 }
 
+/// Dry-run one host's plan without writing anything (T141): true when it would touch a file.
+/// Reuses [`apply_all`] exactly as [`run`] does, only forced into `dry_run` on a throwaway
+/// config clone — the restart orchestration uses this to decide whether a running desktop
+/// app is worth quitting before the real write.
+pub(crate) fn would_change(cfg: &Config, agent: &'static dyn Agent, req: &Request) -> Result<bool> {
+    let mut dry = cfg.clone();
+    dry.setup.dry_run = true;
+    dry.setup.backup = false;
+    let want = |kind: Kind| req.mode == Mode::Remove || wants(kind, req.cli, req.desktop, req.all);
+    let (_, changed) = apply_all(&dry, req, &[agent], want)?;
+    Ok(changed)
+}
+
 /// The blocks of every wanted variant, and whether any step changed a file.
-fn apply_all(
+pub(crate) fn apply_all(
     cfg: &Config,
     req: &Request,
     agents: &[&'static dyn Agent],

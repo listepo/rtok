@@ -768,7 +768,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__install)
-            opts="-h --dry-run --remove --mode --yes --replace --mcp --proxy --cli --desktop --all --config --help"
+            opts="-h --dry-run --remove --mode --yes --replace --mcp --proxy --cli --desktop --all --no-restart --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -886,7 +886,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__agents__subcmd__uninstall)
-            opts="-h --dry-run --config --help"
+            opts="-h --dry-run --no-restart --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -3634,7 +3634,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__setup)
-            opts="-h --dry-run --remove --mode --yes --replace --mcp --proxy --cli --desktop --all --config --help"
+            opts="-h --dry-run --remove --mode --yes --replace --mcp --proxy --cli --desktop --all --no-restart --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
