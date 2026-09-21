@@ -1173,6 +1173,7 @@ _arguments "${_arguments_options[@]}" : /
             (flush)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--coalesce[T143/: hook-spawned only. Coalesces concurrent hook flushes to at most one running + one queued process instead of one per /`Stop/`//`SessionEnd/` event. A manual /`rtok otel flush/` never passes this — it always flushes]' /
 '-h[Print help]' /
 '--help[Print help]' /
 && ret=0

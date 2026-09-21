@@ -312,7 +312,13 @@ enum DemonCmd {
 #[derive(Subcommand)]
 enum OtelCmd {
     /// Post rows past the watermarks to the endpoint, once
-    Flush,
+    Flush {
+        /// T143: hook-spawned only. Coalesces concurrent hook flushes to at most one
+        /// running + one queued process instead of one per `Stop`/`SessionEnd` event.
+        /// A manual `rtok otel flush` never passes this — it always flushes.
+        #[arg(long, hide = true)]
+        coalesce: bool,
+    },
     /// Endpoint, watermarks, pending rows, last exporter log line
     Status {
         /// JSON instead of the table
@@ -1198,9 +1204,14 @@ pub fn run() -> Result<()> {
         Cmd::Otel { action } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
             match action {
-                OtelCmd::Flush => {
+                OtelCmd::Flush { coalesce } => {
                     let cx = crate::plugin::Runtime::open(cfg, "otel")?;
-                    println!("{}", crate::otel::export::flush_blocking(&cx));
+                    let rep = if coalesce {
+                        crate::otel::export::flush_coalesced_blocking(&cx)
+                    } else {
+                        crate::otel::export::flush_blocking(&cx)
+                    };
+                    println!("{rep}");
                 }
                 OtelCmd::Status { json } => {
                     if json {
