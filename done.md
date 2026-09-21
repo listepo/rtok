@@ -4100,3 +4100,11 @@ Complexity: 2/5 — one loop; reuses `read`/`boot_time`/`process_kill`.
 Status: done 2026-09-21
 Check result: e2e 10/10 standalone after the fix (3 failures on 2026-09-19–20 before); full gate green.
 Model: ZCode / GLM-5.3 (race fix + close-out; feature skeleton by Cursor / grok 4.6)
+
+**T84 Auto-revert opens a PR that brings the reverted work back** · `.github/workflows/ci.yml`
+Do: `revert-on-failure` used to push the revert to `main` and stop, leaving the reverted work only in history. After the revert lands (step `id: revert`, `reverted=true` written only after the push — every skip path leaves it unset) a second step pushes `revert-<original branch>` — the head branch of the merged PR the push came from (`gh api repos/{repo}/commits/{sha}/pulls`, merged only), else `revert-<short sha>` for a direct push to `main`, suffixed with the short sha if the branch exists — holding one commit that reverts the revert with the original author, and opens a draft PR back to `main`. Draft because `check` skips drafts and the tree is known-red; a PR opened with `GITHUB_TOKEN` starts no workflow, so the first CI run is the fix-up push or "ready for review". Job permissions gain `pull-requests: write`. Open for the creator: the repo setting "Allow GitHub Actions to create and approve pull requests" is off (`gh api repos/listepo/rtok/actions/permissions/workflow`, 2026-09-21); until it is on, `gh pr create` fails after the revert has already landed.
+Check: `actionlint` clean; git commands of both steps replayed in a scratch repo; `just check`.
+Complexity: 2/5 — one workflow step, no product code.
+Status: done 2026-09-21
+Check result: `actionlint` 1.7.12 + `shellcheck` 0.10.0 clean; scratch replay (single commit, multi-commit push, merge commit): `main` equals the pre-push tree, the branch equals the failed push, 1 commit ahead, author preserved; `just check` exit 0. The `gh` calls are not exercised until a real red push.
+Model: Claude Code / claude-fable-5-1
