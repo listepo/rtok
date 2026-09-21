@@ -1363,6 +1363,7 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
 - worktrunk (https://github.com/max-sixty/worktrunk): path templates, merge-and-remove, `--copy-ignored` reflink seeding of `target/`. It does not record owners, find orphans, or clean idle caches — the three things measured in §18.1.
 - Squash-aware "merged" needs no GitHub call: `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}` when merging the branch would change nothing.
 - A shared `CARGO_TARGET_DIR` is rejected: ~5 parallel agents would serialize on the build lock. `sccache` does not cache incremental builds. Reflink seeding (`reflink-copy`) only lowers the cost at creation; cleaning idle caches removes it → measure before adopting (T156).
+- First data point for T156 (2026-09-22, APFS, `cp -c -R <other-worktree>/target <new-worktree>/target`, disk delta from `df -k`, not `du`): an 8.1 GB `target/` cloned in 8.8 s for 17 MiB of physical disk; the first `cargo nextest run --lib --test worktree` in the seeded worktree (T150) rebuilt only the four workspace crates, 24 s, with no dependency recompiled. A cold build was not run for comparison — the disk had under 8 GiB free, which is why the clone was tried at all.
 
 ### 18.5 What follows for rtok
 
