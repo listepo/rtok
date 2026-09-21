@@ -663,9 +663,36 @@ fn trace_dir(base: &Path) -> PathBuf {
     dir
 }
 
+/// Markers in `trace_dir` with extension `ext`: `run` (child alive), `done` (child exited),
+/// `spawned` (written by the hook itself before it exits — T161).
+fn trace_files(dir: &Path, ext: &str) -> usize {
+    std::fs::read_dir(dir)
+        .map(|it| {
+            it.filter_map(Result::ok)
+                .filter(|e| e.path().extension().is_some_and(|x| x == ext))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 /// Flush children currently alive, per `trace_dir`.
 fn trace_count(dir: &Path) -> usize {
-    std::fs::read_dir(dir).map(|it| it.count()).unwrap_or(0)
+    trace_files(dir, "run")
+}
+
+/// T161: wait (bounded) until every spawned flush child has exited. An empty `run` set alone
+/// is not enough — a child that was spawned but has not started yet has no marker either.
+fn trace_drained(dir: &Path, timeout: Duration) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if trace_count(dir) == 0 && trace_files(dir, "done") >= trace_files(dir, "spawned") {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// T143: `Stop`/`SessionEnd` hand a flush to a detached child on every event. Against a slow
@@ -749,13 +776,8 @@ fn hook_spawned_flushes_coalesce_to_at_most_two_processes() {
     // Drain: the mock collector answers every in-flight POST on its own delay and the
     // client's `flush_secs` timeout bounds the rest, so every child exits by itself —
     // wait (bounded) for the trace dir to empty instead of killing anything.
-    let drain_deadline = std::time::Instant::now() + Duration::from_secs(20);
-    while trace_count(&trace) > 0 && std::time::Instant::now() < drain_deadline {
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    assert_eq!(
-        trace_count(&trace),
-        0,
+    assert!(
+        trace_drained(&trace, Duration::from_secs(20)),
         "every flush child must exit on its own within the drain deadline"
     );
 
@@ -842,13 +864,15 @@ fn hook_skips_spawning_when_a_flush_is_already_queued() {
     // and also pays this binary's first-exec cost before the timed run below.
     let (warm, _) = run_stop();
     assert!(warm.status.success());
-    let drain_deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while trace_count(&trace) > 0 && std::time::Instant::now() < drain_deadline {
-        std::thread::sleep(Duration::from_millis(50));
-    }
     assert_eq!(
-        trace_count(&trace),
-        0,
+        trace_files(&trace, "spawned"),
+        1,
+        "the warm-up hook spawns exactly one flush child"
+    );
+    // T161: wait for that child to exit, not merely for its `run` marker to be absent — on a
+    // loaded runner it may not have started yet, and would then run into the timed check.
+    assert!(
+        trace_drained(&trace, Duration::from_secs(20)),
         "the warm-up flush child must exit on its own within the drain deadline"
     );
 
@@ -862,11 +886,13 @@ fn hook_skips_spawning_when_a_flush_is_already_queued() {
         elapsed < Duration::from_secs(2),
         "the pre-check path must stay fast, took {elapsed:?}"
     );
+    // The hook has exited, so any spawn it made is already marked: no timing involved.
     assert_eq!(
-        trace_count(&trace),
-        0,
+        trace_files(&trace, "spawned"),
+        1,
         "queued lock held: no flush process should have been spawned at all"
     );
+    assert_eq!(trace_count(&trace), 0, "no flush child is running");
 
     drop(slot);
     let _ = std::fs::remove_dir_all(&dir);
