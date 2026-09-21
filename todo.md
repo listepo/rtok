@@ -15,6 +15,3 @@
 - T105. Report renderers: edge-case snapshots
 - T106. `otel/export.rs` unit tests
 - T107. CLI bad-argument fixtures
-- T116. Copilot CLI plugin
-- T117. VS Code agent plugins
-- T118. Gemini CLI host with an extension

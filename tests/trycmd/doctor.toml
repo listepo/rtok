@@ -14,7 +14,7 @@ agents
     ✗ hooks   not installed
     ✗ mcp     not installed
     ✗ proxy   not installed (--proxy)
-    ✗ plugin  not installed (--yes)
+    − plugin  not supported: Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link
   claude (desktop)
     − hooks   not supported: Claude Desktop has no hook events
     ✗ mcp     not installed
