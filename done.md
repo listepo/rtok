@@ -4371,3 +4371,11 @@ Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id
 Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
 
 Done: `measure::jsonl` collects `thinking`/`redacted_thinking` blocks per unique `message.id`; `measure::stats` sums them over sessions (text line + JSON `thinking`), share against uncached + cache_create + cache_read input. 2026-09-21, `rtok stats --since 30d`, 827 sessions: 28,072 blocks, 7,266,318 B ≈ 1,816,580 est. tokens = 0.0297 % of session input → I-86 moved to Rejected in `ideas.md`; row in `research.md` §2.
+
+**T127 Read advice: a small ranged native `Read` is the edit gate** · `src/plugins/read/{hook.rs,README.md,AGENTS.md}`
+Do: creator request 2026-09-21 — read file content through `rtok read` always. The host's `Edit` demands a native `Read` first and an MCP read does not satisfy it; the hook decided on size alone, so even `Read(limit=30)` of a file over `native_max_bytes` was denied, and the deny text promised "native Read allowed for files you are about to edit" while only files edited in the last 5 tool calls passed. Verified 2026-09-21 on Claude Code: `Read(limit=1)` satisfies the gate; an `Edit` of line 40 then succeeds. `pre_tool` now passes a native `Read` with `limit` ≤ 5 (`GATE_MAX_LINES`, a constant — the planned `read.gate_max_lines` key was dropped as YAGNI) whatever the file size; `REASON` is `use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate`; the `mode=diff` deny stays.
+Check: `hook.rs` unit tests — 100 KB file with `limit: 1` → no decision, `limit: 2000` → deny, no `limit` → deny with the new text; `just check` green.
+Complexity: 2/5 — one guard, one string, one test.
+Status: done 2026-09-21
+Check result: `cargo nextest -E test(/plugins::read::hook/)` 9 passed (new `a_small_limit_opens_the_edit_gate`; `hundred_kb_is_denied` asserts the new text); `just check` green (fmt, clippy, full nextest, build-min, jscpd, oxlint, oxfmt).
+Model: Claude Code / claude-opus-5
