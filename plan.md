@@ -52,7 +52,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
-| T158 | todo | P1 | 3 | 0% | |
+| T158 | in progress | P1 | 3 | 0% | Claude Code / claude-fable-5-1 |
 | T159 | todo | P2 | 4 | 0% | |
 
 
@@ -380,6 +380,8 @@ Creator request 2026-09-22: rtok owns the worktree lifecycle, creation included.
 Plan: `rtok worktree add <task-id> [<slug>] --owner "<provider> / <model>"`, printing the created path on stdout and nothing else (scripts and T159 consume it). Rules, identical to the creator-local `wt.sh new` it replaces: root = `[worktree].root` if set, else the nearest ancestor of the main checkout that holds `_worktrees/`, else `_worktrees/` next to it; directory `<repo>-<task-id>`, branch `<task-id>[-<slug>]`, both lower case and validated against `[a-z0-9._-]`; refuse when the path exists (one worktree per task) or when the root resolves under a temp directory; `git fetch origin <default>` then `git worktree add --lock --reason "<owner> | <task-id> | <date>" --no-track -b <branch> <path> origin/<default>` — no upstream, so a bare `git push` cannot reach `main`; the reason stays ASCII (porcelain C-quotes anything else, T150 parses it back). Write the T154 ledger row at creation when that table exists. `[worktree].root` is a new config key: `docs/config.md` and the config coverage test in the same PR. No seeding of `target/` here — that waits for T156's numbers.
 
 Check: `assert_fs` integration test — the path and branch follow the rule and the path is the only stdout line; the lock reason round-trips through T150's parser; a second `add` for the same task fails without touching the first; invalid ids and a temp-directory root are rejected before git runs; the new branch has no upstream; `[worktree].root` overrides discovery; `trycmd` snapshot of `--help` and the error messages; `just check`.
+
+Do (Claude Code / claude-fable-5-1): `WorktreeCmd::Add { task, slug, owner }`. `src/worktree/add.rs` — `plan(main, root_override, task, slug, owner, today) -> Result<Plan { path, branch, reason }>` is pure over paths and strings (validation, root discovery, the temp-directory refusal, the lock reason built so that `Owner::parse` reads it back) and is tested as a table; the runner resolves the main checkout from `git::list`, then `git fetch origin <default>` and one `git worktree add --lock --reason … --no-track -b …` through new `git.rs` calls. A failed fetch is an error, not a fallback to a stale base. `[worktree] root = ""` lands in `config/default.toml`, `Config`, `docs/config.md`; `--owner` is a per-call flag (`ALLOW_KEYS`). The T154 ledger row is left to T154 — the table does not exist yet. Tests use `testutil::tmp_dir` (`assert_fs` is not a dependency of this repo), so the temp-directory refusal is tested on `plan` with injected paths and the fixture passes an explicit root through a `--config` file. Gates per the note on the T152 card.
 
 ### T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 
