@@ -66,6 +66,8 @@ fn pi_package_is_extension_and_skill_without_tools() {
     let dir = root();
     let pkg: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(dir.join("package.json")).unwrap()).unwrap();
+    // `pi.extensions` is also the key oh my pi's loader falls back to — `rtok agents install
+    // omp` links this directory as is (T92), so renaming it breaks two hosts.
     let exts = pkg["pi"]["extensions"].as_array().expect("pi.extensions");
     assert_eq!(exts.len(), 1, "one extension entry");
     assert!(exts[0].as_str().unwrap().ends_with("rtok.ts"), "{exts:?}");

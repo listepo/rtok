@@ -1,5 +1,49 @@
 # rtok — completed tasks
 
+### T104. Migration and `schema.rs` drift guard
+
+`MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
+
+Check: deleting a line from `MIGRATIONS` or a column from `schema.rs` fails the test; `just test` green.
+
+Do (2026-09-21): two unit tests in `src/store/mod.rs`. `migrations_list_matches_the_directory` reads `migrations/*.sql`, sorts the names and compares them with `MIGRATIONS` in order. `schema_rs_matches_the_migrated_tables` parses every `diesel::table!` in `schema.rs` (`include_str!`, `#[sql_name]` resolved to the SQL name) and compares each column set with `pragma_table_info` on a fully migrated in-memory store. Its first run found real drift: `0017.sql` (T69.2) added `notes.uses` and `notes.last_used`, which `schema.rs` never listed — both added (`Integer`, `Nullable<BigInt>`). Every `notes` query selects columns by name, so nothing else changed.
+
+Check result (2026-09-21): mutation-checked — deleting the `0018.sql` line from `MIGRATIONS` fails `migrations_list_matches_the_directory` ("MIGRATIONS drifted"); deleting `notes.last_used` from `schema.rs` fails `schema_rs_matches_the_migrated_tables` ("schema.rs `notes` vs the migrated table"). Both green on the real tree; `just check` green.
+
+### T103. Unit tests for untested store queries
+
+No test calls `Store::memory_recall_totals` (`src/store/mod.rs`) or `call_io_archives`. Add unit tests on an in-memory store: empty store, one row, many sessions, rows outside the window.
+
+Check: both functions covered by `src/store` unit tests; `just test` green.
+
+Do (2026-09-21): two unit tests in `src/store/mod.rs` on `Store::open_in_memory`. `memory_recall_totals_sums_recalls_in_the_window_only`: empty store `(0, 0, 0)`; one row; three sessions summed while a `memory`/`save` row and a `read`/`recall` row stay out; one row backdated a day falls outside a one-hour window, and a window starting in the future is empty. `call_io_archives_names_only_spilled_bodies`: no `call_io` row → `(None, None)`; inline bodies → `(None, None)`; an over-cap request → its sha, which names a file in the archive dir, response `None`; both over cap → both ids; over cap with no archive dir (the hook path) → `(None, None)`.
+
+Check result (2026-09-21): both tests pass; `just check` green with the branch.
+
+### T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
+
+Creator request 2026-09-21: a host plugin for oh my pi CLI + desktop. oh my pi (https://github.com/can1357/oh-my-pi, binary `omp`) is a fork of pi with no desktop app — a TUI plus Zed ACP, which runs the same binary and config — so the host has one CLI variant. Its extension loader accepts `package.json` `omp.extensions` **or legacy `pi.extensions`**, treats symlinked directories as discovery targets, scans `~/.omp/agent/extensions` (not `~/.pi/agent/extensions`), and delivers the events `plugins/pi/extensions/rtok.ts` already subscribes to (`tool_call`, `tool_result`, `context`, `session_start`, `session_compact`); the extension imports nothing from upstream pi. So `plugins/pi` is reused as is — no `plugins/omp/` tree. Unlike pi, omp has native MCP (`~/.omp/agent/mcp.json`, `mcpServers.{command,args,env}`). Evidence: `docs/extension-loading.md`, `docs/extensions.md`, `docs/mcp-config.md` in that repo (fetched 2026-09-21).
+
+Creator decision 2026-09-21: extension + native MCP. The extension owns the bash call path, context and compaction; tools come from `rtok mcp` registered in `mcp.json`; `registerTool` stays off under omp — one call path per capability (D21).
+
+Plan:
+1. `src/agents/omp/mod.rs` + `README.md` (`## Docs`: extensions, extension loading, hooks, MCP config, skills, marketplace): `HostPlugin { src_rel: "plugins/pi", host: "oh my pi", dest: <extensions_path>/rtok }` and `rtok_agent_sdk::register_mcp` on `mcp_path`; `support`: `plugin` → `Flag("--yes")`, `mcp` → yes, `hooks` → `No` (omp hooks are in-process TS modules; the extension owns that path), `proxy` → `No` (`models.yml` is not edited by setup, the pi rule). `[setup.omp] extensions_path = "~/.omp/agent/extensions"`, `mcp_path = "~/.omp/agent/mcp.json"` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md` (a named profile is a path override). Registered in `HOSTS` and `host()`.
+2. `plugins/pi/README.md` gains the omp section and links; `tests/pi_plugin.rs` asserts the manifest still declares `pi.extensions` (the key omp's loader falls back to).
+3. Unit tests: offer names `plugins/pi` and the ketch line; `--yes` links and writes `mcpServers.rtok`, second apply `NO_CHANGES`, remove takes back exactly ours and leaves foreign servers; `docs/agents.md` blessed; `tests/trycmd/agents-list*.toml` re-blessed.
+Verified 2026-09-21 on omp 18.1.14 (probe extension in a scratch `PI_CODING_AGENT_DIR`, nothing written to `~/.omp`): (a) a **symlinked** directory whose `package.json` declares only legacy `pi.extensions` is discovered and its factory runs — the exact mechanism `plugins/pi` uses; (b) host signal: omp injects its SDK as `pi.pi` (an object with `getAgentDir()` and `VERSION`; `process.title` is `omp`), upstream pi's `ExtensionAPI` has no `pi` member — so `registerPiTools` returns early when `pi.pi` is an object, because that host has native MCP; without it a machine with pi (`[setup.pi] tools = true`) and omp would get every tool twice under omp (D21); (c) by source (`src/capability/mcp.ts` `key: server => server.name`, `src/capability/index.ts` first-wins dedupe in provider-priority order, native config highest): a native `rtok` entry and one imported from a Claude Code / Cursor config collapse into **one** server. Not verified: a real model turn whose bash call goes through `rtok run` — the only model key in this environment has no credit (`credit_balance_exhausted`); the creator runs one `omp -p` turn after install.
+Also found by reading omp's source (`src/session/agent-session.ts` `#beforeToolCall`, `src/extensibility/extensions/wrapper.ts`): omp applies a revised input only when the handler **returns** `{ input }`; upstream pi documents mutating `event.input` in place. The bash rewrite reaches omp today only because omp hands `bash` handlers the live args object — an undocumented alias.
+
+Split (each ≤200 LOC / ≤3 files):
+- T92.1 (done, see `done.md`) — `plugins/pi/extensions/rtok.ts`: the bash rewrite mutates `event.input` in place **and** returns `{ input: event.input }` (pi ignores the extra field; omp's documented path); `registerPiTools` returns early when `pi.pi` is an object (omp — native MCP owns the tools). `plugins/pi/tests/rtok.test.ts`: two cases pin both. Check: `pi_plugin` green (it runs the Node test file).
+- T92.2 (done) — host `src/agents/omp/` (`mod.rs` + `README.md`), `HOSTS` / `host()` in `src/agents/mod.rs`, `[setup.omp]` in `config/default.toml` / `src/config/mod.rs` / `docs/config.md`, unit tests from Plan step 3.
+- T92.3 (done) — `docs/agents.md` bless, `tests/trycmd/*` re-bless, `plugins/pi/README.md` omp section.
+
+Check: the unit tests above; `rtok agents list` shows `omp`; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin` green; `just check`.
+
+Do (2026-09-21): T92.2 — `src/agents/omp/` (`mod.rs` + `README.md` with the module table and `## Docs` linking omp's extensions, extension-loading, hooks, MCP config, skills and marketplace pages). One CLI variant (`omp`). `apply` is `HostPlugin { src_rel: "plugins/pi", host: "oh my pi" }` linked to `<extensions_path>/rtok` plus `mcpServers.rtok = {command, args}` through `rtok_agent_sdk::register_server` (omp's documented shape has no `type`, the Kimi call); remove unlinks and drops only our server. `installed()` reports `plugin` only when `PLUGIN.ours` (T75) and `mcp` from `mcp.json`. `support`: plugin `--yes`, mcp yes, hooks and proxy no. Registered in `HOSTS` (after `pi`) and `host()`; `[setup.omp] extensions_path`, `mcp_path` in `config/default.toml`, `src/config/mod.rs`, `docs/config.md`. T92.3 — `docs/agents.md` blessed, `tests/trycmd/{config-init,config-show,doctor,report-md}` re-blessed (the `windsurf` block `TRYCMD=overwrite` folded into `...` was put back by hand), `plugins/pi/README.md` gains an oh my pi section, and `tests/pi_plugin.rs` says why `pi.extensions` must stay.
+
+Check result (2026-09-21): unit tests `agents::omp::tests` (dry-run offer names `plugins/pi` and ketch, writes nothing; `--yes` links and registers with no `type`, second apply `NO_CHANGES` twice, remove keeps a foreign server; a foreign dest directory is not `installed`) pass; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin`, `cli_trycmd` green. On this machine (omp 18.1.14 at `~/.bun/bin/omp`) `rtok agents list` shows `CLI: oh my pi` and `rtok agents install omp --dry-run` offers `plugins/pi → ~/.omp/agent/extensions/rtok` and `mcpServers.rtok: rtok mcp`, writing nothing. `just check` green: 1109 passed, 4 skipped. Still open, as the card says: one real `omp -p` turn whose bash call goes through `rtok run` (no model credit here).
+
 ### T110. oxlint and oxfmt for the JS/TS files
 
 Asked for by the creator. The six TypeScript files (`plugins/opencode/*.ts`, `plugins/pi/**/*.ts`, `tests/node/fake-rtok.ts`) had no linter or formatter; their line widths and quoting differed file to file. mise pins `npm:oxlint` 1.83.0 and `npm:oxfmt` 0.68.0 (both released 2026-09-14, oxc-project — maintained). `just js` runs `oxlint --deny-warnings` and `oxfmt --check` over `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs'` and is part of `just check`, so CI's `check` job enforces it; `just js-fmt` rewrites. JSON is deliberately outside the file list: oxfmt would reformat the plugins' manifests (`hooks.json`, `package.json`), which tests compare byte for byte. Defaults, no config file.

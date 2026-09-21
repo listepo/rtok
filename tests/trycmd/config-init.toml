@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,293 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -161,6 +161,9 @@ target/tmp/t60-2-config-init.toml
 +[setup.pi]
 +extensions_path = "~/.pi/agent/extensions"
 +tools           = false                     # pi.registerTool for read/search/graph/memory (T70.3)
++[setup.omp]
++extensions_path = "~/.omp/agent/extensions" # oh my pi: plugins/pi is linked here (T92)
++mcp_path        = "~/.omp/agent/mcp.json"
 +[setup.zcode]
 +config_path   = "~/.zcode/cli/config.json"
 +[setup.kimi]
