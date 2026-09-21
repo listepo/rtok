@@ -4361,3 +4361,11 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+**T127 toon and compress on by default; fix their rewrite bugs** · `src/plugins/{toon,compress,archive}/mod.rs`, `src/config/mod.rs`, `config/default.toml`, docs and snapshots
+Do: creator request 2026-09-21. Both plugins default on (`CATALOGUE`, `[plugins.toon|compress] enabled`, manifests); they still act only in `proxy.mode = "compress"`. `toon`: parses the table from the tool-result text, so MCP `[{type: text}]` results encode and `expand` returns that text (it used to see only the wire's block array); skips a table whose pointer + TOON would not estimate fewer tokens, before any archive row or decision is written (a compact table used to grow, with a negative saving measured); rejects keys with header delimiters (`,{}":`), which shifted columns. `compress`: each source line appears once (deduped), facts/files are clipped like archive pointers (a minified line used to outgrow the pointer, so the block was skipped), error lines rank before plain `:` lines, and title/narrative/facts no longer repeat the same lines. `archive::block_text` / `clip` are `pub(crate)` and reused instead of copied.
+Check: new unit tests `text_block_content_encodes`, `a_table_that_would_grow_is_left_alone`, `keys_with_delimiters_do_not_encode`, `summary_puts_errors_first_and_clips_each_line_once`; default-on config/TUI/agents tests; trycmd snapshots and `docs/agents.md` re-blessed; `just check`.
+Complexity: 3/5 — two plugins, defaults across config, docs and snapshots.
+Status: done 2026-09-21
+Check result: `just check` green, 1121/1121. `tests/proxy.rs` helpers turn `compress` off — they assert `archive`'s own pointers; `plugins_e2e` covers the compress path. A bare JSON array of rows as `content` still encodes (the e2e fixture sends that shape).
+Model: Claude Code / claude-opus-5

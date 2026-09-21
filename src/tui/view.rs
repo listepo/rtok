@@ -874,8 +874,8 @@ mod tests {
 
     /// T15.4: a toggle writes `<home>/config.toml` through `config set`'s writer and
     /// the tab shows the outcome in the row and the status line — both off the re-read
-    /// model, never the key press's hope. `toon`, the one default-off plugin, is the
-    /// interesting direction. Its own temp home, like the toggle test in `app`.
+    /// model, never the key press's hope. `toon` starts on, so the toggle turns it off. Its
+    /// own temp home, like the toggle test in `app`.
     #[test]
     fn plugins_toggle_shows_in_the_row_and_the_status_line() {
         let dir = std::env::temp_dir().join(format!("rtok-tui-plugins-{}", std::process::id()));
@@ -884,13 +884,13 @@ mod tests {
         let mut app = crate::tui::app::tests::cursor_on_plugin(&cfg, "toon");
         app.key(KeyCode::Char(' '), KeyModifiers::NONE);
         assert!(
-            Config::load_from(&dir)
+            !Config::load_from(&dir)
                 .unwrap()
                 .plugin_enabled("toon", false),
             "the file, not just the row"
         );
         let screen = screen(&app);
-        assert!(screen.contains("toon on"), "the status names the outcome");
+        assert!(screen.contains("toon off"), "the status names the outcome");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

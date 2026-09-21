@@ -282,7 +282,7 @@ Plugin catalogue (v0.1). Every plugin is native Rust written from scratch here (
 | `guard` | token-optimizer refetch_guard | PreToolUse | identical read/command within N turns → deny |
 | `memory` | engram, claude-mem | MCP `mem_save/search/get` | agent-written notes, SQLite FTS5 |
 | `graph` | codebase-memory-mcp, serena, codegraph | MCP `symbol`,`callers`,`outline` | tree-sitter-tags index in SQLite; optional LSP is T30.2 |
-| `toon` (off by default) | caveman toon, TOON | proxy/MCP | tabular JSON → TOON |
+| `toon` (on by default) | caveman toon, TOON | proxy/MCP | tabular JSON → TOON |
 
 ### Working agreement
 

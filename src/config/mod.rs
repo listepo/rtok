@@ -39,8 +39,8 @@ pub const CATALOGUE: [(&str, bool); 11] = [
     ("guard", true),
     ("memory", true),
     ("graph", true),
-    ("toon", false),
-    ("compress", false),
+    ("toon", true),
+    ("compress", true),
 ];
 
 /// Shorthand for the section attributes every table repeats.
@@ -698,7 +698,7 @@ section! {
 section! {
     /// `[plugins.toon]`
     Toon {
-        enabled: bool = false,
+        enabled: bool = true,
         min_rows: u32 = 5,
     }
 }
@@ -706,7 +706,7 @@ section! {
 section! {
     /// `[plugins.compress]`
     Compress {
-        enabled: bool = false,
+        enabled: bool = true,
     }
 }
 
@@ -1225,7 +1225,7 @@ mod tests {
         assert_eq!(cfg.plugins.inject.budget_tokens, 800);
         assert_eq!(cfg.core.db_path, home.join("rtok.db"));
         assert_eq!(cfg.core.archive_dir, home.join("archive"));
-        assert!(!cfg.plugin_enabled("toon", true));
+        assert!(cfg.plugin_enabled("toon", true));
         std::fs::remove_dir_all(&home).unwrap();
     }
 
@@ -1329,24 +1329,24 @@ bogus = true
     }
 
     #[test]
-    fn compress_defaults_off_and_overlays_turn_on() {
+    fn compress_defaults_on_and_overlays_turn_off() {
         use super::layers;
 
-        assert!(!Config::default().plugins.compress.enabled);
+        assert!(Config::default().plugins.compress.enabled);
 
-        let cfg: Config = parse("[plugins.compress]\nenabled = true\n").unwrap();
-        assert!(cfg.plugins.compress.enabled);
+        let cfg: Config = parse("[plugins.compress]\nenabled = false\n").unwrap();
+        assert!(!cfg.plugins.compress.enabled);
 
         let home = tmp("compress-env");
         std::fs::create_dir_all(&home).unwrap();
-        std::fs::write(home.join(".env"), "RTOK_PLUGINS_COMPRESS_ENABLED=true\n").unwrap();
+        std::fs::write(home.join(".env"), "RTOK_PLUGINS_COMPRESS_ENABLED=false\n").unwrap();
         let cfg = layers::load(&home, None, None).unwrap();
-        assert!(cfg.plugins.compress.enabled);
+        assert!(!cfg.plugins.compress.enabled);
         let row = layers::entries(&layers::figment(&home, None, None))
             .into_iter()
             .find(|(k, _, _)| k == "plugins.compress.enabled")
             .expect("leaf key listed");
-        assert_eq!(row.1, "true");
+        assert_eq!(row.1, "false");
         assert_eq!(row.2, "dotenv");
         let _ = std::fs::remove_dir_all(&home);
     }

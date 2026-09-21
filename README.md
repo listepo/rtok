@@ -221,11 +221,11 @@ inject   on       hook
 guard    on       hook
 memory   on       mcp,hook
 graph    on       mcp
-toon     off      proxy,mcp
+toon     on       proxy,mcp
 ```
 
-Turn one off with `rtok config set plugins.cmd.enabled false`, or turn `toon` on with
-`rtok config set plugins.toon.enabled true` — same thing as a `[plugins.<id>]` table in the
+Turn one off with `rtok config set plugins.cmd.enabled false`, or turn `toon` off with
+`rtok config set plugins.toon.enabled false` — same thing as a `[plugins.<id>]` table in the
 config file.
 
 ### Find out where a setting came from
@@ -325,7 +325,7 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 | `guard` | PreToolUse | prevents repeated reads and commands within a turn window |
 | `memory` | MCP, PreCompact | stores agent-written notes with progressive disclosure; FTS5 plant-and-recall 20/20 (`research.md` §14) |
 | `graph` | MCP | indexes symbols and references with bounded responses |
-| `toon` | proxy, MCP | optionally encodes tabular JSON; disabled by default |
+| `toon` | proxy, MCP | encodes old tabular JSON tool results when that is smaller; on by default |
 
 Plugin details and configuration live in [`docs/config.md`](docs/config.md),
 [`architecture.md`](architecture.md), and each `src/plugins/<id>/README.md`. Every call rtok

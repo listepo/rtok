@@ -188,6 +188,9 @@ async fn proxy_server(dir_tag: &str, tune: impl FnOnce(&mut Config)) -> Server {
     let dir = std::env::temp_dir().join(format!("rtok-proxy-{dir_tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let mut cfg = Config::load_from(&dir).expect("config");
+    // These cases assert `archive`'s own pointers; `compress` (on by default since T127)
+    // would summarise them. Its path is covered in `plugins_e2e`; `tune` can turn it on.
+    cfg.plugins.compress.enabled = false;
     tune(&mut cfg);
     let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1170,6 +1173,8 @@ async fn plain_server(
     cfg.proxy.mode = mode.to_string();
     cfg.proxy.enabled = proxy_enabled;
     cfg.core.enabled = core_enabled;
+    // Asserts archive pointers; see `proxy_server`.
+    cfg.plugins.compress.enabled = false;
     let state = Arc::new(ProxyState::new(&cfg).expect("proxy state"));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

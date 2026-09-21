@@ -1,7 +1,7 @@
 # `toon`
 
-Tabular JSON → TOON (Token-Oriented Object Notation). Off by default until an A/B run shows it
-pays for itself on this workload.
+Tabular JSON → TOON (Token-Oriented Object Notation). On by default (T127); a block is
+rewritten only when the encoding is smaller than the JSON it replaces.
 
 | | |
 |---|---|
@@ -20,7 +20,7 @@ Non-tabular JSON is left untouched. The original is archived; the encoded block 
 
 ```toml
 [plugins.toon]
-enabled = false
+enabled = true
 min_rows = 5
 ```
 
@@ -28,7 +28,7 @@ min_rows = 5
 
 See `roadmap.md` § `toon`. Checks in `plan.md`.
 
-T11.7 `proxy_filter` TOON on tabular JSON (default off). Enable for traffic after T9.1 can A/B it.
+T11.7 `proxy_filter` TOON on tabular JSON (default on). A table that would not shrink is left as is.
 
 ## Status
 

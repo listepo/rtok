@@ -355,11 +355,11 @@ backend    = "tags"                   # tags | lsp: index backend; default tags;
 watch      = "off"                    # off | notify | watchman: background re-index inside `rtok mcp` (P8d); watchman needs `--features graph-watchman` (opt-in, Gate P8d)
 
 [plugins.toon]
-enabled  = false
+enabled  = true
 min_rows = 5
 
 [plugins.compress]
-enabled = false                       # optional LLM compression / memory extractor (P28); off until Gate P28
+enabled = true                        # extractive summaries of archived tool output; runs only in proxy.mode = "compress"
 
 [plugins.wasm]
 enabled = false                      # off by default; no .wasm loaded until T32.2 host + `wasm-host` feature
