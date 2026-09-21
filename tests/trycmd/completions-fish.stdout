@@ -399,6 +399,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand otel; and not __fish_seen_subc
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and not __fish_seen_subcommand_from flush status help" -f -a "status" -d 'Endpoint, watermarks, pending rows, last exporter log line'
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and not __fish_seen_subcommand_from flush status help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and __fish_seen_subcommand_from flush" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand otel; and __fish_seen_subcommand_from flush" -l coalesce -d 'T143: hook-spawned only. Coalesces concurrent hook flushes to at most one running + one queued process instead of one per `Stop`/`SessionEnd` event. A manual `rtok otel flush` never passes this — it always flushes'
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and __fish_seen_subcommand_from flush" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and __fish_seen_subcommand_from status" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand otel; and __fish_seen_subcommand_from status" -l json -d 'JSON instead of the table'

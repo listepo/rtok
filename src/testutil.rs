@@ -39,6 +39,14 @@ pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
     (Runtime::open(c, tag).unwrap(), dir)
 }
 
+/// T143: claim the otel hook-flush "queued" slot for a test, simulating another hook-spawned
+/// flush already waiting behind the running one. Drop the guard to release it.
+pub fn hold_otel_queue_slot(cx: &Runtime) -> impl Drop + use<> {
+    crate::otel::export::try_queue(cx)
+        .expect("queue lock")
+        .expect("queued slot free for the test to claim")
+}
+
 /// In-memory path → bytes map for unit tests that must not touch the host disk (D29 / T56).
 /// Prefer this over `tmp_dir` when the code under test only needs path/content/size.
 /// Optional symlinks (`link` → `target`) let `ReadFs` / resolve twins cover escape cases.

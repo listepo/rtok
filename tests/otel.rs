@@ -652,6 +652,226 @@ fn concurrent_flushes_post_each_row_once() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// T143: a directory each hook-spawned flush child marks with `<pid>.run` for its whole
+/// lifetime (`RTOK_OTEL_FLUSH_TRACE`, see `FlushTrace` in `src/otel/export.rs`), so these
+/// tests can count concurrent flush children without querying the host process table — no
+/// `ps`, no `kill`, ever, per the creator's hard rule. `home` already gives each test its own
+/// scratch directory, so nesting the trace dir under it keeps parallel tests apart too.
+fn trace_dir(base: &Path) -> PathBuf {
+    let dir = base.join("flush-trace");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Flush children currently alive, per `trace_dir`.
+fn trace_count(dir: &Path) -> usize {
+    std::fs::read_dir(dir).map(|it| it.count()).unwrap_or(0)
+}
+
+/// T143: `Stop`/`SessionEnd` hand a flush to a detached child on every event. Against a slow
+/// collector, a burst of them used to pile up one blocked `rtok otel flush` process per event
+/// (each one waiting forever on the exclusive flush lock). Fixed by coalescing: at most one
+/// running + one queued hook-spawned flush at a time. Reproduces the pile-up on unfixed code
+/// (this test fails there — see the task notes for the failing count) and proves the bound
+/// holds after the fix, with every seeded row still posted exactly once. Counts concurrent
+/// flush children via `trace_dir`/`RTOK_OTEL_FLUSH_TRACE`, never `ps` (see `trace_dir`'s doc).
+#[cfg(unix)]
+#[test]
+fn hook_spawned_flushes_coalesce_to_at_most_two_processes() {
+    let server = MockServer::start();
+    let delay = Duration::from_millis(500);
+    let traces = server.mock(|when, then| {
+        when.method(POST).path("/v1/traces");
+        then.status(200).body("{}").delay(delay);
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/logs");
+        then.status(200).body("{}").delay(delay);
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/metrics");
+        then.status(200).body("{}").delay(delay);
+    });
+
+    let dir = home("burst");
+    {
+        let cx = ctx(&dir, &server.base_url());
+        seed(&cx);
+    }
+    let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
+    cfg.push_str(&format!(
+        "\n[otel]\nendpoint = \"{}\"\nflush_secs = 5\n",
+        server.base_url()
+    ));
+    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+
+    let trace = trace_dir(&dir);
+    let fire_stop = || {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+            .args(["hook", "Stop"])
+            .env("RTOK_HOME", &dir)
+            .env("RTOK_OTEL_FLUSH_TRACE", &trace)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(br#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#)
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+    };
+
+    let mut max_seen = 0usize;
+    for _ in 0..20 {
+        fire_stop();
+        max_seen = max_seen.max(trace_count(&trace));
+    }
+    // Keep sampling a while: children spawned near the end of the burst are still alive.
+    let sample_deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while std::time::Instant::now() < sample_deadline {
+        max_seen = max_seen.max(trace_count(&trace));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let result: Result<(), String> = if max_seen <= 2 {
+        Ok(())
+    } else {
+        Err(format!(
+            "at most 2 hook-spawned flush processes may be alive at once, saw {max_seen}"
+        ))
+    };
+
+    // Drain: the mock collector answers every in-flight POST on its own delay and the
+    // client's `flush_secs` timeout bounds the rest, so every child exits by itself —
+    // wait (bounded) for the trace dir to empty instead of killing anything.
+    let drain_deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while trace_count(&trace) > 0 && std::time::Instant::now() < drain_deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        trace_count(&trace),
+        0,
+        "every flush child must exit on its own within the drain deadline"
+    );
+
+    let cx = ctx(&dir, &server.base_url());
+    let (pending_calls, pending_logs) = cx.store.otel_pending().unwrap();
+    assert_eq!(
+        (pending_calls, pending_logs),
+        (0, 0),
+        "every seeded row must post exactly once, none lost"
+    );
+    assert!(
+        traces.calls() >= 1,
+        "at least one flush posted the seeded spans"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+    result.unwrap();
+}
+
+/// T143: a manual `rtok otel flush` (no `--coalesce`) must keep flushing even while a
+/// hook-spawned flush is already queued — only the hook path coalesces away.
+#[test]
+fn manual_flush_ignores_the_queued_slot() {
+    let server = MockServer::start();
+    for path in ["/v1/traces", "/v1/logs", "/v1/metrics"] {
+        server.mock(|when, then| {
+            when.method(POST).path(path);
+            then.status(200).body("{}");
+        });
+    }
+    let dir = home("manual-queued");
+    let cx = ctx(&dir, &server.base_url());
+    seed(&cx);
+    let _slot = rtok::testutil::hold_otel_queue_slot(&cx);
+    let r = flush_blocking(&cx);
+    assert_eq!(r.error, None, "{r}");
+    assert!(
+        r.posted > 0,
+        "the manual path must not be coalesced away: {r}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// T143: with the queued slot already held, the hook's pre-check must skip spawning a flush
+/// process at all, and stay fast — but a bare wall-clock bound on a spawned subprocess is
+/// exactly the load-flakiness `hooks_stay_fast_with_an_unreachable_endpoint` documents (a
+/// freshly linked binary's first exec pays a one-time cost unrelated to this code: measured
+/// directly, `Runtime::open` + `spawn_child` together take low single-digit milliseconds). A
+/// warm-up call on the same binary absorbs that cost before the timed, queued-slot call; the
+/// trace-dir count is the real behavioural proof, independent of timing (see `trace_dir`).
+#[cfg(unix)]
+#[test]
+fn hook_skips_spawning_when_a_flush_is_already_queued() {
+    let dir = home("skip-queue");
+    let trace = trace_dir(&dir);
+
+    let mut cfg = std::fs::read_to_string(dir.join("config.toml")).unwrap_or_default();
+    cfg.push_str("\n[otel]\nendpoint = \"http://127.0.0.1:9\"\nflush_secs = 5\n");
+    std::fs::write(dir.join("config.toml"), cfg).unwrap();
+
+    let run_stop = || {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+            .args(["hook", "Stop"])
+            .env("RTOK_HOME", &dir)
+            .env("RTOK_OTEL_FLUSH_TRACE", &trace)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(br#"{"session_id":"s1","hook_event_name":"Stop","reason":"end_turn"}"#)
+            .unwrap();
+        let start = std::time::Instant::now();
+        let out = child.wait_with_output().unwrap();
+        (out, start.elapsed())
+    };
+
+    // Warm-up: no queued slot yet, so this spawns a real (unreachable-endpoint) flush child,
+    // and also pays this binary's first-exec cost before the timed run below.
+    let (warm, _) = run_stop();
+    assert!(warm.status.success());
+    let drain_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while trace_count(&trace) > 0 && std::time::Instant::now() < drain_deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        trace_count(&trace),
+        0,
+        "the warm-up flush child must exit on its own within the drain deadline"
+    );
+
+    let cx = ctx(&dir, "http://127.0.0.1:9");
+    let slot = rtok::testutil::hold_otel_queue_slot(&cx);
+    drop(cx);
+    let (out, elapsed) = run_stop();
+    assert!(out.status.success(), "hooks fail open");
+    assert_eq!(out.stdout, b"{}");
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "the pre-check path must stay fast, took {elapsed:?}"
+    );
+    assert_eq!(
+        trace_count(&trace),
+        0,
+        "queued lock held: no flush process should have been spawned at all"
+    );
+
+    drop(slot);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// T53.4: `tools/otel-check.sh` seeds `RTOK_HOME` before `rtok otel flush`.
 #[ignore]
 #[test]
