@@ -358,6 +358,7 @@ section! {
         opencode: SetupOpenCode = SetupOpenCode::default(),
         kilo: SetupKilo = SetupKilo::default(),
         pi: SetupPi = SetupPi::default(),
+        omp: SetupOmp = SetupOmp::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
         vscode: SetupVscode = SetupVscode::default(),
@@ -400,6 +401,15 @@ section! {
         /// Register the measured MCP tools through `pi.registerTool` (T70.3).
         /// Off: those descriptions do not ride every pi request.
         tools: bool = false,
+    }
+}
+
+section! {
+    /// `[setup.omp]` — oh my pi: the linked pi extension and native `mcp.json` (T92). A named
+    /// omp profile is a path override.
+    SetupOmp {
+        extensions_path: PathBuf = p("~/.omp/agent/extensions"),
+        mcp_path: PathBuf = p("~/.omp/agent/mcp.json"),
     }
 }
 
