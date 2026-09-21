@@ -1,5 +1,7 @@
 //! T10.2: `rtok filter --cmd` reads stdin; OpenCode plugin mock.
 
+mod common;
+
 use rstest::rstest;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -43,15 +45,5 @@ fn printf_git_status_returns_filtered_text() {
 
 #[test]
 fn opencode_plugin_unit_test_with_api_mock() {
-    let status = Command::new("node")
-        .args([
-            "--experimental-strip-types",
-            "--disable-warning=ExperimentalWarning",
-            "--test",
-            "plugins/opencode/rtok.test.ts",
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .status()
-        .expect("node");
-    assert!(status.success());
+    common::vitest("plugins/opencode/rtok.test.ts", &[]);
 }
