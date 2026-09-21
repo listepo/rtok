@@ -46,6 +46,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | T127 | todo | P2 | 3 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
+| T150 | in progress | P1 | 3 | 90% | Claude Code / claude-fable-5-1 |
+| T151 | todo | P1 | 3 | 0% | |
+| T152 | todo | P1 | 2 | 0% | |
+| T153 | todo | P2 | 4 | 0% | |
+| T154 | todo | P2 | 3 | 0% | |
+| T155 | todo | P2 | 2 | 0% | |
+| T156 | todo | P3 | 3 | 0% | |
+| T157 | todo | P2 | 1 | 0% | |
+| T158 | todo | P1 | 3 | 0% | |
+| T159 | todo | P2 | 4 | 0% | |
 
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -322,6 +332,90 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
+
+### T150. Worktree inventory: one git helper that lists, attributes and classifies every worktree
+
+Creator request 2026-09-21; evidence in `research.md` §18. On that day the repo had 28 worktrees in 5 locations, the host disk had 220 MiB free, and nothing could say whose a worktree was or whether it was finished. Not a token saving: no `Measurement` row and no public number come out of T150–T157. The reason it lives in rtok is that rtok already runs in every session on every host (T154), and a full disk fakes rtok's own test failures. Blocker for T151–T155.
+
+Plan: a `worktree` module off the hot path (a CLI command like `doctor`, not a hook). One helper that runs `git worktree list --porcelain -z` and parses it into records: path, branch or detached, `locked` + reason, `prunable` + reason. No new dependency — `git2` lacks `move`/`repair`/checked `remove` and `gix` cannot mutate worktrees (§18.4). Per record: dirty (`git status --porcelain`), merged — squash-aware, `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}`, base = `origin/HEAD` — and owner parsed from a lock reason of the form `<owner> | <task-id> | <date>` (ASCII: porcelain C-quotes anything else). Parsing and classification are pure functions over strings; only the thin runner spawns git. Do not refactor `git_changed_files` or the two `git_root` copies here.
+
+Check: unit tests on captured porcelain — `-z` records with a path containing a space and a newline, locked with and without a reason, prunable, detached, bare main; classification table (merged/unmerged × dirty/clean × locked/unlocked); an integration test builds a real repository under `testutil::tmp_dir` with two worktrees, squash-merges one branch and sees it reported merged while `git branch --merged` does not; `just check`.
+
+Do (Claude Code / claude-fable-5-1): `pub mod worktree` in `src/lib.rs`. `src/worktree/mod.rs` — `Record` (path, head, branch, detached, bare, `locked`, `prunable`), `parse_porcelain(&[u8])` over NUL-separated records, `Owner::parse` for `<owner> | <task-id> | <date>` (a lock with no reason is an unknown owner, never "unlocked"), `State` + `classify` as a pure function of (exists, dirty, merged, lock). `src/worktree/git.rs` — the only place that spawns git: `list`, `is_dirty`, `is_merged` (`merge-tree --write-tree`), `default_base` (`origin/HEAD`, fallback `origin/main`). Unit tests beside the code, `tests/worktree.rs` for the real-git fixture. No CLI surface here — T151 adds it. Verify with `cargo nextest run --lib worktree` and `--test worktree`, `cargo clippy --all-targets`, `cargo fmt --check`; the full `just check` runs in CI while the host disk is under 10 GiB free.
+
+### T151. `rtok worktree list`: source size, cache size and orphans in one table
+
+Depends on T150. All of the measured weight was tagged build cache (19–29 MB of source against 1.4–18 GB of `target/`), and the largest consumer was an orphan git could not see: a directory whose `.git` file points at an admin entry that no longer exists (`research.md` §18.1).
+
+Plan: `rtok worktree list [--json]`. Per worktree from T150: source bytes and cache bytes, where a cache is a directory holding a `CACHEDIR.TAG` with the standard signature (cargo writes it into `target/`; no hardcoded directory names), walked with the already-approved `walkdir`, never descending into a nested worktree. Orphan scan: in the parent directories of the known worktrees plus `<repo>/.claude/worktrees`, a directory with a `.git` *file* whose `gitdir:` target is missing, or that the inventory does not list, is reported as `orphan` with its sizes. Columns: path, branch, owner, state (`active`/`idle`/`merged`/`dirty`/`orphan`/`stale`), source, cache, last modified. `stale` is the mirror of `orphan`: a record whose directory is gone — detected by the missing path, not by git's `prunable` flag, because git never flags a locked record (T153). Sizes are logical bytes; say so in `--help` (APFS clones are double-counted). Read-only: this command deletes nothing.
+
+Check: `assert_fs` integration test — a repo with a clean worktree, a dirty one, one with a tagged cache, one with an untagged directory of the same name (not counted as cache) and one orphan (admin entry removed by hand); `trycmd` snapshot of the table and of `--json`; `just check`.
+
+### T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
+
+Depends on T151. The always-safe operation: a tagged cache holds no source and the next build recreates it, while `git worktree remove` refuses the whole worktree when anything is uncommitted (`graph-perf`: 18.1 GB of cache next to 23 uncommitted files; deleting only the cache freed 17 GiB and lost nothing).
+
+Plan: `rtok worktree clean [<path>…] [--idle <duration>] [--yes]`. Default is a dry run that prints what would be freed. Targets only directories that pass T151's `CACHEDIR.TAG` signature check, in worktrees (and orphans) where nothing under the cache was modified within `--idle` (default settled in the Do and recorded in `docs/config.md` if it becomes a key). Never the cache of the worktree the command runs from unless its path is given explicitly. Deletion is the one non-lossless act in rtok, so the card states why it is allowed: a tagged cache is reproducible by definition; nothing untagged is ever touched.
+
+Check: integration test — dry run deletes nothing and reports the bytes; `--yes` removes the tagged cache and leaves an untagged `target/`, a fresh (non-idle) cache and every source file in place; an orphan's cache is cleaned; exit code and output snapshot via `trycmd`; `just check`.
+
+### T153. `rtok worktree gc`: remove finished worktrees and their merged branches
+
+Depends on T151. Hosts clean up only unchanged worktrees, and squash merges make every merged branch look unmerged, so finished worktrees stay forever (`research.md` §18.1, §18.3).
+
+Plan: `rtok worktree gc [--yes]`, dry run by default. A worktree is removed only when all hold: merged per T150, clean, idle per T152, and its lock is absent or names the owner passed with `--owner` — a lock naming anyone else is a hard stop, as is any dirty file. Removal is `git worktree unlock` + `git worktree remove` (never `--force`) and `git branch -D` for the merged local branch; the remote branch is reported, not deleted. Orphans are reported, never removed.
+
+Stale records are part of the job, not a footnote. A worktree deleted with `rm -rf` (or purged from `/tmp`) leaves its record in `.git/worktrees/<id>`: git prunes it only after `gc.worktreePruneExpire` (3 months) when unlocked and **never when locked** — and the conventions (T155) lock every worktree. Until then the branch counts as checked out: it cannot be deleted or checked out elsewhere, and T150 would keep listing a worktree that does not exist. So `gc` treats "directory missing" as its own state: under the same owner rule (no lock, or a lock naming `--owner`; a lock with no reason is a foreign owner) it drops that one record with `git worktree unlock` + `git worktree remove <path>` — per record, never a blanket `git worktree prune`, which would also drop the records of another session's worktrees on a volume that is merely unmounted — and then applies the merged-branch rule. `rtok worktree clean`/`gc` never delete a worktree directory themselves, so they never create such a record.
+
+Check: integration test over a fixture repo — merged+clean+idle is removed with its branch; each of dirty, unmerged, foreign-locked, locked-without-reason and non-idle survives with its reason printed; a worktree whose directory was removed by hand is dropped from `git worktree list` and its merged branch deleted, both when unlocked and when locked by `--owner`, and survives when locked by someone else; after every case `.git/worktrees/` holds no entry without a directory that `gc` was allowed to drop; dry run changes nothing; the main checkout can never be selected; `just check`.
+
+### T154. Ownership ledger: SessionStart records which session worked in which worktree
+
+Depends on T133 (resolve a worktree to its main repository without spawning git) and T151. Git has no owner field and lock reasons depend on agent discipline; rtok's `SessionStart` hook already fires on every host with `session_id` and `cwd`, so ownership can be recorded without the agent doing anything (`research.md` §18.5).
+
+Plan: on `SessionStart`, when T133's resolver says `cwd` is inside a linked worktree, upsert one store row: worktree path, main repository, host, `session_id`, first seen, last seen. Fail open and inside the 10 ms hook budget — no git spawn, no directory walk, no output, no injected context. `rtok worktree list` fills `owner`/`last seen` from this table when there is no lock reason. Settle in the Do whether this is a new `worktree` plugin (feature flag, `CATALOGUE`, `src/plugins/worktree/AGENTS.md`, `docs/plugin-authoring.md`) or a row written by the existing session path — one writer per store (D21) decides it.
+
+Check: hook fixture test — a SessionStart event with a worktree `cwd` writes one row and a second event updates `last seen` instead of inserting; a main-checkout or non-repo `cwd` writes nothing; a store error still exits 0 with unmodified output; the hook latency test stays under budget; `just check`.
+
+### T155. Ship the `worktrees` skill with rtok
+
+Depends on T152, T153 and T158. The conventions (one location, `<repo>-<task-id>`, lock reason as owner, clean caches when idle, never `rm -rf`, never touch another owner's worktree) exist as a creator-local skill with a shell script since 2026-09-22. A skill costs one description line per session instead of `AGENTS.md` budget, and the `SKILL.md` format is read by Claude Code, Cursor and Codex.
+
+Plan: `skills/worktrees/SKILL.md` next to `skills/rtok/`, English, with the script replaced by `rtok worktree add|list|clean|gc`, so the skill carries no git command of its own for the normal path. On Claude Code the hooks (T159) make creation and removal automatic and the skill only explains them. Offer it through `rtok agents install <host>` wherever `skills/rtok` is offered today; re-verify each touched host's `## Docs` links; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`) if a surface changes. If `rtok` is missing the skill says to install it with ketch (`ketch install listepo/rtok`) and falls back to plain git commands.
+
+Check: host matrix e2e — install offers the skill and removal takes it away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; the skill text contains no command that `rtok worktree --help` does not list (test greps it); `just check`.
+
+### T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
+
+No product code. Two open questions from `research.md` §18.3–18.4: (1) Claude Code's `WorktreeCreate`/`WorktreeRemove` hooks replace the default create/remove — can rtok own location, naming and the ownership record there, and what do the desktop app and sub-agent `isolation: worktree` actually send; (2) does seeding a new worktree's `target/` by reflink (`reflink-copy`, APFS `clonefile`) save build time and disk after a real task, or does cargo rewrite most of it anyway.
+
+Plan: throwaway hook script (scratch, not committed) that logs the payloads for `claude --worktree`, a sub-agent worktree and the desktop app, and returns a path under `_worktrees/`. For (2): two fresh worktrees of this repo, one seeded with `cp -c -R target`, one cold; record wall time of `just check` and physical disk delta (`df`, not `du` — clones are double-counted) for each. Write the payloads, the numbers and the dated commands into `research.md` §18. `reflink-copy` is a new dependency: adopting it is a creator decision taken on those numbers, not part of this task.
+
+Check: `research.md` §18 gains the hook payloads and a dated table (cold vs seeded: seconds, bytes); T159's card is corrected against the recorded payloads; seeding gets a follow-up task or an `ideas.md` entry from the numbers; no file under `src/` changes.
+
+### T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
+
+No product code. The 18 GB orphan came from absolute worktree links breaking when the repository moved; git ≥ 2.48 can write relative links, but doing so sets `extensions.relativeWorktrees`, and a tool that does not know the extension refuses to open the repository (`research.md` §18.2).
+
+Plan: in a scratch clone, enable `worktree.useRelativePaths`, add a worktree, then open the repository with every git reader in `toolchain.md` and the workspace (git CLI, `gh`, cargo's VCS check in `cargo package --list`, the editors' git integrations, any `git2`/`gix`-based tool found in `toolchain.md`). Move the clone and confirm the link survives and `git worktree repair` is not needed.
+
+Check: `research.md` §18.2 gains a dated compatibility table; if every reader passes, the `worktrees` skill (T155) and `AGENTS.md` gain the one-line setting; if any fails, the finding is recorded and the setting stays off.
+
+### T158. `rtok worktree add`: rtok creates the worktree — one location, one name, one owner
+
+Creator request 2026-09-22: rtok owns the worktree lifecycle, creation included. Depends on T150. Every measured problem starts at creation: 28 worktrees in 5 locations, directory names that do not match their branch, locks without a reason (`research.md` §18.1). Cleaning up afterwards (T152, T153) treats the symptom; one creation path removes the cause, and it is the only moment the owner is known for certain.
+
+Plan: `rtok worktree add <task-id> [<slug>] --owner "<provider> / <model>"`, printing the created path on stdout and nothing else (scripts and T159 consume it). Rules, identical to the creator-local `wt.sh new` it replaces: root = `[worktree].root` if set, else the nearest ancestor of the main checkout that holds `_worktrees/`, else `_worktrees/` next to it; directory `<repo>-<task-id>`, branch `<task-id>[-<slug>]`, both lower case and validated against `[a-z0-9._-]`; refuse when the path exists (one worktree per task) or when the root resolves under a temp directory; `git fetch origin <default>` then `git worktree add --lock --reason "<owner> | <task-id> | <date>" --no-track -b <branch> <path> origin/<default>` — no upstream, so a bare `git push` cannot reach `main`; the reason stays ASCII (porcelain C-quotes anything else, T150 parses it back). Write the T154 ledger row at creation when that table exists. `[worktree].root` is a new config key: `docs/config.md` and the config coverage test in the same PR. No seeding of `target/` here — that waits for T156's numbers.
+
+Check: `assert_fs` integration test — the path and branch follow the rule and the path is the only stdout line; the lock reason round-trips through T150's parser; a second `add` for the same task fails without touching the first; invalid ids and a temp-directory root are rejected before git runs; the new branch has no upstream; `[worktree].root` overrides discovery; `trycmd` snapshot of `--help` and the error messages; `just check`.
+
+### T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
+
+Depends on T156 (the real payloads), T158 (create) and T153 (remove). A skill is advice an agent may skip; the host's own worktree hooks are the only place where the rules cannot be skipped: `claude --worktree`, the desktop app and sub-agent `isolation: worktree` all create worktrees without asking the agent, which is where the `agent-<hex>` directories and reason-less locks come from (`research.md` §18.1, §18.3).
+
+Plan: `rtok hook WorktreeCreate` maps the host's `name` to T158's rules and prints the created path; `rtok hook WorktreeRemove` applies T153's single-worktree rules to `worktree_path` — never forced: a dirty worktree, or one locked by another owner, is left in place and reported, and its tagged caches are cleaned (T152) either way. Installed by `rtok agents install claude` with the plugin, removed with it, singleton per D21; the host docs link for these events joins `plugins/claude/README.md` `## Docs`; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`). **One decision to take before the Do, by the creator:** these hooks replace the host's default behaviour and must spawn git, so they cannot meet "exit 0 in ≤ 10 ms with unmodified input". Proposed reading: the 10 ms rule binds the per-tool-call hot path; `WorktreeCreate` fires once per worktree, and fail-open here means "on any rtok error, create the worktree exactly where the host would have (`<repo>/.claude/worktrees/<name>`) with plain git, print that path, exit 0" — the host never loses the ability to create a worktree because of rtok. Record the outcome as a decision row (D31 or the next free id) in this task's PR. Other hosts have no such hook today (§18.3); they keep the skill (T155).
+
+Check: hook fixture tests with T156's recorded payloads — create returns a path under the T158 root with the owner lock; a simulated failure of `rtok worktree add` still yields a usable worktree at the host default path and exit 0; remove deletes a merged clean worktree, keeps a dirty one and a foreign-locked one with the reason on stderr, and cleans the tagged cache in all three; host matrix e2e — install adds both hooks exactly once and removal takes them away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; `just check`.
 
 ## Reference
 
