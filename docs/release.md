@@ -9,13 +9,15 @@ up in this repository right now.
 Actions → **Bump and release** → *Run workflow*. No version is typed anywhere:
 [`tools/release.sh`](../tools/release.sh) releases the version in `Cargo.toml`, and raises it only
 when that version is already tagged. So the first run publishes `0.0.1`, the next `0.0.2`, and so
-on. `level` (`patch` by default) chooses which part moves when a raise is due; `dry_run` prints the
-version and stops.
+on. `level` (`patch` by default) chooses which part moves when a raise is due. The workflow has
+no dry run: every run of it ships, so a green run always means a release.
 
-The same script runs locally:
+The same script runs locally, and the preview lives only here — it prints the version that would
+be released and writes nothing:
 
 ```bash
 just release
+tools/release.sh patch --dry-run
 ```
 
 It lands one `release: v<version>` commit — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` — pushes it,
