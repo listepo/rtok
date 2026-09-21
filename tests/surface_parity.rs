@@ -334,6 +334,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "stops live surfaces, replaces the binary, starts the same set",
     ),
     ("otel flush", "posts rows past the watermarks"),
+    (
+        "worktree gc",
+        "removes finished git worktrees and their merged branches (T153)",
+    ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (
