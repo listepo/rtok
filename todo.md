@@ -1,6 +1,9 @@
 - T79. `agents install zed` aborts on a real settings.json (JSONC)
 - T83. Fix the Windows test failures and empty the T82 exclusion list
 - T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
+- T87. `rtok hook <event> --host devin` reads Devin's payload
+- T88. Devin plugin tree (`plugins/devin/`)
+- T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 - T91. `rtok agents install antigravity` — CLI and desktop, the plugin is the only unit
 - T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP
 - T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
@@ -8,3 +11,10 @@
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 - T100. `rtok agents install grok` and the Read path under Grok
+- T101. Hook fail-open matrix over every `--host`
+- T102. Lossless round-trip for every plugin that shortens
+- T103. Unit tests for untested store queries
+- T104. Migration and `schema.rs` drift guard
+- T105. Report renderers: edge-case snapshots
+- T106. `otel/export.rs` unit tests
+- T107. CLI bad-argument fixtures
