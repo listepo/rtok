@@ -45,5 +45,4 @@
 - T158. `rtok worktree add`: rtok creates the worktree — one location, one name, one owner
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T160. No expand trailer when shortening saved less than the trailer costs
-- T161. Deflake `hook_skips_spawning_when_a_flush_is_already_queued`
 
