@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-/// T111: run one TS host plugin test file under vitest (the mise tool; `vitest.config.mjs` at the
+/// T119: run one TS host plugin test file under vitest (the mise tool; `vitest.config.mjs` at the
 /// repo root). `envs` are set for the run. Panics with the file name when a test fails.
 pub fn vitest(file: &str, envs: &[(&str, &Path)]) {
     // npm installs a `.cmd` shim on Windows, which `Command` only finds by its full name.

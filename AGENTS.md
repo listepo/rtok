@@ -39,4 +39,4 @@ Run tests with `just test` — the default locally and in CI (`just check`): `-j
 
 Prefer `crate::testutil::Vfs` (in-memory path → bytes) over host `TempDir` for unit tests that only need path/content/size. See plan D29 / T56.
 
-JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no `vitest` import); never `node:test`/`node:assert`. Prefer `toMatchInlineSnapshot` for structured output. See T111.
+JS/TS tests (host plugins) use vitest (`vitest.config.mjs`, globals, no `vitest` import); never `node:test`/`node:assert`. Prefer `toMatchInlineSnapshot` for structured output. See T119.

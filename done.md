@@ -18,7 +18,7 @@ Check: `claude plugin validate plugins/claude` (if the CLI has it) or `claude --
 
 Check result (2026-09-21): `claude plugin validate` passes for the plugin and the marketplace; in a scratch `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add plugins/claude` + `claude plugin install rtok@rtok` succeed and `claude plugin details rtok@rtok` lists 7 hook events and 1 MCP server; the cache copy keeps the scripts executable; `hook.sh UserPromptSubmit` pipes through `rtok hook` (exit 0); `just check` green. Not verified: a live Claude Code session with the plugin installed.
 
-### T111. TS plugin tests on vitest, with snapshots
+### T119. TS plugin tests on vitest, with snapshots
 
 The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
 
