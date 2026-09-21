@@ -183,7 +183,7 @@ async fn ws_expand_returns_payload_and_unknown_id() {
 /// is missing and still serve the API.
 async fn serve_pkg(
     label: &str,
-    pkg: Option<std::path::PathBuf>,
+    pkg: rtok::web::Pkg,
 ) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
     let dir = std::env::temp_dir().join(format!("rtok-pkg-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -202,7 +202,7 @@ async fn web_serves_the_resolved_pkg_dir() {
     let pkg = std::env::temp_dir().join(format!("rtok-pkg-src-{}", std::process::id()));
     std::fs::create_dir_all(&pkg).expect("pkg dir");
     std::fs::write(pkg.join("rtok_webui.js"), "export default 1;\n").expect("bundle");
-    let (addr, task) = serve_pkg("present", Some(pkg.clone())).await;
+    let (addr, task) = serve_pkg("present", rtok::web::Pkg::Dir(pkg.clone())).await;
     let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
         .await
         .expect("pkg");
@@ -214,7 +214,7 @@ async fn web_serves_the_resolved_pkg_dir() {
 
 #[tokio::test]
 async fn web_without_a_bundle_says_so_instead_of_404() {
-    let (addr, task) = serve_pkg("missing", None).await;
+    let (addr, task) = serve_pkg("missing", rtok::web::Pkg::Missing).await;
     let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
         .await
         .expect("pkg");
@@ -229,5 +229,33 @@ async fn web_without_a_bundle_says_so_instead_of_404() {
         .await
         .expect("health");
     assert_eq!(health.status(), 200, "the API stays up without the UI");
+    task.abort();
+}
+
+/// T111: a ketch install has only the binary, so the bundle rides inside it. Skipped
+/// when this build had no bundle to embed (`build.rs` found no `pkg/`).
+#[tokio::test]
+async fn web_serves_the_embedded_bundle() {
+    let Some((mime, bytes)) = rtok::web::embedded::get("rtok_webui_bg.wasm") else {
+        eprintln!("skip: built without a bundle — run `just web-bundle`");
+        return;
+    };
+    assert_eq!(mime, "application/wasm");
+    let (addr, task) = serve_pkg("embedded", rtok::web::Pkg::Embedded).await;
+    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui_bg.wasm"))
+        .await
+        .expect("wasm");
+    assert_eq!(res.status(), 200);
+    assert_eq!(res.headers()["content-type"], "application/wasm");
+    let body = res.bytes().await.expect("body");
+    assert!(body.starts_with(b"\0asm") && body.len() == bytes.len());
+    let js = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
+        .await
+        .expect("js");
+    assert_eq!(js.status(), 200);
+    let other = reqwest::get(format!("http://{addr}/pkg/nope.js"))
+        .await
+        .expect("other");
+    assert_eq!(other.status(), 404);
     task.abort();
 }

@@ -26,6 +26,19 @@ Files:
 - `tests/rtok.test.ts` — vitest unit test of the extension against a fake `rtok` on PATH (`tests/node/fake-rtok.ts`, every OS); run by
   `tests/pi_plugin.rs`. Outside `extensions/`, so pi never loads it.
 
+## oh my pi
+
+`rtok agents install omp --yes` links this same directory to `~/.omp/agent/extensions/rtok` and
+writes `mcpServers.rtok` into `~/.omp/agent/mcp.json` (T92) — there is no `plugins/omp/`. omp's
+loader accepts `omp.extensions` or the legacy `pi.extensions` this manifest declares, and follows
+a symlinked directory. Under omp (`pi.pi` is an object) `registerPiTools` returns early, because
+the tools come from omp's native MCP; the bash rewrite returns `{ input }`, the only revised input
+omp applies (T92.1).
+
+- Extensions: https://github.com/can1357/oh-my-pi/blob/main/docs/extensions.md
+- Extension loading: https://github.com/can1357/oh-my-pi/blob/main/docs/extension-loading.md
+- MCP config: https://github.com/can1357/oh-my-pi/blob/main/docs/mcp-config.md
+
 ## Docs
 
 Host documentation this package is written against. Re-check every link when the package changes.
@@ -35,3 +48,11 @@ Host documentation this package is written against. Re-check every link when the
 - Packages (`package.json` `pi` key: `extensions`, `skills`, `prompts`, `themes`; `pi install <path>`): https://pi.dev/docs/latest/packages
 - Skills (`SKILL.md` frontmatter `name`, `description`): https://pi.dev/docs/latest/skills and https://agentskills.io/specification
 - Source of the docs: https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

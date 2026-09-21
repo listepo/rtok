@@ -147,6 +147,7 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           tools/webui-bundle.sh --require
+          echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
         shell: "bash"
       - name: "Discover macOS codesign identity"
         if: "runner.os == 'macOS'"

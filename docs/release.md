@@ -141,16 +141,19 @@ $99/year and a certificate to rotate.
 Never commit the `.p12` or the `.p8`. They belong in the login keychain locally and in repository
 secrets in CI.
 
-## The web UI rides in the archive
+## The web UI rides in the binary
 
-Every archive carries `pkg/` — the Slint WASM bundle `rtok web` serves — beside the binary,
-the same way `plugins/` and `skills/` ship (`include` in `Cargo.toml`'s
-`[package.metadata.dist]`). `.github/build-setup.yml` installs wasm-pack and runs
-`tools/webui-bundle.sh --require` in each build job, so a missing bundle fails the release
-instead of shipping an archive whose `rtok web` has no UI.
+The Slint WASM bundle `rtok web` serves is compiled into the executable: `build.rs` embeds
+`crates/rtok-webui/pkg/` when it exists, so every install — including a ketch install that keeps
+only the binary — has the UI. `.github/build-setup.yml` installs wasm-pack, runs
+`tools/webui-bundle.sh --require` in each build job and exports `RTOK_WEB_EMBED=require`, so a
+missing bundle fails the release instead of shipping a binary whose `rtok web` has no UI.
 
-A **local** `dist build` does not run that hook: build the bundle first, or the copy step has
-nothing to copy.
+A bundle on disk still wins at run time (`RTOK_WEB_PKG`, `pkg/` beside the binary, the source
+tree), so `just web` serves a fresh build without relinking.
+
+A **local** `dist build` does not run that hook: build the bundle first, or the binary is built
+without it.
 
 ```bash
 just web-bundle
