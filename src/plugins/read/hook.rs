@@ -3,7 +3,11 @@
 use rtok_plugin_sdk::{Ctx, PreToolDecision, PreToolUse};
 
 const REASON: &str =
-    "use rtok read(mode=map) first; native Read allowed for files you are about to edit";
+    "use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate";
+
+/// A native `Read` of at most this many lines passes whatever the file size (T127): the
+/// host's `Edit` wants a native `Read` first, and an MCP `read` does not count.
+const GATE_MAX_LINES: u64 = 5;
 
 pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     let cfg = cx.plugin_config::<crate::config::Read>("read");
@@ -13,6 +17,10 @@ pub fn pre_tool(ev: &PreToolUse<'_>, cx: &Ctx) -> Option<PreToolDecision> {
     let path = super::path_arg(ev.tool_input)?;
     let len = std::fs::metadata(path).ok()?.len();
     if len <= cfg.native_max_bytes {
+        return None;
+    }
+    let limit = ev.tool_input.get("limit").and_then(|l| l.as_u64());
+    if limit.is_some_and(|l| l <= GATE_MAX_LINES) {
         return None;
     }
     if recently_edited(cx, path) {
@@ -234,9 +242,30 @@ mod tests {
         let input = json!({"file_path": p.to_str().unwrap()});
         let d = pre_tool(&ev(&input), &Ctx::new(&cx)).expect("deny");
         match d {
-            PreToolDecision::Deny { reason } => assert!(reason.contains("rtok read"), "{reason}"),
+            PreToolDecision::Deny { reason } => {
+                assert!(reason.contains("Read(limit=1)"), "{reason}")
+            }
             other => panic!("{other:?}"),
         }
+    }
+
+    /// T127: a small ranged native Read is the edit gate; a large range is still denied.
+    #[test]
+    fn a_small_limit_opens_the_edit_gate() {
+        let cx = cx("gate");
+        let p = cx
+            .config
+            .core
+            .archive_dir
+            .parent()
+            .unwrap()
+            .join("gate.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let path = p.to_str().unwrap();
+        let gate = json!({"file_path": path, "limit": 1});
+        assert!(pre_tool(&ev(&gate), &Ctx::new(&cx)).is_none());
+        let wide = json!({"file_path": path, "limit": 2000});
+        assert!(pre_tool(&ev(&wide), &Ctx::new(&cx)).is_some());
     }
 
     /// T55.13: Copilot's adapted `Read` carries `path`, not `file_path`; the large-file
