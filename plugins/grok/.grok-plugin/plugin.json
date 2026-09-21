@@ -1,0 +1,12 @@
+{
+  "name": "rtok",
+  "version": "0.0.1",
+  "description": "rtok hooks and MCP server for Grok Build",
+  "author": {
+    "name": "listepo",
+    "url": "https://github.com/listepo"
+  },
+  "homepage": "https://github.com/listepo/rtok",
+  "repository": "https://github.com/listepo/rtok",
+  "keywords": ["tokens", "hooks", "mcp"]
+}

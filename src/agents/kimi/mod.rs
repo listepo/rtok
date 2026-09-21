@@ -348,4 +348,34 @@ mod tests {
         assert!(!fs::read_to_string(mcp_path(&c)).unwrap().contains("rtok"));
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
+
+    /// `plugins/kimi/kimi.plugin.json` (T85) is the installer's hooks and MCP in Kimi's plugin
+    /// shape: same entries in the same order, same default timeout, one server. A new `ENTRIES`
+    /// row fails here until the manifest follows.
+    #[test]
+    fn plugin_manifest_matches_the_installer() {
+        let m: serde_json::Value =
+            serde_json::from_str(include_str!("../../../plugins/kimi/kimi.plugin.json")).unwrap();
+        assert_eq!(m["name"], NAME);
+        let timeout = Config::default().setup.hook_timeout_s;
+        let want: Vec<_> = ENTRIES
+            .iter()
+            .map(|&(event, matcher)| {
+                let mut h = json!({"event": event, "command": format!("rtok hook {event}"), "timeout": timeout});
+                if !matcher.is_empty() {
+                    h["matcher"] = json!(matcher);
+                }
+                h
+            })
+            .collect();
+        assert_eq!(m["hooks"], json!(want));
+        for h in m["hooks"].as_array().unwrap() {
+            let (cmd, event) = (h["command"].as_str().unwrap(), h["event"].as_str().unwrap());
+            assert!(is_ours(cmd, event), "{cmd}");
+        }
+        assert_eq!(
+            m["mcpServers"],
+            json!({NAME: {"command": "rtok", "args": ["mcp"]}})
+        );
+    }
 }

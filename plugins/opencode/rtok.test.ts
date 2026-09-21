@@ -10,13 +10,9 @@ test("replaces bash output via the injected filter", async () => {
     return "On branch main\nmodified:   src/lib.rs\n";
   })();
   const output = {
-    output:
-      "On branch main\nChanges not staged for commit:\n\tmodified:   src/lib.rs\n",
+    output: "On branch main\nChanges not staged for commit:\n\tmodified:   src/lib.rs\n",
   };
-  await plugin["tool.execute.after"](
-    { tool: "bash", args: { command: "git status" } },
-    output,
-  );
+  await plugin["tool.execute.after"]({ tool: "bash", args: { command: "git status" } }, output);
   assert.equal(output.output, "On branch main\nmodified:   src/lib.rs\n");
 });
 
@@ -27,12 +23,9 @@ test("replaces skill output via the injected filter", async () => {
     return "# Nx Workspace Exploration\n";
   })();
   const output = {
-    output: "<skill_content name=\"nx-workspace\">\n# Nx Workspace Exploration\nbody\n",
+    output: '<skill_content name="nx-workspace">\n# Nx Workspace Exploration\nbody\n',
   };
-  await plugin["tool.execute.after"](
-    { tool: "skill", args: { name: "nx-workspace" } },
-    output,
-  );
+  await plugin["tool.execute.after"]({ tool: "skill", args: { name: "nx-workspace" } }, output);
   assert.equal(output.output, "# Nx Workspace Exploration\n");
 });
 
@@ -132,10 +125,7 @@ test("next system transform injects the compact restore once", async () => {
     () => "",
     (event) => (event === "SessionStart" || event === "PostCompact" ? CKPT : ""),
   )();
-  await plugin["experimental.session.compacting"](
-    { sessionID: "s1" },
-    { context: [] },
-  );
+  await plugin["experimental.session.compacting"]({ sessionID: "s1" }, { context: [] });
   const sys = { system: ["base"] };
   await plugin["experimental.chat.system.transform"]({ sessionID: "s1" }, sys);
   assert.deepEqual(sys.system, ["base", CKPT]);
@@ -183,7 +173,8 @@ test("before throws the deny reason and stays silent without one", async () => {
     () => ({ allow: false, reason: "duplicate; rtok expand abc" }),
   )();
   await assert.rejects(
-    () => deny["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "ls" } }),
+    () =>
+      deny["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "ls" } }),
     /duplicate; rtok expand abc/,
   );
   const silent = await createPlugin(
@@ -193,7 +184,10 @@ test("before throws the deny reason and stays silent without one", async () => {
     () => "",
     () => ({ allow: false }),
   )();
-  await silent["tool.execute.before"]({ tool: "bash", sessionID: "s" }, { args: { command: "ls" } });
+  await silent["tool.execute.before"](
+    { tool: "bash", sessionID: "s" },
+    { args: { command: "ls" } },
+  );
 });
 
 test("before allow does not throw", async () => {
@@ -204,5 +198,8 @@ test("before allow does not throw", async () => {
     () => "",
     () => ({ allow: true }),
   )();
-  await plugin["tool.execute.before"]({ tool: "read", sessionID: "s" }, { args: { filePath: "a.rs" } });
+  await plugin["tool.execute.before"](
+    { tool: "read", sessionID: "s" },
+    { args: { filePath: "a.rs" } },
+  );
 });

@@ -79,11 +79,19 @@ fn dispatch_owned(stdin: &[u8], event: &str, cfg: &Config) -> Vec<u8> {
 fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<u8>, String> {
     let mut input: HookInput =
         serde_json::from_slice(stdin).map_err(|e| format!("hook {event}: bad stdin: {e}"))?;
-    let copilot = cfg.hook.host == "copilot";
-    if cfg.hook.host == "cursor" {
+    // Grok Build sends its own envelope to every hook it runs, including the Claude and Cursor
+    // hooks it imports, so its reserved `GROK_HOOK_EVENT` wins over `--host` (plan T98).
+    let grok = cfg.hook.host == "grok" || std::env::var_os("GROK_HOOK_EVENT").is_some();
+    let copilot = !grok && cfg.hook.host == "copilot";
+    let cursor = !grok && cfg.hook.host == "cursor";
+    if grok {
+        input.adapt_grok(event);
+    } else if cursor {
         input.adapt_cursor(event);
     } else if copilot {
         input.adapt_copilot(event);
+    } else if cfg.hook.host == "devin" {
+        input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
         input.hook_event_name = event.to_string();
     }
@@ -100,7 +108,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(copilot_output(&parsed));
     }
-    if cfg.hook.host == "cursor" {
+    if cursor {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(cursor_output(&parsed));
     }
@@ -809,6 +817,33 @@ mod tests {
         c.core.db_path = dir.join("rtok.db");
         c.core.archive_dir = dir.join("archive");
         c
+    }
+
+    /// T98: a Grok PreToolUse on `run_terminal_command` is rewritten and answered in Claude's
+    /// shape, which Grok reads unchanged.
+    #[cfg(feature = "cmd")]
+    #[test]
+    fn grok_pre_tool_use_rewrites_the_terminal_command() {
+        let dir = std::env::temp_dir().join(format!("rtok-hook-grok-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let mut cfg = cursor_cfg(&dir);
+        cfg.hook.host = "grok".into();
+        let stdin = serde_json::to_vec(&serde_json::json!({
+            "hookEventName": "pre_tool_use",
+            "hook_event_name": "PreToolUse",
+            "sessionId": "grok-1",
+            "cwd": dir.to_string_lossy(),
+            "toolName": "run_terminal_command",
+            "toolInput": {"command": "git status"}
+        }))
+        .unwrap();
+        let out = dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let hso = &v["hookSpecificOutput"];
+        assert_eq!(hso["hookEventName"], "PreToolUse", "{v}");
+        let cmd = hso["updatedInput"]["command"].as_str().unwrap_or("");
+        assert!(cmd.contains("git status") && cmd != "git status", "{v}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn mcp_stdin(server: &str, tool: &str, text: &str) -> Vec<u8> {

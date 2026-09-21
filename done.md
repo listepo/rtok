@@ -1,5 +1,85 @@
 # rtok — completed tasks
 
+### T110. oxlint and oxfmt for the JS/TS files
+
+Asked for by the creator. The six TypeScript files (`plugins/opencode/*.ts`, `plugins/pi/**/*.ts`, `tests/node/fake-rtok.ts`) had no linter or formatter; their line widths and quoting differed file to file. mise pins `npm:oxlint` 1.83.0 and `npm:oxfmt` 0.68.0 (both released 2026-09-14, oxc-project — maintained). `just js` runs `oxlint --deny-warnings` and `oxfmt --check` over `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs'` and is part of `just check`, so CI's `check` job enforces it; `just js-fmt` rewrites. JSON is deliberately outside the file list: oxfmt would reformat the plugins' manifests (`hooks.json`, `package.json`), which tests compare byte for byte. Defaults, no config file.
+
+The one lint hit was real: `tests/node/fake-rtok.ts` used a ternary as a statement for its side effect (`no-unused-expressions`) — now `if/else`. Formatting diff is cosmetic only (100-column wrap, quote normalisation).
+
+Check: `just js` exits 0 (0 warnings, 6 files formatted); the plugin behaviour tests that drive these files (`filter::opencode_plugin_unit_test_with_api_mock`, `pi_plugin::*`, `opencode_plugin::*`) pass after the reformat; `just check` green.
+
+### T108. Guard tests for the Windows CI job
+
+Asked for by the creator on the T82/T93 PR. `tests/windows_ci.rs`, no new dependency (`regex`, `ignore` are already in `Cargo.toml`):
+
+1. `rtok_exe_reserves_an_8_mib_main_thread_stack` (`cfg(windows)`) reads `SizeOfStackReserve` from the PE optional header of `CARGO_BIN_EXE_rtok` and requires ≥ 8 MiB — dropping the T93 line from `build.rs` fails one named test instead of ~100 e2e crashes.
+2. `byte_compared_files_are_lf_in_the_working_tree` — no CR byte in `tests/trycmd/` or `skills/`; on a Windows checkout this is what `.gitattributes` (T82) guarantees.
+3. `windows_exclusion_list_names_only_existing_tests` — every `binary(x)` in the `cfg(windows)` `default-filter` is a `tests/x.rs`, every test name is a `fn name(` somewhere in `src/`, `tests/` or `crates/`, so a rename cannot leave a line that skips nothing and T83's list cannot look non-empty by accident.
+
+Check result (2026-09-21): macOS — 2 passed (the PE test is Windows-only); mutation: renaming `test(=cli)` to `test(=cli_renamed_away)` in `.config/nextest.toml` makes test 3 fail with `stale exclusions: ["test cli_renamed_away"]`. `rustfmt --check` and `clippy --test windows_ci -D warnings` clean. The Windows half is proved by the PR's `windows` job.
+
+### T109. `.editorconfig` matches the repository
+
+The file dated from T0.7: a `[Makefile]` section for a repo without one, and whitespace rules applied to byte-exact fixtures — `tests/trycmd/{config-show,man}.stdout`, `{doctor,report-md}.toml` and `help-subcommands.trycmd` carry trailing spaces, 18 `tests/cmd_golden/*.out` and the 3 proxy JSON fixtures end without a newline, so an editor honouring the old file broke a golden on first save. Now: 2-space indent also for ts/js/sh/html/css/gotmpl (their measured majority), whitespace/newline/indent rules unset for `tests/{trycmd,cmd_golden,fixtures}/**` and `**/snapshots/**`, everything unset for the vendored fonts (CRLF `OFL.txt`) and `*.svg`; `end_of_line = lf` stays in step with `.gitattributes`.
+
+Check: survey script over `git ls-files` (indent histogram per extension, trailing-whitespace and no-final-newline lists) — every file the old rules would have rewritten falls under an unset section.
+
+### T82. Windows back in CI: green job with a named exclusion list
+
+The advisory `windows` job in `.github/workflows/ci.yml` has been commented out since `224b215` (2026-09-17) because `cargo nextest` hung for hours. The hang itself is already handled: with `slow-timeout = { period = "60s", terminate-after = 3 }` (`552ad01`) the last Windows run (35244082778) finished in ~10 min — 833 run, 808 passed, 22 failed, 3 timed out. A job that is red on every push hides regressions, so the job comes back green: the known Windows failures are skipped by name and everything else must pass.
+
+Plan:
+1. `.config/nextest.toml`: one `[[profile.default.overrides]]` with `platform = 'cfg(windows)'` and a `default-filter` that excludes exactly the 25 tests that failed in run 35244082778, grouped by binary with the run id in the comment. One list, one place; `just test` on a Windows box skips the same set. Linux/macOS selection is unchanged (verify: `cargo nextest list` count is identical before and after).
+2. `.github/workflows/ci.yml`: restore the `windows` job (`windows-latest`, `timeout-minutes: 30`, same `cargo nextest run --workspace` command). It stays `continue-on-error` and outside `revert-on-failure`'s `needs` until T83 empties the list — a Windows-only break must not auto-revert main yet.
+3. `.gitattributes`: `* text=auto eol=lf` (the one CRLF blob, the webui font licence, is `-text`) — Windows runners check out with `core.autocrlf=true` and `tests/skill.rs` compares bytes.
+4. Run the job on a scratch branch via `workflow_dispatch`; add tests that fail on current main (the suite grew 833 → 1 072 since the last Windows run) to the list until the job is green.
+
+Check: a `ci` run on the final commit shows the `windows` job green with the skipped count equal to the list length; `just check` green locally; `cargo nextest list` on macOS selects the same tests as before the change.
+
+Extra tests (creator request 2026-09-21): a test that every test named in the `cfg(windows)` `default-filter` still exists in `cargo nextest list --workspace` (a renamed or deleted test must not leave a stale exclusion that silently skips nothing); on macOS/Linux the filter selects zero tests out.
+
+Check result (2026-09-21): ci run 35578041497 (`workflow_dispatch` on scratch branch `t82-windows-ci`, tree = origin/main + this change + T93) — `windows` success in 8 min, `1042 tests run: 1042 passed, 33 skipped` (29 by the platform filter + 4 `#[ignore]`); `check (ubuntu-latest)` and `check (macos-latest)` success. The list grew 25 → 29 on the way: run 35573995011 exposed T93 (104 stack overflows, fixed, not excluded) and 2 CRLF failures (fixed by `.gitattributes`, not excluded); run 35576438155 left 4 real failures, now listed and handed to T83. macOS `cargo nextest list` before/after the override: identical (1078 = 1078); with the platform flipped to `cfg(unix)` the filter removes exactly the listed tests. `just check` green locally.
+
+### T93. `rtok` overflows the main-thread stack on Windows
+
+Found by T82's first run on current main (ci run 35573995011, `windows-latest`, debug build): 104 of 117 new failures are the spawned `rtok.exe` dying with `thread 'main' has overflowed its stack`, exit `0xC00000FD` (-1073741571) — on `report`, `stats`, `logs`, `config init`, `plugins`, `info`, `mcp`, `agents install`, `hook PreToolUse` and `hook PostToolUse`. The hook crash breaks "fail open" on that platform. Cause: Windows reserves 1 MiB for the main thread where Linux and macOS give 8 MiB, and `cli::run()` is one function whose ~85-arm `match` keeps every arm's locals in a single debug frame. The shipped `x86_64-pc-windows-msvc` release build was not tested; its frames are smaller, but nothing guarantees the margin.
+
+Plan:
+1. `build.rs`: for a Windows target emit `cargo:rustc-link-arg-bins` with an 8 MiB stack reserve (`/STACK:8388608` on msvc, `-Wl,--stack,8388608` on gnu) — parity with the Unix default. Reserve is address space, not committed memory: no cost on the ≤ 10 ms hook path, no new dependency, and it holds for `cargo install` and `dist` builds alike (a `.cargo/config.toml` rustflag would not).
+2. Verify on the T82 scratch branch: the `windows` job no longer shows `overflowed its stack` / `-1073741571` anywhere in its log.
+3. Splitting `cli::run()` into per-command functions is the structural fix and stays out of scope (≤ 200 LOC rule); note it in `ideas.md` only if the 8 MiB reserve proves insufficient.
+
+Check: `windows` job log of a `ci` run on the change has 0 occurrences of `overflowed its stack`; `just check` green on macOS (the script is a no-op off Windows).
+
+Extra tests (creator request 2026-09-21): an integration test that runs in the `windows` job: `rtok hook PreToolUse` and `rtok hook PostToolUse` on garbage stdin exit 0 with `{}` — the fail-open rule asserted on the platform that broke it.
+
+Check result (2026-09-21): ci run 35573995011 (before) — 117 failed, 104 of them `overflowed its stack` / `-1073741571`. ci run 35576438155 (after, same tree plus `build.rs` and `.gitattributes`) — 4 failed, 0 occurrences of either string in the `windows` job log. Local `rustfmt --check build.rs` and `cargo clippy -p rtok --bins -- -D warnings` clean; the branch is a no-op off Windows. The shipped release build was not tested before or after — the reserve applies to it as well.
+
+### T92.1. The shared pi extension runs correctly under oh my pi
+
+Part of T92 (`rtok agents install omp`). Verified 2026-09-21 on omp 18.1.14, in a scratch `PI_CODING_AGENT_DIR` (nothing written to `~/.omp`): a symlinked directory whose `package.json` declares only legacy `pi.extensions` is discovered and its factory runs; the real `plugins/pi/extensions/rtok.ts`, loaded through a recording wrapper, subscribes to `tool_call`, `tool_result`, `context`, `session_before_compact`, `session_compact`, `session_start` without error — each has an `on()` overload in omp's `ExtensionAPI`. Two gaps found in omp's source:
+
+1. omp applies a revised tool input only when a `tool_call` handler **returns** `{ input }` (`src/session/agent-session.ts` `#beforeToolCall`, `src/extensibility/extensions/wrapper.ts`); upstream pi documents mutating `event.input` in place. The rewrite reached omp only through an undocumented alias of the live args object.
+2. `registerPiTools` read `setup.pi.tools` with no idea of the host, so a machine with pi (`tools = true`) and omp would get every rtok tool twice under omp — `registerTool` plus omp's native MCP — against D21.
+
+Do (2026-09-21): `plugins/pi/extensions/rtok.ts` — the bash rewrite still mutates `event.input` (pi) and now also returns `{ input: event.input }` (omp; pi ignores the field); `registerPiTools` returns early when `pi.pi` is an object — omp injects its SDK there (`getAgentDir`, `VERSION`), pi's `ExtensionAPI` has no such member. `plugins/pi/tests/rtok.test.ts` — `load()` takes extra API members; new cases: the rewrite is returned as `input`, and with `pi.pi` present no tool registers even when `setup.pi.tools` is true; the three guard-allow cases now assert the returned rewrite instead of `undefined`.
+
+Check: `pi_plugin` green (it runs the Node test files).
+
+Check result (2026-09-21): `rtok.test.ts` 23/23 and `load.test.ts` pass under `node --test`; `cargo nextest run --test pi_plugin` 5 passed; `cargo fmt --check` exit 0. Full workspace run: 1081 passed, 5 failed — all five (`agents::kilo::tests::*`, `readme_tables_match_support`, `agents_doc`, `agents_install setup_twice…`, `cli_trycmd`) come from another session's uncommitted `kilo` host (`src/agents/kilo/` untracked, `"kilo"` added to `HOSTS`), none touch `plugins/pi`. Not verified: a real model turn whose bash call runs through `rtok run` under omp — the only model key here has no credit (`credit_balance_exhausted`).
+
+### T90. Antigravity plugin tree (`plugins/antigravity/`)
+
+Creator request 2026-09-21: a host plugin for Google Antigravity CLI + desktop, like Claude's and Cursor's. Antigravity's plugin format is a directory: manifest `plugin.json` (only `name` is required, `^[a-zA-Z0-9-_]+$`), optional `mcp_config.json`, `hooks.json`, `skills/`, `agents/`, `rules/`. Global plugins live in `~/.gemini/config/plugins/` and are read by all three surfaces — Antigravity CLI (`agy`), Antigravity 2.0 and Antigravity IDE — so one tree is D21's "plugin and MCP as one unit" for CLI and desktop. Evidence: https://antigravity.google/docs/plugins/, https://antigravity.google/docs/mcp/ (fetched 2026-09-21).
+
+Creator decisions 2026-09-21: the plugin is the only install path (no direct edit of `~/.gemini/config/mcp_config.json`), and it ships **no hooks** — per https://antigravity.google/docs/hooks/ `PreToolUse` answers only `decision` (`allow` / `deny` / `ask` / …) with a `reason` and cannot rewrite tool input, and `PostToolUse` answers `{}` and cannot add context, so neither the `rtok run` rewrite nor a context note is expressible. The bash path is the hub skill plus the MCP tools. A `deny`-with-reason redirect was left out (it costs a model turn per command and has no `Measurement` row).
+
+Do (2026-09-21): `plugins/antigravity/plugin.json` (`name: "rtok"`, description), `plugins/antigravity/mcp_config.json` (`mcpServers.rtok` → `{command: "rtok", args: ["mcp"]}` directly — I-37: launcher scripts never run, the ketch hint lives in the README), `plugins/antigravity/README.md` (install by hand with `agy plugin install <path>` or by placing the folder at `~/.gemini/config/plugins/rtok`, files, why there are no hooks, `## Docs` with five links — plugins, MCP, hooks, skills, CLI install — each fetched on 2026-09-21). No `hooks.json` and no copy of the skill: T91 installs the hub skill. New `tests/antigravity_plugin.rs` (3 tests): the manifest name is `rtok` and matches the documented pattern, `mcp_config.json` is exactly the one `rtok` server, and the tree holds no `hooks.json`.
+
+Check: `host_docs` and the new manifest test green; `just check`.
+
+Check result (2026-09-21): `--test antigravity_plugin` 3 passed, `--test host_docs` 2 passed. The `just check` steps, run one by one: `fmt-check` exit 0, `lint` green, `cargo nextest run --workspace --no-fail-fast` 1083 passed / 4 skipped, `build-min` and `dup` green. An earlier `just check` in the same shared checkout stopped at `fmt-check` on another session's in-progress `src/hooks/types.rs` and once failed `cli_trycmd` while that session was re-blessing `tests/trycmd/`; neither repeated once those edits settled, and nothing under `src/` or `tests/trycmd/` names `antigravity`. Not verified live: `agy` and the Antigravity desktop apps are not installed on this machine, so the plugin has not been loaded by a real host — T91 carries that check.
+
 ### T80. `demon status` names the proxy endpoint (bind:port)
 
 Creator 2026-09-21. `rtok demon status` said whether a service was running but never *where*: the proxy row carried no host/port, so answering "is the proxy up and on what address?" meant `rtok proxy --dry-run` or reading config by hand.
@@ -4110,6 +4190,37 @@ Status: done 2026-09-21
 Check result: e2e 10/10 standalone after the fix (3 failures on 2026-09-19–20 before); full gate green.
 Model: ZCode / GLM-5.3 (race fix + close-out; feature skeleton by Cursor / grok 4.6)
 
+**T84 Auto-revert opens a PR that brings the reverted work back** · `.github/workflows/ci.yml`
+Do: `revert-on-failure` used to push the revert to `main` and stop, leaving the reverted work only in history. After the revert lands (step `id: revert`, `reverted=true` written only after the push — every skip path leaves it unset) a second step pushes `revert-<original branch>` — the head branch of the merged PR the push came from (`gh api repos/{repo}/commits/{sha}/pulls`, merged only), else `revert-<short sha>` for a direct push to `main`, suffixed with the short sha if the branch exists — holding one commit that reverts the revert with the original author, and opens a draft PR back to `main`. Draft because `check` skips drafts and the tree is known-red; a PR opened with `GITHUB_TOKEN` starts no workflow, so the first CI run is the fix-up push or "ready for review". Job permissions gain `pull-requests: write`. Open for the creator: the repo setting "Allow GitHub Actions to create and approve pull requests" is off (`gh api repos/listepo/rtok/actions/permissions/workflow`, 2026-09-21); until it is on, `gh pr create` fails after the revert has already landed.
+Check: `actionlint` clean; git commands of both steps replayed in a scratch repo; `just check`.
+Complexity: 2/5 — one workflow step, no product code.
+Status: done 2026-09-21
+Check result: `actionlint` 1.7.12 + `shellcheck` 0.10.0 clean; scratch replay (single commit, multi-commit push, merge commit): `main` equals the pre-push tree, the branch equals the failed push, 1 commit ahead, author preserved; `just check` exit 0. The `gh` calls are not exercised until a real red push.
+Model: Claude Code / claude-fable-5-1
+
+**T85 Kimi Code plugin tree (`plugins/kimi/`)** · `plugins/kimi/{kimi.plugin.json,README.md}` (new), `src/agents/kimi/mod.rs`
+Do: creator request 2026-09-21 — a host plugin for Kimi Code CLI + Desktop, like Cursor's. Kimi's plugin format is one manifest at the plugin root, `kimi.plugin.json`, that carries `hooks` (the `[[hooks]]` shape: `event` / `matcher` / `command` / `timeout`) and `mcpServers` (`{command, args}`) together — D21's "plugin and MCP as one unit" by construction. The manifest holds the nine Claude `ENTRIES` as `rtok hook <event>` with `timeout: 5` and `mcpServers.rtok` → `rtok mcp` directly: one command works on macOS and Windows, and I-37 records that Cursor's `scripts/mcp.*` launchers never run, so none are copied. A missing `rtok` fails open (only exit 2 blocks); the ketch hint is in the README. Desktop manages the same plugins (Settings → Plugins; its docs link the CLI plugin page and say Desktop and CLI share plugin-related settings; on this machine `Kimi Code.app` keeps its `kimi` binary and server under `~/.kimi-code/`). Kimi copies a plugin into `$KIMI_CODE_HOME/plugins/managed/<id>/` and runs the copy, so `PluginLink` does not apply; install is `/plugins install <path>` inside Kimi, and the installer offer is T86. `plugins/` already ships whole in the release archive (`Cargo.toml` `include`). README states two limits: plugin hooks run with cwd = plugin root (documented by Kimi), so the `.rtok.toml` / `.env` project layer — found from the process directory — does not apply, while the project itself still comes from stdin `cwd`; and the cwd Kimi gives a plugin's stdio MCP server is undocumented.
+Check: `agents::kimi::tests::plugin_manifest_matches_the_installer` — manifest hooks equal `ENTRIES` with `Config::default().setup.hook_timeout_s`, every command passes `is_ours`, `mcpServers` is exactly `rtok`; `host_docs`; `just check`.
+Complexity: 2/5 — two data files and one unit test; no product code.
+Status: done 2026-09-21
+Check result: the new test, `host_docs` (2) and `declared_host_plugins_have_distinct_sources` pass; `cargo nextest run --workspace --no-fail-fast` 1079 passed, 4 skipped (a first fail-fast run lost `demon::status_asks_the_kernel_rather_than_believing_the_state_file` once, green on the rerun, untouched by this change); lint, `build-min`, `dup` exit 0; `rustfmt --check` clean on the touched file — workspace `fmt-check` was red only on another session's uncommitted `src/hooks/types.rs`. Not verified on a live Kimi install (the `kimi` binary is outside this agent's shell allowlist and `/plugins install` is TUI-only): that the plugin loads, and the MCP server's working directory — T86 starts with that check.
+Model: Claude Code / claude-fable-5-1
+
+**T98 `rtok hook` reads Grok Build's hook envelope** · `src/hooks/types.rs`, `src/hooks/mod.rs`
+Do: creator request 2026-09-21 — a host plugin for Grok Build (xAI's `grok` CLI), like Claude's and Cursor's; this is its precondition. Grok answers hooks in Claude's shape (`hookSpecificOutput.updatedInput` / `additionalContext`, `permissionDecision`; only exit 2 or an explicit `deny` blocks), but its stdin is camelCase: `sessionId`, `toolName` with Grok's own names (`run_terminal_command`, `read_file`), `toolInput`, `toolResult`, `toolUseId`, `permissionMode`, `workspaceRoot`; only `hook_event_name` keeps Claude's key. Before this every rtok hook under Grok parsed `tool_name = None` and did nothing — including the `~/.claude/settings.json` / `~/.cursor/hooks.json` hooks Grok imports by default. `HookInput::adapt_grok` lifts those keys, maps only `run_terminal_command` → `Bash` and copies a Bash `output_for_prompt` to `stdout`. `read_file` keeps its name: Grok blocks a call whose `updatedInput` fails the tool schema, and rtok's Read rewrite is unverified against `read_file` (T100). Dispatch detects Grok from the runner's reserved `GROK_HOOK_EVENT` (or `--host grok`) ahead of `--host cursor` / `copilot`, because an imported hook still receives Grok's envelope; output passes through. Evidence: Grok's bundled `~/.grok/docs/user-guide/10-hooks.md` (= https://docs.x.ai/build/features/hooks). No new dependency.
+Check: `hooks::types::tests::grok_lifts_camel_case_and_maps_only_the_terminal` (documented Pre/PostToolUse payloads, `read_file` untouched, unknown keys kept); `hooks::tests::grok_pre_tool_use_rewrites_the_terminal_command` (a Grok `git status` comes back with `hookSpecificOutput.updatedInput.command` rewritten); `just check`.
+Complexity: 2/5 — one adapter beside `adapt_copilot` / `adapt_devin`, one dispatch arm.
+Status: done 2026-09-21
+Check result: both tests pass; `just check` exit 0 — 1090 passed, 4 skipped. Not verified on a live Grok session (a headless run bills the creator's xAI account).
+Model: Claude Code / claude-opus-5
+
+**T99 Grok Build plugin tree (`plugins/grok/`)** · `plugins/grok/{.grok-plugin/plugin.json,hooks/hooks.json,.mcp.json,README.md}` (new), `tests/grok_plugin.rs` (new)
+Do: after T98. Grok plugins are Claude-compatible directories: optional `.grok-plugin/plugin.json`, `hooks/hooks.json` in Claude's nested shape, `.mcp.json`. Hooks: `rtok hook <event> --host grok` with `timeout: 5` (Grok's PostToolUse default is 600 s) on PreToolUse (Bash), PostToolUse (no matcher — Grok's matcher is a regex, so Claude's `*` is not used), UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd = Claude `ENTRIES` minus Read and Skill. `.mcp.json` → `rtok mcp` (D21: one unit). Install `grok plugin install <path> --trust` or `~/.grok/plugins/rtok/` + `[plugins].enabled`. README states the double-fire: Grok imports rtok's Claude hooks and `~/.claude.json` MCP by default, so keep either the plugin (with `[compat.claude] hooks = false`, `mcps = false`) or the Claude install; plus the limits (no Read/Skill, Grok drops UserPromptSubmit and SessionStart context, live load unverified) and `## Docs`.
+Check: `tests/grok_plugin.rs` — manifest name `rtok`, `.mcp.json` exactly `rtok`, hooks exactly the filtered set; `host_docs`; `just check`.
+Complexity: 2/5 — data files and one integration test; no product code.
+Status: done 2026-09-21
+Check result: `grok_plugin` (3) and `host_docs` pass inside `just check` exit 0 — 1090 passed, 4 skipped. The expected hook list is written out in the test because `agents::claude::ENTRIES` is `pub(super)`; T100's `src/agents/grok` moves the check next to `ENTRIES`. Not verified on a live Grok session.
+Model: Claude Code / claude-opus-5
 **T77 ZCode plugin offered on install (--yes), singleton with the config surfaces** · `src/agents/zcode/{mod.rs,README.md}`, `plugins/zcode/`, `tests/agents_install.rs`, `tests/trycmd/{doctor,report-md}.toml`, `docs/agents.md`
 Do: `rtok agents install zcode --yes` links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` and lists it in `plugins.dirs` in `~/.zcode/cli/config.json` — read from the installed app (v0.2.0, `glm/zcode.cjs`): every `plugins.dirs` entry is an inline plugin root, enabled by default, marketplace id `inline`; `remove` unlinks and drops the entry. The plugin is hooks and MCP as one unit (D21): `.zcode-plugin/plugin.json` + auto-discovered `hooks/hooks.json` (the five documented entries, `type: "process"` via `${ZCODE_PLUGIN_ROOT}/scripts/hook.sh`) + `.mcp.json` (`scripts/mcp.sh`); the launchers resolve rtok from PATH or the ketch store, fail the hook open and the MCP loudly with the ketch hint. While the plugin is linked it is the only call path: setup strips its own `hooks.events` entries and `mcp.servers.rtok` instead of re-adding them; a declined offer adds no `plugins.dirs` entry and a stale one is dropped.
 Check: unit `dry_run_offer_names_plugin_and_local`, `yes_links_plugin_and_lists_dirs`, `linked_plugin_is_the_only_call_path`, `declined_offer_adds_no_dirs_entry_and_drops_a_stale_one`, `remove_unlinks_plugin_and_drops_dirs_entry`; `agents_install` / `agent_remove` with `--yes`; `host_docs`, blessed `agents_doc`; `just check`.

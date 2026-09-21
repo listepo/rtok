@@ -8,6 +8,11 @@
 // Every shortened payload carries an `expand <id>` trailer (D4). Missing `rtok`
 // fails open and names the ketch install (D21).
 //
+// oh my pi (`omp`, T92) loads this same extension through the legacy
+// `pi.extensions` manifest key. It is told apart by `pi.pi` (omp injects its
+// SDK there; pi's API has no such member). omp has native MCP, so the tools
+// come from `rtok mcp` there and `registerTool` stays off (D21).
+//
 // Optional proxy: uncomment the `registerProvider` block to route pi's
 // provider through `rtok proxy` (T11.5 pattern, `http://127.0.0.1:8790/v1`).
 
@@ -100,7 +105,9 @@ export default function (pi) {
     if (typeof command !== "string" || command.startsWith("rtok run -- ")) return;
     if (g.missing) return;
     const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
+    // pi documents mutating `event.input`; omp documents returning `{ input }`.
     event.input.command = `rtok run -- ${quoted}`;
+    return { input: event.input };
   });
 
   // Bash results: `rtok filter` compresses oversized output. File/search
@@ -167,10 +174,7 @@ export default function (pi) {
       );
       const text = additionalContext(c.stdout);
       if (text) {
-        messages = [
-          ...messages,
-          { role: "user", content: [{ type: "text", text }] },
-        ];
+        messages = [...messages, { role: "user", content: [{ type: "text", text }] }];
       }
     }
     if (messages === event.messages) return;
@@ -219,49 +223,87 @@ function claudeTool(name) {
   return String(name ?? "");
 }
 
-
 const PI_TOOLS = [
   {
     name: "read",
     label: "Read",
     description: "Read a file; mode full|lines|map|signatures; range a-b for full|lines.",
-    parameters: { type: "object", properties: { path: { type: "string" }, mode: { type: "string" }, range: { type: "string" } }, required: ["path"] },
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, mode: { type: "string" }, range: { type: "string" } },
+      required: ["path"],
+    },
   },
   {
     name: "search",
     label: "Search",
     description: "Regex search files; path:line: snippet, max hits.",
-    parameters: { type: "object", properties: { pattern: { type: "string" }, path: { type: "string" }, max: { type: "integer" } }, required: ["pattern"] },
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: { type: "string" },
+        path: { type: "string" },
+        max: { type: "integer" },
+      },
+      required: ["pattern"],
+    },
   },
   {
     name: "tree",
     label: "Tree",
     description: "Compact directory listing with sizes; depth cap.",
-    parameters: { type: "object", properties: { path: { type: "string" }, depth: { type: "integer" } } },
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, depth: { type: "integer" } },
+    },
   },
   {
     name: "symbol",
     label: "Symbol",
-    description: "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
-    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" }, kind: { type: "string" } }, required: ["name"] },
+    description:
+      "Definitions of a symbol with their source: path:line kind, then the body. Optional path substring and kind narrow the match.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string" }, path: { type: "string" }, kind: { type: "string" } },
+      required: ["name"],
+    },
   },
   {
     name: "callers",
     label: "Callers",
-    description: "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
-    parameters: { type: "object", properties: { name: { type: "string" }, path: { type: "string" } }, required: ["name"] },
+    description:
+      "Which definitions reference a symbol: path, calling definition, count. Optional path substring keeps one subtree.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string" }, path: { type: "string" } },
+      required: ["name"],
+    },
   },
   {
     name: "expand",
     label: "Expand",
-    description: "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
-    parameters: { type: "object", properties: { id: { type: "string" }, lines: { type: "string" }, grep: { type: "string" }, context: { type: "integer" } }, required: ["id"] },
+    description:
+      "Return archived payload by id; optional lines a-b, regex grep (hits as N:line), context N.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        lines: { type: "string" },
+        grep: { type: "string" },
+        context: { type: "integer" },
+      },
+      required: ["id"],
+    },
   },
   {
     name: "mem_search",
     label: "Mem search",
     description: "Search notes by FTS5; ids, titles, snippets.",
-    parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+    parameters: {
+      type: "object",
+      properties: { query: { type: "string" }, limit: { type: "integer" } },
+      required: ["query"],
+    },
   },
   {
     name: "mem_get",
@@ -273,6 +315,8 @@ const PI_TOOLS = [
 
 async function registerPiTools(pi) {
   if (typeof pi.registerTool !== "function") return;
+  // omp: native MCP already serves these tools — a second path would break D21.
+  if (typeof pi.pi === "object" && pi.pi !== null) return;
   const r = await rtok(["config", "get", "setup.pi.tools"]);
   if (r.missing || r.stdout.trim() !== "true") return;
   for (const t of PI_TOOLS) {

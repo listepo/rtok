@@ -14,7 +14,7 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
-      --host <HOST>    Overlay `[hook] host` (`claude` | `cursor` | `copilot`)
+      --host <HOST>    Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
   -h, --help           Print help
 
 $ rtok mcp --help

@@ -200,6 +200,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.dry_run | false | default |
 | setup.hook_timeout_s | 5 | default |
+| setup.kilo.config_path | ~/.config/kilo/kilo.json | default |
 | setup.kimi.config_path | ~/.kimi-code/config.toml | default |
 | setup.mcp | true | default |
 | setup.modes | [] | default |
@@ -243,7 +244,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.host | 127.0.0.1 | default |
 | web.port | 3333 | default |
 
-197 keys.
+198 keys.
 
 ## Doctor
 
@@ -293,6 +294,16 @@ agents
     hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed
     proxy   not installed
+    plugin  not installed (--yes)
+  kilo (cli)
+    hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
+    mcp     not installed
+    proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
+    plugin  not installed (--yes)
+  kilo (desktop)
+    hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
+    mcp     not installed
+    proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
     plugin  not installed (--yes)
   pi (cli)
     hooks   not supported: pi has no hook events; the extension owns the bash call path

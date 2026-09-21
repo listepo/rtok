@@ -30,9 +30,7 @@ type Spawn = { missing: boolean; failed: boolean; stdout: string };
 /** Fail open: on spawn/error, return the original stdin. A missing `rtok` says so once (D21). */
 function spawnRtok(args: string[], stdin = ""): Spawn {
   const r = spawnSync("rtok", args, { input: stdin, encoding: "utf8" });
-  const missing = Boolean(
-    r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT",
-  );
+  const missing = Boolean(r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT");
   if (missing && !hinted) {
     hinted = true;
     console.error(KETCH_HINT);
@@ -95,20 +93,18 @@ export function guardCheck(
   args: unknown,
   session: string,
 ): { allow: boolean; reason?: string } {
-  const r = spawnRtok(
-    [
-      "guard",
-      "check",
-      "--tool",
-      tool,
-      "--json",
-      JSON.stringify(claudeArgs(args)),
-      "--session",
-      session,
-      "--host",
-      "opencode",
-    ],
-  );
+  const r = spawnRtok([
+    "guard",
+    "check",
+    "--tool",
+    tool,
+    "--json",
+    JSON.stringify(claudeArgs(args)),
+    "--session",
+    session,
+    "--host",
+    "opencode",
+  ]);
   if (r.failed) return { allow: true };
   try {
     const v = JSON.parse(r.stdout);
@@ -161,12 +157,7 @@ export function createPlugin(
     },
     "tool.execute.after": async (input: AfterInput, output: AfterOutput) => {
       if (run === filterStdin) {
-        remember(
-          String(input.tool),
-          input.args,
-          String(input.sessionID ?? ""),
-          output.output,
-        );
+        remember(String(input.tool), input.args, String(input.sessionID ?? ""), output.output);
       }
       const tool = String(input.tool).toLowerCase();
       if (tool === "skill") {
@@ -182,10 +173,7 @@ export function createPlugin(
     ) => {
       const sid = String(input?.sessionID ?? "");
       hook("PreCompact", hookPayload("PreCompact", sid, { trigger: "auto" }));
-      const text = hook(
-        "SessionStart",
-        hookPayload("SessionStart", sid, { source: "compact" }),
-      );
+      const text = hook("SessionStart", hookPayload("SessionStart", sid, { source: "compact" }));
       if (text) {
         output.context.push(text);
         restore = sid;

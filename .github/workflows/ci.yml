@@ -1,8 +1,9 @@
 name: ci
 
-# Push to main arms `revert-on-failure` (auto-revert of a bad push). That is intentional:
-# main must stay green. Pull requests against main are the review gate; draft PRs are skipped
-# so half-finished work does not burn runners. `workflow_dispatch` remains for manual runs
+# Push to main arms `revert-on-failure` (auto-revert of a bad push, then a draft PR
+# `revert-<branch>` that brings the work back — T84). That is intentional: main must stay
+# green. Pull requests against main are the review gate; draft PRs are skipped so
+# half-finished work does not burn runners. `workflow_dispatch` remains for manual runs
 # (release branches, one-off checks).
 on:
   push:
@@ -46,20 +47,23 @@ jobs:
       - run: just publish-dry
 
   # T44.4: the agent installers write Windows paths and `%APPDATA%` files; run the suite there.
-  # Advisory: `continue-on-error` keeps its result out of `revert-on-failure` until it is green.
-  # Temporarily disabled: Windows nextest hang burns runners; restore when suite is stable.
-  # windows:
-  #   runs-on: windows-latest
-  #   continue-on-error: true
-  #   # Cap advisory Windows suite: a hung test must not occupy a runner for hours.
-  #   timeout-minutes: 30
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - uses: jdx/mise-action@v4
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         save-if: ${{ github.ref == 'refs/heads/main' }}
-  #     - run: mise exec -- cargo nextest run --workspace --no-fail-fast
+  # T82: the tests known to fail on Windows are skipped by name — the `cfg(windows)`
+  # `default-filter` in .config/nextest.toml — so this job is green and a new failure is a
+  # regression. Advisory until T83 empties that list: `continue-on-error` and no entry in
+  # `revert-on-failure`'s `needs`, so a Windows-only break cannot auto-revert main yet.
+  windows:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: windows-latest
+    continue-on-error: true
+    # A hung test is killed by nextest's `terminate-after`; this caps everything else.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: mise exec -- cargo nextest run --workspace --no-fail-fast
 
   revert-on-failure:
     name: revert-on-failure
@@ -72,11 +76,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Revert commits from this push
+        id: revert
         env:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
@@ -110,3 +116,30 @@ jobs:
             git commit -m "ci: auto-revert $short — main CI failed"
           fi
           git push origin HEAD:main
+          echo "reverted=true" >> "$GITHUB_OUTPUT"
+      # T84: main is green again; the work comes back as a draft PR to fix and re-land. Draft
+      # because `check` skips drafts and this tree is known-red. Needs the repo setting
+      # "Allow GitHub Actions to create and approve pull requests".
+      - name: Open a PR that re-applies the reverted work
+        if: steps.revert.outputs.reverted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short=$(git rev-parse --short "$AFTER")
+          # Merged PR -> its head branch; direct push to main -> the short sha.
+          name=$(gh api "repos/$GITHUB_REPOSITORY/commits/$AFTER/pulls" \
+            --jq '[.[] | select(.merged_at != null)][0].head.ref // empty' || true)
+          branch="revert-${name:-$short}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            branch="$branch-$short"
+          fi
+          git checkout -b "$branch"
+          git revert --no-commit HEAD
+          git commit --author="$(git log -1 --format='%an <%ae>' "$AFTER")" \
+            -m "Reapply $short — reverted after main CI failed"
+          git push origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Reapply $short — reverted after main CI failed" \
+            --body "CI failed on main at $AFTER ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), so the push was auto-reverted. This branch re-applies it on top of main: push the fix here, mark the PR ready for review, merge when CI is green."

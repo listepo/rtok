@@ -356,6 +356,7 @@ section! {
         cursor: SetupCursor = SetupCursor::default(),
         codex: SetupCodex = SetupCodex::default(),
         opencode: SetupOpenCode = SetupOpenCode::default(),
+        kilo: SetupKilo = SetupKilo::default(),
         pi: SetupPi = SetupPi::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
@@ -385,6 +386,11 @@ section! {
 section! {
     /// `[setup.opencode]`
     SetupOpenCode { config_path: PathBuf = p("~/.config/opencode/opencode.json") }
+}
+
+section! {
+    /// `[setup.kilo]` — `kilo.json`, merged by Kilo with a user's `kilo.jsonc` (T97).
+    SetupKilo { config_path: PathBuf = p("~/.config/kilo/kilo.json") }
 }
 
 section! {
@@ -885,6 +891,7 @@ impl Config {
             &mut self.setup.cursor.hooks_path,
             &mut self.setup.codex.config_path,
             &mut self.setup.opencode.config_path,
+            &mut self.setup.kilo.config_path,
             &mut self.setup.pi.extensions_path,
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
@@ -1105,6 +1112,7 @@ mod tests {
             &cfg.setup.cursor.hooks_path,
             &cfg.setup.codex.config_path,
             &cfg.setup.opencode.config_path,
+            &cfg.setup.kilo.config_path,
             &cfg.setup.pi.extensions_path,
             &cfg.setup.zcode.config_path,
             &cfg.setup.kimi.config_path,
