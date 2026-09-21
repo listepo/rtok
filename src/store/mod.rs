@@ -3202,4 +3202,76 @@ mod tests {
         assert_eq!(store.call_io_archives(no_dir).unwrap(), (None, None));
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    // T104: `MIGRATIONS` and the `table!` macros are both kept by hand.
+
+    /// Every `migrations/*.sql` is in `MIGRATIONS`, in filename order, and nothing else is.
+    #[test]
+    fn migrations_list_matches_the_directory() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut files: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".sql"))
+            .collect();
+        files.sort();
+        let listed: Vec<&str> = MIGRATIONS.iter().map(|(n, _)| *n).collect();
+        assert_eq!(listed, files, "MIGRATIONS drifted from migrations/");
+    }
+
+    /// `(table, columns)` for every `diesel::table!` in `schema.rs`, with `#[sql_name]`
+    /// resolved — the SQL column name, not the Rust one.
+    fn schema_tables() -> Vec<(String, std::collections::BTreeSet<String>)> {
+        let src = include_str!("schema.rs");
+        let mut out = Vec::new();
+        let mut lines = src.lines().map(str::trim);
+        while let Some(line) = lines.next() {
+            if line != "diesel::table! {" {
+                continue;
+            }
+            let head = lines.next().unwrap();
+            let name = head.split_whitespace().next().unwrap().to_string();
+            let mut cols = std::collections::BTreeSet::new();
+            let mut rename = None;
+            for l in lines.by_ref() {
+                if l == "}" {
+                    break;
+                }
+                if let Some(n) = l
+                    .strip_prefix("#[sql_name = \"")
+                    .and_then(|r| r.strip_suffix("\"]"))
+                {
+                    rename = Some(n.to_string());
+                } else if let Some((col, _)) = l.split_once(" -> ") {
+                    cols.insert(rename.take().unwrap_or_else(|| col.to_string()));
+                }
+            }
+            out.push((name, cols));
+        }
+        out
+    }
+
+    /// After every migration each `table!` column set equals `PRAGMA table_info`.
+    #[test]
+    fn schema_rs_matches_the_migrated_tables() {
+        #[derive(QueryableByName)]
+        struct Col {
+            #[diesel(sql_type = Text)]
+            name: String,
+        }
+        let tables = schema_tables();
+        assert!(tables.len() >= 16, "parsed {} table! macros", tables.len());
+        let store = Store::open_in_memory().unwrap();
+        let mut conn = store.lock().unwrap();
+        for (table, cols) in tables {
+            let live: std::collections::BTreeSet<String> =
+                sql_query(format!("SELECT name FROM pragma_table_info('{table}')"))
+                    .load::<Col>(&mut *conn)
+                    .unwrap()
+                    .into_iter()
+                    .map(|c| c.name)
+                    .collect();
+            assert_eq!(cols, live, "schema.rs `{table}` vs the migrated table");
+        }
+    }
 }

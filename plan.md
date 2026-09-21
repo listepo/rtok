@@ -20,7 +20,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T100 | todo | P1 | 3 | 0% | |
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T104 | todo | P2 | 2 | 0% | |
 | T105 | todo | P2 | 2 | 0% | |
 | T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
@@ -175,12 +174,6 @@ Check: `just test` green; one case per host × event × stdin in the nextest lis
 Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
-
-### T104. Migration and `schema.rs` drift guard
-
-`MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
-
-Check: deleting a line from `MIGRATIONS` or a column from `schema.rs` fails the test; `just test` green.
 
 ### T105. Report renderers: edge-case snapshots
 
