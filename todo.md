@@ -1,4 +1,5 @@
 - T79. `agents install zed` aborts on a real settings.json (JSONC)
+- T83. Fix the Windows test failures and empty the T82 exclusion list
 - T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
 - T91. `rtok agents install antigravity` — CLI and desktop, the plugin is the only unit
 - T92. `rtok agents install omp` — oh my pi: the shared pi extension plus native MCP

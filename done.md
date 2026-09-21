@@ -1,5 +1,21 @@
 # rtok — completed tasks
 
+### T82. Windows back in CI: green job with a named exclusion list
+
+The advisory `windows` job in `.github/workflows/ci.yml` has been commented out since `224b215` (2026-09-17) because `cargo nextest` hung for hours. The hang itself is already handled: with `slow-timeout = { period = "60s", terminate-after = 3 }` (`552ad01`) the last Windows run (35244082778) finished in ~10 min — 833 run, 808 passed, 22 failed, 3 timed out. A job that is red on every push hides regressions, so the job comes back green: the known Windows failures are skipped by name and everything else must pass.
+
+Plan:
+1. `.config/nextest.toml`: one `[[profile.default.overrides]]` with `platform = 'cfg(windows)'` and a `default-filter` that excludes exactly the 25 tests that failed in run 35244082778, grouped by binary with the run id in the comment. One list, one place; `just test` on a Windows box skips the same set. Linux/macOS selection is unchanged (verify: `cargo nextest list` count is identical before and after).
+2. `.github/workflows/ci.yml`: restore the `windows` job (`windows-latest`, `timeout-minutes: 30`, same `cargo nextest run --workspace` command). It stays `continue-on-error` and outside `revert-on-failure`'s `needs` until T83 empties the list — a Windows-only break must not auto-revert main yet.
+3. `.gitattributes`: `* text=auto eol=lf` (the one CRLF blob, the webui font licence, is `-text`) — Windows runners check out with `core.autocrlf=true` and `tests/skill.rs` compares bytes.
+4. Run the job on a scratch branch via `workflow_dispatch`; add tests that fail on current main (the suite grew 833 → 1 072 since the last Windows run) to the list until the job is green.
+
+Check: a `ci` run on the final commit shows the `windows` job green with the skipped count equal to the list length; `just check` green locally; `cargo nextest list` on macOS selects the same tests as before the change.
+
+Extra tests (creator request 2026-09-21): a test that every test named in the `cfg(windows)` `default-filter` still exists in `cargo nextest list --workspace` (a renamed or deleted test must not leave a stale exclusion that silently skips nothing); on macOS/Linux the filter selects zero tests out.
+
+Check result (2026-09-21): ci run 35578041497 (`workflow_dispatch` on scratch branch `t82-windows-ci`, tree = origin/main + this change + T93) — `windows` success in 8 min, `1042 tests run: 1042 passed, 33 skipped` (29 by the platform filter + 4 `#[ignore]`); `check (ubuntu-latest)` and `check (macos-latest)` success. The list grew 25 → 29 on the way: run 35573995011 exposed T93 (104 stack overflows, fixed, not excluded) and 2 CRLF failures (fixed by `.gitattributes`, not excluded); run 35576438155 left 4 real failures, now listed and handed to T83. macOS `cargo nextest list` before/after the override: identical (1078 = 1078); with the platform flipped to `cfg(unix)` the filter removes exactly the listed tests. `just check` green locally.
+
 ### T93. `rtok` overflows the main-thread stack on Windows
 
 Found by T82's first run on current main (ci run 35573995011, `windows-latest`, debug build): 104 of 117 new failures are the spawned `rtok.exe` dying with `thread 'main' has overflowed its stack`, exit `0xC00000FD` (-1073741571) — on `report`, `stats`, `logs`, `config init`, `plugins`, `info`, `mcp`, `agents install`, `hook PreToolUse` and `hook PostToolUse`. The hook crash breaks "fail open" on that platform. Cause: Windows reserves 1 MiB for the main thread where Linux and macOS give 8 MiB, and `cli::run()` is one function whose ~85-arm `match` keeps every arm's locals in a single debug frame. The shipped `x86_64-pc-windows-msvc` release build was not tested; its frames are smaller, but nothing guarantees the margin.
