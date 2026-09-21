@@ -25,3 +25,4 @@
 - T125. `rtok stats`: thinking-block share — the gate for I-86
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
 - T127. A dedup pointer reaches a sub-agent that never saw the body
+
