@@ -26,6 +26,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
+| T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
+| T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+| T124 | todo | P3 | 2 | 0% | |
+| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T128 | todo | P1 | 3 | 0% | |
 | T129 | todo | P1 | 3 | 0% | |
 | T130 | todo | P2 | 4 | 0% | |
@@ -225,82 +230,63 @@ New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hoo
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
 
 ### T128. `rtok stats`: sub-agent transcripts and the re-read share
-
 Evidence gate for T130–T132 (`research.md` §17.1). T59.6 measured the `Agent` tool in the parent transcript only; what a sub-agent spends lives in `<session>/subagents/agent-<id>.jsonl` (+ `.meta.json`: `agentType`, `model`) and is attributed to nobody. An ad-hoc scan (2026-09-21) put re-reads at 48 % of sub-agent read bytes; that number is not citable until it is a `rtok stats` row.
-
 Plan: in `src/measure/` attribute `subagents/agent-*.jsonl` to the parent session (no double count as a session of its own); `Report` gains a `subagents` row next to `agents` (T59.6 `AgentRow`): sub-agent count, tool-result bytes vs parent, file-read bytes, read bytes of a path the parent read, of a path an earlier sibling read, usage tokens; split by `agentType` and `model` from the meta file. Reuse the existing JSONL parser and read-tool detection — no second parser. Fixture test: one parent + two sub-agents with overlapping reads.
-
 Check: fixture test asserts the three shares; `rtok stats --since 30d --json` has `subagents`; the dated result replaces the ad-hoc table in `research.md` §17.1; `just check` green.
-
 ### T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
-
 `research.md` §17.3(1). Hooks fired inside a sub-agent carry the parent's `session_id` plus `agent_id`/`agent_type`; `src/hooks/types.rs` drops both, so `guard::pre_tool` denies a sub-agent's first Read of a file the parent read (`duplicate; rtok expand <id>`) — a body that context never saw, one extra round trip, and a `guard` Measurement row claiming a saving. Complements T122 (MCP side, no caller identity); reuse its context key if it lands one — do not add a second.
-
 Plan: parse optional `agent_id`/`agent_type` in `src/hooks/types.rs`; failing test first in `src/plugins/guard/mod.rs` (parent reads P, sub-agent reads P → allowed; sub-agent reads P twice → denied; parent again → denied); scope the guard's read-cache key by `agent_id` at the one place the key is built (`cache_key`), so every caller follows. Hosts without the field behave as today.
-
 Check: the three-case test; no `guard` Measurement row on the allowed path; hook fixture with `agent_id` still exits 0 within the 10 ms budget; `just check` green.
-
 ### T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
-
 `research.md` §17.3(2). Off by default until T131 shows a net saving. At `PreToolUse` on `Agent`/`Task`, return `updatedInput` with the original `prompt` plus a brief built from the parent's ledger: paths the parent read or edited (most recent first, those named in the prompt first), each with its archive id and outline line ranges where the graph index has them, and two fixed lines of instruction (ranged `read`, `expand <id>`, answer with `path:line`). Pointers only — never file bodies. First step: verify on a live hook whether `SubagentStart` `additionalContext` reaches the sub-agent; pick **one** injection path (D21) and record the choice in the card.
-
 Plan: one builder shared with the `handoff` MCP tool (`src/plugins/memory/handoff.rs`) — the tool and the hook are two surfaces of one digest; config `[memory] spawn_brief = false`, `spawn_brief_tokens = 300`; deterministic order and byte-stable output for an unchanged ledger; fail open: any error → no `updatedInput`. The brief is archived and carries its own `expand <id>`.
-
 Check: `assert_cmd` hook test — `Agent` payload in → `updatedInput.prompt` starts with the original prompt, brief ≤ budget, identical bytes on a second run; flag off or empty ledger → passthrough; non-`Agent` tools untouched; ≤ 10 ms; `just check` green.
-
 ### T131. Measure the spawn brief: cost row and on/off re-read share
-
 Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.
-
 Plan: T130's hook records a `Measurement` (`plugin: "memory"`, `kind: "brief"`) with the tokens it added (before = 0, after = brief) so the cost shows as negative saving; `rtok stats` `subagents` row splits the re-read share and sub-agent input tokens by "spawned with a brief" (the brief's archive id in the sub-agent's first user message) vs without.
-
 Check: fixture with one briefed and one plain sub-agent asserts the split; after a dated window with the flag on, `research.md` §17 gets the measured net; default flips to on only if net tokens saved > 0 — otherwise the card closes with the number and T130 stays off.
-
 ### T132. Ship a Haiku scout agent definition with the Claude Code plugin
-
 `research.md` §17.3(4). Make the cheap path the default one: `plugins/claude/agents/rtok-scout.md` with `model: haiku`, `tools` limited to the rtok MCP `read`, `search`, `outline`, `explore`, `expand`, and a short system prompt — ranged reads only, never a whole file over the outline threshold, answer with `path:line` citations and no file dumps. Verify the plugin `agents/` directory format against the current Claude Code docs first and add the link to the `## Docs` list in `plugins/claude/README.md`.
-
 Check: `rtok agents install claude` offers the agent file and removal takes it away (host matrix e2e); `tests/host_docs.rs` and `tests/agents_doc.rs` (`RTOK_BLESS=1`) green; T128's per-`agentType` split is the measurement — record `rtok-scout` vs `Explore`/`general-purpose` read bytes per sub-agent in `research.md` §17 after a dated window.
-
 ### T133. Project identity survives git worktrees
-
 From I-58; its blocker ("parked until a second checkout is the workflow") has cleared: D16 is one branch per task, and on 2026-09-21 this repo had 18 worktrees. `memory::project_name` (`src/plugins/memory/mod.rs`) returns the basename of the first directory with a `.git` entry, so a worktree `rtok-wt-t128` is its own project: notes saved there are orphaned, SessionStart recall and the T71.2 `session:<project>` handoff find nothing, and `memory/sync.rs` exports under the wrong name.
-
 Plan: resolve identity without spawning git (hook ≤ 10 ms): `.git` file → `gitdir:` → `commondir` → the main repository; name = normalised `origin` repo name from its `config`, fallback = basename of the main checkout. One function, the existing callers (`mod.rs`, `sync.rs`) unchanged. A standard clone whose directory is named after the repo keeps its notes; record the rename case in the card before writing a migration — do not write one without a measured need.
-
 Check: `Vfs` test — main checkout and a linked worktree resolve to one project; plain directory → `None`; no `origin` → basename of the main checkout; a note saved from the worktree fixture is recalled from the main one; `just check` green.
-
 ### T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
-
 Gate for I-91 (`research.md` §17.2). The Agent SDK hooks page says `updatedToolOutput` "works for any tool"; rtok's standing rule says PostToolUse can only add context. If the CLI honours it, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied — that changes the design of `cmd`, `read` and `guard`, so it is a creator decision, not a silent change. No product code in this task.
-
 Plan: throwaway hook script (scratch, not committed) returning `hookSpecificOutput.updatedToolOutput` for `Read` and `Bash` on the current Claude Code; run one Read and one Bash; check what the model received in the transcript. Repeat for an MCP tool.
-
 Check: a dated row in `research.md` §3 with the Claude Code version, the payload sent and what the transcript shows, per tool kind. Honoured → the `AGENTS.md` rule line and I-91 are put to the creator with the row; not honoured → I-91 closes with the date.
-
 ### T135. `doctor::read_share` stops re-parsing every transcript
-
 From I-87 (T74 investigation, 2026-09-21): `doctor::read_share` parses the whole `stats.transcripts_dir` on the snapshot path, ~36 s CPU per cache miss on this machine, once per 30 s TTL. T113 moved the model off the UI thread, so the freeze is gone but the burn is not.
-
 Plan (needs a decision first): D19 keeps observability a projection of ledgers, and this parser is a second recorder. Either (a) per-file aggregates cached by `(path, size, mtime)` so only changed JSONL is parsed, or (b) `read_share` reads what `rtok stats` ingest already persisted and `doctor` parses nothing. Ask the creator which; then one implementation, shared by `doctor`, `tui`, `report`.
-
 Check: bench or test on a fixture directory — second snapshot with no file change parses 0 bytes; `rtok doctor` wall time on this machine before/after recorded in the card; `just check` green.
-
 ### T136. `rtok stats`: whole-file native Reads that `outline` would have answered
-
 Gate for I-82 (deny a native Read of an indexed source file). §2: Read is 15 % of tool-result tokens and the eight largest results are all whole-file Reads of 38–68 K chars. I-82 is parked on exactly this missing number.
-
 Plan: in `src/measure/stats.rs`, a `read_whole` row: native `Read` calls with no `offset`/`limit`, on a path whose extension has a tree-sitter grammar in the graph plugin, result ≥ the outline threshold; bytes and share of Read bytes and of all tool-result bytes; how many were followed by an Edit of the same path within the guard window (those needed the body). Reuse the grammar list and read-tool detection — no copies.
-
 Check: fixture test; dated `rtok stats --since 30d` row in `research.md` §2. Reads not followed by an Edit ≥ 5 % of tool-result tokens → I-82 goes to the creator with the number; below → I-82 closes with it.
-
 ### T137. `rtok stats`: image blocks row
-
 Gate for a multimodal token gate (`research.md` §16.3 #9). Screenshots from browser and simulator tools enter the live zone as image blocks; rtok measures bytes of text only, so their share is unknown.
-
 Plan: count `image` content blocks in tool results and user messages per tool; bytes; pixel size from the PNG `IHDR` / JPEG `SOF` header (fixed-offset parse, no new dependency); estimated tokens by the provider's published formula, cited in the code comment and in the row.
-
 Check: fixture with one PNG and one JPEG block; dated row in `research.md` §2. Under 5 % of input tokens → closes with the number; above → a card for downscale-or-OCR goes to the creator.
+### T122. A dedup pointer reaches a context that never saw the body
+Seen 2026-09-21 in a Claude Code session: a Haiku sub-agent read `research.md` and `ideas.md`; the parent's first MCP `read` of the same files (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file. Two defects: (1) `plugin::identical_result` (T65.1) keys on the host session, which sub-agents share with the parent, so the pointer names a body that is not in the caller's context and every such read costs a second `expand` round trip — a loss, recorded as a `dedup` saving; (2) the ranged read was hashed or archived as the whole file, so two different ranges are "identical". The same question holds after a `compact_boundary`: the earlier body is gone from context. Reproduce first with a test, then fix at the responsible layer: hash the bytes actually returned, and return a pointer only when the earlier result was delivered to the same context (the hook payload's agent/transcript id where the surface has one; when the surface cannot tell — MCP — a body under a size threshold is returned as is). Lossless rule unchanged.
+Plan: failing test first in `src/plugins/read/mod.rs` tests (two ranges of one file → distinct results; body archived under one context, read from another → body). Fix in `plugin::identical_result` / `read::mod` hash of the returned bytes; context key from the hook payload where present, size threshold on MCP. `mise exec -- cargo nextest run read:: plugin::`.
+Check: a test where session S archives body B under sub-agent context A, then context P reads B → P gets the body, not a pointer; two different ranges of one file never share an id; `just test` green; no `dedup` Measurement row on the returned-body path.
+### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
+Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
+Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
+### T124. Realized `tools_rewrite` saving as a dated `research.md` row
+6.2 % (T59.5) is the ceiling, not a saving: no dated row shows what `[proxy.tools_rewrite]` removes with the default `max_description_tokens = 60`. Precondition, by the creator: turn it on for this machine's proxy for at least 20 sessions. Then sum the `kind = tools_rewrite` Measurement rows against session input for the same window (`rtok stats` / `rtok gain`, dated command in the row), and write one row into `research.md` §2 next to the T59.5 row; update `docs/comparison.md` only if it cites the number. If the realized share is under the 3 % gate, say so in the row and leave the default off.
+Check: the row cites the command, date, sessions, before/after tokens and the share; no number in prose without it.
+### T125. `rtok stats`: thinking-block share — the gate for I-86
+I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
+Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
+Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
+### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
+`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
+Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
+Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
 
 ## Reference
 

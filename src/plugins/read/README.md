@@ -25,8 +25,11 @@ Five MCP tools instead of seventy-eight, and no per-turn banner.
   diff is below `delta_max_ratio` of the file (default 0.6). Measured 2026-09-18
   (`rtok stats --since 90d`, 959 sessions): 593 such re-reads, **7.3 %** of Read bytes.
 - PreToolUse(Read) advice: native `Read` of a file > 32 K that was not edited in the last
-  5 turns is denied with "use rtok read(mode=map) first". After an Edit of a file already
-  in the read cache, the deny points at `read(mode=diff)` instead. Never for files under 32 K.
+  5 tool calls is denied with "use rtok read; before Edit run native Read(limit=1)". After an
+  Edit of a file already in the read cache, the deny points at `read(mode=diff)` instead.
+  Never for files under 32 K, and never for a native `Read` with `limit` ≤ 5 (T127): the
+  host's `Edit` wants a native `Read` first, an MCP `read` does not count, and one line is
+  enough — so content always comes from `read` and the edit gate costs one line.
 
 Root guard: paths must be under cwd or `allow_paths`.
 

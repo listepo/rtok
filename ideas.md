@@ -40,6 +40,7 @@ Inventory of shipped levers vs further options: [`research.md` §16](research.md
 | I-91 | Agent SDK hooks page: `PostToolUse` `updatedToolOutput` "works for any tool" (`research.md` §17.2) | hooks / `archive` / `compress` | **gate: T134** — If the CLI honours it for command hooks, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied. | Unverified for CLI command hooks; contradicts the standing rule "PostToolUse can only add context" — needs a live hook probe and a creator decision before any design. |
 
 
+
 Inspired by the comparison matrix (`research.md` §4) and stack gaps (`research.md` §5)
 that v0.1 does not schedule.
 
@@ -136,7 +137,6 @@ Scheduled for a higher version, **not rejected**. v0.1 §5 is done; I-21..I-26 d
 | I-24 | serena | `graph` | **promoted P30** — LSP-grade / type-resolved backend behind the same MCP tools. | v0.1 tags index covers `symbol`/`callers`/`outline`; LSP is the precision ceiling. |
 | I-25 | OpenViking L0/L1/L2 | `archive` / `inject` | **promoted P33** — Tiered session context loading. | Needs a model path and an AGPL license call-out; unmeasured vs v0.1 archive. |
 | I-26 | (architecture) | core | **promoted P32** — WASM plugin host for out-of-tree plugins. | D1 v0.1 is in-tree + `from_plugins`. WASM is how third parties ship without linking. D6 still: this repo does not vendor those plugins. |
-| I-30 | LadybugDB / P8c cost | `graph` | **done via P39 (2026-09-12)** — keep SQLite; delete `lbug` / `graph-lbug` / `symbols_lbug.rs`; Grafeo spike abandoned (PR #22). | C++/cmake cost + P8c (2)(3)(5); Grafeo measured worse on warm impact. |
 
 ---
 
@@ -148,7 +148,6 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 
 ## Promoted
 
-| I-01 | P15 T15.1–T15.9 | ratatui `rtok tui` dashboard (D17) | 2026-09-02 |
 | I-27 | P20 T20.1 | `rtok demon` supervises `proxy`/`mcp`/`dashboard` (D22) | 2026-09-09 |
 | I-34 | P19 T19.1–T19.3 | Slint WASM + axum WebSocket `rtok dashboard` (D20) | 2026-09-08 |
 | I-17 (pi only) | T10.6 | pi host plugin: `plugins/pi/` package + `rtok setup pi` | 2026-09-08 |
@@ -178,32 +177,7 @@ Nothing permanently rejected. Scope by version (Open / Later), do not discard.
 | I-32 | T53.3 | Stop linking Security.framework and CoreFoundation into the one binary: they cost 1.3–1.5 ms of dyld time on every hook | 2026-09-17 |
 | I-35 | T48.1 | The linked `~/.pi/agent/extensions/rtok/` has no `index.ts`; pi documents loading `extensions/*.ts` and `extensions/*/in | 2026-09-17 |
 | I-36 | T48.2 | `extensions/rtok.ts` sends the ketch hint with `pi.appendEntry`, which pi documents as "does NOT participate in LLM cont | 2026-09-17 |
-| I-38 | T57.1 | Flag-aware `guard` read-only classes: writer markers (`>`, `-delete`, `sed -i`, `tail -f`, pipe into a writer) take the mutating path; new read-only stems only with transcript counts. | 2026-09-17 |
-| I-41 | T58.1 | `read` delta since last read: unified diff against the archived previous read; full fallback. | 2026-09-17 |
-| I-42 | T58.2 | Compaction hooks: re-inject the SessionStart budget after `PostCompact`, one memory note with live archive ids at `PreCompact`. | 2026-09-17 |
-| I-43 | T58.3 (T58.4 dropped) | `old_string` measured at 3.8 % of tool-input bytes / ≈ 1.3 % of output tokens over 925 sessions; the `patch` tool stays an idea with that number. | 2026-09-17 |
-| I-39 | T59.1 | Per-stem interactive table for `skip_wrap`: `-i` is interactive only for REPL stems, `ffmpeg -i` / `curl -i` / `ssh -i` get wrapped. | 2026-09-17 |
-| I-40 | T59.2 | Canonicalize `cwd` once per `search` / `tree` call instead of per row. | 2026-09-17 |
-| I-30 | T59.3 | Batch the cold `graph` index in one transaction per 200 files; re-run the T8.4 cold bench. | 2026-09-17 |
-| I-44 | T59.4 (done) | Lossless MCP wrapper landed as `rtok mcp -- <server argv>`; lean-ctx measured at ≈ 27 % of tool-result bytes over 30 d, above the 5 % gate. | 2026-09-17 |
-| I-45 | T59.5 | Byte-stable `tools[]` description rewrite in the proxy, off by default; 6.2 % of session input (2026-09-18). | 2026-09-18 |
-| I-46 | T59.6 | `handoff` MCP tool: budgeted digest for sub-agents, behind evidence. | 2026-09-17 |
-| I-47 | T59.7 | `doctor` names host-native features that duplicate a rtok surface. | 2026-09-17 |
-| I-48 | T59.8 | Token-sink ranking rule in `report`. | 2026-09-17 |
-| I-49 | T61.1 | `stats` counts injected skill bodies (`isMeta` + `sourceToolUseID`). | 2026-09-17 |
-| I-50 | T61.3 | `doctor` skill audit: listing cost, oversized bodies, never-invoked skills. | 2026-09-17 |
-| I-51 | T61.2 | Archive skill bodies outside the live zone, gated on T61.1. | 2026-09-17 |
-| I-53 | T67.1 | `expand --grep` as a regex with `N:line` hits (recursive-llm search-then-slice). | 2026-09-18 |
-| I-54 | T67.2 | `expand --context N` around grep hits. | 2026-09-18 |
-| I-67 | T70.1–T70.3 | pi extension: every tool result, the `context` live zone, tools without MCP. | 2026-09-18 |
-| I-68 | T70.4, T70.7 | Cursor plugin: host-launched MCP results; the session-start / prompt events `inject` needs. | 2026-09-18 |
-| I-69 | T70.5, T70.6 | `guard` and the compaction checkpoint on pi and OpenCode through their plugins. | 2026-09-18 |
-| I-71 | T71.1 (dropped) | HTML 0.06 % of Bash result bytes (7 curl/wget HTML calls, 26,963 B); formatter not added. | 2026-09-18 |
-| I-56 | T71.2 | `SessionEnd` checkpoint injected at the next `SessionStart`, off by default behind an A/B (engram `mem_context`). | 2026-09-18 |
-| I-52 | T71.3 | rtok's own hub skill per host, installed and removed with the host plugin. | 2026-09-18 |
 | I-37 | T48.3 | `plugins/cursor/mcp.json` spawns `rtok mcp` directly, so `scripts/mcp.sh` / `mcp.cmd` (the ketch hint) never run; the sp | 2026-09-17 |
-| I-58 | T133 | Project identity survives git worktrees (origin repo name, main-checkout fallback). | 2026-09-21 |
-| I-87 | T135 | `doctor::read_share` stops re-parsing every transcript. | 2026-09-21 |
 
 | ID | Became | Date |
 |----|--------|------|
