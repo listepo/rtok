@@ -18,7 +18,7 @@ copied twice.
 | hooks | yes | `rtok hook <event>` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` (off with `[setup] mcp = false`) |
 | proxy | `--proxy` | `env.ANTHROPIC_BASE_URL` → `http://<bind>:<port>`; opt-in because it routes every request through `rtok proxy` |
-| plugin | no | Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link |
+| plugin | no | Claude Code installs plugins/claude by hand (`claude plugin marketplace add` + `claude plugin install rtok@rtok`); `--yes` is T115 |
 | hooks (desktop) | no | Claude Desktop has no hook events |
 | mcp (desktop) | yes | `mcpServers.rtok` → `<abs rtok> mcp` in `claude_desktop_config.json` |
 | proxy (desktop) | no | Claude Desktop has no base-URL setting; its requests do not pass through the proxy |

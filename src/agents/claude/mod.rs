@@ -224,7 +224,7 @@ impl Agent for Claude {
             (_, "mcp") | (Kind::Cli, "hooks") => Support::Yes,
             (Kind::Cli, "proxy") => Support::Flag("--proxy"),
             (Kind::Cli, _) => Support::No(
-                "Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link",
+                "Claude Code installs plugins/claude by hand (`claude plugin marketplace add` + `claude plugin install rtok@rtok`); `--yes` is T115",
             ),
             (Kind::Desktop, "hooks") => Support::No("Claude Desktop has no hook events"),
             (Kind::Desktop, "proxy") => Support::No(
@@ -546,5 +546,37 @@ mod tests {
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
+    }
+
+    /// T114: `plugins/claude` carries the installer's hooks, one `rtok mcp`, and the marketplace
+    /// the directory is its own marketplace (`claude plugin marketplace add plugins/claude`).
+    #[test]
+    fn plugin_tree_matches_the_installer() {
+        let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
+        let hooks = parse(include_str!("../../../plugins/claude/hooks/hooks.json"));
+        let timeout = Config::default().setup.hook_timeout_s;
+        let mut want = json!({});
+        for &(event, matcher) in ENTRIES {
+            let cmd = format!("\"${{CLAUDE_PLUGIN_ROOT}}/scripts/hook.sh\" {event}");
+            let mut e = json!({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]});
+            if !matcher.is_empty() {
+                e["matcher"] = json!(matcher);
+            }
+            array_at(&mut want, event).push(e);
+        }
+        assert_eq!(hooks["hooks"], want);
+        let mcp = parse(include_str!("../../../plugins/claude/.mcp.json"));
+        assert_eq!(
+            mcp["mcpServers"],
+            json!({"rtok": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp.sh"}})
+        );
+        let manifest = parse(include_str!(
+            "../../../plugins/claude/.claude-plugin/plugin.json"
+        ));
+        let market = parse(include_str!(
+            "../../../plugins/claude/.claude-plugin/marketplace.json"
+        ));
+        assert_eq!(market["plugins"][0]["name"], manifest["name"]);
+        assert_eq!(market["plugins"][0]["source"], "./");
     }
 }
