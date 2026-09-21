@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T113. `rtok tui` freezes on start and on tab switches
+
+Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
+
+Do: `App::background` gives the running TUI a `Worker` thread that turns a config into a snapshot (queued requests collapse into the newest; a thread that will not start or dies falls back to inline reads, D1). The screen opens at once over `Snapshot::default()`; the loop waits at most 100 ms for a key, then `App::poll` lands finished reads; a timer tick is skipped while a read runs; the footer says `loading…`. `App::new` still reads inline for unit tests.
+
+Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` — tabs switch mid-read, the worker's snapshot lands, a tick mid-read is skipped; all `tui::` tests green; `just check` green.
+
+Status: done September 21, 2026
+
 ### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
 
 After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).
