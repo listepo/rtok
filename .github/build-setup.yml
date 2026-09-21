@@ -19,10 +19,10 @@
     # Release builds are rare; always save so the next cut is warm.
     cache-on-failure: true
 
-# T81: every archive carries `pkg/` (Cargo.toml [package.metadata.dist] include),
-# so an installed `rtok web` has a UI instead of explaining its absence (T80).
-# The bundle is platform-independent, but `include` is workspace-wide with no
-# per-target form, so each matrix job builds its own copy before `dist build`.
+# T111: the binary embeds the Slint WASM bundle (build.rs), so an installed
+# `rtok web` has a UI instead of explaining its absence (T80) — even from a ketch
+# install that keeps only the executable. Each matrix job builds the bundle before
+# `dist build`; RTOK_WEB_EMBED=require makes build.rs fail rather than embed nothing.
 - name: Install wasm-pack
   uses: taiki-e/install-action@v2
   with:
@@ -33,6 +33,7 @@
   run: |
     rustup target add wasm32-unknown-unknown
     tools/webui-bundle.sh --require
+    echo "RTOK_WEB_EMBED=require" >> "$GITHUB_ENV"
 
 - name: Discover macOS codesign identity
   if: runner.os == 'macOS'

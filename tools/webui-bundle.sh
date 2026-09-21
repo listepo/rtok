@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # Build the Slint WASM bundle into crates/rtok-webui/pkg — the directory `rtok web`
-# serves (T80) and the release archive carries (T81: `include` in Cargo.toml's
-# [package.metadata.dist]). One script so `just web` and .github/build-setup.yml
-# cannot drift apart.
+# serves (T80) and build.rs compiles into the binary (T111). One script so `just web`
+# and .github/build-setup.yml cannot drift apart.
 #
 # Flags:
-#   --require   turn every skip into a failure (CI: an archive without the bundle is
-#               the bug T81 closed). Without it a dev lacking wasm-pack still gets the
+#   --require   turn every skip into a failure (CI: a release without the bundle is
+#               the bug T81/T111 closed). Without it a dev lacking wasm-pack still gets the
 #               API, and `rtok web` says the bundle is missing.
 #   --compress  also write the .br/.gz `rtok web` negotiates (T60.7). `just web` passes
-#               it; the release archive does not carry them, since it serves loopback.
+#               it; the embedded copy does not carry them, since it serves loopback.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -57,7 +56,7 @@ bytes=$(wc -c < "$wasm" | tr -d ' ')
 echo "webui-bundle: $wasm is $bytes bytes (gate $gate)"
 if [ "$bytes" -gt "$gate" ]; then
   # Reached when wasm-opt ran nowhere: the unoptimised bundle is ~10.5 MB, and
-  # shipping that in every archive is not a thing to discover after a release.
+  # shipping that in every binary is not a thing to discover after a release.
   echo "webui-bundle: over the T60.7 gate — is wasm-opt/binaryen reachable?" >&2
   exit 1
 fi

@@ -68,8 +68,8 @@ pub async fn serve(cfg: Config) -> Result<()> {
         .await
         .with_context(|| format!("bind {addr}"))?;
     eprintln!("rtok web http://{addr}  (ws://{addr}/ws)");
-    let pkg = pkg_dir();
-    if pkg.is_none() {
+    let pkg = resolve_pkg();
+    if matches!(pkg, Pkg::Missing) {
         eprintln!("{}", pkg_missing_text());
     }
     axum::serve(listener, app_with_pkg(Arc::new(DashState::new(cfg)), pkg))
@@ -78,25 +78,96 @@ pub async fn serve(cfg: Config) -> Result<()> {
 }
 
 pub fn app(state: Arc<DashState>) -> Router {
-    app_with_pkg(state, pkg_dir())
+    app_with_pkg(state, resolve_pkg())
 }
 
-/// `app` with the asset directory already resolved, so tests cover both the
-/// bundle-present and the bundle-missing surface without touching the process
-/// environment.
-pub fn app_with_pkg(state: Arc<DashState>, pkg: Option<PathBuf>) -> Router {
+/// Where `/pkg` comes from.
+#[derive(Debug, Clone)]
+pub enum Pkg {
+    /// A built bundle on disk (`RTOK_WEB_PKG`, beside the binary, the source tree).
+    Dir(PathBuf),
+    /// The bundle compiled into this binary (T111) — what a ketch install has.
+    Embedded,
+    /// Neither: `/pkg` answers 503 with how to get one (T80).
+    Missing,
+}
+
+/// A bundle on disk wins, so `RTOK_WEB_PKG` and a fresh `just web` override the
+/// copy baked in at build time; the embedded one serves every plain install.
+pub fn resolve_pkg() -> Pkg {
+    match pkg_dir() {
+        Some(dir) => Pkg::Dir(dir),
+        None if embedded::AVAILABLE => Pkg::Embedded,
+        None => Pkg::Missing,
+    }
+}
+
+/// `app` with the asset source already resolved, so tests cover every surface
+/// without touching the process environment.
+pub fn app_with_pkg(state: Arc<DashState>, pkg: Pkg) -> Router {
     let r = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
         .route("/ws", get(ws_upgrade))
         .with_state(state);
     match pkg {
-        Some(dir) => {
+        Pkg::Dir(dir) => {
             let service = ServeDir::new(dir).precompressed_br().precompressed_gzip();
             r.nest_service("/pkg", service)
         }
+        Pkg::Embedded => r.route("/pkg/{*path}", get(embedded::serve)),
         // T80: a 404 here reads as a broken build. Say what is missing instead.
-        None => r.route("/pkg/{*path}", get(pkg_missing)),
+        Pkg::Missing => r.route("/pkg/{*path}", get(pkg_missing)),
+    }
+}
+
+/// The Slint bundle `build.rs` found at compile time (T111). Without it the
+/// binary still builds; `AVAILABLE` is false and `/pkg` falls back to disk.
+pub mod embedded {
+    use axum::extract::Path;
+    use axum::http::{StatusCode, header};
+    use axum::response::IntoResponse;
+
+    #[cfg(rtok_web_embed)]
+    const FILES: &[(&str, &str, &[u8])] = &[
+        (
+            "rtok_webui.js",
+            "text/javascript",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/crates/rtok-webui/pkg/rtok_webui.js"
+            )),
+        ),
+        (
+            "rtok_webui_bg.wasm",
+            "application/wasm",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/crates/rtok-webui/pkg/rtok_webui_bg.wasm"
+            )),
+        ),
+    ];
+    #[cfg(not(rtok_web_embed))]
+    const FILES: &[(&str, &str, &[u8])] = &[];
+
+    /// True when this binary carries the bundle.
+    pub const AVAILABLE: bool = !FILES.is_empty();
+
+    /// Bytes and media type of one embedded file, by its name under `/pkg/`.
+    pub fn get(name: &str) -> Option<(&'static str, &'static [u8])> {
+        FILES
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, mime, bytes)| (*mime, *bytes))
+    }
+
+    pub(super) async fn serve(Path(name): Path<String>) -> impl IntoResponse {
+        match get(&name) {
+            Some((mime, bytes)) => {
+                (StatusCode::OK, [(header::CONTENT_TYPE, mime)], bytes).into_response()
+            }
+            None => StatusCode::NOT_FOUND.into_response(),
+        }
     }
 }
 
@@ -123,7 +194,11 @@ fn pkg_candidates() -> Vec<PathBuf> {
             out.push(prefix.join("share").join("rtok").join("pkg"));
         }
     }
-    out.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg"));
+    // Dev fallback only: an embedded build already carries this tree's bundle, and
+    // `build.rs` re-embeds it whenever it changes.
+    if !embedded::AVAILABLE {
+        out.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg"));
+    }
     out
 }
 

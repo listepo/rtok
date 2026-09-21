@@ -24,10 +24,9 @@ publish = false
 dist = true
 # Host plugins must ship beside the binary: setup resolves `plugins/<host>` next
 # to `current_exe()` for installed archives (Windows zip / unix tarballs).
-# T81: `pkg/` is the same deal for the web UI — `rtok web` looks for it beside the
-# executable first (src/web/mod.rs, T80). .github/build-setup.yml builds it before
-# `dist build`; a local `dist build` needs `just web-bundle` first.
-include = ["plugins/", "skills/", "crates/rtok-webui/pkg/"]
+# The web UI is not here: T111 compiles it into the binary (build.rs), because a ketch
+# install keeps only the executable.
+include = ["plugins/", "skills/"]
 
 [[bin]]
 name = "rtok"
@@ -144,6 +143,7 @@ httpmock = "0.8" # mock Anthropic/OpenAI upstreams for proxy tests (T5.0)
 insta = "1" # snapshot tests for stable text output
 rstest = "0.27.0" # parameterized unit tests; #[rstest] instead of #[test] (T36.5)
 trycmd = "1.2.1" # full CLI command-output fixtures in tests/trycmd/
+tokio-tungstenite = "0.29" # real WebSocket client for the `rtok web` e2e (tests/web_e2e.rs); already in the tree via axum "ws"
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # tests hold a competing writer on the store file (same crate/features as [dependencies], T75)
 
 # T17.1. No profile may set `panic = "abort"`: `hooks::dispatch` fails open through five
