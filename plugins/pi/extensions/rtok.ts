@@ -8,6 +8,11 @@
 // Every shortened payload carries an `expand <id>` trailer (D4). Missing `rtok`
 // fails open and names the ketch install (D21).
 //
+// oh my pi (`omp`, T92) loads this same extension through the legacy
+// `pi.extensions` manifest key. It is told apart by `pi.pi` (omp injects its
+// SDK there; pi's API has no such member). omp has native MCP, so the tools
+// come from `rtok mcp` there and `registerTool` stays off (D21).
+//
 // Optional proxy: uncomment the `registerProvider` block to route pi's
 // provider through `rtok proxy` (T11.5 pattern, `http://127.0.0.1:8790/v1`).
 
@@ -100,7 +105,9 @@ export default function (pi) {
     if (typeof command !== "string" || command.startsWith("rtok run -- ")) return;
     if (g.missing) return;
     const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
+    // pi documents mutating `event.input`; omp documents returning `{ input }`.
     event.input.command = `rtok run -- ${quoted}`;
+    return { input: event.input };
   });
 
   // Bash results: `rtok filter` compresses oversized output. File/search
@@ -273,6 +280,8 @@ const PI_TOOLS = [
 
 async function registerPiTools(pi) {
   if (typeof pi.registerTool !== "function") return;
+  // omp: native MCP already serves these tools — a second path would break D21.
+  if (typeof pi.pi === "object" && pi.pi !== null) return;
   const r = await rtok(["config", "get", "setup.pi.tools"]);
   if (r.missing || r.stdout.trim() !== "true") return;
   for (const t of PI_TOOLS) {

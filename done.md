@@ -1,5 +1,18 @@
 # rtok — completed tasks
 
+### T92.1. The shared pi extension runs correctly under oh my pi
+
+Part of T92 (`rtok agents install omp`). Verified 2026-09-21 on omp 18.1.14, in a scratch `PI_CODING_AGENT_DIR` (nothing written to `~/.omp`): a symlinked directory whose `package.json` declares only legacy `pi.extensions` is discovered and its factory runs; the real `plugins/pi/extensions/rtok.ts`, loaded through a recording wrapper, subscribes to `tool_call`, `tool_result`, `context`, `session_before_compact`, `session_compact`, `session_start` without error — each has an `on()` overload in omp's `ExtensionAPI`. Two gaps found in omp's source:
+
+1. omp applies a revised tool input only when a `tool_call` handler **returns** `{ input }` (`src/session/agent-session.ts` `#beforeToolCall`, `src/extensibility/extensions/wrapper.ts`); upstream pi documents mutating `event.input` in place. The rewrite reached omp only through an undocumented alias of the live args object.
+2. `registerPiTools` read `setup.pi.tools` with no idea of the host, so a machine with pi (`tools = true`) and omp would get every rtok tool twice under omp — `registerTool` plus omp's native MCP — against D21.
+
+Do (2026-09-21): `plugins/pi/extensions/rtok.ts` — the bash rewrite still mutates `event.input` (pi) and now also returns `{ input: event.input }` (omp; pi ignores the field); `registerPiTools` returns early when `pi.pi` is an object — omp injects its SDK there (`getAgentDir`, `VERSION`), pi's `ExtensionAPI` has no such member. `plugins/pi/tests/rtok.test.ts` — `load()` takes extra API members; new cases: the rewrite is returned as `input`, and with `pi.pi` present no tool registers even when `setup.pi.tools` is true; the three guard-allow cases now assert the returned rewrite instead of `undefined`.
+
+Check: `pi_plugin` green (it runs the Node test files).
+
+Check result (2026-09-21): `rtok.test.ts` 23/23 and `load.test.ts` pass under `node --test`; `cargo nextest run --test pi_plugin` 5 passed; `cargo fmt --check` exit 0. Full workspace run: 1081 passed, 5 failed — all five (`agents::kilo::tests::*`, `readme_tables_match_support`, `agents_doc`, `agents_install setup_twice…`, `cli_trycmd`) come from another session's uncommitted `kilo` host (`src/agents/kilo/` untracked, `"kilo"` added to `HOSTS`), none touch `plugins/pi`. Not verified: a real model turn whose bash call runs through `rtok run` under omp — the only model key here has no credit (`credit_balance_exhausted`).
+
 ### T90. Antigravity plugin tree (`plugins/antigravity/`)
 
 Creator request 2026-09-21: a host plugin for Google Antigravity CLI + desktop, like Claude's and Cursor's. Antigravity's plugin format is a directory: manifest `plugin.json` (only `name` is required, `^[a-zA-Z0-9-_]+$`), optional `mcp_config.json`, `hooks.json`, `skills/`, `agents/`, `rules/`. Global plugins live in `~/.gemini/config/plugins/` and are read by all three surfaces — Antigravity CLI (`agy`), Antigravity 2.0 and Antigravity IDE — so one tree is D21's "plugin and MCP as one unit" for CLI and desktop. Evidence: https://antigravity.google/docs/plugins/, https://antigravity.google/docs/mcp/ (fetched 2026-09-21).
