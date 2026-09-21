@@ -375,27 +375,41 @@ pub fn flush_coalesced_blocking(cx: &Runtime) -> Report {
 }
 
 /// T143 test hook only: when `RTOK_OTEL_FLUSH_TRACE` names a directory, mark this process's
-/// whole lifetime with `<dir>/<pid>.run` so `tests/otel.rs` can count concurrent hook-spawned
-/// flush children by reading a directory it owns, instead of querying the host process table
-/// (`ps`/`kill` are off-limits for tests — see the T143 task notes). The env var is unset in
-/// every real run, so the only production cost is one `var_os` lookup.
+/// whole lifetime with `<dir>/<pid>.run` (renamed to `<pid>.done` on exit) so `tests/otel.rs`
+/// can count concurrent hook-spawned flush children by reading a directory it owns, instead of
+/// querying the host process table (`ps`/`kill` are off-limits for tests — see the T143 task
+/// notes). T161: the spawning hook also writes `<child pid>.spawned` before it exits, so a test
+/// can tell "spawned but not running yet" from "never spawned" or "already exited" without
+/// racing the child's start-up. The env var is unset in every real run, so the only
+/// production cost is one `var_os` lookup.
 struct FlushTrace(Option<PathBuf>);
 
 impl FlushTrace {
+    fn dir() -> Option<PathBuf> {
+        std::env::var_os("RTOK_OTEL_FLUSH_TRACE").map(PathBuf::from)
+    }
+
     fn new() -> Self {
-        let Some(dir) = std::env::var_os("RTOK_OTEL_FLUSH_TRACE") else {
+        let Some(dir) = Self::dir() else {
             return Self(None);
         };
-        let path = PathBuf::from(dir).join(format!("{}.run", std::process::id()));
+        let path = dir.join(format!("{}.run", std::process::id()));
         let _ = File::create(&path);
         Self(Some(path))
+    }
+
+    /// Called by `spawn_child` in the hook process right after a successful spawn.
+    fn spawned(pid: u32) {
+        if let Some(dir) = Self::dir() {
+            let _ = File::create(dir.join(format!("{pid}.spawned")));
+        }
     }
 }
 
 impl Drop for FlushTrace {
     fn drop(&mut self) {
         if let Some(path) = &self.0 {
-            let _ = std::fs::remove_file(path);
+            let _ = std::fs::rename(path, path.with_extension("done"));
         }
     }
 }
@@ -487,7 +501,9 @@ pub fn spawn_child(cx: &Runtime) {
     if !cx.config.home.as_os_str().is_empty() {
         cmd.env("RTOK_HOME", &cx.config.home);
     }
-    let _ = cmd.spawn();
+    if let Ok(child) = cmd.spawn() {
+        FlushTrace::spawned(child.id());
+    }
 }
 
 #[cfg(test)]

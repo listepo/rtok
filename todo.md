@@ -43,6 +43,7 @@
 - T155. Ship the `worktrees` skill with rtok
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
+- T158. `rtok worktree add`: rtok creates the worktree — one location, one name, one owner
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T160. No expand trailer when shortening saved less than the trailer costs
 

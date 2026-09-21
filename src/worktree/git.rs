@@ -113,19 +113,3 @@ pub fn has_remote_branch(repo: &Path, branch: &str) -> bool {
     let name = format!("refs/remotes/origin/{branch}");
     git(repo, &["show-ref", "--verify", "-q", &name]).is_ok_and(|out| out.status.success())
 }
-
-/// `origin/<x>` → `git fetch origin <x>`; a base that is not on `origin` is left as is.
-pub fn fetch(repo: &Path, base: &str) -> Result<()> {
-    let Some(branch) = base.strip_prefix("origin/") else {
-        return Ok(());
-    };
-    git_ok(repo, &["fetch", "--quiet", "origin", branch]).map(drop)
-}
-
-/// One locked worktree on a new branch with no upstream: a bare `git push` from it
-/// cannot reach the default branch.
-pub fn add_locked(repo: &Path, path: &Path, branch: &str, reason: &str, base: &str) -> Result<()> {
-    let args = ["worktree", "add", "--quiet", "--lock", "--reason", reason];
-    let tail = ["--no-track", "-b", branch, path_arg(path)?, base];
-    git_ok(repo, &[&args[..], &tail[..]].concat()).map(drop)
-}
