@@ -18,8 +18,9 @@ use crate::measure::{cache, stats};
 use crate::plugins::Registry;
 use crate::store::{CallRow, SessionTotals, Store};
 
-/// Everything a surface needs for one refresh.
-#[derive(Debug, Serialize)]
+/// Everything a surface needs for one refresh. `Default` is the empty frame a surface
+/// paints while its first read is still running.
+#[derive(Debug, Default, Serialize)]
 pub struct Snapshot {
     #[serde(rename = "type")]
     pub kind: &'static str,

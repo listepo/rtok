@@ -9,7 +9,7 @@ mod app;
 mod view;
 
 use std::io::{self, IsTerminal};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use crossterm::event::{self, Event, KeyEventKind};
@@ -26,31 +26,39 @@ pub fn run(cfg: Config) -> Result<()> {
     // `max(1)`: a zero cadence would busy-poll; `config validate` rejects it in the
     // file, this holds the line for `--tick-secs 0`.
     let tick = Duration::from_secs(cfg.tui.tick_secs.max(1));
-    let mut app = app::App::new(&cfg);
+    let mut app = app::App::background(&cfg);
     let res = event_loop(&mut terminal, &mut app, tick);
     ratatui::restore();
     res
 }
 
-/// Draw, then wait up to `tick` for a key: a press updates the state, a timeout asks
-/// the App to re-read the model through the config it holds — the same
-/// one-snapshot-per-tick shape `rtok web`'s socket serves, from one owner (T15.4).
+/// How long the loop waits for a key before it checks for a finished background read.
+const FRAME: Duration = Duration::from_millis(100);
+
+/// Draw, then wait briefly for a key: a press updates the state, and every `tick` the
+/// App re-reads the model through the config it holds — the same one-snapshot-per-tick
+/// shape `rtok web`'s socket serves, from one owner (T15.4). Reads run off this thread,
+/// so keys stay live while the model is slow.
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut app::App,
     tick: Duration,
 ) -> Result<()> {
+    let mut next = Instant::now() + tick;
     loop {
         terminal.draw(|frame| view::draw(frame, app))?;
-        if !event::poll(tick)? {
-            app.tick();
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        if key.kind == KeyEventKind::Press && app.key(key.code, key.modifiers) {
+        let wait = next.saturating_duration_since(Instant::now()).min(FRAME);
+        if event::poll(wait)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+            && app.key(key.code, key.modifiers)
+        {
             return Ok(());
+        }
+        app.poll();
+        if Instant::now() >= next {
+            app.tick();
+            next = Instant::now() + tick;
         }
     }
 }

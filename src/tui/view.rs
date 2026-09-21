@@ -719,7 +719,8 @@ fn footer_line(app: &App) -> String {
         .map(|(k, _)| *k)
         .collect::<Vec<_>>()
         .join(" · ");
-    format!("{hints} · updated {time} UTC")
+    let loading = if app.loading() { " · loading…" } else { "" };
+    format!("{hints} · updated {time} UTC{loading}")
 }
 
 #[cfg(test)]
