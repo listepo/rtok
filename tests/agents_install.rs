@@ -331,6 +331,23 @@ fn claude_desktop_installs_mcp_with_the_absolute_binary_under_a_temp_home() {
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
 }
 
+/// T81: a pipe is the CI / agent shape. The plugin offer must decline itself — no question
+/// printed, nothing waited for — while the settings-file install still finishes green.
+#[test]
+fn an_unanswered_offer_on_a_pipe_declines_itself_and_still_installs() {
+    let home = tmp("offer-pipe");
+    let cfg = write_cfg(&home);
+    let out = raw(&["agents", "install", "claude"], &cfg, &home);
+    assert!(out.status.success(), "{:?}", out.status);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("[Y/n]"),
+        "a pipe must never see a question: {stdout}"
+    );
+    assert!(stdout.contains("accept with --yes"), "{stdout}");
+    assert!(stdout.contains("✓ hooks   installed"), "{stdout}");
+}
+
 #[test]
 fn an_unknown_host_is_refused_before_any_backup() {
     let home = tmp("unknown");

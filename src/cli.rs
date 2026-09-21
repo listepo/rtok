@@ -1411,7 +1411,16 @@ fn setup_host(config_file: Option<&std::path::Path>, args: SetupArgs) -> Result<
         all,
     };
     let hosts_for_restart = req.hosts.clone();
-    let out = with_loader("updating host", || crate::agents::run(&mut cfg, &req))?;
+    // T81: `agents::run` may ask the plugin question mid-run, and a loader ticking on
+    // stderr redraws right over a prompt — the question turns invisible and the wait for
+    // its answer reads as a hang. A spinner must never share a terminal with a question,
+    // so interactive runs render no loader; pipes and CI (which can never be asked) keep it.
+    let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let out = if interactive {
+        crate::agents::run(&mut cfg, &req)?
+    } else {
+        with_loader("updating host", || crate::agents::run(&mut cfg, &req))?
+    };
     print!("{out}");
     // T76: after successful config writes, offer a stop→start so the host reloads.
     // Skipped under --dry-run and when stdin is not a TTY (CI / pipes).
