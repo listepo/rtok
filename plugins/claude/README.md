@@ -11,9 +11,10 @@ claude plugin install rtok@rtok
 ```
 
 Remove with `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`.
-Installing the plugin and also running a plain `rtok agents install claude` fires every hook
-twice; `rtok agents install claude --yes` (T115) will do the plugin install and keep one call
-path.
+`rtok agents install claude --yes` runs both commands and, while the plugin is installed, strips
+rtok's own hooks from `~/.claude/settings.json` and `mcpServers.rtok` from `~/.claude.json`, so
+every event fires once (D21). `rtok agents remove claude` uninstalls it. Installing by hand and
+then running a plain `rtok agents install claude` leaves that singleton rule in force too.
 
 Files:
 

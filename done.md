@@ -1,5 +1,13 @@
 # rtok — completed tasks
 
+### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
+
+After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).
+
+Check: e2e with a fake `claude` binary records the four commands in order; second `--yes` says `already installed`; remove restores; `just check` green.
+
+Check result (2026-09-21): `tests/claude_plugin.rs` — dry-run prints `claude plugin marketplace add …/plugins/claude && claude plugin install rtok@rtok` and calls nothing; `--yes` after a plain install calls add then install, strips the settings hooks and `mcpServers.rtok`; a second `--yes` says `already installed`; remove calls `uninstall` then `marketplace remove`. `docs/agents.md` re-blessed, doctor/report fixtures updated; `just check` green (1108 passed). The real CLI path was checked by hand in T114 (scratch `CLAUDE_CONFIG_DIR`). Unix only: the fake is a shell script, and the Windows job already skips the install matrix.
+
 ### T114. Claude Code plugin tree (`plugins/claude`)
 
 Claude Code has a plugin system (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `.mcp.json`, `skills/`, `${CLAUDE_PLUGIN_ROOT}`), loaded by the CLI and the desktop Code tab alike; `support("plugin")` still says "there is no plugin directory to link", which is stale. This task ships the tree only; T115 installs it.

@@ -26,7 +26,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T105 | todo | P2 | 2 | 0% | |
 | T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
-| T115 | todo | P1 | 3 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
@@ -231,12 +230,6 @@ Check: `just test` green; no new dependency.
 `tests/trycmd/` pins help and happy output. Add fixtures for a bad value or missing argument on each subcommand (exit 2, clap message) and for `parse_since` rejects (`--since 5x`, `--since -1d`, empty).
 
 Check: one fixture per subcommand; `just test` green.
-
-### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
-
-After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer). `installed()` reports `plugin` from `claude plugin list` or `~/.claude/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude with a fake `claude` on PATH).
-
-Check: e2e with a fake `claude` binary records the four commands in order; second `--yes` says `already installed`; remove restores; `just check` green.
 
 ### T116. Copilot CLI plugin
 
