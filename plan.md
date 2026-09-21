@@ -13,7 +13,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T94 | todo | P1 | 3 | 0% | |
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
-| T97 | in progress | P1 | 3 | 90% | Claude Code / claude-fable-5-1 |
+| T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T100 | todo | P1 | 3 | 0% | |
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -114,6 +114,7 @@ Verify first (check `command -v kilo` and `~/.config/kilo/`; otherwise the creat
 Over the ≤200 LOC / ≤3 files limit as written — split into T97.1 (host + plugin link + config) and T97.2 (MCP + docs bless) when claiming.
 
 Progress: host written and green in one change (not split — the rest were one-line list edits). Settled from Kilo's source (`packages/opencode/src/config/config.ts`, `config/plugin.ts`, fetched 2026-09-21): the global config merges `config.json`, `kilo.json`, `kilo.jsonc`, `opencode.json[c]`, so rtok writes `kilo.json` and never touches a user's `kilo.jsonc` — (d) is moot, T79 does not block; plugins are scanned as `{plugin,plugins}/*.{ts,js}` with `symlink: true`, so the link to `plugins/rtok.ts` loads. Both variants share the files (`shared() = true`); the desktop variant is detected by VS Code, because the extension's directory name carries its version. (c) accepted: rows are labelled `opencode`. `proxy` → `No`. Open: (a)/(b) live — one bash call through `rtok run` in `kilo` and in the extension; the agent's shell allowlist blocks the `kilo` binary, so the creator runs it (`rtok agents install kilo --yes`, then any bash command, then `rtok stats`).
+Extra tests: written and green (`agents::kilo::tests`); the dangling-link one found that `PluginLink::run` reported `no changes` for a broken symlink on every host — fixed in `rtok-agent-sdk` (`plugin_link_replaces_a_dangling_link`). Only the live check above is left.
 
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 

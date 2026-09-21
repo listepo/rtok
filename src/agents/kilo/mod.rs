@@ -85,12 +85,6 @@ impl Agent for Kilo {
         vec![cfg.setup.kilo.config_path.clone()]
     }
 
-    fn markers(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
-        let mut paths = self.files(cfg, kind);
-        paths.push(plugin_dest(cfg));
-        paths
-    }
-
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let mut out = Vec::new();
         if super::read(&cfg.setup.kilo.config_path).contains("\"rtok\"") {
@@ -191,6 +185,87 @@ mod tests {
         assert_eq!(root["mcp"]["other"]["command"][0], "x");
         assert!(!PLUGIN.linked(&c));
         assert!(Kilo.installed(&c, Kind::Cli).is_empty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Every file under `dir` with its bytes (symlinks as their target), sorted.
+    fn snapshot(dir: &std::path::Path) -> Vec<(PathBuf, Vec<u8>)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                let meta = fs::symlink_metadata(&p).unwrap();
+                if meta.file_type().is_symlink() {
+                    let target = fs::read_link(&p).unwrap();
+                    out.push((p, target.to_string_lossy().into_owned().into_bytes()));
+                } else if meta.is_dir() {
+                    stack.push(p);
+                } else {
+                    out.push((p.clone(), fs::read(&p).unwrap()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// A user's config and a foreign plugin beside the files rtok owns.
+    fn seeded(name: &str, dry: bool) -> (Config, PathBuf) {
+        let (mut c, dir) = cfg(name, dry);
+        c.setup.yes = true;
+        fs::write(dir.join("kilo.jsonc"), "{\n  // mine\n  \"mcp\": {},\n}\n").unwrap();
+        fs::create_dir_all(dir.join("plugin")).unwrap();
+        fs::write(dir.join("plugin/rtok.ts"), "export default {} // mine\n").unwrap();
+        (c, dir)
+    }
+
+    #[test]
+    fn dry_run_leaves_the_tree_byte_for_byte() {
+        let (c, dir) = seeded("dry-bytes", true);
+        let before = snapshot(&dir);
+        Kilo.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        Kilo.apply(&c, Kind::Cli, Mode::Remove).unwrap();
+        assert_eq!(snapshot(&dir), before);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn user_jsonc_and_foreign_plugin_survive_install_and_remove() {
+        let (c, dir) = seeded("foreign", false);
+        let jsonc = fs::read(dir.join("kilo.jsonc")).unwrap();
+        let theirs = fs::read(dir.join("plugin/rtok.ts")).unwrap();
+        Kilo.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert_eq!(fs::read(dir.join("kilo.jsonc")).unwrap(), jsonc);
+        assert_eq!(fs::read(dir.join("plugin/rtok.ts")).unwrap(), theirs);
+        Kilo.apply(&c, Kind::Cli, Mode::Remove).unwrap();
+        assert_eq!(fs::read(dir.join("kilo.jsonc")).unwrap(), jsonc);
+        assert_eq!(fs::read(dir.join("plugin/rtok.ts")).unwrap(), theirs);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_plugin_link_is_repaired() {
+        let (mut c, dir) = cfg("dangling", false);
+        c.setup.yes = true;
+        fs::create_dir_all(dir.join("plugins")).unwrap();
+        std::os::unix::fs::symlink(dir.join("gone.ts"), plugin_dest(&c)).unwrap();
+        Kilo.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        let body = fs::read_to_string(plugin_dest(&c)).unwrap();
+        assert!(
+            body.contains("rtok"),
+            "link does not reach plugins/opencode/rtok.ts"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn remove_on_a_clean_home_changes_nothing() {
+        let (c, dir) = cfg("clean", false);
+        let lines = Kilo.apply(&c, Kind::Cli, Mode::Remove).unwrap();
+        assert!(lines.iter().all(|l| l == NO_CHANGES), "{lines:?}");
+        assert!(!c.setup.kilo.config_path.exists());
         let _ = fs::remove_dir_all(dir);
     }
 }

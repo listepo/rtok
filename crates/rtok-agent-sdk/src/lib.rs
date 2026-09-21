@@ -460,7 +460,14 @@ impl PluginLink<'_> {
                 self.dest.display()
             ));
         }
-        if self.linked() {
+        // A dangling link (its source moved: a new ketch version, a deleted checkout) is not an
+        // install; it is replaced like a missing one instead of reported as `no changes`.
+        let dangling = self
+            .dest
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+            && !self.dest.exists();
+        if self.linked() && !dangling {
             return Ok(NO_CHANGES.into());
         }
         let question = format!(
@@ -475,6 +482,9 @@ impl PluginLink<'_> {
                 self.src_rel,
                 self.main_desc()
             ));
+        }
+        if dangling {
+            fs::remove_file(&self.dest)?;
         }
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
@@ -665,6 +675,23 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const YES: Apply = Apply {
+        dry_run: false,
+        backup: false,
+        yes: true,
+    };
+
+    /// A `plugins/demo` link with no label, the shape most link tests start from.
+    fn demo_link(src: PathBuf, dest: PathBuf) -> PluginLink<'static> {
+        PluginLink {
+            src_rel: "plugins/demo",
+            src,
+            dest,
+            label: None,
+            host: "demo",
+        }
+    }
     use rstest::rstest;
 
     fn tmp(name: &str) -> PathBuf {
@@ -949,6 +976,21 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn plugin_link_replaces_a_dangling_link() {
+        let dir = tmp("dangling");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(dir.join("host")).unwrap();
+        let dest = dir.join("host/rtok");
+        std::os::unix::fs::symlink(dir.join("gone"), &dest).unwrap();
+        let link = demo_link(src, dest.clone());
+        assert!(link.run(&YES, false).unwrap().starts_with("+ plugin"));
+        assert!(dest.exists(), "the link reaches the source again");
+        assert_eq!(link.run(&YES, false).unwrap(), NO_CHANGES);
+    }
+
     #[test]
     fn plugin_link_offers_then_links_then_unlinks() {
         let dir = tmp("link");
@@ -1143,26 +1185,15 @@ mod tests {
         .unwrap();
         fs::write(dest.join("host-cache.bin"), "host wrote this").unwrap();
 
-        let link = PluginLink {
-            src_rel: "plugins/demo",
-            src: src.clone(),
-            dest: dest.clone(),
-            label: None,
-            host: "demo",
-        };
-        let yes = Apply {
-            dry_run: false,
-            backup: false,
-            yes: true,
-        };
+        let link = demo_link(src.clone(), dest.clone());
         assert!(link.ours(), "a byte-complete copy of our tree is ours");
         assert_eq!(
-            link.run(&yes, true).unwrap(),
+            link.run(&YES, true).unwrap(),
             format!("- plugin {}", dest.display())
         );
         assert!(!dest.exists(), "the materialized copy must go");
         assert!(!link.ours(), "and no longer reads as ours");
-        assert_eq!(link.run(&yes, true).unwrap(), NO_CHANGES);
+        assert_eq!(link.run(&YES, true).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(dir);
     }
 
