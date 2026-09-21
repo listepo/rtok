@@ -27,6 +27,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+
+| T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T127 | todo | P2 | 3 | 0% | |
@@ -226,6 +228,14 @@ Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just chec
 Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
 
 Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
+
+### T122. A dedup pointer reaches a context that never saw the body
+
+Seen 2026-09-21 in a Claude Code session: a Haiku sub-agent read `research.md` and `ideas.md`; the parent's first MCP `read` of the same files (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file. Two defects: (1) `plugin::identical_result` (T65.1) keys on the host session, which sub-agents share with the parent, so the pointer names a body that is not in the caller's context and every such read costs a second `expand` round trip — a loss, recorded as a `dedup` saving; (2) the ranged read was hashed or archived as the whole file, so two different ranges are "identical". The same question holds after a `compact_boundary`: the earlier body is gone from context. Reproduce first with a test, then fix at the responsible layer: hash the bytes actually returned, and return a pointer only when the earlier result was delivered to the same context (the hook payload's agent/transcript id where the surface has one; when the surface cannot tell — MCP — a body under a size threshold is returned as is). Lossless rule unchanged.
+
+Plan: failing test first in `src/plugins/read/mod.rs` tests (two ranges of one file → distinct results; body archived under one context, read from another → body). Fix in `plugin::identical_result` / `read::mod` hash of the returned bytes; context key from the hook payload where present, size threshold on MCP. `mise exec -- cargo nextest run read:: plugin::`.
+
+Check: a test where session S archives body B under sub-agent context A, then context P reads B → P gets the body, not a pointer; two different ranges of one file never share an id; `just test` green; no `dedup` Measurement row on the returned-body path.
 
 ### T124. Realized `tools_rewrite` saving as a dated `research.md` row
 
