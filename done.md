@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T121. Codex plugin tree (`plugins/codex/`)
+
+Creator request 2026-09-21: every host in `src/agents/` whose host has a plugin format gets a `plugins/<host>/` package. Audit: kilo and omp reuse `plugins/opencode` / `plugins/pi` (T97, T92); windsurf → Devin (T88), Copilot (T116), VS Code (T117) are planned; aider has no plugin system; Zed has only WASM extensions (MCP, no hooks). Codex was the one host with a plugin format and no task. Creator decision: Codex only, one PR. Codex plugin format (fetched 2026-09-21, https://developers.openai.com/plugins/build/plugins, https://learn.chatgpt.com/docs/hooks; matches `engram` and `claude-mem` in this machine's `~/.codex/plugins/cache/`): `.codex-plugin/plugin.json` naming `hooks` and `mcpServers` files, a local marketplace at `.agents/plugins/marketplace.json`, loaded by the CLI and the desktop app.
+
+Do (2026-09-21): `plugins/codex/.codex-plugin/plugin.json`, `.mcp.json` (`rtok mcp` directly, I-37), `hooks/hooks.json` (`rtok hook PreCompact` / `PostCompact`, timeout 5 — the installer's `COMPACT` set), `.agents/plugins/marketplace.json` (one local entry at `./`), `README.md` (install, plugin XOR `rtok agents install codex`, limits, `## Docs`), `AGENTS.md`; row in `plugins/README.md`; `tests/codex_plugin.rs`. Installer offer, singleton and tool hooks → I-88.
+
+Check: `cargo nextest run --test codex_plugin --test host_docs`; `just check`.
+
+Check result (2026-09-21): full `cargo nextest run` 1093/1094 — the one failure is `cli_trycmd` `report-md` snapshotting the binary path under a borrowed `CARGO_TARGET_DIR` (disk full), unrelated. Live on codex-cli 0.155.1 with a scratch `CODEX_HOME`: `codex plugin marketplace add plugins/codex` accepts the `./` entry, `codex plugin add rtok@rtok` installs and enables it, `codex mcp list` shows `rtok` → `rtok mcp`. Hooks firing in a live session not run.
+
 ### T113. `rtok tui` freezes on start and on tab switches
 
 Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
@@ -4361,6 +4371,22 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+**T126** `roadmap.md` and `research.md` §16.2 list shipped work as open
+
+Do: Every task in `roadmap.md` is checked against `done.md` headings (exact match: `## T59.5 —`, `## T58.1 —`, `## T61.2 —`) and open PR branches (`git branch -r` / `gh pr list --state open`); shipped ids are removed from table rows (T59.5, T61.2, T58.1 from the `read` and `proxy`/`archive` lanes). `research.md` §16.2 table gains a `Status` column (values: `shipped`, `shipped (off by default)`, `open`) and a dated line "Status as of 2026-09-21."; T58.1's Why text is fixed to note the 7.3 % re-read delta (from §2) that gates it. Docs only; no code changes.
+
+Check: no shipped id remains in `roadmap.md`; every row in §16.2 has a Status value; `just site` builds; user's shell-generated command list finds no stale task references.
+
+Complexity: 1/5 — docs only, table edits.
+
+Status: done 2026-09-21
+
+Check result: `roadmap.md` rows cleaned: T59.5 removed from `proxy`/`archive` lane (1 row), T61.2 removed (1 row), T58.1 removed from `read` lane (1 row); §16.2 Status column added; T59.5/T61.2 marked `shipped (off by default)` per `config/default.toml` defaults (`enabled=false`, `skills=false`), T58.1 marked `shipped` (delta on by default); `research.md` Why text updated; `just site` not tested (disk nearly full, hugo not available). Verification: `grep` over roadmap.md confirms no T59.5/T58.1/T61.2 remain.
+
+Model: Claude Code / claude-haiku-4-5
+
+Also: the whole `roadmap.md` lane table was stale — all 67 listed ids are in `done.md` (T71.1 dropped, I-71); replaced with a dated note.
 
 ### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 

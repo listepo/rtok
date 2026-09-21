@@ -41,6 +41,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T136 | todo | P2 | 3 | 0% | |
 | T137 | todo | P3 | 3 | 0% | |
 
+
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
 Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
@@ -288,6 +289,7 @@ Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit tes
 `roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
 Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
 Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
+
 
 ## Reference
 
