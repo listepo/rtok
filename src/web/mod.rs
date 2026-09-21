@@ -68,27 +68,86 @@ pub async fn serve(cfg: Config) -> Result<()> {
         .await
         .with_context(|| format!("bind {addr}"))?;
     eprintln!("rtok web http://{addr}  (ws://{addr}/ws)");
-    axum::serve(listener, app(Arc::new(DashState::new(cfg))))
+    let pkg = pkg_dir();
+    if pkg.is_none() {
+        eprintln!("{}", pkg_missing_text());
+    }
+    axum::serve(listener, app_with_pkg(Arc::new(DashState::new(cfg)), pkg))
         .await
         .context("dashboard server")
 }
 
 pub fn app(state: Arc<DashState>) -> Router {
-    let mut r = Router::new()
+    app_with_pkg(state, pkg_dir())
+}
+
+/// `app` with the asset directory already resolved, so tests cover both the
+/// bundle-present and the bundle-missing surface without touching the process
+/// environment.
+pub fn app_with_pkg(state: Arc<DashState>, pkg: Option<PathBuf>) -> Router {
+    let r = Router::new()
         .route("/", get(index))
         .route("/health", get(health))
         .route("/ws", get(ws_upgrade))
         .with_state(state);
-    let pkg = pkg_dir();
-    if pkg.is_dir() {
-        let service = ServeDir::new(pkg).precompressed_br().precompressed_gzip();
-        r = r.nest_service("/pkg", service);
+    match pkg {
+        Some(dir) => {
+            let service = ServeDir::new(dir).precompressed_br().precompressed_gzip();
+            r.nest_service("/pkg", service)
+        }
+        // T80: a 404 here reads as a broken build. Say what is missing instead.
+        None => r.route("/pkg/{*path}", get(pkg_missing)),
     }
-    r
 }
 
-fn pkg_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg")
+/// Where the Slint WASM bundle lives at run time. `env!("CARGO_MANIFEST_DIR")` is
+/// baked at compile time, so a released binary would look inside the CI runner's
+/// checkout (T80); the source tree is the last candidate, not the only one.
+pub fn pkg_dir() -> Option<PathBuf> {
+    pkg_candidates().into_iter().find(|p| p.is_dir())
+}
+
+fn pkg_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(dir) = std::env::var_os(PKG_ENV) {
+        out.push(PathBuf::from(dir));
+    }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(bin) = exe.parent()
+    {
+        // A release archive unpacks `pkg/` beside the binary; a prefix install
+        // puts it under `share/rtok/` beside or one level above `bin/`.
+        out.push(bin.join("pkg"));
+        out.push(bin.join("share").join("rtok").join("pkg"));
+        if let Some(prefix) = bin.parent() {
+            out.push(prefix.join("share").join("rtok").join("pkg"));
+        }
+    }
+    out.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("crates/rtok-webui/pkg"));
+    out
+}
+
+const PKG_ENV: &str = "RTOK_WEB_PKG";
+
+/// One line for the 503 body and for the startup warning — same text, one source.
+fn pkg_missing_text() -> String {
+    let tried = pkg_candidates()
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n  ");
+    format!(
+        "rtok web: the Slint WASM bundle is not on this machine, so the UI cannot load \
+         (the API and /ws are up). Build it with `just web`, or point {PKG_ENV} at a pkg/ \
+         directory. Looked in:\n  {tried}"
+    )
+}
+
+async fn pkg_missing() -> impl IntoResponse {
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        pkg_missing_text(),
+    )
 }
 
 async fn index() -> Html<&'static str> {

@@ -1,1 +1,2 @@
 - T79. `agents install zed` aborts on a real settings.json (JSONC)
+- T81. Ship the WASM bundle with the release archive
