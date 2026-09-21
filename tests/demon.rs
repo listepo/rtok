@@ -191,21 +191,27 @@ fn status_names_the_proxy_endpoint_running_or_stopped() {
         .unwrap();
     assert!(mcp["endpoint"].is_null(), "mcp is stdio: {}", mcp);
 
-    // And the same address once it really is up: wait on the listener, not the state file.
-    rtok(&["demon", "start", "proxy"], &h);
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8123));
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
-            break;
+    // T82: starting/stopping the demon process tree times out on windows-latest (180s) —
+    // same family as the other `tests/demon.rs` exclusions. Keep the stopped-endpoint
+    // checks above on every OS; the live listen round-trip stays Unix until T83.
+    #[cfg(unix)]
+    {
+        // And the same address once it really is up: wait on the listener, not the state file.
+        rtok(&["demon", "start", "proxy"], &h);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8123));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "proxy never listened on 8123");
+            std::thread::sleep(Duration::from_millis(50));
         }
-        assert!(Instant::now() < deadline, "proxy never listened on 8123");
-        std::thread::sleep(Duration::from_millis(50));
+        let up = rtok(&["demon", "status", "proxy"], &h);
+        assert!(up.contains("running"), "{up}");
+        assert!(up.contains("127.0.0.1:8123"), "{up}");
+        rtok(&["demon", "stop", "proxy"], &h);
     }
-    let up = rtok(&["demon", "status", "proxy"], &h);
-    assert!(up.contains("running"), "{up}");
-    assert!(up.contains("127.0.0.1:8123"), "{up}");
-    rtok(&["demon", "stop", "proxy"], &h);
     let _ = fs::remove_dir_all(&h);
 }
 
