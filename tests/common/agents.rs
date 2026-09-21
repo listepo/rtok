@@ -124,12 +124,54 @@ pub fn raw(args: &[&str], cfg: &Path, home: &Path) -> Output {
     Command::new(bin())
         .args(["--config", cfg.to_str().unwrap()])
         .args(args)
+        .env("PATH", fake_claude_path(home))
         .env("HOME", home)
         .env("USERPROFILE", home)
         .env("APPDATA", home)
         .env("RTOK_HOME", home.join(".rtok"))
         .output()
         .expect("rtok")
+}
+
+/// A fake `claude` (T115) first on PATH, so no test ever runs the real CLI: it answers the
+/// detection probe (`--version`), appends every other argv to `<home>/claude.log` and keeps `<config dir>/plugins/installed_plugins.json` the way
+/// `claude plugin install` / `uninstall` do. Unix only; elsewhere PATH is left as it is.
+pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = home.join(".fake-bin");
+        let exe = dir.join("claude");
+        if !exe.exists() {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                &exe,
+                r#"#!/bin/sh
+[ "$1" = --version ] && { echo "2.0.0 (Claude Code)"; exit 0; }
+echo "$*" >> "$HOME/claude.log"
+plugins="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins"
+case "$*" in
+  "plugin install rtok@rtok") mkdir -p "$plugins"
+    printf '{"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}' > "$plugins/installed_plugins.json" ;;
+  "plugin uninstall rtok@rtok") rm -f "$plugins/installed_plugins.json" ;;
+esac
+"#,
+            )
+            .unwrap();
+            fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let mut dirs = vec![dir];
+        dirs.extend(std::env::split_paths(&path));
+        return std::env::join_paths(dirs).unwrap();
+    }
+    #[allow(unreachable_code)]
+    path
+}
+
+/// The fake `claude`'s calls so far, one argv per line.
+pub fn claude_log(home: &Path) -> String {
+    fs::read_to_string(home.join("claude.log")).unwrap_or_default()
 }
 
 /// [`raw`] that must succeed; returns stdout.
