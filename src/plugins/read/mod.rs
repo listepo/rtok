@@ -129,15 +129,12 @@ pub(crate) fn read_with(
     };
     let key = cache::key(abs.to_string_lossy().as_ref(), mode, range);
     // T122: a ranged read is keyed on the bytes it returns, never the whole file.
-    let payload = if mode == "map"
-        || mode == "signatures"
-        || stripped_src.is_some()
-        || range.is_some()
-    {
-        body.as_bytes()
-    } else {
-        raw.as_bytes()
-    };
+    let payload =
+        if mode == "map" || mode == "signatures" || stripped_src.is_some() || range.is_some() {
+            body.as_bytes()
+        } else {
+            raw.as_bytes()
+        };
     if let Some(hit) = cache::hit(
         cx,
         &key,
@@ -702,9 +699,14 @@ pub(crate) mod tests {
         let out1 = read(&Ctx::new(&cx), path, "lines", Some("10-20")).unwrap();
         let out2 = read(&Ctx::new(&cx), path, "lines", Some("30-40")).unwrap();
         assert!(!out1.contains("identical to"), "{out1}");
-        assert!(out1.contains("10:Line 10") && !out1.contains("Line 30"), "{out1}");
-        assert!(out2.contains("30:Line 30") && !out2.contains("Line 10"), "{out2}");
+        assert!(
+            out1.contains("10:Line 10") && !out1.contains("Line 30"),
+            "{out1}"
+        );
+        assert!(
+            out2.contains("30:Line 30") && !out2.contains("Line 10"),
+            "{out2}"
+        );
         let _ = fs::remove_dir_all(dir);
     }
-
 }
