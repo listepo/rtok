@@ -31,7 +31,7 @@ _rtok() {
         case $line[1] in
             (hook)
 _arguments "${_arguments_options[@]}" : /
-'--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/`)]:HOST:_default' /
+'--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/` | /`devin/`)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
 '-h[Print help]' /
 '--help[Print help]' /

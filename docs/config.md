@@ -94,7 +94,7 @@ cjk   = 1.0
 # ── surfaces ────────────────────────────────────────────────────────────────
 
 [hook]                                # rtok hook <event>
-host      = "claude"                  # claude | cursor | copilot — payload field mapping (T10.1, T46.3)
+host      = "claude"                  # claude | cursor | copilot | devin — payload field mapping (T10.1, T46.3, T87)
 max_ms    = 10                        # soft budget; over it, the event is logged as slow
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 

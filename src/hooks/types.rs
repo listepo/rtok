@@ -145,6 +145,32 @@ impl HookInput {
         self.hook_event_name = claude_event(name).to_string();
     }
 
+    /// Devin (CLI and Desktop) sends Claude's snake_case keys with its own values: tools are
+    /// `exec`, `read`, `edit`, `write`; a finished call reports `{success, output, error}`;
+    /// compaction is the single event `PostCompaction`; the project root is the environment's
+    /// `DEVIN_PROJECT_DIR`, passed in as `project_dir`. The reply needs no mapping — Devin reads
+    /// `hookSpecificOutput` as Claude writes it.
+    pub fn adapt_devin(&mut self, event: &str, project_dir: Option<String>) {
+        if let Some(name) = self.tool_name.take() {
+            self.tool_name = Some(canonical_tool_name(&name));
+        }
+        if let Some(Value::Object(resp)) = self.tool_response.as_mut()
+            && !resp.contains_key("stdout")
+            && let Some(out) = resp.get("output").filter(|v| v.is_string()).cloned()
+        {
+            resp.insert("stdout".into(), out);
+        }
+        if self.cwd.is_none() {
+            self.cwd = project_dir.filter(|d| !d.is_empty());
+        }
+        if self.hook_event_name.is_empty() {
+            self.hook_event_name = event.to_string();
+        }
+        if self.hook_event_name == "PostCompaction" {
+            self.hook_event_name = "PostCompact".into();
+        }
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,
@@ -282,9 +308,10 @@ fn claude_event(name: &str) -> &str {
 /// Host tool names (`bash`, `read_file`, `edit`, …) to the Claude names `plugins::guard` matches.
 pub(crate) fn canonical_tool_name(name: &str) -> String {
     let l = name.to_ascii_lowercase();
-    if ["bash", "shell", "terminal", "powershell"]
-        .iter()
-        .any(|k| l.contains(k))
+    if l == "exec"
+        || ["bash", "shell", "terminal", "powershell"]
+            .iter()
+            .any(|k| l.contains(k))
     {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
@@ -468,6 +495,59 @@ mod tests {
         assert_eq!(after.tool_name.as_deref(), Some("Read"));
         assert!(after.post_tool().is_some());
         assert_eq!(copilot_tool_name("web_search"), "web_search");
+    }
+
+    /// Payloads as https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks gives them.
+    #[test]
+    fn devin_maps_tool_names_result_project_dir_and_compaction() {
+        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "dv-1",
+            "prompt_id": "p-1",
+            "tool_name": "exec",
+            "tool_input": {"command": "git status", "shell_id": "main"}
+        }))
+        .unwrap();
+        pre.adapt_devin("PreToolUse", Some("/work/app".into()));
+        assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(pre.tool_input.as_ref().unwrap()["shell_id"], "main");
+        assert_eq!(pre.cwd.as_deref(), Some("/work/app"));
+        assert_eq!(pre.extra.get("prompt_id"), Some(&serde_json::json!("p-1")));
+        assert!(pre.pre_tool().is_some());
+
+        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "dv-1",
+            "cwd": "/from/stdin",
+            "tool_name": "exec",
+            "tool_input": {"command": "ls"},
+            "tool_response": {"success": true, "output": "a\nb\n", "error": null}
+        }))
+        .unwrap();
+        post.adapt_devin("PostToolUse", Some("/work/app".into()));
+        let resp = post.tool_response.as_ref().unwrap();
+        assert_eq!(resp["stdout"], "a\nb\n");
+        assert_eq!(resp["output"], "a\nb\n");
+        assert_eq!(resp["success"], true);
+        assert_eq!(post.cwd.as_deref(), Some("/from/stdin"));
+        assert!(post.post_tool().is_some());
+
+        let mut other: HookInput = serde_json::from_value(serde_json::json!({
+            "tool_name": "mcp__github__execute_query",
+            "tool_input": {}
+        }))
+        .unwrap();
+        other.adapt_devin("PreToolUse", None);
+        assert_eq!(
+            other.tool_name.as_deref(),
+            Some("mcp__github__execute_query")
+        );
+        assert!(other.cwd.is_none());
+
+        let mut compact: HookInput =
+            serde_json::from_value(serde_json::json!({"session_id": "dv-1", "summary": null}))
+                .unwrap();
+        compact.adapt_devin("PostCompaction", None);
+        assert_eq!(compact.hook_event_name, "PostCompact");
     }
 
     #[test]
