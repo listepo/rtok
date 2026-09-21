@@ -4309,3 +4309,11 @@ Complexity: 1/5 — three small write helpers and test updates.
 Status: done 2026-09-21
 Check result: `agents::restart` 13/13 pass. Known limit: an answer that wraps past the terminal width puts the glyph on the wrong row (cosmetic).
 Model: Claude Code / claude-opus-5
+
+**T119 CodeQL on GitHub and locally** · `.github/workflows/codeql.yml`, `justfile`, `mise.toml`, `toolchain.md`
+Do: creator request 2026-09-21. `codeql.yml` scans `actions`, `javascript-typescript`, `python` and `rust` on push/PR to main, weekly and on dispatch (`github/codeql-action@v4`, `build-mode: none`, `security-and-quality`); repo default setup is `not-configured`, so the advanced workflow does not collide with it. `codeql` 2.27.0 is pinned in `mise.toml`; `just codeql [langs…]` copies the tracked files (working-tree content) to `target/codeql/src`, builds one database per language, writes `target/codeql/<lang>.sarif` and fails on any result. Kept out of `just check` because it takes minutes.
+Check: `just codeql` runs all four languages; `actionlint` clean on the workflow; `just check`.
+Complexity: 2/5 — one workflow, one recipe, one pin.
+Status: done 2026-09-21
+Check result: local scan — actions 15 (13 `actions/unpinned-tag` across all workflows, 2 `actions/missing-workflow-permissions` in `ci.yml`), javascript-typescript 0, python 0, rust 1 (`rust/log-injection` in `tests/web.rs:223`, test code); 30 of 190 Rust files extract with errors under `build-mode: none`. Findings are left for a follow-up task. `just check` red only on load flakes (`claude_plugin` ×2, `cli_trycmd`, `graph::watch` watchman fallback, earlier ENOSPC at 2 GB free); each passes alone, none touches this change.
+Model: Claude Code / claude-opus-5
