@@ -1,5 +1,9 @@
 //! Embeds the git sha into `rtok --version` (plan T10.4): `rtok 0.1.0 (1a2b3c4d5)`.
 //! Without a `.git` (crates.io tarball, dist source archive) the sha reads `unknown`.
+//!
+//! T111: also embeds the Slint WASM bundle into `rtok web` when it has been built
+//! (`cfg(rtok_web_embed)`). `RTOK_WEB_EMBED=require` (the release job) turns a
+//! missing bundle into a build failure instead of a binary without a UI.
 
 use std::path::Path;
 use std::process::Command;
@@ -32,5 +36,32 @@ fn main() {
         if Path::new(p).exists() {
             println!("cargo:rerun-if-changed={p}");
         }
+    }
+    web_bundle();
+}
+
+/// Files `src/web/mod.rs` embeds; `src/web/index.html` imports the first, which
+/// fetches the second.
+const WEB_BUNDLE: [&str; 2] = ["rtok_webui.js", "rtok_webui_bg.wasm"];
+
+fn web_bundle() {
+    println!("cargo:rustc-check-cfg=cfg(rtok_web_embed)");
+    println!("cargo:rerun-if-env-changed=RTOK_WEB_EMBED");
+    let pkg = Path::new("crates/rtok-webui/pkg");
+    let present = WEB_BUNDLE.iter().all(|f| pkg.join(f).is_file());
+    // Same rule as the git hints: never name a path that does not exist. A dev
+    // without a bundle still gets the UI from disk (`pkg_dir`) once it is built.
+    for f in WEB_BUNDLE {
+        if pkg.join(f).is_file() {
+            println!("cargo:rerun-if-changed={}", pkg.join(f).display());
+        }
+    }
+    if present {
+        println!("cargo:rustc-cfg=rtok_web_embed");
+    } else if std::env::var("RTOK_WEB_EMBED").as_deref() == Ok("require") {
+        panic!(
+            "RTOK_WEB_EMBED=require but {} lacks {WEB_BUNDLE:?}; run tools/webui-bundle.sh first",
+            pkg.display()
+        );
     }
 }

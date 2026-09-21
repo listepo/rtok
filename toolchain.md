@@ -87,6 +87,7 @@ Project programs and direct packages from the manifests.
 | tree-sitter-tags | local | https://crates.io/crates/tree-sitter-tags | Rust dependency |
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
+| tokio-tungstenite | local | https://crates.io/crates/tokio-tungstenite | WebSocket client for the `rtok web` e2e (tests/web_e2e.rs) |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
 | watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
 | webpki-roots | local | https://crates.io/crates/webpki-roots | Mozilla roots without the platform verifier (T53.3) |

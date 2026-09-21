@@ -1,6 +1,6 @@
-//! T81: the web UI ships with the release archive, and the three places that say so
-//! stay in step. Pure file reads — the archive itself is built in CI, but a dropped
-//! `include`, a hand-edited `release.yml` or a drifted size gate is caught here.
+//! T81/T111: the web UI ships inside the release binary, and the places that say so
+//! stay in step. Pure file reads — the release itself is built in CI, but a dropped
+//! embed guard, a hand-edited `release.yml` or a drifted size gate is caught here.
 
 use std::path::{Path, PathBuf};
 
@@ -13,30 +13,25 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// The bundle rides in every archive, next to the binary — the first directory
-/// `rtok web` looks at (`pkg_dir` in `src/web/mod.rs`).
+/// T111: a ketch install keeps only the executable, so the bundle is compiled in.
+/// The release job must demand it — otherwise `build.rs` quietly embeds nothing.
 #[test]
-fn dist_archives_carry_the_wasm_bundle() {
-    let manifest = read("Cargo.toml");
-    let include = manifest
-        .lines()
-        .find(|l| l.starts_with("include = ["))
-        .expect("[package.metadata.dist] include");
+fn the_release_build_requires_the_embedded_bundle() {
+    let build = read("build.rs");
     assert!(
-        include.contains("crates/rtok-webui/pkg/"),
-        "dist include lost the web UI bundle: {include}"
+        build.contains(r#"Ok("require")"#) && build.contains("rtok_web_embed"),
+        "build.rs no longer embeds the bundle or no longer honours RTOK_WEB_EMBED=require"
     );
-}
-
-/// `rtok web` resolves `pkg/` beside the executable, which is where dist unpacks a
-/// top-level `include`d directory. If that candidate is ever dropped, the archive
-/// becomes dead weight and an installed `rtok web` silently loses its UI again.
-#[test]
-fn the_server_still_looks_beside_the_executable() {
-    let web = read("src/web/mod.rs");
+    for rel in [".github/build-setup.yml", ".github/workflows/release.yml"] {
+        assert!(
+            read(rel).contains("RTOK_WEB_EMBED=require"),
+            "{rel} no longer exports RTOK_WEB_EMBED=require before dist build"
+        );
+    }
+    let manifest = read("Cargo.toml");
     assert!(
-        web.contains(r#"bin.join("pkg")"#),
-        "src/web/mod.rs no longer looks for pkg/ next to current_exe()"
+        !manifest.contains(r#""crates/rtok-webui/pkg/""#),
+        "the archive would carry a second copy of the embedded bundle"
     );
 }
 
@@ -87,10 +82,10 @@ fn the_script_gate_matches_the_measured_size_gate() {
     assert_eq!(gate, measured, "T60.7 gate drifted between script and test");
 }
 
-/// A bundle built here must be the one the archive would carry: the script writes
-/// into the directory `include` names. Skipped when nothing has been built yet.
+/// A bundle built here must be the one `build.rs` embeds: the script writes into
+/// the directory it reads. Skipped when nothing has been built yet.
 #[test]
-fn a_built_bundle_lands_where_dist_picks_it_up() {
+fn a_built_bundle_lands_where_build_rs_embeds_it() {
     let pkg = repo("crates/rtok-webui/pkg");
     if !Path::new(&pkg).is_dir() {
         eprintln!("skip: no bundle built — run `just web-bundle`");
