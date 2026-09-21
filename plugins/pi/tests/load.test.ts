@@ -1,10 +1,12 @@
 // T48.1: pi's own loader finds the extension through the directory `rtok agents install pi --yes`
 // links into `<agent dir>/extensions/rtok`. pi reads that directory's `package.json`
 // `pi.extensions` (then `index.ts`), so no `index.ts` is needed. `RTOK_PI_AGENT_DIR` points at a
-// dir install prepared; without it the test links `plugins/pi` itself. Skipped when pi is missing.
+// dir install prepared; without it the test links `plugins/pi` itself. Skips when pi is missing.
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PI = "@earendil-works/pi-coding-agent";
@@ -29,7 +31,7 @@ function piPackage(): string | null {
 
 const pkg = piPackage();
 
-test.skipIf(!pkg)("pi loads the linked rtok directory once", async () => {
+test("pi loads the linked rtok directory once", { skip: !pkg && "pi not installed" }, async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rtok-pi-load-"));
   let agentDir = process.env.RTOK_PI_AGENT_DIR;
   if (!agentDir) {
@@ -42,12 +44,12 @@ test.skipIf(!pkg)("pi loads the linked rtok directory once", async () => {
     pathToFileURL(path.join(pkg!, "dist/index.js")).href
   );
   const { extensions, errors } = await discoverAndLoadExtensions([], tmp, agentDir);
-  expect(errors).toEqual([]);
-  expect(extensions, extensions.map((e: any) => e.path).join(", ")).toHaveLength(1);
+  assert.deepEqual(errors, []);
+  assert.equal(extensions.length, 1, extensions.map((e: any) => e.path).join(", "));
   const [ext] = extensions;
-  expect(ext.path).toMatch(/extensions[\\/]rtok[\\/]extensions[\\/]rtok\.ts$/);
-  expect(ext.handlers.has("tool_call"), "bash rewrite handler").toBe(true);
-  expect(ext.handlers.has("tool_result"), "bash filter handler").toBe(true);
-  expect(ext.handlers.has("context"), "archive live-zone handler (T70.2)").toBe(true);
+  assert.match(ext.path, /extensions[\\/]rtok[\\/]extensions[\\/]rtok\.ts$/);
+  assert.ok(ext.handlers.has("tool_call"), "bash rewrite handler");
+  assert.ok(ext.handlers.has("tool_result"), "bash filter handler");
+  assert.ok(ext.handlers.has("context"), "archive live-zone handler (T70.2)");
   fs.rmSync(tmp, { recursive: true, force: true });
 });

@@ -44,16 +44,6 @@ Do (2026-09-21): T92.2 — `src/agents/omp/` (`mod.rs` + `README.md` with the mo
 
 Check result (2026-09-21): unit tests `agents::omp::tests` (dry-run offer names `plugins/pi` and ketch, writes nothing; `--yes` links and registers with no `type`, second apply `NO_CHANGES` twice, remove keeps a foreign server; a foreign dest directory is not `installed`) pass; `agents_doc`, `host_docs`, `config_coverage`, `pi_plugin`, `cli_trycmd` green. On this machine (omp 18.1.14 at `~/.bun/bin/omp`) `rtok agents list` shows `CLI: oh my pi` and `rtok agents install omp --dry-run` offers `plugins/pi → ~/.omp/agent/extensions/rtok` and `mcpServers.rtok: rtok mcp`, writing nothing. `just check` green: 1109 passed, 4 skipped. Still open, as the card says: one real `omp -p` turn whose bash call goes through `rtok run` (no model credit here).
 
-### T111. TS plugin tests on vitest, with snapshots
-
-The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
-
-Do: vitest 5.0.1 as a mise `npm:` tool like oxlint/jscpd (no `package.json`), `globals: true` and `cacheDir: target/vitest` in `vitest.config.mjs` so tests need no `vitest` import; rewrite the three files to `test`/`expect`/`vi`; inline snapshots for the registered tool names, the context replacement array and the compaction/transform outputs; `tests/filter.rs` and `tests/pi_plugin.rs` run `vitest run <file>` instead of `node --test`; `toolchain.md` and the `mise.toml` comment.
-
-Check: `vitest run` green; `cargo nextest run --test filter --test pi_plugin` green; `just js` green.
-
-Check result (2026-09-21): `vitest run` 3 files, 42 tests green; `cargo nextest run --test filter --test pi_plugin` 7/7; `just js` green. Snapshots: the opencode PreCompact/SessionStart hook payloads, the pi `context` replacement array, the pi `mcp --call` line per registered tool. `tests/common::vitest` is the one runner both wrappers use (Windows: `vitest.cmd`).
-
 ### T110. oxlint and oxfmt for the JS/TS files
 
 Asked for by the creator. The six TypeScript files (`plugins/opencode/*.ts`, `plugins/pi/**/*.ts`, `tests/node/fake-rtok.ts`) had no linter or formatter; their line widths and quoting differed file to file. mise pins `npm:oxlint` 1.83.0 and `npm:oxfmt` 0.68.0 (both released 2026-09-14, oxc-project — maintained). `just js` runs `oxlint --deny-warnings` and `oxfmt --check` over `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs'` and is part of `just check`, so CI's `check` job enforces it; `just js-fmt` rewrites. JSON is deliberately outside the file list: oxfmt would reformat the plugins' manifests (`hooks.json`, `package.json`), which tests compare byte for byte. Defaults, no config file.
@@ -143,7 +133,6 @@ Do (2026-09-21): `demon::Row` gains `endpoint: Option<String>` — for `proxy`, 
 Check: unit `the_proxy_row_names_its_configured_endpoint_stopped_or_not` (row + table carry the configured address while stopped; mcp stays `None`); integration `tests/demon.rs::status_names_the_proxy_endpoint_running_or_stopped` (custom `[proxy] port = 8123` shows stopped, in `--json` with mcp `null`, and — after `demon start proxy` — the same address while a `TcpStream` actually reaches it); trycmd `demon-status` / `demon-json` refreshed. `just check`.
 
 Check result (2026-09-21): full `just check` green in the worktree — 1061 passed, 3 skipped, exit 0; demon units 9/9 (incl. the new one), `--test demon` 6/6, trycmd `cli` green over the refreshed `demon-status` / `demon-json` goldens.
-
 ### T81. Ship the WASM bundle with the release archive
 
 Do (2026-09-21): T80 taught an installed `rtok web` to explain a missing bundle; this puts the bundle in the archive. `Cargo.toml`'s `[package.metadata.dist] include` gains `crates/rtok-webui/pkg/`, so every archive carries `pkg/` beside the binary exactly as it already carries `plugins/` and `skills/` — and `pkg/` beside `current_exe()` is the first candidate `pkg_dir` tries. The open question (which targets pay the ~4.2 MB) was answered by the tool, not by taste: `include` is package-local with no per-target form, so it is every archive or none. `.github/build-setup.yml` — the hook dist injects into `build-local-artifacts` — installs wasm-pack via `taiki-e/install-action` (Linux/macOS/Windows) and runs the build before `dist build`; `.github/workflows/release.yml` was regenerated with `just dist-generate` (9 added lines, nothing hand-edited). The build itself moved into `tools/webui-bundle.sh` so `just web` and CI cannot drift: `--require` turns every skip into a failure (CI), `--compress` writes the `.br`/`.gz` `rtok web` negotiates (`just web` only — the archive serves loopback and does not need them). The script also refuses a bundle over the T60.7 gate, which is what a silent loss of wasm-opt would produce: `wasm-pack` runs wasm-opt itself when binaryen is reachable (measured 4,392,425 B; the explicit `-Oz` on top gives 4,232,904 B), and without it the bundle is ~10.5 MB — not something to discover after a release.
@@ -321,7 +310,6 @@ Done when:
 **Check:** docs-only close; no ranking code.
 
 ---
-
 ## T71.4 — Measure the per-skill listing overhead through the proxy
 
 From `research.md` §10.6 (open question). The docs say "~100 tokens per skill"; the measured description here averages 194 chars ≈ 49 tokens, so the framing per listed skill (name, path, wrapper text) is unknown, and T61.3 / T63.1 total "description bytes ≈ tokens per request" without it.
@@ -863,7 +851,6 @@ Done when an opt-in `inject` nudge set exists as data (D7), stays inside the D5 
 **Result (2026-09-18).** `modes/nudges.md` is D7 data (re-read / expand / outline-first / search-before-Grep), wired as opt-in `builtin("nudges")` in inject (default `modes = []`). Est. **114** prose tokens (cap 250). SessionStart `additionalContext` **0 B off / 478 B on**, byte-stable, absent from UserPromptSubmit. Dry `rtok bench` without `RTOK_BENCH_LIVE`: off and on both **6/6** pass, cost **0** (`live: false`). Live A/B attempted 2026-09-18 after creator spend approval: `claude` 2.1.236 present, `claude auth status` `loggedIn: false`, OAuth expired and `ANTHROPIC_API_KEY` unset (gateway key 401). No live tokens or `stats --price` rows; gate stays **do not enable**. Default `modes` left off.
 
 ---
-
 ## T68.1 — `explore`: one call answers a code question
 
 From the codegraph / graphify review (2026-09-18). codegraph's single `codegraph_explore`
@@ -942,7 +929,6 @@ Deviation: the commit is not its own `T67.1:` commit. Another agent ran `git add
 Check: `cargo nextest run -p rtok` with the expand/mcp filter — 64 passed, including the new `grep_is_regex_numbered_by_archive_line_and_falls_back_to_literal` (regex hit, literal fallback on `[E0308`, numbering inside a range, no-grep unchanged) and `descriptions_at_most_60_tokens`. `cargo fmt` and `clippy -D warnings` clean. Three `agents install cursor` tests failed in that run with empty stdout/stderr and exit 1; the host had 1.5 GiB free while other agents were building. Re-run after freeing the scratch worktree: 3 passed.
 
 ---
-
 ## T66.1 — `mem_save` updates a note in place: project + kind + title is the topic key
 
 From the engram gap review (`research.md` §13, 2026-09-18). engram's `topic_key` upserts the observation for the same `project + scope + topic_key` and bumps a revision counter, so an evolving decision stays one row; rtok's `mem_save` always inserted, so re-saving "auth model" after a change left two rows with the same title, and SessionStart recall (5 titles) showed the stale one beside the new one. Zero-LLM, no schema change: the title already is the stable key.
@@ -1634,14 +1620,12 @@ Check: an archived `call_io` body carries its session; the recorded sha256 match
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test --lib store` — `spill_archive_carries_session`, `inline_sha256_matches_stored_text`, `insert_measurement_rejects_out_of_range_estimates` pass (rstest); T36.2 `live_zone_pointer` retained.
-
 **T36.9 `~` expands for every path key** · — · `src/config/mod.rs`
 Do: `report.out`, `bench.tasks`, `bench.configs.*` and `plugins.read.allow_paths` are missing from the expansion list, so `[report] out = "~/rtok-report.md"` fails with `No such file or directory` although `docs/config.md` says paths accept `~`.
 Check: a test walks every `PathBuf` leaf of `Config::default()` and fails if one is not expanded.
 Complexity: 2/5
 Status: done 2026-09-11 · Model: Composer 2.5
 Evidence: `mise exec -- cargo test -p rtok --lib default_expands_every_pathbuf tilde_expands` — 6 passed (`default_expands_every_pathbuf`, four `tilde_expands_for_every_path_key` cases, `expand_covers_bare_tilde_and_rtok_home_dir`).
-
 **T36.8 legacy-key fold cannot outrank env or flags** · — · `src/config/mod.rs`, `src/config/layers.rs`
 Do: `[dashboard]`, `core.log_file`, `core.log_level`, `core.log_to_db` and `core.inject_budget_tokens` are folded after `extract()`, so a stale file key overrides `RTOK_*` and `--flags` (`rtok web --port 5555` binds the file's 4444), and `config show --sources` reports the pre-fold value and source. Fold inside the figment below project/env/flag, or apply a legacy value only while the new key is still at its default, and build `--sources` rows from the folded result.
 Check: a legacy file key loses to `RTOK_*` and to a flag; `show --sources` names the layer whose value is in effect.
@@ -3550,7 +3534,6 @@ Status: done 2026-09-02 · Check: `printf 'a\nb\n'` → stdout `a\nb\n` exit 0 n
 Do: pure function over `&str`: apply `Rule { match, max_lines, head, tail, drop = [regex], keep = [regex], dedupe }` to captured output. Keep-regexes always survive (`error|warning|panic|FAIL|Traceback` built in); drop-regexes remove lines; `dedupe` collapses consecutive repeats to `<line> (×N)`; then head/tail with `… N lines omitted (expand <id>)`. Non-zero exit → last 80 lines verbatim, no rule applied. No I/O, no subprocess.
 Check: unit tests: 300 `ok` lines + one `error:` line with `max_lines = 20` → ≤ 20 lines that include the error line; exit-3 input returns its last 80 lines untouched.
 Status: done 2026-09-02 · Check: `cargo test cmd::rules` both tests green. Deviation: keep/drop match `|`-split substrings, not the `regex` crate.
-
 **T3.5 `rtok expand <id>`** · T3.1 · `src/expand.rs`
 Do: print archived payload; `--lines a-b`; `--grep re`. Also exposed later as MCP tool (T4.1).
 Check: `rtok expand <id from T3.1>` prints the raw output; unknown id → exit 1 with message.
@@ -3780,7 +3763,6 @@ Status: done 2026-09-02 · Check: `fifty_then_reimport_then_malformed_exits_ok` 
 Do: copy the intent of caveman (terse output) and ponytail (YAGNI ladder) into ≤ 250-token markdown files under `~/.rtok/modes/`; `rtok setup --mode terse,yagni` enables; injected once per session via `inject` (priority 5), not per prompt.
 Check: `rtok hook SessionStart` output contains the mode text once; UserPromptSubmit output does not.
 Status: done 2026-09-02 · Check: SessionStart additionalContext contains `# terse` and `# yagni` once; UserPromptSubmit does not. Files ≤ 250 tokens. `make check` green. Deviation: `--mode` on `setup` maps to `setup.modes`; builtins via `include_str!`.
-
 **T7.2 instruction audit** · T1.4 · `src/doctor.rs`
 Do: `rtok doctor --instructions`: token count of `~/.claude/CLAUDE.md` + project CLAUDE.md + every enabled plugin's SessionStart text (lean-ctx, engram, ponytail, claude-mem, token-optimizer today); flag duplicates (same sentence in two files) and anything > 1,000 tokens.
 Check: on this machine, report lists ≥ 4 injectors and their token totals.
@@ -4293,7 +4275,6 @@ Complexity: 2/5 — data files and one integration test; no product code.
 Status: done 2026-09-21
 Check result: `grok_plugin` (3) and `host_docs` pass inside `just check` exit 0 — 1090 passed, 4 skipped. The expected hook list is written out in the test because `agents::claude::ENTRIES` is `pub(super)`; T100's `src/agents/grok` moves the check next to `ENTRIES`. Not verified on a live Grok session.
 Model: Claude Code / claude-opus-5
-
 **T77 ZCode plugin offered on install (--yes), singleton with the config surfaces** · `src/agents/zcode/{mod.rs,README.md}`, `plugins/zcode/`, `tests/agents_install.rs`, `tests/trycmd/{doctor,report-md}.toml`, `docs/agents.md`
 Do: `rtok agents install zcode --yes` links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` and lists it in `plugins.dirs` in `~/.zcode/cli/config.json` — read from the installed app (v0.2.0, `glm/zcode.cjs`): every `plugins.dirs` entry is an inline plugin root, enabled by default, marketplace id `inline`; `remove` unlinks and drops the entry. The plugin is hooks and MCP as one unit (D21): `.zcode-plugin/plugin.json` + auto-discovered `hooks/hooks.json` (the five documented entries, `type: "process"` via `${ZCODE_PLUGIN_ROOT}/scripts/hook.sh`) + `.mcp.json` (`scripts/mcp.sh`); the launchers resolve rtok from PATH or the ketch store, fail the hook open and the MCP loudly with the ketch hint. While the plugin is linked it is the only call path: setup strips its own `hooks.events` entries and `mcp.servers.rtok` instead of re-adding them; a declined offer adds no `plugins.dirs` entry and a stale one is dropped.
 Check: unit `dry_run_offer_names_plugin_and_local`, `yes_links_plugin_and_lists_dirs`, `linked_plugin_is_the_only_call_path`, `declined_offer_adds_no_dirs_entry_and_drops_a_stale_one`, `remove_unlinks_plugin_and_drops_dirs_entry`; `agents_install` / `agent_remove` with `--yes`; `host_docs`, blessed `agents_doc`; `just check`.
@@ -4301,11 +4282,3 @@ Complexity: 3/5 — mirrors the Cursor offer (T10.5) plus the `plugins.dirs` lis
 Status: done 2026-09-21
 Check result: 7/7 zcode unit tests; `agents_install` 9/9 and `agent_remove` green with `--yes`; `just check` green after updating the two trycmd snapshots (`doctor`, `report-md`) that carry the module line; smoke run under a temp HOME shows the first `--yes` run writing only `+ plugin` and `+ plugins.dirs +=`.
 Model: ZCode / GLM-5.3
-
-**T112 Restart prompt spinner no longer erases the typed answer** · `src/agents/restart.rs`
-Do: the `[y/N]` restart prompt after `agents install|uninstall` redrew its spinner every 80 ms with `\r\x1b[K` + the prompt, wiping the terminal echo of what the user was typing. Now the row is cleared once on the first paint; each frame swaps only the column-0 glyph under cursor save/restore (`ESC 7`/`ESC 8`); an answered prompt blanks the glyph one row up instead of reprinting the prompt, and an unanswered one ends the line.
-Check: `agents::restart` tests assert exactly one `\x1b[K` per prompt, in-place glyph frames, one trailing newline on timeout, and the answered-row cleanup; `just check`.
-Complexity: 1/5 — three small write helpers and test updates.
-Status: done 2026-09-21
-Check result: `agents::restart` 13/13 pass. Known limit: an answer that wraps past the terminal width puts the glyph on the wrong row (cosmetic).
-Model: Claude Code / claude-opus-5

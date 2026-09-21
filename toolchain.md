@@ -14,11 +14,10 @@ Project programs and direct packages from the manifests.
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
 | just | mise | Command recipes | https://github.com/casey/just |
-| node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does | https://github.com/nodejs/node |
+| node | mise | jscpd, oxlint, oxfmt and the TS plugin tests run on it; nothing in the binary does | https://github.com/nodejs/node |
 | jscpd | mise | `just dup` (T26.0): copy-paste detector, config in .jscpd.json | https://github.com/kucherenko/jscpd |
 | oxlint | mise (`npm:oxlint`) | `just js` (T110): lint for the TS host plugins and tests/node, `--deny-warnings` | https://github.com/oxc-project/oxc |
 | oxfmt | mise (`npm:oxfmt`) | `just js` / `just js-fmt` (T110): formatter for the same JS/TS files | https://github.com/oxc-project/oxc |
-| vitest | mise (`npm:vitest`) | T111: runs the TS host plugin tests (`vitest.config.mjs`, globals, inline snapshots); driven by `tests/filter.rs` and `tests/pi_plugin.rs` | https://github.com/vitest-dev/vitest |
 | rust | mise | CI otherwise installs the minimal profile | https://github.com/rust-lang/rust |
 | rustc | mise (pin rust) | Rust compiler | https://github.com/rust-lang/rust |
 | cargo | mise (pin rust) | Rust build and dependencies | https://github.com/rust-lang/cargo |

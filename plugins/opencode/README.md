@@ -10,7 +10,7 @@ any spawn error returns the original output). `experimental.session.compacting` 
 appends the budgeted checkpoint to `output.context` (never `output.prompt`). The next
 `experimental.chat.system.transform` injects `PostCompact` restore bytes (T70.6). Hook hosts
 are T58.2. `rtok agents install opencode --yes` links it into `<config dir>/plugins/rtok.ts`
-for the CLI and the desktop app (T44.5). `rtok.test.ts` is its unit test (vitest). Missing `rtok`:
+for the CLI and the desktop app (T44.5). `rtok.test.ts` is its unit test. Missing `rtok`:
 install with ketch (`ketch install listepo/rtok`).
 
 Kilo Code 7 runs on the OpenCode server and loads the same file unchanged:
