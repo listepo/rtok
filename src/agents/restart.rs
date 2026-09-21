@@ -560,12 +560,14 @@ mod tests {
             // frame still paints many before it — a 25 ms timeout left room for only one.
             prompt_with_spinner_io(
                 "> ",
-                None,
+                // Long enough that even a loaded CI runner paints >=2 in-place frames
+                // before the deadline (first paint uses \r\x1b[K, not \x1b7\r).
+                Some(Duration::from_millis(120)),
                 &['1', '2', '3'],
                 Duration::from_millis(5),
                 &mut *guard,
                 |_| {
-                    thread::sleep(Duration::from_millis(150));
+                    thread::sleep(Duration::from_millis(250));
                     Ok(None)
                 },
             )

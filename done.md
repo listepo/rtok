@@ -10,6 +10,16 @@ Do (2026-09-21): a `tests` module in `src/otel/export.rs`, six units, no new dep
 
 Check result (2026-09-21): `cargo nextest run --lib otel::export` 6/6 green; `just check` green.
 
+### T113. `rtok tui` freezes on start and on tab switches
+
+Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
+
+Do: `App::background` gives the running TUI a `Worker` thread that turns a config into a snapshot (queued requests collapse into the newest; a thread that will not start or dies falls back to inline reads, D1). The screen opens at once over `Snapshot::default()`; the loop waits at most 100 ms for a key, then `App::poll` lands finished reads; a timer tick is skipped while a read runs; the footer says `loading…`. `App::new` still reads inline for unit tests.
+
+Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` — tabs switch mid-read, the worker's snapshot lands, a tick mid-read is skipped; all `tui::` tests green; `just check` green.
+
+Status: done September 21, 2026
+
 ### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
 
 After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).
@@ -4360,4 +4370,12 @@ Check: `just codeql` 0 results for all four languages; `actionlint` on every wor
 Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
+Model: Claude Code / claude-opus-5
+
+**T127 Read advice: a small ranged native `Read` is the edit gate** · `src/plugins/read/{hook.rs,README.md,AGENTS.md}`
+Do: creator request 2026-09-21 — read file content through `rtok read` always. The host's `Edit` demands a native `Read` first and an MCP read does not satisfy it; the hook decided on size alone, so even `Read(limit=30)` of a file over `native_max_bytes` was denied, and the deny text promised "native Read allowed for files you are about to edit" while only files edited in the last 5 tool calls passed. Verified 2026-09-21 on Claude Code: `Read(limit=1)` satisfies the gate; an `Edit` of line 40 then succeeds. `pre_tool` now passes a native `Read` with `limit` ≤ 5 (`GATE_MAX_LINES`, a constant — the planned `read.gate_max_lines` key was dropped as YAGNI) whatever the file size; `REASON` is `use rtok read; before Edit run native Read(limit=1) — it satisfies the edit gate`; the `mode=diff` deny stays.
+Check: `hook.rs` unit tests — 100 KB file with `limit: 1` → no decision, `limit: 2000` → deny, no `limit` → deny with the new text; `just check` green.
+Complexity: 2/5 — one guard, one string, one test.
+Status: done 2026-09-21
+Check result: `cargo nextest -E test(/plugins::read::hook/)` 9 passed (new `a_small_limit_opens_the_edit_gate`; `hundred_kb_is_denied` asserts the new text); `just check` green (fmt, clippy, full nextest, build-min, jscpd, oxlint, oxfmt).
 Model: Claude Code / claude-opus-5
