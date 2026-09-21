@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::agents::{backups, json, rtok, rtok_without_claude, tmp, write_cfg};
+use common::agents::{backups, contains_hook, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
 
 /// No `claude` on PATH (T139: the plugin is the default once it is there), so this exercises
@@ -35,10 +35,7 @@ fn claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign() {
         &home,
     );
     let after_setup = fs::read_to_string(&settings).unwrap();
-    assert!(
-        after_setup.contains("rtok hook PreToolUse"),
-        "{after_setup}"
-    );
+    assert!(contains_hook(&after_setup, "PreToolUse"), "{after_setup}");
     assert!(after_setup.contains("ANTHROPIC_BASE_URL"), "{after_setup}");
     assert!(json(&claude_json)["mcpServers"]["rtok"].is_object());
 

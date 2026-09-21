@@ -150,8 +150,11 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 }
 
 /// A fake `claude` (T115) first on PATH, so no test ever runs the real CLI: it answers the
-/// detection probe (`--version`), appends every other argv to `<home>/claude.log` and keeps `<config dir>/plugins/installed_plugins.json` the way
-/// `claude plugin install` / `uninstall` do. Unix only; elsewhere PATH is left as it is.
+/// detection probe (`--version`), appends every other argv to `<home>/claude.log` and keeps
+/// `<config dir>/plugins/installed_plugins.json` the way `claude plugin install` / `uninstall`
+/// do. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm installs the real
+/// CLI as), which `spawn_claude`'s `cmd /C` wrapper (T139 windows fix) resolves the way it
+/// resolves the real thing.
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
     let path = std::env::var_os("PATH").unwrap_or_default();
     #[cfg(unix)]
@@ -176,6 +179,41 @@ esac
             )
             .unwrap();
             fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let mut dirs = vec![dir];
+        dirs.extend(std::env::split_paths(&path));
+        return std::env::join_paths(dirs).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        let dir = home.join(".fake-bin");
+        let exe = dir.join("claude.cmd");
+        if !exe.exists() {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                &exe,
+                r#"@echo off
+if "%~1"=="--version" (
+  echo 2.0.0 Claude Code
+  exit /b 0
+)
+set "ALLARGS=%*"
+echo %ALLARGS%>>"%HOME%\claude.log"
+if defined CLAUDE_CONFIG_DIR (
+  set "PLUGINS=%CLAUDE_CONFIG_DIR%\plugins"
+) else (
+  set "PLUGINS=%HOME%\.claude\plugins"
+)
+if "%ALLARGS%"=="plugin install rtok@rtok" (
+  mkdir "%PLUGINS%" 2>nul
+  >"%PLUGINS%\installed_plugins.json" echo {"version":2,"plugins":{"rtok@rtok":[{"scope":"user"}]}}
+)
+if "%ALLARGS%"=="plugin uninstall rtok@rtok" (
+  del /f /q "%PLUGINS%\installed_plugins.json" 2>nul
+)
+"#,
+            )
+            .unwrap();
         }
         let mut dirs = vec![dir];
         dirs.extend(std::env::split_paths(&path));
@@ -216,6 +254,15 @@ pub fn rtok_without_claude(args: &[&str], cfg: &Path, home: &Path) -> String {
 
 pub fn json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// Does `text` install our hook for `event`? `rtok_command`'s Windows fallback (no bare `rtok`
+/// on the sandboxed PATH) writes the absolute `…\rtok.exe` instead of the bare name, so a
+/// literal `"rtok hook <event>"` search would miss it; dropping `.exe` first collapses that
+/// back to the same shape the test expects on every platform.
+pub fn contains_hook(text: &str, event: &str) -> bool {
+    text.replace(".exe", "")
+        .contains(&format!("rtok hook {event}"))
 }
 
 /// The copies of `path` in its sibling `_backup/` directory, oldest name first.

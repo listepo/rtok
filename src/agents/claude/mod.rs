@@ -223,9 +223,24 @@ fn marketplace_state(cfg: &Config) -> MarketplaceState {
     }
 }
 
+/// `claude` resolved the way a shell would. Windows CLIs installed through npm ship as a
+/// `.cmd`/`.bat`/`.ps1` shim, not a `.exe` — `Command::new("claude")` only ever auto-appends
+/// `.exe` (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a
+/// real, on-PATH `claude` and the plugin offer stays closed forever. Routing through `cmd /C`
+/// there reuses the shell's own PATH + `PATHEXT` search, which does try `.cmd`/`.bat`.
+fn spawn_claude() -> std::process::Command {
+    if cfg!(windows) {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", "claude"]);
+        cmd
+    } else {
+        std::process::Command::new("claude")
+    }
+}
+
 /// One `claude plugin …` call; `CLAUDE_CONFIG_DIR` only when `settings_path` is not the default.
 fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
-    let mut cmd = std::process::Command::new("claude");
+    let mut cmd = spawn_claude();
     cmd.args(args).stdin(std::process::Stdio::null());
     let dir = config_dir(cfg);
     if dir != super::home_dir().join(".claude") {
