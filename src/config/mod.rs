@@ -467,6 +467,14 @@ section! {
 }
 
 section! {
+    /// `[worktree]` — `rtok worktree add` (T158).
+    Worktree {
+        /// Where worktrees are created; empty = discover `_worktrees/` from the main checkout.
+        root: PathBuf = PathBuf::new(),
+    }
+}
+
+section! {
     /// `[otel]` — OpenTelemetry export (D19, P16). Off until `endpoint` resolves.
     Otel {
         endpoint: String = String::new(),
@@ -744,6 +752,7 @@ pub struct Config {
     pub setup: Setup,
     pub expand: Expand,
     pub filter: Filter,
+    pub worktree: Worktree,
     pub otel: Otel,
     pub plugins: Plugins,
     /// Directory the config was loaded from; not part of the file.
@@ -914,6 +923,7 @@ impl Config {
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
+            &mut self.worktree.root,
         ] {
             *path = expand(path, home);
         }
@@ -1133,6 +1143,7 @@ mod tests {
             &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,
             &cfg.plugins.wasm.dir,
+            &cfg.worktree.root,
         ];
         out.extend(cfg.bench.configs.values());
         out.extend(&cfg.plugins.read.allow_paths);
@@ -1407,6 +1418,7 @@ bogus = true
     #[case::allow_paths("[plugins.read]\nallow_paths = [\"~/src\"]\n")]
     #[case::wasm_dir("[plugins.wasm]\ndir = \"~/plugins\"\n")]
     #[case::doctor_mcp_json("[doctor]\nmcp_json = \"~/.mcp.json\"\n")]
+    #[case::worktree_root("[worktree]\nroot = \"~/worktrees\"\n")]
     fn tilde_expands_for_every_path_key(#[case] toml: &str) {
         let home = Path::new("/tmp/rtok-tilde-keys");
         let mut cfg: Config = parse(toml).unwrap();
