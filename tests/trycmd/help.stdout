@@ -11,6 +11,7 @@ Commands:
   stats        Measurements from session logs and the proxy
   bench        A/B benchmark of host configurations
   doctor       Inspect hooks, MCP servers and the proxy chain
+  worktree     Git worktrees of this repository: owner, state and disk cost
   info         Version, effective paths, disk usage, error count and proxy status
   agents       Agent hosts (`rtok agents install|uninstall|list|info …`) [alias: agent]
   run          Execute a command, archive its raw output, print the filtered version

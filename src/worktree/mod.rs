@@ -3,6 +3,7 @@
 //! Parsing and classification are pure; [`git`] is the only module that spawns git.
 
 pub mod git;
+pub mod list;
 
 use std::path::{Path, PathBuf};
 
@@ -95,6 +96,18 @@ pub enum State {
     /// Merging the branch into the base would change nothing — squash merges included.
     Merged,
     Unmerged,
+}
+
+impl State {
+    pub fn label(self) -> &'static str {
+        match self {
+            State::Main => "main",
+            State::Stale => "stale",
+            State::Dirty => "dirty",
+            State::Merged => "merged",
+            State::Unmerged => "unmerged",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
