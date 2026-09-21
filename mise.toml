@@ -5,10 +5,11 @@ git-cliff = "2.13.1"
 go = "1.27.0" # hugo resolves the hextra theme as a Go module (site/go.mod)
 hugo = "0.165.0"
 just = "1.58.0"
-node = "26.8.2" # jscpd, oxlint, oxfmt and the TS plugin tests run on it; nothing in the binary does
+node = "26.8.2" # jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does
 "npm:jscpd" = "5.1.2" # `just dup` (T26.0): copy-paste detector, config in .jscpd.json
 "npm:oxlint" = "1.83.0" # `just js` (T110): lint for the TS host plugins and tests/node
 "npm:oxfmt" = "0.68.0" # `just js` (T110): format check for the same files
+"npm:vitest" = "5.0.1" # T111: test runner for the TS host plugin tests (run by tests/filter.rs, tests/pi_plugin.rs)
 rust = { version = "1.97.1", components = "rustfmt,clippy" } # CI otherwise installs the minimal profile
 
 # Lightweight Docker-compatible stack (agents: prefer this over Docker Desktop; see docs/colima.md)

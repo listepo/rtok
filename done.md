@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+### T111. TS plugin tests on vitest, with snapshots
+
+The host plugins' TypeScript tests (`plugins/opencode/rtok.test.ts`, `plugins/pi/tests/*.test.ts`) run on `node:test` + `node:assert`. Move them to vitest (creator's request) and pin structured outputs as snapshots where a hand-written deep-equal only restates the value.
+
+Do: vitest 5.0.1 as a mise `npm:` tool like oxlint/jscpd (no `package.json`), `globals: true` and `cacheDir: target/vitest` in `vitest.config.mjs` so tests need no `vitest` import; rewrite the three files to `test`/`expect`/`vi`; inline snapshots for the registered tool names, the context replacement array and the compaction/transform outputs; `tests/filter.rs` and `tests/pi_plugin.rs` run `vitest run <file>` instead of `node --test`; `toolchain.md` and the `mise.toml` comment.
+
+Check: `vitest run` green; `cargo nextest run --test filter --test pi_plugin` green; `just js` green.
+
+Check result (2026-09-21): `vitest run` 3 files, 42 tests green; `cargo nextest run --test filter --test pi_plugin` 7/7; `just js` green. Snapshots: the opencode PreCompact/SessionStart hook payloads, the pi `context` replacement array, the pi `mcp --call` line per registered tool. `tests/common::vitest` is the one runner both wrappers use (Windows: `vitest.cmd`).
 ### T104. Migration and `schema.rs` drift guard
 
 `MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
