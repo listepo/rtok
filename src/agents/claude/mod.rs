@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, array_at, edit_json, object_at};
+use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES, accepted, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -161,6 +161,91 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_mcp(&apply(cfg), &cfg.doctor.claude_json, "rtok")
 }
 
+/// The plugin tree (T114) and its id in the one-plugin marketplace that tree also is.
+const PLUGIN_SRC: &str = "plugins/claude";
+const PLUGIN_ID: &str = "rtok@rtok";
+
+/// Claude Code's config dir: the one `settings_path` lives in (`~/.claude`).
+fn config_dir(cfg: &Config) -> PathBuf {
+    let s = &cfg.setup.claude.settings_path;
+    s.parent().map(PathBuf::from).unwrap_or_else(|| s.clone())
+}
+
+/// True when Claude Code lists `rtok@rtok` as installed. Read from its own record, so a
+/// plugin removed through `/plugin` stops counting at once (T75).
+pub(super) fn plugin_installed(cfg: &Config) -> bool {
+    super::read(&config_dir(cfg).join("plugins/installed_plugins.json"))
+        .contains(&format!("\"{PLUGIN_ID}\""))
+}
+
+/// One `claude plugin …` call; `CLAUDE_CONFIG_DIR` only when `settings_path` is not the default.
+fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
+    let mut cmd = std::process::Command::new("claude");
+    cmd.args(args).stdin(std::process::Stdio::null());
+    let dir = config_dir(cfg);
+    if dir != super::home_dir().join(".claude") {
+        cmd.env("CLAUDE_CONFIG_DIR", &dir);
+    }
+    match cmd.output() {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => Err(String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .next()
+            .unwrap_or("non-zero exit")
+            .to_string()),
+        Err(e) => Err(format!("claude: {e}")),
+    }
+}
+
+/// Offer, install, or uninstall the plugin through the official `claude plugin` commands
+/// (T115, the creator's choice over writing Claude's plugin store). A failing `claude` keeps
+/// the offer open instead of failing the install: the settings-file hooks still go in.
+fn plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let a = apply(cfg);
+    let src = super::plugin_src(PLUGIN_SRC).to_string_lossy().into_owned();
+    let steps: [&[&str]; 2] = if remove {
+        [
+            &["plugin", "uninstall", PLUGIN_ID],
+            &["plugin", "marketplace", "remove", "rtok"],
+        ]
+    } else {
+        [
+            &["plugin", "marketplace", "add", &src],
+            &["plugin", "install", PLUGIN_ID],
+        ]
+    };
+    let shown = steps
+        .iter()
+        .map(|s| format!("claude {}", s.join(" ")))
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if remove != plugin_installed(cfg) {
+        return Ok(NO_CHANGES.into());
+    }
+    if a.dry_run {
+        return Ok(if remove {
+            format!("- plugin {PLUGIN_ID} ({shown})")
+        } else {
+            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
+        });
+    }
+    if !remove && !accepted(&a, &format!("install {PLUGIN_SRC} into Claude Code?")) {
+        return Ok(format!(
+            "offer {PLUGIN_SRC} → {shown} (accept with --yes) {KETCH_INSTALL}"
+        ));
+    }
+    for step in steps {
+        if let Err(e) = claude_cli(cfg, step) {
+            return Ok(format!("offer {PLUGIN_SRC} → {shown} (claude failed: {e})"));
+        }
+    }
+    Ok(if remove {
+        format!("- plugin {PLUGIN_ID}")
+    } else {
+        format!("+ plugin {PLUGIN_SRC} → {PLUGIN_ID}")
+    })
+}
+
 /// Where Claude Desktop reads `mcpServers`: its own file, not `~/.claude.json`.
 pub fn desktop_path() -> PathBuf {
     let home = super::home_dir();
@@ -223,9 +308,8 @@ impl Agent for Claude {
         match (kind, module) {
             (_, "mcp") | (Kind::Cli, "hooks") => Support::Yes,
             (Kind::Cli, "proxy") => Support::Flag("--proxy"),
-            (Kind::Cli, _) => Support::No(
-                "Claude Code loads hooks and MCP from its own settings; there is no plugin directory to link",
-            ),
+            // `plugin`: `plugins/claude` through `claude plugin install` (T115).
+            (Kind::Cli, _) => Support::Flag("--yes"),
             (Kind::Desktop, "hooks") => Support::No("Claude Desktop has no hook events"),
             (Kind::Desktop, "proxy") => Support::No(
                 "Claude Desktop has no base-URL setting; its requests do not pass through the proxy",
@@ -256,11 +340,13 @@ impl Agent for Claude {
         }
         let s = super::read(&cfg.setup.claude.settings_path);
         let m = super::read(&cfg.doctor.claude_json);
+        // The installed plugin serves the hooks and the MCP itself (D21).
+        let plugin = plugin_installed(cfg);
         let mut out = Vec::new();
-        if s.contains("rtok hook") {
+        if s.contains("rtok hook") || plugin {
             out.push("hooks");
         }
-        if m.contains("\"rtok\"") {
+        if m.contains("\"rtok\"") || plugin {
             out.push("mcp");
         }
         // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the
@@ -270,6 +356,9 @@ impl Agent for Claude {
             .and_then(|v| v["env"]["ANTHROPIC_BASE_URL"].as_str().map(str::to_string));
         if base.as_deref() == Some(super::anthropic_proxy_url(cfg).as_str()) {
             out.push("proxy");
+        }
+        if plugin {
+            out.push("plugin");
         }
         out
     }
@@ -294,15 +383,26 @@ impl Agent for Claude {
                 super::skill::sync("claude", cfg, false)?,
             ]),
             Mode::Remove => Ok(vec![
+                plugin(cfg, true)?,
                 run(cfg, true)?,
                 unregister_mcp(cfg)?,
                 crate::proxy::cli::unregister_proxy(cfg)?,
                 super::skill::sync("claude", cfg, true)?,
             ]),
             Mode::Install => {
-                let mut lines = vec![run(cfg, false)?];
-                if cfg.setup.mcp {
-                    lines.push(register_mcp(cfg)?);
+                // Offer first: once the plugin is installed it is the only call path (D21
+                // singleton), so the settings-file hooks and MCP are stripped, not added —
+                // judged by Claude's own record, so a dry run or a declined offer still gets
+                // the settings-file install.
+                let mut lines = vec![plugin(cfg, false)?];
+                if plugin_installed(cfg) {
+                    lines.push(run(cfg, true)?);
+                    lines.push(unregister_mcp(cfg)?);
+                } else {
+                    lines.push(run(cfg, false)?);
+                    if cfg.setup.mcp {
+                        lines.push(register_mcp(cfg)?);
+                    }
                 }
                 if cfg.setup.proxy {
                     lines.push(crate::proxy::cli::register_proxy(cfg)?);
@@ -546,5 +646,37 @@ mod tests {
             let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(root["hooks"]["PreToolUse"].is_array(), "{body}");
         }
+    }
+
+    /// T114: `plugins/claude` carries the installer's hooks, one `rtok mcp`, and the marketplace
+    /// the directory is its own marketplace (`claude plugin marketplace add plugins/claude`).
+    #[test]
+    fn plugin_tree_matches_the_installer() {
+        let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
+        let hooks = parse(include_str!("../../../plugins/claude/hooks/hooks.json"));
+        let timeout = Config::default().setup.hook_timeout_s;
+        let mut want = json!({});
+        for &(event, matcher) in ENTRIES {
+            let cmd = format!("\"${{CLAUDE_PLUGIN_ROOT}}/scripts/hook.sh\" {event}");
+            let mut e = json!({"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]});
+            if !matcher.is_empty() {
+                e["matcher"] = json!(matcher);
+            }
+            array_at(&mut want, event).push(e);
+        }
+        assert_eq!(hooks["hooks"], want);
+        let mcp = parse(include_str!("../../../plugins/claude/.mcp.json"));
+        assert_eq!(
+            mcp["mcpServers"],
+            json!({"rtok": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp.sh"}})
+        );
+        let manifest = parse(include_str!(
+            "../../../plugins/claude/.claude-plugin/plugin.json"
+        ));
+        let market = parse(include_str!(
+            "../../../plugins/claude/.claude-plugin/marketplace.json"
+        ));
+        assert_eq!(market["plugins"][0]["name"], manifest["name"]);
+        assert_eq!(market["plugins"][0]["source"], "./");
     }
 }

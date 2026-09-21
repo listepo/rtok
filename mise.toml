@@ -1,6 +1,7 @@
 [tools]
 "cargo:cargo-cache" = "0.8.3" # `just cache` / `just cache-autoclean` (T17.2); the shared cargo home fills up
 "cargo:cargo-nextest" = "0.9.143" # `just test` / `just check` (cargo nextest run)
+codeql = "2.27.0" # `just codeql` (T119): local run of the code scanning in .github/workflows/codeql.yml
 git-cliff = "2.13.1"
 go = "1.27.0" # hugo resolves the hextra theme as a Go module (site/go.mod)
 hugo = "0.165.0"

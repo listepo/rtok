@@ -28,6 +28,14 @@ Check: `claude plugin validate plugins/claude` (if the CLI has it) or `claude --
 
 Check result (2026-09-21): `claude plugin validate` passes for the plugin and the marketplace; in a scratch `CLAUDE_CONFIG_DIR`, `claude plugin marketplace add plugins/claude` + `claude plugin install rtok@rtok` succeed and `claude plugin details rtok@rtok` lists 7 hook events and 1 MCP server; the cache copy keeps the scripts executable; `hook.sh UserPromptSubmit` pipes through `rtok hook` (exit 0); `just check` green. Not verified: a live Claude Code session with the plugin installed.
 
+### T113. `rtok tui` freezes on start and on tab switches
+
+Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
+
+Do: `App::background` gives the running TUI a `Worker` thread that turns a config into a snapshot (queued requests collapse into the newest; a thread that will not start or dies falls back to inline reads, D1). The screen opens at once over `Snapshot::default()`; the loop waits at most 100 ms for a key, then `App::poll` lands finished reads; a timer tick is skipped while a read runs; the footer says `loading…`. `App::new` still reads inline for unit tests.
+
+Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` — tabs switch mid-read, the worker's snapshot lands, a tick mid-read is skipped; all `tui::` tests green; `just check` green.
+
 ### T104. Migration and `schema.rs` drift guard
 
 `MIGRATIONS` is a hand-kept list, and `src/store/schema.rs` `table!` macros are hand-kept too. A unit test: every `migrations/*.sql` file is in `MIGRATIONS`, in filename order, and after all migrations each `table!` column set equals `PRAGMA table_info`.
@@ -4336,4 +4344,20 @@ Check: `agents::restart` tests assert exactly one `\x1b[K` per prompt, in-place 
 Complexity: 1/5 — three small write helpers and test updates.
 Status: done 2026-09-21
 Check result: `agents::restart` 13/13 pass. Known limit: an answer that wraps past the terminal width puts the glyph on the wrong row (cosmetic).
+Model: Claude Code / claude-opus-5
+
+**T119 CodeQL on GitHub and locally** · `.github/workflows/codeql.yml`, `justfile`, `mise.toml`, `toolchain.md`
+Do: creator request 2026-09-21. `codeql.yml` scans `actions`, `javascript-typescript`, `python` and `rust` on push/PR to main, weekly and on dispatch (`github/codeql-action@v4`, `build-mode: none`, `security-and-quality`); repo default setup is `not-configured`, so the advanced workflow does not collide with it. `codeql` 2.27.0 is pinned in `mise.toml`; `just codeql [langs…]` copies the tracked files (working-tree content) to `target/codeql/src`, builds one database per language, writes `target/codeql/<lang>.sarif` and fails on any result. Kept out of `just check` because it takes minutes.
+Check: `just codeql` runs all four languages; `actionlint` clean on the workflow; `just check`.
+Complexity: 2/5 — one workflow, one recipe, one pin.
+Status: done 2026-09-21
+Check result: local scan — actions 15 (13 `actions/unpinned-tag` across all workflows, 2 `actions/missing-workflow-permissions` in `ci.yml`), javascript-typescript 0, python 0, rust 1 (`rust/log-injection` in `tests/web.rs:223`, test code); 30 of 190 Rust files extract with errors under `build-mode: none`. Findings are left for a follow-up task. `just check` red only on load flakes (`claude_plugin` ×2, `cli_trycmd`, `graph::watch` watchman fallback, earlier ENOSPC at 2 GB free); each passes alone, none touches this change.
+Model: Claude Code / claude-opus-5
+
+**T120 Clear the CodeQL findings** · `.github/workflows/{bump,ci,docs,release-plz,release,verify}.yml`, `.github/build-setup.yml`, `tests/web.rs`
+Do: creator request 2026-09-21, after T119. Every third-party action is pinned to the commit its tag pointed at, tag kept as a comment (`jdx/mise-action` v4.3.0, `Swatinem/rust-cache` v2.9.2, `release-plz/action` v0.5.139, `taiki-e/install-action` v2.87.17) — no version bumps; `actions/*` are GitHub-owned and CodeQL does not flag them. `release.yml` gets its two pins from `.github/build-setup.yml` through `just dist-generate`, not by hand. `ci.yml` has a top-level `permissions: contents: read`; `revert-on-failure` keeps its own wider block. `tests/web.rs` asserts with a fixed message instead of echoing the HTTP body into the panic (`rust/log-injection`).
+Check: `just codeql` 0 results for all four languages; `actionlint` on every workflow; `just check`; next `ci` / `codeql` runs on `main`.
+Complexity: 2/5 — mechanical pins, one permissions block, one assert.
+Status: done 2026-09-21
+Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
