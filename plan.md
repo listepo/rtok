@@ -47,10 +47,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T127 | todo | P2 | 3 | 0% | |
 | T138 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T150 | todo | P1 | 3 | 0% | |
+| T150 | in progress | P1 | 3 | 5% | Claude Code / claude-fable-5-1 |
 | T151 | todo | P1 | 3 | 0% | |
 | T152 | todo | P1 | 2 | 0% | |
-| T153 | todo | P2 | 3 | 0% | |
+| T153 | todo | P2 | 4 | 0% | |
 | T154 | todo | P2 | 3 | 0% | |
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
@@ -348,7 +348,9 @@ Creator request 2026-09-21; evidence in `research.md` §18. On that day the repo
 
 Plan: a `worktree` module off the hot path (a CLI command like `doctor`, not a hook). One helper that runs `git worktree list --porcelain -z` and parses it into records: path, branch or detached, `locked` + reason, `prunable` + reason. No new dependency — `git2` lacks `move`/`repair`/checked `remove` and `gix` cannot mutate worktrees (§18.4). Per record: dirty (`git status --porcelain`), merged — squash-aware, `git merge-tree --write-tree <base> <branch>` equals `<base>^{tree}`, base = `origin/HEAD` — and owner parsed from a lock reason of the form `<owner> | <task-id> | <date>` (ASCII: porcelain C-quotes anything else). Parsing and classification are pure functions over strings; only the thin runner spawns git. Do not refactor `git_changed_files` or the two `git_root` copies here.
 
-Check: unit tests on captured porcelain — `-z` records with a path containing a space and a newline, locked with and without a reason, prunable, detached, bare main; classification table (merged/unmerged × dirty/clean × locked/unlocked); an `assert_fs` integration test builds a repo with two worktrees, squash-merges one branch and sees it reported merged while `git branch --merged` does not; `just check`.
+Check: unit tests on captured porcelain — `-z` records with a path containing a space and a newline, locked with and without a reason, prunable, detached, bare main; classification table (merged/unmerged × dirty/clean × locked/unlocked); an integration test builds a real repository under `testutil::tmp_dir` with two worktrees, squash-merges one branch and sees it reported merged while `git branch --merged` does not; `just check`.
+
+Do (Claude Code / claude-fable-5-1): `pub mod worktree` in `src/lib.rs`. `src/worktree/mod.rs` — `Record` (path, head, branch, detached, bare, `locked`, `prunable`), `parse_porcelain(&[u8])` over NUL-separated records, `Owner::parse` for `<owner> | <task-id> | <date>` (a lock with no reason is an unknown owner, never "unlocked"), `State` + `classify` as a pure function of (exists, dirty, merged, lock). `src/worktree/git.rs` — the only place that spawns git: `list`, `is_dirty`, `is_merged` (`merge-tree --write-tree`), `default_base` (`origin/HEAD`, fallback `origin/main`). Unit tests beside the code, `tests/worktree.rs` for the real-git fixture. No CLI surface here — T151 adds it. Verify with `cargo nextest run --lib worktree` and `--test worktree`, `cargo clippy --all-targets`, `cargo fmt --check`; the full `just check` runs in CI while the host disk is under 10 GiB free.
 
 ### T151. `rtok worktree list`: source size, cache size and orphans in one table
 
