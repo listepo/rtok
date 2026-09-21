@@ -16,22 +16,59 @@ use crate::config::Config;
 
 /// Process control seam (T141): the real impl shells out; tests fake it and record calls.
 pub trait Procs {
-    /// True if a desktop app or CLI binary named `name` is currently running. Must not launch
-    /// it as a side effect.
-    fn running(&self, name: &str) -> bool;
+    /// True if a desktop app bundle/window named `name` is currently running. Must not launch
+    /// it as a side effect. Not for CLI binaries — on macOS `osascript`'s app-name lookup is
+    /// case-insensitive and can match the wrong app (or pop a "Choose Application" dialog for
+    /// an unknown name), so a CLI binary is asked about through [`Self::bin_running`] instead.
+    fn app_running(&self, name: &str) -> bool;
+    /// True if a CLI binary named `bin` is currently running (`pgrep -x` / `tasklist`, never
+    /// `osascript`'s app-name check).
+    fn bin_running(&self, bin: &str) -> bool;
     /// Ask a running desktop app to quit.
     fn quit(&self, name: &str) -> Result<()>;
     /// Launch a desktop app again.
     fn open(&self, name: &str, path: &Path) -> Result<()>;
 }
 
+/// `tasklist /FI "IMAGENAME eq <name>.exe"` (Windows): used for both an app's exe and a CLI
+/// binary — unlike `osascript`'s app-name lookup, it matches an exact image name only.
+#[cfg(target_os = "windows")]
+fn tasklist_running(name: &str) -> bool {
+    let exe = if name.ends_with(".exe") {
+        name.to_string()
+    } else {
+        format!("{name}.exe")
+    };
+    std::process::Command::new("tasklist")
+        .args(["/FI", &format!("IMAGENAME eq {exe}")])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .to_ascii_lowercase()
+                .contains(&exe.to_ascii_lowercase())
+        })
+        .unwrap_or(false)
+}
+
+/// `pgrep -x <name>` (macOS/Linux): exact process-name match, used for CLI binaries everywhere
+/// and for desktop apps outside macOS (where there is no app-bundle concept to ask `osascript`
+/// about).
+#[cfg(not(target_os = "windows"))]
+fn pgrep_running(name: &str) -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-x", name])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Real OS process control: macOS uses `osascript` (the same name resolution `tell application
-/// … to quit` and `open -a` already rely on); Windows uses `tasklist`/`taskkill`; everything
-/// else uses `pgrep`/`killall`.
+/// … to quit` and `open -a` already rely on) for [`Procs::app_running`] only; Windows uses
+/// `tasklist`/`taskkill` for both; everything else uses `pgrep`/`killall` for both.
 pub struct RealProcs;
 
 impl Procs for RealProcs {
-    fn running(&self, name: &str) -> bool {
+    fn app_running(&self, name: &str) -> bool {
         #[cfg(target_os = "macos")]
         {
             std::process::Command::new("osascript")
@@ -42,28 +79,22 @@ impl Procs for RealProcs {
         }
         #[cfg(target_os = "windows")]
         {
-            let exe = if name.ends_with(".exe") {
-                name.to_string()
-            } else {
-                format!("{name}.exe")
-            };
-            std::process::Command::new("tasklist")
-                .args(["/FI", &format!("IMAGENAME eq {exe}")])
-                .output()
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .to_ascii_lowercase()
-                        .contains(&exe.to_ascii_lowercase())
-                })
-                .unwrap_or(false)
+            tasklist_running(name)
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
-            std::process::Command::new("pgrep")
-                .args(["-x", name])
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false)
+            pgrep_running(name)
+        }
+    }
+
+    fn bin_running(&self, bin: &str) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            tasklist_running(bin)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            pgrep_running(bin)
         }
     }
 
@@ -146,7 +177,7 @@ fn expand_app_path(spec: &str) -> PathBuf {
 }
 
 /// The display/process name our path parsing reads from one `apps[]` entry — the same string
-/// asked of [`Procs::running`] and handed to [`Procs::quit`]/[`Procs::open`].
+/// asked of [`Procs::app_running`] and handed to [`Procs::quit`]/[`Procs::open`].
 fn desktop_app_name(spec: &str, fallback: &str) -> (String, PathBuf) {
     let path = expand_app_path(spec);
     let name = path
@@ -162,7 +193,7 @@ fn running_desktop_app(v: &Variant, procs: &dyn Procs) -> Option<(String, PathBu
     v.apps
         .iter()
         .map(|spec| desktop_app_name(spec, v.name))
-        .find(|(name, _)| procs.running(name))
+        .find(|(name, _)| procs.app_running(name))
 }
 
 /// The first CLI binary of a host that `procs` reports as currently running.
@@ -171,13 +202,13 @@ fn running_cli_bin(agent: &dyn Agent, procs: &dyn Procs) -> Option<&'static str>
         .variants()
         .iter()
         .filter(|v| v.kind == Kind::Cli)
-        .find_map(|v| v.bins.iter().copied().find(|b| procs.running(b)))
+        .find_map(|v| v.bins.iter().copied().find(|b| procs.bin_running(b)))
 }
 
-/// Poll `procs.running(name)` until it goes false or `timeout` elapses.
+/// Poll `procs.app_running(name)` until it goes false or `timeout` elapses.
 fn wait_until_not_running(procs: &dyn Procs, name: &str, timeout: Duration) {
     let started = std::time::Instant::now();
-    while procs.running(name) && started.elapsed() < timeout {
+    while procs.app_running(name) && started.elapsed() < timeout {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
@@ -217,8 +248,14 @@ fn with_restart(
                 .iter()
                 .filter(|v| v.kind == Kind::Desktop)
                 .find_map(|v| running_desktop_app(v, procs));
+            let bin = running_cli_bin(agent, procs);
+            // Nothing of this host's is running: skip the dry-run entirely (T141 review).
+            if target.is_none() && bin.is_none() {
+                continue;
+            }
+            let changed = would_change(cfg, agent)?;
             if let Some((name, path)) = target
-                && would_change(cfg, agent)?
+                && changed
             {
                 if cfg.setup.dry_run {
                     out.push_str(&format!("{}: would close/reopen {name}\n", agent.id()));
@@ -231,7 +268,7 @@ fn with_restart(
                     to_reopen.push((name, path));
                 }
             }
-            if let Some(bin) = running_cli_bin(agent, procs) {
+            if changed && let Some(bin) = bin {
                 out.push_str(&format!(
                     "{}: restart your {bin} session to load the new config\n",
                     agent.id()
@@ -239,12 +276,15 @@ fn with_restart(
             }
         }
     }
-    out.push_str(&write(cfg)?);
+    // Always reopen what was quit — even when the write itself fails — before propagating
+    // the write's error (T141 review): a write failure must never leave a closed app closed.
+    let written = write(cfg);
     for (name, path) in to_reopen {
         if let Err(e) = procs.open(&name, &path) {
             eprintln!("warning: could not reopen {name}: {e:#}; open it manually");
         }
     }
+    out.push_str(&written?);
     Ok(out)
 }
 
@@ -272,8 +312,11 @@ mod tests {
     }
 
     impl Procs for FakeProcs {
-        fn running(&self, name: &str) -> bool {
+        fn app_running(&self, name: &str) -> bool {
             self.running.borrow().contains(name)
+        }
+        fn bin_running(&self, bin: &str) -> bool {
+            self.running.borrow().contains(bin)
         }
         fn quit(&self, name: &str) -> Result<()> {
             self.calls.borrow_mut().push(format!("quit:{name}"));
@@ -402,6 +445,28 @@ mod tests {
             ["quit:Windsurf".to_string(), "write".to_string()]
         );
         assert!(out.is_empty());
+    }
+
+    #[test]
+    fn write_failure_still_reopens_then_propagates_the_error() {
+        let procs = FakeProcs::running_names(&["Windsurf"]);
+        let mut cfg = Config::default();
+        let err = with_restart(
+            &mut cfg,
+            &req("windsurf"),
+            false,
+            &procs,
+            |_, _| Ok(true),
+            |_| anyhow::bail!("disk full"),
+        )
+        .unwrap_err();
+        // Quit, then reopen despite the write error, then the error propagates — a write
+        // failure must never leave the app closed (T141 review).
+        assert_eq!(
+            procs.calls.borrow().as_slice(),
+            ["quit:Windsurf".to_string(), "open:Windsurf".to_string()]
+        );
+        assert!(err.to_string().contains("disk full"), "{err:#}");
     }
 
     #[test]
