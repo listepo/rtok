@@ -360,6 +360,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "otel status",
         "exporter echo: endpoint, watermarks, pending rows",
     ),
+    (
+        "worktree list",
+        "reads git and the checkout's file system, not the store: no model data (T151)",
+    ),
     // reading, but on-demand today (T15.11); the frame does not carry the page yet
     (
         "report",
@@ -472,6 +476,7 @@ const JSON_READERS: &[&str] = &[
     "demon status",
     "otel status",
     "memory status",
+    "worktree list",
 ];
 
 fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {
