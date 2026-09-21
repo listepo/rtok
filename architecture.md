@@ -64,7 +64,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/config/layers.rs`, `validate.rs`, `config/default.toml` | figment providers (D14); `rtok config show/validate/set` (see `docs/config.md`) | P12 |
 | `src/store/` + `migrations/` | Diesel models; `Store::open`; `insert_call`/`tokens`/`log`; `insert_measurement` | T0.3, P13 |
 | `src/store/symbols.rs` | The `graph` symbol index over SQLite (Ladybug/Grafeo backends removed, P39) | T8.10; P39 |
-| `src/testutil.rs`, `tests/common/` | test-only: a fresh temp dir and a `Config`/`Runtime` confined to it; the nearest-rank p95 the latency gates share | T34.2, T34.3 |
+| `src/testutil.rs`, `tests/common/` | test-only: a fresh temp dir and a `Config`/`Runtime` confined to it; the nearest-rank p95 the latency gates share; `agents::real_config` seeds the invoking user's own host configs into a throwaway home and answers `None` under `CI`, so the checks that read them are local-only and skip everywhere else | T34.2, T34.3, T78 |
 | `src/plugin.rs` | the contract (§4) | T0.4 |
 | `src/plugins/mod.rs` | feature-gated module list, `all()`, `Registry` | T0.4 |
 | `src/plugins/<id>/` | one plugin: `mod.rs` + `README.md` (what/why) + `AGENTS.md` (how to work on it) | per plugin |
@@ -78,7 +78,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
 | `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Serves the D23 operator model `rtok tui` also renders; the WASM UI itself is still thin (Plugins strip) vs `model::pages()` — Sessions/Calls/Logs/Doctor are T19.4. UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
-| `src/agents/` | agent hosts (`rtok agents install\|remove\|list`): one folder per host, each `<host>/mod.rs` implementing the `Agent` contract (variants, files, installed modules, apply) and `<host>/README.md` saying which rtok modules it takes and why the rest cannot be taken; a test keeps README and `support()` in step. Backups and `--dry-run` come from `rtok-agent-sdk`. | T2.3, P10, T44.2 |
+| `src/agents/` | agent hosts (`rtok agents install\|remove\|list`): one folder per host, each `<host>/mod.rs` implementing the `Agent` contract (variants, files, installed modules, apply) and `<host>/README.md` saying which rtok modules it takes and why the rest cannot be taken; a test keeps README and `support()` in step. Backups and `--dry-run` come from `rtok-agent-sdk`; a host that ships a plugin declares it as one `agents::plugin::HostPlugin` (source, destination, label, host name) instead of respelling the link cycle. | T2.3, P10, T44.2, T77 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
 | `tests/fixtures/hooks/*.json` | one real payload per hook event | T0.6 |
 

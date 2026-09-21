@@ -728,7 +728,7 @@ mod wasm {
         });
         let ws_expand = ws.clone();
         ui.on_expand_archive(move |id| {
-            let msg = serde_json::json!({ "expand": id });
+            let msg = serde_json::json!({ "expand": id.as_str() });
             let _ = ws_expand.send_with_str(&msg.to_string());
         });
         let ui_filter = ui.as_weak();

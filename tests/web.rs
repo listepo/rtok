@@ -177,3 +177,53 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     );
     task.abort();
 }
+
+/// T80: the bundle directory is resolved at run time. An installed binary has no
+/// source tree, and a 404 there reads as a broken build — the surface must say what
+/// is missing and still serve the API.
+async fn serve_pkg(
+    label: &str,
+    pkg: Option<std::path::PathBuf>,
+) -> (String, tokio::task::JoinHandle<std::io::Result<()>>) {
+    let dir = std::env::temp_dir().join(format!("rtok-pkg-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let cfg = Config::load_from(&dir).expect("config");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr").to_string();
+    let app = rtok::web::app_with_pkg(Arc::new(DashState::new(cfg)), pkg);
+    let task = tokio::spawn(axum::serve(listener, app).into_future());
+    (addr, task)
+}
+
+#[tokio::test]
+async fn web_serves_the_resolved_pkg_dir() {
+    let pkg = std::env::temp_dir().join(format!("rtok-pkg-src-{}", std::process::id()));
+    std::fs::create_dir_all(&pkg).expect("pkg dir");
+    std::fs::write(pkg.join("rtok_webui.js"), "export default 1;\n").expect("bundle");
+    let (addr, task) = serve_pkg("present", Some(pkg.clone())).await;
+    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
+        .await
+        .expect("pkg");
+    assert_eq!(res.status(), 200);
+    assert!(res.text().await.expect("body").contains("export default"));
+    task.abort();
+    let _ = std::fs::remove_dir_all(&pkg);
+}
+
+#[tokio::test]
+async fn web_without_a_bundle_says_so_instead_of_404() {
+    let (addr, task) = serve_pkg("missing", None).await;
+    let res = reqwest::get(format!("http://{addr}/pkg/rtok_webui.js"))
+        .await
+        .expect("pkg");
+    assert_eq!(res.status(), 503);
+    let body = res.text().await.expect("body");
+    assert!(body.contains("RTOK_WEB_PKG"), "{body}");
+    let health = reqwest::get(format!("http://{addr}/health"))
+        .await
+        .expect("health");
+    assert_eq!(health.status(), 200, "the API stays up without the UI");
+    task.abort();
+}

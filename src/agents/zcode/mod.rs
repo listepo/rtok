@@ -4,16 +4,17 @@
 //! `~/.zcode/cli/config.json` — `hooks.enabled`, `hooks.events.<Event>[]` with `timeoutMs` —
 //! and MCP from `mcp.servers.<name> = {command, args}`. The hook entries are Claude's helpers;
 //! only the shape around them differs. The app starts without a shell PATH, so both carry the
-//! absolute `rtok` binary.
+//! absolute `rtok` binary. With `--yes` the linked plugin (T77) carries both instead: ZCode
+//! loads inline plugin roots listed in `plugins.dirs`, enabled by default.
 
 use std::path::PathBuf;
 
 use anyhow::Result;
-use rtok_agent_sdk::{NO_CHANGES, edit_json, object_at};
+use rtok_agent_sdk::{NO_CHANGES, PluginLink, array_at, edit_json, object_at};
 use serde_json::{Value, json};
 
 use super::claude::{desktop_command, insert_ours, strip_ours};
-use super::{Agent, Kind, Mode, Support, Variant, apply};
+use super::{Agent, Kind, Mode, Support, Variant, apply, plugin_src};
 use crate::config::Config;
 
 /// ZCode: hooks and MCP in one `config.json`; a desktop app only.
@@ -94,6 +95,84 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     )
 }
 
+const PLUGIN_SRC_REL: &str = "plugins/zcode";
+const PLUGIN_LOCAL: &str = "~/.zcode/cli/plugins/local";
+
+/// Local ZCode plugin dest: sibling of config.json → `<zcode-cli-dir>/plugins/local/rtok`.
+pub fn plugin_dest(cfg: &Config) -> PathBuf {
+    cfg.setup
+        .zcode
+        .config_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("plugins")
+        .join("local")
+        .join("rtok")
+}
+
+fn link(cfg: &Config) -> PluginLink<'static> {
+    PluginLink {
+        src_rel: PLUGIN_SRC_REL,
+        src: plugin_src(PLUGIN_SRC_REL),
+        dest: plugin_dest(cfg),
+        label: Some(PLUGIN_LOCAL),
+        host: "ZCode",
+    }
+}
+
+/// Offer / link / unlink `plugins/zcode` (D21, T77). ZCode has no third-party marketplace to
+/// push into; it loads inline plugin roots listed in `plugins.dirs` (enabled by default), so
+/// linking also lists the dest there and unlinking drops the entry.
+/// Dry-run and the unaccepted offer MUST contain the substrings `plugins/zcode`
+/// and `~/.zcode/cli/plugins/local` and `ketch install listepo/rtok`.
+pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let report = link(cfg).run(&apply(cfg), remove)?;
+    let dirs = plugin_dirs(cfg, remove)?;
+    let mut out = Vec::new();
+    for line in [report, dirs] {
+        if line != NO_CHANGES {
+            out.push(line);
+        }
+    }
+    Ok(if out.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        out.join("\n")
+    })
+}
+
+/// `plugins.dirs` in `config.json` lists inline plugin roots; ZCode enables them by
+/// default, so the link needs no `plugins.enabledPlugins` entry alongside it. The entry
+/// exists exactly while an rtok-owned plugin sits at the dest: a declined offer adds
+/// nothing, and a stale entry whose dest is gone (or foreign) is dropped.
+fn plugin_dirs(cfg: &Config, remove: bool) -> Result<String> {
+    let dest = plugin_dest(cfg).display().to_string();
+    let live = link(cfg).ours();
+    edit_json(&apply(cfg), &cfg.setup.zcode.config_path, |root| {
+        let dirs = array_at(object_at(root, "plugins"), "dirs");
+        let has = dirs.iter().any(|v| v.as_str() == Some(dest.as_str()));
+        match (remove || !live, has) {
+            (true, false) | (false, true) => NO_CHANGES.into(),
+            (true, true) => {
+                dirs.retain(|v| v.as_str() != Some(dest.as_str()));
+                format!("- plugins.dirs -= {dest}")
+            }
+            (false, false) => {
+                dirs.push(json!(dest));
+                format!("+ plugins.dirs += {dest}")
+            }
+        }
+    })
+}
+
+/// True when the linked plugin is the call path for hooks and MCP (D21 singleton).
+///
+/// Judged only by the link, not `--yes`: a dry-run with `--yes` has not linked yet
+/// and must still show what the config would get if the offer is declined.
+pub fn plugin_serves(cfg: &Config, remove: bool) -> bool {
+    !remove && link(cfg).linked()
+}
+
 impl Agent for Zcode {
     fn id(&self) -> &'static str {
         "zcode"
@@ -107,14 +186,19 @@ impl Agent for Zcode {
         include_str!("README.md")
     }
 
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[
+            rtok_plugin_sdk::Surface::Hook,
+            rtok_plugin_sdk::Surface::Mcp,
+        ]
+    }
+
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
             "hooks" | "mcp" => Support::Yes,
-            "proxy" => Support::No(
-                "ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them",
-            ),
+            "plugin" => Support::Flag("--yes"),
             _ => Support::No(
-                "ZCode plugins come from the Z.ai marketplace; there is no local plugin directory to link",
+                "ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them",
             ),
         }
     }
@@ -123,24 +207,44 @@ impl Agent for Zcode {
         vec![cfg.setup.zcode.config_path.clone()]
     }
 
+    fn markers(&self, cfg: &Config, kind: Kind) -> Vec<PathBuf> {
+        let mut paths = self.files(cfg, kind);
+        paths.push(plugin_dest(cfg));
+        paths
+    }
+
     fn installed(&self, cfg: &Config, _kind: Kind) -> Vec<&'static str> {
         let s = super::read(&cfg.setup.zcode.config_path);
+        // T75: `ours`, not any metadata — a foreign directory at the plugin dest is not
+        // an rtok install, so it cannot keep the green mark alive after an uninstall
+        // that (rightly) left it alone.
+        let plugin = link(cfg).ours();
         let mut out = Vec::new();
         // The command is an absolute path, so match the tail rather than a bare `rtok hook`.
-        if s.contains(" hook PreToolUse") {
+        // The linked plugin serves the hooks themselves (D21).
+        if s.contains(" hook PreToolUse") || plugin {
             out.push("hooks");
         }
         let root: Value = serde_json::from_str(&s).unwrap_or(Value::Null);
-        if root["mcp"]["servers"][NAME].is_object() {
+        if root["mcp"]["servers"][NAME].is_object() || plugin {
             out.push("mcp");
+        }
+        if plugin {
+            out.push("plugin");
         }
         out
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?];
-        if remove {
+        // Offer first: once the plugin is linked it is the only call path (D21 singleton),
+        // so the config-file entries below are stripped rather than (re)added — also on
+        // the very run that links, and against leftovers of a declined earlier offer.
+        // Judged by the link alone: a dry run or a declined offer has not linked yet
+        // and still gets the config-file install.
+        let mut lines = vec![offer_plugin(cfg, remove)?];
+        lines.push(run(cfg, remove || plugin_serves(cfg, remove))?);
+        if remove || plugin_serves(cfg, remove) {
             lines.push(unregister_mcp(cfg)?);
         } else if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
@@ -175,6 +279,109 @@ mod tests {
         assert!(report.contains("+ SessionStart "), "{report}");
         assert!(!report.contains("SessionEnd"), "{report}");
         assert!(!path.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn dry_run_offer_names_plugin_and_local() {
+        let (c, path) = cfg("dry-offer", true);
+        let s = offer_plugin(&c, false).unwrap();
+        assert!(s.contains("plugins/zcode"), "{s}");
+        assert!(s.contains("~/.zcode/cli/plugins/local"), "{s}");
+        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(!plugin_dest(&c).symlink_metadata().is_ok());
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn yes_links_plugin_and_lists_dirs() {
+        let (mut c, path) = cfg("yes", false);
+        c.setup.yes = true;
+        let first = offer_plugin(&c, false).unwrap();
+        assert!(first.starts_with("+ plugin"), "{first}");
+        assert!(first.contains("+ plugins.dirs +="), "{first}");
+        assert!(link(&c).linked());
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            root["plugins"]["dirs"][0].as_str().unwrap(),
+            plugin_dest(&c).display().to_string()
+        );
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        assert_eq!(
+            Zcode.installed(&c, Kind::Desktop),
+            ["hooks", "mcp", "plugin"]
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// While the plugin is linked it is the only call path (D21): a plain install's
+    /// config-file hooks and `mcp.servers.rtok` must not survive beside it.
+    #[test]
+    fn linked_plugin_is_the_only_call_path() {
+        let (mut c, path) = cfg("singleton", false);
+        let plain = Zcode
+            .apply(&c, Kind::Desktop, Mode::Install)
+            .unwrap()
+            .join("\n");
+        assert!(plain.contains("5 additions"), "{plain}");
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(root["mcp"]["servers"]["rtok"].is_object());
+        c.setup.yes = true;
+        let linking = Zcode
+            .apply(&c, Kind::Desktop, Mode::Install)
+            .unwrap()
+            .join("\n");
+        assert!(linking.contains("+ plugin"), "{linking}");
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains(" hook PreToolUse"), "{raw}");
+        let root: Value = serde_json::from_str(&raw).unwrap();
+        assert!(root["mcp"]["servers"]["rtok"].is_null(), "{raw}");
+        assert!(plugin_serves(&c, false));
+        // A later full setup neither re-adds the config entries nor churns.
+        let steady = Zcode
+            .apply(&c, Kind::Desktop, Mode::Install)
+            .unwrap()
+            .into_iter()
+            .filter(|l| l != NO_CHANGES)
+            .count();
+        assert_eq!(steady, 0, "steady state must be no changes");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn declined_offer_adds_no_dirs_entry_and_drops_a_stale_one() {
+        let (c, path) = cfg("declined", false);
+        let s = offer_plugin(&c, false).unwrap();
+        assert!(s.contains("accept with --yes"), "{s}");
+        assert!(!path.exists(), "a declined offer writes no config");
+        // A stale entry whose dest no longer holds our plugin is dropped.
+        fs::write(
+            &path,
+            json!({"plugins": {"dirs": [plugin_dest(&c).display().to_string()]}}).to_string(),
+        )
+        .unwrap();
+        let s = offer_plugin(&c, false).unwrap();
+        assert!(s.contains("- plugins.dirs -="), "{s}");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn remove_unlinks_plugin_and_drops_dirs_entry() {
+        let (mut c, path) = cfg("remove-plugin", false);
+        c.setup.yes = true;
+        offer_plugin(&c, false).unwrap();
+        assert!(link(&c).linked());
+        let report = offer_plugin(&c, true).unwrap();
+        assert!(report.starts_with("- plugin"), "{report}");
+        assert!(report.contains("- plugins.dirs -="), "{report}");
+        assert!(!plugin_dest(&c).symlink_metadata().is_ok());
+        let root: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            root["plugins"]["dirs"]
+                .as_array()
+                .is_none_or(|a| a.is_empty())
+        );
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

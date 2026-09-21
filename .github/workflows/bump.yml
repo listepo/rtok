@@ -15,10 +15,9 @@ on:
         default: patch
         type: choice
         options: [patch, minor, major]
-      dry_run:
-        description: print the version that would be released and stop
-        default: false
-        type: boolean
+      # No `dry_run` input: a ticked box made this workflow end green with nothing released,
+      # and a green "Bump and release" reads as a release. The preview is local only —
+      # `tools/release.sh <level> --dry-run` — so every run of this workflow ships.
 
 permissions:
   contents: write # push the version commit
@@ -49,4 +48,4 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          tools/release.sh "${{ inputs.level }}" ${{ inputs.dry_run && '--dry-run' || '' }}
+          tools/release.sh "${{ inputs.level }}"

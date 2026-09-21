@@ -93,28 +93,20 @@ site:
 site-serve:
     {{hugo}} server --buildDrafts
 
-# Slint WASM UI, then API+UI on host:port (T60.7: release profile + wasm-opt + precompress)
-web host="127.0.0.1" port="3333":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if command -v wasm-pack >/dev/null 2>&1; then
-        wasm-pack build crates/rtok-webui --release --target web --out-dir pkg
-        wasm="crates/rtok-webui/pkg/rtok_webui_bg.wasm"
-        if command -v wasm-opt >/dev/null 2>&1; then
-            wasm-opt -Oz "$wasm" -o "$wasm"
-        else
-            echo "wasm-opt not on PATH; serving unoptimized wasm" >&2
-        fi
-        if command -v brotli >/dev/null 2>&1; then
-            brotli -f -k "$wasm"
-        fi
-        if command -v gzip >/dev/null 2>&1; then
-            gzip -kf "$wasm"
-        fi
-    else
-        echo "wasm-pack not found; serving API only until cargo install wasm-pack" >&2
-    fi
+# Slint WASM UI, then API+UI on host:port (T60.7 profile + wasm-opt; T81 shares the script with CI)
+web host="127.0.0.1" port="3333": web-bundle
     {{cargo}} run -q -- web --host {{host}} --port {{port}}
+
+# Just the WASM bundle `rtok web` serves and the release archive carries (T81).
+# Fails open without wasm-pack; CI runs the same script with --require.
+web-bundle:
+    tools/webui-bundle.sh --compress
+
+# `crates/rtok-webui` is excluded from the workspace, so `just check` never compiles
+# it — a wasm-only break reaches main unseen (T81 hit one). CI runs this.
+webui-check:
+    rustup target add wasm32-unknown-unknown
+    {{cargo}} check --manifest-path crates/rtok-webui/Cargo.toml --target wasm32-unknown-unknown
 
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:

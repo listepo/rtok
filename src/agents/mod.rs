@@ -1,7 +1,8 @@
 //! Agent hosts (`rtok agents install|remove|list`).
 //!
 //! Everything the hosts share — backup, the dry-run/idempotence write gate, `mcpServers`
-//! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28). Each host is one
+//! registration, the plugin-link offer — lives in `rtok-agent-sdk` (D28); a host declares its
+//! own plugin as one [`plugin::HostPlugin`] rather than respelling that cycle. Each host is one
 //! folder here: `<host>/mod.rs` implements [`Agent`] (variants, files, installed modules,
 //! apply) and `<host>/README.md` says which rtok modules the host takes, which it could take,
 //! and why the rest cannot be taken; a unit test keeps the README and `support()` in step.
@@ -15,6 +16,7 @@ pub mod cursor;
 pub mod kimi;
 pub mod opencode;
 pub mod pi;
+pub mod plugin;
 pub mod restart;
 pub mod skill;
 pub mod vscode;
