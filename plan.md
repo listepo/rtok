@@ -21,16 +21,20 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
 | T105 | todo | P2 | 2 | 0% | |
-| T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
+| T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+
 | T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
 | T124 | todo | P3 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
+| T127 | todo | P2 | 3 | 0% | |
+| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
+
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
 
@@ -189,12 +193,6 @@ Check: the test fails if a new shortening plugin is added without a fixture; `ju
 
 Check: snapshots committed; `just test` green.
 
-### T106. `otel/export.rs` unit tests
-
-`src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
-
-Check: `just test` green; no new dependency.
-
 ### T107. CLI bad-argument fixtures
 
 `tests/trycmd/` pins help and happy output. Add fixtures for a bad value or missing argument on each subcommand (exit 2, clap message) and for `parse_since` rejects (`--since 5x`, `--since -1d`, empty).
@@ -218,6 +216,14 @@ Check: settings round-trip test (add, idempotent, remove keeps foreign entries);
 New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
 
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
+
+### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
+
+`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
+
+Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
+
+Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
 
 ### T122. A dedup pointer reaches a context that never saw the body
 
@@ -248,6 +254,20 @@ I-86 (strip or pointer prior reasoning blocks on replay) has no number. First re
 Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
 
 Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
+
+### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
+
+`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
+
+Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
+
+Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
+
+### T127. A dedup pointer reaches a sub-agent that never saw the body
+
+Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
+
+Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
 
 ## Reference
 

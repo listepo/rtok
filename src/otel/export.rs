@@ -369,3 +369,139 @@ pub fn spawn_child(cx: &Runtime) {
     }
     let _ = cmd.spawn();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil;
+
+    /// A loopback port nothing listens on: bind, read the port, drop the listener.
+    fn closed_port() -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        drop(l);
+        format!("http://127.0.0.1:{port}")
+    }
+
+    fn runtime_with(tag: &str, endpoint: &str) -> Runtime {
+        let (mut cfg, _) = testutil::config(tag);
+        cfg.otel.endpoint = endpoint.into();
+        cfg.otel.flush_secs = 1;
+        Runtime::open(cfg, tag).unwrap()
+    }
+
+    /// The env var turns export on without a key; "no endpoint" cases skip when it is set.
+    fn env_endpoint_set() -> bool {
+        std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT").is_some_and(|v| !v.is_empty())
+    }
+
+    #[test]
+    fn resource_names_the_service_version_and_sdk() {
+        let (mut cfg, _) = testutil::config("otel-res");
+        cfg.otel.service_name = "my-svc".into();
+        let cx = Runtime::open(cfg, "s").unwrap();
+        assert_eq!(
+            resource(&cx).attrs,
+            [
+                otlp::s("service.name", "my-svc"),
+                otlp::s("service.version", env!("CARGO_PKG_VERSION")),
+                otlp::s("telemetry.sdk.name", "rtok"),
+                otlp::s("telemetry.sdk.language", "rust"),
+            ]
+        );
+    }
+
+    #[test]
+    fn unreachable_collector_returns_the_error_and_marks_nothing() {
+        let cx = runtime_with("otel-unreach", &closed_port());
+        let s = &cx.store;
+        s.upsert_session("otel-unreach", None, None, None, None)
+            .unwrap();
+        s.insert_call("otel-unreach", "cli", "cmd", None, None, None, None, None)
+            .unwrap();
+        cx.log("info", "test", "seed", "one log row");
+        let pending = s.otel_pending().unwrap();
+
+        let r = flush_blocking(&cx);
+
+        assert!(r.enabled);
+        let err = r.error.as_deref().expect("a refused connect is an error");
+        for stream in ["/v1/traces", "/v1/logs", "/v1/metrics"] {
+            assert!(err.contains(stream), "{err}");
+        }
+        assert_eq!((r.spans, r.logs, r.points, r.posted), (0, 0, 0, 0));
+        assert!(r.skipped.is_empty(), "a refusal is not a 404");
+        for stream in ["calls", "logs", "sessions", "sessions_tail"] {
+            assert_eq!(s.otel_mark(stream).unwrap(), 0, "{stream} mark moved");
+        }
+        let last = s.last_log("otel").unwrap().expect("failure logged");
+        assert_eq!(
+            (last.level.as_str(), last.name.as_str()),
+            ("error", "flush")
+        );
+        let (calls, logs) = s.otel_pending().unwrap();
+        assert_eq!(calls, pending.0, "calls stay pending");
+        assert_eq!(logs, pending.1 + 1, "the error row joins the pending logs");
+    }
+
+    #[test]
+    fn flush_without_an_endpoint_is_a_disabled_no_op() {
+        if env_endpoint_set() {
+            return;
+        }
+        let cx = runtime_with("otel-off", "");
+        let r = flush_blocking(&cx);
+        assert_eq!(r, Report::default());
+        assert_eq!(r.to_string(), "otel: no endpoint");
+        assert!(cx.store.last_log("otel").unwrap().is_none());
+    }
+
+    /// The ticker thread has no stop handle; it dies with the process. What the caller relies
+    /// on: `spawn_ticker` returns at once, and the first flush waits a full period.
+    #[test]
+    fn ticker_returns_at_once_and_waits_a_period_before_flushing() {
+        let (mut cfg, _) = testutil::config("otel-tick");
+        cfg.otel.endpoint = closed_port();
+        cfg.otel.flush_secs = 3600;
+        let cx = Runtime::open(cfg.clone(), "otel-tick").unwrap();
+        cx.log("info", "test", "seed", "pending");
+        let t = std::time::Instant::now();
+        spawn_ticker(&cfg);
+        assert!(
+            t.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            t.elapsed()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            cx.store.last_log("otel").unwrap().is_none(),
+            "no flush before the first period"
+        );
+    }
+
+    #[test]
+    fn ticker_without_an_endpoint_spawns_nothing() {
+        if env_endpoint_set() {
+            return;
+        }
+        let (cfg, dir) = testutil::config("otel-tick-off");
+        spawn_ticker(&cfg);
+        assert!(!cfg.core.db_path.exists(), "no thread opened the store");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn errors_from_several_streams_join_in_one_report_line() {
+        let mut rep = Report {
+            enabled: true,
+            ..Report::default()
+        };
+        push_error(&mut rep, "/v1/traces: a".into());
+        push_error(&mut rep, "/v1/logs: b".into());
+        assert_eq!(rep.error.as_deref(), Some("/v1/traces: a; /v1/logs: b"));
+        assert_eq!(
+            rep.to_string(),
+            "otel: 0 spans · 0 logs · 0 metric points · 0 posts\notel: error: /v1/traces: a; /v1/logs: b"
+        );
+    }
+}
