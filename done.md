@@ -1,5 +1,14 @@
 # rtok — completed tasks
 
+### T113. `rtok tui` freezes on start and on tab switches
+
+Creator's bug report: the TUI hangs while loading and when switching tabs. Cause: `model::snapshot` (store, doctor probe, transcript parse — seconds on a busy machine) ran on the key loop — before the first frame, and on every tick, `r` and plugin toggle — so no key was read until it returned.
+
+Do: `App::background` gives the running TUI a `Worker` thread that turns a config into a snapshot (queued requests collapse into the newest; a thread that will not start or dies falls back to inline reads, D1). The screen opens at once over `Snapshot::default()`; the loop waits at most 100 ms for a key, then `App::poll` lands finished reads; a timer tick is skipped while a read runs; the footer says `loading…`. `App::new` still reads inline for unit tests.
+
+Check: `tui::app::tests::background_app_switches_tabs_while_the_model_loads` — tabs switch mid-read, the worker's snapshot lands, a tick mid-read is skipped; all `tui::` tests green; `just check` green.
+
+
 ### T110. oxlint and oxfmt for the JS/TS files
 
 Asked for by the creator. The six TypeScript files (`plugins/opencode/*.ts`, `plugins/pi/**/*.ts`, `tests/node/fake-rtok.ts`) had no linter or formatter; their line widths and quoting differed file to file. mise pins `npm:oxlint` 1.83.0 and `npm:oxfmt` 0.68.0 (both released 2026-09-14, oxc-project — maintained). `just js` runs `oxlint --deny-warnings` and `oxfmt --check` over `git ls-files '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs'` and is part of `just check`, so CI's `check` job enforces it; `just js-fmt` rewrites. JSON is deliberately outside the file list: oxfmt would reformat the plugins' manifests (`hooks.json`, `package.json`), which tests compare byte for byte. Defaults, no config file.

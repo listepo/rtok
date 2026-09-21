@@ -4,6 +4,8 @@
 //! outside a call — both arrive through [`super`]'s loop, which is what keeps the state
 //! transitions unit-testable without a tty.
 
+use std::sync::mpsc;
+
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::config::{Config, validate};
@@ -64,6 +66,42 @@ pub struct App {
     skills: SkillsState,
     /// Whether the `?` help overlay is up (T60.8).
     help: bool,
+    /// The running TUI's model reader: a snapshot parses transcripts and probes the
+    /// doctor (seconds on a busy machine), so reading it on the key loop froze the
+    /// screen at start and on every tick. `None` reads inline — what unit tests drive.
+    worker: Option<Worker>,
+    /// Generation of the last requested re-read; `shown` is the one on screen.
+    requested: u64,
+    shown: u64,
+}
+
+/// One background thread that turns a config into a snapshot. Requests queued while a
+/// read runs collapse into the newest, so a slow model never builds a backlog.
+struct Worker {
+    tx: mpsc::Sender<(u64, Config)>,
+    rx: mpsc::Receiver<(u64, Snapshot)>,
+}
+
+impl Worker {
+    /// `None` when the thread will not start; the App then reads inline (fail open, D1).
+    fn spawn() -> Option<Self> {
+        let (tx, jobs) = mpsc::channel::<(u64, Config)>();
+        let (done, rx) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("rtok-tui-model".into())
+            .spawn(move || {
+                while let Ok(mut job) = jobs.recv() {
+                    while let Ok(newer) = jobs.try_recv() {
+                        job = newer;
+                    }
+                    if done.send((job.0, model::snapshot(&job.1))).is_err() {
+                        break;
+                    }
+                }
+            })
+            .ok()?;
+        Some(Self { tx, rx })
+    }
 }
 
 /// Selection and detail state of the Calls page (T15.5). The row list lives in the
@@ -103,7 +141,25 @@ struct SkillsState {
 }
 
 impl App {
+    /// An App that reads the model inline: the first snapshot is on hand when this
+    /// returns (unit tests).
+    #[cfg(test)]
     pub fn new(cfg: &Config) -> Self {
+        let mut app = Self::empty(cfg);
+        app.tick();
+        app
+    }
+
+    /// The running TUI's App: the screen paints at once over an empty snapshot and
+    /// every read runs on a [`Worker`]; [`Self::poll`] takes the results.
+    pub fn background(cfg: &Config) -> Self {
+        let mut app = Self::empty(cfg);
+        app.worker = Worker::spawn();
+        app.tick();
+        app
+    }
+
+    fn empty(cfg: &Config) -> Self {
         let tabs = model::pages();
         // `[tui] tab` names the opening tab; empty or unknown falls back to the first
         // page rather than failing the surface (fail open, D1).
@@ -114,8 +170,8 @@ impl App {
         Self {
             tabs,
             selected,
-            snapshot: model::snapshot(cfg),
-            updated: crate::log::now(),
+            snapshot: Snapshot::default(),
+            updated: 0,
             cfg: cfg.clone(),
             plugin_cursor: 0,
             plugin_status: String::new(),
@@ -123,6 +179,9 @@ impl App {
             sessions: SessionsState::default(),
             skills: SkillsState::default(),
             help: false,
+            worker: None,
+            requested: 0,
+            shown: 0,
         }
     }
 
@@ -196,8 +255,40 @@ impl App {
 
     /// The loop's tick: re-read the model through the config the App holds, so a
     /// toggle's re-read and the next tick cannot disagree (T15.4).
+    /// A timer tick skips while a read is still running, so a slow model is not
+    /// re-read back to back.
     pub fn tick(&mut self) {
+        if !self.loading() {
+            self.request();
+        }
+    }
+
+    /// Re-read now: on the worker when there is one, inline otherwise (or when the
+    /// worker is gone — fail open, D1).
+    fn request(&mut self) {
+        self.requested += 1;
+        if let Some(w) = &self.worker {
+            if w.tx.send((self.requested, self.cfg.clone())).is_ok() {
+                return;
+            }
+            self.worker = None;
+        }
         self.refresh(model::snapshot(&self.cfg));
+        self.shown = self.requested;
+    }
+
+    /// Take the worker's newest finished read, if any. Called by the loop between keys.
+    pub fn poll(&mut self) {
+        let Some(latest) = self.worker.as_ref().and_then(|w| w.rx.try_iter().last()) else {
+            return;
+        };
+        self.refresh(latest.1);
+        self.shown = latest.0;
+    }
+
+    /// Whether a requested re-read has not reached the screen yet.
+    pub fn loading(&self) -> bool {
+        self.shown < self.requested
     }
 
     /// The Calls page's selected row (T15.5), clamped to the rows it holds — a refresh
@@ -439,7 +530,7 @@ impl App {
             return false;
         }
         if code == KeyCode::Char('r') {
-            self.tick();
+            self.request();
             return false;
         }
         if self.page() == "calls" && self.calls_key(code) {
@@ -522,7 +613,7 @@ impl App {
                     .unwrap_or(written);
                 self.cfg.set_plugin_enabled(id, on);
                 self.plugin_status = format!("{id} {}", if on { "on" } else { "off" });
-                self.refresh(model::snapshot(&self.cfg));
+                self.request();
             }
             Err(e) => self.plugin_status = format!("config set {key}: {e:#}"),
         }
@@ -644,6 +735,31 @@ pub(super) mod tests {
         assert_eq!(app.page(), names[8 % n], "a digit past the list wraps");
         app.key(KeyCode::Char('0'), KeyModifiers::NONE);
         assert_eq!(app.page(), names[8 % n], "0 is not a tab");
+    }
+
+    /// The running TUI never reads the model on the key thread: it opens on an empty
+    /// snapshot, tabs switch while the read runs, and `poll` lands the worker's result.
+    #[test]
+    fn background_app_switches_tabs_while_the_model_loads() {
+        let cfg = config();
+        let mut app = App::background(&cfg);
+        assert!(app.loading(), "the first read is on the worker");
+        app.key(KeyCode::Right, KeyModifiers::NONE);
+        assert_eq!(app.page(), app.tab_names()[1], "keys work mid-read");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while app.loading() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            app.poll();
+        }
+        assert!(!app.loading(), "the worker delivered");
+        assert_eq!(
+            app.snapshot().plugins.len(),
+            model::snapshot(&cfg).plugins.len()
+        );
+        app.tick();
+        assert!(app.loading(), "a tick requests another read");
+        app.tick();
+        assert_eq!(app.requested, 2, "a tick mid-read is skipped");
     }
 
     #[test]
