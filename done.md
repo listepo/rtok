@@ -1,5 +1,15 @@
 # rtok — completed tasks
 
+### T106. `otel/export.rs` unit tests
+
+`src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
+
+Check: `just test` green; no new dependency.
+
+Do (2026-09-21): a `tests` module in `src/otel/export.rs`, six units, no new dependency. `resource()` pins the four attributes with a custom `service_name`. An unreachable collector (a loopback port bound then dropped, so the connect is refused at once): `flush_blocking` returns one error naming all three streams, posts nothing, skips nothing, leaves every mark (`calls`, `logs`, `sessions`, `sessions_tail`) at 0, writes one `otel` `error`/`flush` log row and does not panic. No endpoint: the report is `Report::default()` and prints `otel: no endpoint`. Ticker: the thread has no stop handle and dies with the process, so the units pin what callers rely on — `spawn_ticker` returns at once, does not flush before its first period, and spawns nothing without an endpoint. `push_error` joins stream errors into one report line. The 404, 500 and happy paths stay in `tests/otel.rs`.
+
+Check result (2026-09-21): `cargo nextest run --lib otel::export` 6/6 green; `just check` green.
+
 ### T115. `rtok agents install claude --yes` installs the plugin through the `claude` CLI
 
 After T114. Creator's choice: rtok runs the official commands rather than writing Claude's plugin store. `--yes`: `claude plugin marketplace add <resolved plugins/claude>` then `claude plugin install rtok@rtok`; `remove`: `claude plugin uninstall rtok@rtok` and `claude plugin marketplace remove rtok`. Dry-run and a plain install print the exact commands (offer); a failing `claude` keeps the offer open and the settings-file install goes ahead (fail open). `CLAUDE_CONFIG_DIR` is set only when `settings_path` is not `~/.claude/settings.json`. `installed()` reports `plugin` (and hooks and MCP, which it then serves) from `<claude config dir>/plugins/installed_plugins.json`. D21 singleton: while the plugin is installed, setup strips its own `hooks` entries from `settings.json` and `mcpServers.rtok` from `~/.claude.json` instead of adding them. `support(Cli, "plugin")` → `Flag("--yes")`; Desktop stays MCP-only. Update `src/agents/claude/README.md`, `docs/agents.md` (`RTOK_BLESS=1` `tests/agents_doc.rs`), `tests/agents_install.rs` matrix (`--yes` for claude; every agent e2e now runs with a fake `claude` first on PATH, `tests/common/agents.rs::fake_claude_path`, so no test reaches the real CLI).

@@ -21,7 +21,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
 | T105 | todo | P2 | 2 | 0% | |
-| T106 | todo | P3 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
@@ -183,12 +182,6 @@ Check: the test fails if a new shortening plugin is added without a fixture; `ju
 `src/report/markdown.rs` and `src/report/html.rs` have no unit tests; `tests/report.rs` covers one fixture and the empty store. `insta` snapshots on a fixed model: zero savings, one row, very large numbers, text with `<`, `|`, backticks and newlines. Done when no table breaks, no HTML is injected, and no `NaN` or `inf` is printed.
 
 Check: snapshots committed; `just test` green.
-
-### T106. `otel/export.rs` unit tests
-
-`src/otel/export.rs` has no unit tests; `tests/otel.rs` covers the happy path against a mock collector. Add units for `resource()` attributes, an unreachable collector (error returned, no row marked, no panic) and ticker shutdown. Skip cases `tests/otel.rs` already pins.
-
-Check: `just test` green; no new dependency.
 
 ### T107. CLI bad-argument fixtures
 
