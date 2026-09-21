@@ -56,3 +56,11 @@ Grok also ships the same guides in `~/.grok/docs/user-guide/` (`09-plugins.md`, 
 - Hooks (events, `matcher` regex, stdin envelope, `hookSpecificOutput`, exit codes, `GROK_HOOK_EVENT`): https://docs.x.ai/build/features/hooks
 - MCP servers (`.mcp.json`, `[mcp_servers.<name>]`, Claude/Cursor imports): https://docs.x.ai/build/features/mcp-servers
 - Settings (`[compat.claude]`, `[plugins]`, `GROK_HOME`): https://docs.x.ai/build/settings/reference
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

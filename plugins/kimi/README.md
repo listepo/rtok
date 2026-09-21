@@ -44,3 +44,11 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Hooks (`event` / `matcher` / `command` / `timeout`, event names, stdin, exit codes): https://www.kimi.com/code/docs/en/kimi-code-cli/customization/hooks.html
 - MCP (`mcpServers.<name>.command` / `args`): https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html
 - Desktop (Settings → Plugins; settings shared with the CLI): https://www.kimi.com/code/docs/en/kimi-code-desktop/using-desktop.html
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

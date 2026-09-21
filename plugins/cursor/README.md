@@ -25,3 +25,11 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Hooks (`"version": 1`, `beforeShellExecution`, `afterShellExecution`, `afterMCPExecution`, `postToolUse` / `updated_mcp_tool_output`): https://cursor.com/docs/agent/hooks
 - MCP (`mcpServers.<name>.command` / `args`, `~/.cursor/mcp.json`): https://cursor.com/docs/context/mcp
 - Agent Plugins spec (root `plugin.json`, `$schema`, `mcp.json`): https://agent-plugins.org/specification
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+

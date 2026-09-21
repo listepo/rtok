@@ -33,3 +33,11 @@ Host documentation this plugin is written against. Re-check every link when the 
 - Hooks (`type: "process"` `command`/`args`/`timeoutMs`, matcher against the tool name, the seven events): https://zcode.z.ai/en/docs/hooks
 - MCP (plugin `.mcp.json`, strict server schema, `mcp.servers` in the config file): https://zcode.z.ai/en/docs/mcp-services
 - Configuration (`~/.zcode/cli/config.json`): https://zcode.z.ai/en/docs/configuration
+
+## Package docs
+
+- Agents working on this package: [`AGENTS.md`](AGENTS.md)
+- All host plugins: [`../README.md`](../README.md)
+- Agent rules for `plugins/`: [`../AGENTS.md`](../AGENTS.md)
+- Doc gaps: [`../TODO-docs.md`](../TODO-docs.md)
+
