@@ -19,6 +19,5 @@
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
 - T122. A dedup pointer reaches a context that never saw the body
-- T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
 - T125. `rtok stats`: thinking-block share — the gate for I-86
