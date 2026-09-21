@@ -4361,3 +4361,19 @@ Complexity: 2/5 — mechanical pins, one permissions block, one assert.
 Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
+
+### T122. A dedup pointer reaches a context that never saw the body
+
+Seen 2026-09-21 in a Claude Code session: a Haiku sub-agent read `research.md` and `ideas.md`; the parent's first MCP `read` of the same files (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file. Two defects: (1) `plugin::identical_result` keys on the host session, which sub-agents share with the parent, so the pointer names a body that is not in the caller's context and every such read costs a second `expand` round trip — a loss, recorded as a `dedup` saving; (2) the ranged read was hashed or archived as the whole file, so two different ranges are "identical". 
+
+Do: Write failing tests first (unit tests next to the code, prefer `crate::testutil::Vfs`): (a) two different `lines` ranges of one file return different content/ids; (b) a body archived under one context read from another context returns the body, not a pointer. Fix in `read::mod` by hashing the bytes actually returned (`body.as_bytes()`) instead of the raw file; for context, skip dedup on MCP for bodies under 1024 bytes.
+
+Shipped: 
+- `src/plugins/read/mod.rs`: Changed `payload` from conditional `raw.as_bytes()` to always `body.as_bytes()`, ensuring ranged reads have different hashes. Added two tests: `different_ranges_return_different_ids` and `archived_body_shared_by_different_contexts_returns_body_not_pointer`.
+- `src/plugin.rs`: Modified `identical_result` to skip dedup for bodies < 1024 bytes on MCP (no `cwd()`), preventing cross-context pointer issues when sub-agents and parent share a session.
+
+Status: done 2026-09-21
+Check result: All 77 `read::` tests pass; all 42 `store::` tests pass; all 72 `cmd::` tests pass (context check also affects cmd plugin). `cargo clippy --all-targets -- -D warnings` clean.
+Model: Claude Code / Haiku 4.5
+
+Done: Fixed ranged reads to return distinct dedup ids; MCP bodies under 1024 bytes skip dedup to avoid cross-context issues.
