@@ -4382,6 +4382,16 @@ Status: done 2026-09-21
 Check result: `just codeql actions rust` 0 + 0 (javascript-typescript and python were already 0 and untouched); `actionlint` clean on every hand-written workflow — the dist-generated `release.yml` carries the same 5 shellcheck style notes as before this change; `just check` green, 1108/1108. The `ci` / `codeql` runs on `main` start with the next push, which is the creator's.
 Model: Claude Code / claude-opus-5
 
+### T125. `rtok stats`: thinking-block share — the gate for I-86
+
+I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
+
+Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
+
+Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
+
+Done: `measure::jsonl` collects `thinking`/`redacted_thinking` blocks per unique `message.id`; `measure::stats` sums them over sessions (text line + JSON `thinking`), share against uncached + cache_create + cache_read input. 2026-09-21, `rtok stats --since 30d`, 827 sessions: 28,072 blocks, 7,266,318 B ≈ 1,816,580 est. tokens = 0.0297 % of session input → I-86 moved to Rejected in `ideas.md`; row in `research.md` §2.
+
 **T127 toon and compress on by default; fix their rewrite bugs** · `src/plugins/{toon,compress,archive}/mod.rs`, `src/config/mod.rs`, `config/default.toml`, docs and snapshots
 Do: creator request 2026-09-21. Both plugins default on (`CATALOGUE`, `[plugins.toon|compress] enabled`, manifests); they still act only in `proxy.mode = "compress"`. `toon`: parses the table from the tool-result text, so MCP `[{type: text}]` results encode and `expand` returns that text (it used to see only the wire's block array); skips a table whose pointer + TOON would not estimate fewer tokens, before any archive row or decision is written (a compact table used to grow, with a negative saving measured); rejects keys with header delimiters (`,{}":`), which shifted columns. `compress`: each source line appears once (deduped), facts/files are clipped like archive pointers (a minified line used to outgrow the pointer, so the block was skipped), error lines rank before plain `:` lines, and title/narrative/facts no longer repeat the same lines. `archive::block_text` / `clip` are `pub(crate)` and reused instead of copied.
 Check: new unit tests `text_block_content_encodes`, `a_table_that_would_grow_is_left_alone`, `keys_with_delimiters_do_not_encode`, `summary_puts_errors_first_and_clips_each_line_once`; default-on config/TUI/agents tests; trycmd snapshots and `docs/agents.md` re-blessed; `just check`.

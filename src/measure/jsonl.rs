@@ -43,6 +43,12 @@ pub struct Usage {
     pub turn: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThinkingBlock {
+    pub bytes: u64,
+    pub turn: u32,
+}
+
 #[derive(Debug, Default)]
 pub struct Parsed {
     pub lines: u64,
@@ -55,6 +61,7 @@ pub struct Parsed {
     pub injected: Vec<Injected>,
     pub assistant_texts: Vec<String>,
     pub usages: Vec<Usage>,
+    pub thinking: Vec<ThinkingBlock>,
     pub turns: u32,
     seen_ids: HashSet<String>,
 }
@@ -106,6 +113,7 @@ pub fn parse_dir(dir: &Path) -> std::io::Result<Parsed> {
                 acc.injected.extend(one.injected);
                 acc.assistant_texts.extend(one.assistant_texts);
                 acc.usages.extend(one.usages);
+                acc.thinking.extend(one.thinking);
             }
         }
     }
@@ -176,14 +184,14 @@ fn ingest(v: &Value, out: &mut Parsed) {
         }
         Some(Value::Array(blocks)) => {
             for b in blocks {
-                ingest_block(b, ty, turn, out);
+                ingest_block(b, ty, turn, out, repeat);
             }
         }
         _ => {}
     }
 }
 
-fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed) {
+fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed, repeat: bool) {
     match b.get("type").and_then(Value::as_str) {
         Some("tool_use") => {
             let id = b
@@ -222,6 +230,17 @@ fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed) {
             {
                 out.assistant_texts.push(t.to_string());
             }
+        }
+        Some("thinking") | Some("redacted_thinking") if ty == "assistant" && !repeat => {
+            let data = b
+                .get("thinking")
+                .or_else(|| b.get("data"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            out.thinking.push(ThinkingBlock {
+                bytes: data.len() as u64,
+                turn,
+            });
         }
         _ => {}
     }
@@ -418,6 +437,22 @@ mod tests {
         );
         assert_eq!(p.turns, 2, "the line after it is still parsed");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn thinking_blocks_counted_once_per_message_id() {
+        let usage = json!({"input_tokens": 10, "output_tokens": 4});
+        let thinking = json!({"type": "assistant", "message": {"id": "m1", "content": [
+            {"type": "thinking", "thinking": "reasoning here"}], "usage": usage}});
+        let redacted = json!({"type": "assistant", "message": {"id": "m2", "content": [
+            {"type": "redacted_thinking", "data": "x"}], "usage": usage}});
+        let dup = json!({"type": "assistant", "message": {"id": "m1", "content": [
+            {"type": "text", "text": "hi"}], "usage": usage}});
+        let p = parse_jsonl(&[thinking, redacted, dup].map(|v| v.to_string()).join("\n"));
+        assert_eq!(p.thinking.len(), 2);
+        assert_eq!(p.thinking[0].bytes, 14);
+        assert_eq!(p.thinking[1].bytes, 1);
+        assert_eq!(p.duplicates, 1);
     }
 
     #[test]
