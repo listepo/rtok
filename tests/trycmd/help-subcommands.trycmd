@@ -776,6 +776,7 @@ Git worktrees of this repository: owner, state and disk cost
 Usage: rtok worktree [OPTIONS] <COMMAND>
 
 Commands:
+  add   Create the worktree for a task: one location, one name, one locked owner; prints its path
   list  Every worktree and orphan with its owner, state, source and build-cache bytes
   gc    Remove merged, clean, idle worktrees with their branches; drop records of deleted ones
   help  Print this message or the help of the given subcommand(s)
@@ -806,6 +807,20 @@ Options:
                        stop
       --idle <IDLE>    Keep worktrees modified within this window (`24h`, `7d`) [default: 24h]
       --json           JSON instead of the table
+  -h, --help           Print help
+
+$ rtok worktree add --help
+Create the worktree for a task: one location, one name, one locked owner; prints its path
+
+Usage: rtok worktree add [OPTIONS] --owner <OWNER> <TASK> [SLUG]
+
+Arguments:
+  <TASK>  Task id, e.g. `t158`; directory `<repo>-<task>`, branch `<task>[-<slug>]`
+  [SLUG]  Optional branch suffix
+
+Options:
+      --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --owner <OWNER>  Who holds it, as `<provider> / <model>`; written into the lock reason
   -h, --help           Print help
 
 ```
