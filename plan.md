@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T79 | todo | P1 | 3 | 0% | |
 | T83 | todo | P1 | 4 | 0% | |
 | T86 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
@@ -48,16 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T165 | todo | P3 | 5 | 0% | |
 | T166 | todo | P2 | 1 | 0% | |
 
-
-### T79. `agents install zed` aborts on a real settings.json (JSONC)
-
-Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
-
-Reproduce: `rtok agents install zed` with a `~/.config/zed/settings.json` Zed itself wrote. The repro is kept as the `#[ignore]`d `zed_keeps_the_real_settings_json` in `tests/agents_real_config.rs` — un-ignore it as the check.
-
-Plan (needs a decision first): a JSONC read alone is not enough — writing back through `serde_json` would silently delete the user's comments, which for Zed is most of the file. So either (a) edit the JSONC hosts in place with a comment-preserving editor, or (b) keep strict parsing and refuse with a message naming the file and the line the user can paste in themselves. Ask the creator which before starting; (b) is small and honest, (a) is the one users want and likely needs a dependency.
-
-Check: un-ignore `zed_keeps_the_real_settings_json` in `tests/agents_real_config.rs` and it passes against a Zed-written `settings.json` — under (a) the comments and trailing commas are still in the file afterwards, under (b) the command exits non-zero with the message and the test asserts that instead. `just check` green either way.
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
 

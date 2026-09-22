@@ -123,6 +123,11 @@ fn identical_backup_exists(dir: &Path, body: &[u8]) -> bool {
 
 /// A host's JSON config as a value to edit. A missing or empty file is an empty object, not an
 /// error: `agent setup` on a host the user has never configured is the common case.
+///
+/// Strict JSON only: a JSONC file (comments, trailing commas — the shape Zed and VS Code
+/// write) is refused, never rewritten — a rewrite from a parsed value would delete the
+/// user's comments (T79 option b). The error names the file and the offending line, so the
+/// entry can be pasted in by hand.
 pub fn read_json(path: &Path) -> Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
@@ -131,7 +136,16 @@ pub fn read_json(path: &Path) -> Result<Value> {
     if raw.trim().is_empty() {
         return Ok(json!({}));
     }
-    serde_json::from_str(&raw).with_context(|| path.display().to_string())
+    serde_json::from_str(&raw).map_err(|e| {
+        let line = e.line();
+        let src = raw.lines().nth(line.saturating_sub(1)).unwrap_or("").trim();
+        anyhow::anyhow!(
+            "{}:{}: not strict JSON: {e}. rtok refuses to rewrite this file (a rewrite would \
+             delete its comments); add the entry by hand at that line and re-run. The line: {src}",
+            path.display(),
+            e.column()
+        )
+    })
 }
 
 /// Every JSON host installer: [`read_json`], let `edit` change the document and report what it
@@ -729,6 +743,22 @@ mod tests {
         backup: false,
         yes: true,
     };
+
+    /// T79: a JSONC config is refused with the file and the offending line named — the entry
+    /// is something the user pastes in by hand — and the file is never rewritten.
+    #[test]
+    fn jsonc_is_refused_naming_the_file_and_the_line() {
+        let dir = tmp("jsonc-refuse");
+        let path = dir.join("settings.json");
+        let raw = "{\n  // my theme\n  \"theme\": \"x\",\n}\n";
+        fs::write(&path, raw).unwrap();
+        let err = read_json(&path).unwrap_err().to_string();
+        assert!(err.contains("settings.json:"), "{err}");
+        assert!(err.contains("The line:"), "{err}");
+        assert!(err.contains("// my theme"), "the offending line: {err}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// A `plugins/demo` link with no label, the shape most link tests start from.
     fn demo_link(src: PathBuf, dest: PathBuf) -> PluginLink<'static> {
