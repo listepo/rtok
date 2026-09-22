@@ -18,7 +18,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T100 | todo | P1 | 3 | 0% | |
-| T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
@@ -190,12 +189,6 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 After T99. A `grok` host in `src/agents/`: detection (`~/.grok/bin/grok`, `GROK_HOME`), `support("plugin")` prints `grok plugin install <resolved plugins/grok> --trust`, `installed()` reports `plugin` from `grok plugin list --json` or `~/.grok/plugins/rtok`; MCP as `[mcp_servers.rtok]` in `~/.grok/config.toml` via `toml_edit` when the plugin is absent. D21 singleton: while rtok's Claude hooks are installed and `[compat.claude] hooks` is on, say so instead of adding a second set. Separately, on a live Grok: dump one `read_file` PreToolUse payload, and if its `toolInput` matches what the Read plugins rewrite, map `read_file` → `Read` and add the Read matcher to the plugin. `docs/agents.md` blessed, `src/agents/grok/README.md` with `## Docs`.
 
 Check: unit tests for offer, detection and singleton; `agents_doc` blessed; `just check`.
-
-### T101. Hook fail-open matrix over every `--host`
-
-`tests/extra_cover.rs` checks bad and empty stdin for the default host only. One `rstest` matrix in `tests/hook_fail_open.rs`: every value `[hook] host` accepts × every hook event × stdin {empty, garbage, truncated JSON, non-UTF-8, 1 MiB}. Done when each case exits 0, prints the host's no-op reply, and never rewrites the input.
-
-Check: `just test` green; one case per host × event × stdin in the nextest list.
 
 ### T102. Lossless round-trip for every plugin that shortens
 
