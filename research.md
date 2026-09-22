@@ -1174,8 +1174,10 @@ Scan of 2026-09-18, unverified against a running host. "—" is "not documented"
 
 Reading: two of the three constraints are host-plugin-shaped, and pi is the host where the
 gap is widest — it reaches two plugins today and its extension API is the most capable of
-the three. The proxy stays the only path on Codex, Claude Desktop, Windsurf, Zed, ZCode,
-Kimi and Copilot, which have neither a plugin directory nor the events.
+the three. The proxy stays the only path on Codex, Claude Desktop, Windsurf, Zed, ZCode
+and Copilot, which have neither a plugin directory nor the events. Kimi has a plugin
+store (`plugins/managed/`, T86) whose hooks and MCP server rtok's installer treats as
+the singleton instead of its own tables.
 
 ### T50.1 default-rule families (2026-09-18)
 
