@@ -3,11 +3,10 @@
 pub mod export;
 pub mod handoff;
 pub mod import;
-mod project;
 pub mod status;
 pub mod sync;
 
-pub use project::project_name;
+pub use crate::project::project_name;
 
 use rtok_plugin_sdk::{
     Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PromptSubmit,
@@ -561,12 +560,7 @@ mod tests {
     fn note_saved_from_a_worktree_recalls_from_the_main_checkout() {
         use rtok_plugin_sdk::PromptSubmit;
         let dir = crate::testutil::tmp_dir("t133-recall");
-        let (main, wt) = (dir.join("repo"), dir.join("wt").join("repo-t1"));
-        let admin = main.join(".git").join("worktrees").join("repo-t1");
-        std::fs::create_dir_all(&admin).unwrap();
-        std::fs::create_dir_all(&wt).unwrap();
-        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
-        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+        let (main, wt) = crate::testutil::worktree_layout(&dir);
         let mut cx = crate::plugin::Runtime::in_memory("t133-recall").unwrap();
         cx.cwd = Some(wt.to_string_lossy().into_owned());
         let ev = PromptSubmit {

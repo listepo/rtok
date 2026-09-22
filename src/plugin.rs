@@ -202,12 +202,10 @@ impl Runtime {
     }
 }
 
-/// The basename of the nearest ancestor of `cwd` holding `.git` (T25.0). The walk itself is
-/// `config::layers::git_root` — one helper, and already the no-subprocess one the fail-open
-/// hook path needs.
+/// The project `cwd` belongs to (T25.0): T133's resolver, so a linked worktree's session is
+/// attributed to its main repository — no subprocess, as the fail-open hook path needs.
 fn project_of(cwd: Option<&str>) -> Option<String> {
-    let root = crate::config::layers::git_root(std::path::Path::new(cwd?))?;
-    root.file_name().map(|n| n.to_string_lossy().into_owned())
+    crate::project::project_name(std::path::Path::new(cwd?))
 }
 
 /// The host side of the contract (D25). `Runtime` *is* the host: every capability trait is
@@ -574,6 +572,29 @@ mod tests {
         }
         let p: &dyn Plugin = &Ext;
         assert_eq!(p.manifest().id, "ext");
+    }
+
+    /// T154: a hook run from a linked worktree attributes its session to the main
+    /// repository, and keeps the worktree as its `cwd` for the ownership ledger.
+    #[test]
+    fn a_session_in_a_linked_worktree_is_attributed_to_the_main_repository() {
+        let dir = crate::testutil::tmp_dir("t154-project");
+        let (_main, wt) = crate::testutil::worktree_layout(&dir);
+        let mut cx = Runtime::in_memory("t154").unwrap();
+        cx.cwd = Some(wt.to_string_lossy().into_owned());
+        cx.record_call("hook", "hook", Some("SessionStart"))
+            .unwrap();
+        let (_, project, cwd) = cx.store.session_row("t154").unwrap().unwrap();
+        assert_eq!(project.as_deref(), Some("repo"));
+        assert_eq!(cwd, cx.cwd);
+        let seen = cx.store.sessions_by_cwd().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            (seen[0].id.as_str(), &seen[0].cwd),
+            ("t154", cwd.as_ref().unwrap())
+        );
+        assert!(seen[0].last_seen > 0 && seen[0].ended_at.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

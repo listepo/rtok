@@ -886,7 +886,15 @@ pub fn run() -> Result<()> {
         Cmd::Worktree {
             action: WorktreeCmd::List { json },
         } => {
-            let rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
+            let mut rows = crate::worktree::list::rows(&std::env::current_dir()?)?;
+            // T154: ownership from the sessions the hooks recorded. The listing must not
+            // depend on the store — without one it prints without attribution.
+            let cfg = Config::load_with(config_file.as_deref(), None)?;
+            if let Ok(store) = crate::store::Store::open(&cfg.core.db_path)
+                && let Ok(seen) = store.sessions_by_cwd()
+            {
+                crate::worktree::list::attribute(&mut rows, &seen);
+            }
             if json {
                 print_json(&rows)?;
             } else {
