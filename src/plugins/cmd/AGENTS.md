@@ -8,7 +8,7 @@
 `rtok_plugin_sdk::…`.
 
 **Invariants**
-- Lossless: the raw output is always archived before anything is shortened. `rtok expand <id>` must return it.
+- Lossless: anything a reader could miss is archived before it is dropped; `rtok expand <id>` returns the raw bytes. A whitespace/ANSI-only change drops nothing and stores no archive row (T160).
 - Exit code of the wrapped command is preserved exactly.
 - Never wrap: first word in `never_wrap` (default `rtok`, `sudo`), heredocs (`<<`), trailing `&`,
   `-i`/`--interactive`, or when `rewrite = false`.

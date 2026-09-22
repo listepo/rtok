@@ -2,7 +2,6 @@ bin.name = "rtok"
 args = "run -- /bin/echo hello-trycmd"
 stdout = """
 hello-trycmd
-[rtok 21ce43ba58d8ea8652aa6113a2272993716d3325fbdc6a57f27edb574ca8c696 · 1 lines · expand: rtok expand 21ce43ba58d8ea8652aa6113a2272993716d3325fbdc6a57f27edb574ca8c696]
 """
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.

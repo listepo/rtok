@@ -13,7 +13,8 @@ pub fn run(cmd: &str, input: &str) -> String {
     compress_only(&settings, cmd, input)
 }
 
-/// Archive, compress, trailer, measure. A store error falls back to [`run`].
+/// Archive (when the shortening dropped something), compress, trailer, measure.
+/// A store error falls back to [`run`].
 pub fn run_with_store(cfg: &Config, cmd: &str, input: &str) -> String {
     let settings = rules::Settings::from_config(cfg);
     let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
@@ -21,23 +22,31 @@ pub fn run_with_store(cfg: &Config, cmd: &str, input: &str) -> String {
         Ok(cx) => cx,
         Err(_) => return compress_only(&settings, cmd, input),
     };
-    let id = match cx.put_archive(input.as_bytes()) {
-        Ok(id) => id,
-        Err(_) => return compress_only(&settings, cmd, input),
-    };
+    // The id is the body's sha256, so the filter can name it before any store write.
+    let id = crate::store::hex_sha256(input.as_bytes());
     let (filtered, kind) = formatters::compress(&settings, &argv, input, 0, &id);
     let lines = if input.is_empty() {
         0
     } else {
         input.lines().count() as u32
     };
-    let mut out = filtered;
-    if super::run::needs_pointer(
+    // T160: a whitespace/ANSI-only change has nothing to expand — no trailer, and then
+    // nothing references the id, so the archive row is skipped too. An inline
+    // `expand <id>` marker already is the pointer and suppresses the trailer, but the
+    // archive it names must exist.
+    let named = super::run::names_the_id(&filtered, &id);
+    let pointer = super::run::needs_pointer(
         lines,
         cfg.plugins.cmd.trailer_min_lines,
-        out.len(),
-        input.len(),
-    ) {
+        input.as_bytes(),
+        &filtered,
+        named,
+    );
+    if (pointer || named) && cx.put_archive(input.as_bytes()).is_err() {
+        return compress_only(&settings, cmd, input);
+    }
+    let mut out = filtered;
+    if pointer {
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
@@ -53,7 +62,7 @@ pub fn run_with_store(cfg: &Config, cmd: &str, input: &str) -> String {
         after_bytes: out.len() as u64,
         est_before: cx.estimate(input, Class::Code),
         est_after: cx.estimate(&out, Class::Code),
-        ref_id: Some(format!("{family}:{id}")),
+        ref_id: (pointer || named).then(|| format!("{family}:{id}")),
         call_id: None,
     });
     out

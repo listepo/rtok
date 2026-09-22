@@ -39,6 +39,6 @@
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
-- T160. No expand trailer when shortening saved less than the trailer costs
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T165. Research: general HTTP(S) interception as a new surface
+- T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
