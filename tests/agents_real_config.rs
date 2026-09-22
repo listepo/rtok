@@ -246,12 +246,11 @@ real_config_round_trip! {
     vscode_keeps_the_real_settings_json => "vscode",
 }
 
-/// Zed writes **JSONC** — its `settings.json` carries `//` comments and trailing commas, which
-/// `rtok_agent_sdk::read_json` (strict `serde_json`) refuses, so `agents install zed` aborts
-/// against a file Zed itself wrote. Tracked as T79; un-ignore as that task's check. Ignored,
-/// not deleted: the reproduction is the point.
+/// Zed writes **JSONC** — its `settings.json` carries `//` comments and trailing commas
+/// (T79). The installer edits the text surgically and validates a JSONC copy
+/// (`jsonc-parser`), so the file Zed itself wrote survives installs and removes with its
+/// comments and trailing commas intact — which is what the round trip asserts.
 #[test]
-#[ignore = "T79: a real Zed settings.json is JSONC and the installer cannot read it"]
 fn zed_keeps_the_real_settings_json() {
     round_trip(by_id("zed"));
 }

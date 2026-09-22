@@ -2,10 +2,11 @@
 //!
 //! Zed reads MCP servers from `context_servers` in `~/.config/zed/settings.json`
 //! (`[setup.zed] config_path`): `context_servers.rtok = {command, args}`. The settings file
-//! is JSON with `//` and `/* */` comments, which `serde_json` rejects, so setup edits the text
-//! surgically and only parses a comment-stripped copy to validate: comments and foreign
-//! servers survive installs and removes. Zed has no shell hook events; the Zed agent reads
-//! these servers directly, and external agents can reach them over ACP.
+//! is JSONC — `//` and `/* */` comments and trailing commas (T79) — which `serde_json`
+//! rejects, so setup edits the text surgically and only parses a JSONC copy (`jsonc-parser`)
+//! to validate: comments, trailing commas and foreign servers survive installs and removes.
+//! Zed has no shell hook events; the Zed agent reads these servers directly, and external
+//! agents can reach them over ACP.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -115,6 +116,9 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.zed.config_path;
     let raw = read_opt(path)?;
     let (body, report) = insert_rtok(&raw, path, &want_entry())?;
+    // Never write a document we cannot read back: "a malformed file is never overwritten"
+    // applies to our own output too.
+    parse(&body).with_context(|| path.display().to_string())?;
     rtok_agent_sdk::write(&apply(cfg), path, &body, &report)?;
     Ok(report)
 }
@@ -125,6 +129,7 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     let path = &cfg.setup.zed.config_path;
     let raw = read_opt(path)?;
     let (body, report) = remove_rtok(&raw, path)?;
+    parse(&body).with_context(|| path.display().to_string())?;
     rtok_agent_sdk::write(&apply(cfg), path, &body, &report)?;
     Ok(report)
 }
@@ -139,10 +144,20 @@ fn read_opt(path: &Path) -> Result<String> {
     }
 }
 
-/// The document with comments stripped, parsed — or an error naming the file (a malformed
-/// file is never overwritten).
+/// The document as Zed writes it — comments and trailing commas included (JSONC) — parsed
+/// for validation only, or an error naming the file (a malformed file is never overwritten).
+/// The surgical editor works on spans of `raw`; this copy is never written back (T79).
 fn parse(raw: &str) -> Result<Value> {
-    serde_json::from_str(&strip_comments(raw)).map_err(|e| anyhow::anyhow!("{e}"))
+    let opts = jsonc_parser::ParseOptions {
+        allow_comments: true,
+        allow_trailing_commas: true,
+        allow_loose_object_property_names: false,
+        allow_missing_commas: false,
+        allow_single_quoted_strings: false,
+        allow_hexadecimal_numbers: false,
+        allow_unary_plus_numbers: false,
+    };
+    jsonc_parser::parse_to_serde_value::<Value>(raw, &opts).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 fn parse_at(raw: &str, path: &Path) -> Result<Value> {
@@ -341,8 +356,15 @@ fn insert_rtok(raw: &str, path: &Path, entry: &Value) -> Result<(String, String)
     let brace = close - 1;
     match find_key(&text, open, "context_servers") {
         None => {
-            let inner_empty = strip_comments(&text[open + 1..brace]).trim().is_empty();
-            let sep = if inner_empty { "\n  " } else { ",\n  " };
+            let inner = strip_comments(&text[open + 1..brace]);
+            let trimmed = inner.trim();
+            // One separator, never two: a root that already ends in a trailing comma (the
+            // shape Zed writes) keeps it and gains no second one (T79).
+            let sep = if trimmed.is_empty() || trimmed.ends_with(',') {
+                "\n  "
+            } else {
+                ",\n  "
+            };
             let mut body = text;
             body.replace_range(
                 brace..close,
@@ -354,8 +376,7 @@ fn insert_rtok(raw: &str, path: &Path, entry: &Value) -> Result<(String, String)
             Ok((body, report))
         }
         Some((_, vs, ve)) => {
-            let span: Value =
-                serde_json::from_str(&strip_comments(&text[vs..ve])).unwrap_or(Value::Null);
+            let span: Value = parse(&text[vs..ve]).unwrap_or(Value::Null);
             if !span.is_object() {
                 let mut body = text;
                 body.replace_range(
@@ -385,8 +406,7 @@ fn insert_rtok(raw: &str, path: &Path, entry: &Value) -> Result<(String, String)
                     Ok((body, report))
                 }
                 Some((_, evs, eve)) => {
-                    let have: Value = serde_json::from_str(&strip_comments(&text[evs..eve]))
-                        .unwrap_or(Value::Null);
+                    let have: Value = parse(&text[evs..eve]).unwrap_or(Value::Null);
                     if have == *entry {
                         Ok((text, NO_CHANGES.into()))
                     } else {
@@ -619,6 +639,62 @@ mod tests {
         assert!(register_mcp(&c).is_err());
         assert!(unregister_mcp(&c).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\"context_servers\": ");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T79: Zed writes JSONC — comments and trailing commas. Both survive install and
+    /// remove, and a trailing comma inside `context_servers` no longer makes the span
+    /// parse fail and replace the whole object (which lost the foreign servers).
+    #[test]
+    fn trailing_commas_survive_install_and_remove() {
+        let (c, path) = cfg("trail", false);
+        fs::write(
+            &path,
+            "{\n  // my theme\n  \"theme\": \"One Dark\",\n  \"context_servers\": {\n    // foreign\n    \"other\": {\"command\": \"npx\", \"args\": [\"x\"],},\n  },\n}\n",
+        )
+        .unwrap();
+        assert!(
+            register_mcp(&c)
+                .unwrap()
+                .starts_with("+ context_servers.rtok: ")
+        );
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("// my theme") && raw.contains("// foreign"),
+            "{raw}"
+        );
+        assert!(raw.contains("\"other\""), "{raw}");
+        let root = parse(&raw).unwrap();
+        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(root["context_servers"]["other"]["command"], "npx");
+        assert_eq!(unregister_mcp(&c).unwrap(), "- context_servers.rtok");
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("\"rtok\""), "{raw}");
+        assert!(
+            raw.contains("// my theme") && raw.contains("\"other\""),
+            "{raw}"
+        );
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// T79: a root object already ending in a trailing comma gains one separator, not two —
+    /// the real-file shape that used to produce `},\\n,` and break the next install.
+    #[test]
+    fn a_root_trailing_comma_adds_no_second_comma() {
+        let (c, path) = cfg("root-trail", false);
+        fs::write(&path, "{\n  // mine\n  \"theme\": \"One Dark\",\n}\n").unwrap();
+        assert!(
+            register_mcp(&c)
+                .unwrap()
+                .starts_with("+ context_servers.rtok: ")
+        );
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("\n,"), "{raw}");
+        assert!(raw.contains("// mine"), "{raw}");
+        let root = parse(&raw).unwrap();
+        assert_eq!(root["theme"], json!("One Dark"));
+        assert_eq!(root["context_servers"]["rtok"]["args"], json!(["mcp"]));
+        assert_eq!(register_mcp(&c).unwrap(), NO_CHANGES);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
