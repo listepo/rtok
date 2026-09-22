@@ -7,7 +7,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T83.2 | todo | P1 | 3 | 0% | |
-| T83.3 | todo | P1 | 4 | 0% | |
+| T83.3 | in progress | P1 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.5 | todo | P1 | 2 | 0% | |
 | T83.6 | todo | P1 | 2 | 0% | |
@@ -52,6 +52,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | todo | P2 | 5 | 0% | |
+| T163.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
+| T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T165 | todo | P3 | 5 | 0% | |
 | T168 | todo | P2 | 1 | 0% | |
 | T170 | todo | P1 | 1 | 0% | |
@@ -62,7 +64,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T175 | todo | P2 | 2 | 0% | |
 | T176 | todo | P1 | 3 | 0% | |
 | T177 | todo | P2 | 3 | 0% | |
-| T178 | todo | P1 | 4 | 0% | |
+| T178 | in progress | P1 | 4 | 5% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T180 | todo | P3 | 4 | 0% | |
 | T181 | todo | P3 | 2 | 0% | |
@@ -82,6 +84,8 @@ Check: the four tests pass in the `windows` CI job; `just check` stays green.
 ### T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
 
 Skips three tests: `a_service_that_exits_comes_back_and_stop_takes_the_whole_tree_down`, `status_asks_the_kernel_rather_than_believing_the_state_file`, `a_second_start_is_refused_and_status_names_every_service`. These were 180 s `terminate-after` timeouts, not fast failures — `demon.rs`'s process-tree model (session leader + `setsid`, `rtok_sys::process_alive`/`process_term`/`process_kill`) is Unix-shaped; Windows has no process groups the same way (job objects are the closest analog). Decide whether `supervise`/`claim`/the kill path needs a `cfg(windows)` job-object implementation or the tests assume POSIX signals. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Execution plan: (1) read `src/demon*` and the `crates/rtok-sys` process helpers and find where the tests hang on Windows (spawn without a new process group, `process_term` with no console-ctrl equivalent, or `process_alive` on a reused pid); (2) add a `cfg(windows)` path in `rtok-sys` — a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` per supervised service, `TerminateJobObject` for the tree kill — leaving the Unix path untouched; (3) remove the three skips; (4) iterate on the PR's `windows` CI job until the tests pass well under 60 s.
 
 Check: the three tests pass (or complete well under the 60 s slow-timeout) in the `windows` CI job; `just check` stays green.
 
@@ -386,9 +390,27 @@ Check: hook fixture tests with T156's recorded payloads — create returns a pat
 
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
-Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`, not yet in rtok — needs creator approval before wiring). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
 
 Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
+
+**Split (2026-09-23).** T163.1 takes `symbols.rs`; T163.2 takes `otel.rs` and `embed.rs`. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
+
+### T163.1. `src/store/symbols.rs` without raw SQL
+
+First slice of T163: the 15 `sql_query` sites in `symbols.rs` (`symbol_stale`, `extractor`, symbol lookups) move to the Diesel DSL over `schema.rs`; `INSERT OR IGNORE` becomes `insert_or_ignore_into`, upserts use `on_conflict`. Anything the DSL cannot express goes through one shared extension module (`define_sql_function!` or a custom `QueryFragment`) that T163.2 and the `mod.rs` slices reuse — never a second one.
+
+Execution plan: (1) map each site to its `schema.rs` table and add missing `table!` entries; (2) rewrite site by site, keeping function signatures and result order; (3) run the store and symbol tests unchanged; (4) move this card to `done.md`.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` finds nothing; store and symbol tests unchanged and green; `just check`.
+
+### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
+
+Second slice of T163: the 6 sites in `otel.rs` and 4 in `embed.rs` move to the Diesel DSL over `schema.rs` (aggregates via `diesel::dsl::{min, count}` and `group_by`). Anything the DSL cannot express goes through the shared extension module from T163.1 — whichever slice lands first creates it.
+
+Execution plan: (1) map each site to `schema.rs`; (2) rewrite, keeping signatures and result order; (3) run the otel, embed and store tests unchanged; (4) move this card to `done.md`.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
 
 ### T165. Research: general HTTP(S) interception as a new surface
 
@@ -475,6 +497,8 @@ Check: `rtok stats` shows the unmatched-rule share; rule tests for each new fami
 Found in the 2026-09-22 audit: in-process hook time is p50 0.3 ms, but Claude Code records p50 18–19 ms and p95 206–255 ms for PreToolUse/PostToolUse — process start of a 27 MB binary dominates and the ≤ 10 ms rule is broken on every call without rtok noticing. Ten hooks were cancelled at Claude Code's 5 s timeout (5 PreToolUse, 5 UserPromptSubmit with p50 5.6 s — no UserPromptSubmit rows exist in the store, so the owner is unconfirmed). SessionEnd (p50 18.9 ms) and PreCompact (p50 15.0 ms) are over budget in-process.
 
 Plan: research first — measure cold/warm start (`hyperfine`), find what runs before `main` dispatches (config parse, DB open, migrations), confirm who owns the UserPromptSubmit timeouts; then pick: lazy store open, a smaller hook path, or a resident process (`rtok demon`) the hook talks to. Record findings in `research.md`.
+
+Execution plan: (1) `hyperfine` `rtok hook PreToolUse`/`PostToolUse` with recorded payloads against `rtok --version`, release build, cold and warm; (2) trace what runs before dispatch (config load, store open, migrations, plugin registry) and the binary's load/page-in cost; (3) read the `~/.claude` hook config to name the owner of the `UserPromptSubmit` timeouts; (4) fix the largest cost at the responsible layer (lazy store open, no migrations on the hook path, lighter hook entry) — a resident process only if the rest cannot reach 10 ms, and then as its own proposed task; (5) dated `research.md` section with before/after.
 
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
