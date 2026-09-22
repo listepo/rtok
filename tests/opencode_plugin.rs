@@ -1,11 +1,12 @@
 //! T47.3 + D21: the OpenCode host plugin is one bash filter beside one `mcp.rtok`, offered by
-//! `rtok agents install opencode` and linked only with `--yes`.
+//! `rtok agents install opencode` and, since OpenCode's own docs have no GitHub/subdir
+//! install, linked by default once OpenCode itself is detected (T164).
 //!
 //! Check: the plugin registers no tool (MCP owns read/search/memory/graph) and names ketch;
 //! `--dry-run` offers `plugins/opencode/rtok.ts` at `<config dir>/plugins/rtok.ts` and writes
-//! nothing; a plain install writes `mcp.rtok` but leaves the offer open; `--yes` links the one
-//! file, a second run is `already installed`, and remove unlinks it and drops `mcp.rtok`. The
-//! plugin's own unit test (`plugins/opencode/rtok.test.ts`) runs from `tests/filter.rs`.
+//! nothing; a plain install links the one file and writes `mcp.rtok`, a second run is
+//! `already installed`, and remove unlinks it and drops `mcp.rtok`. The plugin's own unit
+//! test (`plugins/opencode/rtok.test.ts`) runs from `tests/filter.rs`.
 
 mod common;
 
@@ -61,29 +62,26 @@ fn dry_run_offers_the_plugin_and_writes_nothing() {
 }
 
 #[test]
-fn install_without_yes_leaves_the_offer_open() {
+fn install_without_yes_links_the_plugin_by_default() {
     let home = tmp("opencode-offer");
     let cfg = write_cfg(&home);
+    let dest = home.join(".config/opencode/plugins/rtok.ts");
     let out = rtok(&["agents", "install", "opencode", "--cli"], &cfg, &home);
-    assert!(out.contains("(accept with --yes)"), "{out}");
-    assert!(out.contains("✗ plugin  not installed (--yes)"), "{out}");
+    assert!(out.contains("+ plugin plugins/opencode/rtok.ts →"), "{out}");
+    assert!(out.contains("✓ plugin  installed"), "{out}");
     let conf = json(&home.join(".config/opencode/opencode.json"));
     assert_eq!(conf["mcp"]["rtok"]["command"][1], "mcp", "{conf}");
-    assert!(
-        home.join(".config/opencode/plugins/rtok.ts")
-            .symlink_metadata()
-            .is_err()
-    );
+    assert!(dest.symlink_metadata().is_ok(), "linked without --yes");
 }
 
 #[test]
-fn yes_links_one_file_then_remove_unlinks_it() {
+fn plain_install_links_one_file_then_remove_unlinks_it() {
     let home = tmp("opencode-yes");
     let cfg = write_cfg(&home);
     let conf = home.join(".config/opencode/opencode.json");
     fs::write(&conf, r#"{"mcp":{"foreign":{"type":"remote","url":"x"}}}"#).unwrap();
     let dest = home.join(".config/opencode/plugins/rtok.ts");
-    let args = ["agents", "install", "opencode", "--cli", "--yes"];
+    let args = ["agents", "install", "opencode", "--cli"];
 
     let out = rtok(&args, &cfg, &home);
     assert!(out.contains("✓ plugin  installed"), "{out}");

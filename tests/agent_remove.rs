@@ -9,6 +9,7 @@ mod common;
 
 use common::agents::{backups, contains_hook, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
+use std::path::PathBuf;
 
 /// No `claude` on PATH (T139: the plugin is the default once it is there), so this exercises
 /// the settings-file fallback: hooks, MCP and the proxy env var, all in `~/.claude/*`.
@@ -91,6 +92,9 @@ fn cursor_remove_strips_hooks_mcp_and_plugin_link() {
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
 }
 
+/// No `codex` on PATH (T140: its plugin is the default once it is there), so this exercises
+/// the file-based fallback: `[mcp_servers.rtok]` and `[model_providers.rtok]` in
+/// `~/.codex/config.toml`, same as [`claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign`].
 #[test]
 fn codex_remove_strips_mcp_block_and_provider_and_keeps_foreign() {
     let home = tmp("codex");
@@ -98,11 +102,11 @@ fn codex_remove_strips_mcp_block_and_provider_and_keeps_foreign() {
     let path = home.join(".codex/config.toml");
     fs::write(&path, "# mine\n[mcp_servers.foreign]\ncommand = \"x\"\n").unwrap();
 
-    rtok(&["agents", "install", "codex", "--proxy"], &cfg, &home);
+    rtok_without_claude(&["agents", "install", "codex", "--proxy"], &cfg, &home);
     let installed = fs::read_to_string(&path).unwrap();
     assert!(installed.contains("[mcp_servers.rtok]"), "{installed}");
 
-    rtok(&["agents", "remove", "codex"], &cfg, &home);
+    rtok_without_claude(&["agents", "remove", "codex"], &cfg, &home);
     let left = fs::read_to_string(&path).unwrap();
     assert!(!left.contains("mcp_servers.rtok"), "{left}");
     assert!(!left.contains("rtok"), "no rtok provider either: {left}");
@@ -156,18 +160,49 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
     )
     .unwrap();
 
+    // T164: no `--yes` — ZCode is detected by the explicit host name, so the plugin
+    // links by default and becomes the only call path, leaving the config-file hooks
+    // and mcp entries untouched (only the foreign ones were ever there).
     rtok(&["agents", "install", "zcode"], &cfg, &home);
-    let installed = fs::read_to_string(&path).unwrap();
-    assert!(installed.contains("hook PreToolUse"), "{installed}");
-    assert!(json(&path)["mcp"]["servers"]["rtok"].is_object());
+    // Built the same way `write_cfg` + `plugin_dest` derive it: the config path is one
+    // all-forward-slash string (`write_cfg` normalizes `home` before embedding it), and
+    // `plugin_dest` then does one `.join()` per segment, which inserts a native separator
+    // (`\` on Windows) at each call. Matching that construction keeps this byte-identical
+    // with what actually lands in `plugins.dirs`.
+    let zcode_cli = PathBuf::from(format!(
+        "{}/.zcode/cli",
+        home.display().to_string().replace('\\', "/")
+    ));
+    let link = zcode_cli.join("plugins").join("local").join("rtok");
+    assert!(link.symlink_metadata().is_ok(), "plugin linked by default");
+    let installed = json(&path);
+    let link_str = link.display().to_string();
+    assert!(
+        installed["plugins"]["dirs"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
+        "{installed}"
+    );
+    assert!(!installed.to_string().contains("PreToolUse"), "{installed}");
+    assert!(installed["mcp"]["servers"]["rtok"].is_null(), "{installed}");
+    assert!(
+        installed["mcp"]["servers"]["foreign"].is_object(),
+        "{installed}"
+    );
+    assert_eq!(
+        installed["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],
+        "echo other"
+    );
 
     rtok(&["agents", "remove", "zcode"], &cfg, &home);
+    assert!(link.symlink_metadata().is_err(), "plugin link unlinked");
     let left = json(&path);
     assert!(
-        !left.to_string().contains(" hook "),
-        "every hook goes: {left}"
+        !left["plugins"]["dirs"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
+        "{left}"
     );
-    assert!(left["mcp"]["servers"]["rtok"].is_null(), "{left}");
     assert!(left["mcp"]["servers"]["foreign"].is_object(), "{left}");
     assert_eq!(
         left["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],

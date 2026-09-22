@@ -71,8 +71,7 @@ impl Agent for Kilo {
     /// Describe which rtok integration surfaces Kilo Code supports.
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
-            "mcp" => Support::Yes,
-            "plugin" => Support::Flag("--yes"),
+            "mcp" | "plugin" => Support::Yes,
             "hooks" => Support::No(
                 "Kilo Code has no shell hook events; the linked plugin filters bash output instead",
             ),
@@ -126,6 +125,9 @@ pub static PLUGIN: HostPlugin = HostPlugin {
     host: "Kilo Code",
     label: None,
     dest: plugin_dest,
+    // Kilo's own docs have no GitHub/subdir plugin install; the local link is the only
+    // path there is, so it installs by default once Kilo itself is detected (T164).
+    default_install: true,
 };
 
 /// Plugin dest: `<kilo config dir>/plugins/rtok.ts` — Kilo loads `{plugin,plugins}/*.{ts,js}`.

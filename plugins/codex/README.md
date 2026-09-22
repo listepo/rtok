@@ -6,10 +6,18 @@ Codex's `.codex-plugin/plugin.json` manifest pointing at `hooks/hooks.json` and 
 
 Install:
 
-- `codex plugin marketplace add <path to this folder>` — the folder is its own local marketplace
-  (`.agents/plugins/marketplace.json`, one entry `rtok` at `./`) — then `codex plugin add rtok@rtok`.
-  The plugin is enabled on install; Codex asks to trust its hooks before they run.
-- Remove: `codex plugin remove rtok@rtok`, then `codex plugin marketplace remove rtok`.
+- `rtok agents install codex` — the automated path (T140): once `codex` is on PATH it runs
+  `codex plugin marketplace add listepo/rtok` against this repo's root marketplace
+  (`.agents/plugins/marketplace.json`, one entry `rtok` at `./plugins/codex`), then
+  `codex plugin add rtok@rtok`, by default — no flag needed. `rtok agents remove codex` reverses
+  it (`codex plugin remove rtok@rtok` then `codex plugin marketplace remove rtok`). A missing or
+  failing `codex` fails open onto the file-based hooks/MCP surfaces below instead of failing the
+  install.
+- By hand, from a local checkout: `codex plugin marketplace add <path to this folder>` — the
+  folder is also its own local marketplace (same file, one entry `rtok` at `./`) — then
+  `codex plugin add rtok@rtok`. The plugin is enabled on install; Codex asks to trust its hooks
+  before they run. Remove: `codex plugin remove rtok@rtok`, then
+  `codex plugin marketplace remove rtok`.
 
 `rtok` must be on `PATH`. If it is missing, both hooks fail open (Codex only blocks on an explicit
 decision) and the MCP server does not start; install it with ketch: `ketch install listepo/rtok`.

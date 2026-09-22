@@ -279,42 +279,42 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: Cursor has no base-URL setting to point at the proxy
-    plugin  not installed (--yes)
+    plugin  not installed
   cursor (desktop)
     hooks   not installed
     mcp     not installed
     proxy   not supported: Cursor has no base-URL setting to point at the proxy
-    plugin  not installed (--yes)
+    plugin  not installed
   codex (cli)
     hooks   not installed
     mcp     not installed
     proxy   not installed (--proxy)
-    plugin  not supported: Codex loads MCP from config.toml; there is no plugin directory to link
+    plugin  not installed
   opencode (cli)
     hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed
     proxy   not installed
-    plugin  not installed (--yes)
+    plugin  not installed
   opencode (desktop)
     hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed
     proxy   not installed
-    plugin  not installed (--yes)
+    plugin  not installed
   kilo (cli)
     hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed
     proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
-    plugin  not installed (--yes)
+    plugin  not installed
   kilo (desktop)
     hooks   not supported: Kilo Code has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed
     proxy   not supported: Kilo Code keeps provider base URLs in its provider settings, which setup does not edit
-    plugin  not installed (--yes)
+    plugin  not installed
   pi (cli)
     hooks   not supported: pi has no hook events; the extension owns the bash call path
     mcp     not supported: pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true
     proxy   not supported: pi provider base URLs live in its models config, which setup does not edit
-    plugin  not installed (--yes)
+    plugin  not installed
   omp (cli)
     hooks   not supported: omp hooks are in-process TS modules; the linked pi extension owns that path
     mcp     not installed
@@ -324,7 +324,7 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them
-    plugin  not installed (--yes)
+    plugin  not installed
   kimi (cli)
     hooks   not installed
     mcp     not installed

@@ -6,7 +6,7 @@ Agent rules for the **pi** host package. Humans: [`README.md`](README.md). Share
 
 | Item | Location / rule |
 | --- | --- |
-| Manifest / entry | `package.json`, `extensions/rtok.ts`, `skills/rtok/SKILL.md` |
+| Manifest / entry | `package.json`, `extensions/rtok.ts`, `skills/rtok/SKILL.md`, `skills/worktrees/SKILL.md` (copy of the hub skill, T155) |
 | Hooks | Extension events — not hooks.json |
 | MCP | Optional via `pi.registerTool` when `[setup.pi] tools = true` |
 | Installer | [`../src/agents/pi/README.md`](../src/agents/pi/README.md) |

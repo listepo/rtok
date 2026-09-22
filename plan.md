@@ -44,15 +44,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
-| T140 | todo | P2 | 3 | 0% | |
-| T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T154 | todo | P2 | 3 | 0% | |
-| T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | todo | P2 | 5 | 0% | |
+| T165 | todo | P3 | 5 | 0% | |
+| T166 | todo | P2 | 1 | 0% | |
 
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -288,22 +286,6 @@ Split from T122. `plugin::identical_result` (T65.1) matches on the host session;
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
 
-### T154. Ownership ledger: SessionStart records which session worked in which worktree
-
-Depends on T133 (resolve a worktree to its main repository without spawning git) and T151. Git has no owner field and lock reasons depend on agent discipline; rtok's `SessionStart` hook already fires on every host with `session_id` and `cwd`, so ownership can be recorded without the agent doing anything (`research.md` §18.5).
-
-Plan: on `SessionStart`, when T133's resolver says `cwd` is inside a linked worktree, upsert one store row: worktree path, main repository, host, `session_id`, first seen, last seen. Fail open and inside the 10 ms hook budget — no git spawn, no directory walk, no output, no injected context. `rtok worktree list` fills `owner`/`last seen` from this table when there is no lock reason. Settle in the Do whether this is a new `worktree` plugin (feature flag, `CATALOGUE`, `src/plugins/worktree/AGENTS.md`, `docs/plugin-authoring.md`) or a row written by the existing session path — one writer per store (D21) decides it.
-
-Check: hook fixture test — a SessionStart event with a worktree `cwd` writes one row and a second event updates `last seen` instead of inserting; a main-checkout or non-repo `cwd` writes nothing; a store error still exits 0 with unmodified output; the hook latency test stays under budget; `just check`.
-
-### T155. Ship the `worktrees` skill with rtok
-
-Depends on T152, T153 and T158. The conventions (one location, `<repo>-<task-id>`, lock reason as owner, clean caches when idle, never `rm -rf`, never touch another owner's worktree) exist as a creator-local skill with a shell script since 2026-09-22. A skill costs one description line per session instead of `AGENTS.md` budget, and the `SKILL.md` format is read by Claude Code, Cursor and Codex.
-
-Plan: `skills/worktrees/SKILL.md` next to `skills/rtok/`, English, with the script replaced by `rtok worktree add|list|clean|gc`, so the skill carries no git command of its own for the normal path. On Claude Code the hooks (T159) make creation and removal automatic and the skill only explains them. Offer it through `rtok agents install <host>` wherever `skills/rtok` is offered today; re-verify each touched host's `## Docs` links; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`) if a surface changes. If `rtok` is missing the skill says to install it with ketch (`ketch install listepo/rtok`) and falls back to plain git commands.
-
-Check: host matrix e2e — install offers the skill and removal takes it away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; the skill text contains no command that `rtok worktree --help` does not list (test greps it); `just check`.
-
 ### T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 
 No product code. Two open questions from `research.md` §18.3–18.4: (1) Claude Code's `WorktreeCreate`/`WorktreeRemove` hooks replace the default create/remove — can rtok own location, naming and the ownership record there, and what do the desktop app and sub-agent `isolation: worktree` actually send; (2) does seeding a new worktree's `target/` by reflink (`reflink-copy`, APFS `clonefile`) save build time and disk after a real task, or does cargo rewrite most of it anyway.
@@ -329,27 +311,25 @@ Plan: `rtok hook WorktreeCreate` maps the host's `name` to T158's rules and prin
 Check: hook fixture tests with T156's recorded payloads — create returns a path under the T158 root with the owner lock; a simulated failure of `rtok worktree add` still yields a usable worktree at the host default path and exit 0; remove deletes a merged clean worktree, keeps a dirty one and a foreign-locked one with the reason on stderr, and cleans the tagged cache in all three; host matrix e2e — install adds both hooks exactly once and removal takes them away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; `just check`.
 
 
-### T160. No expand trailer when shortening saved less than the trailer costs
-
-Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` prints `[rtok <id> · N lines · expand: …]` whenever `printed < raw`, even when the formatter dropped only a few bytes. Seen live: a 7-line `just check` summary got the ~110-byte trailer, so the call likely cost more tokens than raw output. What was dropped there is not yet known — reproduce it first (`rtok expand <id>` vs printed output). The rule "Lossless by default" still holds: if nothing a reader could miss was dropped, there is nothing to expand.
-
-Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
-
-Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
-
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
 Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`, not yet in rtok — needs creator approval before wiring). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
 
 Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
 
-### T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
+### T165. Research: general HTTP(S) interception as a new surface
 
-T139 did this for Claude Code (root `.claude-plugin/marketplace.json` + `claude plugin marketplace add`/`install`). Every other host with a `plugins/<host>/` tree still only offers a local path or a manual copy step, which shares T139's original problem: it breaks across a ketch upgrade and is never installed by default. Same shape, per host: install from GitHub `listepo/rtok` by default (no `--yes`) whenever the host's CLI is on `PATH` and the plugin is not already installed, checked first through that host's own list command or record (never a byte-guess) — no-op when already installed, fail open with an "offer … (host failed: …)" message when the CLI is missing or errors, `--dry-run` only prints.
+Creator request 2026-09-22. Research only — no product code in this task. Today `rtok proxy` reaches one API through `ANTHROPIC_BASE_URL`; a general interceptor would see every HTTP call an agent makes (docs fetches, package registries, other model APIs). That is a new surface on the level of `proxy` and `mcp`: a local CA whose root the user trusts, TLS termination on loopback only, CONNECT proxying via `HTTPS_PROXY`, and fail open whenever a client bypasses the proxy, pins certificates or rejects the CA. It is the most contested item in the plan — it touches the user's trust store and sees all their traffic — so it is scheduled last.
 
-Plan: per host, follow its current plugin docs rather than copying Claude's marketplace shape verbatim: `pi` via `pi install git:github.com/listepo/rtok` if pi's installer supports a subdirectory (else keep the local-path offer and say so); `codex`, `kimi`, `grok`, `cursor`, `opencode`, `zcode`, `antigravity`, `copilot`, `gemini` each get the GitHub-based command their own current docs name, verified live against those docs before writing the installer branch (do not assume Claude's shape transfers); hosts with no CLI plugin-install command (UI-only, e.g. VS Code, Windsurf) keep today's local-path offer — GitHub install is not possible there. `support("plugin")` for a host converted this way moves from `Flag("--yes")` to `Yes`, mirroring T139's `src/agents/claude/mod.rs` change. Split per host into its own task/PR when claimed (≤200 LOC / ≤10 files each) rather than one large change.
+Plan: (1) survey at least three alternatives with evidence and dates — e.g. mitmproxy, `hudsucker`/`http-mitm-proxy` (Rust), Proxyman/Charles, and the no-MITM option (per-host `*_BASE_URL` plus MCP only) — covering CA install/removal per OS, cert pinning failures, HTTP/2 and streaming, latency cost, and what share of an agent's tokens actually travels over HTTP outside the API (measure from `~/.claude/projects` like I-71; below 1 % → stop and record); (2) a privacy decision for the creator: default-deny with an allow-list, or an exclude-list of hosts/domains never decrypted (banks, auth/SSO, OS update, password managers, anything with pinning), what is stored and for how long, how the CA key is protected and removed; (3) if the survey says build, split the surface into tasks of ≤ 200 LOC / ≤ 10 files each (CA generate/trust/uninstall, CONNECT tunnel passthrough, TLS termination for allow-listed hosts, bypass detection and fail open, `Measurement` rows, docs), with the decision row proposed as the next free D id.
 
-Check: per converted host, unit tests for the decision logic (installed → no-op; not installed → installs; missing/failing CLI → fail-open offer; dry-run text) without spawning a real host CLI, reusing T139's `raw_without_claude`-style pattern; `docs/agents.md` reblessed (`RTOK_BLESS=1`); `host_docs` and `readme_tables_match_support` green; `just check`.
+Check: `research.md` gains a dated section with the survey table and the measured HTTP share; the privacy decision is written down and approved by the creator; either a "do not build" note or the split tasks go to `roadmap.md` for creator approval — none go straight into this table.
+
+### T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
+
+Found 2026-09-22 on T160's `just check`, reproducing identically on clean `main` (so, pre-existing and machine-state): `windsurf_keeps_the_real_mcp_config_json` panics at `tests/agents_real_config.rs:197` — `nothing foreign in the seeded configs, so this proves nothing`. The file already has the portability mechanism this repo mandates for real-config-driven tests: `seed_real` finding nothing calls `skip(...)`. The same treatment fits `compared == 0` — the real config exists but has no foreign entry to protect, so the test has nothing to prove on this machine and must say so instead of failing. Decide per host whether `compared == 0` may also mean the installer's own seeding drifted (e.g. the Windsurf → Devin move) before silently skipping.
+
+Check: on a machine whose real config has no foreign entries the run skips with the host id and the reason; where foreign entries exist the `survives` assertions still run and `compared > 0` semantics are kept; `just test` green.
 
 ## Reference
 

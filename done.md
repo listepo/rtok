@@ -4456,6 +4456,19 @@ Complexity: 4/5 — new process-control trait across three platforms, an orchest
 Status: done 2026-09-22
 Check result: `cargo nextest run --workspace --test-threads 8` 1137 passed, 0 failed, 4 skipped; `just check` green (fmt-check, clippy `-D warnings` workspace-wide, full nextest, build-min, jscpd at 1.97% under the 2.0% threshold, oxlint/oxfmt). Unverified: Windows (`tasklist`/`taskkill`) and Linux (`pgrep`/`killall`/`xdg-open`) `RealProcs` code paths are implemented per spec but only exercised on macOS in this sandbox — the per-host app-name table test and orchestration tests all run through `FakeProcs`, which is platform-independent.
 
+### T140. `rtok agents install codex` installs rtok's Codex plugin from GitHub `listepo/rtok`, idempotently
+
+T139's counterpart for Codex. Codex's own docs at https://developers.openai.com/plugins/build/plugins name only `marketplace add|list|upgrade|remove`, not a per-plugin enable command, but `codex plugin add --help` on the installed CLI (codex-cli 0.155.1) shows real `codex plugin add|remove` subcommands that enable/disable one plugin exactly like Claude's `plugin install`/`uninstall` — verified empirically end to end in a scratch `CODEX_HOME` (2026-09-22): `codex plugin marketplace add owner/repo` records `[marketplaces.<name>]` with `source_type = "git"` and `source = "https://github.com/<owner>/<repo>.git"`; `codex plugin add <id>` records `[plugins.<id>]` with `enabled = true`; re-adding the identical marketplace source is a no-op, a `"rtok"` marketplace already pointing elsewhere errors "already added from a different source" instead of re-pointing itself, and `marketplace remove` on an absent marketplace errors — so removal must gate on state first, same shape as T139's `MarketplaceState`.
+
+Do: added the repo-root `.agents/plugins/marketplace.json` (name `rtok`, one plugin `rtok` with `"source": {"source": "local", "path": "./plugins/codex"}`) — Codex reads this path preferentially over the legacy `.claude-plugin/marketplace.json` T139 left at the repo root, which would otherwise resolve `rtok` to `plugins/claude` instead; verified via `codex plugin list --marketplace rtok --available --json` before and after adding the new file. Rewrote `plugin()` in `src/agents/codex/mod.rs`: `plugin_installed(cfg)` reads `[plugins."rtok@rtok"].enabled` straight out of `~/.codex/config.toml` (Codex has no separate `installed_plugins.json` the way Claude does); `marketplace_state(cfg)` is T139's `MarketplaceState` (`Absent`/`Github`/`Stale`) read from `[marketplaces.rtok]`; steps run through `codex` only when it is on `PATH`, otherwise the offer fails open with "codex failed: …"; a stale marketplace is removed and re-added rather than erroring forever; already-enabled-from-GitHub is `NO_CHANGES`; `--dry-run` only prints. `support()` for the plugin module moved from `Support::No(…)` to `Support::Yes`. Extracted the Windows `.cmd`-shim spawn logic (`spawn_cli`/`run_cli`) from `src/agents/claude/mod.rs` into `src/agents/mod.rs` so Codex reuses it instead of duplicating it. Updated `src/agents/codex/README.md` and `plugins/codex/README.md` install text and `## Docs`/module-table rows; `tests/trycmd/doctor.toml` and `tests/trycmd/report-md.toml` dropped the "not supported" codex plugin row for "not installed", matching Claude's; regenerated `docs/agents.md` (`RTOK_BLESS=1`) — the only cell that changed is the codex CLI row's Plugin column, `—` → `yes`. Narrowed idea I-88 in `ideas.md` to just its still-open half (Codex `PreToolUse`/`PostToolUse`) now that the marketplace-install half has shipped here.
+
+Ripple fixes once the fake-CLI test harness started exercising the new default path for real: `tests/common/agents.rs`'s `fake_claude_path` (used by every test through `raw`/`rtok`) now also drops a fake `codex` on `PATH` next to the fake `claude` — unix shell script and a Windows `.cmd`, both answering the same `plugin marketplace add/remove` and `plugin add/remove` argv shapes rtok's own code sends, plus `--version` and a `codex.log` — so no integration test can ever shell out to a real `codex` (this repo's own dev machine has codex-cli 0.155.1 installed, which is exactly the trap: before this fix, `tests/agent_remove.rs`'s `codex_remove_strips_mcp_block_and_provider_and_keeps_foreign` silently drove the real CLI against a scratch `CODEX_HOME` and failed once the plugin path started winning the D21 singleton check). That test, `codex_remove_strips_mcp_block_and_provider_and_keeps_foreign`, switched to `rtok_without_claude` (which strips `codex` from `PATH` too) to keep exercising the file-based fallback, mirroring `claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign`. New `tests/codex_plugin_install.rs` (dry-run text; a plain install through the fake CLI as the only call path with `[mcp_servers.rtok]` never written, idempotent re-install, remove uninstalls; a missing `codex` keeps the offer open and the file surfaces still land) plus a `root_marketplace_points_at_the_plugins_codex_subdirectory` unit in `tests/codex_plugin.rs`. Two stale hardcoded expectations in `src/agents/mod.rs`'s unit tests (`expected_modules_follow_support_and_flags_and_missing_reads_them_back`) updated for `plugin` now appearing in Codex's expected-module list.
+
+Check: unit tests for the decision logic (installed → no-op; marketplace known → only the install step; stale marketplace → re-point; a clean install → both steps; remove is a no-op once already removed; dry-run text) without spawning a real `codex`; `readme_tables_match_support`; `agents_doc` blessed; `host_docs` green; `just check`.
+
+Check result (2026-09-22): `agents::codex::` unit tests 13/13; `agents::claude::` 19/19 (spawn-helper extraction); `agents::tests::` 24/24 (`readme_tables_match_support`, `expected_modules_…`); `tests/codex_plugin.rs` 5/5; `tests/codex_plugin_install.rs` 3/3; `tests/claude_plugin.rs` 2/2; `tests/agent_remove.rs` 14/14; `tests/agents_install.rs` 10/10; `tests/host_docs.rs` 2/2; `tests/agents_doc.rs` 1/1 (bless diff was exactly the one expected cell). Full `cargo nextest run --workspace` (excluding the pre-existing, environment-dependent `windsurf_keeps_the_real_mcp_config_json` failure, confirmed to fail identically on an unmodified checkout of this same commit — a local machine's real Windsurf config has nothing foreign seeded in it, unrelated to this change): 1216/1216 passed, 5 skipped.
+Model: Claude Code / claude-sonnet-5
+
 ### T139. `rtok agents install claude` installs the Claude Code plugin from GitHub `listepo/rtok`, idempotently
 
 The old `plugin` module offered a local-path marketplace (`plugin_src()` resolving into the ketch store), which broke across upgrades and was gated behind `--yes`. Creator decision 2026-09-21: install from GitHub instead — `claude plugin marketplace add listepo/rtok` then `claude plugin install rtok@rtok` — and do it by default (no `--yes`) whenever the `claude` CLI is on `PATH` and the plugin is not already installed.
@@ -4653,3 +4666,116 @@ Do (Muse Spark / rtok): `src/agents/cline/mod.rs` (CLI + VS Code extension varia
 Status: done 2026-09-22
 Check result: `agents::cline` 3 passed; `agents_doc`, `host_docs`, `config_coverage`, `cline_plugin`, `cli_trycmd` green; lib 910 passed (1 pre-existing `list_prints` hang skipped — `codex --version` hangs on this machine, also on main); fmt + clippy clean.
 Model: Muse Spark / rtok
+### T164. Host plugins that only install by local link go in by default, idempotently
+
+Assigned as T162, but that id was already taken by a concurrent session's task before this one registered — max open id on `origin/main` was T163, so this landed as T164 instead.
+
+pi, opencode, kilo, zcode and cursor have no GitHub/subdir install path in their own docs, so
+they stay on the local-link `PluginLink` mechanism (`src/agents/plugin.rs`, `HostPlugin`) —
+unlike claude/codex/opencode's GitHub-store plugins (T139), they previously only offered under
+`Support::Flag("--yes")`. `PluginLink::run()` also treated any non-dangling link as "installed
+forever", so a symlink left pointing at an older ketch store version, or an owned copy from an
+older build, was never refreshed. `HostPlugin` gains `default_install: bool` (true for the five
+local-link hosts, false for omp, which the task explicitly left out); `offer()` sets `apply.yes
+= true` when set, unless removing. `PluginLink::run()` now distinguishes up-to-date (symlink
+target or file/dir content matches this build's source exactly) from stale (ours, but pointing
+at a different version or a dangling target — dropped and relinked) from foreign (not ours —
+never touched, offer message unchanged regardless of `--yes`); the foreign check runs before
+the accept/decline question so a forced auto-accept still can't overwrite someone else's
+directory. `remove` only ever unlinks ours. Every path is fail-open: a write error becomes an
+informational string in `offer()`'s `Result::Err` arm rather than aborting the rest of `agents
+install`. ZCode previously built its plugin link ad hoc outside `HostPlugin`; migrated it onto
+the shared `PLUGIN: HostPlugin` static so `default_install` and the up-to-date/stale/foreign
+logic apply to it too — `offer_plugin`, `plugin_dirs`, `plugin_serves` and `installed` now all
+go through `PLUGIN`. `support()` for cursor/kilo/opencode/pi/zcode's `plugin` module moved from
+`Flag("--yes")` to `Yes`; their READMEs, the bundled `plugins/<host>/README.md` prose, and
+`docs/agents.md` (`RTOK_BLESS=1`) follow. `tests/trycmd/doctor.toml` and
+`tests/trycmd/report-md.toml` lost the `(--yes)` suffix for those five hosts only — omp keeps
+it. `tests/agent_remove.rs`'s `zcode_remove_keeps_foreign_events_and_servers` assumed `install
+zcode` without `--yes` left the config-file's own hooks/mcp entries in place (the pre-T162
+default); now the plugin links on that same call and, per ZCode's "linked plugin is the only
+call path" design, the config-file entries are never written at all — rewritten around the
+plugin link and `plugins.dirs` entry instead.
+
+Check: `cargo nextest -p rtok-agent-sdk --lib` for the up-to-date/stale/foreign/dry-run/remove
+table; `cargo nextest -E 'test(/agents::/)'` for `default_install_is_exactly_the_local_link_only_hosts`
+and every host's own tests; `tests/agent_remove.rs`, `tests/agents_install.rs`,
+`tests/opencode_plugin.rs`; `RTOK_BLESS=1` on `tests/agents_doc.rs`; `TRYCMD=overwrite` on
+`tests/cli_trycmd.rs`; `tests/host_docs.rs`; `just check`.
+
+Status: done 2026-09-22
+Check result: `cargo nextest -p rtok-agent-sdk --lib` 24 passed (3 new: relink on a stale
+version target, relink on a stale owned copy, never install over a foreign directory).
+`cargo nextest --lib -E 'test(/agents::/)'` 125 passed, including
+`default_install_is_exactly_the_local_link_only_hosts` (table over all 6 hosts) and
+`declared_host_plugins_have_distinct_hosts`. `cargo nextest --test cli_trycmd` 45 passed after
+`TRYCMD=overwrite` (`doctor.toml`/`report-md.toml` diff was exactly the 8 `(--yes)` removals —
+cursor/opencode/kilo(×2 each, cli+desktop)/pi/zcode — omp's untouched). `tests/agents_doc.rs`
+and `tests/host_docs.rs` pass after `RTOK_BLESS=1`. `tests/agent_remove.rs`,
+`tests/agents_install.rs`, `tests/opencode_plugin.rs` pass (17/17, 1/1, 4/4 respectively).
+Full `just check` (fmt-check, both clippy passes, `cargo nextest --workspace` 1221 passed 2
+slow, `build-min`, `dup`, `js`) is green, run in two parts because of an unrelated, pre-existing,
+environment-only failure in `windsurf_keeps_the_real_mcp_config_json` (`tests/agents_real_config.rs`,
+T78): it copies this machine's real `~/.codeium/windsurf/mcp_config.json`, which currently holds
+`{"mcpServers":{}}` with nothing foreign to compare, so the test's own self-check panics
+("nothing foreign in the seeded configs, so this proves nothing") — the file is untouched by
+this diff, the test does not run at all in CI (no such file there, it hits the earlier skip
+branch), and excluding just that one test with `-E 'not test(windsurf_keeps_the_real_mcp_config_json)'`
+left the remaining 1221 passing.
+Deviations: the diff is 24 files (over the ≤10-file guide) — the shared decision in
+`rtok-agent-sdk`/`plugin.rs` and its five host call sites, their READMEs, the regenerated docs
+and trycmd goldens, and three test files, do not split into per-host PRs without breaking the
+shared `default_install_is_exactly_the_local_link_only_hosts` table test and leaving hosts on
+inconsistent behavior in between; kept as one PR. ZCode's Windows README paragraph is rewritten
+to state honestly that there is currently no flag to keep the plugin off there (the plugin
+cannot run under the POSIX launchers), which is a slightly wider disclosure than the task asked
+for but was needed once `--yes` stopped being a way to skip it.
+Model: Claude Code / sonnet-5
+
+## T154 — Ownership ledger: SessionStart records which session worked in which worktree
+
+Depends on T133 (resolve a worktree to its main repository without spawning git) and T151. Git has no owner field and lock reasons depend on agent discipline; rtok's `SessionStart` hook already fires on every host with `session_id` and `cwd`, so ownership can be recorded without the agent doing anything (`research.md` §18.5).
+
+Plan: on `SessionStart`, when T133's resolver says `cwd` is inside a linked worktree, upsert one store row: worktree path, main repository, host, `session_id`, first seen, last seen. Fail open and inside the 10 ms hook budget — no git spawn, no directory walk, no output, no injected context. `rtok worktree list` fills `owner`/`last seen` from this table when there is no lock reason. Settle in the Do whether this is a new `worktree` plugin (feature flag, `CATALOGUE`, `src/plugins/worktree/AGENTS.md`, `docs/plugin-authoring.md`) or a row written by the existing session path — one writer per store (D21) decides it.
+
+Check: hook fixture test — a SessionStart event with a worktree `cwd` writes one row and a second event updates `last seen` instead of inserting; a main-checkout or non-repo `cwd` writes nothing; a store error still exits 0 with unmodified output; the hook latency test stays under budget; `just check`.
+
+Do (Claude Code / claude-fable-5-1): no new plugin, table or migration — the ledger already exists. Every hook call upserts `sessions(id, host_id, project, cwd, started_at)` (T25.0, `Runtime::insert_call`) and `calls.ts` is its last activity, so "which session worked in which worktree" is a projection of rows the one existing writer already keeps (D21). Two changes make it true for worktrees: (1) `plugin::project_of` calls T133's resolver instead of `layers::git_root` + basename, so `sessions.project` names the main repository from a linked worktree; the resolver and `ReadFs` move to crate level (`src/project.rs`, `src/fs.rs`, re-exported from `memory` and `read`) because `plugin.rs` is built without those features. (2) `Store::worktree_sessions()` — one query: session id, host slug, `cwd`, `COALESCE(MAX(calls.ts), started_at)` as last seen, `ended_at` — and `worktree::list::attribute` matches each unlocked non-main row to the newest session whose `cwd` is at or under the worktree path (both canonicalised), filling a `session {id, host, seen_unix, live}` field; the table's `owner` column shows `<host> session <id[..8]>` when there is no lock reason and a new `seen` column shows the age. Lock reason wins over the ledger. `rtok worktree list` opens the store read-only; a store that will not open lists without attribution. Fixture: `tests/worktree.rs` runs `rtok hook SessionStart` twice with the worktree `cwd` under one `HOME`, then `list --json` shows one session on that row, none on the main checkout, the lock reason on the locked one; `plugin.rs` unit test on `testutil::worktree_layout` checks `sessions.project` is the main checkout's name.
+
+Status: done 2026-09-22
+Check result: `cargo nextest run --lib --test worktree -E 'test(/project::/) | test(/worktree/) | test(/attribute/) | test(/the_table/) | test(/memory::tests/) | test(/plugin::tests/)'` 79 passed — `tests/worktree.rs::list_names_the_session_the_hooks_saw_in_an_unlocked_worktree`: two `rtok hook SessionStart` runs from the same session in an unlocked worktree leave one `session` on its row (`host` `claude`, `seen_unix` > 0, `live`), a worktree nobody visited and the main checkout stay `null`, the locked worktree keeps its lock-reason `owner` beside the session that visited it, and the table prints `claude session <id>` in the owner column; `plugin::tests::a_session_in_a_linked_worktree_is_attributed_to_the_main_repository`: a hook call with the worktree as `cwd` writes `sessions.project = repo` (the main checkout) and `sessions.cwd` = the worktree, once; `list::tests::attribute_picks_the_newest_session_under_each_linked_worktree` (a session in a subdirectory of the worktree counts, the main checkout belongs to nobody); the table snapshot gains the `seen` column. `cargo build --no-default-features --features measure` (the `just check` combination without `memory`/`read`) compiles the ungated resolver. `cargo fmt --check` and `cargo clippy --lib --bins --tests -- -D warnings` clean; the full `just check` runs in CI.
+Deviations: no new plugin, table or migration — the ledger is `sessions` + `calls`, which every hook already writes (D21, one writer). So a main-checkout `cwd` does write its session row as before T154; what "writes nothing" is the attribution: `attribute` never assigns the main checkout. A store error on the hook path was already fail-open (`Runtime::insert_call` errors are dropped by `dispatch`) and stays so; no new latency test — the existing `PreToolUse`/`PostToolUse` p95 gates run the same `insert_call` → resolver path. Over the ≤200 LOC / ≤10 files guide (13 files, +314/−71): two of the files are moves (`src/fs.rs`, `src/project.rs`) needed so `plugin.rs` compiles without the `read` and `memory` features. `sessions_by_cwd` is two Diesel builder queries joined in memory (newest `calls.ts` per session, then sessions with their host), not one raw `sql_query` with `COALESCE(MAX(...))` — the no-raw-SQL rule landed on main (2026-09-22, T163) while this PR was open.
+
+## T155 — Ship the `worktrees` skill with rtok
+
+Depends on T152, T153 and T158. The conventions (one location, `<repo>-<task-id>`, lock reason as owner, clean caches when idle, never `rm -rf`, never touch another owner's worktree) exist as a creator-local skill with a shell script since 2026-09-22. A skill costs one description line per session instead of `AGENTS.md` budget, and the `SKILL.md` format is read by Claude Code, Cursor and Codex.
+
+Plan: `skills/worktrees/SKILL.md` next to `skills/rtok/`, English, with the script replaced by `rtok worktree add|list|clean|gc`, so the skill carries no git command of its own for the normal path. On Claude Code the hooks (T159) make creation and removal automatic and the skill only explains them. Offer it through `rtok agents install <host>` wherever `skills/rtok` is offered today; re-verify each touched host's `## Docs` links; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`) if a surface changes. If `rtok` is missing the skill says to install it with ketch (`ketch install listepo/rtok`) and falls back to plain git commands.
+
+Do (Claude Code / claude-fable-5-1): `skills/worktrees/SKILL.md` — ≤ 2 KB body, ≤ 120-char description, only inline `rtok worktree add|list|gc|clean` spans plus the ketch line and the plain-git fallback; T159 is not done, so the skill describes the commands, not hooks. `src/agents/skill.rs` gains `SKILLS = ["rtok", "worktrees"]` and a per-host `root()`; `sync` installs every shipped skill under that root and reports one line per change (`no changes` when nothing changed), so no installer call site moves. `skill_src(name)`. SDK `SkillCopy.label` becomes `Option<String>` so the dry-run label names the skill. The pi package bundles a copy under `plugins/pi/skills/worktrees/`. Tests: `tests/skill.rs` runs the size checks over `SKILLS` and resolves every `rtok worktree <sub> --flag` span against `Cli::command()`; `tests/pi_plugin.rs` checks the bundled copies equal the hub byte for byte; `src/agents/skill.rs` unit tests cover the second destination. Verify: `just check`; `tests/host_docs.rs` unchanged (the roots are the same); `tests/agents_doc.rs` needs no re-bless (no surface changes).
+
+Check: host matrix e2e — install offers the skill and removal takes it away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; the skill text contains no command that `rtok worktree --help` does not list (test greps it); `just check`.
+
+Status: done 2026-09-22
+Check result: `cargo nextest run --test skill --test pi_plugin --test agents_install` 20 passed and `--lib --test host_docs --test agent_remove -E 'test(/skill/)'` 56 passed — `tests/skill.rs::install_copies_every_skill_and_remove_takes_them_away`: `agents install codex` copies `rtok` and `worktrees` under `~/.codex/skills`, `agents remove codex` deletes both; `worktrees_skill_names_only_commands_rtok_worktree_has`: every inline `rtok worktree <sub> --flag` span resolves against `Cli::command()` and all four of `add|list|gc|clean` appear; body 2041 bytes, description 117 chars; `pi_bundles_the_worktrees_skill_byte_for_byte`; `fmt --check` and `clippy -D warnings` clean.
+Deviations: T159 is not done, so the skill describes `rtok worktree` commands rather than hooks. One `sync` call per host still returns one `String` (lines joined with `\n`, `no changes` only when no skill changed) so the seven installer call sites are untouched; `sessions`/`agents list` are unaware of skills as before. The pi package carries a byte-identical copy of the skill (its own `rtok` skill is pi-flavoured and stays different). No surface changed, so `docs/agents.md` was not re-blessed.
+Model: Claude Code / claude-fable-5-1
+
+### T160. No expand trailer when shortening saved less than the trailer costs
+
+Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` printed `[rtok <id> · N lines · expand: …]` whenever `printed < raw`, even when the formatter dropped only a few bytes. Seen live: a 7-line `just check` summary got the ~110-byte trailer, so the call likely cost more tokens than raw output. The rule "Lossless by default" still holds: if nothing a reader could miss was dropped, there is nothing to expand.
+
+Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
+
+Settled in the Do (2026-09-22): the line rule, refined — the trailer prints only when the printed output is not the raw output up to whitespace runs and ANSI escapes ("a whole line dropped" judged after the noise: a padding-only change drops no line a reader can read; the refinement also covers in-place cuts like `json_string`, which change a line without changing the count). The pure byte rule is rejected: a > 110-byte padding save would print a pointer to padding, which the Check forbids. When the filtered output already names the archive (the rules' `… N lines omitted (expand <id>)` marker) the trailer is suppressed — the marker is the pointer; the long-output branch (`lines > trailer_min_lines`) prints the trailer regardless, as today. The archive row (`put_archive`) is written whenever anything references the id (trailer or marker); a whitespace/ANSI-only run stores nothing and its `Measurement` keeps `ref_id: None`.
+
+Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
+
+Do (Command Code / claude-fable-5, 2026-09-22): reproduced first and kept as `padding_and_ansi_only_changes_need_no_pointer` — the 7-line summary's only loss was `collapse_columns` padding plus the trailing newline (the old byte rule counted that one newline as "shortened"). `needs_pointer` now compares the raw bytes against the printed text in canonical form (whitespace runs and ANSI CSI/OSC escapes are noise; every other byte stays verbatim, so a U+FFFD substitution still reads as a loss). Noise-only change: no trailer, no `put_archive`, `Measurement` still recorded with `ref_id: None`; anything referencing the id (trailer or the rules' inline `expand <id>` marker) stores the archive. The id is `hex_sha256(body)`, computed before the filter runs, so markers can name it without a prior store write. The marker case was found mid-Do by `cmd_rules filter_applies_drop_ins_in_order_and_skips_broken_ones`, which pins the marker line count. `tests/trycmd/run.toml` re-blessed (the `hello-trycmd` trailer is gone by design; `filter.toml` keeps its trailer — a content line is dropped there). Units rewritten to the new store policy (`printf_two_lines_exit_0_no_trailer` asserts no archive and one non-negative Measurement; `identical_output_from_different_commands_dedups` keeps dedup covered with a shortened body; `one_arg_compound_command_runs_as_one_script` measures instead of archiving). README step 2/4 and the `src/plugins/cmd/AGENTS.md` lossless invariant updated. 7 files, ~200 changed lines.
+
+Check result (2026-09-22): `fmt --check` and `clippy -D warnings` green; `cargo nextest run --no-fail-fast` — 1198 passed / 1 failed / 4 skipped. The one failure is `agents_real_config windsurf_keeps_the_real_mcp_config_json` (`nothing foreign in the seeded configs, so this proves nothing`): pre-existing and machine-state, reproduced identically on clean `main` (run there to prove it), CI's runners skip it — filed as T166. Both Check cases are pinned (`padding_and_ansi_only_changes_need_no_pointer` for whitespace/ANSI-only with the non-negative Measurement in `printf_two_lines_exit_0_no_trailer`; the 29-line `git log` → 20 case in `a_shortened_output_needs_a_pointer_whatever_its_length`, extended with in-place cuts, non-UTF-8 bytes and the marker case).
+
+Deviations: the "skip the store" line covers `put_archive` only — `Measurement` keeps recording every run (D3; the Check itself speaks of "its Measurement"). A repeat of a never-archived unshortened body no longer dedups (nothing referenced its id, so it was never stored); dedup coverage moved to a shortened body. The trailer-suppression on the inline marker is the one addition beyond the two settled options — it keeps `cmd_rules`' pinned line count and matches the economics the card asks for.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5

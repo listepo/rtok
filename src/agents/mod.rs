@@ -195,6 +195,46 @@ fn find_on_path(bin: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Spawn a host CLI (`claude`, `codex`, …) by name. Windows CLIs installed through npm ship
+/// as a `.cmd`/`.bat`/`.ps1` shim, not a `.exe` — `Command::new` only ever auto-appends `.exe`
+/// (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a real,
+/// on-PATH shim. Routing through `cmd /C` there reuses the shell's own PATH + `PATHEXT`
+/// search, which does try `.cmd`/`.bat` (T139).
+fn spawn_cli(bin: &str) -> std::process::Command {
+    if cfg!(windows) {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", bin]);
+        cmd
+    } else {
+        std::process::Command::new(bin)
+    }
+}
+
+/// Run one `<bin> <args>` call with stdin closed, optionally overriding one environment
+/// variable (a config-dir redirect for a non-default settings path). Returns the first
+/// stderr line — or the spawn error itself when the binary is not found — as the failure
+/// text a host's plugin offer folds into "`<bin>` failed: …".
+pub(crate) fn run_cli(
+    bin: &str,
+    args: &[&str],
+    env: Option<(&str, &Path)>,
+) -> std::result::Result<(), String> {
+    let mut cmd = spawn_cli(bin);
+    cmd.args(args).stdin(std::process::Stdio::null());
+    if let Some((key, val)) = env {
+        cmd.env(key, val);
+    }
+    match cmd.output() {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => Err(String::from_utf8_lossy(&o.stderr)
+            .lines()
+            .next()
+            .unwrap_or("non-zero exit")
+            .to_string()),
+        Err(e) => Err(format!("{bin}: {e}")),
+    }
+}
+
 /// Where the app is: a desktop bundle first, else the binary on PATH.
 pub fn app_path(v: &Variant) -> Option<PathBuf> {
     v.apps
@@ -843,16 +883,16 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
     )
 }
 
-/// The hub skill tree this repo ships (`skills/rtok/`).
+/// A skill tree this repo ships (`skills/<name>/`, see [`skill::SKILLS`]).
 ///
 /// Prefer the top-level hub. Older ketch archives only shipped
 /// `plugins/` (no `skills/`), so fall back to the pi-bundled copy.
-pub(crate) fn skill_src() -> std::path::PathBuf {
-    let hub = plugin_src("skills/rtok");
+pub(crate) fn skill_src(name: &str) -> std::path::PathBuf {
+    let hub = plugin_src(&format!("skills/{name}"));
     if hub.exists() {
         return hub;
     }
-    plugin_src("plugins/pi/skills/rtok")
+    plugin_src(&format!("plugins/pi/skills/{name}"))
 }
 
 /// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).
@@ -1316,8 +1356,12 @@ mod tests {
             .join("config.toml");
         cfg.setup.claude.settings_path = std::env::temp_dir().join("rtok-no-such-dir/s.json");
         cfg.doctor.claude_json = std::env::temp_dir().join("rtok-no-such-dir/c.json");
-        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "mcp"]);
-        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
+        assert_eq!(
+            expected(&codex::Codex, Kind::Cli, &cfg),
+            ["hooks", "mcp", "plugin"]
+        );
+        // pi's plugin is expected by default, without `--yes` (T164).
+        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
         assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
         // Claude Code's plugin is expected by default, without `--yes` (T139).
         assert_eq!(
@@ -1327,7 +1371,10 @@ mod tests {
         cfg.setup.proxy = true;
         cfg.setup.yes = true;
         cfg.setup.mcp = false;
-        assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "proxy"]);
+        assert_eq!(
+            expected(&codex::Codex, Kind::Cli, &cfg),
+            ["hooks", "proxy", "plugin"]
+        );
         assert_eq!(
             expected(&claude::Claude, Kind::Cli, &cfg),
             ["hooks", "proxy", "plugin"]

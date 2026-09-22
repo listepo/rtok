@@ -460,30 +460,32 @@ impl PluginLink<'_> {
                 return Ok(NO_CHANGES.into());
             }
             // Install refuses to overwrite a foreign directory; remove must not wipe one
-            // either. Unlink a symlink / plain file, or wipe a copy we can prove is ours.
-            let meta = self.dest.symlink_metadata()?;
-            if meta.file_type().is_symlink() || meta.file_type().is_file() {
-                fs::remove_file(&self.dest)?;
-                return Ok(format!("- plugin {}", self.dest.display()));
+            // either.
+            if !self.ours() {
+                return Ok(format!(
+                    "leave {} (not an rtok link; remove by hand)",
+                    self.dest.display()
+                ));
             }
-            if meta.is_dir() && self.ours() {
-                fs::remove_dir_all(&self.dest)?;
-                return Ok(format!("- plugin {}", self.dest.display()));
-            }
-            return Ok(format!(
-                "leave {} (not an rtok link; remove by hand)",
-                self.dest.display()
-            ));
+            self.unlink()?;
+            return Ok(format!("- plugin {}", self.dest.display()));
         }
-        // A dangling link (its source moved: a new ketch version, a deleted checkout) is not an
-        // install; it is replaced like a missing one instead of reported as `no changes`.
-        let dangling = self
-            .dest
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink())
-            && !self.dest.exists();
-        if self.linked() && !dangling {
-            return Ok(NO_CHANGES.into());
+        if self.linked() {
+            if self.up_to_date() {
+                return Ok(NO_CHANGES.into());
+            }
+            // Something else is at the destination: never overwrite ground we did not
+            // put there, whatever the answer to the question below would be (T164).
+            if !self.ours() {
+                return Ok(format!(
+                    "offer {} → {} (accept with --yes) {KETCH_INSTALL}",
+                    self.src_rel,
+                    self.main_desc()
+                ));
+            }
+            // Ours but stale — an older ketch version, or a link whose target is gone.
+            // Drop it so a fresh install can take its place (T164).
+            self.unlink()?;
         }
         let question = format!(
             "install {} into {} for {}?",
@@ -498,9 +500,6 @@ impl PluginLink<'_> {
                 self.main_desc()
             ));
         }
-        if dangling {
-            fs::remove_file(&self.dest)?;
-        }
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
         }
@@ -512,6 +511,39 @@ impl PluginLink<'_> {
             self.dest.display(),
             label
         ))
+    }
+
+    /// Unlink whatever sits at the destination outright: a symlink or plain file removed,
+    /// an owned directory copy wiped whole. Callers check [`ours`] first — this only runs
+    /// once that already said yes, whether for a genuine uninstall or to clear a stale
+    /// version before a relink (T164).
+    fn unlink(&self) -> Result<()> {
+        let meta = self.dest.symlink_metadata()?;
+        if meta.file_type().is_symlink() || meta.file_type().is_file() {
+            fs::remove_file(&self.dest)?;
+        } else if meta.is_dir() {
+            fs::remove_dir_all(&self.dest)?;
+        }
+        Ok(())
+    }
+
+    /// True when the destination already carries exactly this build's plugin: the same
+    /// symlink target on Unix (and it still resolves), or a byte-identical owned copy
+    /// elsewhere. A link into a different — typically older — ketch store version, or a
+    /// dangling one, is not up to date: [`run`] relinks it like a fresh install instead of
+    /// reporting [`NO_CHANGES`] forever (T164).
+    fn up_to_date(&self) -> bool {
+        let Ok(meta) = self.dest.symlink_metadata() else {
+            return false;
+        };
+        if meta.file_type().is_symlink() {
+            return self.dest.exists()
+                && fs::read_link(&self.dest).is_ok_and(|target| target == self.src);
+        }
+        if meta.file_type().is_file() {
+            return self.src.is_file() && fs::read(&self.dest).ok() == fs::read(&self.src).ok();
+        }
+        meta.is_dir() && tree_copies(&self.src, &self.dest)
     }
 }
 
@@ -556,8 +588,9 @@ pub struct SkillCopy {
     pub src: PathBuf,
     /// Where the host loads skills from (`~/.cursor/skills/rtok`, …).
     pub dest: PathBuf,
-    /// How the destination reads to a person; dry runs print the concrete path beside it.
-    pub label: Option<&'static str>,
+    /// How the destination reads to a person (`~/.cursor/skills/rtok`); dry runs print the
+    /// concrete path beside it.
+    pub label: Option<String>,
 }
 
 impl SkillCopy {
@@ -566,7 +599,7 @@ impl SkillCopy {
     }
 
     fn dest_desc(&self) -> String {
-        match self.label {
+        match &self.label {
             Some(label) => format!("{label} ({})", self.dest.display()),
             None => self.dest.display().to_string(),
         }
@@ -1019,11 +1052,98 @@ mod tests {
         assert_eq!(link.run(&YES, false).unwrap(), NO_CHANGES);
     }
 
+    /// T164: a symlink whose target still exists but is not this build's source — the
+    /// shape a ketch upgrade leaves behind, a prior version's plugin directory not yet
+    /// pruned — is not up to date either. `run` must relink it, not report `NO_CHANGES`
+    /// forever because *something* still resolves.
+    #[cfg(unix)]
+    #[test]
+    fn plugin_link_relinks_a_stale_version_target() {
+        let dir = tmp("stale-version");
+        let old_src = dir.join("store/v1/plugins/demo");
+        let new_src = dir.join("store/v2/plugins/demo");
+        fs::create_dir_all(&old_src).unwrap();
+        fs::create_dir_all(&new_src).unwrap();
+        fs::create_dir_all(dir.join("host")).unwrap();
+        let dest = dir.join("host/rtok");
+        std::os::unix::fs::symlink(&old_src, &dest).unwrap();
+        let link = demo_link(new_src.clone(), dest.clone());
+        assert!(!link.up_to_date(), "an old version is not up to date");
+        assert_eq!(
+            link.run(&YES, false).unwrap(),
+            format!("+ plugin plugins/demo → {}", dest.display())
+        );
+        assert_eq!(fs::read_link(&dest).unwrap(), new_src);
+        assert_eq!(link.run(&YES, false).unwrap(), NO_CHANGES);
+    }
+
+    /// T164: an owned copy (the non-Unix install shape) left over from an older version —
+    /// marker present, content stale — is ours but not current, so it is replaced rather
+    /// than reported as installed forever.
+    #[test]
+    fn plugin_link_relinks_a_stale_owned_copy() {
+        let dir = tmp("stale-copy");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("plugin.json"), "v2").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        copy_owned(&src, &dest).unwrap();
+        fs::write(dest.join("plugin.json"), "v1").unwrap(); // an older, now-stale copy
+        let link = demo_link(src, dest.clone());
+        assert!(link.ours(), "an owned copy with our marker is ours");
+        assert!(!link.up_to_date(), "stale content is not up to date");
+        assert_eq!(
+            link.run(&YES, false).unwrap(),
+            format!("+ plugin plugins/demo → {}", dest.display())
+        );
+        assert_eq!(fs::read_to_string(dest.join("plugin.json")).unwrap(), "v2");
+    }
+
+    /// T164: default-install hosts must never overwrite a foreign directory at the plugin
+    /// destination, even though nothing declined the offer — `--yes` alone cannot make a
+    /// stranger's files ours. The install must still describe the offer, not silently sit
+    /// as `NO_CHANGES`.
+    #[test]
+    fn plugin_link_never_installs_over_a_foreign_directory() {
+        let dir = tmp("foreign-install");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("plugin.json"), "ours").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("mine.txt"), "keep").unwrap();
+        let link = PluginLink {
+            src_rel: "plugins/demo",
+            src,
+            dest: dest.clone(),
+            label: Some("~/.demo/plugins"),
+            host: "demo",
+        };
+        let report = link.run(&YES, false).unwrap();
+        assert!(
+            report.starts_with("offer "),
+            "a foreign directory must be offered, not silently skipped: {report}"
+        );
+        assert!(
+            dest.join("mine.txt").exists(),
+            "the foreign file must survive"
+        );
+        assert!(
+            !dest.join("plugin.json").exists(),
+            "ours must not be copied in"
+        );
+    }
+
     #[test]
     fn plugin_link_offers_then_links_then_unlinks() {
         let dir = tmp("link");
         let src = dir.join("plugins/demo");
         fs::create_dir_all(&src).unwrap();
+        // A real plugin source is never empty; an empty `src` cannot prove a non-symlink
+        // (Windows) install is up to date (T164: `tree_copies` needs at least one file to
+        // compare), which would otherwise make the second `run` below reinstall instead of
+        // reporting `NO_CHANGES`.
+        fs::write(src.join("plugin.json"), "v1").unwrap();
         let link = PluginLink {
             src_rel: "plugins/demo",
             src,

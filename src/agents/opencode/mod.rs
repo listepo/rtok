@@ -84,8 +84,7 @@ impl Agent for OpenCode {
 
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
-            "proxy" | "mcp" => Support::Yes,
-            "plugin" => Support::Flag("--yes"),
+            "proxy" | "mcp" | "plugin" => Support::Yes,
             _ => Support::No(
                 "OpenCode has no shell hook events; the linked plugin filters bash output instead",
             ),
@@ -167,6 +166,10 @@ pub static PLUGIN: HostPlugin = HostPlugin {
     host: "OpenCode",
     label: None,
     dest: plugin_dest,
+    // OpenCode's own docs have no GitHub/subdir plugin install; the local link is the
+    // only path there is, so it installs by default once OpenCode itself is detected
+    // (T164).
+    default_install: true,
 };
 
 /// Plugin dest: `<config dir>/plugins/rtok.ts` — OpenCode loads every `*.ts` there.

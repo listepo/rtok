@@ -16,7 +16,7 @@ variant is detected by VS Code itself.
 | Module | Support | Why |
 | --- | --- | --- |
 | mcp | yes | `mcp.rtok` → `{type: local, command: [rtok, mcp], enabled: true}` (off with `[setup] mcp = false`) |
-| plugin | `--yes` | the offer links `plugins/opencode/rtok.ts` to `<config dir>/plugins/rtok.ts`; without a terminal only `--yes` accepts |
+| plugin | yes | links `plugins/opencode/rtok.ts` to `<config dir>/plugins/rtok.ts` by default, once Kilo Code itself is detected; a stale or foreign destination is never overwritten |
 | hooks | no | Kilo Code has no shell hook events; the linked plugin filters bash output instead |
 | proxy | no | Kilo Code keeps provider base URLs in its provider settings, which setup does not edit |
 

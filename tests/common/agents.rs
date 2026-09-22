@@ -161,23 +161,27 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
         .expect("rtok")
 }
 
-/// A fake `claude` (T115) first on PATH, so no test ever runs the real CLI: it answers the
-/// detection probe (`--version`), appends every other argv to `<home>/claude.log` and keeps
-/// `<config dir>/plugins/installed_plugins.json` the way `claude plugin install` / `uninstall`
-/// do. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm installs the real
-/// CLI as), which `spawn_claude`'s `cmd /C` wrapper (T139 windows fix) resolves the way it
-/// resolves the real thing.
+/// A fake `claude` (T115) and a fake `codex` (T140) first on PATH, so no test ever runs
+/// either real CLI: `claude` answers the detection probe (`--version`), appends every other
+/// argv to `<home>/claude.log` and keeps `<config dir>/plugins/installed_plugins.json` the way
+/// `claude plugin install` / `uninstall` do; `codex` answers `--version` and edits
+/// `${CODEX_HOME:-$HOME/.codex}/config.toml`'s `[marketplaces.rtok]` / `[plugins."rtok@rtok"]`
+/// tables the way `codex plugin marketplace add|remove` / `plugin add|remove` do, including the
+/// real CLI's "already added from a different source" error on a second `marketplace add` with
+/// a different source. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
+/// installs the real CLI as), which `agents::run_cli`'s `cmd /C` wrapper (T139 windows fix)
+/// resolves the way it resolves the real thing.
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
     let path = std::env::var_os("PATH").unwrap_or_default();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let dir = home.join(".fake-bin");
-        let exe = dir.join("claude");
-        if !exe.exists() {
-            fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let claude = dir.join("claude");
+        if !claude.exists() {
             fs::write(
-                &exe,
+                &claude,
                 r#"#!/bin/sh
 [ "$1" = --version ] && { echo "2.0.0 (Claude Code)"; exit 0; }
 echo "$*" >> "$HOME/claude.log"
@@ -190,7 +194,12 @@ esac
 "#,
             )
             .unwrap();
-            fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let codex = dir.join("codex");
+        if !codex.exists() {
+            fs::write(&codex, FAKE_CODEX_SH).unwrap();
+            fs::set_permissions(&codex, fs::Permissions::from_mode(0o755)).unwrap();
         }
         let mut dirs = vec![dir];
         dirs.extend(std::env::split_paths(&path));
@@ -199,11 +208,11 @@ esac
     #[cfg(windows)]
     {
         let dir = home.join(".fake-bin");
-        let exe = dir.join("claude.cmd");
-        if !exe.exists() {
-            fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let claude = dir.join("claude.cmd");
+        if !claude.exists() {
             fs::write(
-                &exe,
+                &claude,
                 r#"@echo off
 if "%~1"=="--version" (
   echo 2.0.0 Claude Code
@@ -227,6 +236,10 @@ if "%ALLARGS%"=="plugin uninstall rtok@rtok" (
             )
             .unwrap();
         }
+        let codex = dir.join("codex.cmd");
+        if !codex.exists() {
+            fs::write(&codex, FAKE_CODEX_CMD).unwrap();
+        }
         let mut dirs = vec![dir];
         dirs.extend(std::env::split_paths(&path));
         return std::env::join_paths(dirs).unwrap();
@@ -235,9 +248,83 @@ if "%ALLARGS%"=="plugin uninstall rtok@rtok" (
     path
 }
 
+/// `codex`'s config: `${CODEX_HOME:-$HOME/.codex}/config.toml` (matches `agents::codex::plugin`'s
+/// `CODEX_HOME` override, which is only set when `config_path` is not the default).
+#[cfg(unix)]
+const FAKE_CODEX_SH: &str = r#"#!/bin/sh
+[ "$1" = --version ] && { echo "codex-cli 0.155.1"; exit 0; }
+echo "$*" >> "$HOME/codex.log"
+cfg="${CODEX_HOME:-$HOME/.codex}/config.toml"
+mkdir -p "$(dirname "$cfg")"
+touch "$cfg"
+case "$*" in
+  "plugin marketplace add listepo/rtok")
+    if grep -q '^source = "https://github.com/listepo/rtok.git"$' "$cfg" 2>/dev/null; then
+      exit 0
+    fi
+    if grep -q '^\[marketplaces.rtok\]$' "$cfg" 2>/dev/null; then
+      echo "rtok: already added from a different source" >&2
+      exit 1
+    fi
+    printf '\n[marketplaces.rtok]\nsource_type = "git"\nsource = "https://github.com/listepo/rtok.git"\n' >> "$cfg"
+    ;;
+  "plugin marketplace remove rtok")
+    grep -q '^\[marketplaces.rtok\]$' "$cfg" 2>/dev/null || { echo "rtok: no such marketplace" >&2; exit 1; }
+    awk '/^\[marketplaces\.rtok\]$/{skip=1;next} /^\[/{skip=0} !skip' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+    ;;
+  "plugin add rtok@rtok")
+    grep -q '^\[plugins\."rtok@rtok"\]$' "$cfg" 2>/dev/null || printf '\n[plugins."rtok@rtok"]\nenabled = true\n' >> "$cfg"
+    ;;
+  "plugin remove rtok@rtok")
+    awk '/^\[plugins\."rtok@rtok"\]$/{skip=1;next} /^\[/{skip=0} !skip' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+    ;;
+esac
+"#;
+
+/// [`FAKE_CODEX_SH`]'s Windows counterpart.
+#[cfg(windows)]
+const FAKE_CODEX_CMD: &str = r#"@echo off
+if "%~1"=="--version" (
+  echo codex-cli 0.155.1
+  exit /b 0
+)
+if defined CODEX_HOME (set "CFG=%CODEX_HOME%\config.toml") else (set "CFG=%HOME%\.codex\config.toml")
+for %%F in ("%CFG%") do if not exist "%%~dpF" mkdir "%%~dpF"
+type nul >> "%CFG%"
+set "ALLARGS=%*"
+echo %ALLARGS%>>"%HOME%\codex.log"
+if "%ALLARGS%"=="plugin marketplace add listepo/rtok" (
+  findstr /c:"source = \"https://github.com/listepo/rtok.git\"" "%CFG%" >nul 2>&1 && exit /b 0
+  findstr /c:"[marketplaces.rtok]" "%CFG%" >nul 2>&1 && (echo rtok: already added from a different source 1>&2 & exit /b 1)
+  >>"%CFG%" echo([marketplaces.rtok]
+  >>"%CFG%" echo source_type = "git"
+  >>"%CFG%" echo source = "https://github.com/listepo/rtok.git"
+)
+if "%ALLARGS%"=="plugin marketplace remove rtok" (
+  findstr /c:"[marketplaces.rtok]" "%CFG%" >nul 2>&1 || (echo rtok: no such marketplace 1>&2 & exit /b 1)
+  findstr /v /c:"[marketplaces.rtok]" /c:"source_type = \"git\"" /c:"source = \"https://github.com/listepo/rtok.git\"" "%CFG%" > "%CFG%.tmp"
+  move /y "%CFG%.tmp" "%CFG%" >nul
+)
+if "%ALLARGS%"=="plugin add rtok@rtok" (
+  findstr /c:"[plugins.\"rtok@rtok\"]" "%CFG%" >nul 2>&1 || (
+    >>"%CFG%" echo([plugins."rtok@rtok"]
+    >>"%CFG%" echo enabled = true
+  )
+)
+if "%ALLARGS%"=="plugin remove rtok@rtok" (
+  findstr /v /c:"[plugins.\"rtok@rtok\"]" /c:"enabled = true" "%CFG%" > "%CFG%.tmp"
+  move /y "%CFG%.tmp" "%CFG%" >nul
+)
+"#;
+
 /// The fake `claude`'s calls so far, one argv per line.
 pub fn claude_log(home: &Path) -> String {
     fs::read_to_string(home.join("claude.log")).unwrap_or_default()
+}
+
+/// The fake `codex`'s calls so far, one argv per line.
+pub fn codex_log(home: &Path) -> String {
+    fs::read_to_string(home.join("codex.log")).unwrap_or_default()
 }
 
 /// [`raw`] that must succeed; returns stdout.

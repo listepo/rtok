@@ -98,6 +98,9 @@ pub static PLUGIN: HostPlugin = HostPlugin {
     host: "oh my pi",
     label: None,
     dest: plugin_dest,
+    // Out of scope for T164: left asking with `--yes`, unlike the five local-link-only
+    // hosts (omp is a pi fork with its own README and its own creator decision pending).
+    default_install: false,
 };
 
 /// Extension dest: `<extensions_path>/rtok` (default `~/.omp/agent/extensions/rtok`).

@@ -1,9 +1,12 @@
-//! Narrow FS surface for `read()` resolve + content (T56.5 / post-T56.4).
+//! Narrow FS surface for `read()` resolve + content (T56.5 / post-T56.4) and for the
+//! project resolver (T133): read a file as text, canonicalize, and a lexical path join.
 //!
 //! Production uses [`HostFs`]. Unit tests drive the same path over [`crate::testutil::Vfs`]
 //! without deleting disk e2e twins. Search/tree keep `ignore::WalkBuilder` on the host.
+//! Crate level, not inside the `read` plugin: `plugin.rs` attributes every session through
+//! [`crate::project`] whatever features are compiled in (T154).
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Read bytes as UTF-8 text and canonicalize (follow symlinks when the backend supports them).
 pub trait ReadFs {
@@ -24,6 +27,30 @@ impl ReadFs for HostFs {
     fn canonicalize(&self, path: &Path) -> Option<PathBuf> {
         dunce::canonicalize(path).ok()
     }
+}
+
+/// Lexical join of `path` onto `root` (`..` pops, `.` drops) — no disk access, so a missing
+/// path still normalises. `read` resolves with it; `project` follows `gitdir:` / `commondir`.
+pub(crate) fn normalize(root: &Path, path: &Path) -> PathBuf {
+    let mut out = if path.is_absolute() {
+        PathBuf::new()
+    } else {
+        root.to_path_buf()
+    };
+    for c in path.components() {
+        match c {
+            // Push, do not replace: on Windows `C:\foo` is Prefix("C:") then
+            // RootDir — replacing wiped the drive and confined to `\foo`.
+            Component::RootDir => out.push(Component::RootDir.as_os_str()),
+            Component::Prefix(p) => out = PathBuf::from(p.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::Normal(s) => out.push(s),
+        }
+    }
+    out
 }
 
 /// Forward-slash Vfs key from a [`Path`] (Windows separators normalized).

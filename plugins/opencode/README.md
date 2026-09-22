@@ -9,14 +9,15 @@ any spawn error returns the original output). `experimental.session.compacting` 
 `rtok hook PreCompact --host opencode` and
 appends the budgeted checkpoint to `output.context` (never `output.prompt`). The next
 `experimental.chat.system.transform` injects `PostCompact` restore bytes (T70.6). Hook hosts
-are T58.2. `rtok agents install opencode --yes` links it into `<config dir>/plugins/rtok.ts`
-for the CLI and the desktop app (T44.5). `rtok.test.ts` is its unit test (vitest). Missing `rtok`:
-install with ketch (`ketch install listepo/rtok`).
+are T58.2. `rtok agents install opencode` links it into `<config dir>/plugins/rtok.ts` by
+default, once OpenCode itself is detected (T164), for the CLI and the desktop app (T44.5).
+`rtok.test.ts` is its unit test (vitest). Missing `rtok`: install with ketch
+(`ketch install listepo/rtok`).
 
 Kilo Code 7 runs on the OpenCode server and loads the same file unchanged:
-`rtok agents install kilo --yes` links it into `~/.config/kilo/plugins/rtok.ts` for the `kilo`
-CLI and the VS Code extension (T97). The plugin still passes `--host opencode`, so Kilo rows
-are labelled `opencode`.
+`rtok agents install kilo` links it into `~/.config/kilo/plugins/rtok.ts` by default, once
+Kilo Code itself is detected (T164), for the `kilo` CLI and the VS Code extension (T97). The
+plugin still passes `--host opencode`, so Kilo rows are labelled `opencode`.
 
 ## Docs
 
