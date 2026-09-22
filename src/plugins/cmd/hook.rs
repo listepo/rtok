@@ -141,6 +141,18 @@ mod tests {
         }
     }
 
+    /// A foreground `sleep` chained with `;` and a pipe is not background: it is
+    /// wrapped whole, like any other compound command.
+    #[test]
+    fn sleep_then_piped_cat_is_wrapped() {
+        let cmd = "sleep 90; cat /tmp/tasks/x.output | tail -30";
+        let d = decide(cmd).unwrap();
+        assert_eq!(
+            wrapped(&d),
+            "rtok run -- 'sleep 90; cat /tmp/tasks/x.output | tail -30'"
+        );
+    }
+
     #[test]
     fn trailing_ampersand_untouched() {
         assert!(decide("sleep 10 &").is_none());

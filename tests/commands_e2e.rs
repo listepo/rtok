@@ -113,6 +113,51 @@ fn hook_grep_glob_deny_is_opt_in() {
     }
 }
 
+/// Emulates the host: PreToolUse rewrites `sleep; cat file | tail`, then the
+/// rewritten command runs under `sh` exactly as Claude Code would run it.
+#[cfg(unix)]
+#[test]
+fn hook_rewrite_of_sleep_cat_tail_runs_through_rtok() {
+    let home = tmp("sleep-tail");
+    let file = home.join("task.output");
+    let lines: Vec<String> = (1..=50).map(|i| format!("line {i}")).collect();
+    fs::write(&file, lines.join("\n") + "\n").unwrap();
+    let original = format!("sleep 1; cat {} | tail -30", file.display());
+    let event = serde_json::json!({
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": original, "description": "t"},
+        "session_id": "t",
+        "cwd": home,
+    });
+    let stdout = hook("PreToolUse", event.to_string().as_bytes(), &home);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let rewritten = v
+        .pointer("/hookSpecificOutput/updatedInput/command")
+        .and_then(|x| x.as_str())
+        .unwrap_or_else(|| panic!("not rewritten: {stdout}"));
+    assert!(rewritten.starts_with("rtok run -- '"), "{rewritten}");
+
+    let bin = assert_cmd::cargo::cargo_bin("rtok");
+    let path = format!(
+        "{}:{}",
+        bin.parent().unwrap().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = std::process::Command::new("sh")
+        .args(["-c", rewritten])
+        .env("PATH", path)
+        .env("RTOK_HOME", &home)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}");
+    assert!(text.contains("line 50"), "{text}");
+    assert!(!text.contains("line 20\n"), "tail -30 ran inside: {text}");
+    let _ = fs::remove_dir_all(&home);
+}
+
 #[test]
 fn hook_session_start_exits_0_with_json() {
     let home = tmp("start");

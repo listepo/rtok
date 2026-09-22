@@ -4611,3 +4611,15 @@ Status: done 2026-09-22
 Check result: `cargo nextest run --lib -E 'test(/memory::/) | test(/read::/)'` 102 passed — `memory::project::tests` on `Vfs`: main checkout and a linked worktree (relative `gitdir:` and `commondir`) resolve to one project named from `origin`; a plain directory → `None`; no `origin` → the main checkout's basename for both checkouts; four `origin` url shapes (`https`, trailing `.git/`, `ssh://`, `file://`) give the repo name; a submodule's `.git` file (no `commondir`) keeps its own name as before. `memory::tests::note_saved_from_a_worktree_recalls_from_the_main_checkout` writes git's worktree layout to a temp dir, remembers a note with the hook `cwd` in the worktree and recalls it with `cwd` in the main checkout; the pre-T133 `recall_filters_by_hook_cwd_not_process_cwd` still passes. `cargo fmt --check` and `cargo clippy --lib --bins --tests -- -D warnings` clean; the full `just check` runs in CI.
 Deviations: the resolver lives in `src/plugins/memory/project.rs` (`mod.rs` re-exports `project_name`, callers unchanged) and reuses `read::normalize` (now `pub(crate)`) rather than a second lexical `..` walker. No migration: a clone named after its repo resolves to the same name as before; the rename case (directory not named after `origin`) is not measured and is left to a future card.
 Model: Claude Code / claude-fable-5-1
+
+### T162. Pin the Bash wrap of `sleep N; cat file | tail -N`
+
+Creator question 2026-09-22: a background task ran `sleep 90; cat …/tasks/<id>.output | tail -30` and the Bash card showed no `rtok`. The card shows the model's command, not the hook's `updatedInput`; nothing pinned that this shape is wrapped.
+
+Plan: a unit test in `src/plugins/cmd/hook.rs` for the exact rewrite; an e2e in `tests/commands_e2e.rs` that emulates the host — `rtok hook PreToolUse` on the event, then `sh -c` on `updatedInput.command` with the built binary on `PATH`.
+
+Check: `cargo nextest run -E 'test(sleep_then_piped_cat_is_wrapped) | test(hook_rewrite_of_sleep_cat_tail_runs_through_rtok)'`; `just check`.
+
+Status: done 2026-09-22
+Check result: both tests pass; the e2e output starts at `line 21` of 50 and ends at `line 50`, so `tail -30` ran inside `rtok run`. A manual run of the installed hook on the same command printed `rtok run -- 'sleep 1; cat … | tail -30'` and the `[rtok … expand]` trailer. No wrap rule changed.
+Model: Claude Code / claude-opus-5
