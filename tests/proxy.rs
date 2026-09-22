@@ -1259,7 +1259,7 @@ async fn assert_plain_forward(label: &str, proxy_enabled: bool, core_enabled: bo
     }
     assert!(!live_http.is_empty(), "{label} /live");
 
-    let mut cfg = Config::default();
+    let (mut cfg, _) = rtok::testutil::config(label);
     cfg.proxy.enabled = proxy_enabled;
     cfg.core.enabled = core_enabled;
     let snap = rtok::web::model::Model::new(&cfg, Some(&state.store)).snapshot();
@@ -1345,7 +1345,7 @@ async fn enabled_compress_still_archives_when_flags_on() {
             .expect("measurements")
             > 0
     );
-    let cfg = Config::default();
+    let (cfg, _) = rtok::testutil::config("both-on");
     let snap = rtok::web::model::Model::new(&cfg, Some(&state.store)).snapshot();
     assert!(snap.usage.alerts.is_empty(), "no alert when enabled");
     assert!(

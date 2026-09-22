@@ -27,8 +27,7 @@ pub fn config(tag: &str) -> (Config, PathBuf) {
 /// `log.path` at its unexpanded default and wrote a literal `./~/.rtok/logs/` into the repo.
 pub fn config_in(dir: &Path) -> Config {
     let mut c = Config::default();
-    c.core.db_path = dir.join("rtok.db");
-    c.core.archive_dir = dir.join("archive");
+    c.rebase_paths(dir);
     c.log.path = dir.join("rtok.log");
     c
 }
