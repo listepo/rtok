@@ -1031,6 +1031,28 @@ pub(crate) fn http_get(base: &str, path: &str, timeout: Duration) -> Option<Stri
         .map(|(_, body)| body.to_string())
 }
 
+/// A bare [`Report`] for the render tests — the `report` renderer fixtures (T105) build
+/// their Doctor section on it, so a fixed model's doctor text is deterministic.
+#[cfg(test)]
+pub(crate) fn report_fixture() -> Report {
+    Report {
+        hooks_total: 0,
+        hooks_by_event: BTreeMap::new(),
+        mcp: Vec::new(),
+        proxy: String::new(),
+        proxy_openai: String::new(),
+        mcp_tool_search_disabled: false,
+        bash_max_output_length: None,
+        auto_compact_window: None,
+        read_share: None,
+        instructions: None,
+        skills: None,
+        overlaps: Vec::new(),
+        tools_rewrite_advice: None,
+        agents: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1207,26 +1229,6 @@ mod tests {
         );
         assert!(text.contains("WARN desc>200"), "{text}");
         assert!(text.contains("WARN body>8K (references/)"), "{text}");
-    }
-
-    /// A bare Report for the render tests.
-    fn report_fixture() -> Report {
-        Report {
-            hooks_total: 0,
-            hooks_by_event: BTreeMap::new(),
-            mcp: Vec::new(),
-            proxy: String::new(),
-            proxy_openai: String::new(),
-            mcp_tool_search_disabled: false,
-            bash_max_output_length: None,
-            auto_compact_window: None,
-            read_share: None,
-            instructions: None,
-            skills: None,
-            overlaps: Vec::new(),
-            tools_rewrite_advice: None,
-            agents: Vec::new(),
-        }
     }
 
     #[test]

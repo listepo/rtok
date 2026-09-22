@@ -1,0 +1,80 @@
+---
+source: src/report/markdown.rs
+expression: out
+---
+# rtok report
+
+Window 2026-09-01 → 2026-10-01 (30d) · store <script>alert(1)</script> | `tick`
+second line
+
+## Window
+
+| ledger | rows | covers |
+| --- | --- | --- |
+| calls | 0 of 0 | window (30d) |
+| measurements | 0 | whole ledger (no row times) |
+| usage | 0 | whole ledger (no row times) |
+
+**No rows in window.** The store has no rows to report.
+
+## Savings
+
+Estimated tokens from `Measurement` rows only: est_before − est_after, net — an `expand` row counts negative, because retrieval costs tokens. A `Measurement` row carries no turn count, so these are floors, not context-token-turns.
+
+| plugin | rows | est before | est after | saved |
+| --- | ---: | ---: | ---: | ---: |
+| <script>alert(1)</script> \| `tick` second line | 1 | 1 | 1 | 0 |
+
+Total: 0 est tokens over 1 `Measurement` rows (whole ledger: no row times).
+
+## Calls
+
+Latency per surface, nearest-rank p50/p95 over the calls that recorded one.
+
+No rows in window.
+
+## Cache
+
+Prompt-cache busts by cause, from the proxy's `usage` rows (whole ledger).
+
+| cause | busts |
+| --- | ---: |
+| <script>alert(1)</script> \| `tick` second line | 1 |
+
+Busts: 0 over 1 turns in 1 session(s).
+
+## Expand
+
+How often a live-zone pointer had to be expanded (`archive_decisions` rows, T5.4).
+
+`rtok expand` froze 0 of 1 live-zone pointers (—%). Expanded: <script>alert(1)</script> \| `tick` second line.
+
+## Config
+
+Every effective key with its origin — the `config show --sources` page.
+
+| key | value | source |
+| --- | --- | --- |
+| <script>alert(1)</script> \| `tick` second line | <script>alert(1)</script> \| `tick` second line | <script>alert(1)</script> \| `tick` second line |
+
+1 keys.
+
+## Doctor
+
+Live probes (the `rtok doctor` page), not store rows.
+
+```text
+hooks 0
+mcp
+proxy <script>alert(1)</script> | `tick`
+second line
+proxy openai 
+BASH_MAX_OUTPUT_LENGTH (unset)
+autoCompactWindow (unset)
+read-share no data
+agents
+```
+
+## Recommendations
+
+- **<script>alert(1)</script> \| `tick` second line**: <script>alert(1)</script> \| `tick` second line (<script>alert(1)</script> \| `tick` second line)

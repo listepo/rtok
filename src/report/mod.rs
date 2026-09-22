@@ -103,3 +103,159 @@ mod tests {
         assert_eq!(bar_shares(&pairs), Vec::<f64>::new());
     }
 }
+
+/// Fixed [`Document`] models for the renderer snapshot tests (T105): zero rows, one row
+/// with very large numbers and non-finite latencies, and hostile text carrying `<`, `|`,
+/// backticks and a newline. Every field is a literal — no store, no clock.
+#[cfg(test)]
+pub(crate) mod fixtures {
+    use super::*;
+    use crate::doctor::report_fixture;
+    use crate::web::model;
+
+    fn base() -> Document {
+        Document {
+            ledgers: model::ReportLedgers {
+                window: model::ReportWindow {
+                    since: "30d".into(),
+                    from_unix: 0,
+                    to_unix: 0,
+                    from_date: "2026-09-01".into(),
+                    to_date: "2026-10-01".into(),
+                    db_path: "/tmp/rtok.db".into(),
+                    calls_in_window: 0,
+                    calls_total: 0,
+                    measurements: 0,
+                    usage: 0,
+                },
+                savings: model::ReportSavingsSection {
+                    rows: Vec::new(),
+                    total_rows: 0,
+                    total_saved: 0,
+                    kinds: Vec::new(),
+                },
+                sinks: model::ReportSinksSection { rows: Vec::new() },
+                calls: model::ReportCallsSection {
+                    rows: Vec::new(),
+                    in_window: 0,
+                    total: 0,
+                    hooks: Vec::new(),
+                },
+                cache: model::ReportCache {
+                    sessions: 0,
+                    turns: 0,
+                    busts: 0,
+                    by_cause: Vec::new(),
+                    detail: Vec::new(),
+                },
+                expand: model::ReportExpand {
+                    decisions: 0,
+                    expanded: 0,
+                    rate: 0.0,
+                    expanded_ids: Vec::new(),
+                    cost: 0,
+                    cost_rows: 0,
+                },
+            },
+            config: Vec::new(),
+            doctor: report_fixture(),
+            recommendations: Vec::new(),
+        }
+    }
+
+    /// Zero savings: every section says there are no rows instead of printing zeros.
+    pub(crate) fn zero() -> Document {
+        base()
+    }
+
+    /// One row per table, with very large numbers and the latencies a store may hold
+    /// (`NaN`, `inf`) — the document must print `—`, never those.
+    pub(crate) fn one_row() -> Document {
+        let mut d = base();
+        let w = &mut d.ledgers.window;
+        w.calls_in_window = 1;
+        w.calls_total = 1;
+        w.measurements = u64::MAX;
+        w.usage = u64::MAX;
+        d.ledgers.savings.rows.push(model::ReportSavings {
+            plugin: "cmd".into(),
+            rows: u64::MAX,
+            est_before: i64::MAX,
+            est_after: i64::MIN,
+            saved: i64::MAX,
+        });
+        d.ledgers.savings.total_rows = u64::MAX;
+        d.ledgers.savings.total_saved = i64::MAX;
+        d.ledgers.calls.rows.push(model::ReportCalls {
+            surface: "hook".into(),
+            calls: u64::MAX,
+            timed: 1,
+            p50_ms: Some(f64::NAN),
+            p95_ms: Some(f64::INFINITY),
+        });
+        d.ledgers.calls.in_window = 1;
+        d.ledgers.calls.total = 1;
+        d.ledgers.cache.sessions = 1;
+        d.ledgers.cache.turns = u64::MAX;
+        d.ledgers.cache.busts = u64::MAX;
+        d.ledgers.cache.by_cause.push(("tools".into(), u64::MAX));
+        d.ledgers.expand = model::ReportExpand {
+            decisions: i64::MAX,
+            expanded: i64::MAX,
+            rate: 1.0,
+            expanded_ids: vec!["f".repeat(64)],
+            cost: i64::MAX,
+            cost_rows: u64::MAX,
+        };
+        d.config.push(model::ConfigEntry {
+            key: "core.db_path".into(),
+            value: "/tmp/rtok.db".into(),
+            source: "user".into(),
+        });
+        d.recommendations.push(Recommendation {
+            rule: "cache-bust".into(),
+            finding: format!("{} tokens", i64::MAX),
+            evidence: format!("{} rows", u64::MAX),
+        });
+        d
+    }
+
+    /// Hostile text in every free-form field: markup, a table pipe, backticks, a newline,
+    /// plus a corrupt (non-finite) expand rate.
+    pub(crate) fn hostile() -> Document {
+        const EVIL: &str = "<script>alert(1)</script> | `tick`\nsecond line";
+        let mut d = base();
+        d.ledgers.window.db_path = EVIL.into();
+        d.ledgers.savings.rows.push(model::ReportSavings {
+            plugin: EVIL.into(),
+            rows: 1,
+            est_before: 1,
+            est_after: 1,
+            saved: 0,
+        });
+        d.ledgers.savings.total_rows = 1;
+        d.ledgers.cache.sessions = 1;
+        d.ledgers.cache.turns = 1;
+        d.ledgers.cache.by_cause.push((EVIL.into(), 1));
+        d.ledgers.expand = model::ReportExpand {
+            decisions: 1,
+            expanded: 0,
+            rate: f64::NAN,
+            expanded_ids: vec![EVIL.into()],
+            cost: 0,
+            cost_rows: 0,
+        };
+        d.config.push(model::ConfigEntry {
+            key: EVIL.into(),
+            value: EVIL.into(),
+            source: EVIL.into(),
+        });
+        d.doctor.proxy = EVIL.into();
+        d.recommendations.push(Recommendation {
+            rule: EVIL.into(),
+            finding: EVIL.into(),
+            evidence: EVIL.into(),
+        });
+        d
+    }
+}
