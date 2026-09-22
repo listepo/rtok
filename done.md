@@ -4827,3 +4827,22 @@ Deviations: none. The trigger (extra config keys shifting the page remainder ont
 
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
+
+### T79. `agents install zed` aborts on a real settings.json (JSONC)
+
+Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
+
+Plan (needs a decision first): (a) edit the JSONC hosts in place with a comment-preserving editor, or (b) keep strict parsing and refuse with a message naming the file and the line the user can paste in themselves.
+
+Check: un-ignore `zed_keeps_the_real_settings_json` and it passes against a Zed-written `settings.json` — under (a) the comments and trailing commas are still in the file afterwards, under (b) the command exits non-zero with the message and the test asserts that instead. `just check` green either way.
+
+Do (Command Code / claude-fable-5, 2026-09-22): (a) for zed — in place, comment-preserving — and (b) for the still-strict hosts. Zed already had a surgical JSONC text editor in `src/agents/zed/mod.rs`; the live repro was the **trailing comma**, which its `strip_comments`-only validation rejected — and the root-insert path then produced a double comma (`},\\n,`) that broke the next install (reproduced on a copy of this machine's real file). Changes: (1) `parse()` and the two span parses validate through **`jsonc-parser` 0.33.2** (feature `serde`; comments + trailing commas allowed, everything else strict) — the surgical span editor stays in-house and untouched; (2) the root insert adds one separator, never two — a root already ending in a trailing comma keeps it; (3) `register_mcp`/`unregister_mcp` validate their own output before writing ("never overwrite a file we cannot read" applies to our own bytes); (4) `read_json` in `rtok-agent-sdk` refuses a JSONC file naming the file, line:column and the offending line — the strict hosts (VS Code et al, option b there) now say what to paste in by hand instead of dying on a bare serde error; (5) `zed_keeps_the_real_settings_json` un-ignored.
+
+New dependency: `jsonc-parser` 0.33.2 (feature `serde`) — JSONC parse (comments + trailing commas) for Zed's in-place editor.
+
+Check result (2026-09-22): `zed_keeps_the_real_settings_json` un-ignored and green against this machine's real Zed-written `settings.json` (comments and trailing commas survive install ×2 and remove); zed units 13/13 including the two new ones — `trailing_commas_survive_install_and_remove` (the span case that used to replace the whole `context_servers` object and lose foreign servers) and `a_root_trailing_comma_adds_no_second_comma` (the real-file repro); SDK 25/25 including `jsonc_is_refused_naming_the_file_and_the_line`; `fmt --check` and `clippy -D warnings` green; full `cargo nextest run` — 964 passed / 1 failed / 3 skipped, the one failure the pre-existing machine-state `agents_real_config windsurf_keeps_the_real_mcp_config_json` (T166, fails on clean `main` too).
+
+Deviations: the decision the card reserved for the creator is taken as (a) for zed (its surgery was already there and tested) and (b) for the strict hosts; porting the surgical editor to VS Code's `settings.json` is the natural follow-up if its users hit JSONC (this machine's file is strict JSON). `jsonc-parser` replaces only the validation/parse copy — the span surgery stays in-house rather than being rewritten onto the crate's edit-tree API.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5
