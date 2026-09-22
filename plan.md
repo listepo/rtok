@@ -55,6 +55,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T179 | todo | P2 | 3 | 0% | |
 | T180 | todo | P3 | 4 | 0% | |
 | T181 | todo | P3 | 2 | 0% | |
+| T182 | todo | P2 | 3 | 0% | |
+| T183 | todo | P2 | 4 | 0% | |
 
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
@@ -421,6 +423,34 @@ Found in the 2026-09-22 audit: `graph/cap` wrote 17 `Measurement` rows with 8 75
 Plan: find whether the cap threshold is never reached on real repos or the row is written before the cap applies; fix the measurement or the threshold, or stop recording no-op rows.
 
 Check: unit test where the cap applies records `after_bytes < before_bytes`; `just test` green.
+
+### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
+
+Creator request 2026-09-22 (voice): AirTalk/rtok agents must clean up junk after themselves. Add `rtok agents junk clear` that deletes temporary files, logs, and cache that rtok (and the work it leaves behind) owns. Separately, inventory where each connected host stores its own junk — which folders — by reading that host's documentation, and record the map so clear/cleanup can cover host-side scratch safely.
+
+Scope:
+1. **Self-cleanup after agent work** — install/remove/list/apply paths and any long-running surfaces must not leave unbounded temp files, rotating logs past D26 caps, or stale cache entries; defaults fail open and never delete live ledgers (`~/.rtok/rtok.db`, archives still referenced by expand ids).
+2. **`rtok agents junk clear`** — one command that removes safe junk: temp dirs, log files past retention, and cache trees rtok owns (and any host junk folders from the map once known). Dry-run prints the paths; apply deletes. Config keys under `[setup]` / `[log]` as needed (D12).
+3. **Per-host junk map** — for every id in `HOSTS` (today: claude, cursor, codex, opencode, kilo, pi, omp, zcode, kimi, grok, vscode, copilot, aider, windsurf, zed), read that host's current docs and list the folders that hold temp/logs/cache; write the table into `research.md` (and a host README note where useful). No host files are deleted until the map is reviewed.
+
+Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, archive retention if any); add the CLI subcommand + tests; run the doc survey as a dated research row; wire clear to the surveyed paths only after creator sign-off on the map.
+
+Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
+
+### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
+
+Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
+
+Scope:
+1. **One entry script** (e.g. `scripts/publish_marketplace.py` or under `tools/`) that accepts `all` | `<host-id>` and refuses hosts without marketplace support with a clear error.
+2. **Per-host Python modules** — one module per marketplace-capable host (discover which of today's `HOSTS` already have a documented marketplace/plugin store path: Claude Code marketplace, Codex `plugin marketplace add`, Cursor, Copilot, Kimi `/plugins`, … — verify against current host docs before coding). Each module owns auth assumptions, package layout under `plugins/<host>/`, and the publish API or CLI the marketplace expects.
+3. **CI trigger from Python** — the script does not hand-upload in production; it triggers the repo's CI workflow that builds and publishes (workflow_dispatch or equivalent), and reports the run URL. Local dry-run prints the planned host list and the workflow inputs without firing CI.
+4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
+
+Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
+
+Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
+
 
 ## Reference
 
