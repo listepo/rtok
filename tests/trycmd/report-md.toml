@@ -287,7 +287,7 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not installed (--proxy)
-    plugin  not supported: Codex loads MCP from config.toml; there is no plugin directory to link
+    plugin  not installed
   opencode (cli)
     hooks   not supported: OpenCode has no shell hook events; the linked plugin filters bash output instead
     mcp     not installed

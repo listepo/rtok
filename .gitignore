@@ -16,3 +16,4 @@ report/jscpd-report.json
 rtok.db
 rtok.db-shm
 rtok.db-wal
+/.commandcode

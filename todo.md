@@ -35,10 +35,9 @@
 - T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
-- T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
-- T160. No expand trailer when shortening saved less than the trailer costs
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T165. Research: general HTTP(S) interception as a new surface
+- T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
