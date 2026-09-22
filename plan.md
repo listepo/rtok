@@ -6,7 +6,19 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T83 | todo | P1 | 4 | 0% | |
+| T83.2 | todo | P1 | 3 | 0% | |
+| T83.3 | todo | P1 | 4 | 0% | |
+| T83.4 | todo | P1 | 3 | 0% | |
+| T83.5 | todo | P1 | 2 | 0% | |
+| T83.6 | todo | P1 | 2 | 0% | |
+| T83.7 | todo | P1 | 2 | 0% | |
+| T83.8 | todo | P1 | 2 | 0% | |
+| T83.9 | todo | P1 | 2 | 0% | |
+| T83.10 | todo | P1 | 2 | 0% | |
+| T83.11 | todo | P1 | 3 | 0% | |
+| T83.12 | todo | P1 | 3 | 0% | |
+| T83.13 | todo | P1 | 3 | 0% | |
+| T83.14 | todo | P1 | 3 | 0% | |
 | T86 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
@@ -44,13 +56,83 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T168 | todo | P2 | 1 | 0% | |
 
 
-### T83. Fix the Windows test failures and empty the T82 exclusion list
+### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
 
-The `cfg(windows)` `default-filter` in `.config/nextest.toml` (T82) names every test that fails on `windows-latest` (29). Families from run 35244082778: `tests/demon.rs` (3 × 180 s timeout — process-tree start/stop), `plugins::cmd::run::tests` (4 — shell spawn), `log::tests` + `demon::tests` rotation (4 — rename of an open file), `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` (8 — symlink and path expectations), `agents::claude` desktop config path, `agents_doc`, `cli_trycmd`, `commands_e2e` run→expand, `otel` unreachable endpoint (131 s), `cmd::formatters::ten_families_and_aws_key_unredacted`. Four more from run 35576438155 (2026-09-21, after T93): `cmd::run::tests::identical_output_from_different_commands_dedups` (dedup count 1 ≠ 0), `read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full` (`unchanged since …` instead of hunks), `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` (os error 4390, not a reparse point), `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` (empty `{}`). T55.12 (Git Bash `wrap_quote`) is in the same area. Each is either a product bug on Windows or a test that assumes Unix; decide per family, fix, and delete its line from the list.
+The `cfg(windows)` `default-filter` in `.config/nextest.toml` (T82) skips four tests on `windows-latest`: `one_arg_compound_command_runs_as_one_script`, `exit_3_is_preserved`, `printf_two_lines_exit_0_no_trailer`, `three_runs_stats_plugin_cmd_json_has_rows`. Find out whether `plugins/cmd/run.rs` hardcodes a POSIX shell (`sh -c`) or exit-code assumption that needs a `cfg(windows)` branch (`cmd /C` or PowerShell), or the tests themselves assume a Unix shell on PATH; fix accordingly and delete the line. One family split out of the original T83 (all families and sources: `done.md` → T83.1, which fixed the log/demon rotation family). Closing criterion for the whole split: once every T83.x below has emptied its line from the `cfg(windows)` override in `.config/nextest.toml`, delete the override and move `windows` out of `continue-on-error` into `revert-on-failure`'s `needs` (or into the `check` matrix if `just check` runs on Windows).
 
-Done when the exclusion list is empty, the override is deleted, and the `windows` job drops `continue-on-error` and joins `revert-on-failure`'s `needs` (or moves into the `check` matrix if `just check` runs on Windows). Split into T83.x per family when claimed.
+Check: the four tests pass in the `windows` CI job; `just check` stays green.
 
-Check: `ci` run with the `windows` job green and 0 tests skipped by the platform filter.
+### T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
+
+Skips three tests: `a_service_that_exits_comes_back_and_stop_takes_the_whole_tree_down`, `status_asks_the_kernel_rather_than_believing_the_state_file`, `a_second_start_is_refused_and_status_names_every_service`. These were 180 s `terminate-after` timeouts, not fast failures — `demon.rs`'s process-tree model (session leader + `setsid`, `rtok_sys::process_alive`/`process_term`/`process_kill`) is Unix-shaped; Windows has no process groups the same way (job objects are the closest analog). Decide whether `supervise`/`claim`/the kill path needs a `cfg(windows)` job-object implementation or the tests assume POSIX signals. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the three tests pass (or complete well under the 60 s slow-timeout) in the `windows` CI job; `just check` stays green.
+
+### T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
+
+Ten tests across four binaries: `agents_install::{list_reports_installed_modules_per_host, setup_twice_takes_one_backup_and_says_already_installed}`, `opencode_plugin::dry_run_offers_the_plugin_and_writes_nothing`, `cursor_plugin::{setup_cursor_dry_run_offers_plugin, setup_cursor_yes_links_plugin_without_mcp_json, setup_cursor_clears_leftover_mcp_when_plugin_already_linked}`, `pi_plugin::{setup_pi_dry_run_offers_plugin, setup_pi_yes_links_remove_unlinks, pi_extension_unit_test_with_fake_rtok}`, `filter::opencode_plugin_unit_test_with_api_mock`. Likely a symlink family: `std::fs::symlink` needs Developer Mode or admin on Windows, and/or the assertions compare `/`-joined paths against a host that prints `\`. Decide per test whether the installer needs a Windows fallback (junction/hardlink/copy) or the fixtures need `Path`-based comparison instead of string paths. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the ten tests pass in the `windows` CI job; `just check` stays green.
+
+### T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
+
+The desktop Claude config path assertion assumes a Unix absolute path or a Unix `rtok` binary name (no `.exe`). Read `src/agents/claude/mod.rs`'s desktop-config writer and decide whether it needs a `cfg(windows)` path/extension branch or the test's expected string needs a platform-aware fixture. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
+
+`tests/agents_doc.rs` compares the generated `docs/agents.md` host table against the bless output; on Windows this likely differs by path separator or line endings (CRLF vs LF) rather than actual host-table content. Decide whether the generator needs `cfg(windows)` normalization or the comparison needs to normalize line endings. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.7. `cli_trycmd::cli` fails on Windows
+
+The `trycmd`-driven CLI snapshot test likely diffs on path separators, line endings, or a Unix-only fixture. Decide whether `rtok`'s own output needs a Windows-safe rendering or the `.toml`/`.stdout` fixtures need a Windows variant. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
+
+The `run` → `expand` round trip likely depends on a Unix shell command or a path/newline assumption in the fixture. Read `tests/commands_e2e.rs` and decide whether the command under test needs a Windows-portable replacement or `rtok`'s `run`/`expand` path has a real Windows bug. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.9. `otel::hooks_stay_fast_with_an_unreachable_endpoint` times out on Windows (131 s)
+
+Connecting to an unreachable endpoint should fail fast (the point of the test — hooks must stay under budget even when otel can't be reached), but on Windows it apparently blocks for 131 s. Likely a difference in how Windows resolves/connects to an unreachable address (DNS or TCP connect timeout defaults) versus Unix. Decide whether the otel client needs an explicit Windows-safe connect timeout or the test's "unreachable" address needs to be one that fails fast cross-platform. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes well under its slow-timeout in the `windows` CI job; `just check` stays green.
+
+### T83.10. `plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted` fails on Windows
+
+Read `plugins/cmd/formatters.rs`'s AWS-key redaction and decide whether the regex/format assumes a Unix-shaped command line (quoting, path separators) that differs on Windows, or the test fixture itself is Unix-only. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.11. `plugins::cmd::run::tests::identical_output_from_different_commands_dedups` fails on Windows (dedup count 1 ≠ 0)
+
+From run 35576438155 (2026-09-21, after T93). The dedup path in `plugins/cmd/run.rs` counted 1 where the test expects 0 — a real behavior difference, not obviously a path/shell issue like T83.2's family. Read the dedup key construction and decide whether it hashes something platform-dependent (e.g. a path or line ending) that makes two "identical" commands look different on Windows, or the test's identical-output premise doesn't hold there. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.12. `plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full` fails on Windows
+
+From run 35576438155. Windows printed `unchanged since …` where the test expects hunks — the cache is treating a changed file as unchanged, likely an mtime-resolution or path-normalization difference on Windows (e.g. FAT/NTFS timestamp granularity, or a `\`-vs-`/` cache key mismatch). Read `plugins/read/cache.rs`'s change-detection key and decide whether it needs a Windows-safe granularity/path fix or the test needs to force a large-enough mtime delta. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.13. `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` fails on Windows (os error 4390)
+
+From run 35576438155. Windows os error 4390 is `ERROR_NOT_A_REPARSE_POINT` — the uninstall path expects a symlink/junction (reparse point) and finds a plain materialized copy instead, matching the card's "not a reparse point" note. Read `agent_remove`'s uninstall and decide whether the installer needs to detect a non-symlinked (materialized/copied) plugin directory on Windows and remove it by content instead of by reparse-point semantics, or the test fixture needs to actually create a reparse point. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
+
+From run 35576438155. The `SessionStart` graph-map payload came back empty on Windows where the test expects populated content — likely a path-walk or capped-map computation that silently no-ops on a Windows path shape. Read the `graph` plugin's `SessionStart` map builder and decide whether it has a real Windows path-handling bug or the test's fixture repo isn't discoverable under Windows path conventions. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
 
 ### T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
 

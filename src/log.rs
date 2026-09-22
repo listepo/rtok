@@ -122,15 +122,38 @@ fn over(log: &Log, incoming: u64) -> bool {
 /// Hooks, `mcp`, `proxy` and `otel flush` append from separate processes. Two past the cap at
 /// once both rotated: the second shifted the first's fresh `.1` to `.2` and then failed to
 /// rename the live file the first had already moved, dropping its own line. The decision is
-/// made again under an exclusive `flock` on the live file, so the loser sees the new small
-/// file and leaves it alone. The lock sits on the inode that gets renamed, so no lock file.
+/// made again under an exclusive lock, so the loser sees the new small file and leaves it
+/// alone. T83.1: the lock used to sit on `log.path` itself — the inode that gets renamed, no
+/// lock file needed, since Unix allows renaming a file you hold locked. Windows does not: with
+/// `live` still open and locked, `rotate()`'s rename of that same path failed every time with
+/// `Os { code: 5, PermissionDenied }`, `FILE_SHARE_DELETE` (already std's Windows default)
+/// notwithstanding. A dedicated lock file coordinates the same race without ever locking the
+/// file that gets renamed.
 fn rotate_if_over(log: &Log, incoming: u64) -> std::io::Result<()> {
-    let live = open_append(&log.path)?;
-    rtok_sys::lock_exclusive(&live)?;
+    let lock = open_rotate_lock(&log.path)?;
+    rtok_sys::lock_exclusive(&lock)?;
     if over(log, incoming) {
         rotate(&log.path, log.files)?;
     }
-    Ok(()) // closing `live` releases the lock
+    Ok(()) // closing `lock` releases the lock
+}
+
+/// The lock file `rotate_if_over` holds across its decision and the rename — keyed by a hash
+/// of `path` so two `[log] path`s never collide, and kept in the OS temp dir rather than
+/// beside `path` so it is never one of the log's own siblings (a directory listing of the
+/// log's folder should show exactly the rotated files, not a lock).
+fn open_rotate_lock(path: &Path) -> std::io::Result<fs::File> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    let lock_path =
+        std::env::temp_dir().join(format!("rtok-log-rotate-{:x}.lock", hasher.finish()));
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path)
 }
 
 /// `rtok.log` → `.1`, `.1` → `.2`, and whatever falls past `[log] files` is deleted. Keeping
