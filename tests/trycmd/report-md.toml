@@ -353,12 +353,12 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
-    plugin  not supported: Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link
+    plugin  not installed (--yes)
   copilot (desktop)
     hooks   not supported: the GitHub Copilot app does not document hooks; the shared hooks/rtok.json is written for the CLI
     mcp     not installed
     proxy   not supported: Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy
-    plugin  not supported: Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link
+    plugin  not supported: the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI
   aider (cli)
     hooks   not supported: aider has no hook events; it reads .aider.conf.yml and .env
     mcp     not supported: aider has no MCP support

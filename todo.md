@@ -8,7 +8,6 @@
 - T95. Cline plugin tree (`plugins/cline/`)
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
-- T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension
 - T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies

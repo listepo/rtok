@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rtok": {
+      "type": "local",
+      "command": "rtok",
+      "args": ["mcp"],
+      "tools": ["*"]
+    }
+  }
+}

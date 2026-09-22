@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rtok_agent_sdk::{Apply, NO_CHANGES, edit_json};
+use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, edit_json};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -19,7 +19,7 @@ use crate::config::Config;
 const NAME: &str = "rtok";
 
 /// Copilot's event names paired with the Claude event `rtok hook` runs for them.
-const EVENTS: &[(&str, &str)] = &[
+pub const EVENTS: &[(&str, &str)] = &[
     ("preToolUse", "PreToolUse"),
     ("postToolUse", "PostToolUse"),
     ("userPromptSubmitted", "UserPromptSubmit"),
@@ -85,10 +85,21 @@ impl Agent for Copilot {
             ("proxy", _) => Support::No(
                 "Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy",
             ),
+            ("plugin", Kind::Cli) => Support::Flag("--yes"),
+            ("plugin", _) => Support::No(
+                "the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI",
+            ),
             _ => Support::No(
                 "Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link",
             ),
         }
+    }
+
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[
+            rtok_plugin_sdk::Surface::Hook,
+            rtok_plugin_sdk::Surface::Mcp,
+        ]
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
@@ -103,18 +114,31 @@ impl Agent for Copilot {
         if super::read(&mcp_path(cfg)).contains("\"rtok\"") {
             out.push("mcp");
         }
+        if plugin_installed(cfg) {
+            out.push("plugin");
+        }
         out
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?];
-        if remove {
-            lines.push(unregister_mcp(cfg)?);
-        } else if cfg.setup.mcp {
+        let head = plugin(cfg, remove)?;
+        if remove || plugin_installed(cfg) {
+            // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so
+            // rtok's own hooks/rtok.json and mcp-config.json entry go instead of coming
+            // (kimi's `plugin_detected` rule), on the same run that installs it too.
+            return Ok(vec![
+                head,
+                run(cfg, true)?,
+                unregister_mcp(cfg)?,
+                super::skill::sync("copilot", cfg, remove)?,
+            ]);
+        }
+        let mut lines = vec![head, run(cfg, false)?];
+        if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
         }
-        lines.push(super::skill::sync("copilot", cfg, remove)?);
+        lines.push(super::skill::sync("copilot", cfg, false)?);
         Ok(lines)
     }
 }
@@ -137,7 +161,9 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 }
 
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
-fn hooks_doc(bin: &str, timeout: u64) -> Value {
+/// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by
+/// `tests/copilot_plugin.rs` — one shape, two surfaces (D21).
+pub fn hooks_doc(bin: &str, timeout: u64) -> Value {
     let mut hooks = serde_json::Map::new();
     for &(copilot, claude) in EVENTS {
         let cmd = format!("{bin} hook {claude} --host copilot");
@@ -181,6 +207,86 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
 /// Drop `mcpServers.rtok` from `mcp-config.json`.
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
     rtok_agent_sdk::unregister_server(&apply(cfg), &mcp_path(cfg), "mcpServers", NAME)
+}
+
+const PLUGIN_SRC: &str = "plugins/copilot";
+
+/// True while `copilot plugin` has rtok installed (T116): the cached copy under
+/// `installed-plugins/` — `MARKETPLACE/PLUGIN-NAME` from a marketplace, `_direct/<id>` from
+/// a local path — is the host's own record. `copilot plugin list --json` reports the same
+/// state; the manifest answers without spawning the CLI (T75).
+pub fn plugin_installed(cfg: &Config) -> bool {
+    let root = cfg.setup.copilot.dir.join("installed-plugins");
+    let Ok(outer) = fs::read_dir(&root) else {
+        return false;
+    };
+    outer.flatten().any(|o| {
+        fs::read_dir(o.path())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| {
+                fs::read_to_string(e.path().join("plugin.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                    .is_some_and(|v| v.get("name").and_then(Value::as_str) == Some(NAME))
+            })
+    })
+}
+
+/// One `copilot plugin …` call; `COPILOT_HOME` only when `dir` is not the default. Windows
+/// shim resolution and stderr handling live in `super::run_cli` (T140).
+fn copilot_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
+    let dir = cfg.setup.copilot.dir.as_path();
+    let default = super::home_dir().join(".copilot");
+    let env = (dir != default).then_some(("COPILOT_HOME", dir));
+    super::run_cli("copilot", args, env)
+}
+
+/// Offer, install, or uninstall `plugins/copilot` through `copilot plugin` (T116): the
+/// documented local-path install (`copilot plugin install <dir>`), uninstall by the
+/// manifest's `name`. Behind `--yes` (`Support::Flag`) — rtok never writes
+/// `installed-plugins/`, that store is Copilot's, so the flag never turns the printed line
+/// into state (`installed()` reads the marker alone). A failing or missing `copilot` keeps
+/// the offer open instead of failing the install: the settings-file hooks still go in.
+fn plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let a = apply(cfg);
+    let installed = plugin_installed(cfg);
+    if remove {
+        if !installed {
+            return Ok(NO_CHANGES.into());
+        }
+    } else if installed || !a.yes {
+        return Ok(NO_CHANGES.into());
+    }
+    let src = super::plugin_src(PLUGIN_SRC);
+    let shown = if remove {
+        format!("copilot plugin uninstall {NAME}")
+    } else {
+        format!("copilot plugin install {}", src.display())
+    };
+    if a.dry_run {
+        return Ok(if remove {
+            format!("- plugin {NAME} ({shown})")
+        } else {
+            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
+        });
+    }
+    let args: Vec<&str> = if remove {
+        vec!["plugin", "uninstall", NAME]
+    } else {
+        vec!["plugin", "install", src.to_str().unwrap_or_default()]
+    };
+    match copilot_cli(cfg, &args) {
+        Ok(()) => Ok(if remove {
+            format!("- plugin {NAME}")
+        } else {
+            format!("+ plugin {PLUGIN_SRC} → {NAME}")
+        }),
+        Err(e) => Ok(format!(
+            "offer {PLUGIN_SRC} → {shown} (copilot failed: {e})"
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -242,6 +348,73 @@ mod tests {
         assert_eq!(gone, format!("- {}", hooks_path(&c).display()));
         assert!(!hooks_path(&c).exists());
         assert_eq!(run(&c, true).unwrap(), NO_CHANGES);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T116: the offer line names the documented local install and runs nothing without
+    /// `--yes`; the marker alone answers `installed()` (T75) and stills the offer.
+    #[test]
+    fn plugin_offers_the_local_install_behind_yes() {
+        let (mut c, dir) = cfg("offer", true);
+        assert_eq!(plugin(&c, false).unwrap(), NO_CHANGES, "no --yes, no line");
+        c.setup.yes = true;
+        let s = plugin(&c, false).unwrap();
+        assert!(s.contains("plugins/copilot"), "{s}");
+        assert!(s.contains("copilot plugin install"), "{s}");
+        assert!(s.contains("ketch install listepo/rtok"), "{s}");
+        assert!(!plugin_installed(&c));
+        let marker = c
+            .setup
+            .copilot
+            .dir
+            .join("installed-plugins/_direct/x/plugin.json");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        assert!(plugin_installed(&c));
+        assert_eq!(plugin(&c, false).unwrap(), NO_CHANGES);
+        assert_eq!(
+            plugin(&c, true).unwrap(),
+            "- plugin rtok (copilot plugin uninstall rtok)"
+        );
+        fs::write(&marker, r#"{"name":"other"}"#).unwrap();
+        assert!(!plugin_installed(&c), "a foreign manifest is not ours");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// D21: while the plugin serves, its hooks and MCP are the unit — an earlier plain
+    /// install's `hooks/rtok.json` and `mcpServers.rtok` are taken back, never added again.
+    #[test]
+    fn the_plugin_is_the_singleton_over_hooks_and_mcp() {
+        let (mut c, dir) = cfg("single", false);
+        c.setup.yes = true;
+        assert!(run(&c, false).unwrap().starts_with("+ "));
+        assert!(register_mcp(&c).unwrap().starts_with("mcpServers.rtok: "));
+        let marker = c
+            .setup
+            .copilot
+            .dir
+            .join("installed-plugins/_direct/x/plugin.json");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, r#"{"name":"rtok"}"#).unwrap();
+        let lines = Copilot.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("- ") && l.contains("hooks")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.contains(&"- mcpServers.rtok".to_string()),
+            "{lines:?}"
+        );
+        assert!(!hooks_path(&c).exists());
+        assert!(
+            !fs::read_to_string(mcp_path(&c))
+                .unwrap_or_default()
+                .contains("rtok"),
+            "no second rtok mcp"
+        );
+        assert_eq!(Copilot.installed(&c, Kind::Cli), ["plugin"]);
         let _ = fs::remove_dir_all(dir);
     }
 

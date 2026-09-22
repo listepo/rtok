@@ -16,7 +16,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
-| T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
@@ -167,12 +166,6 @@ Extra tests: written and green (`agents::kilo::tests`); the dangling-link one fo
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 
 Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
-
-### T116. Copilot CLI plugin
-
-Copilot CLI plugins bundle hooks and MCP (`plugin.json`); local install is `copilot plugin marketplace add <path>` (https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating). First verify whether Copilot reads the T114 Claude-format marketplace as is; if yes, reuse it (one tree), otherwise a `plugins/copilot` tree with `--host copilot` hook commands. Installer mirrors T115 through the `copilot` CLI; D21 singleton against `mcp-config.json` and `hooks/rtok.json`.
-
-Check: fake `copilot` e2e like T115; `just check` green.
 
 ### T117. VS Code agent plugins
 
