@@ -53,13 +53,12 @@ fn state(home: &Path) -> Option<Value> {
     serde_json::from_str(&fs::read_to_string(home.join("demon/mcp.json")).ok()?).ok()
 }
 
-/// The kernel's answer, not the state file's.
+/// The kernel's answer, not the state file's. `demon.rs` itself asks through
+/// `rtok_sys::process_alive` (Unix `kill -0`, Windows `GetExitCodeProcess`); asking the same
+/// way here — rather than shelling out to a `kill` binary that doesn't exist on Windows —
+/// checks what the supervisor actually reads instead of merely a lookalike.
 fn alive(pid: i64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    rtok_sys::process_alive(pid as i32)
 }
 
 /// Wait for the supervisor to have restarted the service at least `n` times.
@@ -102,10 +101,7 @@ fn status_asks_the_kernel_rather_than_believing_the_state_file() {
     let st = wait_restarts(&h, 1);
     let sup = st["supervisor"].as_i64().unwrap();
     // Kill it the way a machine would — the state file stays, saying "supervisor <pid>".
-    Command::new("kill")
-        .args(["-9", &sup.to_string()])
-        .output()
-        .unwrap();
+    rtok_sys::process_kill(sup as i32);
     for _ in 0..40 {
         if !alive(sup) {
             break;

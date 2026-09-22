@@ -1,5 +1,4 @@
 - T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
-- T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
 - T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
 - T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
 - T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
