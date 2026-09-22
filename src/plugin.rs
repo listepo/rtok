@@ -106,9 +106,11 @@ impl Runtime {
         Self::with_store(config, store, session)
     }
 
-    /// Default config + in-memory store, for tests and examples.
+    /// Default config with every path under a fresh temp dir + in-memory store, for tests and
+    /// examples.
     pub fn in_memory(session: impl Into<String>) -> Result<Self> {
-        Self::with_store(Config::default(), Store::open_in_memory()?, session)
+        let (config, _) = crate::testutil::config("mem");
+        Self::with_store(config, Store::open_in_memory()?, session)
     }
 
     fn with_store(config: Config, store: Store, session: impl Into<String>) -> Result<Self> {

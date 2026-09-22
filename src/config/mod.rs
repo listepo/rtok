@@ -775,10 +775,7 @@ pub struct Config {
 impl Config {
     /// `$RTOK_HOME` or `$HOME/.rtok`.
     pub fn home_dir() -> PathBuf {
-        if let Some(h) = std::env::var_os("RTOK_HOME") {
-            return PathBuf::from(h);
-        }
-        env_user_home().unwrap_or_default().join(".rtok")
+        home_dir_from(std::env::var_os("RTOK_HOME"), env_user_home())
     }
 
     /// `<home>/config.toml`.
@@ -905,7 +902,26 @@ impl Config {
             eprintln!("rtok: core.log_to_db is now log.to_db (using {to_db})");
         }
         self.home = home.to_path_buf();
-        for path in [
+        let user_home = env_user_home();
+        self.expand_paths_with(home, user_home.as_deref());
+    }
+
+    /// Resolve every `~` path under `dir`, `~/.rtok/x` and `~/x` alike. For a config that never
+    /// passes [`Config::finish`] (tests, `Runtime::in_memory`): a literal `~/.rtok/archive`
+    /// resolves against the cwd and grew a `./~` directory in every checkout (T169).
+    pub fn rebase_paths(&mut self, dir: &Path) {
+        self.expand_paths_with(dir, Some(dir));
+    }
+
+    fn expand_paths_with(&mut self, rtok_home: &Path, user_home: Option<&Path>) {
+        for path in self.path_fields_mut() {
+            *path = expand_with(path, rtok_home, user_home);
+        }
+    }
+
+    /// Every path key — the one list `~` expansion walks.
+    fn path_fields_mut(&mut self) -> Vec<&mut PathBuf> {
+        let mut out = vec![
             &mut self.core.db_path,
             &mut self.core.archive_dir,
             &mut self.log.path,
@@ -923,6 +939,8 @@ impl Config {
             &mut self.setup.opencode.config_path,
             &mut self.setup.kilo.config_path,
             &mut self.setup.pi.extensions_path,
+            &mut self.setup.omp.extensions_path,
+            &mut self.setup.omp.mcp_path,
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
             &mut self.setup.grok.config_path,
@@ -937,15 +955,10 @@ impl Config {
             &mut self.plugins.inject.modes_dir,
             &mut self.plugins.wasm.dir,
             &mut self.worktree.root,
-        ] {
-            *path = expand(path, home);
-        }
-        for path in self.bench.configs.values_mut() {
-            *path = expand(path, home);
-        }
-        for path in &mut self.plugins.read.allow_paths {
-            *path = expand(path, home);
-        }
+        ];
+        out.extend(self.bench.configs.values_mut());
+        out.extend(&mut self.plugins.read.allow_paths);
+        out
     }
 
     /// `[plugins.<id>] enabled`. `default_on` is the answer for an id that is not in the
@@ -1052,15 +1065,27 @@ fn nonempty_home(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
     value.filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
-/// `~/.rtok/x` → `<home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` → `$HOME/x`.
-/// Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them literal is how
-/// tests without `finish` used to create a `./~` directory in the repo.
+/// [`Config::home_dir`] from explicit env values. A `~` in `RTOK_HOME` (set from a JSON `env`
+/// block, where no shell expands it) is expanded: left literal, every store path hung off it
+/// resolved against the cwd as `./~/.rtok/…` (T169).
+fn home_dir_from(rtok_home: Option<std::ffi::OsString>, user_home: Option<PathBuf>) -> PathBuf {
+    let default = user_home.clone().unwrap_or_default().join(".rtok");
+    match rtok_home {
+        Some(h) => expand_with(Path::new(&h), &default, user_home.as_deref()),
+        None => default,
+    }
+}
+
+/// [`expand_with`] against the process's own user home.
+#[cfg(test)]
 fn expand(path: &Path, home: &Path) -> PathBuf {
     expand_with(path, home, env_user_home().as_deref())
 }
 
-/// Like [`expand`], but takes an explicit user-home so Windows `USERPROFILE`
-/// fallback can be tested without mutating process env.
+/// `~/.rtok/x` → `<rtok_home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` →
+/// `<user_home>/x`. Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them
+/// literal is how tests without `finish` used to create a `./~` directory in the repo. The
+/// user home is explicit so the Windows `USERPROFILE` fallback is testable without env.
 fn expand_with(path: &Path, rtok_home: &Path, user_home: Option<&Path>) -> PathBuf {
     let raw = path.to_string_lossy();
     if let Some(rest) = strip_rtok_home_prefix(&raw) {
@@ -1113,6 +1138,7 @@ mod tests {
     use super::*;
     use figment::Figment;
     use figment::providers::{Format, Toml};
+    use figment::value::Value;
     use rstest::rstest;
 
     /// Parse a TOML string into a `Config` the same way the layered loader does (T12.2: figment's
@@ -1127,53 +1153,44 @@ mod tests {
         dir
     }
 
-    /// Every `PathBuf` leaf in a finished config — catches a new path key without `expand`.
-    fn path_leaves(cfg: &Config) -> Vec<&PathBuf> {
-        let mut out = vec![
-            &cfg.core.db_path,
-            &cfg.core.archive_dir,
-            &cfg.log.path,
-            &cfg.demon.state_dir,
-            &cfg.stats.transcripts_dir,
-            &cfg.report.out,
-            &cfg.bench.tasks,
-            &cfg.doctor.settings_path,
-            &cfg.doctor.claude_json,
-            &cfg.doctor.mcp_json,
-            &cfg.setup.claude.settings_path,
-            &cfg.setup.cursor.hooks_path,
-            &cfg.setup.codex.config_path,
-            &cfg.setup.opencode.config_path,
-            &cfg.setup.kilo.config_path,
-            &cfg.setup.pi.extensions_path,
-            &cfg.setup.zcode.config_path,
-            &cfg.setup.kimi.config_path,
-            &cfg.setup.copilot.dir,
-            &cfg.setup.aider.config_path,
-            &cfg.setup.windsurf.config_path,
-            &cfg.setup.zed.config_path,
-            &cfg.plugins.cmd.rules,
-            &cfg.plugins.cmd.rules_dir,
-            &cfg.plugins.inject.modes_dir,
-            &cfg.plugins.wasm.dir,
-            &cfg.worktree.root,
-        ];
-        out.extend(cfg.bench.configs.values());
-        out.extend(&cfg.plugins.read.allow_paths);
-        if let Some(path) = &cfg.core.log_file {
-            out.push(path);
+    /// Every string leaf of `cfg` that still starts with `~`, as `key = value`. Walks the
+    /// serialized config, not a hand list, so a path key `finish` forgets fails here (T169).
+    fn tilde_leaves(cfg: &Config) -> Vec<String> {
+        fn walk(v: &Value, key: &str, out: &mut Vec<String>) {
+            match v {
+                Value::String(_, s) if s.starts_with('~') => out.push(format!("{key} = {s}")),
+                Value::Dict(_, d) => d
+                    .iter()
+                    .for_each(|(k, v)| walk(v, &format!("{key}.{k}"), out)),
+                Value::Array(_, a) => a.iter().for_each(|v| walk(v, key, out)),
+                _ => {}
+            }
         }
+        let mut out = Vec::new();
+        walk(&Value::serialize(cfg).unwrap(), "", &mut out);
         out
     }
 
     fn assert_paths_expanded(cfg: &Config) {
-        for path in path_leaves(cfg) {
+        assert_eq!(tilde_leaves(cfg), Vec::<String>::new(), "unexpanded paths");
+    }
+
+    /// T169: configs that skip `finish` (`testutil`, `Runtime::in_memory`) never hand a `~`
+    /// path to the filesystem, where it resolves against the cwd and grows a `./~`.
+    #[test]
+    fn unfinished_configs_never_keep_a_literal_tilde_path() {
+        let dir = tmp("rebase");
+        let rebased = crate::testutil::config_in(&dir);
+        let rt = crate::plugin::Runtime::in_memory("t169").unwrap();
+        for cfg in [&rebased, &rt.config] {
+            assert_paths_expanded(cfg);
             assert!(
-                !path.to_string_lossy().starts_with('~'),
-                "unexpanded path {}",
-                path.display()
+                cfg.core.archive_dir.is_absolute(),
+                "{}",
+                cfg.core.archive_dir.display()
             );
         }
+        assert!(rebased.setup.claude.settings_path.starts_with(&dir));
     }
 
     /// The Check for T12.1: the reference file is the defaults, exactly.
@@ -1466,6 +1483,17 @@ bogus = true
             user_home_from(Some(OsString::from("")), Some(OsString::from(""))),
             None
         );
+    }
+
+    /// T169: a literal `~` in `RTOK_HOME` is expanded, never kept as a relative path.
+    #[rstest]
+    #[case::unset(None, "/Users/me/.rtok")]
+    #[case::absolute(Some("/srv/rtok"), "/srv/rtok")]
+    #[case::rtok_tilde(Some("~/.rtok"), "/Users/me/.rtok")]
+    #[case::other_tilde(Some("~/state/rtok"), "/Users/me/state/rtok")]
+    fn rtok_home_expands_a_literal_tilde(#[case] env: Option<&str>, #[case] want: &str) {
+        let got = home_dir_from(env.map(Into::into), Some(PathBuf::from("/Users/me")));
+        assert_eq!(got, PathBuf::from(want));
     }
 
     #[test]
