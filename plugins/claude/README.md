@@ -30,8 +30,9 @@ Files:
   `./plugins/claude`) by its GitHub shorthand `listepo/rtok`.
 - `hooks/hooks.json` — the installer's nine entries (`claude::ENTRIES`: PreToolUse Bash, Read,
   Skill; PostToolUse `*`; UserPromptSubmit; SessionStart; PreCompact; PostCompact; SessionEnd) →
-  `rtok hook <event>` through `scripts/hook.sh`, `timeout` 5 s. A unit test in
-  `src/agents/claude/mod.rs` keeps them equal.
+  `rtok hook <event>`, `timeout` 5 s. The command execs `rtok` from PATH in Claude Code's own
+  shell and runs `scripts/hook.sh` only when PATH has none: the second shell cost ~6 ms per call
+  (`research.md` §19). A unit test in `src/agents/claude/mod.rs` keeps them equal.
 - `.mcp.json` — `mcpServers.rtok` → `scripts/mcp.sh`.
 - `scripts/hook.sh`, `scripts/mcp.sh` — resolve `rtok` from PATH or the ketch store; a missing
   `rtok` fails the hook open (exit 0) and the MCP loudly (exit 1), both printing
