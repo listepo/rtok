@@ -28,7 +28,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T128 | todo | P1 | 3 | 0% | |
 | T129 | todo | P1 | 3 | 0% | |
 | T130 | todo | P2 | 4 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
@@ -195,10 +194,6 @@ New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hoo
 
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
 
-### T128. `rtok stats`: sub-agent transcripts and the re-read share
-Evidence gate for T130–T132 (`research.md` §17.1). T59.6 measured the `Agent` tool in the parent transcript only; what a sub-agent spends lives in `<session>/subagents/agent-<id>.jsonl` (+ `.meta.json`: `agentType`, `model`) and is attributed to nobody. An ad-hoc scan (2026-09-21) put re-reads at 48 % of sub-agent read bytes; that number is not citable until it is a `rtok stats` row.
-Plan: in `src/measure/` attribute `subagents/agent-*.jsonl` to the parent session (no double count as a session of its own); `Report` gains a `subagents` row next to `agents` (T59.6 `AgentRow`): sub-agent count, tool-result bytes vs parent, file-read bytes, read bytes of a path the parent read, of a path an earlier sibling read, usage tokens; split by `agentType` and `model` from the meta file. Reuse the existing JSONL parser and read-tool detection — no second parser. Fixture test: one parent + two sub-agents with overlapping reads.
-Check: fixture test asserts the three shares; `rtok stats --since 30d --json` has `subagents`; the dated result replaces the ad-hoc table in `research.md` §17.1; `just check` green.
 ### T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
 `research.md` §17.3(1). Hooks fired inside a sub-agent carry the parent's `session_id` plus `agent_id`/`agent_type`; `src/hooks/types.rs` drops both, so `guard::pre_tool` denies a sub-agent's first Read of a file the parent read (`duplicate; rtok expand <id>`) — a body that context never saw, one extra round trip, and a `guard` Measurement row claiming a saving. Complements T122 (MCP side, no caller identity); reuse its context key if it lands one — do not add a second.
 Plan: parse optional `agent_id`/`agent_type` in `src/hooks/types.rs`; failing test first in `src/plugins/guard/mod.rs` (parent reads P, sub-agent reads P → allowed; sub-agent reads P twice → denied; parent again → denied); scope the guard's read-cache key by `agent_id` at the one place the key is built (`cache_key`), so every caller follows. Hosts without the field behave as today.

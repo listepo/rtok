@@ -1,5 +1,11 @@
 # rtok — completed tasks
 
+### T128. `rtok stats`: sub-agent transcripts and the re-read share
+
+Do (2026-09-22): `src/measure/subagents.rs` attributes `<session>/subagents/agent-*.jsonl` to the parent session (sidecar dir = the transcript stem; `agent-<id>.meta.json` `agentType`/`model`/`toolUseId`), reusing `jsonl::parse_path` and `stats::tool_path`/`same_path` — no second parser. `Report.subagents`: sessions with sub-agents and sub-agent count, tool-result bytes vs the parents', native-`Read` result bytes, the two disjoint re-read columns (parent read the path first / an earlier sibling did), the three §17.1 shares (39 % / 13 % / 5.8 % on the dated run), usage tokens, and a `by_type` split per `agentType × model` (spawn order from the meta's `toolUseId` against the parent's `Agent`/`Task` calls). The recursive session walk now skips `subagents/` paths, so a sub-agent transcript is never counted as a session of its own. `research.md` §17.1 carries the dated `rtok stats --since 30d --json` run (2026-09-22: 51 sessions / 531 sub-agents, re-read 4,014,843 B) replacing the ad-hoc table.
+
+Check result (2026-09-22): fixture test `one_parent_and_two_siblings_assert_the_three_shares` asserts all three shares and the parent-first split; `just check` green (`stats_json_is_unchanged_on_a_fixture_store` goldens hold — the row is absent without sub-agents); `--json` carries `subagents` on the real 30-day window.
+
 ### T81. `agents install` read as hung: the plugin question ran under the "updating host" spinner
 
 Creator report 2026-09-21: `rtok agents install claude` (v0.6.2) printed "updating host" twice and then waited forever.
