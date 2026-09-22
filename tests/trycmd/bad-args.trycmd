@@ -1,0 +1,124 @@
+# Bad arguments: a bad value or missing argument on every subcommand (T107)
+
+Clap rejects at parse time (`? 2`, clap message) before any config is loaded; the
+`parse_since` trio below reaches run time (`? 1`) and carries the same isolated
+`HOME`/`RTOK_HOME` as the reading fixtures.
+
+```console
+$ rtok hook
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok mcp --call
+? 2
+error: a value is required for '--call <TOOL>' but none was supplied
+...
+$ rtok proxy --port
+? 2
+error: a value is required for '--port <PORT>' but none was supplied
+...
+$ rtok web --port
+? 2
+error: a value is required for '--port <PORT>' but none was supplied
+...
+$ rtok tui --tick-secs
+? 2
+error: a value is required for '--tick-secs <TICK_SECS>' but none was supplied
+...
+$ rtok stats --plugin
+? 2
+error: a value is required for '--plugin <PLUGIN>' but none was supplied
+...
+$ rtok bench --runs
+? 2
+error: a value is required for '--runs <RUNS>' but none was supplied
+...
+$ rtok doctor --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok worktree add
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok info --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok agents install
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok run --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok filter --cmd
+? 2
+error: a value is required for '--cmd <CMD>' but none was supplied
+...
+$ rtok expand
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok archive rewrite --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok completions nu
+? 2
+error: invalid value 'nu' for '<SHELL>'
+...
+$ rtok man --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok plugins --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok config get
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok memory import
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok graph impact
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok guard check
+? 2
+error: the following required arguments were not provided:
+...
+$ rtok demon start nosuch
+? 2
+error: invalid value 'nosuch' for '[SERVICE]...'
+...
+$ rtok otel flush --config
+? 2
+error: a value is required for '--config <PATH>' but none was supplied
+...
+$ rtok logs --lines
+? 2
+error: a value is required for '--lines <LINES>' but none was supplied
+...
+$ rtok report --format json
+? 2
+error: invalid value 'json' for '--format <FORMAT>'
+...
+
+$ HOME=target/tmp/t107-since RTOK_HOME=target/tmp/t107-since rtok stats --since 5x
+? 1
+Error: bad --since unit in 5x
+...
+$ HOME=target/tmp/t107-since RTOK_HOME=target/tmp/t107-since rtok stats --since=-1d
+? 1
+Error: bad --since -1d
+...
+$ HOME=target/tmp/t107-since RTOK_HOME=target/tmp/t107-since rtok stats --since ''
+? 1
+Error: bad --since [..]
+```

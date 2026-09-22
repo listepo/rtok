@@ -11,7 +11,6 @@
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 - T100. `rtok agents install grok` and the Read path under Grok
 - T102. Lossless round-trip for every plugin that shortens
-- T107. CLI bad-argument fixtures
 - T116. Copilot CLI plugin
 - T117. VS Code agent plugins
 - T118. Gemini CLI host with an extension

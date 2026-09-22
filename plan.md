@@ -19,7 +19,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T100 | todo | P1 | 3 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
@@ -195,12 +194,6 @@ Check: unit tests for offer, detection and singleton; `agents_doc` blessed; `jus
 Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
-
-### T107. CLI bad-argument fixtures
-
-`tests/trycmd/` pins help and happy output. Add fixtures for a bad value or missing argument on each subcommand (exit 2, clap message) and for `parse_since` rejects (`--since 5x`, `--since -1d`, empty).
-
-Check: one fixture per subcommand; `just test` green.
 
 ### T116. Copilot CLI plugin
 
