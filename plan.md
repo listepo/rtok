@@ -47,7 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T140 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
@@ -324,14 +323,6 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
-
-### T155. Ship the `worktrees` skill with rtok
-
-Depends on T152, T153 and T158. The conventions (one location, `<repo>-<task-id>`, lock reason as owner, clean caches when idle, never `rm -rf`, never touch another owner's worktree) exist as a creator-local skill with a shell script since 2026-09-22. A skill costs one description line per session instead of `AGENTS.md` budget, and the `SKILL.md` format is read by Claude Code, Cursor and Codex.
-
-Plan: `skills/worktrees/SKILL.md` next to `skills/rtok/`, English, with the script replaced by `rtok worktree add|list|clean|gc`, so the skill carries no git command of its own for the normal path. On Claude Code the hooks (T159) make creation and removal automatic and the skill only explains them. Offer it through `rtok agents install <host>` wherever `skills/rtok` is offered today; re-verify each touched host's `## Docs` links; regenerate the host table (`tests/agents_doc.rs`, `RTOK_BLESS=1`) if a surface changes. If `rtok` is missing the skill says to install it with ketch (`ketch install listepo/rtok`) and falls back to plain git commands.
-
-Check: host matrix e2e — install offers the skill and removal takes it away; `tests/host_docs.rs` and `tests/agents_doc.rs` green; the skill text contains no command that `rtok worktree --help` does not list (test greps it); `just check`.
 
 ### T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
 

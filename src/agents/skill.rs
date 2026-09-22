@@ -1,4 +1,5 @@
-//! T71.3: install `skills/rtok/` into each host's documented skill root (`research.md` §10.1).
+//! T71.3 / T155: install the skills this repo ships (`skills/<name>/`) into each host's
+//! documented skill root (`research.md` §10.1).
 
 use std::path::PathBuf;
 
@@ -9,46 +10,66 @@ use crate::config::Config;
 
 use super::{apply, home_dir, skill_src};
 
+/// Skills this repo ships under `skills/`, installed and removed together.
+pub const SKILLS: &[&str] = &["rtok", "worktrees"];
+
 /// User skill root for a host that documents the Agent Skills format; `None` = untouched.
-pub fn dest(host: &str, cfg: &Config) -> Option<PathBuf> {
+pub fn root(host: &str, cfg: &Config) -> Option<PathBuf> {
     let home = home_dir();
     match host {
-        "claude" => Some(home.join(".claude/skills/rtok")),
-        "cursor" => Some(home.join(".cursor/skills/rtok")),
-        "codex" => Some(home.join(".codex/skills/rtok")),
+        "claude" => Some(home.join(".claude/skills")),
+        "cursor" => Some(home.join(".cursor/skills")),
+        "codex" => Some(home.join(".codex/skills")),
         "opencode" => cfg
             .setup
             .opencode
             .config_path
             .parent()
-            .map(|p| p.join("skills/rtok")),
-        "copilot" => Some(cfg.setup.copilot.dir.join("skills/rtok")),
+            .map(|p| p.join("skills")),
+        "copilot" => Some(cfg.setup.copilot.dir.join("skills")),
         _ => None,
     }
+}
+
+/// Where `skills/<name>` lands for `host`.
+pub fn dest(host: &str, cfg: &Config, name: &str) -> Option<PathBuf> {
+    root(host, cfg).map(|r| r.join(name))
 }
 
 fn label(host: &str) -> Option<&'static str> {
     match host {
-        "claude" => Some("~/.claude/skills/rtok"),
-        "cursor" => Some("~/.cursor/skills/rtok"),
-        "codex" => Some("~/.codex/skills/rtok"),
-        "opencode" => Some("~/.config/opencode/skills/rtok"),
-        "copilot" => Some("~/.copilot/skills/rtok"),
+        "claude" => Some("~/.claude/skills"),
+        "cursor" => Some("~/.cursor/skills"),
+        "codex" => Some("~/.codex/skills"),
+        "opencode" => Some("~/.config/opencode/skills"),
+        "copilot" => Some("~/.copilot/skills"),
         _ => None,
     }
 }
 
-/// Copy or remove the hub skill for `host` (one report line).
+/// Copy or remove every shipped skill for `host`: one report line per skill that changes,
+/// [`NO_CHANGES`] when none does.
 pub fn sync(host: &str, cfg: &Config, remove: bool) -> Result<String> {
-    let Some(dest) = dest(host, cfg) else {
+    let Some(root) = root(host, cfg) else {
         return Ok(NO_CHANGES.into());
     };
-    SkillCopy {
-        src: skill_src(),
-        dest,
-        label: label(host),
+    let mut lines = Vec::new();
+    for name in SKILLS {
+        let line = SkillCopy {
+            src: skill_src(name),
+            dest: root.join(name),
+            label: label(host).map(|l| format!("{l}/{name}")),
+        }
+        .run(&apply(cfg), remove)?;
+        if line != NO_CHANGES {
+            lines.push(line);
+        }
     }
-    .run(&apply(cfg), remove)
+    Ok(if lines.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        lines.join("\n")
+    })
 }
 
 #[cfg(test)]
@@ -137,32 +158,42 @@ mod tests {
         for id in HOSTS {
             match *id {
                 "claude" | "cursor" | "codex" | "opencode" | "copilot" => {
-                    assert!(dest(id, &cfg).is_some(), "{id} has a §10.1 skill root");
+                    assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
+                    assert!(label(id).is_some(), "{id} root has a label");
                 }
-                _ => assert!(dest(id, &cfg).is_none(), "{id} has no skill format"),
+                _ => assert!(root(id, &cfg).is_none(), "{id} has no skill format"),
             }
         }
-        assert!(dest("gemini", &cfg).is_none(), "no gemini host installer");
-        assert!(
-            dest("claude", &cfg)
-                .unwrap()
-                .ends_with(".claude/skills/rtok")
-        );
-        assert!(
-            dest("cursor", &cfg)
-                .unwrap()
-                .ends_with(".cursor/skills/rtok")
-        );
-        assert!(dest("codex", &cfg).unwrap().ends_with(".codex/skills/rtok"));
-        assert!(
-            dest("opencode", &cfg)
-                .unwrap()
-                .ends_with("opencode/skills/rtok")
-        );
-        assert!(
-            dest("copilot", &cfg)
-                .unwrap()
-                .ends_with(".copilot/skills/rtok")
-        );
+        assert!(root("gemini", &cfg).is_none(), "no gemini host installer");
+        for (host, tail) in [
+            ("claude", ".claude/skills"),
+            ("cursor", ".cursor/skills"),
+            ("codex", ".codex/skills"),
+            ("opencode", "opencode/skills"),
+            ("copilot", ".copilot/skills"),
+        ] {
+            assert!(root(host, &cfg).unwrap().ends_with(tail), "{host} root");
+            for name in SKILLS {
+                let dest = dest(host, &cfg, name).unwrap();
+                assert!(
+                    dest.ends_with(format!("{tail}/{name}")),
+                    "{host} {name} → {}",
+                    dest.display()
+                );
+            }
+        }
+    }
+
+    /// T155: every shipped skill has a hub directory to copy from, and a `SKILL.md` in it.
+    #[test]
+    fn every_shipped_skill_exists_in_the_hub() {
+        for name in SKILLS {
+            let src = skill_src(name);
+            assert!(
+                src.join("SKILL.md").is_file(),
+                "{name}: {} has no SKILL.md",
+                src.display()
+            );
+        }
     }
 }
