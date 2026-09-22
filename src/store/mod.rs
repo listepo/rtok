@@ -53,6 +53,36 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
+    wait: LockWait,
+}
+
+/// How long one connection waits on another process's lock (T178).
+#[derive(Debug, Clone, Copy)]
+pub struct LockWait {
+    /// `busy_timeout` for every statement.
+    pub busy: std::time::Duration,
+    /// Fresh connections tried when the WAL switch returns "database is locked".
+    pub attempts: u32,
+    /// `busy_timeout` while migrations run.
+    pub migrate: std::time::Duration,
+}
+
+impl LockWait {
+    /// Every surface but the hook: 1 s per statement, 10 connects, 30 s for a migration run.
+    pub const STEADY: Self = Self {
+        busy: std::time::Duration::from_secs(1),
+        attempts: 10,
+        migrate: std::time::Duration::from_secs(30),
+    };
+}
+
+/// A statement gave up on another process's lock after its `busy_timeout`.
+pub fn is_locked(e: &anyhow::Error) -> bool {
+    format!("{e:#}").contains("database is locked")
+}
+
+fn set_busy(conn: &mut SqliteConnection, busy: std::time::Duration) -> Result<()> {
+    Ok(conn.batch_execute(&format!("PRAGMA busy_timeout = {};", busy.as_millis()))?)
 }
 
 /// One row of [`Store::sessions_by_cwd`].
@@ -80,6 +110,11 @@ pub(crate) fn fts_phrase_query(query: &str) -> Option<String> {
 impl Store {
     /// Open (creating directories and the file as needed) and migrate.
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_with(path, LockWait::STEADY)
+    }
+
+    /// [`Store::open`] with its own bound on waiting for other processes' locks.
+    pub fn open_with(path: &Path, wait: LockWait) -> Result<Self> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -89,10 +124,11 @@ impl Store {
         // "database is locked" straight away — SQLite does not always run the busy
         // handler for a journal-mode change. Retry with a fresh connection instead of
         // failing the open.
-        for attempt in 0..10 {
-            match Self::connect(url) {
+        let attempts = wait.attempts.max(1);
+        for attempt in 0..attempts {
+            match Self::connect(url, wait) {
                 Ok(store) => return Ok(store),
-                Err(e) if format!("{e:#}").contains("database is locked") && attempt + 1 < 10 => {
+                Err(e) if is_locked(&e) && attempt + 1 < attempts => {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(e) => return Err(e.context(path.display().to_string())),
@@ -101,27 +137,27 @@ impl Store {
         unreachable!("open: the retry loop always returns")
     }
 
-    fn connect(url: &str) -> Result<Self> {
+    fn connect(url: &str, wait: LockWait) -> Result<Self> {
         let mut conn = SqliteConnection::establish(url)?;
         // Hooks, the MCP server, the proxy and the detached `otel flush` child all write this one
         // file. SQLite's default busy timeout is 0, so a second writer failed at once with
         // "database is locked" instead of waiting the few ms the first one holds the lock. First,
-        // so switching to WAL waits too; 1 s bounds how long a hook can wait before it fails open.
-        conn.batch_execute(
-            "PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
-        )?;
-        Self::init(conn)
+        // so switching to WAL waits too; `wait.busy` bounds each statement's wait.
+        set_busy(&mut conn, wait.busy)?;
+        conn.batch_execute("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        Self::init(conn, wait)
     }
 
     /// Fresh in-memory store for tests and examples.
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(SqliteConnection::establish(":memory:")?)
+        Self::init(SqliteConnection::establish(":memory:")?, LockWait::STEADY)
     }
 
-    fn init(mut conn: SqliteConnection) -> Result<Self> {
+    fn init(mut conn: SqliteConnection, wait: LockWait) -> Result<Self> {
         conn.batch_execute("PRAGMA foreign_keys = ON;")?;
         let store = Self {
             conn: Mutex::new(conn),
+            wait,
         };
         store.migrate()?;
         Ok(store)
@@ -157,9 +193,10 @@ impl Store {
         }
         // Only a fresh or upgraded store reaches here, and everything else opening it in the
         // same moment queues behind this one transaction. `open`'s 1 s is the steady-state
-        // bound for a hook; one migration run plus that queue outlives it, and the losers
-        // came back "database is locked". Restored below, so the bound still holds after.
-        conn.batch_execute("PRAGMA busy_timeout = 30000;")?;
+        // bound; one migration run plus that queue outlives it, and the losers came back
+        // "database is locked". Restored below, so the bound still holds after. The hook
+        // keeps its few ms here too and fails open instead (T178).
+        set_busy(&mut conn, self.wait.migrate)?;
         let applied = conn.exclusive_transaction::<_, anyhow::Error, _>(|conn| {
             let mut applied = 0;
             for (name, sql) in MIGRATIONS {
@@ -179,7 +216,7 @@ impl Store {
             }
             Ok(applied)
         });
-        conn.batch_execute("PRAGMA busy_timeout = 1000;")?;
+        set_busy(&mut conn, self.wait.busy)?;
         applied
     }
 
@@ -1793,7 +1830,7 @@ impl Store {
                     .collect::<Vec<_>>(),
             ))
         });
-        conn.batch_execute("PRAGMA busy_timeout = 1000;")?;
+        set_busy(&mut conn, self.wait.busy)?;
         let paths = purged?;
         for path in paths.1 {
             let _ = std::fs::remove_file(path);
