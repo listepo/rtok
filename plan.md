@@ -52,6 +52,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
+| T163 | todo | P2 | 5 | 0% | |
 | T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
@@ -419,7 +420,7 @@ Check: hook fixture tests with T156's recorded payloads — create returns a pat
 
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
-Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 104 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2 (`symbols.rs`'s 15 are done — T163.1). Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`; creator approved wiring it into rtok on 2026-09-23). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
 
 Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
 
@@ -434,6 +435,7 @@ First slice of T163: the 15 `sql_query` sites in `symbols.rs` (`symbol_stale`, `
 Execution plan: (1) map each site to its `schema.rs` table and add missing `table!` entries; (2) rewrite site by site, keeping function signatures and result order; (3) run the store and symbol tests unchanged; (4) move this card to `done.md`.
 
 Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` finds nothing; store and symbol tests unchanged and green; `just check`.
+**Split (2026-09-23).** T163.1 (`symbols.rs`, done — see `done.md`) created the shared `src/store/sql_ext.rs` extension module. T163.2 takes `otel.rs` and `embed.rs`, reusing it. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
 
 ### T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
 

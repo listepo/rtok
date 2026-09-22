@@ -4,6 +4,8 @@ pub mod embed;
 pub mod models;
 pub mod otel;
 pub mod schema;
+// T163: shared Diesel extension for SQL the DSL cannot express (recursive CTEs, FTS5).
+mod sql_ext;
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
 

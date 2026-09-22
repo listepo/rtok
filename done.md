@@ -5185,4 +5185,12 @@ Split into three stacked PRs to stay within ≤200 LOC/≤10 files each: PR #207
 Check result: `mise exec -- pytest tools/tests` — 11 passed (registry vs every `plugins/` dir, `verify_local` against the real `.claude-plugin/marketplace.json`/`.agents/plugins/marketplace.json` plus one synthetic failure case, unknown/unsupported-host refusal, dry-run fires nothing, `trigger` builds the exact `gh workflow run`/`gh run list` commands against a fake runner). The `marketplace.yml` verify step was run locally as the same `python3 -c` one-liner against both real catalogs and printed `claude: ok`/`codex: ok`. CI status and PR URLs reported separately once pushed.
 
 Status: done 2026-09-23
+### T163.1. `src/store/symbols.rs` without raw SQL
+
+First slice of T163: the 15 `sql_query` sites in `symbols.rs` (`symbol_stale`, `extractor`, symbol lookups) moved to the Diesel DSL over `schema.rs` — `INSERT OR IGNORE` as `insert_or_ignore_into`, upserts via `on_conflict`, self-joins via `diesel::alias!`, and correlated subqueries/anti-joins via `.single_value()`/`exists()`/`not()`. `schema.rs` gained `extractor` and `symbol_stale` `table!` entries (both existed only as raw SQL before). Two shapes the typed DSL cannot express landed in the new `src/store/sql_ext.rs` — a hand-written `QueryFragment` bound through the public `AstPass::push_bind_param`, never `sql_query`/`sql::<>`/`batch_execute`: the two `WITH RECURSIVE` walks (`symbol_impact`, `symbol_paths`), and `symbol_callees`'s self-join `GROUP BY` — Diesel's `alias!` self-join fields (`AliasedField`) have no `IsContainedInGroupBy` bridge in diesel 2.3.13, only `ValidGrouping<()>` (i.e. no `GROUP BY` at all), so a self-join `GROUP BY` across two aliases has no DSL form to fall back to.
+
+Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` finds nothing; store and symbol tests unchanged and green; `just check`.
+
+Status: done 2026-09-23
+Check result: `grep -cE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` 15 → 0. `cargo nextest run --lib store::` 42/42 pass, including `schema_rs_matches_the_migrated_tables` (T104 drift guard, now covering the two new tables) and both `symbols::tests::top_refs_*`. `cargo nextest run --test graph_truth --test graph_contract --test graph_lsp_gate` 14/14 pass byte-exact, exercising `symbol_impact`/`symbol_paths`/`symbol_callees`/`symbol_import_follow` through the `graph` plugin's `explore`/`impact`/`callers`/`callees` CLI paths.
 Model: Claude Code / claude-sonnet-5
