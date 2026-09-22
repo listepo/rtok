@@ -3,8 +3,11 @@
 pub mod export;
 pub mod handoff;
 pub mod import;
+mod project;
 pub mod status;
 pub mod sync;
+
+pub use project::project_name;
 
 use rtok_plugin_sdk::{
     Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PromptSubmit,
@@ -66,19 +69,6 @@ impl Plugin for Memory {
             return Some(inj);
         }
         prompt_recall(ev, cx)
-    }
-}
-
-/// Git directory name of `cwd`, if any.
-pub fn project_name(cwd: &std::path::Path) -> Option<String> {
-    let mut p = cwd.to_path_buf();
-    loop {
-        if p.join(".git").exists() {
-            return p.file_name().map(|s| s.to_string_lossy().into_owned());
-        }
-        if !p.pop() {
-            return None;
-        }
     }
 }
 
@@ -562,6 +552,31 @@ mod tests {
         let inj = recall(&Ctx::new(&cx)).unwrap();
         assert!(inj.text.contains("cwd-note"), "{}", inj.text);
         assert!(!inj.text.contains("other-note"), "{}", inj.text);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T133: a note remembered from a linked worktree recalls from the main checkout —
+    /// the layout git writes (`.git` file, `commondir`), no git binary needed.
+    #[test]
+    fn note_saved_from_a_worktree_recalls_from_the_main_checkout() {
+        use rtok_plugin_sdk::PromptSubmit;
+        let dir = crate::testutil::tmp_dir("t133-recall");
+        let (main, wt) = (dir.join("repo"), dir.join("wt").join("repo-t1"));
+        let admin = main.join(".git").join("worktrees").join("repo-t1");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+        let mut cx = crate::plugin::Runtime::in_memory("t133-recall").unwrap();
+        cx.cwd = Some(wt.to_string_lossy().into_owned());
+        let ev = PromptSubmit {
+            prompt: "remember: worktree note",
+        };
+        Memory.prompt_submit(&ev, &Ctx::new(&cx)).unwrap();
+        cx.cwd = Some(main.to_string_lossy().into_owned());
+        let inj = recall(&Ctx::new(&cx)).unwrap();
+        assert!(inj.text.contains("worktree note"), "{}", inj.text);
+        assert_eq!(project_name(&wt).as_deref(), Some("repo"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

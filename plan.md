@@ -38,7 +38,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T130 | todo | P2 | 4 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
-| T133 | todo | P1 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
 | T135 | todo | P2 | 3 | 0% | |
 | T136 | todo | P2 | 3 | 0% | |
@@ -255,10 +254,6 @@ Check: fixture with one briefed and one plain sub-agent asserts the split; after
 ### T132. Ship a Haiku scout agent definition with the Claude Code plugin
 `research.md` §17.3(4). Make the cheap path the default one: `plugins/claude/agents/rtok-scout.md` with `model: haiku`, `tools` limited to the rtok MCP `read`, `search`, `outline`, `explore`, `expand`, and a short system prompt — ranged reads only, never a whole file over the outline threshold, answer with `path:line` citations and no file dumps. Verify the plugin `agents/` directory format against the current Claude Code docs first and add the link to the `## Docs` list in `plugins/claude/README.md`.
 Check: `rtok agents install claude` offers the agent file and removal takes it away (host matrix e2e); `tests/host_docs.rs` and `tests/agents_doc.rs` (`RTOK_BLESS=1`) green; T128's per-`agentType` split is the measurement — record `rtok-scout` vs `Explore`/`general-purpose` read bytes per sub-agent in `research.md` §17 after a dated window.
-### T133. Project identity survives git worktrees
-From I-58; its blocker ("parked until a second checkout is the workflow") has cleared: D16 is one branch per task, and on 2026-09-21 this repo had 18 worktrees. `memory::project_name` (`src/plugins/memory/mod.rs`) returns the basename of the first directory with a `.git` entry, so a worktree `rtok-wt-t128` is its own project: notes saved there are orphaned, SessionStart recall and the T71.2 `session:<project>` handoff find nothing, and `memory/sync.rs` exports under the wrong name.
-Plan: resolve identity without spawning git (hook ≤ 10 ms): `.git` file → `gitdir:` → `commondir` → the main repository; name = normalised `origin` repo name from its `config`, fallback = basename of the main checkout. One function, the existing callers (`mod.rs`, `sync.rs`) unchanged. A standard clone whose directory is named after the repo keeps its notes; record the rename case in the card before writing a migration — do not write one without a measured need.
-Check: `Vfs` test — main checkout and a linked worktree resolve to one project; plain directory → `None`; no `origin` → basename of the main checkout; a note saved from the worktree fixture is recalled from the main one; `just check` green.
 ### T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 Gate for I-91 (`research.md` §17.2). The Agent SDK hooks page says `updatedToolOutput` "works for any tool"; rtok's standing rule says PostToolUse can only add context. If the CLI honours it, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied — that changes the design of `cmd`, `read` and `guard`, so it is a creator decision, not a silent change. No product code in this task.
 Plan: throwaway hook script (scratch, not committed) returning `hookSpecificOutput.updatedToolOutput` for `Read` and `Bash` on the current Claude Code; run one Read and one Bash; check what the model received in the transcript. Repeat for an MCP tool.
@@ -275,7 +270,6 @@ Check: fixture test; dated `rtok stats --since 30d` row in `research.md` §2. Re
 Gate for a multimodal token gate (`research.md` §16.3 #9). Screenshots from browser and simulator tools enter the live zone as image blocks; rtok measures bytes of text only, so their share is unknown.
 Plan: count `image` content blocks in tool results and user messages per tool; bytes; pixel size from the PNG `IHDR` / JPEG `SOF` header (fixed-offset parse, no new dependency); estimated tokens by the provider's published formula, cited in the code comment and in the row.
 Check: fixture with one PNG and one JPEG block; dated row in `research.md` §2. Under 5 % of input tokens → closes with the number; above → a card for downscale-or-OCR goes to the creator.
-
 ### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
 `research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
