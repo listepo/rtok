@@ -177,11 +177,13 @@ impl HookInput {
         }
     }
 
-    /// Gemini CLI (https://geminicli.com/docs/hooks/reference/, fetched 2026-09-22) already
-    /// speaks Claude's field names on the base envelope (`session_id`, `cwd`, `tool_name`,
-    /// `tool_input`, `prompt`, `trigger`) — only the event names and `tool_response` shape
-    /// differ (see `gemini_event`). `tool_response` is `{llmContent, returnDisplay, error}`;
-    /// `llmContent` is aliased to `stdout` so plugins keyed on Claude's flat shape still work.
+    /// Gemini CLI (https://geminicli.com/docs/hooks/reference/, fetched 2026-09-22) speaks
+    /// Claude's field names already (`tool_input`, `prompt`, `trigger`) and its tools' own
+    /// path/command keys match Claude's too (verified against gemini-cli's tool source:
+    /// `read_file`/`write_file`/`replace` use `file_path`, `run_shell_command` uses `command`)
+    /// — only event and tool *names* need mapping (`gemini_event`/`canonical_tool_name`).
+    /// `tool_response` is `{llmContent, returnDisplay, error}`; `llmContent` aliases to
+    /// `stdout` for plugins keyed on Claude's flat shape.
     pub fn adapt_gemini(&mut self, event: &str) {
         let name = if self.hook_event_name.is_empty() {
             event
@@ -189,6 +191,9 @@ impl HookInput {
             self.hook_event_name.as_str()
         };
         self.hook_event_name = gemini_event(name).to_string();
+        if let Some(t) = self.tool_name.take() {
+            self.tool_name = Some(canonical_tool_name(&t));
+        }
         if let Some(Value::Object(resp)) = self.tool_response.as_mut()
             && !resp.contains_key("stdout")
             && let Some(content) = resp.get("llmContent").filter(|v| v.is_string()).cloned()
@@ -354,9 +359,9 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
         "Read".into()
-    } else if l == "edit" {
+    } else if l == "edit" || l == "replace" {
         "Edit".into()
-    } else if l == "write" {
+    } else if l == "write" || l == "write_file" {
         "Write".into()
     } else {
         name.to_string()
@@ -704,7 +709,7 @@ mod tests {
 
     /// Payloads as https://geminicli.com/docs/hooks/reference/ gives them.
     #[test]
-    fn gemini_before_after_tool_map_and_alias_llm_content_to_stdout() {
+    fn gemini_before_after_tool_map_event_tool_name_and_alias_llm_content_to_stdout() {
         let mut pre: HookInput = serde_json::from_value(serde_json::json!({
             "session_id": "g-1",
             "hook_event_name": "BeforeTool",
@@ -715,6 +720,7 @@ mod tests {
         .unwrap();
         pre.adapt_gemini("BeforeTool");
         assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
         assert!(pre.pre_tool().is_some());
 
         let mut post: HookInput = serde_json::from_value(serde_json::json!({
@@ -727,9 +733,23 @@ mod tests {
         .unwrap();
         post.adapt_gemini("AfterTool");
         assert_eq!(post.hook_event_name, "PostToolUse");
+        assert_eq!(post.tool_name.as_deref(), Some("Bash"));
         assert_eq!(post.tool_response.as_ref().unwrap()["stdout"], "a\nb\n");
         assert_eq!(post.tool_response.as_ref().unwrap()["llmContent"], "a\nb\n");
         assert!(post.post_tool().is_some());
+
+        let mut read: HookInput = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "BeforeTool",
+            "tool_name": "read_file",
+            "tool_input": {"file_path": "/p.rs"}
+        }))
+        .unwrap();
+        read.adapt_gemini("BeforeTool");
+        assert_eq!(read.tool_name.as_deref(), Some("Read"));
+        assert!(read.pre_tool().is_some());
+
+        assert_eq!(canonical_tool_name("write_file"), "Write");
+        assert_eq!(canonical_tool_name("replace"), "Edit");
     }
 
     #[test]
