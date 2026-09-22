@@ -77,7 +77,7 @@ impl Agent for Kimi {
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
             "hooks" | "mcp" => Support::Yes,
-            "plugin" => Support::Flag("--yes"),
+            "plugin" => Support::Offer("--yes"),
             "proxy" => Support::No(
                 "Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them",
             ),
@@ -110,10 +110,7 @@ impl Agent for Kimi {
         if super::read(&mcp_path(cfg)).contains("\"rtok\"") {
             out.push("mcp");
         }
-        if plugin_detected(cfg) || cfg.setup.yes {
-            // The offer is guidance, not state rtok owns: `--yes` accepts the
-            // question it asks, so `plugin` reads back once accepted (like every
-            // other flag module). Without the flag it stays declined, unreported.
+        if plugin_detected(cfg) {
             out.push("plugin");
         }
         out
@@ -121,21 +118,33 @@ impl Agent for Kimi {
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![offer_plugin(cfg, remove)?];
         if remove {
+            let mut lines = vec![offer_plugin(cfg, true)?];
             lines.push(run(cfg, true)?);
             lines.push(unregister_mcp(cfg)?);
-        } else if plugin_detected(cfg) {
+            return Ok(lines);
+        }
+        if plugin_detected(cfg) {
             // D21 singleton: the plugin serves hooks and MCP, so rtok's own
             // tables go instead of coming (Cursor's `plugin_is_mcp` rule,
             // for hooks too).
+            let mut lines = vec![offer_plugin(cfg, false)?];
             lines.push(run(cfg, true)?);
             lines.push(unregister_mcp(cfg)?);
+            return Ok(lines);
+        }
+        // Plain path: hooks + MCP lines first. The offer line follows only when
+        // something else changed and `--yes` is set — a repeat install is all
+        // `NO_CHANGES` and reads back as `already installed` (every line counts,
+        // including guidance).
+        let mut lines = vec![run(cfg, false)?];
+        if cfg.setup.mcp {
+            lines.push(register_mcp(cfg)?);
+        }
+        if lines.iter().any(|l| l != NO_CHANGES) && cfg.setup.yes {
+            lines.insert(0, offer_plugin(cfg, false)?);
         } else {
-            lines.push(run(cfg, false)?);
-            if cfg.setup.mcp {
-                lines.push(register_mcp(cfg)?);
-            }
+            lines.insert(0, NO_CHANGES.into());
         }
         Ok(lines)
     }
@@ -166,8 +175,8 @@ pub fn plugin_detected(cfg: &Config) -> bool {
 /// `--yes` only, on dry-run and apply alike; rtok never writes `plugins/managed/`
 /// or `installed.json` — that format is Kimi's and undocumented.
 /// On remove the managed copy is left alone with its own remove line.
-/// Gating on the flag keeps `expected()` honest: without `--yes` the offer stays
-/// declined (`NO_CHANGES`), so no `did not read back` warning fires.
+/// Gating on the flag matches `Support::Offer("--yes")`; the flag never turns
+/// the printed line into state (`installed()` reads the marker alone).
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
     let a = apply(cfg);
     if a.dry_run {
@@ -512,17 +521,19 @@ mod tests {
     /// T86 D21 singleton: with a seeded `managed/rtok/kimi.plugin.json` a second
     /// install removes the nine tables and `mcpServers.rtok` and reports `plugin`;
     /// remove leaves the managed copy alone with its own remove line.
-    /// (`--yes` accepted: the `Flag("--yes")` offer reads back as installed,
-    /// like every other flag module.)
     #[test]
     fn plugin_detected_strips_own_tables_and_reports_plugin() {
         let (mut c, dir) = cfg("singleton", false);
         c.setup.yes = true;
-        // Plain install first: hooks + MCP land in the user files (`plugin`
-        // reads back too — the flag accepted the offer).
+        // Plain install first: hooks + MCP land in the user files; the `--yes`
+        // offer prints alongside the changing run.
         let first = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
-        assert_eq!(Kimi.installed(&c, Kind::Cli), ["hooks", "mcp", "plugin"]);
+        assert_eq!(Kimi.installed(&c, Kind::Cli), ["hooks", "mcp"]);
         assert!(first[0].contains("/plugins install"), "{first:?}");
+        // A repeat install changes nothing: every line is NO_CHANGES, so the
+        // matrix reads it back as `already installed`.
+        let repeat = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert!(repeat.iter().all(|l| l == NO_CHANGES), "{repeat:?}");
         // Kimi installs the plugin: seed the managed copy it would write.
         let marker = plugin_marker(&c);
         fs::create_dir_all(marker.parent().unwrap()).unwrap();
