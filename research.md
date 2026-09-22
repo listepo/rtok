@@ -1375,3 +1375,53 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
 2. The always-safe operation is "delete tagged caches, keep the worktree"; `git worktree remove` cannot express it (it refuses the whole worktree when anything is uncommitted) → T152.
 3. Inventory first, then deletion: T150 → T151 → T152/T153. Conventions ship as a skill so they cost one description line, not `AGENTS.md` budget → T155.
 4. Every measured problem starts at creation (location, name, reason-less lock), and creation is the only moment the owner is known for certain. rtok creates the worktree itself → T158. A skill is advice; on Claude Code the `WorktreeCreate`/`WorktreeRemove` hooks are the one place the rules cannot be skipped, at the price of a decision on what fail-open and the 10 ms budget mean for a hook that must spawn git → T159.
+
+## 19. Hook wall-clock time as Claude Code sees it (2026-09-23)
+
+T178. Machine: the creator's Mac (Apple silicon, macOS, `/bin/sh` → bash), shared with other agents' cargo builds, so every run states its load average. Release build of `68760c6` (`target/release/rtok`, 26,831,904 bytes). All runs use an isolated `RTOK_HOME` and two payloads recorded in the store (a 968-byte `PreToolUse` Bash call and a 2,692-byte `PostToolUse` Bash call, `cwd` rewritten to the worktree). Not a token saving: no `Measurement` row follows.
+
+### 19.1 What Claude Code records
+
+Claude Code writes every hook run into the session transcript as an `attachment` (`hook_success`, `hook_cancelled`, `hook_non_blocking_error`) with `durationMs` and `command`. Command: `find ~/.claude/projects -name '*.jsonl' -mtime -3 | xargs cat | jq 'select(.type=="attachment") | .attachment | select(.durationMs!=null)'`, grouped by `command`.
+
+| `command` | runs | p10 | p50 | p95 |
+| --- | ---: | ---: | ---: | ---: |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PreToolUse` (plugin) | 5,997 | 18 ms | 23 ms | 71 ms |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PostToolUse` (plugin) | 7,976 | 18 ms | 20 ms | 52 ms |
+| `rtok hook PreToolUse` (settings-file install) | 3,246 | 14 ms | 17 ms | 78 ms |
+| `rtok hook PostToolUse` (settings-file install) | 4,566 | 13 ms | 16 ms | 80 ms |
+| another vendor's `/bin/sh` hook (reads stdin, prints `{}`, may POST to a local port) | 11,699 | 13 ms | 19 ms | 53 ms |
+
+### 19.2 Reproducing it: node `spawn(cmd, {shell: true})`, payload on stdin, clock stops on `close`
+
+A 30-line node harness spawns each command the way Claude Code does, round-robin so load drift hits every command equally. 300 rounds, load average 12.6 → 21.6:
+
+| command | p50 | p95 | delta |
+| --- | ---: | ---: | --- |
+| `true` | 5.19 ms | 7.27 ms | node + `/bin/sh` floor |
+| `rtok --version` | 10.81 ms | 13.59 ms | +5.6 ms: loading the 27 MB binary, clap |
+| `rtok hook PreToolUse` | 13.61 ms | 19.63 ms | +2.8 ms: the hook itself |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PreToolUse` (shipped) | 20.01 ms | 24.88 ms | +6.4 ms: the launcher |
+
+The harness lands on Claude Code's own p50 (20–23 ms), so the gap between the 0.3 ms in-process `calls.ms` and what Claude Code waits for is: shell floor 5 ms, binary start 5.6 ms, launcher 6.4 ms, hook work 2.8 ms. `hyperfine -N -w 10 -r 200` (no shell): `/bin/echo` 2.0 ms, `rtok --version` 5.3 ms, `rtok hook PreToolUse` 8.4 ms, `rtok hook PostToolUse` 8.6 ms.
+
+### 19.3 Root causes, largest first
+
+1. **The launcher, 6.4 ms.** Claude Code runs `/bin/sh -c`, which execs `hook.sh`, a second `/bin/sh` (bash in sh mode, ~5 ms to start on macOS), which forks once more for `$(command -v rtok)` before it execs `rtok`.
+2. **Binary start, 5.6 ms over the shell floor** (3.3 ms over `/bin/echo` in hyperfine). Two static initialisers only (`__mod_init_func` is 16 bytes); dyld maps 25 MB of `__TEXT`, rebases 860 KB of `__DATA_CONST` and loads Security, CoreFoundation and CoreServices. `DYLD_PRINT_STATISTICS` prints nothing on this macOS, and samply is not installed, so this was not split further.
+3. **In-process, 2.9 ms.** Temporary `Instant` marks (not committed), p50 of 200 runs, with a second connection held open as a live MCP server holds one: clap parse 0.23 ms, `Config::load_lenient` 1.07 ms (figment: defaults, user TOML, legacy fold, env), `Store::open` 0.84 ms (connection, pragmas, settled-migration check, host row), registry 0.01 ms, `calls` row and plugins 0.6 ms, `set_call_ms` and `call_io` 0.08 ms, drop 0.08 ms. With no other connection open, drop costs 1.1–2.1 ms more: the last connection checkpoints the WAL on close. Migrations do not run on a settled store (`migrate` returns after one `COUNT`).
+
+### 19.4 The 5 s cancellations and UserPromptSubmit
+
+`~/.claude/settings.json` has no `hooks` key; the only enabled plugin is `rtok@rtok`, whose `hooks.json` owns every `UserPromptSubmit` hook, with `timeout: 5` from `setup.hook_timeout_s`. The ten cancelled rtok hooks (5 `PreToolUse`, 5 `UserPromptSubmit`, 2026-09-14 to 2026-09-21) all ran the older settings-file command `rtok hook <event>`. The store does hold `UserPromptSubmit` rows (905, mean 0.52 ms in-process). For four of the ten, the matching `calls` row carries a timestamp 0–1 s before Claude Code logged the cancellation, 5 s after it started the hook, and recorded 0.3–0.6 ms in-process; the other six left no row in that window. So the stall came before `record_call`, which is `Config` load or `Store::open`. `Store::open` waits `busy_timeout = 1000` ms on a locked database and retries a locked open up to ten times (~11 s at worst), so this points at the SQLite write lock. Not reproduced here.
+
+### 19.5 Change and result
+
+`plugins/claude/hooks/hooks.json` now runs `command -v rtok >/dev/null 2>&1 && exec rtok hook <event>; exec "${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" <event>`. `command -v` is a shell builtin, so with `rtok` on PATH Claude Code's own shell execs it directly; without it, `hook.sh` keeps the ketch-store lookup and the fail-open hint. Same harness, 500 rounds, load average 40 → 30:
+
+| event | before (`hook.sh`) p50 / p95 | after p50 / p95 | `true` floor p50 |
+| --- | --- | --- | ---: |
+| PreToolUse | 20.89 / 62.26 ms | 14.63 / 41.65 ms | 5.38 ms |
+| PostToolUse | 18.99 / 33.33 ms | 13.30 / 22.24 ms | 4.86 ms |
+
+About −6 ms, or 30 %, on every hook call. The T178 Check (p50 under 10 ms as Claude Code sees it) is **not met**: the shell floor plus `rtok --version` alone is 10.8 ms. What is left cannot come from trimming the hook path. Parse, config and store open together are 2.1 ms. Reaching 10 ms needs a process that starts in ~1–2 ms: a small hook client with no TLS or framework dependencies, talking to a resident process over a socket, and falling open when the process is absent.
