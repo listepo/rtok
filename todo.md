@@ -46,3 +46,4 @@
 - T179. Why `read/dedup` and `read/delta` rarely fire
 - T180. Research: filtering WebFetch, WebSearch and browser page text
 - T181. `graph/cap` records 0% saving
+- T182. rtok never resolves its home to a relative `.rtok`
