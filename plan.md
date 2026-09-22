@@ -8,7 +8,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | --- | --- | --- | --- | --- | --- |
 | T79 | todo | P1 | 3 | 0% | |
 | T83 | todo | P1 | 4 | 0% | |
-| T86 | done | P1 | 3 | 100% | Muse Spark / rtok |
+| T86 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -70,6 +70,12 @@ The `cfg(windows)` `default-filter` in `.config/nextest.toml` (T82) names every 
 Done when the exclusion list is empty, the override is deleted, and the `windows` job drops `continue-on-error` and joins `revert-on-failure`'s `needs` (or moves into the `check` matrix if `just check` runs on Windows). Split into T83.x per family when claimed.
 
 Check: `ci` run with the `windows` job green and 0 tests skipped by the platform filter.
+
+### T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
+
+After T85. Precondition, by the creator on a live Kimi (agents cannot drive its TUI): `/plugins install <repo>/plugins/kimi`, `/reload`, then call the rtok MCP `tree` tool with no path — it must list the session project, not `plugins/managed/rtok/`. If it lists the plugin copy, Kimi starts plugin MCP servers in the plugin root and the singleton rule below must keep `mcp.json` and strip only the hooks. `support("plugin")` stops saying "no": install prints the exact `/plugins install <resolved plugins/kimi path>` line (dry-run and apply alike; rtok never writes `plugins/managed/` or `installed.json` — that format is Kimi's and undocumented). `installed()` reports `plugin` when `<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists. D21 singleton: while the plugin is installed, setup strips rtok's own `[[hooks]]` tables and `mcpServers.rtok` from `config.toml` / `mcp.json` instead of adding them (Cursor's `plugin_is_mcp` rule, for hooks too), so no event fires twice and one `rtok mcp` serves the store. A `Desktop` variant (`Kimi Code.app`) joins `VARIANTS` with the same files. `src/agents/kimi/README.md` module table, `docs/agents.md` (bless), `research.md` §15 sentence listing Kimi among hosts without a plugin directory.
+
+Check: unit tests — offer names `plugins/kimi` and `/plugins install`; with a seeded `managed/rtok/kimi.plugin.json` a second install removes the nine tables and `mcpServers.rtok` and reports `plugin`; remove leaves the managed copy alone and says how to remove it (`/plugins remove rtok`); `agents_doc` blessed; `just check`.
 
 ### T87. `rtok hook <event> --host devin` reads Devin's payload
 

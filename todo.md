@@ -1,5 +1,6 @@
 - T79. `agents install zed` aborts on a real settings.json (JSONC)
 - T83. Fix the Windows test failures and empty the T82 exclusion list
+- T86. `rtok agents install kimi` offers the plugin, and the plugin is the singleton
 - T87. `rtok hook <event> --host devin` reads Devin's payload
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
