@@ -41,6 +41,8 @@ config; reading cases set `inherit = false` and `RTOK_HOME` under `target/tmp/`.
 - `report-md.toml` — `report --format md`; dates via `[..]`
 - `proxy-dry-run.toml` — `proxy --dry-run` effective `[proxy]` settings
 - `expand.trycmd` — `run cat` of the fixture body, then `expand --lines --grep`
+- `bad-args.trycmd` — a bad value or missing argument on every subcommand (exit 2, clap
+  message) and the `parse_since` rejects `--since 5x` / `--since=-1d` / empty (exit 1)
 - `hook.toml` — `hook SessionStart` with fixture stdin JSON
 - `mcp.toml` — `mcp` `tools/list` frame on stdin
 - `filter.toml` — `filter --cmd git status` of a short payload
