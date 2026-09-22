@@ -84,15 +84,12 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let grok = cfg.hook.host == "grok" || std::env::var_os("GROK_HOOK_EVENT").is_some();
     let copilot = !grok && cfg.hook.host == "copilot";
     let cursor = !grok && cfg.hook.host == "cursor";
-    let cline = !grok && cfg.hook.host == "cline";
     if grok {
         input.adapt_grok(event);
     } else if cursor {
         input.adapt_cursor(event);
     } else if copilot {
         input.adapt_copilot(event);
-    } else if cline {
-        input.adapt_cline(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
@@ -114,10 +111,6 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     if cursor {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(cursor_output(&parsed));
-    }
-    if cline {
-        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
-        return Ok(cline_output(&parsed));
     }
     Ok(out)
 }
@@ -148,50 +141,6 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
         o.insert("permissionDecision".into(), "deny".into());
         if let Some(r) = &out.reason {
             o.insert("permissionDecisionReason".into(), r.as_str().into());
-        }
-    }
-    serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
-}
-
-/// Cline file hooks read a flat object: `overrideInput` replaces the tool input (PreToolUse
-/// only), `context` is injected into the next turn, `cancel: true` + `errorMessage` blocks.
-/// `{}` means do nothing — and stays `{}` here. A Claude `decision: block` becomes `cancel`.
-pub fn cline_output(out: &HookOutput) -> Vec<u8> {
-    let mut o = serde_json::Map::new();
-    let deny = out.decision.as_deref() == Some("block")
-        || out
-            .hook_specific_output
-            .as_ref()
-            .and_then(|h| h.permission_decision.as_deref())
-            == Some("deny");
-    if let Some(h) = &out.hook_specific_output {
-        if let Some(u) = &h.updated_input
-            && let Some(cmd) = u.get("command").and_then(|c| c.as_str())
-        {
-            o.insert(
-                "overrideInput".into(),
-                serde_json::json!({"commands": [cmd]}),
-            );
-        }
-        if let Some(c) = &h.additional_context {
-            o.insert("context".into(), c.as_str().into());
-        }
-        if deny && h.permission_decision_reason.is_some() {
-            o.insert(
-                "errorMessage".into(),
-                h.permission_decision_reason
-                    .as_deref()
-                    .unwrap_or_default()
-                    .into(),
-            );
-        }
-    }
-    if deny {
-        o.insert("cancel".into(), true.into());
-        if !o.contains_key("errorMessage")
-            && let Some(r) = &out.reason
-        {
-            o.insert("errorMessage".into(), r.as_str().into());
         }
     }
     serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| b"{}".to_vec())
@@ -676,91 +625,6 @@ mod tests {
         let mut out = Vec::new();
         run("PreToolUse", b"not-json".as_slice(), &mut out, &cfg);
         assert_eq!(out, b"{}");
-    }
-
-    #[test]
-    fn cline_output_shapes_override_context_block_and_empty() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
-        assert_eq!(
-            json(cline_output(&HookOutput::default())),
-            serde_json::json!({})
-        );
-        let pre = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                updated_input: Some(serde_json::json!({"command": "rtok run -- 'git status'"})),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(
-            json(cline_output(&pre)),
-            serde_json::json!({
-                "overrideInput": {"commands": ["rtok run -- 'git status'"]}
-            })
-        );
-        let post = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PostToolUse".into(),
-                additional_context: Some("ctx".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert_eq!(
-            json(cline_output(&post)),
-            serde_json::json!({"context": "ctx"})
-        );
-        let block = HookOutput {
-            decision: Some("block".into()),
-            reason: Some("guard".into()),
-            ..Default::default()
-        };
-        assert_eq!(
-            json(cline_output(&block)),
-            serde_json::json!({"cancel": true, "errorMessage": "guard"})
-        );
-    }
-
-    fn cline_cfg(dir: &std::path::Path) -> Config {
-        let mut cfg = Config::default();
-        cfg.hook.host = "cline".into();
-        cfg.core.db_path = dir.join("rtok.db");
-        cfg.core.archive_dir = dir.join("archive");
-        cfg
-    }
-
-    #[test]
-    fn cline_pre_tool_use_rewrites_single_command_and_fails_open() {
-        let dir = std::env::temp_dir().join(format!(
-            "rtok-hook-cline-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let cfg = cline_cfg(&dir);
-        let stdin = serde_json::to_vec(&serde_json::json!({
-            "hookName": "tool_call",
-            "taskId": "cline-1",
-            "workspaceRoots": ["/tmp"],
-            "tool_call": {"id": "tc-1", "name": "run_commands", "input": {"commands": ["git status"]}}
-        }))
-        .unwrap();
-        let out = dispatch_owned_strict(&stdin, "PreToolUse", &cfg).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-        let cmd = v["overrideInput"]["commands"][0].as_str().unwrap();
-        assert!(cmd.starts_with("rtok run"), "{v}");
-
-        for bad in [b"not-json".as_slice(), b"".as_slice()] {
-            let mut out = Vec::new();
-            run("PreToolUse", bad, &mut out, &cfg);
-            assert_eq!(out, b"{}");
-        }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T45.4: `core.session_env` resolves the session when stdin has none.

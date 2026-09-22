@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,296 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -34,7 +34,7 @@ target/tmp/t60-2-config-init.toml
 +# ── surfaces ────────────────────────────────────────────────────────────────
 +
 +[hook]                                # rtok hook <event>
-+host      = "claude"                  # claude | cursor | copilot | devin | cline — payload field mapping (T10.1, T46.3, T87, T94)
++host      = "claude"                  # claude | cursor | copilot | devin — payload field mapping (T10.1, T46.3, T87)
 +max_ms    = 10                        # soft budget; over it, the event is logged as slow
 +fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 +
@@ -179,9 +179,6 @@ target/tmp/t60-2-config-init.toml
 +config_path   = "~/.codeium/windsurf/mcp_config.json"
 +[setup.zed]
 +config_path   = "~/.config/zed/settings.json"
-+[setup.cline]
-+hooks_path    = "~/Documents/Cline/Hooks"
-+mcp_path      = "~/.cline/data/settings/cline_mcp_settings.json"  # CLI; the extension uses the VS Code globalStorage settings file
 +
 +[expand]                              # rtok expand <id>
 +max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

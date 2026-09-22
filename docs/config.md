@@ -94,7 +94,7 @@ cjk   = 1.0
 # ── surfaces ────────────────────────────────────────────────────────────────
 
 [hook]                                # rtok hook <event>
-host      = "claude"                  # claude | cursor | copilot | devin | cline — payload field mapping (T10.1, T46.3, T87, T94)
+host      = "claude"                  # claude | cursor | copilot | devin — payload field mapping (T10.1, T46.3, T87)
 max_ms    = 10                        # soft budget; over it, the event is logged as slow
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 
@@ -229,9 +229,6 @@ config_path   = "~/.aider.conf.yml"         # openai-api-base → rtok proxy (--
 config_path   = "~/.codeium/windsurf/mcp_config.json"
 [setup.zed]
 config_path   = "~/.config/zed/settings.json"
-[setup.cline]
-hooks_path    = "~/Documents/Cline/Hooks"
-mcp_path      = "~/.cline/data/settings/cline_mcp_settings.json"  # CLI; the extension uses the VS Code globalStorage settings file
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

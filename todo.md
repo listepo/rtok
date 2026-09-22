@@ -5,6 +5,9 @@
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 - T91. `rtok agents install antigravity` — CLI and desktop, the plugin is the only unit
+- T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
+- T95. Cline plugin tree (`plugins/cline/`)
+- T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 - T100. `rtok agents install grok` and the Read path under Grok
 - T101. Hook fail-open matrix over every `--host`

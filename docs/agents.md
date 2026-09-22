@@ -32,8 +32,6 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`windsurf`](https://github.com/listepo/rtok/blob/main/src/agents/windsurf/README.md) | Windsurf | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed CLI | CLI | — | yes | — | — | read, archive, memory, graph, toon |
 | [`zed`](https://github.com/listepo/rtok/blob/main/src/agents/zed/README.md) | Zed | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
-| [`cline`](https://github.com/listepo/rtok/blob/main/src/agents/cline/README.md) | Cline CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
-| [`cline`](https://github.com/listepo/rtok/blob/main/src/agents/cline/README.md) | Cline for VS Code | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 <!-- agents-table:end -->
 
 The table is generated from the host code (`src/agents/<host>/mod.rs` and the plugin catalogue) by `tests/agents_doc.rs`, which fails when it is stale. After changing a host, adding one, or changing a plugin's surfaces, regenerate it:
