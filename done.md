@@ -4780,3 +4780,18 @@ Deviations: the markdown header (`store <path>`) and the Doctor code block carry
 
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
+
+### T102. Lossless round-trip for every plugin that shortens
+
+Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
+
+Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
+
+Do (Command Code / claude-fable-5, 2026-09-22): one `tests/lossless_roundtrip.rs` with the walk and its completeness gate. Fixtures: plain, CRLF, non-UTF-8, empty — 50 lines each so a capping plugin has something to drop; `empty` stays empty on purpose. Each driver takes the id from the plugin's own record and compares `rtok::expand::fetch(id)` (what `rtok expand <id>` runs) against the exact bytes: `cmd::run::emit_filtered` (id from the Measurement's `ref_id`; a body nothing was dropped from stores nothing and records `ref_id: None` — the T160 policy pinned again), `read::cache::remember` (any bytes), `guard::Guard::post_tool` (the cache archive; `post_tool` answers `None` and records no Measurement, so the id is the one archive file it wrote), `toon::Toon::proxy_filter` (the archived original is the pretty JSON it replaced; the table is the spec's `{a,b,c}` shape — `tabular_keys` needs ≥ 3 columns), `archive::Archive::proxy_filter` (the result text; gated on `proxy.mode = "compress"`), `graph::outline` (the uncapped text is `read`'s `map` output — captured through a second `Runtime` on purpose: the re-read cache would otherwise answer the call inside `outline` with a delta, and the delta is what would be archived). Completeness: every `CATALOGUE` id is classified in the test (six covered, five `never`), each `never` one is source-checked for a production `put_archive(` (before `mod tests`), each covered one must still call it — a plugin added without a fixture, or a `never` plugin starting to archive, fails.
+
+Check result (2026-09-22): `--test lossless_roundtrip` 2/2 green — the walk round-trips all six plugins across the fixtures their input shapes can carry (the byte-exact non-UTF-8 and empty cases run through `cmd` and `read`, whose paths take raw bytes); `fmt --check` and `clippy -D warnings` green; full `cargo nextest run` — 958 passed / 1 failed / 4 skipped, the one failure being the pre-existing machine-state `agents_real_config windsurf_keeps_the_real_mcp_config_json` (T166, fails on clean `main` too).
+
+Deviations: the walk's scope is `src/plugins/` — the hook and MCP surface wraps (`hooks/mod.rs`, `mcp/wrap.rs`) write archive rows too but are surfaces, not plugins; their round trips stay pinned in `tests/mcp_wrap.rs` and `tests/archive_rewrite.rs`. JSON-shaped paths (toon, archive, guard's response) cannot carry invalid UTF-8 by construction — those bytes round-trip through `cmd`/`read`, and `graph`'s `read` refuses non-UTF-8 files outright. The completeness gate classifies plugins, not call sites: a new archive path inside an already-covered plugin is not detected.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5
