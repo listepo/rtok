@@ -1,7 +1,7 @@
-import { Button, CheckBox, HorizontalBox, VerticalBox, ListView, ScrollView, LineEdit, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ListView, LineEdit, Palette } from "std-widgets.slint";
 
 import { RtokTheme } from "theme.slint";
-import { BodyText, Card, ListRow, MetaText, NavItem, PageIcon, SectionText, TitleText } from "kit.slint";
+import { BodyText, Card, IconSlot, ListRow, MetaText, NavItem, PageScroll, Panel, PanelNote, PanelTitle, RowText, SectionText, TitleText } from "kit.slint";
 
 // Bundled IBM Plex Mono (OFL) — weights 400 / 600 / 700
 import "./fonts/IBMPlexMono-Regular.ttf";
@@ -42,29 +42,6 @@ export struct CallRow {
     ref-id: string,
 }
 
-component CallArchive inherits VerticalBox {
-    in property <string> ref-id;
-    in-out property <string> view;
-    in-out property <string> filter;
-    callback expand-archive(string);
-    callback filter-expand(string);
-    spacing: RtokTheme.space-2;
-    if ref-id != "": Button {
-        accessible-label: "expand " + ref-id;
-        text: "expand " + ref-id;
-        clicked => { root.expand-archive(root.ref-id); }
-    }
-    LineEdit {
-        placeholder-text: "filter";
-        text <=> root.filter;
-        edited => { root.filter-expand(self.text); }
-    }
-    BodyText {
-        text: root.view;
-        font-size: 12px;
-    }
-}
-
 export struct SkillRow {
     name: string,
     source: string,
@@ -93,28 +70,15 @@ export struct SessionRow {
     detail: string,
 }
 
-component MetricCell inherits VerticalBox {
-    in property <string> label;
-    in property <string> value;
-    in property <color> value-color: RtokTheme.ink;
-    in property <length> value-size: 18px;
-    // Fixed pair, centered as one block — a stretched default spreads
-    // label and value to the cell edges (probe-verified).
-    alignment: center;
-    spacing: RtokTheme.space-1;
-    MetaText {
-        text: label;
-    }
-    Text {
-        text: value;
-        color: value-color;
-        font-size: value-size;
-        font-weight: 600;
-    }
+struct Metric {
+    label: string,
+    value: string,
+    accent: bool,
 }
 
-/// Shared stats strip for plugins that record Measurement / usage rows.
-/// Wraps to 2×3 when the strip itself is narrow (< 520px).
+/// Shared stats grid for plugins that record Measurement / usage rows.
+/// Cells sit on one column grid, so labels and values line up across rows:
+/// one row when every cell gets ≥ 120px, else 3 (or 2) columns.
 export component TokenStatsWidget inherits Card {
     in property <int> input-tokens;
     in property <int> output-tokens;
@@ -123,56 +87,63 @@ export component TokenStatsWidget inherits Card {
     in property <int> est-before;
     in property <int> est-after;
     in property <int> rows;
+    /// The overview has no estimates — it shows the four usage cells only.
+    in property <bool> show-estimates: true;
+    property <[Metric]> all-metrics: [
+        { label: "input", value: "\{input-tokens}", accent: false },
+        { label: "output", value: "\{output-tokens}", accent: false },
+        { label: "cache read", value: "\{cache-read}", accent: false },
+        { label: "cache create", value: "\{cache-create}", accent: false },
+        { label: "est before → after", value: "\{est-before} → \{est-after}", accent: true },
+        { label: "rows", value: "\{rows}", accent: false },
+    ];
+    property <[Metric]> usage-metrics: [
+        { label: "input", value: "\{input-tokens}", accent: false },
+        { label: "output", value: "\{output-tokens}", accent: false },
+        { label: "cache read", value: "\{cache-read}", accent: false },
+        { label: "cache create", value: "\{cache-create}", accent: false },
+    ];
+    property <[Metric]> metrics: show-estimates ? all-metrics : usage-metrics;
+    // Tracked, not bound: a live `root.width` read here would loop through
+    // the parent layout's layoutinfo.
     property <length> strip-w: 800px;
     changed width => { strip-w = root.width; }
     init => { strip-w = root.width; }
-    property <bool> narrow: strip-w < 760px;
-    property <length> value-size: narrow ? 16px : 18px;
+    property <int> count: metrics.length;
+    property <int> cols: strip-w >= count * 120px
+        ? count
+        : (strip-w >= 360px && Math.mod(count, 3) == 0 ? 3 : 2);
+    property <int> row-count: Math.ceil(count / cols);
+    property <length> pad: RtokTheme.space-3;
+    property <length> gap: RtokTheme.space-3;
+    property <length> cell-h: 44px;
+    property <length> cell-w: (strip-w - 2 * pad - (cols - 1) * gap) / cols;
+    property <length> value-size: cell-w >= 170px ? 18px : 14px;
+    property <length> strip-h: 2 * pad + row-count * cell-h + (row-count - 1) * gap;
     border-radius: RtokTheme.radius-md;
-    // The card hugs its rows: `if`-only children report a zero preferred
-    // height here, so the height comes from the wrapper's layoutinfo.
-    min-height: stats.preferred-height;
-    preferred-height: stats.preferred-height;
-    stats := VerticalLayout {
-        if narrow: VerticalBox {
-            padding: RtokTheme.space-3;
-            spacing: RtokTheme.space-2;
-            HorizontalBox {
-                spacing: RtokTheme.space-3;
-                alignment: space-around;
-                MetricCell { label: "input"; value: "\{input-tokens}"; value-size: value-size; }
-                MetricCell { label: "output"; value: "\{output-tokens}"; value-size: value-size; }
-                MetricCell { label: "cache read"; value: "\{root.cache-read}"; value-size: value-size; }
-            }
-            HorizontalBox {
-                spacing: RtokTheme.space-3;
-                alignment: space-around;
-                MetricCell { label: "cache create"; value: "\{root.cache-create}"; value-size: value-size; }
-                MetricCell {
-                    label: "est before → after";
-                    value: "\{est-before} → \{est-after}";
-                    value-color: RtokTheme.accent;
-                    value-size: value-size;
-                }
-                MetricCell { label: "rows"; value: "\{rows}"; value-size: value-size; }
-            }
+    min-height: strip-h;
+    preferred-height: strip-h;
+    max-height: strip-h;
+    for m[i] in metrics: VerticalLayout {
+        x: pad + Math.mod(i, cols) * (cell-w + gap);
+        y: pad + Math.floor(i / cols) * (cell-h + gap);
+        width: cell-w;
+        height: cell-h;
+        spacing: RtokTheme.space-1;
+        MetaText {
+            text: m.label;
+            height: 16px;
+            vertical-alignment: center;
+            overflow: elide;
         }
-
-        if !narrow: HorizontalBox {
-            padding: RtokTheme.space-3;
-            spacing: RtokTheme.space-4;
-            alignment: space-around;
-            MetricCell { label: "input"; value: "\{input-tokens}"; value-size: value-size; }
-            MetricCell { label: "output"; value: "\{output-tokens}"; value-size: value-size; }
-            MetricCell { label: "cache read"; value: "\{root.cache-read}"; value-size: value-size; }
-            MetricCell { label: "cache create"; value: "\{root.cache-create}"; value-size: value-size; }
-            MetricCell {
-                label: "est before → after";
-                value: "\{est-before} → \{est-after}";
-                value-color: RtokTheme.accent;
-                value-size: value-size;
-            }
-            MetricCell { label: "rows"; value: "\{rows}"; value-size: value-size; }
+        Text {
+            text: m.value;
+            height: 24px;
+            color: m.accent ? RtokTheme.accent : RtokTheme.ink;
+            font-size: value-size;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
         }
     }
 }
@@ -187,6 +158,156 @@ component PluginEnableToggle inherits CheckBox {
     text: "enabled";
     checked: root.on;
     toggled() => { root.enable(self.checked); }
+}
+
+component PluginList inherits Panel {
+    in property <[PluginRow]> plugins;
+    in-out property <int> cursor;
+    PanelTitle {
+        text: "plugins";
+    }
+    ListView {
+        for p[i] in root.plugins: ListRow {
+            selected: i == root.cursor;
+            label: p.title;
+            activated => { root.cursor = i; }
+            RowText {
+                text: p.title;
+                selected: i == root.cursor;
+                color: i == root.cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
+            }
+        }
+    }
+}
+
+component PluginDetail inherits PageScroll {
+    in property <PluginRow> plugin;
+    callback toggle-plugin(string, bool);
+    TitleText {
+        text: plugin.title;
+    }
+    PluginEnableToggle {
+        on: plugin.enabled;
+        plugin-id: plugin.id;
+        enable(value) => { root.toggle-plugin(plugin.id, value); }
+    }
+    BodyText {
+        text: plugin.summary;
+    }
+    if plugin.fields != "": BodyText {
+        text: plugin.fields;
+        color: RtokTheme.ink-subtle;
+    }
+    if plugin.saves-tokens: TokenStatsWidget {
+        input-tokens: plugin.input-tokens;
+        output-tokens: plugin.output-tokens;
+        cache-read: plugin.cache-read;
+        cache-create: plugin.cache-create;
+        est-before: plugin.est-before;
+        est-after: plugin.est-after;
+        rows: plugin.rows;
+    }
+}
+
+component CallList inherits Panel {
+    in property <[CallRow]> calls;
+    in-out property <int> cursor;
+    PanelTitle {
+        text: "calls (newest first)";
+    }
+    if calls.length == 0: PanelNote {
+        text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
+    }
+    ListView {
+        for c[i] in root.calls: ListRow {
+            selected: i == root.cursor;
+            label: c.name;
+            row-height: 44px;
+            activated => { root.cursor = i; }
+            RowText {
+                text: "\{c.when}  \{c.surface}  \{c.kind}";
+                selected: i == root.cursor;
+                font-size: 12px;
+            }
+            MetaText {
+                text: c.subtitle;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component CallDetail inherits PageScroll {
+    in property <bool> has-call;
+    in property <CallRow> call;
+    in-out property <string> view;
+    in-out property <string> filter;
+    callback expand-archive(string);
+    callback filter-expand(string);
+    gap: RtokTheme.space-2;
+    MetaText {
+        text: "detail";
+    }
+    if has-call: BodyText {
+        text: call.detail;
+    }
+    if has-call && call.ref-id != "": HorizontalLayout {
+        alignment: start;
+        Button {
+            accessible-label: "expand " + call.ref-id;
+            text: "expand " + call.ref-id;
+            clicked => { root.expand-archive(call.ref-id); }
+        }
+    }
+    if has-call: LineEdit {
+        placeholder-text: "filter";
+        text <=> root.filter;
+        edited => { root.filter-expand(self.text); }
+    }
+    if has-call: BodyText {
+        text: root.view;
+        font-size: 12px;
+    }
+}
+
+component SessionList inherits Panel {
+    in property <[SessionRow]> sessions;
+    in-out property <int> cursor;
+    PanelTitle {
+        text: "sessions";
+    }
+    if sessions.length == 0: PanelNote {
+        text: "no sessions yet";
+    }
+    ListView {
+        for s[i] in root.sessions: ListRow {
+            selected: i == root.cursor;
+            label: "session " + s.id;
+            row-height: 52px;
+            activated => { root.cursor = i; }
+            RowText {
+                text: s.summary;
+                selected: i == root.cursor;
+                font-weight: 600;
+            }
+            MetaText {
+                text: s.activity;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component SessionDetail inherits PageScroll {
+    in property <bool> has-session;
+    in property <SessionRow> session;
+    gap: RtokTheme.space-2;
+    MetaText {
+        text: "detail";
+    }
+    if has-session: BodyText {
+        text: session.detail;
+    }
 }
 
 export component MainWindow inherits Window {
@@ -276,38 +397,39 @@ export component MainWindow inherits Window {
     property <length> nav-width: rail ? RtokTheme.sidebar-w-rail : RtokTheme.sidebar-w-full;
     property <length> plugin-list-w: wide ? min(280px, win-w * 0.22) : min(240px, win-w * 0.28);
     property <length> calls-list-w: min(480px, win-w * 0.42);
-    property <length> content-max: ultrawide ? 1600px : 10000px;
+    // Stacked (compact) list panels take a slice of the height; the detail
+    // scrolls underneath.
+    property <length> stacked-list-h: max(120px, min(220px, win-h * 0.35));
+    property <length> content-max: ultrawide ? 1600px : 100000px;
 
-    VerticalBox {
+    VerticalLayout {
         padding: shell-pad;
         spacing: shell-gap;
-        alignment: stretch;
 
         if error != "": Card {
             border-radius: RtokTheme.radius-md;
             background: RtokTheme.surface-2;
             border-color: RtokTheme.delta;
-            min-height: 32px;
-            preferred-height: 32px;
-            max-height: 32px;
-            Text {
-                text: error;
-                color: RtokTheme.delta;
-                font-size: 12px;
-                x: RtokTheme.space-3;
-                y: parent.height / 2 - self.height / 2;
+            min-height: 36px;
+            max-height: 36px;
+            HorizontalLayout {
+                padding-left: RtokTheme.space-3;
+                padding-right: RtokTheme.space-3;
+                Text {
+                    text: error;
+                    color: RtokTheme.delta;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
             }
         }
 
-        // Mobile: horizontal icon bar (icons only, equal buttons, ≥36px hits)
-        if compact: Card {
-            min-height: 52px;
-            preferred-height: 52px;
-            max-height: 52px;
-            HorizontalBox {
-                padding: RtokTheme.space-1;
-                spacing: 2px;
-                alignment: stretch;
+        // Mobile: horizontal icon bar (icons only, equal buttons, 44px hits)
+        if compact: Panel {
+            HorizontalLayout {
+                spacing: RtokTheme.space-1;
                 for p[i] in pages: NavItem {
                     page-id: p.id;
                     title: p.title;
@@ -326,494 +448,274 @@ export component MainWindow inherits Window {
             }
         }
 
-        HorizontalBox {
+        HorizontalLayout {
             spacing: shell-gap;
-            alignment: stretch;
+            vertical-stretch: 1;
 
-            // Tablet rail / desktop full sidebar
-            if !compact: Card {
+            // Tablet rail / desktop full sidebar. Logo, status dot and nav
+            // icons share one 24px icon column.
+            if !compact: Panel {
                 width: nav-width;
-                VerticalBox {
-                    padding: RtokTheme.space-2;
-                    spacing: RtokTheme.space-2;
+                gap: 2px;
 
-                    HorizontalBox {
-                        spacing: RtokTheme.space-2;
-                        alignment: full-nav ? start : center;
+                HorizontalLayout {
+                    min-height: 44px;
+                    max-height: 44px;
+                    padding-left: full-nav ? RtokTheme.space-2 : 0;
+                    spacing: RtokTheme.space-2;
+                    alignment: full-nav ? start : center;
+                    IconSlot {
                         Image {
                             source: @image-url("assets/logo.svg");
-                            min-width: 24px;
-                            min-height: 24px;
-                            preferred-width: 24px;
-                            preferred-height: 24px;
-                            max-width: 24px;
-                            max-height: 24px;
-                        }
-                        if full-nav: SectionText {
-                            text: "RTOK";
-                            font-weight: 700;
-                            vertical-alignment: center;
+                            width: 24px;
+                            height: 24px;
                         }
                     }
+                    if full-nav: SectionText {
+                        text: "RTOK";
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
 
-                    if full-nav: Rectangle {
-                        min-height: 28px;
-                        preferred-height: 28px;
-                        max-height: 28px;
-                        border-radius: RtokTheme.radius-md;
-                        background: RtokTheme.surface-2;
-                        HorizontalBox {
-                            padding-left: RtokTheme.space-2;
-                            spacing: RtokTheme.space-2;
-                            alignment: start;
+                Rectangle {
+                    min-height: 28px;
+                    max-height: 28px;
+                    border-radius: RtokTheme.radius-md;
+                    background: RtokTheme.surface-2;
+                    HorizontalLayout {
+                        padding-left: full-nav ? RtokTheme.space-2 : 0;
+                        padding-right: full-nav ? RtokTheme.space-2 : 0;
+                        spacing: RtokTheme.space-2;
+                        alignment: full-nav ? start : center;
+                        IconSlot {
                             Rectangle {
                                 width: 8px;
                                 height: 8px;
                                 border-radius: 4px;
                                 background: RtokTheme.accent;
-                                y: parent.height / 2 - self.height / 2;
-                            }
-                            MetaText {
-                                text: status;
-                                vertical-alignment: center;
                             }
                         }
-                    }
-
-                    ListView {
-                        for p[i] in pages: NavItem {
-                            page-id: p.id;
-                            title: p.title;
-                            selected: i == page-index;
-                            show-label: full-nav;
-                            icon-only: rail;
-                            activated => { page-index = i; }
+                        if full-nav: MetaText {
+                            text: status;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
                         }
                     }
+                }
 
-                    NavItem {
-                        page-id: "theme";
-                        title: RtokTheme.dark ? "Light mode" : "Dark mode";
-                        show-label: full-nav;
-                        icon-only: rail;
-                        activated => { root.dark = !root.dark; root.theme-toggle(); }
-                    }
+                Rectangle {
+                    min-height: RtokTheme.space-2;
+                    max-height: RtokTheme.space-2;
+                }
+
+                for p[i] in pages: NavItem {
+                    page-id: p.id;
+                    title: p.title;
+                    selected: i == page-index;
+                    show-label: full-nav;
+                    icon-only: rail;
+                    activated => { page-index = i; }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+
+                NavItem {
+                    page-id: "theme";
+                    title: RtokTheme.dark ? "Light mode" : "Dark mode";
+                    show-label: full-nav;
+                    icon-only: rail;
+                    activated => { root.dark = !root.dark; root.theme-toggle(); }
                 }
             }
 
-            // Content pane — stretch; cap readable width on ultrawide via max on metric strips / prose
+            // Content pane — stretch; readable width capped on ultrawide.
             Rectangle {
                 horizontal-stretch: 1;
-                background: transparent;
 
-                if page-id == "overview": ScrollView {
-                    VerticalBox {
-                        padding: wide ? RtokTheme.space-2 : 0;
-                        spacing: shell-gap;
-                        alignment: start;
-                        max-width: content-max;
-                        TitleText {
-                            text: "overview";
-                        }
-                        MetaText {
-                            text: "usage totals (usage rows, all apis)";
-                        }
-                        TokenStatsWidget {
-                            input-tokens: usage-input;
-                            output-tokens: usage-output;
-                            cache-read: usage-cache-read;
-                            cache-create: usage-cache-create;
-                            est-before: 0;
-                            est-after: 0;
-                            rows: 0;
-                        }
-                        BodyText {
-                            text: "ctt  \{usage-ctt} (input-side tok × turns after)";
-                            color: RtokTheme.ink;
-                        }
-                        MetaText {
-                            text: "saved by plugin (Measurement rows)";
-                        }
-                        BodyText {
-                            text: overview-savings;
-                        }
-                        BodyText {
-                            text: overview-turns;
-                            color: RtokTheme.ink-subtle;
-                        }
+                if page-id == "overview": PageScroll {
+                    max-content: content-max;
+                    TitleText {
+                        text: "overview";
+                    }
+                    MetaText {
+                        text: "usage totals (usage rows, all apis)";
+                    }
+                    TokenStatsWidget {
+                        input-tokens: usage-input;
+                        output-tokens: usage-output;
+                        cache-read: usage-cache-read;
+                        cache-create: usage-cache-create;
+                        show-estimates: false;
+                    }
+                    BodyText {
+                        text: "ctt  \{usage-ctt} (input-side tok × turns after)";
+                        color: RtokTheme.ink;
+                    }
+                    MetaText {
+                        text: "saved by plugin (Measurement rows)";
+                    }
+                    BodyText {
+                        text: overview-savings;
+                    }
+                    BodyText {
+                        text: overview-turns;
+                        color: RtokTheme.ink-subtle;
                     }
                 }
 
-                // Plugins: stacked on compact, side-by-side otherwise
-                if page-id == "plugins" && compact: VerticalBox {
+                // Split pages: stacked on compact, side-by-side otherwise.
+                if page-id == "plugins" && compact: VerticalLayout {
                     spacing: shell-gap;
-                    Card {
-                        min-height: 120px;
-                        preferred-height: min(200px, win-h * 0.35);
-                        max-height: min(200px, win-h * 0.35);
-                        VerticalBox {
-                            padding: RtokTheme.space-2;
-                            SectionText {
-                                text: "plugins";
-                            }
-                            ListView {
-                                for p[i] in plugins: ListRow {
-                                    selected: i == plugin-cursor;
-                                    label: p.title;
-                                    row-height: 36px;
-                                    activated => { plugin-cursor = i; }
-                                    HorizontalBox {
-                                        padding-left: RtokTheme.space-2;
-                                        alignment: start;
-                                        Text {
-                                            text: p.title;
-                                            color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    PluginList {
+                        min-height: stacked-list-h;
+                        max-height: stacked-list-h;
+                        plugins: root.plugins;
+                        cursor <=> root.plugin-cursor;
                     }
-                    ScrollView {
+                    PluginDetail {
                         vertical-stretch: 1;
-                        VerticalBox {
-                            spacing: shell-gap;
-                            alignment: start;
-                            TitleText {
-                                text: selected-plugin.title;
-                            }
-                            PluginEnableToggle {
-                                on: selected-plugin.enabled;
-                                plugin-id: selected-plugin.id;
-                                enable(value) => {
-                                    root.toggle-plugin(selected-plugin.id, value);
-                                }
-                            }
-                            BodyText {
-                                text: selected-plugin.summary;
-                            }
-                            BodyText {
-                                text: selected-plugin.fields;
-                                color: RtokTheme.ink-subtle;
-                            }
-                            if selected-plugin.saves-tokens: TokenStatsWidget {
-                                input-tokens: selected-plugin.input-tokens;
-                                output-tokens: selected-plugin.output-tokens;
-                                cache-read: selected-plugin.cache-read;
-                                cache-create: selected-plugin.cache-create;
-                                est-before: selected-plugin.est-before;
-                                est-after: selected-plugin.est-after;
-                                rows: selected-plugin.rows;
-                            }
-                        }
+                        plugin: selected-plugin;
+                        toggle-plugin(id, value) => { root.toggle-plugin(id, value); }
                     }
                 }
 
-                if page-id == "plugins" && !compact: HorizontalBox {
+                if page-id == "plugins" && !compact: HorizontalLayout {
                     spacing: shell-gap;
-                    Card {
+                    PluginList {
                         width: plugin-list-w;
-                        VerticalBox {
-                            padding: RtokTheme.space-2;
-                            SectionText {
-                                text: "plugins";
-                            }
-                            ListView {
-                                for p[i] in plugins: ListRow {
-                                    selected: i == plugin-cursor;
-                                    label: p.title;
-                                    row-height: 36px;
-                                    activated => { plugin-cursor = i; }
-                                    HorizontalBox {
-                                        padding-left: RtokTheme.space-2;
-                                        alignment: start;
-                                        Text {
-                                            text: p.title;
-                                            color: i == plugin-cursor ? RtokTheme.accent : (p.enabled ? RtokTheme.ink : RtokTheme.ink-subtle);
-                                            vertical-alignment: center;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        plugins: root.plugins;
+                        cursor <=> root.plugin-cursor;
                     }
-                    ScrollView {
+                    PluginDetail {
                         horizontal-stretch: 1;
-                        VerticalBox {
-                            spacing: shell-gap;
-                            alignment: start;
-                            max-width: content-max;
-                            TitleText {
-                                text: selected-plugin.title;
-                            }
-                            PluginEnableToggle {
-                                on: selected-plugin.enabled;
-                                plugin-id: selected-plugin.id;
-                                enable(value) => {
-                                    root.toggle-plugin(selected-plugin.id, value);
-                                }
-                            }
-                            BodyText {
-                                text: selected-plugin.summary;
-                            }
-                            BodyText {
-                                text: selected-plugin.fields;
-                                color: RtokTheme.ink-subtle;
-                            }
-                            if selected-plugin.saves-tokens: TokenStatsWidget {
-                                input-tokens: selected-plugin.input-tokens;
-                                output-tokens: selected-plugin.output-tokens;
-                                cache-read: selected-plugin.cache-read;
-                                cache-create: selected-plugin.cache-create;
-                                est-before: selected-plugin.est-before;
-                                est-after: selected-plugin.est-after;
-                                rows: selected-plugin.rows;
-                            }
-                        }
+                        max-content: content-max;
+                        plugin: selected-plugin;
+                        toggle-plugin(id, value) => { root.toggle-plugin(id, value); }
                     }
                 }
 
-                // Calls: stacked on compact, side-by-side otherwise
-                if page-id == "calls" && compact: VerticalBox {
+                if page-id == "calls" && compact: VerticalLayout {
                     spacing: shell-gap;
-                    Card {
-                        min-height: 120px;
-                        preferred-height: min(220px, win-h * 0.4);
-                        max-height: min(220px, win-h * 0.4);
-                        VerticalBox {
-                            padding: RtokTheme.space-2;
-                            SectionText {
-                                text: "calls (newest first)";
-                            }
-                            if calls.length == 0: BodyText {
-                                text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
-                            }
-                            ListView {
-                                for c[i] in calls: ListRow {
-                                    selected: i == call-cursor;
-                                    label: c.name;
-                                    row-height: 40px;
-                                    activated => { call-cursor = i; }
-                                    VerticalBox {
-                                        padding-left: RtokTheme.space-2;
-                                        spacing: 0;
-                                        Text {
-                                            text: "\{c.when}  \{c.surface}  \{c.kind}";
-                                            color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
-                                            font-size: 12px;
-                                        }
-                                        MetaText {
-                                            text: c.subtitle;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    CallList {
+                        min-height: stacked-list-h;
+                        max-height: stacked-list-h;
+                        calls: root.calls;
+                        cursor <=> root.call-cursor;
                     }
-                    ScrollView {
+                    CallDetail {
                         vertical-stretch: 1;
-                        VerticalBox {
-                            spacing: RtokTheme.space-2;
-                            alignment: start;
-                            MetaText {
-                                text: "detail";
-                            }
-                            if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: VerticalBox {
-                                BodyText {
-                                    text: selected-call.detail;
-                                }
-                                CallArchive {
-                                    ref-id: selected-call.ref-id;
-                                    view <=> root.expand-view;
-                                    filter <=> root.expand-filter;
-                                    expand-archive(id) => { root.expand-archive(id); }
-                                    filter-expand(s) => { root.filter-expand(s); }
-                                }
-                            }
-                        }
+                        has-call: calls.length > 0;
+                        call: selected-call;
+                        view <=> root.expand-view;
+                        filter <=> root.expand-filter;
+                        expand-archive(id) => { root.expand-archive(id); }
+                        filter-expand(s) => { root.filter-expand(s); }
                     }
                 }
 
-                if page-id == "calls" && !compact: HorizontalBox {
+                if page-id == "calls" && !compact: HorizontalLayout {
                     spacing: shell-gap;
-                    Card {
+                    CallList {
                         width: calls-list-w;
-                        VerticalBox {
-                            padding: RtokTheme.space-2;
-                            SectionText {
-                                text: "calls (newest first)";
-                            }
-                            if calls.length == 0: BodyText {
-                                text: "no calls yet (the ledger fills as hooks, MCP and the proxy run)";
-                            }
-                            ListView {
-                                for c[i] in calls: ListRow {
-                                    selected: i == call-cursor;
-                                    label: c.name;
-                                    row-height: 40px;
-                                    activated => { call-cursor = i; }
-                                    VerticalBox {
-                                        padding-left: RtokTheme.space-2;
-                                        spacing: 0;
-                                        Text {
-                                            text: "\{c.when}  \{c.surface}  \{c.kind}";
-                                            color: i == call-cursor ? RtokTheme.accent : RtokTheme.ink;
-                                            font-size: 12px;
-                                        }
-                                        MetaText {
-                                            text: c.subtitle;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        calls: root.calls;
+                        cursor <=> root.call-cursor;
                     }
-                    ScrollView {
+                    CallDetail {
                         horizontal-stretch: 1;
-                        VerticalBox {
-                            spacing: RtokTheme.space-2;
-                            alignment: start;
-                            max-width: content-max;
-                            MetaText {
-                                text: "detail";
-                            }
-                            if calls.length == 0: Text { text: ""; }
-                            if calls.length > 0: VerticalBox {
-                                BodyText {
-                                    text: selected-call.detail;
-                                }
-                                CallArchive {
-                                    ref-id: selected-call.ref-id;
-                                    view <=> root.expand-view;
-                                    filter <=> root.expand-filter;
-                                    expand-archive(id) => { root.expand-archive(id); }
-                                    filter-expand(s) => { root.filter-expand(s); }
-                                }
-                            }
-                        }
+                        max-content: content-max;
+                        has-call: calls.length > 0;
+                        call: selected-call;
+                        view <=> root.expand-view;
+                        filter <=> root.expand-filter;
+                        expand-archive(id) => { root.expand-archive(id); }
+                        filter-expand(s) => { root.filter-expand(s); }
                     }
                 }
 
-                if page-id == "sessions": HorizontalBox {
+                if page-id == "sessions" && compact: VerticalLayout {
                     spacing: shell-gap;
-                    Card {
+                    SessionList {
+                        min-height: stacked-list-h;
+                        max-height: stacked-list-h;
+                        sessions: root.sessions;
+                        cursor <=> root.session-cursor;
+                    }
+                    SessionDetail {
+                        vertical-stretch: 1;
+                        has-session: sessions.length > 0;
+                        session: selected-session;
+                    }
+                }
+
+                if page-id == "sessions" && !compact: HorizontalLayout {
+                    spacing: shell-gap;
+                    SessionList {
                         width: calls-list-w;
-                        VerticalBox {
-                            padding: RtokTheme.space-2;
-                            TitleText {
-                                text: "sessions";
-                            }
-                            if sessions.length == 0: BodyText {
-                                text: "no sessions yet";
-                            }
-                            ListView {
-                                for s[i] in sessions: ListRow {
-                                    selected: i == session-cursor;
-                                    label: "session " + s.id;
-                                    row-height: 56px;
-                                    activated => { session-cursor = i; }
-                                    VerticalBox {
-                                        padding-left: RtokTheme.space-2;
-                                        spacing: 0;
-                                        Text {
-                                            text: s.summary;
-                                            color: i == session-cursor ? RtokTheme.accent : RtokTheme.ink;
-                                            font-weight: 600;
-                                            font-size: RtokTheme.body-size;
-                                        }
-                                        MetaText {
-                                            text: s.activity;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        sessions: root.sessions;
+                        cursor <=> root.session-cursor;
                     }
-                    ScrollView {
+                    SessionDetail {
                         horizontal-stretch: 1;
-                        VerticalBox {
-                            spacing: RtokTheme.space-2;
-                            alignment: start;
-                            max-width: content-max;
-                            MetaText {
-                                text: "detail";
-                            }
-                            if sessions.length == 0: Text { text: ""; }
-                            if sessions.length > 0: BodyText {
-                                text: selected-session.detail;
-                            }
-                        }
+                        max-content: content-max;
+                        has-session: sessions.length > 0;
+                        session: selected-session;
                     }
                 }
 
-                if page-id == "doctor": ScrollView {
-                    VerticalBox {
-                        spacing: RtokTheme.space-2;
-                        alignment: start;
-                        max-width: content-max;
-                        TitleText {
-                            text: "doctor";
-                        }
-                        BodyText {
-                            text: doctor-text;
-                        }
+                if page-id == "doctor": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "doctor";
+                    }
+                    BodyText {
+                        text: doctor-text;
                     }
                 }
 
-                if page-id == "logs": ScrollView {
-                    VerticalBox {
-                        spacing: RtokTheme.space-1;
-                        alignment: start;
-                        max-width: content-max;
-                        TitleText {
-                            text: "logs";
-                        }
-                        if logs.length == 0: BodyText {
-                            text: "no logs yet";
-                        }
-                        for line in logs: Text {
-                            text: line;
-                            color: RtokTheme.ink-muted;
-                            wrap: word-wrap;
-                            font-size: ultrawide ? 13px : 12px;
-                        }
+                if page-id == "logs": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-1;
+                    TitleText {
+                        text: "logs";
+                    }
+                    if logs.length == 0: BodyText {
+                        text: "no logs yet";
+                    }
+                    for line in logs: BodyText {
+                        text: line;
+                        font-size: ultrawide ? 13px : 12px;
                     }
                 }
 
-                if page-id == "skills": ScrollView {
-                    VerticalBox {
-                        spacing: RtokTheme.space-2;
-                        alignment: start;
-                        max-width: content-max;
-                        TitleText {
-                            text: "skills";
-                        }
-                        BodyText {
-                            text: skills-header;
-                        }
-                        CheckBox {
-                            accessible-label: "never invoked only";
-                            text: "never invoked only";
-                            checked: skills-never-only;
-                            toggled() => { skills-never-only = self.checked; }
-                        }
-                        if skills.length == 0: BodyText {
-                            text: "no skills listed";
-                        }
-                        for s in skills: Rectangle {
-                            property <bool> shown: !skills-never-only || s.never;
-                            height: shown ? 48px : 0px;
-                            if shown: ListRow {
-                                label: "skill " + s.name;
-                                row-height: 48px;
-                                Text {
-                                    text: s.summary;
-                                    x: 0;
-                                    color: s.never ? RtokTheme.ink-muted : RtokTheme.ink;
-                                    font-size: RtokTheme.body-size;
-                                }
+                if page-id == "skills": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "skills";
+                    }
+                    BodyText {
+                        text: skills-header;
+                    }
+                    CheckBox {
+                        accessible-label: "never invoked only";
+                        text: "never invoked only";
+                        checked: skills-never-only;
+                        toggled() => { skills-never-only = self.checked; }
+                    }
+                    if skills.length == 0: BodyText {
+                        text: "no skills listed";
+                    }
+                    for s in skills: VerticalLayout {
+                        if !skills-never-only || s.never: ListRow {
+                            label: "skill " + s.name;
+                            RowText {
+                                text: s.summary;
+                                color: s.never ? RtokTheme.ink-muted : RtokTheme.ink;
                             }
                         }
                     }
