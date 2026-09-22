@@ -9,6 +9,7 @@ mod common;
 
 use common::agents::{backups, contains_hook, json, rtok, rtok_without_claude, tmp, write_cfg};
 use std::fs;
+use std::path::PathBuf;
 
 /// No `claude` on PATH (T139: the plugin is the default once it is there), so this exercises
 /// the settings-file fallback: hooks, MCP and the proxy env var, all in `~/.claude/*`.
@@ -160,7 +161,16 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
     // links by default and becomes the only call path, leaving the config-file hooks
     // and mcp entries untouched (only the foreign ones were ever there).
     rtok(&["agents", "install", "zcode"], &cfg, &home);
-    let link = home.join(".zcode/cli/plugins/local/rtok");
+    // Built the same way `write_cfg` + `plugin_dest` derive it: the config path is one
+    // all-forward-slash string (`write_cfg` normalizes `home` before embedding it), and
+    // `plugin_dest` then does one `.join()` per segment, which inserts a native separator
+    // (`\` on Windows) at each call. Matching that construction keeps this byte-identical
+    // with what actually lands in `plugins.dirs`.
+    let zcode_cli = PathBuf::from(format!(
+        "{}/.zcode/cli",
+        home.display().to_string().replace('\\', "/")
+    ));
+    let link = zcode_cli.join("plugins").join("local").join("rtok");
     assert!(link.symlink_metadata().is_ok(), "plugin linked by default");
     let installed = json(&path);
     let link_str = link.display().to_string();
