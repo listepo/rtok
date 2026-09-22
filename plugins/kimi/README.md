@@ -15,9 +15,12 @@ so there is nothing to symlink and a changed source needs a reinstall:
 (only exit 2 blocks) and the MCP server does not start; install it with ketch:
 `ketch install listepo/rtok`.
 
-Use the plugin **or** `rtok agents install kimi`, not both: the installer writes the same nine
-hooks into `config.toml` and the same server into `mcp.json`, and with both in place every event
-fires twice and two `rtok mcp` processes share one store.
+Use the plugin **or** `rtok agents install kimi`, not both — unless you installed the
+plugin through Kimi: while `<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists,
+the installer detects it and strips its own `[[hooks]]` tables and `mcpServers.rtok`
+instead of adding them (D21 singleton), so no event fires twice and one `rtok mcp`
+serves the store. Without the plugin, the installer writes the same nine hooks into
+`config.toml` and the same server into `mcp.json` itself.
 
 Files:
 
