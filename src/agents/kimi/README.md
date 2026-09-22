@@ -1,6 +1,7 @@
 # Kimi Code
 
-`rtok agents install kimi` — Moonshot's Kimi Code CLI (`kimi`). Two files under one key,
+`rtok agents install kimi` — Moonshot's Kimi Code CLI (`kimi`) and Kimi Code Desktop
+(`Kimi Code.app`): one install writes the same two files. Two files under one key,
 `[setup.kimi] config_path` (default `~/.kimi-code/config.toml`): hooks go into `config.toml`
 as `[[hooks]]` tables, MCP into the sibling `mcp.json`. Edits keep the user's comments and
 every hook or server that is not ours.
@@ -11,8 +12,8 @@ every hook or server that is not ours.
 | --- | --- | --- |
 | hooks | yes | `[[hooks]]` with `event`, `matcher`, `command = "rtok hook <event>"`, `timeout` (seconds) on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart, PreCompact, PostCompact, SessionEnd |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp.json`, `{command, args}` as the Kimi docs show it, no `type` (off with `[setup] mcp = false`) |
+| plugin | yes | install prints `/plugins install <resolved plugins/kimi path>` — rtok never writes `plugins/managed/`, that store is Kimi's and undocumented, so the offer is always printed, never gated. While the plugin is installed (`<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists), setup strips rtok's own `[[hooks]]` tables and `mcpServers.rtok` instead of adding them (D21 singleton: the plugin is the hooks and the MCP as one unit) |
 | proxy | no | Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them |
-| plugin | no | Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link |
 
 Kimi's hook protocol is Claude's: stdin `hook_event_name`, `session_id`, `cwd`, `tool_name`,
 `tool_input`; exit 2 blocks with stderr as the reason; `hookSpecificOutput.permissionDecision`
