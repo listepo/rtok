@@ -52,6 +52,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
+| T163 | todo | P2 | 5 | 0% | |
 
 
 ### T79. `agents install zed` aborts on a real settings.json (JSONC)
@@ -372,6 +373,12 @@ Creator request 2026-09-21. `needs_pointer` in `src/plugins/cmd/run.rs` prints `
 Plan: in `needs_pointer`, keep the long-output branch (`lines > trailer_min_lines`); for short output, print the pointer only when a whole line or more was dropped, or when the bytes saved exceed the trailer length. Settle which of the two in the Do (a line-based rule is easier to explain in `src/plugins/cmd/README.md`). Skip the `store` for the same case if nothing references the id. Update the unit tests next to `needs_pointer` and the README rule.
 
 Check: a short output that loses only whitespace/ANSI prints no trailer and its `Measurement` never reports negative savings; a 29-line `git log` trimmed to 20 still prints the pointer (existing test); `just check`.
+
+### T163. Replace raw SQL in `src/store/` with Diesel's query builder
+
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`, not yet in rtok — needs creator approval before wiring). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+
+Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
 
 ### T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
 
