@@ -148,10 +148,10 @@ rows, T5.4).\n"
         };
         let _ = writeln!(
             s,
-            "`rtok expand` froze {} of {} live-zone pointers ({:.1}%). Expanded: {}.",
+            "`rtok expand` froze {} of {} live-zone pointers ({}%). Expanded: {}.",
             exp.expanded,
             exp.decisions,
-            100.0 * exp.rate,
+            dec(Some(100.0 * exp.rate)),
             what
         );
     }
@@ -199,14 +199,84 @@ page.\n"
     s
 }
 
-/// `4.0` for a recorded latency, `—` for none — an untimed surface is not a zero-ms one.
+/// `4.0` for a recorded latency, `—` for none or a non-finite one — an untimed surface
+/// is not a zero-ms one, and `NaN`/`inf` must never reach the document (T105).
 /// `pub(crate)` so the `--ai` rendering (T22.4) formats latencies the same way.
 pub(crate) fn ms(v: Option<f64>) -> String {
-    v.map(|ms| format!("{ms:.1}")).unwrap_or_else(|| "—".into())
+    dec(v)
+}
+
+/// One decimal for a latency or a share; `—` for none or non-finite (T105).
+pub(crate) fn dec(v: Option<f64>) -> String {
+    match v {
+        Some(v) if v.is_finite() => format!("{v:.1}"),
+        _ => "—".into(),
+    }
 }
 
 /// A table cell: `|` would end the cell early, so it is escaped; a newline would end the
 /// row, so it folds to a space (the `--ai` rendering's `flat`).
 fn cell(s: &str) -> String {
     super::ai::flat(s).replace('|', "\\|")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::report::fixtures;
+
+    /// T105 Check: no `NaN`/`inf` reaches the document and no table breaks — every
+    /// table keeps the width of its header row.
+    fn holds(out: &str) {
+        assert!(!out.contains("NaN"), "no NaN: {out}");
+        assert!(!out.to_lowercase().contains("inf"), "no inf: {out}");
+        let mut width = 0;
+        for line in out.lines() {
+            if line.starts_with('|') {
+                let pipes = line.matches('|').count() - line.matches("\\|").count();
+                if width == 0 {
+                    width = pipes;
+                } else {
+                    assert_eq!(pipes, width, "table row broken: {line}");
+                }
+            } else {
+                width = 0;
+            }
+        }
+    }
+
+    #[test]
+    fn zero_rows_snapshot() {
+        let out = render(&fixtures::zero());
+        holds(&out);
+        insta::assert_snapshot!("zero", out);
+    }
+
+    #[test]
+    fn one_row_snapshot() {
+        let out = render(&fixtures::one_row());
+        holds(&out);
+        assert!(
+            out.contains("9223372036854775807"),
+            "very large numbers: {out}"
+        );
+        insta::assert_snapshot!("one_row", out);
+    }
+
+    #[test]
+    fn hostile_text_snapshot() {
+        let out = render(&fixtures::hostile());
+        holds(&out);
+        assert!(out.contains("\\|"), "the table pipe is escaped: {out}");
+        for line in out
+            .lines()
+            .filter(|l| l.starts_with('|') && l.contains("second line"))
+        {
+            assert!(
+                line.contains("script"),
+                "the cell folded to one row: {line}"
+            );
+        }
+        insta::assert_snapshot!("hostile", out);
+    }
 }

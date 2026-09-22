@@ -1,0 +1,84 @@
+---
+source: src/report/html.rs
+expression: out
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rtok report</title>
+<style>
+body{font-family:sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;color:#222}
+table{border-collapse:collapse;margin:1rem 0}
+th,td{border:1px solid #ccc;padding:.25rem .5rem;text-align:left}
+pre{background:#f6f6f6;padding:1rem;overflow-x:auto}
+svg.chart{background:#fafafa;margin:1rem 0}
+</style>
+</head>
+<body>
+<h1>rtok report</h1>
+<p>Window 2026-09-01 → 2026-10-01 (30d) · store /tmp/rtok.db</p>
+<h2 id="window">Window</h2>
+<table>
+<tr><th>ledger</th><th>rows</th><th>covers</th></tr>
+<tr><td>calls</td><td>1 of 1</td><td>window (30d)</td></tr>
+<tr><td>measurements</td><td>18446744073709551615</td><td>whole ledger (no row times)</td></tr>
+<tr><td>usage</td><td>18446744073709551615</td><td>whole ledger (no row times)</td></tr>
+</table>
+<h2 id="savings">Savings</h2>
+<p>Estimated tokens from <code>Measurement</code> rows only (est_before − est_after, net; floors, not context-token-turns).</p>
+<svg class="chart" width="600" height="32" role="img" aria-label="saved tokens per plugin">
+<text x="0" y="16" font-size="12">cmd</text><rect x="140" y="4" width="440" height="14"/><text x="586" y="16" font-size="12">9223372036854775807</text>
+</svg>
+<table>
+<tr><th>plugin</th><th>rows</th><th>est before</th><th>est after</th><th>saved</th></tr>
+<tr><td>cmd</td><td>18446744073709551615</td><td>9223372036854775807</td><td>-9223372036854775808</td><td>9223372036854775807</td></tr>
+</table>
+<p>Total: 9223372036854775807 est tokens over 18446744073709551615 <code>Measurement</code> rows (whole ledger: no row times).</p>
+<h2 id="calls">Calls</h2>
+<p>Latency per surface, nearest-rank p50/p95 over the calls that recorded one.</p>
+<svg class="chart" width="600" height="32" role="img" aria-label="calls per surface">
+<text x="0" y="16" font-size="12">hook</text><rect x="140" y="4" width="0" height="14"/><text x="146" y="16" font-size="12">-1</text>
+</svg>
+<table>
+<tr><th>surface</th><th>calls</th><th>timed</th><th>p50 ms</th><th>p95 ms</th></tr>
+<tr><td>hook</td><td>18446744073709551615</td><td>1</td><td>—</td><td>—</td></tr>
+</table>
+<p>1 of 1 <code>calls</code> rows in window (30d); surfaces beyond hook/mcp/proxy are not in the section set.</p>
+<h2 id="cache">Cache</h2>
+<p>Prompt-cache busts by cause, from the proxy's <code>usage</code> rows (whole ledger).</p>
+<svg class="chart" width="600" height="32" role="img" aria-label="busts per cause">
+<text x="0" y="16" font-size="12">tools</text><rect x="140" y="4" width="0" height="14"/><text x="146" y="16" font-size="12">-1</text>
+</svg>
+<table>
+<tr><th>cause</th><th>busts</th></tr>
+<tr><td>tools</td><td>18446744073709551615</td></tr>
+</table>
+<p>Busts: 18446744073709551615 over 18446744073709551615 turns in 1 session(s).</p>
+<h2 id="expand">Expand</h2>
+<p>How often a live-zone pointer had to be expanded (<code>archive_decisions</code> rows, T5.4).</p>
+<p><code>rtok expand</code> froze 9223372036854775807 of 9223372036854775807 live-zone pointers (100.0%). Expanded: <code>ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff</code>.</p>
+<h2 id="config">Config</h2>
+<p>Every effective key with its origin — the <code>config show --sources</code> page.</p>
+<table>
+<tr><th>key</th><th>value</th><th>source</th></tr>
+<tr><td>core.db_path</td><td><code>/tmp/rtok.db</code></td><td>user</td></tr>
+</table>
+<p>1 keys.</p>
+<h2 id="doctor">Doctor</h2>
+<p>Live probes (the <code>rtok doctor</code> page), not store rows.</p>
+<pre><code>hooks 0
+mcp
+proxy 
+proxy openai 
+BASH_MAX_OUTPUT_LENGTH (unset)
+autoCompactWindow (unset)
+read-share no data
+agents
+</code></pre>
+<h2 id="recommendations">Recommendations</h2>
+<ul>
+<li><strong>cache-bust</strong>: 9223372036854775807 tokens (18446744073709551615 rows)</li>
+</ul>
+</body>
+</html>
