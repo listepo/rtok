@@ -9,7 +9,8 @@
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 - T117. VS Code agent plugins
-- T118. Gemini CLI host with an extension
+- T118.2. Gemini CLI host module: registration, config keys, e2e
+- T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
 - T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
 - T122. A dedup pointer reaches a context that never saw the body
