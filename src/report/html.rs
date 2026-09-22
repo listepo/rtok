@@ -6,7 +6,7 @@
 //! busts per cause. The model carries no per-turn series, so the rest stays tables.
 
 use super::Document;
-use super::markdown::ms;
+use super::markdown::{dec, ms};
 
 const CSS: &str = "body{font-family:sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;color:#222}\ntable{border-collapse:collapse;margin:1rem 0}\nth,td{border:1px solid #ccc;padding:.25rem .5rem;text-align:left}\npre{background:#f6f6f6;padding:1rem;overflow-x:auto}\nsvg.chart{background:#fafafa;margin:1rem 0}\n";
 
@@ -163,8 +163,11 @@ pub fn render(doc: &Document) -> String {
                 .join(", ")
         };
         s.push_str(&format!(
-            "<p><code>rtok expand</code> froze {} of {} live-zone pointers ({:.1}%). Expanded: {}.</p>\n",
-            exp.expanded, exp.decisions, 100.0 * exp.rate, what
+            "<p><code>rtok expand</code> froze {} of {} live-zone pointers ({}%). Expanded: {}.</p>\n",
+            exp.expanded,
+            exp.decisions,
+            dec(Some(100.0 * exp.rate)),
+            what
         ));
     }
 
@@ -263,4 +266,46 @@ fn esc(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::report::fixtures;
+
+    /// T105 Check: the edge cases pin nothing — no `NaN`, no `inf`, no injected HTML.
+    fn holds(out: &str) {
+        assert!(!out.contains("NaN"), "no NaN: {out}");
+        assert!(!out.to_lowercase().contains("inf"), "no inf: {out}");
+        assert!(!out.contains("<script>"), "no injected HTML: {out}");
+    }
+
+    #[test]
+    fn zero_rows_snapshot() {
+        let out = render(&fixtures::zero());
+        holds(&out);
+        insta::assert_snapshot!("zero", out);
+    }
+
+    #[test]
+    fn one_row_snapshot() {
+        let out = render(&fixtures::one_row());
+        holds(&out);
+        assert!(
+            out.contains("9223372036854775807"),
+            "very large numbers: {out}"
+        );
+        insta::assert_snapshot!("one_row", out);
+    }
+
+    #[test]
+    fn hostile_text_snapshot() {
+        let out = render(&fixtures::hostile());
+        holds(&out);
+        assert!(
+            out.contains("&lt;script&gt;"),
+            "escaped, not injected: {out}"
+        );
+        insta::assert_snapshot!("hostile", out);
+    }
 }

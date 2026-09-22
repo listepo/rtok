@@ -1,0 +1,80 @@
+---
+source: src/report/markdown.rs
+expression: out
+---
+# rtok report
+
+Window 2026-09-01 → 2026-10-01 (30d) · store /tmp/rtok.db
+
+## Window
+
+| ledger | rows | covers |
+| --- | --- | --- |
+| calls | 1 of 1 | window (30d) |
+| measurements | 18446744073709551615 | whole ledger (no row times) |
+| usage | 18446744073709551615 | whole ledger (no row times) |
+
+## Savings
+
+Estimated tokens from `Measurement` rows only: est_before − est_after, net — an `expand` row counts negative, because retrieval costs tokens. A `Measurement` row carries no turn count, so these are floors, not context-token-turns.
+
+| plugin | rows | est before | est after | saved |
+| --- | ---: | ---: | ---: | ---: |
+| cmd | 18446744073709551615 | 9223372036854775807 | -9223372036854775808 | 9223372036854775807 |
+
+Total: 9223372036854775807 est tokens over 18446744073709551615 `Measurement` rows (whole ledger: no row times).
+
+## Calls
+
+Latency per surface, nearest-rank p50/p95 over the calls that recorded one.
+
+| surface | calls | timed | p50 ms | p95 ms |
+| --- | ---: | ---: | ---: | ---: |
+| hook | 18446744073709551615 | 1 | — | — |
+
+1 of 1 `calls` rows in window (30d); surfaces beyond hook/mcp/proxy are not in the section set.
+
+## Cache
+
+Prompt-cache busts by cause, from the proxy's `usage` rows (whole ledger).
+
+| cause | busts |
+| --- | ---: |
+| tools | 18446744073709551615 |
+
+Busts: 18446744073709551615 over 18446744073709551615 turns in 1 session(s).
+
+## Expand
+
+How often a live-zone pointer had to be expanded (`archive_decisions` rows, T5.4).
+
+`rtok expand` froze 9223372036854775807 of 9223372036854775807 live-zone pointers (100.0%). Expanded: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff.
+
+## Config
+
+Every effective key with its origin — the `config show --sources` page.
+
+| key | value | source |
+| --- | --- | --- |
+| core.db_path | /tmp/rtok.db | user |
+
+1 keys.
+
+## Doctor
+
+Live probes (the `rtok doctor` page), not store rows.
+
+```text
+hooks 0
+mcp
+proxy 
+proxy openai 
+BASH_MAX_OUTPUT_LENGTH (unset)
+autoCompactWindow (unset)
+read-share no data
+agents
+```
+
+## Recommendations
+
+- **cache-bust**: 9223372036854775807 tokens (18446744073709551615 rows)

@@ -18,9 +18,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T100 | todo | P1 | 3 | 0% | |
-| T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T105 | todo | P2 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
@@ -192,23 +190,11 @@ After T99. A `grok` host in `src/agents/`: detection (`~/.grok/bin/grok`, `GROK_
 
 Check: unit tests for offer, detection and singleton; `agents_doc` blessed; `just check`.
 
-### T101. Hook fail-open matrix over every `--host`
-
-`tests/extra_cover.rs` checks bad and empty stdin for the default host only. One `rstest` matrix in `tests/hook_fail_open.rs`: every value `[hook] host` accepts × every hook event × stdin {empty, garbage, truncated JSON, non-UTF-8, 1 MiB}. Done when each case exits 0, prints the host's no-op reply, and never rewrites the input.
-
-Check: `just test` green; one case per host × event × stdin in the nextest list.
-
 ### T102. Lossless round-trip for every plugin that shortens
 
 Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
-
-### T105. Report renderers: edge-case snapshots
-
-`src/report/markdown.rs` and `src/report/html.rs` have no unit tests; `tests/report.rs` covers one fixture and the empty store. `insta` snapshots on a fixed model: zero savings, one row, very large numbers, text with `<`, `|`, backticks and newlines. Done when no table breaks, no HTML is injected, and no `NaN` or `inf` is printed.
-
-Check: snapshots committed; `just test` green.
 
 ### T107. CLI bad-argument fixtures
 
