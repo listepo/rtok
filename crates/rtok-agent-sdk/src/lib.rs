@@ -1138,6 +1138,11 @@ mod tests {
         let dir = tmp("link");
         let src = dir.join("plugins/demo");
         fs::create_dir_all(&src).unwrap();
+        // A real plugin source is never empty; an empty `src` cannot prove a non-symlink
+        // (Windows) install is up to date (T164: `tree_copies` needs at least one file to
+        // compare), which would otherwise make the second `run` below reinstall instead of
+        // reporting `NO_CHANGES`.
+        fs::write(src.join("plugin.json"), "v1").unwrap();
         let link = PluginLink {
             src_rel: "plugins/demo",
             src,
