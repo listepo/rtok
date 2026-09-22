@@ -376,7 +376,7 @@ Check: a short output that loses only whitespace/ANSI prints no trailer and its 
 
 ### T163. Replace raw SQL in `src/store/` with Diesel's query builder
 
-Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`, not yet in rtok — needs creator approval before wiring). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
+Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`). Creator approved new dependencies for this task (2026-09-22): add `diesel_migrations` and any other current, maintained crate it needs, with a one-line reason in the commit and rows in `toolchain.md` and `rust.md`. Split into ≤200 LOC / ≤10 file PRs per file when claimed.
 
 Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
 
