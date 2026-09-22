@@ -502,6 +502,8 @@ pub mod snapshot {
     }
 }
 
+// Used by the wasm client's filter box and the unit tests — nothing native.
+#[cfg(any(target_family = "wasm", test))]
 fn filter_expand(text: &str, needle: &str) -> String {
     if needle.is_empty() {
         return text.to_string();
@@ -687,8 +689,35 @@ mod wasm {
                 .collect::<Vec<_>>(),
         ))));
         super::init_theme(&ui);
+        track_viewport(&ui);
         connect(&ui, 0);
         ui.run().expect("slint run");
+    }
+
+    /// Size the window to the browser viewport: without this the canvas keeps
+    /// `preferred-width/height` (960×640) and never fills the screen.
+    fn fit_viewport(ui: &MainWindow) {
+        let Some(win) = web_sys::window() else { return };
+        let (Ok(w), Ok(h)) = (win.inner_width(), win.inner_height()) else { return };
+        let (Some(w), Some(h)) = (w.as_f64(), h.as_f64()) else { return };
+        ui.window()
+            .set_size(slint::LogicalSize::new(w as f32, h as f32));
+    }
+
+    /// Keep the window glued to the viewport across browser resizes and zooms.
+    fn track_viewport(ui: &MainWindow) {
+        fit_viewport(ui);
+        let weak = ui.as_weak();
+        let on_resize = Closure::<dyn FnMut()>::new(move || {
+            if let Some(ui) = weak.upgrade() {
+                fit_viewport(&ui);
+            }
+        });
+        let _ = web_sys::window().and_then(|w| {
+            w.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref())
+                .ok()
+        });
+        on_resize.forget();
     }
 
     fn connect(ui: &MainWindow, attempt: u32) {
