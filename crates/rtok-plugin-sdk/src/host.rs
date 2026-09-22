@@ -147,12 +147,28 @@ impl<T> Capabilities for T where T: Host + Archive + Notes + ReadCache + Ledger 
 /// [`Capabilities`], so every host method is reachable directly on it.
 pub struct Ctx<'a> {
     host: &'a dyn Capabilities,
+    agent_id: Option<&'a str>,
 }
 
 impl<'a> Ctx<'a> {
     /// Wrap a host for one dispatch.
     pub fn new(host: &'a dyn Capabilities) -> Self {
-        Self { host }
+        Self {
+            host,
+            agent_id: None,
+        }
+    }
+
+    /// T129: wrap a host for one dispatch inside a sub-agent's context window. A window is
+    /// `(session_id, agent_id)`: hooks fired in a sub-agent carry `agent_id` on the payload,
+    /// and "already seen" state must not cross windows.
+    pub fn with_agent(host: &'a dyn Capabilities, agent_id: Option<&'a str>) -> Self {
+        Self { host, agent_id }
+    }
+
+    /// The sub-agent this dispatch belongs to, or `None` for the parent window.
+    pub fn agent_id(&self) -> Option<&str> {
+        self.agent_id
     }
 
     /// This plugin's own `[plugins.<id>]` section, deserialized into `T`.

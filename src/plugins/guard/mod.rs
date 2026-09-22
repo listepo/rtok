@@ -34,7 +34,7 @@ impl Plugin for Guard {
         if let Some(d) = native_redirect(ev.tool_name, cx) {
             return Some(d);
         }
-        let key = cache_key(ev.tool_name, ev.tool_input)?;
+        let key = cache_key(ev.tool_name, ev.tool_input, cx.agent_id())?;
         let (id, ts) = cx.get_read_cache(&key).ok().flatten()?;
         let id = id?;
         let n = cx.calls_since(ts).unwrap_or(0);
@@ -69,7 +69,7 @@ impl Plugin for Guard {
     }
 
     fn post_tool(&self, ev: &PostToolUse, cx: &Ctx) -> Option<String> {
-        match cache_key(ev.tool_name, ev.tool_input) {
+        match cache_key(ev.tool_name, ev.tool_input, cx.agent_id()) {
             Some(key) => {
                 let body = payload(ev.tool_response);
                 let id = cx.put_archive(&body).ok()?;
@@ -164,8 +164,8 @@ fn native_redirect(tool: &str, cx: &Ctx) -> Option<PreToolDecision> {
     Some(PreToolDecision::Deny { reason })
 }
 
-fn cache_key(tool: &str, input: &Value) -> Option<String> {
-    match tool {
+fn cache_key(tool: &str, input: &Value, agent: Option<&str>) -> Option<String> {
+    let key = match tool {
         // Claude Code sends `file_path`; Copilot's `read_file`/`view` are adapted to the
         // tool name `Read` but keep their own input key `path` — either names the file.
         // The `read\t` prefix is what the mutating arm below clears in one store call
@@ -185,7 +185,14 @@ fn cache_key(tool: &str, input: &Value) -> Option<String> {
             read_only(&c).then(|| format!("bash\t{c}"))
         }
         _ => None,
-    }
+    }?;
+    // T129: a context window is `(session_id, agent_id)`. A sub-agent's key carries the id
+    // as a suffix, so a body one window has seen is only a duplicate to that window — and
+    // the prefix clears below (`read`, `read\t{path}`) still reach every window's key.
+    Some(match agent {
+        Some(id) if !id.is_empty() => format!("{key}\t{id}"),
+        _ => key,
+    })
 }
 
 /// Stems whose output only changes when something else ran in between. Looks past the
@@ -375,7 +382,7 @@ mod tests {
     /// `git status` differ per directory, so a repeat behind a `cd` is new information.
     #[test]
     fn bash_key_keeps_the_cd_target() {
-        let k = |c: &str| cache_key("Bash", &json!({"command": c}));
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}), None);
         assert_eq!(k("ls"), Some("bash\tls".to_string()));
         assert_eq!(k("cd a && ls"), Some("bash\tcd a && ls".to_string()));
         assert_eq!(k("cd b && ls"), Some("bash\tcd b && ls".to_string()));
@@ -581,7 +588,7 @@ mod tests {
             )
             .is_none()
         );
-        let key = cache_key("Read", &path).unwrap();
+        let key = cache_key("Read", &path, None).unwrap();
         let (id, _) = cx.store.get_read_cache(&cx.session, &key).unwrap().unwrap();
         let id = id.unwrap();
         std::fs::remove_file(cx.config.core.archive_dir.join(&id)).unwrap();
@@ -590,6 +597,54 @@ mod tests {
             tool_input: &path,
         };
         assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+    }
+
+    /// T129: a context window is `(session_id, agent_id)`. The parent reads P; a sub-agent's
+    /// first Read of P is new to its window and must be allowed with no `guard` Measurement
+    /// row (the session-scoped key denied a body that window never saw); the sub-agent's
+    /// repeat denies; the parent's repeat still denies.
+    #[test]
+    fn a_sub_agent_window_scopes_the_read_cache() {
+        let cx = setup();
+        let g = Guard;
+        let path = json!({"file_path": "/proj/p.rs"});
+        let resp = json!({"content": "body"});
+        let read = PreToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+        };
+        let post = PostToolUse {
+            tool_name: "Read",
+            tool_input: &path,
+            tool_response: &resp,
+        };
+        assert!(g.pre_tool(&read, &Ctx::new(&cx)).is_none());
+        assert!(g.post_tool(&post, &Ctx::new(&cx)).is_none());
+
+        let sub = Ctx::with_agent(&cx, Some("a1"));
+        let rows = cx.store.measurement_count("guard").unwrap();
+        assert!(
+            g.pre_tool(&read, &sub).is_none(),
+            "the sub-agent's first Read of P is new to its window"
+        );
+        assert_eq!(
+            cx.store.measurement_count("guard").unwrap(),
+            rows,
+            "the allowed path records no guard Measurement row"
+        );
+        assert!(g.post_tool(&post, &sub).is_none());
+        match g.pre_tool(&read, &sub) {
+            Some(PreToolDecision::Deny { reason }) => {
+                assert!(reason.contains("expand"), "{reason}")
+            }
+            other => panic!("the sub-agent's repeat must deny: {other:?}"),
+        }
+        match g.pre_tool(&read, &Ctx::new(&cx)) {
+            Some(PreToolDecision::Deny { reason }) => {
+                assert!(reason.contains("expand"), "{reason}")
+            }
+            other => panic!("the parent's repeat must deny: {other:?}"),
+        }
     }
 
     /// T50.4: off by default, Grep points at `search` and Glob at `tree` when on,
@@ -763,7 +818,7 @@ mod tests {
             )
             .is_none()
         );
-        let key = cache_key("Read", &path).unwrap();
+        let key = cache_key("Read", &path, None).unwrap();
         let (id, _) = cx.store.get_read_cache(&cx.session, &key).unwrap().unwrap();
         let id = id.unwrap();
         let file = cx.config.core.archive_dir.join(&id);
@@ -785,7 +840,7 @@ mod tests {
     /// T57.1: flag-aware read-only keys — writer markers take the mutating path.
     #[test]
     fn flag_aware_read_only_keys() {
-        let k = |c: &str| cache_key("Bash", &json!({"command": c}));
+        let k = |c: &str| cache_key("Bash", &json!({"command": c}), None);
         assert!(k("sed -n 1,40p f").is_some(), "sed -n is read-only");
         assert!(k("sed -i s/a/b/ f").is_none(), "sed -i is mutating");
         assert!(

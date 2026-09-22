@@ -8,5 +8,7 @@
   "tool_input": {
     "file_path": "/Users/dev/proj/src/main.rs"
   },
-  "tool_use_id": "toolu_01ReadAbCdEfGhIjKlMnOpQr"
+  "tool_use_id": "toolu_01ReadAbCdEfGhIjKlMnOpQr",
+  "agent_id": "a00bd472273a674a6",
+  "agent_type": "general-purpose"
 }

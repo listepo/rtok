@@ -13,6 +13,12 @@ use crate::plugin::{PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionSt
 pub struct HookInput {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub session_id: String,
+    /// T129: hooks fired inside a sub-agent carry the parent's `session_id` plus these
+    /// (`research.md` §17.2). Absent in the parent window and on hosts without sub-agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hook_event_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -425,6 +431,30 @@ mod tests {
                 "{name}: exactly one view (none for PostCompact)"
             );
         }
+    }
+
+    /// T129: a sub-agent's hook events carry `agent_id` / `agent_type` beside the parent's
+    /// `session_id`; both parse and round-trip, and a payload without them stays as it was.
+    #[test]
+    fn agent_identity_parses_and_round_trips() {
+        let v = serde_json::json!({
+            "session_id": "s-1",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/p.rs"},
+            "agent_id": "a00bd472273a674a6",
+            "agent_type": "general-purpose"
+        });
+        let input: HookInput = serde_json::from_value(v).unwrap();
+        assert_eq!(input.agent_id.as_deref(), Some("a00bd472273a674a6"));
+        assert_eq!(input.agent_type.as_deref(), Some("general-purpose"));
+        let round: HookInput =
+            serde_json::from_str(&serde_json::to_string(&input).unwrap()).unwrap();
+        assert_eq!(round, input);
+        let plain: HookInput =
+            serde_json::from_str(r#"{"session_id":"s-2","hook_event_name":"PreToolUse"}"#).unwrap();
+        assert_eq!(plain.agent_id, None);
+        assert_eq!(plain.agent_type, None);
     }
 
     #[test]
