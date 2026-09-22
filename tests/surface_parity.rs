@@ -342,6 +342,10 @@ const EXEMPT: &[(&str, &str)] = &[
         "worktree add",
         "creates a locked git worktree and prints its path (T158)",
     ),
+    (
+        "worktree clean",
+        "deletes tagged build caches on the checkout's file system, not the store (T152)",
+    ),
     // helpers: a location or a verdict, not model data
     ("config path", "prints where the config file is"),
     (

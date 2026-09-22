@@ -48,7 +48,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T140 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T152 | todo | P1 | 2 | 0% | |
 | T154 | todo | P2 | 3 | 0% | |
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
@@ -330,16 +329,6 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
-
-### T152. `rtok worktree clean`: delete tagged build caches, keep the worktrees
-
-Depends on T151. The always-safe operation: a tagged cache holds no source and the next build recreates it, while `git worktree remove` refuses the whole worktree when anything is uncommitted (`graph-perf`: 18.1 GB of cache next to 23 uncommitted files; deleting only the cache freed 17 GiB and lost nothing).
-
-Plan: `rtok worktree clean [<path>…] [--idle <duration>] [--yes]`. Default is a dry run that prints what would be freed. Targets only directories that pass T151's `CACHEDIR.TAG` signature check, in worktrees (and orphans) where nothing under the cache was modified within `--idle` (default settled in the Do and recorded in `docs/config.md` if it becomes a key). Never the cache of the worktree the command runs from unless its path is given explicitly. Deletion is the one non-lossless act in rtok, so the card states why it is allowed: a tagged cache is reproducible by definition; nothing untagged is ever touched.
-
-Check: integration test — dry run deletes nothing and reports the bytes; `--yes` removes the tagged cache and leaves an untagged `target/`, a fresh (non-idle) cache and every source file in place; an orphan's cache is cleaned; exit code and output snapshot via `trycmd`; `just check`.
-
-Already in the tree (T151, T153) — reuse, do not re-implement: `worktree::list::is_cache_dir` (the `CACHEDIR.TAG` signature check), `worktree::list::usage` (source/cache bytes and the newest mtime), `worktree::list::orphans`, and the `--idle` flag of `worktree gc` (default `24h`, parsed by `measure::stats::parse_since`) — `clean` takes the same flag with the same default. A new subcommand also needs a reason in `tests/surface_parity.rs` `EXEMPT`, its per-call flags in `tests/config_coverage.rs` `ALLOW_KEYS`, a `--help` case inside the fence of `tests/trycmd/help-subcommands.trycmd`, and re-blessed completion goldens — after `TRYCMD=overwrite`, restore the `v[..] ([..])` line of `tests/trycmd/man.stdout`.
 
 ### T154. Ownership ledger: SessionStart records which session worked in which worktree
 

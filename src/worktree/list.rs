@@ -21,24 +21,45 @@ pub fn is_cache_dir(dir: &Path) -> bool {
 
 /// Logical bytes: an APFS clone or a hard link counts in full, so the sum over worktrees
 /// can exceed what deleting them would free.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Usage {
     pub source: u64,
     pub cache: u64,
+    pub modified: Option<SystemTime>,
+    /// Every tagged cache root under the worktree; `cache` is their sum.
+    pub caches: Vec<Cache>,
+}
+
+/// One tagged cache root: the unit `rtok worktree clean` (T152) deletes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cache {
+    pub path: PathBuf,
+    pub bytes: u64,
     pub modified: Option<SystemTime>,
 }
 
 pub fn usage(dir: &Path) -> Usage {
     let mut total = Usage::default();
-    walk(dir, false, &mut total);
+    walk(dir, None, &mut total);
     total
 }
 
-fn walk(dir: &Path, in_cache: bool, total: &mut Usage) {
+/// `cache` indexes `total.caches` once the walk is inside a tagged root.
+fn walk(dir: &Path, cache: Option<usize>, total: &mut Usage) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    let in_cache = in_cache || is_cache_dir(dir);
+    let cache = cache.or_else(|| {
+        is_cache_dir(dir).then(|| {
+            let root = Cache {
+                path: dir.to_path_buf(),
+                bytes: 0,
+                modified: None,
+            };
+            total.caches.push(root);
+            total.caches.len() - 1
+        })
+    });
     for entry in entries.flatten() {
         // `DirEntry::metadata` does not follow symlinks: a link costs its own length.
         let Ok(meta) = entry.metadata() else {
@@ -48,16 +69,21 @@ fn walk(dir: &Path, in_cache: bool, total: &mut Usage) {
         if meta.is_dir() {
             // A nested checkout (another worktree, a submodule) is its own row.
             if !path.join(".git").exists() {
-                walk(&path, in_cache, total);
+                walk(&path, cache, total);
             }
             continue;
         }
-        if in_cache {
-            total.cache += meta.len();
-        } else {
-            total.source += meta.len();
+        let modified = meta.modified().ok();
+        match cache {
+            Some(i) => {
+                let root = &mut total.caches[i];
+                root.bytes += meta.len();
+                root.modified = root.modified.max(modified);
+                total.cache += meta.len();
+            }
+            None => total.source += meta.len(),
         }
-        total.modified = total.modified.max(meta.modified().ok());
+        total.modified = total.modified.max(modified);
     }
 }
 
@@ -210,6 +236,15 @@ mod tests {
         assert_eq!(used.cache, 1000 + CACHEDIR_SIGNATURE.len() as u64);
         assert_eq!(used.source, 10 + 100 + "not a signature".len() as u64);
         assert!(used.modified.is_some());
+        let [root] = used.caches.as_slice() else {
+            panic!("one cache root, got {:?}", used.caches);
+        };
+        assert_eq!(
+            (root.path.as_path(), root.bytes),
+            (dir.join("target").as_path(), used.cache)
+        );
+        // The root's newest file is at most as new as the worktree's newest file.
+        assert!(root.modified.is_some() && root.modified <= used.modified);
         assert_eq!(usage(&dir.join("missing")), Usage::default());
     }
 

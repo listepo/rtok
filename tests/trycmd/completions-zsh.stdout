@@ -157,6 +157,17 @@ _arguments "${_arguments_options[@]}" : /
 '--help[Print help]' /
 && ret=0
 ;;
+(clean)
+_arguments "${_arguments_options[@]}" : /
+'--idle=[Keep caches modified within this window (/`24h/`, /`7d/`)]:IDLE:_default' /
+'--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--yes[Apply; without it this is a dry run that changes nothing]' /
+'--json[JSON instead of the table]' /
+'-h[Print help]' /
+'--help[Print help]' /
+'*::paths -- Only these worktrees; the one this command runs from is cleaned only when named:_files' /
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : /
 ":: :_rtok__subcmd__worktree__subcmd__help_commands" /
@@ -178,6 +189,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (gc)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clean)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -1446,6 +1461,10 @@ _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
 (gc)
+_arguments "${_arguments_options[@]}" : /
+&& ret=0
+;;
+(clean)
 _arguments "${_arguments_options[@]}" : /
 && ret=0
 ;;
@@ -2747,6 +2766,7 @@ _rtok__subcmd__help__subcmd__worktree_commands() {
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
+'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
     )
     _describe -t commands 'rtok help worktree commands' commands "$@"
 }
@@ -2754,6 +2774,11 @@ _rtok__subcmd__help__subcmd__worktree_commands() {
 _rtok__subcmd__help__subcmd__worktree__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok help worktree add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__clean_commands] )) ||
+_rtok__subcmd__help__subcmd__worktree__subcmd__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok help worktree clean commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__help__subcmd__worktree__subcmd__gc_commands] )) ||
 _rtok__subcmd__help__subcmd__worktree__subcmd__gc_commands() {
@@ -3032,6 +3057,7 @@ _rtok__subcmd__worktree_commands() {
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
+'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok worktree commands' commands "$@"
@@ -3040,6 +3066,11 @@ _rtok__subcmd__worktree_commands() {
 _rtok__subcmd__worktree__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__clean_commands] )) ||
+_rtok__subcmd__worktree__subcmd__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree clean commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__gc_commands] )) ||
 _rtok__subcmd__worktree__subcmd__gc_commands() {
@@ -3052,6 +3083,7 @@ _rtok__subcmd__worktree__subcmd__help_commands() {
 'add:Create the worktree for a task/: one location, one name, one locked owner; prints its path' /
 'list:Every worktree and orphan with its owner, state, source and build-cache bytes' /
 'gc:Remove merged, clean, idle worktrees with their branches; drop records of deleted ones' /
+'clean:Delete idle tagged build caches (/`CACHEDIR.TAG/`) and keep the worktrees; dry run without /`--yes/`' /
 'help:Print this message or the help of the given subcommand(s)' /
     )
     _describe -t commands 'rtok worktree help commands' commands "$@"
@@ -3060,6 +3092,11 @@ _rtok__subcmd__worktree__subcmd__help_commands() {
 _rtok__subcmd__worktree__subcmd__help__subcmd__add_commands() {
     local commands; commands=()
     _describe -t commands 'rtok worktree help add commands' commands "$@"
+}
+(( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__clean_commands] )) ||
+_rtok__subcmd__worktree__subcmd__help__subcmd__clean_commands() {
+    local commands; commands=()
+    _describe -t commands 'rtok worktree help clean commands' commands "$@"
 }
 (( $+functions[_rtok__subcmd__worktree__subcmd__help__subcmd__gc_commands] )) ||
 _rtok__subcmd__worktree__subcmd__help__subcmd__gc_commands() {

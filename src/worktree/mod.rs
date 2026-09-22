@@ -3,9 +3,25 @@
 //! Parsing and classification are pure; [`git`] is the only module that spawns git.
 
 pub mod add;
+pub mod clean;
 pub mod gc;
 pub mod git;
 pub mod list;
+
+/// A `render::table` with one free-text note appended per line (after a `note` header),
+/// so the table itself still ends right-aligned. `gc` and `clean` print their verdicts this way.
+pub(crate) fn noted_table<'a>(
+    cols: &[crate::render::Col],
+    lines: &[Vec<String>],
+    notes: impl Iterator<Item = &'a str>,
+) -> String {
+    let body = crate::render::table(cols, lines);
+    let notes = std::iter::once("note").chain(notes);
+    body.lines()
+        .zip(notes)
+        .map(|(row, note)| format!("{row}  {note}\n"))
+        .collect()
+}
 
 use std::path::{Path, PathBuf};
 

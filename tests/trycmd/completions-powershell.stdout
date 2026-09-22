@@ -139,6 +139,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
+            [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -166,10 +167,20 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
         }
+        'rtok;worktree;clean' {
+            [CompletionResult]::new('--idle', '--idle', [CompletionResultType]::ParameterName, 'Keep caches modified within this window (`24h`, `7d`)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Apply; without it this is a dry run that changes nothing')
+            [CompletionResult]::new('--json', '--json', [CompletionResultType]::ParameterName, 'JSON instead of the table')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'rtok;worktree;help' {
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
+            [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -180,6 +191,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;worktree;help;gc' {
+            break
+        }
+        'rtok;worktree;help;clean' {
             break
         }
         'rtok;worktree;help;help' {
@@ -1069,6 +1083,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('add', 'add', [CompletionResultType]::ParameterValue, 'Create the worktree for a task: one location, one name, one locked owner; prints its path')
             [CompletionResult]::new('list', 'list', [CompletionResultType]::ParameterValue, 'Every worktree and orphan with its owner, state, source and build-cache bytes')
             [CompletionResult]::new('gc', 'gc', [CompletionResultType]::ParameterValue, 'Remove merged, clean, idle worktrees with their branches; drop records of deleted ones')
+            [CompletionResult]::new('clean', 'clean', [CompletionResultType]::ParameterValue, 'Delete idle tagged build caches (`CACHEDIR.TAG`) and keep the worktrees; dry run without `--yes`')
             break
         }
         'rtok;help;worktree;add' {
@@ -1078,6 +1093,9 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             break
         }
         'rtok;help;worktree;gc' {
+            break
+        }
+        'rtok;help;worktree;clean' {
             break
         }
         'rtok;help;info' {
