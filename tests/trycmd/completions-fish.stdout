@@ -57,7 +57,7 @@ complete -c rtok -n "__fish_rtok_needs_command" -f -a "otel" -d 'OpenTelemetry e
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "logs" -d 'rtok/'s own log (`rtok logs` prints, `rtok logs export` strips numbering and colour)'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "report" -d 'The operator model as one document (D24): Markdown, HTML and PDF'
 complete -c rtok -n "__fish_rtok_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c rtok -n "__fish_rtok_using_subcommand hook" -l host -d 'Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)' -r
+complete -c rtok -n "__fish_rtok_using_subcommand hook" -l host -d 'Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin` | `cline`)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand hook" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand hook" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand mcp" -l call -d 'Call one listed tool and print the text result (pi `registerTool` shim, T70.3)' -r

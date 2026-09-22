@@ -365,6 +365,7 @@ section! {
         aider: SetupAider = SetupAider::default(),
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
+        cline: SetupCline = SetupCline::default(),
     }
 }
 
@@ -391,6 +392,15 @@ section! {
 section! {
     /// `[setup.kilo]` — `kilo.json`, merged by Kilo with a user's `kilo.jsonc` (T97).
     SetupKilo { config_path: PathBuf = p("~/.config/kilo/kilo.json") }
+}
+
+section! {
+    /// `[setup.cline]` — hooks dir serves CLI + extension (D21 singleton, T96);
+    /// MCP is per surface (CLI path below + VS Code extension globalStorage).
+    SetupCline {
+        hooks_path: PathBuf = p("~/Documents/Cline/Hooks"),
+        mcp_path: PathBuf = p("~/.cline/data/settings/cline_mcp_settings.json"),
+    }
 }
 
 section! {
@@ -919,6 +929,8 @@ impl Config {
             &mut self.setup.aider.config_path,
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
+            &mut self.setup.cline.hooks_path,
+            &mut self.setup.cline.mcp_path,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,
@@ -1139,6 +1151,8 @@ mod tests {
             &cfg.setup.aider.config_path,
             &cfg.setup.windsurf.config_path,
             &cfg.setup.zed.config_path,
+            &cfg.setup.cline.hooks_path,
+            &cfg.setup.cline.mcp_path,
             &cfg.plugins.cmd.rules,
             &cfg.plugins.cmd.rules_dir,
             &cfg.plugins.inject.modes_dir,

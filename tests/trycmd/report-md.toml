@@ -196,6 +196,8 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.aider.config_path | ~/.aider.conf.yml | default |
 | setup.backup | true | default |
 | setup.claude.settings_path | ~/.claude/settings.json | default |
+| setup.cline.hooks_path | ~/Documents/Cline/Hooks | default |
+| setup.cline.mcp_path | ~/.cline/data/settings/cline_mcp_settings.json | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
@@ -247,7 +249,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-201 keys.
+203 keys.
 
 ## Doctor
 
@@ -368,6 +370,16 @@ agents
     mcp     not installed
     proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
     plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
+  cline (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: the Anthropic base URL is extension state, not a file rtok may edit
+    plugin  not installed (--yes)
+  cline (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: the Anthropic base URL is extension state, not a file rtok may edit
+    plugin  not installed (--yes)
 skills (1 listed, 154 desc bytes ≈ 38 tokens per request)
   dry-refactoring project desc 154c body 2772B calls - WARN never invoked
 ```
