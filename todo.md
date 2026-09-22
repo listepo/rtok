@@ -48,3 +48,4 @@
 - T181. `graph/cap` records 0% saving
 - T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 - T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
+- T184. rtok never resolves its home to a relative `.rtok`

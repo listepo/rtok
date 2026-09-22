@@ -57,6 +57,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T181 | todo | P3 | 2 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
 | T183 | todo | P2 | 4 | 0% | |
+| T184 | todo | P1 | 2 | 0% | |
 
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
@@ -448,6 +449,14 @@ Scope:
 4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
 
 Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
+
+### T184. rtok never resolves its home to a relative `.rtok`
+
+Found 2026-09-22 while closing T169: `cli_trycmd` writes `./.rtok/config.toml` and `./.rtok/rtok.db` into the checkout. Bisected to five cases — `agents-sessions-json`, `doctor-json`, `otel-json`, `plugins-json`, `stats-price`. Ten `tests/trycmd/*.toml` cases put their variables straight under `[env]` (`RTOK_HOME = "target/tmp/…"`). trycmd 1.2.1's `Env` knows only `inherit`, `add` and `remove`, has no `deny_unknown_fields`, and drops those keys silently; the 26 other cases use `[env.add]` correctly. With `inherit = false` the binary then runs with neither `HOME` nor `RTOK_HOME`, and `Config::home_dir` returns `"".join(".rtok")`, a path relative to the cwd. Reproduced: `env -i rtok --config tests/trycmd/input/json-readers.toml plugins --json` in the repo root creates `./.rtok/`; with `RTOK_HOME` set it does not. The tracked `.rtok/config.toml` (added by `1a40127`, a stale copy of `config/default.toml`) is the same output committed; the project layer reads `<git root>/.rtok.toml`, not that file.
+
+Plan: (1) move the ten cases' variables under `[env.add]`, re-bless whatever output then changes, and add a test that fails on any bare key under `[env]` in `tests/trycmd/*.toml`; (2) `Config::home_dir` (`home_dir_from`, `src/config/mod.rs`) falls back to `std::env::home_dir()` (not deprecated in the pinned Rust 1.97.1; on Unix it reads `getpwuid_r` when `HOME` is unset) and never returns a relative path — when no home resolves, pick a behaviour that keeps hooks fail-open (for example the OS temp dir) and cover it with a unit test; (3) untrack `.rtok/config.toml` and ignore `/.rtok/`.
+
+Check: after `just test`, no `./.rtok` and no `./~` in the checkout; `env -i rtok plugins --json` from the repo root creates nothing in the cwd; the new trycmd-schema test fails on `main`; `just check` green.
 
 Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
 
