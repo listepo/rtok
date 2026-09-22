@@ -588,8 +588,9 @@ pub struct SkillCopy {
     pub src: PathBuf,
     /// Where the host loads skills from (`~/.cursor/skills/rtok`, …).
     pub dest: PathBuf,
-    /// How the destination reads to a person; dry runs print the concrete path beside it.
-    pub label: Option<&'static str>,
+    /// How the destination reads to a person (`~/.cursor/skills/rtok`); dry runs print the
+    /// concrete path beside it.
+    pub label: Option<String>,
 }
 
 impl SkillCopy {
@@ -598,7 +599,7 @@ impl SkillCopy {
     }
 
     fn dest_desc(&self) -> String {
-        match self.label {
+        match &self.label {
             Some(label) => format!("{label} ({})", self.dest.display()),
             None => self.dest.display().to_string(),
         }

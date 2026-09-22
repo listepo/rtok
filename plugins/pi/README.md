@@ -22,6 +22,7 @@ Files:
   Missing `rtok` fails open and names ketch (`ketch install listepo/rtok`). Hook hosts
   (Claude/Cursor/Codex/Copilot) are T58.2.
 - `skills/rtok/SKILL.md` — tells the model how to recover full output (`rtok expand <id>`).
+- `skills/worktrees/SKILL.md` — copy of the hub `skills/worktrees/` skill (git worktrees via `rtok worktree`); kept byte-identical by `tests/pi_plugin.rs`.
 - `tests/load.test.ts` — loads the linked directory with pi's own `discoverAndLoadExtensions` and expects
   one extension with `tool_call` and `tool_result`; skipped when pi is not installed.
 - `tests/rtok.test.ts` — vitest unit test of the extension against a fake `rtok` on PATH (`tests/node/fake-rtok.ts`, every OS); run by
