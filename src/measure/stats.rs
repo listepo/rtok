@@ -91,6 +91,10 @@ pub struct Report {
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<BTreeMap<String, SkillRow>>,
+    /// T128: sub-agent transcripts under `<session>/subagents/`, attributed to their
+    /// parent sessions (`super::subagents`). Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagents: Option<super::subagents::Subagents>,
 }
 
 /// What the model re-types to edit (plan T58.3). `old_string` is the span `Edit` and every
@@ -255,6 +259,37 @@ impl Report {
             self.cache_hit_rate * 100.0,
             self.median_final_context
         ));
+        if let Some(sa) = &self.subagents {
+            s.push_str(&format!(
+                "sub-agents {} sessions / {} agents  results {} B vs parents {} B ({:.1}% of the tree)\n",
+                sa.sessions,
+                sa.count,
+                sa.result_bytes,
+                sa.parent_result_bytes,
+                pct(sa.result_bytes, sa.result_bytes + sa.parent_result_bytes)
+            ));
+            s.push_str(&format!(
+                "  reads {} B ({:.1}% of results)  re-reads: parent {} B, sibling {} B\n",
+                sa.read_bytes,
+                pct(sa.read_bytes, sa.result_bytes),
+                sa.read_parent,
+                sa.read_sibling
+            ));
+            s.push_str(&format!(
+                "  re-read {} B = {:.1}% of reads, {:.1}% of results, {:.1}% of the tree\n",
+                sa.reread_bytes, sa.share_read, sa.share_results, sa.share_tree
+            ));
+            s.push_str(&format!(
+                "  usage input={} cache_read={} cache_write={} output={}\n",
+                sa.usage_input, sa.usage_cache_read, sa.usage_cache_write, sa.usage_output
+            ));
+            for r in &sa.by_type {
+                s.push_str(&format!(
+                    "  {} | {}  {} agents  results {} B  reads {} B  re-read {} B\n",
+                    r.agent_type, r.model, r.count, r.result_bytes, r.read_bytes, r.reread_bytes
+                ));
+            }
+        }
         if !self.api.is_empty() {
             // The old fixed widths ride along as column floors, so the bytes a golden
             // pinned do not move (T25.2 moved the padding into `render::table`).
@@ -708,7 +743,13 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         .unwrap_or(SystemTime::UNIX_EPOCH);
     let mut report = Report::default();
     let mut finals = Vec::new();
+    let mut parents = Vec::new();
     for p in super::codex::jsonl_paths(dir, cutoff) {
+        // T128: a sub-agent transcript is attributed to its parent below, never counted
+        // as a session of its own.
+        if super::subagents::is_subagent(&p) {
+            continue;
+        }
         // One unreadable transcript is one malformed entry, not the end of the report.
         let Ok(parsed) = jsonl::parse_path(&p) else {
             report.malformed += 1;
@@ -719,6 +760,7 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
             report.session_stems.push(stem.to_string());
         }
         fold_session(&parsed, plugin, replay, &mut report, &mut finals);
+        parents.push(super::subagents::Parent::new(&p, &parsed));
     }
     report.no_checkpoint = report.sessions;
     finish_rows(&mut report.tools);
@@ -736,6 +778,7 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
     } else {
         finals[finals.len() / 2]
     };
+    report.subagents = super::subagents::collect(&parents, cutoff);
     Ok(report)
 }
 
@@ -968,7 +1011,7 @@ fn fold_read_delta(row: &mut ReadDeltaRow, parsed: &Parsed) {
     }
 }
 
-fn tool_path(input: &Value) -> Option<&str> {
+pub(crate) fn tool_path(input: &Value) -> Option<&str> {
     input
         .get("file_path")
         .or_else(|| input.get("path"))
@@ -978,7 +1021,7 @@ fn tool_path(input: &Value) -> Option<&str> {
 }
 
 /// Exact match, or relative-vs-absolute (`src/a.rs` vs `/repo/src/a.rs`).
-fn same_path(a: &str, b: &str) -> bool {
+pub(crate) fn same_path(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
@@ -987,7 +1030,7 @@ fn same_path(a: &str, b: &str) -> bool {
     a.ends_with(b) || b.ends_with(a)
 }
 
-fn pct(part: u64, whole: u64) -> f64 {
+pub(crate) fn pct(part: u64, whole: u64) -> f64 {
     if whole == 0 {
         0.0
     } else {

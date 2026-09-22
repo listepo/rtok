@@ -1295,19 +1295,21 @@ Creator request: a freshly spawned sub-agent gets none of the parent's context, 
 
 T59.6 closed `handoff` at 0.7 % because it measured the `Agent` tool's input and result **in the parent transcript**. The cost of a sub-agent is not there: it is in `<session>/subagents/agent-<id>.jsonl` (plus `agent-<id>.meta.json`: `agentType`, `model`, `toolUseId`, `spawnDepth`), which no rtok code attributes to a parent — `src/` has no `agent_id`, `agent_type` or sidechain handling.
 
-Ad-hoc scan, 2026-09-21, `~/.claude/projects/*/*/subagents/agent-*.jsonl` modified in the last 30 days, one Python pass over tool_use/tool_result blocks (script not in the repo — **T128 replaces this with a `rtok stats` row; until then these are not public numbers**):
+`rtok stats --since 30d --json` → `subagents`, run 2026-09-22 on this machine's `~/.claude/projects` (the T128 row replaces the 2026-09-21 ad-hoc scan and supersedes its numbers):
 
 | Quantity | Value |
 | --- | --- |
-| Sessions with sub-agents / sub-agents | 46 / 501 |
-| Tool-result bytes: sub-agents vs their parents | 29,104,009 vs 40,604,776 (42 % of the tree) |
-| Sub-agent file-read result bytes | 12,985,961 (45 % of sub-agent tool-result bytes) |
-| … of a path the parent also read | 3,936,134 (30 % of sub-agent read bytes) |
-| … of a path an earlier sibling read | 2,235,446 (17 %) |
-| Re-read total | 6,171,580 B = 48 % of sub-agent read bytes, 21 % of sub-agent tool-result bytes, 8.9 % of the tree's |
-| Sub-agent usage (tokens) | input 70,198 · cache read 682,758,922 · cache write 33,236,176 · output 484,836 |
+| Sessions with sub-agents / sub-agents | 51 / 531 |
+| Tool-result bytes: sub-agents vs their parents | 32,112,993 vs 37,054,167 (46 % of the tree) |
+| Sub-agent file-read result bytes | 10,262,213 (32 % of sub-agent tool-result bytes) |
+| … of a path the parent also read | 2,554,602 (25 % of sub-agent read bytes) |
+| … of a path an earlier sibling read | 1,460,241 (14 %) |
+| Re-read total | 4,014,843 B = 39 % of sub-agent read bytes, 13 % of sub-agent tool-result bytes, 5.8 % of the tree's |
+| Sub-agent usage (tokens) | input 78,320 · cache read 1,083,085,186 · cache write 40,376,428 · output 655,280 |
 
-Caveats: path-level match (no range or sha), parent reads counted over the whole session (before or after the spawn), bytes are JSON-encoded result sizes. Every re-read byte is also re-sent on each later sub-agent turn (the cache-read column), so the byte share understates the token share.
+Largest `agentType × model` splits (the full list is `--json` `by_type`): `general-purpose | haiku` 351 agents / 1,028,835 B re-read; `general-purpose | sonnet` 63 / 1,599,793 B; `general-purpose | -` 46 / 676,366 B.
+
+Caveats: path-level match (no range or sha), parent reads counted over the whole session (before or after the spawn), bytes are JSON-encoded `Read` result sizes. Parent-first: a path both the parent and an earlier sibling read counts as a parent re-read, so the two re-read columns are disjoint and sum to the total. Sub-agent transcripts are attributed to their parent session and are no longer counted as sessions of their own (they were before T128). Every re-read byte is also re-sent on each later sub-agent turn (the cache-read column), so the byte share understates the token share.
 
 ### 17.2 What the host gives us (Claude Code)
 

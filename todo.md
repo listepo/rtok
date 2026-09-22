@@ -20,7 +20,6 @@
 
 - T125. `rtok stats`: thinking-block share — the gate for I-86
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-- T128. `rtok stats`: sub-agent transcripts and the re-read share
 - T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
 - T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
 - T131. Measure the spawn brief: cost row and on/off re-read share
