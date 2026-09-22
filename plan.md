@@ -63,7 +63,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T175 | todo | P2 | 2 | 0% | |
 | T176 | todo | P1 | 3 | 0% | |
 | T177 | todo | P2 | 3 | 0% | |
-| T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
+| T178 | in progress | P1 | 4 | 60% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T180 | todo | P3 | 4 | 0% | |
 | T181 | todo | P3 | 2 | 0% | |
@@ -493,7 +493,7 @@ Execution plan: (1) `hyperfine` `rtok hook PreToolUse`/`PostToolUse` with record
 
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
-Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
+Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. The 5 s cancellations point at `Store::open` waiting on the SQLite lock (1 s `busy_timeout` × up to 10 retries) — also a separate fix.
 
 ### T179. Why `read/dedup` and `read/delta` rarely fire
 

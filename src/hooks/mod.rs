@@ -14,14 +14,6 @@ use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
 use types::{HookInput, HookOutput, HookSpecificOutput};
 
-/// T178: the hook's budget is 10 ms, so it waits 5 ms on another process's lock — one connect,
-/// migrations included — and then fails open. Every statement used to wait 1 s.
-const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
-    busy: std::time::Duration::from_millis(5),
-    attempts: 1,
-    migrate: std::time::Duration::from_millis(5),
-};
-
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
 /// With `[hook] fail_open = false` (debugging only) errors surface as a panic
 /// instead of `{}` — the default `true` keeps the fail-open rule (D1).
@@ -109,7 +101,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
-    let mut cx = Runtime::open_with(cfg.clone(), session, LOCK_WAIT)
+    let mut cx = Runtime::open(cfg.clone(), session)
         .map_err(|e| format!("hook {event}: store open: {e}"))?;
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
@@ -195,16 +187,9 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
-    let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
-        Ok(id) => Some(id),
-        // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
-        // wait again, so pass the input through unchanged and record nothing.
-        Err(e) if crate::store::is_locked(&e) => {
-            eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
-            return b"{}".to_vec();
-        }
-        Err(_) => None,
-    };
+    let parent = cx
+        .record_call("hook", "hook", Some(&input.hook_event_name))
+        .ok();
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),

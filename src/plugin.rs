@@ -102,16 +102,7 @@ pub struct Runtime {
 impl Runtime {
     /// Open the store at `config.core.db_path`.
     pub fn open(config: Config, session: impl Into<String>) -> Result<Self> {
-        Self::open_with(config, session, crate::store::LockWait::STEADY)
-    }
-
-    /// [`Runtime::open`] with the store's own bound on waiting for other processes' locks.
-    pub fn open_with(
-        config: Config,
-        session: impl Into<String>,
-        wait: crate::store::LockWait,
-    ) -> Result<Self> {
-        let store = Store::open_with(&config.core.db_path, wait)?;
+        let store = Store::open(&config.core.db_path)?;
         Self::with_store(config, store, session)
     }
 

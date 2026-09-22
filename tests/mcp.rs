@@ -1,8 +1,6 @@
 //! T4.1 Check: `tools/list` over stdio lists `expand`.
 #![allow(unexpected_cfgs)]
 
-mod common;
-
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -53,7 +51,20 @@ fn mcp_serves_while_another_process_holds_the_store_writer() {
     drop(rtok::store::Store::open(&db).unwrap());
     // Hold the WAL writer lock for 2.5 s — past the steady 1 s busy timeout even
     // after the binary's own startup latency reaches the purge.
-    let holder = common::hold_store_writer(&db, std::time::Duration::from_millis(2500));
+    let (held, held_ack) = std::sync::mpsc::channel();
+    let url = db.to_str().unwrap().to_string();
+    let holder = std::thread::spawn(move || {
+        use diesel::Connection;
+        use diesel::connection::SimpleConnection;
+        let mut conn = diesel::sqlite::SqliteConnection::establish(&url).unwrap();
+        conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
+            .unwrap();
+        conn.batch_execute("BEGIN IMMEDIATE;").unwrap();
+        held.send(()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        conn.batch_execute("COMMIT;").unwrap();
+    });
+    held_ack.recv().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
         .arg("mcp")
         .env("RTOK_HOME", &tmp)
