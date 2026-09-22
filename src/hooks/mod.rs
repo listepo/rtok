@@ -582,26 +582,25 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use types::{post_out, pre_out};
+
+    /// Shared by every per-host `_output` test below: hook stdout bytes back to `Value`.
+    fn json(bytes: Vec<u8>) -> serde_json::Value {
+        serde_json::from_slice(&bytes).unwrap()
+    }
 
     #[test]
     fn copilot_output_shapes_pre_post_block_and_empty() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
         assert_eq!(
             json(copilot_output(&HookOutput::default())),
             serde_json::json!({})
         );
 
-        let pre = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("allow".into()),
-                permission_decision_reason: Some("rtok".into()),
-                updated_input: Some(serde_json::json!({"command": "rtok cmd -- git status"})),
-                additional_context: None,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let pre = pre_out(
+            Some("allow"),
+            Some("rtok"),
+            Some(serde_json::json!({"command": "rtok cmd -- git status"})),
+        );
         assert_eq!(
             json(copilot_output(&pre)),
             serde_json::json!({
@@ -611,14 +610,7 @@ mod tests {
             })
         );
 
-        let post = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PostToolUse".into(),
-                additional_context: Some("ctx".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let post = post_out("ctx");
         assert_eq!(
             json(copilot_output(&post)),
             serde_json::json!({"additionalContext": "ctx"})
@@ -636,47 +628,28 @@ mod tests {
     }
     #[test]
     fn gemini_output_shapes_deny_rewrite_context_and_empty() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
         assert_eq!(
             json(gemini_output(&HookOutput::default(), "PreToolUse")),
             serde_json::json!({})
         );
 
-        let deny = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("deny".into()),
-                permission_decision_reason: Some("dup".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let deny = pre_out(Some("deny"), Some("dup"), None);
         assert_eq!(
             json(gemini_output(&deny, "PreToolUse")),
             serde_json::json!({"decision": "deny", "reason": "dup"})
         );
 
-        let rewrite = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                updated_input: Some(serde_json::json!({"command": "rtok cmd -- git status"})),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let rewrite = pre_out(
+            None,
+            None,
+            Some(serde_json::json!({"command": "rtok cmd -- git status"})),
+        );
         assert_eq!(
             json(gemini_output(&rewrite, "PreToolUse")),
             serde_json::json!({"hookSpecificOutput": {"tool_input": {"command": "rtok cmd -- git status"}}})
         );
 
-        let post = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PostToolUse".into(),
-                additional_context: Some("ctx".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let post = post_out("ctx");
         assert_eq!(
             json(gemini_output(&post, "PostToolUse")),
             serde_json::json!({"hookSpecificOutput": {"additionalContext": "ctx"}})
@@ -955,7 +928,6 @@ mod tests {
 
     #[test]
     fn cursor_output_emits_snake_case_mcp_replacement() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
         assert_eq!(
             json(cursor_output(&HookOutput::default())),
             serde_json::json!({})

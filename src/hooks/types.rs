@@ -427,6 +427,39 @@ pub struct HookSpecificOutput {
     pub updated_mcp_tool_output: Option<Value>,
 }
 
+/// Shared by hook-output tests here and in `hooks::tests`: one `PreToolUse`-shaped `HookOutput`
+/// — a permission decision, an input rewrite, or the bare event name.
+#[cfg(test)]
+pub(crate) fn pre_out(
+    decision: Option<&str>,
+    reason: Option<&str>,
+    input: Option<Value>,
+) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PreToolUse".into(),
+            permission_decision: decision.map(Into::into),
+            permission_decision_reason: reason.map(Into::into),
+            updated_input: input,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// One `PostToolUse`-shaped `HookOutput` carrying `additionalContext`.
+#[cfg(test)]
+pub(crate) fn post_out(ctx: &str) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PostToolUse".into(),
+            additional_context: Some(ctx.into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,15 +542,7 @@ mod tests {
     #[test]
     fn empty_output_is_empty_object() {
         assert_eq!(serde_json::to_string(&HookOutput::default()).unwrap(), "{}");
-        let out = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("deny".into()),
-                permission_decision_reason: Some("dup".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let out = pre_out(Some("deny"), Some("dup"), None);
         let json = serde_json::to_value(&out).unwrap();
         assert_eq!(json["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(json.get("continue").is_none());
