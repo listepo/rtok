@@ -30,6 +30,24 @@ fn marketplace_lists_this_folder() {
     );
 }
 
+/// The repo-root marketplace `codex plugin marketplace add listepo/rtok` resolves (T140):
+/// same shape as the nested dev marketplace above, but its one plugin points at the
+/// `plugins/codex` subdirectory instead of `./`, since the marketplace file itself lives at
+/// the repo root, not inside the plugin's own folder.
+#[test]
+fn root_marketplace_points_at_the_plugins_codex_subdirectory() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".agents/plugins/marketplace.json");
+    let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let m: Value =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    assert_eq!(m["name"], "rtok");
+    assert_eq!(m["plugins"][0]["name"], "rtok");
+    assert_eq!(
+        m["plugins"][0]["source"],
+        json!({"source": "local", "path": "./plugins/codex"})
+    );
+}
+
 #[test]
 fn mcp_is_exactly_rtok() {
     assert_eq!(
