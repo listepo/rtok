@@ -132,9 +132,22 @@ pub struct Row {
     pub locked: bool,
     /// T150's state, or `orphan`.
     pub state: &'static str,
+    /// The newest session the hooks saw working here (T154); never set on the main checkout.
+    pub session: Option<Seen>,
     pub source_bytes: u64,
     pub cache_bytes: u64,
     pub modified_unix: Option<u64>,
+}
+
+/// Ownership without agent discipline: every hook upserts `sessions.cwd`, so the store knows
+/// who worked in a worktree even when nobody wrote a lock reason. The lock reason still wins.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Seen {
+    pub session: String,
+    pub host: Option<String>,
+    pub seen_unix: i64,
+    /// No `SessionEnd` recorded — the host may simply never send one.
+    pub live: bool,
 }
 
 impl Row {
@@ -147,10 +160,36 @@ impl Row {
             owner: None,
             locked: false,
             state,
+            session: None,
             source_bytes: used.source,
             cache_bytes: used.cache,
             modified_unix: used.modified.and_then(unix),
         }
+    }
+}
+
+/// Fill [`Row::session`] from the store's sessions: for each linked worktree the newest
+/// session whose `cwd` is the worktree or a directory under it (both canonicalised, so
+/// `/tmp` and `/private/tmp` agree). The main checkout belongs to nobody.
+pub fn attribute(rows: &mut [Row], sessions: &[crate::store::SessionSeen]) {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let seen: Vec<(PathBuf, &crate::store::SessionSeen)> = sessions
+        .iter()
+        .map(|s| (real(Path::new(&s.cwd)), s))
+        .collect();
+    for row in rows.iter_mut().filter(|r| r.state != "main") {
+        let dir = real(&row.path);
+        row.session = seen
+            .iter()
+            .filter(|(cwd, _)| cwd.starts_with(&dir))
+            .map(|(_, s)| *s)
+            .max_by(|a, b| a.last_seen.cmp(&b.last_seen).then(b.id.cmp(&a.id)))
+            .map(|s| Seen {
+                session: s.id.clone(),
+                host: s.host.clone(),
+                seen_unix: s.last_seen,
+                live: s.ended_at.is_none(),
+            });
     }
 }
 
@@ -173,31 +212,36 @@ pub fn to_table(rows: &[Row], now: SystemTime) -> String {
     let dash = || "-".to_string();
     let mut lines = vec![
         [
-            "path", "branch", "owner", "state", "modified", "source", "cache",
+            "path", "branch", "owner", "state", "seen", "modified", "source", "cache",
         ]
         .map(String::from)
         .to_vec(),
     ];
     lines.extend(rows.iter().map(|r| {
-        let owner = match (&r.owner, r.locked) {
-            (Some(owner), _) => owner.clone(),
-            (None, true) => "locked, owner unknown".into(),
-            (None, false) => dash(),
+        let owner = match (&r.owner, r.locked, &r.session) {
+            (Some(owner), ..) => owner.clone(),
+            (None, true, _) => "locked, owner unknown".into(),
+            (None, false, Some(s)) => {
+                let id: String = s.session.chars().take(8).collect();
+                format!("{} session {id}", s.host.as_deref().unwrap_or("?"))
+            }
+            (None, false, None) => dash(),
         };
-        let age = r
-            .modified_unix
-            .map(|t| duration(now.saturating_sub(t) as i64));
+        let ago = |t: i64| duration(now as i64 - t);
+        let seen = r.session.as_ref().map(|s| ago(s.seen_unix));
+        let age = r.modified_unix.map(|t| ago(t as i64));
         vec![
             r.path.display().to_string(),
             r.branch.clone().unwrap_or_else(dash),
             owner,
             r.state.into(),
+            seen.unwrap_or_else(dash),
             age.unwrap_or_else(dash),
             human_bytes(r.source_bytes),
             human_bytes(r.cache_bytes),
         ]
     }));
-    let cols = [0, 0, 0, 0, 0].map(Col::left).into_iter();
+    let cols = [0, 0, 0, 0, 0, 0].map(Col::left).into_iter();
     let cols: Vec<Col> = cols.chain([Col::right(0), Col::right(0)]).collect();
     let (source, cache) = rows
         .iter()
@@ -250,29 +294,84 @@ mod tests {
 
     #[test]
     fn the_table_names_an_unknown_owner_and_totals_both_kinds_of_bytes() {
-        let row = |state, owner: Option<&str>, locked, cache| Row {
+        let row = |state, owner: Option<&str>, locked, session: Option<Seen>, cache| Row {
             path: "/w/x".into(),
             branch: Some("t1".into()),
             owner: owner.map(Into::into),
             locked,
             state,
+            session,
             source_bytes: 1024,
             cache_bytes: cache,
             modified_unix: Some(1_000),
         };
+        let seen = Seen {
+            session: "b1e2c3d4-0000-4000-8000-000000000001".into(),
+            host: Some("claude".into()),
+            seen_unix: 1_000 + 3 * 86_400,
+            live: true,
+        };
         let rows = [
-            row("merged", Some("Cursor / grok"), true, 2048),
-            row("dirty", None, true, 0),
-            row("orphan", None, false, 0),
+            row(
+                "merged",
+                Some("Cursor / grok"),
+                true,
+                Some(seen.clone()),
+                2048,
+            ),
+            row("dirty", None, true, None, 0),
+            row("unmerged", None, false, Some(seen), 0),
+            row("orphan", None, false, None, 0),
         ];
         let now = UNIX_EPOCH + std::time::Duration::from_secs(1_000 + 3 * 86_400 + 4 * 3_600);
         insta::assert_snapshot!(to_table(&rows, now), @r"
-        path branch owner                 state  modified source  cache
-        /w/x t1     Cursor / grok         merged 3d04h    1.0 KB 2.0 KB
-        /w/x t1     locked, owner unknown dirty  3d04h    1.0 KB    0 B
-        /w/x t1     -                     orphan 3d04h    1.0 KB    0 B
+        path branch owner                   state    seen  modified source  cache
+        /w/x t1     Cursor / grok           merged   4h00m 3d04h    1.0 KB 2.0 KB
+        /w/x t1     locked, owner unknown   dirty    -     3d04h    1.0 KB    0 B
+        /w/x t1     claude session b1e2c3d4 unmerged 4h00m 3d04h    1.0 KB    0 B
+        /w/x t1     -                       orphan   -     3d04h    1.0 KB    0 B
 
-        3 worktrees: 3.0 KB source, 2.0 KB build cache (logical bytes; clones and hard links count in full)
+        4 worktrees: 4.0 KB source, 2.0 KB build cache (logical bytes; clones and hard links count in full)
         ");
+    }
+
+    /// T154: the newest session at or under a linked worktree wins; the main checkout and a
+    /// worktree nobody visited stay unattributed.
+    #[test]
+    fn attribute_picks_the_newest_session_under_each_linked_worktree() {
+        use crate::store::SessionSeen;
+        let dir = tmp_dir("wt-attribute");
+        for sub in ["work", "wt-a/src", "wt-b"] {
+            create_dir_all(dir.join(sub)).unwrap();
+        }
+        let session = |id: &str, cwd: PathBuf, last_seen, ended_at| SessionSeen {
+            id: id.into(),
+            host: Some("claude".into()),
+            cwd: cwd.to_string_lossy().into_owned(),
+            last_seen,
+            ended_at,
+        };
+        let sessions = [
+            session("old", dir.join("wt-a"), 100, Some(150)),
+            session("new", dir.join("wt-a/src"), 200, None),
+            session("main", dir.join("work"), 300, None),
+        ];
+        let mut rows: Vec<Row> = [("work", "main"), ("wt-a", "dirty"), ("wt-b", "merged")]
+            .into_iter()
+            .map(|(name, state)| Row::new(dir.join(name), state))
+            .collect();
+        attribute(&mut rows, &sessions);
+        assert_eq!(rows[0].session, None, "the main checkout belongs to nobody");
+        assert_eq!(
+            rows[1].session,
+            Some(Seen {
+                session: "new".into(),
+                host: Some("claude".into()),
+                seen_unix: 200,
+                live: true,
+            })
+        );
+        assert_eq!(rows[2].session, None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

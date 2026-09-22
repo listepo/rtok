@@ -46,7 +46,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T127 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T154 | todo | P2 | 3 | 0% | |
 | T155 | todo | P2 | 2 | 0% | |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
@@ -324,14 +323,6 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 Split from T122. `plugin::identical_result` (T65.1) matches on the host session; Claude Code sub-agents share the parent's session and its `rtok mcp` process, so a body archived from the parent's context is answered as a pointer in a sub-agent (or the other way round), and the caller pays a second `expand` round trip while a `dedup` saving is recorded. First find what identifies the context on each surface: the hook payload (`agent_id` / `transcript_path` or similar on sub-agent tool calls — verify against the current Claude Code hooks docs and a real payload) and MCP (one process serves both — is there any per-request signal?). Then key `archive_in_session` on session + context where the surface has one; where it has none, decide with the creator between no pointer on that surface and keeping today's behaviour.
 
 Check: a test where a body is archived under context A and read under context B of the same session returns the body; same context still returns the pointer; `just test` green.
-
-### T154. Ownership ledger: SessionStart records which session worked in which worktree
-
-Depends on T133 (resolve a worktree to its main repository without spawning git) and T151. Git has no owner field and lock reasons depend on agent discipline; rtok's `SessionStart` hook already fires on every host with `session_id` and `cwd`, so ownership can be recorded without the agent doing anything (`research.md` §18.5).
-
-Plan: on `SessionStart`, when T133's resolver says `cwd` is inside a linked worktree, upsert one store row: worktree path, main repository, host, `session_id`, first seen, last seen. Fail open and inside the 10 ms hook budget — no git spawn, no directory walk, no output, no injected context. `rtok worktree list` fills `owner`/`last seen` from this table when there is no lock reason. Settle in the Do whether this is a new `worktree` plugin (feature flag, `CATALOGUE`, `src/plugins/worktree/AGENTS.md`, `docs/plugin-authoring.md`) or a row written by the existing session path — one writer per store (D21) decides it.
-
-Check: hook fixture test — a SessionStart event with a worktree `cwd` writes one row and a second event updates `last seen` instead of inserting; a main-checkout or non-repo `cwd` writes nothing; a store error still exits 0 with unmodified output; the hook latency test stays under budget; `just check`.
 
 ### T155. Ship the `worktrees` skill with rtok
 

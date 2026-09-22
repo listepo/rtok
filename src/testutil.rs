@@ -39,6 +39,19 @@ pub fn runtime(tag: &str) -> (Runtime, PathBuf) {
     (Runtime::open(c, tag).unwrap(), dir)
 }
 
+/// The layout git writes for a main checkout `repo` with one linked worktree `wt/repo-t1`
+/// (`.git` file → `gitdir:` → admin dir → `commondir`), no git binary needed. Returns
+/// `(main, worktree)`; both resolve to the project `repo` (T133 / T154).
+pub fn worktree_layout(dir: &Path) -> (PathBuf, PathBuf) {
+    let (main, wt) = (dir.join("repo"), dir.join("wt").join("repo-t1"));
+    let admin = main.join(".git").join("worktrees").join("repo-t1");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    (main, wt)
+}
+
 /// T143: claim the otel hook-flush "queued" slot for a test, simulating another hook-spawned
 /// flush already waiting behind the running one. Drop the guard to release it.
 pub fn hold_otel_queue_slot(cx: &Runtime) -> impl Drop + use<> {

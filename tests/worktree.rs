@@ -101,17 +101,32 @@ fn inventory_sees_a_squash_merge_a_foreign_lock_and_a_deleted_directory() {
 }
 
 fn rtok(cwd: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_rtok"))
+    rtok_in(cwd, cwd, args, b"")
+}
+
+/// `rtok` with its store under `home`, fed `stdin`.
+fn rtok_in(home: &Path, cwd: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
+    use std::io::Write as _;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
         .current_dir(cwd)
-        .env("HOME", cwd)
+        .env("HOME", home)
         .args(args)
-        .output()
-        .expect("rtok runs")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("rtok spawns");
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().expect("rtok runs")
 }
 
 /// A successful `rtok … --json` run, parsed.
 fn json(cwd: &Path, args: &[&str]) -> serde_json::Value {
-    let out = rtok(cwd, args);
+    json_in(cwd, cwd, args)
+}
+
+fn json_in(home: &Path, cwd: &Path, args: &[&str]) -> serde_json::Value {
+    let out = rtok_in(home, cwd, args, b"");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "rtok {args:?}: {err}");
     serde_json::from_slice(&out.stdout).unwrap()
@@ -181,6 +196,54 @@ fn list_splits_cache_from_source_and_reports_an_orphan() {
     assert!(!outside.status.success());
     let err = String::from_utf8_lossy(&outside.stderr);
     assert!(err.contains("not a git repository"), "{err}");
+}
+
+/// T154: with no lock reason, `list` names the session the hooks saw working in a worktree —
+/// one `SessionStart` is enough, a second one from the same session adds no second owner,
+/// and the main checkout belongs to nobody. The lock reason still wins where there is one.
+#[test]
+fn list_names_the_session_the_hooks_saw_in_an_unlocked_worktree() {
+    let tmp = rtok::testutil::tmp_dir("worktree-seen");
+    run(&tmp, &["init", "-q", "work"]);
+    let work = tmp.join("work");
+    commit(&work, "a.txt");
+    add(&work, "locked", Some(&format!("{ME} | t1 | 2026-09-22")));
+    add(&work, "free", None);
+    add(&work, "idle", None);
+    let free = tmp.join("wt-free");
+    let hook = |cwd: &Path, session: &str| {
+        let stdin = serde_json::json!({
+            "hook_event_name": "SessionStart", "session_id": session,
+            "cwd": cwd, "source": "startup",
+        });
+        let out = rtok_in(
+            &tmp,
+            cwd,
+            &["hook", "SessionStart"],
+            stdin.to_string().as_bytes(),
+        );
+        assert!(out.status.success(), "hooks exit 0");
+    };
+    hook(&free, "sess-free-1");
+    hook(&free, "sess-free-1");
+    hook(&work, "sess-main");
+    hook(&tmp.join("wt-locked"), "sess-locked");
+
+    let rows = json_in(&tmp, &work, &["worktree", "list", "--json"]);
+    let row = |name: &str| by_name(&rows, name);
+    assert!(row("work")["session"].is_null(), "{rows}");
+    assert!(row("wt-idle")["session"].is_null(), "{rows}");
+    let seen = &row("wt-free")["session"];
+    assert_eq!(seen["session"], "sess-free-1", "{rows}");
+    assert_eq!(seen["host"], "claude");
+    assert!(seen["seen_unix"].as_i64().unwrap() > 0 && seen["live"] == true);
+    assert_eq!(row("wt-locked")["owner"], ME);
+    assert_eq!(row("wt-locked")["session"]["session"], "sess-locked");
+
+    let table = rtok_in(&tmp, &work, &["worktree", "list"], b"");
+    let table = String::from_utf8_lossy(&table.stdout);
+    assert!(table.contains("claude session sess-fre"), "{table}");
+    assert!(table.contains(ME), "{table}");
 }
 
 const ME: &str = "Claude Code / sonnet";

@@ -1,5 +1,6 @@
-//! Project identity for notes (T133): the checkout `cwd` belongs to, resolved so that a
-//! linked git worktree and its main checkout share one name.
+//! Project identity (T133): the checkout `cwd` belongs to, resolved so that a linked git
+//! worktree and its main checkout share one name — for notes (`memory`) and for the
+//! `sessions.project` every hook call attributes (T154).
 //!
 //! Lexical only — `.git` files, `commondir` and `config` are read, git is never spawned, so
 //! the hook budget (≤ 10 ms) holds. Runs over [`ReadFs`] so unit tests use `Vfs`.
@@ -7,8 +8,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::plugins::read::fs::{HostFs, ReadFs};
-use crate::plugins::read::normalize;
+use crate::fs::{HostFs, ReadFs, normalize};
 
 /// Name of the project `cwd` lies in, if it is inside a git checkout: the `origin` repo name
 /// (`git@host:owner/repo.git`, `https://…/repo`, `file:///…/repo.git` → `repo`), else the
