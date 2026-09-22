@@ -588,8 +588,9 @@ pub struct SkillCopy {
     pub src: PathBuf,
     /// Where the host loads skills from (`~/.cursor/skills/rtok`, …).
     pub dest: PathBuf,
-    /// How the destination reads to a person; dry runs print the concrete path beside it.
-    pub label: Option<&'static str>,
+    /// How the destination reads to a person (`~/.cursor/skills/rtok`); dry runs print the
+    /// concrete path beside it.
+    pub label: Option<String>,
 }
 
 impl SkillCopy {
@@ -598,7 +599,7 @@ impl SkillCopy {
     }
 
     fn dest_desc(&self) -> String {
-        match self.label {
+        match &self.label {
             Some(label) => format!("{label} ({})", self.dest.display()),
             None => self.dest.display().to_string(),
         }
@@ -1138,6 +1139,11 @@ mod tests {
         let dir = tmp("link");
         let src = dir.join("plugins/demo");
         fs::create_dir_all(&src).unwrap();
+        // A real plugin source is never empty; an empty `src` cannot prove a non-symlink
+        // (Windows) install is up to date (T164: `tree_copies` needs at least one file to
+        // compare), which would otherwise make the second `run` below reinstall instead of
+        // reporting `NO_CHANGES`.
+        fs::write(src.join("plugin.json"), "v1").unwrap();
         let link = PluginLink {
             src_rel: "plugins/demo",
             src,

@@ -881,16 +881,16 @@ pub(crate) fn plugin_src(rel: &str) -> std::path::PathBuf {
     )
 }
 
-/// The hub skill tree this repo ships (`skills/rtok/`).
+/// A skill tree this repo ships (`skills/<name>/`, see [`skill::SKILLS`]).
 ///
 /// Prefer the top-level hub. Older ketch archives only shipped
 /// `plugins/` (no `skills/`), so fall back to the pi-bundled copy.
-pub(crate) fn skill_src() -> std::path::PathBuf {
-    let hub = plugin_src("skills/rtok");
+pub(crate) fn skill_src(name: &str) -> std::path::PathBuf {
+    let hub = plugin_src(&format!("skills/{name}"));
     if hub.exists() {
         return hub;
     }
-    plugin_src("plugins/pi/skills/rtok")
+    plugin_src(&format!("plugins/pi/skills/{name}"))
 }
 
 /// Pure resolution used by [`plugin_src`] and unit tests (fake exe / ketch layout).
