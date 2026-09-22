@@ -30,7 +30,6 @@
 - T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
-- T133. Project identity survives git worktrees
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 - T135. `doctor::read_share` stops re-parsing every transcript
 - T136. `rtok stats`: whole-file native Reads that `outline` would have answered
@@ -43,4 +42,4 @@
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T160. No expand trailer when shortening saved less than the trailer costs
-
+- T163. Replace raw SQL in `src/store/` with Diesel's query builder

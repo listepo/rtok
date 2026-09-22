@@ -198,7 +198,9 @@ pub(crate) fn resolve_with(
     bail!("path outside cwd: {}", path.display())
 }
 
-fn normalize(root: &Path, path: &Path) -> PathBuf {
+/// Lexical join of `path` onto `root` (`..` pops, `.` drops) — no disk access, so a missing
+/// path still normalises. Shared with `memory::project` (T133) for `gitdir:` / `commondir`.
+pub(crate) fn normalize(root: &Path, path: &Path) -> PathBuf {
     let mut out = if path.is_absolute() {
         PathBuf::new()
     } else {
