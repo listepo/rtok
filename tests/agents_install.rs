@@ -45,6 +45,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ),
         ("kimi", vec![], Some(home.join(".kimi-code/config.toml"))),
         (
+            "cline",
+            vec!["--yes"],
+            Some(home.join(".cline/data/settings/cline_mcp_settings.json")),
+        ),
+        (
             "copilot",
             vec![],
             Some(home.join(".copilot/hooks/rtok.json")),
