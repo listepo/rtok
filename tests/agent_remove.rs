@@ -92,6 +92,9 @@ fn cursor_remove_strips_hooks_mcp_and_plugin_link() {
     assert!(servers["mcpServers"]["foreign"].is_object(), "{servers}");
 }
 
+/// No `codex` on PATH (T140: its plugin is the default once it is there), so this exercises
+/// the file-based fallback: `[mcp_servers.rtok]` and `[model_providers.rtok]` in
+/// `~/.codex/config.toml`, same as [`claude_remove_strips_hooks_mcp_and_proxy_and_keeps_foreign`].
 #[test]
 fn codex_remove_strips_mcp_block_and_provider_and_keeps_foreign() {
     let home = tmp("codex");
@@ -99,11 +102,11 @@ fn codex_remove_strips_mcp_block_and_provider_and_keeps_foreign() {
     let path = home.join(".codex/config.toml");
     fs::write(&path, "# mine\n[mcp_servers.foreign]\ncommand = \"x\"\n").unwrap();
 
-    rtok(&["agents", "install", "codex", "--proxy"], &cfg, &home);
+    rtok_without_claude(&["agents", "install", "codex", "--proxy"], &cfg, &home);
     let installed = fs::read_to_string(&path).unwrap();
     assert!(installed.contains("[mcp_servers.rtok]"), "{installed}");
 
-    rtok(&["agents", "remove", "codex"], &cfg, &home);
+    rtok_without_claude(&["agents", "remove", "codex"], &cfg, &home);
     let left = fs::read_to_string(&path).unwrap();
     assert!(!left.contains("mcp_servers.rtok"), "{left}");
     assert!(!left.contains("rtok"), "no rtok provider either: {left}");

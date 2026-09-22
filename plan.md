@@ -44,7 +44,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
-| T140 | todo | P2 | 3 | 0% | |
 | T160 | todo | P2 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T156 | todo | P3 | 3 | 0% | |
@@ -362,14 +361,6 @@ Check: a short output that loses only whitespace/ANSI prints no trailer and its 
 Creator request 2026-09-22: no raw SQL anywhere (AGENTS.md rule, D13). `src/store/` still has 119 `sql_query`/`sql::<>`/`batch_execute` calls: `mod.rs` 92, `symbols.rs` 15, `otel.rs` 6, `embed.rs` 4, `schema.rs` 2. Plain CRUD moves to the typed DSL over `schema.rs`; FTS5 `MATCH`, `bm25()` and PRAGMA become Diesel extensions (`define_sql_function!` / a custom `QueryFragment`) in one module; DDL moves to `diesel_migrations` (listed in workspace `rust.md`, not yet in rtok — needs creator approval before wiring). Split into ≤200 LOC / ≤10 file PRs per file when claimed.
 
 Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing store tests unchanged and green; hook path still ≤ 10 ms; `just check`.
-
-### T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
-
-T139 did this for Claude Code (root `.claude-plugin/marketplace.json` + `claude plugin marketplace add`/`install`). Every other host with a `plugins/<host>/` tree still only offers a local path or a manual copy step, which shares T139's original problem: it breaks across a ketch upgrade and is never installed by default. Same shape, per host: install from GitHub `listepo/rtok` by default (no `--yes`) whenever the host's CLI is on `PATH` and the plugin is not already installed, checked first through that host's own list command or record (never a byte-guess) — no-op when already installed, fail open with an "offer … (host failed: …)" message when the CLI is missing or errors, `--dry-run` only prints.
-
-Plan: per host, follow its current plugin docs rather than copying Claude's marketplace shape verbatim: `pi` via `pi install git:github.com/listepo/rtok` if pi's installer supports a subdirectory (else keep the local-path offer and say so); `codex`, `kimi`, `grok`, `cursor`, `opencode`, `zcode`, `antigravity`, `copilot`, `gemini` each get the GitHub-based command their own current docs name, verified live against those docs before writing the installer branch (do not assume Claude's shape transfers); hosts with no CLI plugin-install command (UI-only, e.g. VS Code, Windsurf) keep today's local-path offer — GitHub install is not possible there. `support("plugin")` for a host converted this way moves from `Flag("--yes")` to `Yes`, mirroring T139's `src/agents/claude/mod.rs` change. Split per host into its own task/PR when claimed (≤200 LOC / ≤10 files each) rather than one large change.
-
-Check: per converted host, unit tests for the decision logic (installed → no-op; not installed → installs; missing/failing CLI → fail-open offer; dry-run text) without spawning a real host CLI, reusing T139's `raw_without_claude`-style pattern; `docs/agents.md` reblessed (`RTOK_BLESS=1`); `host_docs` and `readme_tables_match_support` green; `just check`.
 
 ### T165. Research: general HTTP(S) interception as a new surface
 
