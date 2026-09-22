@@ -6,7 +6,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T79 | todo | P1 | 3 | 0% | |
 | T83 | todo | P1 | 4 | 0% | |
 | T86 | todo | P1 | 3 | 0% | |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
@@ -46,17 +45,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | todo | P2 | 5 | 0% | |
 | T165 | todo | P3 | 5 | 0% | |
+| T168 | todo | P2 | 1 | 0% | |
 
-
-### T79. `agents install zed` aborts on a real settings.json (JSONC)
-
-Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
-
-Reproduce: `rtok agents install zed` with a `~/.config/zed/settings.json` Zed itself wrote. The repro is kept as the `#[ignore]`d `zed_keeps_the_real_settings_json` in `tests/agents_real_config.rs` — un-ignore it as the check.
-
-Plan (needs a decision first): a JSONC read alone is not enough — writing back through `serde_json` would silently delete the user's comments, which for Zed is most of the file. So either (a) edit the JSONC hosts in place with a comment-preserving editor, or (b) keep strict parsing and refuse with a message naming the file and the line the user can paste in themselves. Ask the creator which before starting; (b) is small and honest, (a) is the one users want and likely needs a dependency.
-
-Check: un-ignore `zed_keeps_the_real_settings_json` in `tests/agents_real_config.rs` and it passes against a Zed-written `settings.json` — under (a) the comments and trailing commas are still in the file afterwards, under (b) the command exits non-zero with the message and the test asserts that instead. `just check` green either way.
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
 
@@ -332,6 +322,14 @@ Creator request 2026-09-22. Research only — no product code in this task. Toda
 Plan: (1) survey at least three alternatives with evidence and dates — e.g. mitmproxy, `hudsucker`/`http-mitm-proxy` (Rust), Proxyman/Charles, and the no-MITM option (per-host `*_BASE_URL` plus MCP only) — covering CA install/removal per OS, cert pinning failures, HTTP/2 and streaming, latency cost, and what share of an agent's tokens actually travels over HTTP outside the API (measure from `~/.claude/projects` like I-71; below 1 % → stop and record); (2) a privacy decision for the creator: default-deny with an allow-list, or an exclude-list of hosts/domains never decrypted (banks, auth/SSO, OS update, password managers, anything with pinning), what is stored and for how long, how the CA key is protected and removed; (3) if the survey says build, split the surface into tasks of ≤ 200 LOC / ≤ 10 files each (CA generate/trust/uninstall, CONNECT tunnel passthrough, TLS termination for allow-listed hosts, bypass detection and fail open, `Measurement` rows, docs), with the decision row proposed as the next free D id.
 
 Check: `research.md` gains a dated section with the survey table and the measured HTTP share; the privacy decision is written down and approved by the creator; either a "do not build" note or the split tasks go to `roadmap.md` for creator approval — none go straight into this table.
+
+### T168. `agents list` tables flake on wrapper noise in `--version`
+
+Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_what_agents_prints` and `remove_twice_says_no_changes_and_the_second_takes_no_backup` failed on this machine with byte diffs in the `app … (version)` cell — the real `copilot` npm wrapper printed `Package extraction took 10612ms` / `Package extraction attempt 1/3 …` into its `--version` output during npm cache activity. Both passed on re-run once npm settled. The tests' fake-bin set carries `claude` and `codex` shims but not `copilot`, so the probe reached the real wrapper — the T166 family of machine-state dependence (taste: never test against real host processes).
+
+Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
+
+Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
 
 ## Reference
 

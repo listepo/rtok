@@ -97,9 +97,9 @@ fn paginate(secs: &[Sec]) -> (Vec<usize>, Vec<Vec<PageItem>>) {
                 }
             }
         }
-        let mut iter = items.into_iter().peekable();
+        let mut iter: std::collections::VecDeque<PageItem> = items.into_iter().collect();
         let mut recorded = false;
-        while iter.peek().is_some() {
+        while !iter.is_empty() {
             // Cost, not item count: a 58-line chart counted as one line, and the next chart
             // was drawn past the bottom margin of the same page.
             let used: usize = pages.last().expect("page").iter().map(PageItem::cost).sum();
@@ -121,26 +121,24 @@ fn paginate(secs: &[Sec]) -> (Vec<usize>, Vec<Vec<PageItem>>) {
 
 /// Take up to `rest` line-costs of blocks; a chart is atomic (never split). Every item fits
 /// an empty page (`rest == LINES`), so an empty result always means "next page" and the
-/// next call makes progress.
-fn chunk<I: Iterator<Item = PageItem>>(
-    iter: &mut std::iter::Peekable<I>,
-    rest: usize,
-) -> Vec<PageItem> {
+/// next call makes progress. The queue belongs to the caller, so the orphan-heading rule
+/// can put a heading back (T167): it used to be consumed from a `Peekable` and then dropped
+/// with the returned `take`, and the section silently lost its heading.
+fn chunk(iter: &mut std::collections::VecDeque<PageItem>, rest: usize) -> Vec<PageItem> {
     let mut take = Vec::new();
     let mut cost = 0;
-    while let Some(next) = iter.peek() {
-        let c = next.cost();
+    while let Some(c) = iter.front().map(PageItem::cost) {
         if cost + c > rest {
             // An orphan heading moves with the block it introduces, unless the page is
             // empty: a heading plus a full-page chart fit no page, and moving them on
             // forever was the other endless loop.
             if take.len() == 1 && matches!(take[0], PageItem::Heading(_)) && rest < LINES {
-                return Vec::new();
+                iter.push_front(take.pop().expect("one heading"));
             }
             break;
         }
         cost += c;
-        take.push(iter.next().expect("peeked"));
+        take.push(iter.pop_front().expect("peeked"));
     }
     take
 }
@@ -725,6 +723,18 @@ mod tests {
             .iter()
             .position(|&id| id == obj_id)
             .unwrap_or_else(|| panic!("bookmark {title} dest {obj_id} not a page"))
+    }
+
+    /// T167: an orphan heading moves with the block it introduces. The old rule consumed
+    /// the heading from the iterator and then returned `Vec::new()`, dropping it — the
+    /// section's heading vanished from the body while the contents page still listed it.
+    #[test]
+    fn an_orphan_heading_moves_with_its_block_instead_of_vanishing() {
+        let items = vec![PageItem::Heading("Orphan"), PageItem::Line("body".into())];
+        let mut iter: std::collections::VecDeque<PageItem> = items.into_iter().collect();
+        let take = chunk(&mut iter, 3);
+        assert!(take.is_empty(), "the heading moves with its block");
+        assert_eq!(iter.len(), 2, "nothing is consumed on the way out");
     }
 
     fn fat_doc(savings_rows: usize, config_rows: usize) -> Document {

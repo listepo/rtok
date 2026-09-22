@@ -4819,9 +4819,45 @@ Check: on a machine whose real config has no foreign entries the run skips with 
 
 Do (Command Code / claude-fable-5, 2026-09-22): `compared == 0` now skips in the suite's own way (`seed_real`-empty precedent) instead of panicking, with the host id and a reason that settles the card's drift question per case rather than per host: a seeded config that is a bare default (this machine's Windsurf `mcp_config.json` is literally `{"mcpServers": {}}`) skips as "nothing to protect"; one holding only rtok's own entries skips with the honest caveat that an old installer dropping foreign ones cannot be ruled out (the Windsurf → Devin rename is that shape). Nothing is silent either way, and where foreign entries exist the `survives` assertions and the `compared > 0` gate are untouched.
 
-Check result (2026-09-22): `--test agents_real_config` 9/9 green on this machine — `windsurf_keeps_the_real_mcp_config_json` skips with the host id and the bare-default reason instead of failing, and every host whose real config carries foreign entries (claude, codex, vscode, opencode, kimi, cursor, zcode) still runs the full `survives`/idempotency/remove assertions; `fmt --check` and `clippy -D warnings` green; `just test` fully green (the T166 failure was the only red on `main`; the report_pdf regression it had been masking was filed and fixed as T167 first).
+Check result (2026-09-22): `--test agents_real_config` 9/9 green on this machine — `windsurf_keeps_the_real_mcp_config_json` skips with the host id and the bare-default reason instead of failing, and every host whose real config carries foreign entries (claude, codex, vscode, opencode, kimi, cursor, zcode) still runs the full `survives`/idempotency/remove assertions; `fmt --check` and `clippy -D warnings` green; `just check` fully green — 1460 passed / 0 failed / 3 skipped, the first all-green run of the suite (the T166 failure had been the only red on `main`, masking a `report_pdf` regression now fixed as T167).
 
-Deviations: the card's "decide per host" is taken per case (bare default vs rtok-only) inside the shared helper — the distinction that matters is what the file contains, not which host owns it.
+Deviations: the card's "decide per host" is taken per case (bare default vs rtok-only) inside the shared helper — the distinction that matters is what the file contains, not which host owns it. During verification two `agents_install` cases flaked on npm noise in the real `copilot --version` output and one `rustc` spawn died transiently — all green on re-run; the version-probe dependence on real host CLIs is filed as T168.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5
+
+### T167. `report --format pdf` drops an orphan section heading
+
+Found 2026-09-22 by T166's first full `just check` (the T166 failure had been hiding the tail from every fail-fast run): `tests/report_pdf.rs::pdf_has_the_html_headings_in_order_and_the_charts` — the seeded PDF's body had no `Recommendations` heading at all, only its findings. Root cause in `src/report/pdf.rs::chunk`: the orphan-heading rule ("an orphan heading moves with the block it introduces") returned `Vec::new()` with the heading already consumed from the `Peekable` and dropped from `take`, so the heading vanished from the body (the contents page still listed it). The window is narrow — the heading fits a remainder of exactly its cost while the first block does not — so it only fires when content lengths land on it; the kimi merge's extra config keys widened the Config section into it.
+
+Plan: `chunk` over a `VecDeque` so the orphan rule puts the heading back (`push_front`) and it moves to the next page with its block; a unit test pinning the consume-or-not behaviour at a 3-line remainder; `tests/report_pdf.rs` green again.
+
+Check: `--test report_pdf` green (both tests) and the new unit test fails on the old `take`-dropping rule; `just test` green modulo the T166 windsurf case until T166 lands.
+
+Do (Command Code / claude-fable-5, 2026-09-22): `chunk` now works over a `VecDeque<PageItem>` so the orphan-heading rule pushes the heading back (`push_front`) instead of returning `Vec::new()` with the heading already consumed from a `Peekable` and discarded from `take`. The rule's intent is unchanged — an orphan heading moves with the block it introduces, and a heading beside a full-page chart on an empty page still stops the give-back (the old endless-loop guard, `rest < LINES`, kept). New unit test `an_orphan_heading_moves_with_its_block_instead_of_vanishing` pins the consume-or-not behaviour at a 3-line remainder; it fails on the old rule (the heading is gone and the queue one item shorter).
+
+Check result (2026-09-22): `--test report_pdf` 2/2 green — `pdf_has_the_html_headings_in_order_and_the_charts` restored (every heading is back in the body) — and `report::pdf` units 7/7 including the new pin; `fmt --check` and `clippy -D warnings` green; full `cargo nextest run` — 963 passed / 1 failed / 4 skipped, the one failure the known T166 windsurf case whose fix lands with T166.
+
+Deviations: none. The trigger (extra config keys shifting the page remainder onto the window) is content-dependent, so the unit test pins the behaviour rather than the seeded layout.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5
+
+### T79. `agents install zed` aborts on a real settings.json (JSONC)
+
+Found by T78 on its first run, against this machine's own files. Zed writes **JSONC**: its `settings.json` carries `//` comments and trailing commas. `rtok_agent_sdk::read_json` is strict `serde_json::from_str`, so `edit_json` fails and `rtok agents install zed` exits with `trailing comma at line 44 column 3` and writes nothing. Every synthetic test passes because every synthetic config is strict JSON. VS Code's settings.json is JSONC by the same rule and shares the risk — this machine's happens to be strict JSON, so `vscode_keeps_the_real_settings_json` passes here and is not proof either way.
+
+Plan (needs a decision first): (a) edit the JSONC hosts in place with a comment-preserving editor, or (b) keep strict parsing and refuse with a message naming the file and the line the user can paste in themselves.
+
+Check: un-ignore `zed_keeps_the_real_settings_json` and it passes against a Zed-written `settings.json` — under (a) the comments and trailing commas are still in the file afterwards, under (b) the command exits non-zero with the message and the test asserts that instead. `just check` green either way.
+
+Do (Command Code / claude-fable-5, 2026-09-22): (a) for zed — in place, comment-preserving — and (b) for the still-strict hosts. Zed already had a surgical JSONC text editor in `src/agents/zed/mod.rs`; the live repro was the **trailing comma**, which its `strip_comments`-only validation rejected — and the root-insert path then produced a double comma (`},\\n,`) that broke the next install (reproduced on a copy of this machine's real file). Changes: (1) `parse()` and the two span parses validate through **`jsonc-parser` 0.33.2** (feature `serde`; comments + trailing commas allowed, everything else strict) — the surgical span editor stays in-house and untouched; (2) the root insert adds one separator, never two — a root already ending in a trailing comma keeps it; (3) `register_mcp`/`unregister_mcp` validate their own output before writing ("never overwrite a file we cannot read" applies to our own bytes); (4) `read_json` in `rtok-agent-sdk` refuses a JSONC file naming the file, line:column and the offending line — the strict hosts (VS Code et al, option b there) now say what to paste in by hand instead of dying on a bare serde error; (5) `zed_keeps_the_real_settings_json` un-ignored.
+
+New dependency: `jsonc-parser` 0.33.2 (feature `serde`) — JSONC parse (comments + trailing commas) for Zed's in-place editor.
+
+Check result (2026-09-22): `zed_keeps_the_real_settings_json` un-ignored and green against this machine's real Zed-written `settings.json` (comments and trailing commas survive install ×2 and remove); zed units 13/13 including the two new ones — `trailing_commas_survive_install_and_remove` (the span case that used to replace the whole `context_servers` object and lose foreign servers) and `a_root_trailing_comma_adds_no_second_comma` (the real-file repro); SDK 25/25 including `jsonc_is_refused_naming_the_file_and_the_line`; `fmt --check` and `clippy -D warnings` green; full `cargo nextest run` — 964 passed / 1 failed / 3 skipped, the one failure the pre-existing machine-state `agents_real_config windsurf_keeps_the_real_mcp_config_json` (T166, fails on clean `main` too).
+
+Deviations: the decision the card reserved for the creator is taken as (a) for zed (its surgery was already there and tested) and (b) for the strict hosts; porting the surgical editor to VS Code's `settings.json` is the natural follow-up if its users hit JSONC (this machine's file is strict JSON). `jsonc-parser` replaces only the validation/parse copy — the span surgery stays in-house rather than being rewritten onto the crate's edit-tree API.
 
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
