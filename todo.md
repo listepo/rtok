@@ -19,7 +19,7 @@
 
 - T125. `rtok stats`: thinking-block share — the gate for I-86
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-- T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
+- T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?

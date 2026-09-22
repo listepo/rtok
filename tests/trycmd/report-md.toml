@@ -146,6 +146,8 @@ Every effective key with its origin — the `config show --sources` page.
 | plugins.memory.recall_titles | 5 | default |
 | plugins.memory.recall_tokens | 200 | default |
 | plugins.memory.search_limit | 5 | default |
+| plugins.memory.spawn_brief | false | default |
+| plugins.memory.spawn_brief_tokens | 300 | default |
 | plugins.memory.startup_recall | false | default |
 | plugins.memory.sync_tokens | 300 | default |
 | plugins.proxy.enabled | true | default |
@@ -248,7 +250,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-202 keys.
+204 keys.
 
 ## Doctor
 

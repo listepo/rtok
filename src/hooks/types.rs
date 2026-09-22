@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::plugin::{PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart};
+use crate::plugin::{
+    PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart, SubagentStart,
+};
 
 /// Union of every hook event's input. Event-specific fields are `Option`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -19,6 +21,9 @@ pub struct HookInput {
     pub agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
+    /// SubagentStart's short description of the spawned task, when the host sends one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_description: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hook_event_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -229,6 +234,13 @@ impl HookInput {
         })
     }
 
+    pub fn subagent_start(&self) -> Option<SubagentStart<'_>> {
+        (self.hook_event_name == "SubagentStart").then_some(SubagentStart {
+            agent_type: self.agent_type.as_deref().unwrap_or(""),
+            task_description: self.task_description.as_deref().unwrap_or(""),
+        })
+    }
+
     pub fn mcp_server_name(&self) -> Option<&str> {
         self.extra.get("mcp_server_name").and_then(|v| v.as_str())
     }
@@ -415,6 +427,39 @@ pub struct HookSpecificOutput {
     pub updated_mcp_tool_output: Option<Value>,
 }
 
+/// Shared by hook-output tests here and in `hooks::tests`: one `PreToolUse`-shaped `HookOutput`
+/// — a permission decision, an input rewrite, or the bare event name.
+#[cfg(test)]
+pub(crate) fn pre_out(
+    decision: Option<&str>,
+    reason: Option<&str>,
+    input: Option<Value>,
+) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PreToolUse".into(),
+            permission_decision: decision.map(Into::into),
+            permission_decision_reason: reason.map(Into::into),
+            updated_input: input,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// One `PostToolUse`-shaped `HookOutput` carrying `additionalContext`.
+#[cfg(test)]
+pub(crate) fn post_out(ctx: &str) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PostToolUse".into(),
+            additional_context: Some(ctx.into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,15 +542,7 @@ mod tests {
     #[test]
     fn empty_output_is_empty_object() {
         assert_eq!(serde_json::to_string(&HookOutput::default()).unwrap(), "{}");
-        let out = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("deny".into()),
-                permission_decision_reason: Some("dup".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let out = pre_out(Some("deny"), Some("dup"), None);
         let json = serde_json::to_value(&out).unwrap();
         assert_eq!(json["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(json.get("continue").is_none());

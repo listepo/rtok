@@ -292,6 +292,18 @@ pub struct PreCompact<'a> {
     pub transcript_path: &'a str,
 }
 
+/// A subagent about to start, before it processes anything (T130). The chosen injection path
+/// for a spawn brief: `PreToolUse`'s `updatedInput` is documented to be ignored by the `Agent`
+/// and `Task` tools, while `SubagentStart`'s `additionalContext` is documented to reach the
+/// subagent (<https://code.claude.com/docs/en/hooks>, checked 2026-09-22).
+#[derive(Debug)]
+pub struct SubagentStart<'a> {
+    /// Agent type the host is spawning, e.g. `general-purpose`.
+    pub agent_type: &'a str,
+    /// The host's short description of the task, when it sends one.
+    pub task_description: &'a str,
+}
+
 /// One token-reduction method.
 ///
 /// Implement the surfaces your [`Manifest`] declares and leave the rest to the no-op
@@ -343,6 +355,12 @@ pub trait Plugin: Send + Sync {
 
     /// Last chance to persist state before the transcript is compacted.
     fn pre_compact(&self, _ev: &PreCompact, _cx: &Ctx) {}
+
+    /// Text to offer a freshly spawned subagent before it processes anything; budgeted the
+    /// same way as [`Plugin::session_start`].
+    fn subagent_start(&self, _ev: &SubagentStart, _cx: &Ctx) -> Option<Injection> {
+        None
+    }
 
     /// Tools this plugin adds to `rtok mcp`.
     fn mcp_tools(&self) -> Vec<ToolDef> {
