@@ -43,6 +43,8 @@
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
+- T163.1. `src/store/symbols.rs` without raw SQL
+- T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
 - T165. Research: general HTTP(S) interception as a new surface
 - T168. `agents list` tables flake on wrapper noise in `--version`
 - T170. A slow hook is logged, not only printed to stderr
