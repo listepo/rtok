@@ -49,6 +49,7 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec!["--yes"],
             Some(home.join(".kimi-code/config.toml")),
         ),
+        ("grok", vec!["--yes"], Some(home.join(".grok/config.toml"))),
         (
             "copilot",
             vec![],

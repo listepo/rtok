@@ -25,6 +25,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`zcode`](https://github.com/listepo/rtok/blob/main/src/agents/zcode/README.md) | ZCode | Desktop | yes | yes | — | yes | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`kimi`](https://github.com/listepo/rtok/blob/main/src/agents/kimi/README.md) | Kimi Code Desktop | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
+| [`grok`](https://github.com/listepo/rtok/blob/main/src/agents/grok/README.md) | Grok Build | CLI | — | yes | — | `--yes` | cmd, read, archive, inject, guard, memory, graph, toon |
 | [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`vscode`](https://github.com/listepo/rtok/blob/main/src/agents/vscode/README.md) | VS Code - Insiders | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`copilot`](https://github.com/listepo/rtok/blob/main/src/agents/copilot/README.md) | Copilot CLI | CLI | yes | yes | — | — | measure, cmd, read, archive, inject, guard, memory, graph, toon |

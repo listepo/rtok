@@ -16,7 +16,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T95 | todo | P1 | 2 | 0% | |
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
-| T100 | todo | P1 | 3 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
@@ -168,12 +167,6 @@ Extra tests: written and green (`agents::kilo::tests`); the dangling-link one fo
 Check: the unit tests above; `rtok agents list` shows `kilo`; `agents_doc`, `host_docs`, `config_coverage`, `opencode_plugin` green; `just check`.
 
 Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree unchanged byte for byte); a user's `kilo.jsonc` is byte-identical after install and remove; an existing foreign file at `plugin/rtok.ts` is neither overwritten nor removed; a dangling `rtok.ts` symlink is repaired; remove on a clean home prints `NO_CHANGES`.
-
-### T100. `rtok agents install grok` and the Read path under Grok
-
-After T99. A `grok` host in `src/agents/`: detection (`~/.grok/bin/grok`, `GROK_HOME`), `support("plugin")` prints `grok plugin install <resolved plugins/grok> --trust`, `installed()` reports `plugin` from `grok plugin list --json` or `~/.grok/plugins/rtok`; MCP as `[mcp_servers.rtok]` in `~/.grok/config.toml` via `toml_edit` when the plugin is absent. D21 singleton: while rtok's Claude hooks are installed and `[compat.claude] hooks` is on, say so instead of adding a second set. Separately, on a live Grok: dump one `read_file` PreToolUse payload, and if its `toolInput` matches what the Read plugins rewrite, map `read_file` → `Read` and add the Read matcher to the plugin. `docs/agents.md` blessed, `src/agents/grok/README.md` with `## Docs`.
-
-Check: unit tests for offer, detection and singleton; `agents_doc` blessed; `just check`.
 
 ### T116. Copilot CLI plugin
 

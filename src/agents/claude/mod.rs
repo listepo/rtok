@@ -177,6 +177,22 @@ fn config_dir(cfg: &Config) -> PathBuf {
     s.parent().map(PathBuf::from).unwrap_or_else(|| s.clone())
 }
 
+/// The modules rtok's hook and MCP registrations carry in the two FILES a foreign importer
+/// reads (`~/.claude/settings.json`, `~/.claude.json`) — the Claude plugin serves its own
+/// and is not visible there, so Grok's `[compat.claude]` import counts these alone (T100).
+pub fn files_serve_rtok(cfg: &Config) -> Vec<&'static str> {
+    let s = super::read(&cfg.setup.claude.settings_path);
+    let m = super::read(&cfg.doctor.claude_json);
+    let mut out = Vec::new();
+    if s.contains("rtok hook") {
+        out.push("hooks");
+    }
+    if m.contains("\"rtok\"") {
+        out.push("mcp");
+    }
+    out
+}
+
 /// True when Claude Code lists `rtok@rtok` as installed. Read from its own record, so a
 /// plugin removed through `/plugin` stops counting at once (T75).
 pub(super) fn plugin_installed(cfg: &Config) -> bool {
@@ -405,14 +421,14 @@ impl Agent for Claude {
             };
         }
         let s = super::read(&cfg.setup.claude.settings_path);
-        let m = super::read(&cfg.doctor.claude_json);
         // The installed plugin serves the hooks and the MCP itself (D21).
         let plugin = plugin_installed(cfg);
+        let files = files_serve_rtok(cfg);
         let mut out = Vec::new();
-        if s.contains("rtok hook") || plugin {
+        if files.contains(&"hooks") || plugin {
             out.push("hooks");
         }
-        if m.contains("\"rtok\"") || plugin {
+        if files.contains(&"mcp") || plugin {
             out.push("mcp");
         }
         // The URL `register_proxy` writes. Matching the default port `8790` anywhere in the

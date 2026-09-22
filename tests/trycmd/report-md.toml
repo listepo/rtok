@@ -200,6 +200,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.dry_run | false | default |
+| setup.grok.config_path | ~/.grok/config.toml | default |
 | setup.hook_timeout_s | 5 | default |
 | setup.kilo.config_path | ~/.config/kilo/kilo.json | default |
 | setup.kimi.config_path | ~/.kimi-code/config.toml | default |
@@ -247,7 +248,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-201 keys.
+202 keys.
 
 ## Doctor
 
@@ -332,6 +333,11 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
+    plugin  not installed (--yes)
+  grok (cli)
+    hooks   not supported: Grok fires one hook set — the plugin's, or rtok's Claude hooks through [compat.claude] hooks — and setup adds no second (D21)
+    mcp     not installed
+    proxy   not supported: Grok Build providers live in its own settings tables; setup does not edit them
     plugin  not installed (--yes)
   vscode (desktop)
     hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
