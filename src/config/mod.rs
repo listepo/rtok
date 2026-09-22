@@ -689,6 +689,11 @@ section! {
         startup_recall: bool = false,
         /// Sub-agent handoff MCP tool (T59.6); off by default.
         handoff: bool = false,
+        /// `SubagentStart` pointer digest appended to a freshly spawned subagent's context
+        /// (T130); off until T131 measures a net saving.
+        spawn_brief: bool = false,
+        /// Token budget for the spawn brief (T130).
+        spawn_brief_tokens: u32 = 300,
         embed: MemoryEmbed = MemoryEmbed::default(),
     }
 }

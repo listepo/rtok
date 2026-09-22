@@ -156,7 +156,9 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
         "AfterMCPExecution" => after_mcp(input, cx),
-        "SessionStart" | "UserPromptSubmit" | "PostCompact" => inject_event(input, cx, &registry),
+        "SessionStart" | "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {
+            inject_event(input, cx, &registry)
+        }
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
@@ -457,6 +459,9 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
                 p.prompt_submit(&ev, &Ctx::new(cx))
             } else if input.hook_event_name == "PostCompact" {
                 p.session_start(&SessionStart { source: "compact" }, &Ctx::new(cx))
+            } else if let Some(ev) = input.subagent_start() {
+                // The parent's own ledger, not the new subagent's (T130): it has none yet.
+                p.subagent_start(&ev, &Ctx::new(cx))
             } else {
                 None
             }

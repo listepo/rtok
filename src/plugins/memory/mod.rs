@@ -10,7 +10,7 @@ pub use crate::project::project_name;
 
 use rtok_plugin_sdk::{
     Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PromptSubmit,
-    SessionStart, Surface, ToolDef,
+    SessionStart, SubagentStart, Surface, ToolDef,
 };
 use serde_json::json;
 
@@ -68,6 +68,19 @@ impl Plugin for Memory {
             return Some(inj);
         }
         prompt_recall(ev, cx)
+    }
+
+    fn subagent_start(&self, ev: &SubagentStart, cx: &Ctx) -> Option<Injection> {
+        let cfg = cx.plugin_config::<crate::config::Memory>("memory");
+        if !cfg.spawn_brief {
+            return None;
+        }
+        let text = handoff::build_brief(cx, cfg.spawn_brief_tokens, ev.task_description)?;
+        Some(Injection {
+            plugin: "memory",
+            text,
+            priority: 9,
+        })
     }
 }
 

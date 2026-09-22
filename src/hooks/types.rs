@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::plugin::{PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart};
+use crate::plugin::{
+    PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart, SubagentStart,
+};
 
 /// Union of every hook event's input. Event-specific fields are `Option`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -19,6 +21,9 @@ pub struct HookInput {
     pub agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
+    /// SubagentStart's short description of the spawned task, when the host sends one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_description: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hook_event_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,6 +206,13 @@ impl HookInput {
     pub fn prompt_submit(&self) -> Option<PromptSubmit<'_>> {
         (self.hook_event_name == "UserPromptSubmit").then_some(PromptSubmit {
             prompt: self.prompt.as_deref()?,
+        })
+    }
+
+    pub fn subagent_start(&self) -> Option<SubagentStart<'_>> {
+        (self.hook_event_name == "SubagentStart").then_some(SubagentStart {
+            agent_type: self.agent_type.as_deref().unwrap_or(""),
+            task_description: self.task_description.as_deref().unwrap_or(""),
         })
     }
 

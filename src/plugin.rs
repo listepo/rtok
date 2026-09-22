@@ -21,8 +21,8 @@ use crate::tokens;
 pub use rtok_plugin_sdk::{
     Archive, ArchiveDecision, ArchiveHit, Capabilities, Class, Ctx, DashboardPage, Host, Injection,
     Ledger, Manifest, Measurement, NoteHit, Notes, Plugin, PostToolUse, PreCompact,
-    PreToolDecision, PreToolUse, PromptSubmit, ReadCache, SessionStart, Surface, Symbols, ToolDef,
-    ToolResultRef, ToolResults, WireRequest,
+    PreToolDecision, PreToolUse, PromptSubmit, ReadCache, SessionStart, SubagentStart, Surface,
+    Symbols, ToolDef, ToolResultRef, ToolResults, WireRequest,
 };
 
 /// The longest prefix of `text` that estimates to at most `budget` tokens.

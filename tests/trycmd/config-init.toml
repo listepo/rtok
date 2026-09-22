@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,296 @@
+@@ -0,0 +1,298 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -271,6 +271,8 @@ target/tmp/t60-2-config-init.toml
 +sync_tokens    = 300                  # rtok memory sync: CLAUDE.md / AGENTS.md block (T69.6)
 +startup_recall = false                # SessionStart(startup) restores newest session:* note (T71.2); off until A/B
 +handoff        = false                # T59.6 sub-agent digest MCP tool
++spawn_brief        = false            # T130: SubagentStart pointer digest; off until T131 measures a net saving
++spawn_brief_tokens = 300              # T130: token budget for the spawn brief
 +
 +[plugins.memory.embed]
 +enabled    = false                    # P29: FTS5-only when false; vector search is opt-in
