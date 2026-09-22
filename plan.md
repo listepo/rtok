@@ -7,7 +7,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
 | T83.2 | todo | P1 | 3 | 0% | |
-| T83.3 | in progress | P1 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T83.4 | todo | P1 | 3 | 0% | |
 | T83.5 | todo | P1 | 2 | 0% | |
 | T83.6 | todo | P1 | 2 | 0% | |
@@ -80,14 +79,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 The `cfg(windows)` `default-filter` in `.config/nextest.toml` (T82) skips four tests on `windows-latest`: `one_arg_compound_command_runs_as_one_script`, `exit_3_is_preserved`, `printf_two_lines_exit_0_no_trailer`, `three_runs_stats_plugin_cmd_json_has_rows`. Find out whether `plugins/cmd/run.rs` hardcodes a POSIX shell (`sh -c`) or exit-code assumption that needs a `cfg(windows)` branch (`cmd /C` or PowerShell), or the tests themselves assume a Unix shell on PATH; fix accordingly and delete the line. One family split out of the original T83 (all families and sources: `done.md` → T83.1, which fixed the log/demon rotation family). Closing criterion for the whole split: once every T83.x below has emptied its line from the `cfg(windows)` override in `.config/nextest.toml`, delete the override and move `windows` out of `continue-on-error` into `revert-on-failure`'s `needs` (or into the `check` matrix if `just check` runs on Windows).
 
 Check: the four tests pass in the `windows` CI job; `just check` stays green.
-
-### T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
-
-Skips three tests: `a_service_that_exits_comes_back_and_stop_takes_the_whole_tree_down`, `status_asks_the_kernel_rather_than_believing_the_state_file`, `a_second_start_is_refused_and_status_names_every_service`. These were 180 s `terminate-after` timeouts, not fast failures — `demon.rs`'s process-tree model (session leader + `setsid`, `rtok_sys::process_alive`/`process_term`/`process_kill`) is Unix-shaped; Windows has no process groups the same way (job objects are the closest analog). Decide whether `supervise`/`claim`/the kill path needs a `cfg(windows)` job-object implementation or the tests assume POSIX signals. One family split out of the original T83; see T83.2 for the closing criterion.
-
-Execution plan: (1) read `src/demon*` and the `crates/rtok-sys` process helpers and find where the tests hang on Windows (spawn without a new process group, `process_term` with no console-ctrl equivalent, or `process_alive` on a reused pid); (2) add a `cfg(windows)` path in `rtok-sys` — a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` per supervised service, `TerminateJobObject` for the tree kill — leaving the Unix path untouched; (3) remove the three skips; (4) iterate on the PR's `windows` CI job until the tests pass well under 60 s.
-
-Check: the three tests pass (or complete well under the 60 s slow-timeout) in the `windows` CI job; `just check` stays green.
 
 ### T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
 

@@ -121,6 +121,10 @@ fn targets(cfg: &Config, named: &[Service], running_first: bool) -> Result<Vec<S
 pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Result<()> {
     fs::create_dir_all(&cfg.demon.state_dir)?;
     let exe = on_disk_exe()?;
+    // The supervisor below outlives this command; on Windows it would otherwise inherit
+    // whatever piped our own stdout/stderr (a test harness, a captured parent) and hold that
+    // pipe open forever, so the piper's read to EOF never returns (T83.3). No-op on Unix.
+    rtok_sys::stop_inheriting_own_stdio();
     for service in targets(cfg, named, false)? {
         // The supervisor's own lock is the truth; the state file can lag it or name a reused pid.
         if claim(cfg, service)?.is_none() {
