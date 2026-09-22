@@ -10,12 +10,12 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use rtok_agent_sdk::PluginLink;
+use rtok_agent_sdk::{KETCH_INSTALL, PluginLink};
 
 use super::{apply, plugin_src};
 use crate::config::Config;
 
-/// One host's plugin: the four values that differ between hosts, and nothing else.
+/// One host's plugin: the values that differ between hosts, and nothing else.
 pub struct HostPlugin {
     /// Repo-relative source, named in every report (`plugins/cursor`).
     pub src_rel: &'static str,
@@ -25,6 +25,11 @@ pub struct HostPlugin {
     pub label: Option<&'static str>,
     /// Where the plugin lands under a given config — the one part that needs the config.
     pub dest: fn(&Config) -> PathBuf,
+    /// True for a host whose official docs have no GitHub/subdir install, so the local
+    /// link is the only path there is (T164: pi, opencode, kilo, zcode, cursor) — installed
+    /// without asking, once the host itself is detected. False keeps the old `--yes`
+    /// question (omp, a pi fork, is unchanged for now).
+    pub default_install: bool,
 }
 
 impl HostPlugin {
@@ -44,10 +49,30 @@ impl HostPlugin {
         self.link(cfg).ours()
     }
 
-    /// Offer, link, or unlink the plugin. Dry-run, the backup gate, the `--yes` question and
-    /// the "leave a foreign tree alone" rule all stay in the SDK.
+    /// Offer, link, or unlink the plugin. Dry-run, the "already current" no-op, the stale-
+    /// version relink and the "leave a foreign tree alone" rule all stay in the SDK
+    /// ([`PluginLink::run`]); this only decides whether the install question needs asking
+    /// at all (T164), and never lets a write error abort the rest of `agents install` —
+    /// it fails open, like a missing host CLI already does (T139).
     pub fn offer(&self, cfg: &Config, remove: bool) -> Result<String> {
-        self.link(cfg).run(&apply(cfg), remove)
+        let mut apply = apply(cfg);
+        if self.default_install && !remove {
+            apply.yes = true;
+        }
+        Ok(self.link(cfg).run(&apply, remove).unwrap_or_else(|e| {
+            if remove {
+                format!("{} plugin failed: {e}", self.host)
+            } else {
+                let desc = self
+                    .label
+                    .map(str::to_string)
+                    .unwrap_or_else(|| self.path(cfg).display().to_string());
+                format!(
+                    "offer {} → {desc} ({} failed: {e}) {KETCH_INSTALL}",
+                    self.src_rel, self.host
+                )
+            }
+        }))
     }
 
     fn link(&self, cfg: &Config) -> PluginLink<'static> {
@@ -65,25 +90,63 @@ impl HostPlugin {
 mod tests {
     use super::*;
 
-    /// Every host plugin declares a distinct source; two hosts sharing one `src_rel` would make
-    /// the offer text ambiguous and let one host's remove report another's tree.
-    #[test]
-    fn declared_host_plugins_have_distinct_sources() {
-        let all = [
+    /// Every declared `HostPlugin`, for tests that must cover the whole set rather than
+    /// pick a few by hand (T164).
+    fn all_host_plugins() -> [&'static HostPlugin; 6] {
+        [
             &super::super::cursor::PLUGIN,
             &super::super::opencode::PLUGIN,
             &super::super::pi::PLUGIN,
-        ];
+            &super::super::kilo::PLUGIN,
+            &super::super::zcode::PLUGIN,
+            &super::super::omp::PLUGIN,
+        ]
+    }
+
+    /// Every host plugin names a distinct host, so a table keyed by host name (below) and a
+    /// report line can never point at two declarations. Two hosts (kilo, omp) do share
+    /// another host's `src_rel` on purpose — kilo links opencode's JS plugin, omp links
+    /// pi's extension, neither duplicates the tree — so this does not check sources.
+    #[test]
+    fn declared_host_plugins_have_distinct_hosts() {
         let mut seen = Vec::new();
-        for p in all {
+        for p in all_host_plugins() {
             assert!(
                 p.src_rel.starts_with("plugins/"),
                 "{} source is not in plugins/: {}",
                 p.host,
                 p.src_rel
             );
-            assert!(!seen.contains(&p.src_rel), "duplicate source {}", p.src_rel);
-            seen.push(p.src_rel);
+            assert!(!seen.contains(&p.host), "duplicate host {}", p.host);
+            seen.push(p.host);
+        }
+    }
+
+    /// T164: exactly pi, opencode, kilo, zcode and cursor install without asking — every
+    /// host whose official docs have no GitHub/subdir install, so the local link is the
+    /// only path there is. omp (a pi fork) is unchanged for now. A table, not one
+    /// assertion per host, so a new host plugin is forced to state its answer here too.
+    #[test]
+    fn default_install_is_exactly_the_local_link_only_hosts() {
+        let expected: &[(&str, bool)] = &[
+            ("Cursor", true),
+            ("OpenCode", true),
+            ("pi", true),
+            ("Kilo Code", true),
+            ("ZCode", true),
+            ("oh my pi", false),
+        ];
+        for p in all_host_plugins() {
+            let want = expected
+                .iter()
+                .find(|(host, _)| *host == p.host)
+                .unwrap_or_else(|| panic!("{} missing from the expected table", p.host))
+                .1;
+            assert_eq!(
+                p.default_install, want,
+                "{} default_install should be {want}",
+                p.host
+            );
         }
     }
 

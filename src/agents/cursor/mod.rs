@@ -66,8 +66,7 @@ impl Agent for Cursor {
 
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
-            "hooks" | "mcp" => Support::Yes,
-            "plugin" => Support::Flag("--yes"),
+            "hooks" | "mcp" | "plugin" => Support::Yes,
             _ => Support::No("Cursor has no base-URL setting to point at the proxy"),
         }
     }
@@ -161,6 +160,9 @@ pub static PLUGIN: HostPlugin = HostPlugin {
     host: "Cursor",
     label: Some("~/.cursor/plugins/local"),
     dest: plugin_dest,
+    // Cursor's own docs have no GitHub/subdir plugin install; the local link is the only
+    // path there is, so it installs by default once Cursor itself is detected (T164).
+    default_install: true,
 };
 
 /// Local Cursor plugin dest: sibling of hooks.json → `<cursor-dir>/plugins/local/rtok`.

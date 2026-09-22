@@ -38,7 +38,7 @@ impl Agent for Pi {
 
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
-            "plugin" => Support::Flag("--yes"),
+            "plugin" => Support::Yes,
             "hooks" => Support::No("pi has no hook events; the extension owns the bash call path"),
             "mcp" => Support::No(
                 "pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true",
@@ -86,6 +86,9 @@ pub static PLUGIN: HostPlugin = HostPlugin {
     host: "pi",
     label: None,
     dest: plugin_dest,
+    // pi's own docs have no GitHub/subdir plugin install; the local link is the only path
+    // there is, so it installs by default once pi itself is detected (T164).
+    default_install: true,
 };
 
 /// Extension dest: `<extensions_path>/rtok` (default `~/.pi/agent/extensions/rtok`).

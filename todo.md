@@ -43,3 +43,4 @@
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T160. No expand trailer when shortening saved less than the trailer costs
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
+- T165. Research: general HTTP(S) interception as a new surface

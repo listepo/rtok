@@ -1358,7 +1358,8 @@ mod tests {
             expected(&codex::Codex, Kind::Cli, &cfg),
             ["hooks", "mcp", "plugin"]
         );
-        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
+        // pi's plugin is expected by default, without `--yes` (T164).
+        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
         assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
         // Claude Code's plugin is expected by default, without `--yes` (T139).
         assert_eq!(

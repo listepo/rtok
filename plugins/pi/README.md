@@ -1,6 +1,7 @@
 # rtok pi package
 
-Linked by `rtok agents install pi --yes` to `~/.pi/agent/extensions/rtok` (D21: one bash call
+Linked by `rtok agents install pi` (by default, once pi itself is detected) to
+`~/.pi/agent/extensions/rtok` (D21: one bash call
 path, no MCP). `rtok agents uninstall pi` unlinks it (`install pi --remove` is the same). By hand: `pi install /path/to/plugins/pi`.
 pi loads a directory in `extensions/` from its `package.json` `pi.extensions` first and falls back to
 `index.ts`, so the link needs no `index.ts` (pi 0.85.1 `resolveExtensionEntries`; the docs list only `*/index.ts`).
