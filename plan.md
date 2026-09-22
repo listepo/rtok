@@ -28,7 +28,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T129 | todo | P1 | 3 | 0% | |
 | T130 | todo | P2 | 4 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
@@ -194,10 +193,6 @@ New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hoo
 
 Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
 
-### T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
-`research.md` §17.3(1). Hooks fired inside a sub-agent carry the parent's `session_id` plus `agent_id`/`agent_type`; `src/hooks/types.rs` drops both, so `guard::pre_tool` denies a sub-agent's first Read of a file the parent read (`duplicate; rtok expand <id>`) — a body that context never saw, one extra round trip, and a `guard` Measurement row claiming a saving. Complements T122 (MCP side, no caller identity); reuse its context key if it lands one — do not add a second.
-Plan: parse optional `agent_id`/`agent_type` in `src/hooks/types.rs`; failing test first in `src/plugins/guard/mod.rs` (parent reads P, sub-agent reads P → allowed; sub-agent reads P twice → denied; parent again → denied); scope the guard's read-cache key by `agent_id` at the one place the key is built (`cache_key`), so every caller follows. Hosts without the field behave as today.
-Check: the three-case test; no `guard` Measurement row on the allowed path; hook fixture with `agent_id` still exits 0 within the 10 ms budget; `just check` green.
 ### T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
 `research.md` §17.3(2). Off by default until T131 shows a net saving. At `PreToolUse` on `Agent`/`Task`, return `updatedInput` with the original `prompt` plus a brief built from the parent's ledger: paths the parent read or edited (most recent first, those named in the prompt first), each with its archive id and outline line ranges where the graph index has them, and two fixed lines of instruction (ranged `read`, `expand <id>`, answer with `path:line`). Pointers only — never file bodies. First step: verify on a live hook whether `SubagentStart` `additionalContext` reaches the sub-agent; pick **one** injection path (D21) and record the choice in the card.
 Plan: one builder shared with the `handoff` MCP tool (`src/plugins/memory/handoff.rs`) — the tool and the hook are two surfaces of one digest; config `[memory] spawn_brief = false`, `spawn_brief_tokens = 300`; deterministic order and byte-stable output for an unchanged ledger; fail open: any error → no `updatedInput`. The brief is archived and carries its own `expand <id>`.

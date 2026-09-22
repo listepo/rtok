@@ -297,9 +297,11 @@ fn pre_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput 
     };
     let mut rewrite: Option<PreToolDecision> = None;
     for p in registry.enabled() {
-        let got = panic::catch_unwind(AssertUnwindSafe(|| p.pre_tool(&ev, &Ctx::new(cx))))
-            .ok()
-            .flatten();
+        let got = panic::catch_unwind(AssertUnwindSafe(|| {
+            p.pre_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
+        }))
+        .ok()
+        .flatten();
         match got {
             Some(PreToolDecision::Deny { reason }) => {
                 return HookOutput {
@@ -336,9 +338,9 @@ fn post_tool(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOutput
     };
     let mut parts = Vec::new();
     for p in registry.enabled() {
-        if let Ok(Some(s)) =
-            panic::catch_unwind(AssertUnwindSafe(|| p.post_tool(&ev, &Ctx::new(cx))))
-        {
+        if let Ok(Some(s)) = panic::catch_unwind(AssertUnwindSafe(|| {
+            p.post_tool(&ev, &Ctx::with_agent(cx, input.agent_id.as_deref()))
+        })) {
             parts.push(s);
         }
     }

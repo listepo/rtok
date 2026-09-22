@@ -1,5 +1,11 @@
 # rtok — completed tasks
 
+### T129. Hook payload carries `agent_id`; "already read" is scoped to a context window
+
+Do (2026-09-22): `HookInput` parses optional `agent_id`/`agent_type` (the fields `research.md` §17.2 documents on sub-agent hook events); `Ctx` (rtok-plugin-sdk) gains the dispatch window's `agent_id` via an additive `Ctx::with_agent` (`Ctx::new` unchanged), filled at the `pre_tool`/`post_tool` dispatch in `src/hooks/mod.rs`. The guard's `cache_key` — the one place its read-cache key is built — appends `\<agent_id>` as a suffix, so a body one context window has seen is only a duplicate to that window, while the prefix clears (`read`, `read\t{path}`) still reach every window's key. Hosts without the field keep today's unscoped keys.
+
+Check result (2026-09-22): `a_sub_agent_window_scopes_the_read_cache` — parent reads P, the sub-agent's first Read of P is allowed with no `guard` Measurement row, its repeat denies, the parent's repeat denies; `agent_identity_parses_and_round_trips`; the `pre_tool_read.json` latency fixture now carries `agent_id`/`agent_type` and still exits 0 within the 10 ms budget (p95 gate); `just check` green.
+
 ### T128. `rtok stats`: sub-agent transcripts and the re-read share
 
 Do (2026-09-22): `src/measure/subagents.rs` attributes `<session>/subagents/agent-*.jsonl` to the parent session (sidecar dir = the transcript stem; `agent-<id>.meta.json` `agentType`/`model`/`toolUseId`), reusing `jsonl::parse_path` and `stats::tool_path`/`same_path` — no second parser. `Report.subagents`: sessions with sub-agents and sub-agent count, tool-result bytes vs the parents', native-`Read` result bytes, the two disjoint re-read columns (parent read the path first / an earlier sibling did), the three §17.1 shares (39 % / 13 % / 5.8 % on the dated run), usage tokens, and a `by_type` split per `agentType × model` (spawn order from the meta's `toolUseId` against the parent's `Agent`/`Task` calls). The recursive session walk now skips `subagents/` paths, so a sub-agent transcript is never counted as a session of its own. `research.md` §17.1 carries the dated `rtok stats --since 30d --json` run (2026-09-22: 51 sessions / 531 sub-agents, re-read 4,014,843 B) replacing the ad-hoc table.
