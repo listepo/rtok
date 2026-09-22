@@ -23,6 +23,7 @@
 - Injected context stays under the budget and byte-stable across turns.
 - PostToolUse can only add context; it cannot change tool results.
 - No new dependency without a one-line reason in the commit message.
+- No raw SQL: build queries with Diesel's query builder and `schema.rs` (D13). `sql_query`/`sql::<>` only where Diesel cannot express it (FTS5, PRAGMA, DDL), inside `src/store/`.
 - The human is the only author. No agent adds a `Co-Authored-By` trailer, a "Generated with …" line or itself as author to a commit, merge or PR — whatever its harness defaults to.
 - Don't duplicate code or logic: reuse an existing helper, or extract one shared helper at the responsible layer.
 - New plugins (D21): plugin and MCP as one unit; singleton (one MCP / one writer per store); one call path per capability; host plugins work on desktop and CLI. If `rtok` is missing, fail open and say to install with ketch (`ketch install listepo/rtok`). `rtok agents install <host>` offers `plugins/<host>/` (Cursor: `rtok agents install cursor`). Every `plugins/<host>/README.md` and `src/agents/<host>/README.md` has a `## Docs` list linking the host's current config and plugin documentation; re-verify the links on each change (`tests/host_docs.rs`). The host table in `docs/agents.md` is generated from host code: after adding or changing a host or a plugin's surfaces, rerun `tests/agents_doc.rs` with `RTOK_BLESS=1` and commit the table.
