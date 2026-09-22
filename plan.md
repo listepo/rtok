@@ -20,7 +20,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T100 | todo | P1 | 3 | 0% | |
 | T101 | todo | P2 | 2 | 0% | |
 | T102 | todo | P2 | 3 | 0% | |
-| T105 | todo | P2 | 2 | 0% | |
 | T107 | todo | P3 | 2 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
@@ -203,12 +202,6 @@ Check: `just test` green; one case per host × event × stdin in the nextest lis
 Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
 
 Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
-
-### T105. Report renderers: edge-case snapshots
-
-`src/report/markdown.rs` and `src/report/html.rs` have no unit tests; `tests/report.rs` covers one fixture and the empty store. `insta` snapshots on a fixed model: zero savings, one row, very large numbers, text with `<`, `|`, backticks and newlines. Done when no table breaks, no HTML is injected, and no `NaN` or `inf` is printed.
-
-Check: snapshots committed; `just test` green.
 
 ### T107. CLI bad-argument fixtures
 

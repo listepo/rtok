@@ -1,0 +1,91 @@
+---
+source: src/report/html.rs
+expression: out
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rtok report</title>
+<style>
+body{font-family:sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;color:#222}
+table{border-collapse:collapse;margin:1rem 0}
+th,td{border:1px solid #ccc;padding:.25rem .5rem;text-align:left}
+pre{background:#f6f6f6;padding:1rem;overflow-x:auto}
+svg.chart{background:#fafafa;margin:1rem 0}
+</style>
+</head>
+<body>
+<h1>rtok report</h1>
+<p>Window 2026-09-01 → 2026-10-01 (30d) · store &lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</p>
+<h2 id="window">Window</h2>
+<table>
+<tr><th>ledger</th><th>rows</th><th>covers</th></tr>
+<tr><td>calls</td><td>0 of 0</td><td>window (30d)</td></tr>
+<tr><td>measurements</td><td>0</td><td>whole ledger (no row times)</td></tr>
+<tr><td>usage</td><td>0</td><td>whole ledger (no row times)</td></tr>
+</table>
+<p><strong>No rows in window.</strong> The store has no rows to report.</p>
+<h2 id="savings">Savings</h2>
+<p>Estimated tokens from <code>Measurement</code> rows only (est_before − est_after, net; floors, not context-token-turns).</p>
+<svg class="chart" width="600" height="32" role="img" aria-label="saved tokens per plugin">
+<text x="0" y="16" font-size="12">&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</text><rect x="140" y="4" width="0" height="14"/><text x="146" y="16" font-size="12">0</text>
+</svg>
+<table>
+<tr><th>plugin</th><th>rows</th><th>est before</th><th>est after</th><th>saved</th></tr>
+<tr><td>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</td><td>1</td><td>1</td><td>1</td><td>0</td></tr>
+</table>
+<p>Total: 0 est tokens over 1 <code>Measurement</code> rows (whole ledger: no row times).</p>
+<h2 id="calls">Calls</h2>
+<p>Latency per surface, nearest-rank p50/p95 over the calls that recorded one.</p>
+<p>No rows in window.</p>
+<h2 id="cache">Cache</h2>
+<p>Prompt-cache busts by cause, from the proxy's <code>usage</code> rows (whole ledger).</p>
+<svg class="chart" width="600" height="32" role="img" aria-label="busts per cause">
+<text x="0" y="16" font-size="12">&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</text><rect x="140" y="4" width="440" height="14"/><text x="586" y="16" font-size="12">1</text>
+</svg>
+<table>
+<tr><th>cause</th><th>busts</th></tr>
+<tr><td>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</td><td>1</td></tr>
+</table>
+<p>Busts: 0 over 1 turns in 1 session(s).</p>
+<h2 id="expand">Expand</h2>
+<p>How often a live-zone pointer had to be expanded (<code>archive_decisions</code> rows, T5.4).</p>
+<p><code>rtok expand</code> froze 0 of 1 live-zone pointers (—%). Expanded: <code>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</code>.</p>
+<h2 id="config">Config</h2>
+<p>Every effective key with its origin — the <code>config show --sources</code> page.</p>
+<table>
+<tr><th>key</th><th>value</th><th>source</th></tr>
+<tr><td>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</td><td><code>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</code></td><td>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</td></tr>
+</table>
+<p>1 keys.</p>
+<h2 id="doctor">Doctor</h2>
+<p>Live probes (the <code>rtok doctor</code> page), not store rows.</p>
+<pre><code>hooks 0
+mcp
+proxy &lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line
+proxy openai 
+BASH_MAX_OUTPUT_LENGTH (unset)
+autoCompactWindow (unset)
+read-share no data
+agents
+</code></pre>
+<h2 id="recommendations">Recommendations</h2>
+<ul>
+<li><strong>&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line</strong>: &lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line (&lt;script&gt;alert(1)&lt;/script&gt; | `tick`
+second line)</li>
+</ul>
+</body>
+</html>
