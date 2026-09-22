@@ -14,7 +14,8 @@ and the app as one shared host, as it does for Cursor.
 | hooks | yes | `hooks/rtok.json` runs `rtok hook <Event> --host copilot` (`bash` and `powershell`, `timeoutSec`) on preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, preCompact |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `mcp-config.json` as `{type: "local", command, args, tools: ["*"]}` (off with `[setup] mcp = false`) |
 | proxy | no | Copilot BYOK is env-only (COPILOT_PROVIDER_BASE_URL); there is no config file to point at the proxy |
-| plugin | no | Copilot plugins live in installed-plugins/, owned by `copilot plugin`; there is no local plugin directory to link |
+| plugin (cli) | `--yes` | install runs `copilot plugin install <resolved plugins/copilot>` behind the flag — rtok never writes `installed-plugins/`, that store is Copilot's. While the plugin is installed (a cached copy under `installed-plugins/` names `rtok`), setup takes back `hooks/rtok.json` and `mcpServers.rtok` instead of adding them (D21: the plugin is the hooks and the MCP as one unit) |
+| plugin (desktop) | no | the GitHub Copilot app does not document plugin installs; `copilot plugin` serves the CLI |
 | hooks (desktop) | no | the GitHub Copilot app does not document hooks; the shared hooks/rtok.json is written for the CLI |
 
 Copilot's hook protocol is its own: camelCase stdin (`sessionId`, `cwd`, `toolName`,

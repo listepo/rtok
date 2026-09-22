@@ -169,6 +169,56 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// a different source. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
 /// installs the real CLI as), which `agents::run_cli`'s `cmd /C` wrapper (T139 windows fix)
 /// resolves the way it resolves the real thing.
+/// A fake `copilot` beside the fake `claude`, so `rtok()`'s PATH picks it up: logs every
+/// call to `$HOME/copilot.log` and mirrors `plugin install` / `plugin uninstall` into the
+/// `installed-plugins/` marker layout the real CLI writes (T116).
+pub fn fake_copilot(home: &Path) {
+    let dir = home.join(".fake-bin");
+    fs::create_dir_all(&dir).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("copilot");
+        if !bin.exists() {
+            fs::write(
+                &bin,
+                r#"#!/bin/sh
+[ "$1" = --version ] && { echo "0.1.0 (fake copilot)"; exit 0; }
+echo "$*" >> "$HOME/copilot.log"
+plugins="${COPILOT_HOME:-$HOME/.copilot}/installed-plugins"
+case "$*" in
+  "plugin install "*) mkdir -p "$plugins/_direct/x"
+    printf '{"name":"rtok","version":"0.0.1"}' > "$plugins/_direct/x/plugin.json" ;;
+  "plugin uninstall rtok") rm -rf "$plugins/_direct/x" ;;
+esac
+"#,
+            )
+            .unwrap();
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    #[cfg(windows)]
+    {
+        let bin = dir.join("copilot.cmd");
+        if !bin.exists() {
+            fs::write(
+                &bin,
+                r#"@echo off
+set "ALLARGS=%*"
+echo %ALLARGS%>>"%HOME%\copilot.log"
+if defined COPILOT_HOME (set "PLUGINS=%COPILOT_HOME%\installed-plugins") else (set "PLUGINS=%HOME%\.copilot\installed-plugins")
+echo %ALLARGS%| findstr /b /c:"plugin install " >nul && (
+  mkdir "%PLUGINS%\_direct\x" 2>nul
+  >"%PLUGINS%\_direct\x\plugin.json" echo {"name":"rtok","version":"0.0.1"}
+)
+if "%ALLARGS%"=="plugin uninstall rtok" rmdir /s /q "%PLUGINS%\_direct\x" 2>nul
+"#,
+            )
+            .unwrap();
+        }
+    }
+}
+
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
     let path = std::env::var_os("PATH").unwrap_or_default();
     #[cfg(unix)]

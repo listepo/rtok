@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "rtok hook PreToolUse --host copilot",
+        "powershell": "rtok hook PreToolUse --host copilot",
+        "timeoutSec": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "rtok hook PostToolUse --host copilot",
+        "powershell": "rtok hook PostToolUse --host copilot",
+        "timeoutSec": 5
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "rtok hook UserPromptSubmit --host copilot",
+        "powershell": "rtok hook UserPromptSubmit --host copilot",
+        "timeoutSec": 5
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "rtok hook SessionStart --host copilot",
+        "powershell": "rtok hook SessionStart --host copilot",
+        "timeoutSec": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "rtok hook SessionEnd --host copilot",
+        "powershell": "rtok hook SessionEnd --host copilot",
+        "timeoutSec": 5
+      }
+    ],
+    "preCompact": [
+      {
+        "type": "command",
+        "bash": "rtok hook PreCompact --host copilot",
+        "powershell": "rtok hook PreCompact --host copilot",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
