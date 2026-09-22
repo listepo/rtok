@@ -37,7 +37,6 @@
 - T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
-- T140. `rtok agents install <host>` installs each host plugin from GitHub `listepo/rtok` per the host's docs, idempotently
 - T154. Ownership ledger: SessionStart records which session worked in which worktree
 - T155. Ship the `worktrees` skill with rtok
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`

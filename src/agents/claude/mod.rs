@@ -223,38 +223,14 @@ fn marketplace_state(cfg: &Config) -> MarketplaceState {
     }
 }
 
-/// `claude` resolved the way a shell would. Windows CLIs installed through npm ship as a
-/// `.cmd`/`.bat`/`.ps1` shim, not a `.exe` — `Command::new("claude")` only ever auto-appends
-/// `.exe` (Win32's `CreateProcess`, never `PATHEXT`), so a bare spawn silently fails to find a
-/// real, on-PATH `claude` and the plugin offer stays closed forever. Routing through `cmd /C`
-/// there reuses the shell's own PATH + `PATHEXT` search, which does try `.cmd`/`.bat`.
-fn spawn_claude() -> std::process::Command {
-    if cfg!(windows) {
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "claude"]);
-        cmd
-    } else {
-        std::process::Command::new("claude")
-    }
-}
-
-/// One `claude plugin …` call; `CLAUDE_CONFIG_DIR` only when `settings_path` is not the default.
+/// One `claude plugin …` call; `CLAUDE_CONFIG_DIR` only when `settings_path` is not the
+/// default. Windows shim resolution and stderr handling live in `super::run_cli` (T140), so
+/// Codex's own `codex_cli` reuses the same spawn logic instead of respelling it.
 fn claude_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
-    let mut cmd = spawn_claude();
-    cmd.args(args).stdin(std::process::Stdio::null());
     let dir = config_dir(cfg);
-    if dir != super::home_dir().join(".claude") {
-        cmd.env("CLAUDE_CONFIG_DIR", &dir);
-    }
-    match cmd.output() {
-        Ok(o) if o.status.success() => Ok(()),
-        Ok(o) => Err(String::from_utf8_lossy(&o.stderr)
-            .lines()
-            .next()
-            .unwrap_or("non-zero exit")
-            .to_string()),
-        Err(e) => Err(format!("claude: {e}")),
-    }
+    let default = super::home_dir().join(".claude");
+    let env = (dir != default).then_some(("CLAUDE_CONFIG_DIR", dir.as_path()));
+    super::run_cli("claude", args, env)
 }
 
 /// Offer, install, or uninstall the plugin through the official `claude plugin` commands

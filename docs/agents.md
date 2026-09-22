@@ -15,7 +15,7 @@ Check what is installed on this machine with `rtok agents list`; `rtok doctor` r
 | [`claude`](https://github.com/listepo/rtok/blob/main/src/agents/claude/README.md) | Claude Desktop | Desktop | — | yes | — | — | read, archive, memory, graph, toon |
 | [`cursor`](https://github.com/listepo/rtok/blob/main/src/agents/cursor/README.md) | Cursor CLI | CLI | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
 | [`cursor`](https://github.com/listepo/rtok/blob/main/src/agents/cursor/README.md) | Cursor | Desktop | yes | yes | — | `--yes` | measure, cmd, read, archive, inject, guard, memory, graph, toon |
-| [`codex`](https://github.com/listepo/rtok/blob/main/src/agents/codex/README.md) | Codex | CLI | yes | yes | `--proxy` | — | measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon, compress |
+| [`codex`](https://github.com/listepo/rtok/blob/main/src/agents/codex/README.md) | Codex | CLI | yes | yes | `--proxy` | yes | measure, cmd, read, archive, proxy, inject, guard, memory, graph, toon, compress |
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode | CLI | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon, compress |
 | [`opencode`](https://github.com/listepo/rtok/blob/main/src/agents/opencode/README.md) | OpenCode Desktop | Desktop | — | yes | yes | `--yes` | measure, cmd, read, archive, proxy, guard, memory, graph, toon, compress |
 | [`kilo`](https://github.com/listepo/rtok/blob/main/src/agents/kilo/README.md) | Kilo Code CLI | CLI | — | yes | — | `--yes` | measure, cmd, read, archive, guard, memory, graph, toon |
