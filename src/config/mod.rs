@@ -360,6 +360,7 @@ section! {
         omp: SetupOmp = SetupOmp::default(),
         zcode: SetupZcode = SetupZcode::default(),
         kimi: SetupKimi = SetupKimi::default(),
+        grok: SetupGrok = SetupGrok::default(),
         vscode: SetupVscode = SetupVscode::default(),
         copilot: SetupCopilot = SetupCopilot::default(),
         aider: SetupAider = SetupAider::default(),
@@ -420,6 +421,12 @@ section! {
 section! {
     /// `[setup.kimi]` — `mcp.json` is read beside `config_path`.
     SetupKimi { config_path: PathBuf = p("~/.kimi-code/config.toml") }
+}
+
+section! {
+    /// `[setup.grok]` — Grok Build's `config.toml`; `plugins/` sits beside it (`GROK_HOME`
+    /// moves the whole home, so point `config_path` there too).
+    SetupGrok { config_path: PathBuf = p("~/.grok/config.toml") }
 }
 
 section! {
@@ -913,6 +920,7 @@ impl Config {
             &mut self.setup.pi.extensions_path,
             &mut self.setup.zcode.config_path,
             &mut self.setup.kimi.config_path,
+            &mut self.setup.grok.config_path,
             &mut self.setup.copilot.dir,
             &mut self.setup.vscode.code_user_dir,
             &mut self.setup.vscode.insiders_user_dir,
