@@ -3,7 +3,7 @@
 //! Spec: the catalogue in `plan.md` §1 names the tools this replaces; none is a
 //! dependency (D6) — the behaviour is re-implemented here.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
@@ -13,8 +13,12 @@ use rtok_plugin_sdk::{
     PreToolUse, Surface, ToolDef,
 };
 
+// `ReadFs` and the lexical `normalize` live at crate level since T154: `project` needs them
+// with this plugin compiled out.
+pub use crate::fs;
+use crate::fs::normalize;
+
 pub mod cache;
-pub mod fs;
 pub mod hook;
 pub(crate) mod outline;
 pub mod search;
@@ -196,30 +200,6 @@ pub(crate) fn resolve_with(
         return Ok(abs);
     }
     bail!("path outside cwd: {}", path.display())
-}
-
-/// Lexical join of `path` onto `root` (`..` pops, `.` drops) — no disk access, so a missing
-/// path still normalises. Shared with `memory::project` (T133) for `gitdir:` / `commondir`.
-pub(crate) fn normalize(root: &Path, path: &Path) -> PathBuf {
-    let mut out = if path.is_absolute() {
-        PathBuf::new()
-    } else {
-        root.to_path_buf()
-    };
-    for c in path.components() {
-        match c {
-            // Push, do not replace: on Windows `C:\foo` is Prefix("C:") then
-            // RootDir — replacing wiped the drive and confined to `\foo`.
-            Component::RootDir => out.push(Component::RootDir.as_os_str()),
-            Component::Prefix(p) => out = PathBuf::from(p.as_os_str()),
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::Normal(s) => out.push(s),
-        }
-    }
-    out
 }
 
 /// `Path::starts_with("")` is true for every path, so an empty root (`allow_paths = [""]`)

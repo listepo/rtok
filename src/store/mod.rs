@@ -7,6 +7,7 @@ pub mod schema;
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -24,7 +25,9 @@ use crate::plugin::Measurement;
 // The two row shapes a plugin sees are the contract's (D25); the diesel rows below feed them.
 pub use crate::plugin::{ArchiveDecision, NoteHit};
 
-use schema::{archive, call_io, calls, hosts, logs, measurements, notes, read_cache, tokens};
+use schema::{
+    archive, call_io, calls, hosts, logs, measurements, notes, read_cache, sessions, tokens,
+};
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -50,6 +53,17 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 pub struct Store {
     conn: Mutex<SqliteConnection>,
+}
+
+/// One row of [`Store::sessions_by_cwd`].
+#[derive(Debug, Clone)]
+pub struct SessionSeen {
+    pub id: String,
+    pub host: Option<String>,
+    pub cwd: String,
+    /// Newest `calls.ts` of the session, else `started_at`.
+    pub last_seen: i64,
+    pub ended_at: Option<i64>,
 }
 
 /// Turn arbitrary user text into an FTS5 MATCH phrase query: every blank-separated token is
@@ -419,6 +433,44 @@ impl Store {
         .bind::<Text, _>(id)
         .load(&mut *conn)?;
         Ok(rows.into_iter().next().map(|r| (r.slug, r.project, r.cwd)))
+    }
+
+    /// Every session with a `cwd`, newest activity first (T154): the worktree ownership
+    /// ledger is this projection of what the hooks already write — no second writer.
+    /// `last_seen` is the newest `calls` row, or `started_at` before the first one lands.
+    pub fn sessions_by_cwd(&self) -> Result<Vec<SessionSeen>> {
+        let mut conn = self.lock()?;
+        // Two builder queries joined in memory: newest call per session, then the sessions
+        // with their host — the query builder has no COALESCE over a grouped join.
+        let last_call: HashMap<String, i64> = calls::table
+            .group_by(calls::session_id)
+            .select((calls::session_id, diesel::dsl::max(calls::ts)))
+            .load::<(String, Option<i64>)>(&mut *conn)?
+            .into_iter()
+            .filter_map(|(id, ts)| Some((id, ts?)))
+            .collect();
+        let mut rows: Vec<SessionSeen> = sessions::table
+            .left_join(hosts::table)
+            .filter(sessions::cwd.is_not_null())
+            .select((
+                sessions::id,
+                hosts::slug.nullable(),
+                sessions::cwd.assume_not_null(),
+                sessions::started_at,
+                sessions::ended_at,
+            ))
+            .load::<(String, Option<String>, String, i64, Option<i64>)>(&mut *conn)?
+            .into_iter()
+            .map(|(id, host, cwd, started_at, ended_at)| SessionSeen {
+                last_seen: last_call.get(&id).copied().unwrap_or(started_at),
+                id,
+                host,
+                cwd,
+                ended_at,
+            })
+            .collect();
+        rows.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then_with(|| a.id.cmp(&b.id)));
+        Ok(rows)
     }
 
     pub fn count_call_io(&self) -> Result<i64> {
