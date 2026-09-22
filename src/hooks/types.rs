@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::plugin::{PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart};
+use crate::plugin::{
+    PostToolUse, PreCompact, PreToolUse, PromptSubmit, SessionStart, SubagentStart,
+};
 
 /// Union of every hook event's input. Event-specific fields are `Option`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -19,6 +21,9 @@ pub struct HookInput {
     pub agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
+    /// SubagentStart's short description of the spawned task, when the host sends one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_description: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub hook_event_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -177,6 +182,31 @@ impl HookInput {
         }
     }
 
+    /// Gemini CLI (https://geminicli.com/docs/hooks/reference/, fetched 2026-09-22) speaks
+    /// Claude's field names already (`tool_input`, `prompt`, `trigger`) and its tools' own
+    /// path/command keys match Claude's too (verified against gemini-cli's tool source:
+    /// `read_file`/`write_file`/`replace` use `file_path`, `run_shell_command` uses `command`)
+    /// — only event and tool *names* need mapping (`gemini_event`/`canonical_tool_name`).
+    /// `tool_response` is `{llmContent, returnDisplay, error}`; `llmContent` aliases to
+    /// `stdout` for plugins keyed on Claude's flat shape.
+    pub fn adapt_gemini(&mut self, event: &str) {
+        let name = if self.hook_event_name.is_empty() {
+            event
+        } else {
+            self.hook_event_name.as_str()
+        };
+        self.hook_event_name = gemini_event(name).to_string();
+        if let Some(t) = self.tool_name.take() {
+            self.tool_name = Some(canonical_tool_name(&t));
+        }
+        if let Some(Value::Object(resp)) = self.tool_response.as_mut()
+            && !resp.contains_key("stdout")
+            && let Some(content) = resp.get("llmContent").filter(|v| v.is_string()).cloned()
+        {
+            resp.insert("stdout".into(), content);
+        }
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,
@@ -201,6 +231,13 @@ impl HookInput {
     pub fn prompt_submit(&self) -> Option<PromptSubmit<'_>> {
         (self.hook_event_name == "UserPromptSubmit").then_some(PromptSubmit {
             prompt: self.prompt.as_deref()?,
+        })
+    }
+
+    pub fn subagent_start(&self) -> Option<SubagentStart<'_>> {
+        (self.hook_event_name == "SubagentStart").then_some(SubagentStart {
+            agent_type: self.agent_type.as_deref().unwrap_or(""),
+            task_description: self.task_description.as_deref().unwrap_or(""),
         })
     }
 
@@ -311,6 +348,18 @@ fn claude_event(name: &str) -> &str {
     }
 }
 
+/// Gemini's event names to Claude's (`BeforeAgent`/etc rtok has no plugin hook for pass
+/// through unmatched, falling into `dispatch`'s `_` arm); an already-Claude name passes too.
+fn gemini_event(name: &str) -> &str {
+    match name {
+        "BeforeTool" => "PreToolUse",
+        "AfterTool" => "PostToolUse",
+        "BeforeAgent" => "UserPromptSubmit",
+        "PreCompress" => "PreCompact",
+        other => other,
+    }
+}
+
 /// Host tool names (`bash`, `read_file`, `edit`, …) to the Claude names `plugins::guard` matches.
 pub(crate) fn canonical_tool_name(name: &str) -> String {
     let l = name.to_ascii_lowercase();
@@ -322,9 +371,9 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
         "Bash".into()
     } else if l.starts_with("read") || l.starts_with("view") {
         "Read".into()
-    } else if l == "edit" {
+    } else if l == "edit" || l == "replace" {
         "Edit".into()
-    } else if l == "write" {
+    } else if l == "write" || l == "write_file" {
         "Write".into()
     } else {
         name.to_string()
@@ -376,6 +425,39 @@ pub struct HookSpecificOutput {
     /// Cursor `postToolUse` only: replaces an MCP tool result (`updated_mcp_tool_output`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_mcp_tool_output: Option<Value>,
+}
+
+/// Shared by hook-output tests here and in `hooks::tests`: one `PreToolUse`-shaped `HookOutput`
+/// — a permission decision, an input rewrite, or the bare event name.
+#[cfg(test)]
+pub(crate) fn pre_out(
+    decision: Option<&str>,
+    reason: Option<&str>,
+    input: Option<Value>,
+) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PreToolUse".into(),
+            permission_decision: decision.map(Into::into),
+            permission_decision_reason: reason.map(Into::into),
+            updated_input: input,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// One `PostToolUse`-shaped `HookOutput` carrying `additionalContext`.
+#[cfg(test)]
+pub(crate) fn post_out(ctx: &str) -> HookOutput {
+    HookOutput {
+        hook_specific_output: Some(HookSpecificOutput {
+            hook_event_name: "PostToolUse".into(),
+            additional_context: Some(ctx.into()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]
@@ -460,15 +542,7 @@ mod tests {
     #[test]
     fn empty_output_is_empty_object() {
         assert_eq!(serde_json::to_string(&HookOutput::default()).unwrap(), "{}");
-        let out = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("deny".into()),
-                permission_decision_reason: Some("dup".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let out = pre_out(Some("deny"), Some("dup"), None);
         let json = serde_json::to_value(&out).unwrap();
         assert_eq!(json["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(json.get("continue").is_none());
@@ -668,5 +742,71 @@ mod tests {
         read.adapt_grok("PreToolUse");
         assert_eq!(read.hook_event_name, "PreToolUse");
         assert_eq!(read.tool_name.as_deref(), Some("read_file"));
+    }
+
+    /// Payloads as https://geminicli.com/docs/hooks/reference/ gives them.
+    #[test]
+    fn gemini_before_after_tool_map_event_tool_name_and_alias_llm_content_to_stdout() {
+        let mut pre: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "g-1",
+            "hook_event_name": "BeforeTool",
+            "cwd": "/work",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "ls"}
+        }))
+        .unwrap();
+        pre.adapt_gemini("BeforeTool");
+        assert_eq!(pre.hook_event_name, "PreToolUse");
+        assert_eq!(pre.tool_name.as_deref(), Some("Bash"));
+        assert!(pre.pre_tool().is_some());
+
+        let mut post: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "g-1",
+            "hook_event_name": "AfterTool",
+            "tool_name": "run_shell_command",
+            "tool_input": {"command": "ls"},
+            "tool_response": {"llmContent": "a\nb\n", "returnDisplay": "a\nb\n", "error": null}
+        }))
+        .unwrap();
+        post.adapt_gemini("AfterTool");
+        assert_eq!(post.hook_event_name, "PostToolUse");
+        assert_eq!(post.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(post.tool_response.as_ref().unwrap()["stdout"], "a\nb\n");
+        assert_eq!(post.tool_response.as_ref().unwrap()["llmContent"], "a\nb\n");
+        assert!(post.post_tool().is_some());
+
+        let mut read: HookInput = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "BeforeTool",
+            "tool_name": "read_file",
+            "tool_input": {"file_path": "/p.rs"}
+        }))
+        .unwrap();
+        read.adapt_gemini("BeforeTool");
+        assert_eq!(read.tool_name.as_deref(), Some("Read"));
+        assert!(read.pre_tool().is_some());
+
+        assert_eq!(canonical_tool_name("write_file"), "Write");
+        assert_eq!(canonical_tool_name("replace"), "Edit");
+    }
+
+    #[test]
+    fn gemini_before_agent_and_pre_compress_map_to_claude_names() {
+        let mut prompt: HookInput = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "BeforeAgent",
+            "prompt": "fix the bug"
+        }))
+        .unwrap();
+        prompt.adapt_gemini("BeforeAgent");
+        assert_eq!(prompt.hook_event_name, "UserPromptSubmit");
+        assert!(prompt.prompt_submit().is_some());
+
+        let mut compress: HookInput = serde_json::from_value(serde_json::json!({
+            "hook_event_name": "PreCompress",
+            "trigger": "auto"
+        }))
+        .unwrap();
+        compress.adapt_gemini("PreCompress");
+        assert_eq!(compress.hook_event_name, "PreCompact");
+        assert!(compress.pre_compact().is_some());
     }
 }

@@ -13,6 +13,8 @@ report/jscpd-report.json
 .worktrees/
 .claude/
 .rtok/rtok.db
+# A config path left as a literal `~` resolves against the cwd (T169)
+/~/
 rtok.db
 rtok.db-shm
 rtok.db-wal

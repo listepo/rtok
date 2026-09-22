@@ -29,7 +29,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T117 | todo | P2 | 3 | 0% | |
-| T118 | todo | P2 | 4 | 0% | |
+| T118.2 | todo | P2 | 3 | 0% | |
+| T118.3 | todo | P2 | 3 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 
 | T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
@@ -38,7 +39,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 
 | T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-| T130 | todo | P2 | 4 | 0% | |
+| T130.2 | todo | P2 | 3 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
@@ -54,6 +55,20 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163 | todo | P2 | 5 | 0% | |
 | T165 | todo | P3 | 5 | 0% | |
 | T168 | todo | P2 | 1 | 0% | |
+| T170 | todo | P1 | 1 | 0% | |
+| T171 | todo | P1 | 2 | 0% | |
+| T172 | todo | P2 | 2 | 0% | |
+| T173 | todo | P2 | 1 | 0% | |
+| T174 | todo | P1 | 2 | 0% | |
+| T175 | todo | P2 | 2 | 0% | |
+| T176 | todo | P1 | 3 | 0% | |
+| T177 | todo | P2 | 3 | 0% | |
+| T178 | todo | P1 | 4 | 0% | |
+| T179 | todo | P2 | 3 | 0% | |
+| T180 | todo | P3 | 4 | 0% | |
+| T181 | todo | P3 | 2 | 0% | |
+| T182 | todo | P2 | 3 | 0% | |
+| T183 | todo | P2 | 4 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -255,19 +270,25 @@ VS Code agent plugins carry hooks and MCP and are registered by path in the `cha
 
 Check: settings round-trip test (add, idempotent, remove keeps foreign entries); `just check` green.
 
-### T118. Gemini CLI host with an extension
+### T118.2. Gemini CLI host module: registration, config keys, e2e
 
-New host `gemini`. Gemini CLI extensions (`gemini-extension.json`, hooks in `hooks/hooks.json`, MCP servers in the manifest) install with `gemini extensions install <path>` / `link` (https://geminicli.com/docs/extensions/). Needs a hook adapter for Gemini's event names and I/O shape (`--host gemini`), `src/agents/gemini/` (`mod.rs` + `README.md` with `## Docs`), `plugins/gemini/`, registration in `HOSTS`, config keys, docs table bless. Split into sub-tasks when claimed.
+T118.1 (done.md) shipped the `--host gemini` hook I/O adapter (`src/hooks/types.rs::adapt_gemini`, `src/hooks/mod.rs::gemini_output`) with no host module yet — `--host` is a free string, not validated against a registry. This task adds the host itself: `src/agents/gemini/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()` (`src/agents/mod.rs`), `[setup.gemini]` config keys (mirror an existing host's `dir`/override shape — see `copilot`/`devin`). Verify current `gemini` CLI detection (binary name, version flag, config home) against https://geminicli.com/docs/ before writing `installed()`/`support()`.
 
-Check: host matrix e2e with a fake `gemini`; hook adapter unit tests; `just check` green.
+Check: host matrix e2e with a fake `gemini` binary (`tests/common/agents.rs`); `docs/agents.md` host table regenerated (`RTOK_BLESS=1`, `tests/agents_doc.rs`); `just check` green.
 
-### T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
-`research.md` §17.3(2). Off by default until T131 shows a net saving. At `PreToolUse` on `Agent`/`Task`, return `updatedInput` with the original `prompt` plus a brief built from the parent's ledger: paths the parent read or edited (most recent first, those named in the prompt first), each with its archive id and outline line ranges where the graph index has them, and two fixed lines of instruction (ranged `read`, `expand <id>`, answer with `path:line`). Pointers only — never file bodies. First step: verify on a live hook whether `SubagentStart` `additionalContext` reaches the sub-agent; pick **one** injection path (D21) and record the choice in the card.
-Plan: one builder shared with the `handoff` MCP tool (`src/plugins/memory/handoff.rs`) — the tool and the hook are two surfaces of one digest; config `[memory] spawn_brief = false`, `spawn_brief_tokens = 300`; deterministic order and byte-stable output for an unchanged ledger; fail open: any error → no `updatedInput`. The brief is archived and carries its own `expand <id>`.
-Check: `assert_cmd` hook test — `Agent` payload in → `updatedInput.prompt` starts with the original prompt, brief ≤ budget, identical bytes on a second run; flag off or empty ledger → passthrough; non-`Agent` tools untouched; ≤ 10 ms; `just check` green.
+### T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
+
+Needs T118.2. Gemini CLI extensions install with `gemini extensions install <path>` / `link` (dev) / `uninstall <name>` (https://geminicli.com/docs/extensions/reference/). Add `plugins/gemini/`: `gemini-extension.json` (`name`, `version`, `description`, `mcpServers.rtok = {command: "rtok", args: ["mcp"]}` — `trust` is the one MCP field the manifest does not support) and `hooks/hooks.json` (Gemini's own shape: `{"hooks": {"<EventName>": [{"matcher": ..., "hooks": [{"type": "command", "command": "rtok hook <ClaudeEventName> --host gemini"}]}]}}` — confirm the extension file's event-name keys against a fresh fetch of the reference doc, since `docs/hooks/reference.md` documents `settings.json` and does not show a worked extension example verbatim). Wire install/remove into `src/agents/gemini/mod.rs`, offering the exact resolved `gemini extensions link <path>` line the way Copilot's plugin offer does. D21 singleton: while the plugin is installed, strip rtok's own hooks/MCP from any file setup would otherwise write directly (mirror `src/agents/copilot/mod.rs`).
+
+Check: `tests/host_docs.rs` (`## Docs` links); `tests/gemini_plugin.rs` (manifest shape, hooks command strings, dry-run/apply/remove, `RTOK_BLESS`-free); `just check` green.
+
+### T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
+T130.1 (`done.md`) landed the mechanism — `SubagentStart` on the `Plugin` trait, the hook dispatch, config, and `memory::handoff::build_brief` shared with the `handoff` MCP tool — but nothing yet installs a `SubagentStart` matcher for real users, so the feature is inert until this lands. Needs: (1) `src/agents/claude/mod.rs`'s `ENTRIES` hook-install list gets a `SubagentStart` row so `rtok agents install claude` actually registers the hook; (2) `docs/agents.md` reblessed (`tests/agents_doc.rs` with `RTOK_BLESS=1`) and `tests/host_docs.rs` green; (3) `ledger()`'s pointers currently carry only a path and an optional archive id — add outline line ranges from the graph index where it has them, per the original card's plan, gated so `memory` still has no hard feature dependency on `graph`. Open: whether other Claude-compatible hosts (Gemini, Grok, Copilot, …) should also get `SubagentStart` in this task or a follow-up — flagging for the creator rather than deciding unilaterally.
+Plan: extend `ENTRIES` the same way the existing `SessionStart`/`UserPromptSubmit` rows are wired; re-run the doc-generation tests with `RTOK_BLESS=1` and commit the regenerated table; for outline ranges, reuse the existing graph-index outline lookup used by `expand`/`outline` (read-only, behind the same `#[cfg(feature = "graph")]` gate `memory` does not otherwise pull in — resolve via an optional method on a capability trait or a cfg'd call site, whichever keeps `memory = []` dependency-free when `graph` is off).
+Check: `agents_install` matrix e2e shows the new `SubagentStart` matcher for the `claude` host; `tests/agents_doc.rs` and `tests/host_docs.rs` green; a `handoff.rs` unit test with a `graph`-enabled fixture asserts a pointer's line range appears in the brief when the index has one, and is silently omitted when it does not (no error, no panic); `just check` green.
 ### T131. Measure the spawn brief: cost row and on/off re-read share
-Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.
-Plan: T130's hook records a `Measurement` (`plugin: "memory"`, `kind: "brief"`) with the tokens it added (before = 0, after = brief) so the cost shows as negative saving; `rtok stats` `subagents` row splits the re-read share and sub-agent input tokens by "spawned with a brief" (the brief's archive id in the sub-agent's first user message) vs without.
+Rule: a saving that is not a `Measurement` row does not exist, and the brief is a cost first. Needs T128 and T130.2.
+Plan: T130.1's hook records a `Measurement` (`plugin: "memory"`, `kind: "brief"`) with the tokens it added (before = 0, after = brief) so the cost shows as negative saving; `rtok stats` `subagents` row splits the re-read share and sub-agent input tokens by "spawned with a brief" (the brief's archive id in the sub-agent's first user message) vs without.
 Check: fixture with one briefed and one plain sub-agent asserts the split; after a dated window with the flag on, `research.md` §17 gets the measured net; default flips to on only if net tokens saved > 0 — otherwise the card closes with the number and T130 stays off.
 ### T132. Ship a Haiku scout agent definition with the Claude Code plugin
 `research.md` §17.3(4). Make the cheap path the default one: `plugins/claude/agents/rtok-scout.md` with `model: haiku`, `tools` limited to the rtok MCP `read`, `search`, `outline`, `explore`, `expand`, and a short system prompt — ranged reads only, never a whole file over the outline threshold, answer with `path:line` citations and no file dumps. Verify the plugin `agents/` directory format against the current Claude Code docs first and add the link to the `## Docs` list in `plugins/claude/README.md`.
@@ -388,6 +409,130 @@ Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_w
 Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
 
 Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
+
+### T170. A slow hook is logged, not only printed to stderr
+
+Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
+
+Plan: route the slow note through `crate::log::record` at `warn` (keep the stderr line); `rtok logs` and `rtok info`'s error count then show it.
+
+Check: a unit test with `max_ms = 0` finds one `warn` row in the log store after a hook run; `just test` green.
+
+### T171. Claude Code sees the rtok MCP server twice
+
+Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
+
+Plan: find which path writes the direct `mcpServers.rtok` entry next to the plugin (`src/agents/claude/`), make install keep only the plugin's server and remove a stale direct entry, and make doctor flag the pair as a duplicate.
+
+Check: install on a fake home with the plugin present leaves one rtok MCP server; doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
+
+### T172. MCP tool failures always set `is_error`
+
+Found in the 2026-09-22 audit: 40 `read`/`expand`/`search` results carried `path outside cwd: …` as plain text without `is_error` (the flag is set only for the other 77 failures), so the model may treat the refusal as file content. Timeouts read `Error: Error: Request timed out` (doubled prefix), and `read` rejects a range the model quoted, `"975-1015"`, with `invalid line range`.
+
+Plan: in `src/mcp.rs` map every tool `Err` (including the root guard in `src/plugins/read/mod.rs:202`) to `is_error: true` with one `Error:` prefix; strip surrounding quotes in the line-range parser.
+
+Check: unit tests for an outside-cwd read (`is_error` true), a quoted range (accepted) and the error text (one prefix); `just test` green.
+
+### T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
+
+Found in the 2026-09-22 audit. `count_hooks` (`src/doctor.rs:731-751`) reads only `settings.json` → `hooks`, so a plugin install prints `hooks 0` while the agents block says hooks ✓ installed. `anthropic_base()` (`src/doctor.rs:938-945`) treats any `ANTHROPIC_BASE_URL` as custom, so Claude Desktop's default `https://api.anthropic.com` prints "mcp_tool_search likely disabled".
+
+Plan: count plugin-carried hooks (the same install check the agents block uses); ignore a base URL equal to the default Anthropic endpoint (trailing slash tolerated).
+
+Check: doctor tests for a plugin-only home (hooks counted) and for the default URL (no warning); `just test` green.
+
+### T174. Plugin hooks fail open when `rtok` is not on `PATH`
+
+Found in the 2026-09-22 audit: 380 hook errors `/bin/sh: rtok: command not found` (exit 127) in 7 days, all in projects whose shell `PATH` lacks `~/.ketch/bin` — one non-blocking error on every tool call. D21 says a missing `rtok` fails open and says to install with ketch.
+
+Plan: make the Claude Code plugin's hook command resolve `rtok` (PATH, then `~/.ketch/bin/rtok`) and, when absent, exit 0 silently except one SessionStart note naming `ketch install listepo/rtok`; apply the same to the other host plugins that shell out to `rtok`.
+
+Check: a plugin test runs the hook command with an empty `PATH` and no binary: exit 0, empty stdout except the one SessionStart note; `just test` green.
+
+### T175. No trailer on tiny outputs
+
+Found in the 2026-09-22 audit: in 1 134 of 4 333 shortened Bash results the rtok trailer (174 B mean, up to 535 B) is longer than the content left (under 200 chars) — 198 KB of pure overhead in 7 days, mostly background polling (`until grep -q …; do sleep 30; done`, `tail -30 …/tasks/*.output`). `needs_pointer` (`src/plugins/cmd/run.rs:165`) adds the trailer whenever the canonical text changed.
+
+Plan: when the raw body is itself small (under the trailer's own size or a configured floor), emit it unfiltered with no trailer; keep lossless-by-default intact because nothing is cut.
+
+Check: unit test — a 150-byte body that the formatter would reshape comes back verbatim with no trailer; the `Measurement` row shows no negative saving; `just test` green.
+
+### T176. Explicitly bounded output is not cut again
+
+Found in the 2026-09-22 audit: 335 times the agent called `expand` on an id it had just been shown; the filtered results totalled 533 KB and the expands 1.47 MB (≈ 234 K tokens paid twice). Worst: `sed -n '1,620p' src/hooks/types.rs` cut to 1.8 KB of 28 KB; `cargo nextest run … | tail -300` lost the failing-test detail (4.7 KB of 20 KB). Reproduced in the audit session itself: a 43-line `grep -A`/`sed -n` result lost 23 lines.
+
+Plan: treat a command the agent already bounded (`sed -n a,bp`, `head`/`tail -n`, `grep -A/-B/-C`, `cat -n` of named files) as asked-for — pass it through; for test/build runners keep failure blocks whole. Measure the re-expand rate in `rtok stats` so the change shows up as a number.
+
+Check: rule tests for each bounded form (output unchanged) and for a failing nextest log (failure block kept); `rtok stats` reports an "expand right after" count; `just test` green.
+
+### T177. Large source dumps through `cat`/`sed`/`grep` get a filter
+
+Found in the 2026-09-22 audit: 77% of Bash result bytes (16.4 MB in 7 days) carry no rtok marker. Much of it is below the size gate by design, but the top groups are large source dumps with no rule: `sed` 2.7 MB, `grep` 2.0 MB, `cat` 1.4 MB, newline-separated multi-command scripts 2.4 MB (only `&&`/`;` chains are split), `git diff` 0.3 MB.
+
+Plan: first split the numbers by "below size gate" vs "no rule matched" in `rtok stats`; then add rules for unbounded multi-file `cat`, large `grep -r` hit lists and newline-joined scripts in `src/plugins/cmd/rules.rs`, coordinated with T176 so bounded reads stay whole.
+
+Check: `rtok stats` shows the unmatched-rule share; rule tests for each new family; saving recorded as `Measurement` rows; `just test` green.
+
+### T178. Hook wall-clock time as Claude Code sees it
+
+Found in the 2026-09-22 audit: in-process hook time is p50 0.3 ms, but Claude Code records p50 18–19 ms and p95 206–255 ms for PreToolUse/PostToolUse — process start of a 27 MB binary dominates and the ≤ 10 ms rule is broken on every call without rtok noticing. Ten hooks were cancelled at Claude Code's 5 s timeout (5 PreToolUse, 5 UserPromptSubmit with p50 5.6 s — no UserPromptSubmit rows exist in the store, so the owner is unconfirmed). SessionEnd (p50 18.9 ms) and PreCompact (p50 15.0 ms) are over budget in-process.
+
+Plan: research first — measure cold/warm start (`hyperfine`), find what runs before `main` dispatches (config parse, DB open, migrations), confirm who owns the UserPromptSubmit timeouts; then pick: lazy store open, a smaller hook path, or a resident process (`rtok demon`) the hook talks to. Record findings in `research.md`.
+
+Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
+
+### T179. Why `read/dedup` and `read/delta` rarely fire
+
+Found in the 2026-09-22 audit: 367 same-session re-reads of the same file (≈ 2.35 MB) while `read/dedup` and `read/delta` together fired about 272 times, and only 2% of native `Read` results carry any rtok marker. Worst: one file read 29× in a session. Part of the misses may be sessions where `rtok` was not on `PATH` (T174). T136 measures `outline`-answerable reads; this task is about repeat reads.
+
+Plan: from transcripts, classify each repeat read: hook not run, file changed (delta expected), range read, sub-agent context (T127), or dedup declined; fix the largest class.
+
+Check: `rtok stats` prints the repeat-read classes; the fixed class shrinks on a replayed transcript fixture; `just test` green.
+
+### T180. Research: filtering WebFetch, WebSearch and browser page text
+
+Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
+
+Plan: list the surfaces that can reach these results (proxy, T134 outcome, an MCP fetch tool), estimate the saving on the audit sample, and propose one option as a plan change.
+
+Check: a dated `research.md` section with the sample numbers and a recommendation.
+
+### T181. `graph/cap` records 0% saving
+
+Found in the 2026-09-22 audit: `graph/cap` wrote 17 `Measurement` rows with 8 759 → 8 759 B — it runs and records, but never caps anything on real sessions.
+
+Plan: find whether the cap threshold is never reached on real repos or the row is written before the cap applies; fix the measurement or the threshold, or stop recording no-op rows.
+
+Check: unit test where the cap applies records `after_bytes < before_bytes`; `just test` green.
+
+### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
+
+Creator request 2026-09-22 (voice): AirTalk/rtok agents must clean up junk after themselves. Add `rtok agents junk clear` that deletes temporary files, logs, and cache that rtok (and the work it leaves behind) owns. Separately, inventory where each connected host stores its own junk — which folders — by reading that host's documentation, and record the map so clear/cleanup can cover host-side scratch safely.
+
+Scope:
+1. **Self-cleanup after agent work** — install/remove/list/apply paths and any long-running surfaces must not leave unbounded temp files, rotating logs past D26 caps, or stale cache entries; defaults fail open and never delete live ledgers (`~/.rtok/rtok.db`, archives still referenced by expand ids).
+2. **`rtok agents junk clear`** — one command that removes safe junk: temp dirs, log files past retention, and cache trees rtok owns (and any host junk folders from the map once known). Dry-run prints the paths; apply deletes. Config keys under `[setup]` / `[log]` as needed (D12).
+3. **Per-host junk map** — for every id in `HOSTS` (today: claude, cursor, codex, opencode, kilo, pi, omp, zcode, kimi, grok, vscode, copilot, aider, windsurf, zed), read that host's current docs and list the folders that hold temp/logs/cache; write the table into `research.md` (and a host README note where useful). No host files are deleted until the map is reviewed.
+
+Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, archive retention if any); add the CLI subcommand + tests; run the doc survey as a dated research row; wire clear to the surveyed paths only after creator sign-off on the map.
+
+Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
+
+### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
+
+Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
+
+Scope:
+1. **One entry script** (e.g. `scripts/publish_marketplace.py` or under `tools/`) that accepts `all` | `<host-id>` and refuses hosts without marketplace support with a clear error.
+2. **Per-host Python modules** — one module per marketplace-capable host (discover which of today's `HOSTS` already have a documented marketplace/plugin store path: Claude Code marketplace, Codex `plugin marketplace add`, Cursor, Copilot, Kimi `/plugins`, … — verify against current host docs before coding). Each module owns auth assumptions, package layout under `plugins/<host>/`, and the publish API or CLI the marketplace expects.
+3. **CI trigger from Python** — the script does not hand-upload in production; it triggers the repo's CI workflow that builds and publishes (workflow_dispatch or equivalent), and reports the run URL. Local dry-run prints the planned host list and the workflow inputs without firing CI.
+4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
+
+Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
+
+Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
+
 
 ## Reference
 

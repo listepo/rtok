@@ -1,0 +1,220 @@
+// rtok web UI kit — the one place a look lives. Screens compose these
+// components; nothing here knows the app's pages, models or callbacks.
+// Every color/space/size comes from `theme.slint` tokens, never literals.
+//
+// Alignment contract: inner structure uses plain `HorizontalLayout` /
+// `VerticalLayout` with explicit token padding — never the padded std
+// `*Box` widgets, whose implicit style padding stacks at every nesting
+// level and throws edges and baselines out of line.
+
+import { ScrollView } from "std-widgets.slint";
+
+import { RtokTheme } from "theme.slint";
+
+/// Page heading — mono bold ink at the theme's title size.
+export component TitleText inherits Text {
+    color: RtokTheme.ink;
+    font-family: "IBM Plex Mono";
+    font-size: RtokTheme.title-size;
+    font-weight: 700;
+    wrap: word-wrap;
+}
+
+/// Panel heading — mono ink at the fixed 16px step.
+export component SectionText inherits Text {
+    color: RtokTheme.ink;
+    font-family: "IBM Plex Mono";
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/// Small muted mono label — column captions, section notes, empty states.
+export component MetaText inherits Text {
+    color: RtokTheme.ink-muted;
+    font-family: "IBM Plex Mono";
+    font-size: 11px;
+}
+
+/// Body copy — muted mono that wraps at the panel edge.
+export component BodyText inherits Text {
+    color: RtokTheme.ink-muted;
+    font-family: "IBM Plex Mono";
+    font-size: RtokTheme.body-size;
+    wrap: word-wrap;
+}
+
+/// One-line list text: elides instead of widening its list.
+export component RowText inherits Text {
+    in property <bool> selected;
+    color: selected ? RtokTheme.accent : RtokTheme.ink;
+    font-family: "IBM Plex Mono";
+    font-size: RtokTheme.body-size;
+    vertical-alignment: center;
+    overflow: elide;
+    horizontal-stretch: 1;
+}
+
+/// The standard surface panel (sidebars, list cards, bars).
+export component Card inherits Rectangle {
+    border-radius: RtokTheme.radius-lg;
+    background: RtokTheme.surface-1;
+    border-width: 1px;
+    border-color: RtokTheme.hairline;
+}
+
+/// A card that stacks its children with one inner padding. List panels use
+/// the default `space-1` so row highlights sit concentric with the card
+/// (radius-lg − space-1 ≈ radius-md) and row text lands on the same inset
+/// as `PageScroll`'s `space-3` content.
+export component Panel inherits Card {
+    in property <length> pad: RtokTheme.space-1;
+    in property <length> gap: 0px;
+    VerticalLayout {
+        padding: root.pad;
+        spacing: root.gap;
+        @children
+    }
+}
+
+/// Panel heading row — inset like `ListRow` text so heading and rows share
+/// one left edge.
+export component PanelTitle inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: RtokTheme.space-2;
+    padding-right: RtokTheme.space-2;
+    min-height: 36px;
+    max-height: 36px;
+    SectionText {
+        text: root.text;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}
+
+/// Wrapping note inside a panel (empty states) at the row text inset.
+export component PanelNote inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: RtokTheme.space-2;
+    padding-right: RtokTheme.space-2;
+    BodyText {
+        text: root.text;
+    }
+}
+
+/// Vertical page that never scrolls sideways: content is laid out at the
+/// visible width (text wraps, rows elide) and capped at `max-content`.
+export component PageScroll inherits ScrollView {
+    in property <length> pad: RtokTheme.space-3;
+    in property <length> gap: RtokTheme.space-3;
+    in property <length> max-content: 100000px;
+    VerticalLayout {
+        width: min(root.visible-width, root.max-content);
+        padding: root.pad;
+        spacing: root.gap;
+        alignment: start;
+        @children
+    }
+}
+
+/// Fixed 24px square that centers one glyph (icon, logo, status dot), so
+/// every leading glyph in a column shares one center line.
+export component IconSlot inherits Rectangle {
+    width: 24px;
+    height: 24px;
+}
+
+/// Page/nav icon: one 16px monochrome glyph, tinted to the theme. The fixed
+/// size keeps layouts from stretching the SVG's intrinsic 24px.
+export component PageIcon inherits Image {
+    in property <string> page-id;
+    in property <color> tint: RtokTheme.ink-muted;
+    width: 16px;
+    height: 16px;
+    colorize: tint;
+    source:
+        page-id == "overview" ? @image-url("icons/overview.svg") :
+        page-id == "plugins" ? @image-url("icons/plugins.svg") :
+        page-id == "calls" ? @image-url("icons/calls.svg") :
+        page-id == "sessions" ? @image-url("icons/sessions.svg") :
+        page-id == "doctor" ? @image-url("icons/doctor.svg") :
+        page-id == "logs" ? @image-url("icons/logs.svg") :
+        page-id == "skills" ? @image-url("icons/skills.svg") :
+        page-id == "theme" ? @image-url("icons/theme.svg") :
+        @image-url("icons/overview.svg");
+}
+
+/// Nav row: icon ± label, selection and hover feedback. Icon-only instances
+/// (`show-label: false`) are the rail and the tool buttons of the mobile bar.
+export component NavItem inherits Rectangle {
+    in property <string> page-id;
+    in property <string> title;
+    in property <bool> selected;
+    in property <bool> show-label: true;
+    in property <bool> icon-only: false;
+    callback activated;
+    property <length> h: icon-only ? 44px : 36px;
+    min-height: h;
+    preferred-height: h;
+    max-height: h;
+    // In the icon bar every button shares the row width equally.
+    horizontal-stretch: 1;
+    min-width: icon-only ? 36px : 0px;
+    border-radius: RtokTheme.radius-md;
+    background: selected
+        ? RtokTheme.accent-muted
+        : (nav-ta.has-hover ? RtokTheme.surface-2 : transparent);
+    animate background { duration: 150ms; }
+    nav-ta := TouchArea {
+        accessible-role: button;
+        accessible-label: root.title;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+    HorizontalLayout {
+        padding-left: show-label ? RtokTheme.space-2 : 0;
+        padding-right: show-label ? RtokTheme.space-2 : 0;
+        spacing: RtokTheme.space-2;
+        alignment: show-label ? start : center;
+        IconSlot {
+            PageIcon {
+                page-id: root.page-id;
+                tint: selected ? RtokTheme.accent : RtokTheme.ink-muted;
+            }
+        }
+        if show-label: RowText {
+            text: title;
+            selected: root.selected;
+            color: selected ? RtokTheme.accent : RtokTheme.ink-muted;
+        }
+    }
+}
+
+/// Selectable list row — highlight, hover, cursor and the accessible label
+/// live here once. Children stack vertically centered at the row inset, so
+/// one- and two-line rows share a left edge.
+export component ListRow inherits Rectangle {
+    in property <bool> selected;
+    in property <string> label;
+    in property <length> row-height: 36px;
+    callback activated;
+    height: row-height;
+    border-radius: RtokTheme.radius-md;
+    background: selected
+        ? RtokTheme.accent-muted
+        : (row-ta.has-hover ? RtokTheme.surface-2 : transparent);
+    animate background { duration: 150ms; }
+    row-ta := TouchArea {
+        accessible-role: button;
+        accessible-label: root.label;
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+    VerticalLayout {
+        padding-left: RtokTheme.space-2;
+        padding-right: RtokTheme.space-2;
+        spacing: 2px;
+        alignment: center;
+        @children
+    }
+}

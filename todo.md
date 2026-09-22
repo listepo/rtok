@@ -21,7 +21,8 @@
 - T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 - T117. VS Code agent plugins
-- T118. Gemini CLI host with an extension
+- T118.2. Gemini CLI host module: registration, config keys, e2e
+- T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
 - T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
 - T122. A dedup pointer reaches a context that never saw the body
@@ -30,7 +31,7 @@
 
 - T125. `rtok stats`: thinking-block share — the gate for I-86
 - T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-- T130. Spawn brief: a budgeted pointer digest appended to the `Agent` prompt
+- T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
@@ -45,3 +46,17 @@
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T165. Research: general HTTP(S) interception as a new surface
 - T168. `agents list` tables flake on wrapper noise in `--version`
+- T170. A slow hook is logged, not only printed to stderr
+- T171. Claude Code sees the rtok MCP server twice
+- T172. MCP tool failures always set `is_error`
+- T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
+- T174. Plugin hooks fail open when `rtok` is not on `PATH`
+- T175. No trailer on tiny outputs
+- T176. Explicitly bounded output is not cut again
+- T177. Large source dumps through `cat`/`sed`/`grep` get a filter
+- T178. Hook wall-clock time as Claude Code sees it
+- T179. Why `read/dedup` and `read/delta` rarely fire
+- T180. Research: filtering WebFetch, WebSearch and browser page text
+- T181. `graph/cap` records 0% saving
+- T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
+- T183. Python utility: publish host plugins to marketplaces (per agent, via CI)

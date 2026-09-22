@@ -179,6 +179,7 @@ fn snapshot_error_reaches_the_banner() {
         &json!({"type":"snapshot","usage":{},"plugins":[],"calls":[],"sessions":[],"logs":[],"doctor":null,"error":"store unreadable"}),
     );
     assert_eq!(ui.get_error().as_str(), "store unreadable");
+}
 
 #[test]
 fn session_click_opens_detail() {

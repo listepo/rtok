@@ -84,12 +84,15 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let grok = cfg.hook.host == "grok" || std::env::var_os("GROK_HOOK_EVENT").is_some();
     let copilot = !grok && cfg.hook.host == "copilot";
     let cursor = !grok && cfg.hook.host == "cursor";
+    let gemini = !grok && cfg.hook.host == "gemini";
     if grok {
         input.adapt_grok(event);
     } else if cursor {
         input.adapt_cursor(event);
     } else if copilot {
         input.adapt_copilot(event);
+    } else if gemini {
+        input.adapt_gemini(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
@@ -112,7 +115,42 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(cursor_output(&parsed));
     }
+    if gemini {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(gemini_output(&parsed, &input.hook_event_name));
+    }
     Ok(out)
+}
+
+/// Gemini CLI (https://geminicli.com/docs/hooks/reference/, fetched 2026-09-22) reads a
+/// top-level `{decision: "deny", reason}` to block a call (nothing nests under
+/// `permissionDecision`) and `{hookSpecificOutput: {tool_input}}` to rewrite one; after a tool
+/// it reads `{hookSpecificOutput: {additionalContext}}`, the key Claude uses too. `{}` stays.
+pub fn gemini_output(out: &HookOutput, event: &str) -> Vec<u8> {
+    let empty = || b"{}".to_vec();
+    let Some(h) = &out.hook_specific_output else {
+        return empty();
+    };
+    if event == "PreToolUse" {
+        if h.permission_decision.as_deref() == Some("deny") {
+            let mut o = serde_json::Map::new();
+            o.insert("decision".into(), "deny".into());
+            if let Some(r) = &h.permission_decision_reason {
+                o.insert("reason".into(), r.as_str().into());
+            }
+            return serde_json::to_vec(&serde_json::Value::Object(o)).unwrap_or_else(|_| empty());
+        }
+        if let Some(input) = &h.updated_input {
+            let v = serde_json::json!({"hookSpecificOutput": {"tool_input": input}});
+            return serde_json::to_vec(&v).unwrap_or_else(|_| empty());
+        }
+        return empty();
+    }
+    if let Some(ctx) = &h.additional_context {
+        let v = serde_json::json!({"hookSpecificOutput": {"additionalContext": ctx}});
+        return serde_json::to_vec(&v).unwrap_or_else(|_| empty());
+    }
+    empty()
 }
 
 /// GitHub Copilot CLI reads a flat object: `{permissionDecision, permissionDecisionReason,
@@ -156,7 +194,9 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
         "AfterMCPExecution" => after_mcp(input, cx),
-        "SessionStart" | "UserPromptSubmit" | "PostCompact" => inject_event(input, cx, &registry),
+        "SessionStart" | "UserPromptSubmit" | "PostCompact" | "SubagentStart" => {
+            inject_event(input, cx, &registry)
+        }
         "PreCompact" => {
             if let Some(ev) = input.pre_compact() {
                 for p in registry.enabled() {
@@ -457,6 +497,9 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
                 p.prompt_submit(&ev, &Ctx::new(cx))
             } else if input.hook_event_name == "PostCompact" {
                 p.session_start(&SessionStart { source: "compact" }, &Ctx::new(cx))
+            } else if let Some(ev) = input.subagent_start() {
+                // The parent's own ledger, not the new subagent's (T130): it has none yet.
+                p.subagent_start(&ev, &Ctx::new(cx))
             } else {
                 None
             }
@@ -539,26 +582,25 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use types::{post_out, pre_out};
+
+    /// Shared by every per-host `_output` test below: hook stdout bytes back to `Value`.
+    fn json(bytes: Vec<u8>) -> serde_json::Value {
+        serde_json::from_slice(&bytes).unwrap()
+    }
 
     #[test]
     fn copilot_output_shapes_pre_post_block_and_empty() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
         assert_eq!(
             json(copilot_output(&HookOutput::default())),
             serde_json::json!({})
         );
 
-        let pre = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PreToolUse".into(),
-                permission_decision: Some("allow".into()),
-                permission_decision_reason: Some("rtok".into()),
-                updated_input: Some(serde_json::json!({"command": "rtok cmd -- git status"})),
-                additional_context: None,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let pre = pre_out(
+            Some("allow"),
+            Some("rtok"),
+            Some(serde_json::json!({"command": "rtok cmd -- git status"})),
+        );
         assert_eq!(
             json(copilot_output(&pre)),
             serde_json::json!({
@@ -568,14 +610,7 @@ mod tests {
             })
         );
 
-        let post = HookOutput {
-            hook_specific_output: Some(HookSpecificOutput {
-                hook_event_name: "PostToolUse".into(),
-                additional_context: Some("ctx".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let post = post_out("ctx");
         assert_eq!(
             json(copilot_output(&post)),
             serde_json::json!({"additionalContext": "ctx"})
@@ -591,6 +626,36 @@ mod tests {
             serde_json::json!({"permissionDecision": "deny", "permissionDecisionReason": "guard"})
         );
     }
+    #[test]
+    fn gemini_output_shapes_deny_rewrite_context_and_empty() {
+        assert_eq!(
+            json(gemini_output(&HookOutput::default(), "PreToolUse")),
+            serde_json::json!({})
+        );
+
+        let deny = pre_out(Some("deny"), Some("dup"), None);
+        assert_eq!(
+            json(gemini_output(&deny, "PreToolUse")),
+            serde_json::json!({"decision": "deny", "reason": "dup"})
+        );
+
+        let rewrite = pre_out(
+            None,
+            None,
+            Some(serde_json::json!({"command": "rtok cmd -- git status"})),
+        );
+        assert_eq!(
+            json(gemini_output(&rewrite, "PreToolUse")),
+            serde_json::json!({"hookSpecificOutput": {"tool_input": {"command": "rtok cmd -- git status"}}})
+        );
+
+        let post = post_out("ctx");
+        assert_eq!(
+            json(gemini_output(&post, "PostToolUse")),
+            serde_json::json!({"hookSpecificOutput": {"additionalContext": "ctx"}})
+        );
+    }
+
     use crate::plugin::Runtime;
 
     #[test]
@@ -863,7 +928,6 @@ mod tests {
 
     #[test]
     fn cursor_output_emits_snake_case_mcp_replacement() {
-        let json = |b: Vec<u8>| serde_json::from_slice::<serde_json::Value>(&b).unwrap();
         assert_eq!(
             json(cursor_output(&HookOutput::default())),
             serde_json::json!({})

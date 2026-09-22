@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const COVERED: &[&str] = &["archive", "cmd", "graph", "guard", "read", "toon"];
-const NEVER: &[&str] = &["compress", "inject", "measure", "memory", "proxy"];
+const COVERED: &[&str] = &["archive", "cmd", "graph", "guard", "memory", "read", "toon"];
+const NEVER: &[&str] = &["compress", "inject", "measure", "proxy"];
 
 /// The fixture body per case: 50 lines so a capping plugin has something to drop, carrying
 /// the property under test. `empty` stays empty on purpose.
@@ -239,6 +239,49 @@ fn graph(kind: &str, body: &[u8]) -> usize {
     n
 }
 
+/// `memory`: `build_brief` (T130) archives the pointer digest it composes for the
+/// `SubagentStart` hook and the `handoff` MCP tool — the ledger's touched-path list plus
+/// the fixed read/expand instructions, not the touched file's own body, so `body` only
+/// gates which fixtures apply (same as `guard`/`toon`) and the round trip is against the
+/// archived digest reconstructed from the returned brief minus its own trailer, with a
+/// budget generous enough that nothing gets capped.
+fn memory(kind: &str, body: &[u8]) -> usize {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return 0;
+    };
+    if text.trim().is_empty() {
+        return 0;
+    }
+    let (cx, dir) = runtime(&format!("memory-{kind}"));
+    let ctx = Ctx::new(&cx);
+    let stdin = json!({
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": format!("/fixture-{kind}.rs")},
+    });
+    let call_id = cx.record_call("hook", "hook", None).unwrap();
+    cx.store
+        .insert_call_io(
+            call_id,
+            Some(&serde_json::to_vec(&stdin).unwrap()),
+            None,
+            65536,
+            None,
+        )
+        .unwrap();
+    let brief = rtok::plugins::memory::handoff::build_brief(&ctx, 100_000, "")
+        .unwrap_or_else(|| panic!("memory: build_brief offered nothing for {kind}"));
+    let id = last_ref_id(&cx, "memory")
+        .unwrap_or_else(|| panic!("memory: no archive id recorded for {kind}"));
+    let trailer = format!("\n[rtok {id} · expand: rtok expand {id}]");
+    let full = brief
+        .strip_suffix(&trailer)
+        .unwrap_or_else(|| panic!("memory: brief for {kind} does not end with its own trailer"));
+    let n = round_trip(&cx, "memory", &id, full.as_bytes());
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
 type Driver = fn(&str, &[u8]) -> usize;
 
 const WALK: &[(&str, Driver)] = &[
@@ -246,6 +289,7 @@ const WALK: &[(&str, Driver)] = &[
     ("cmd", cmd),
     ("graph", graph),
     ("guard", guard),
+    ("memory", memory),
     ("read", read),
     ("toon", toon),
 ];

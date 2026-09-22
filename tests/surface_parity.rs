@@ -110,7 +110,7 @@ fn session_detail_exists_on_both_surfaces() {
         "the web UI rebuilds the same snapshot filter"
     );
     assert!(
-        slint.contains("selected-session.detail"),
+        slint.contains("session.detail"),
         "the web Sessions page has a detail pane"
     );
 }
@@ -163,7 +163,7 @@ fn expand_payload_exists_on_both_surfaces() {
         "web inbound answers expand through expand_payload"
     );
     assert!(
-        web.contains("on_expand_archive") && slint.contains("CallArchive"),
+        web.contains("on_expand_archive") && slint.contains("expand-archive"),
         "the web Calls page has an expand button and pane"
     );
 }
