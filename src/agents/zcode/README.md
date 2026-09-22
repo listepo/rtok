@@ -3,7 +3,7 @@
 `rtok agents install zcode` — Z.ai's ZCode desktop app (the GLM coding harness). One config
 file, `[setup.zcode] config_path`, default `~/.zcode/cli/config.json`, carries hooks and MCP.
 The app starts without a shell PATH, so every command written is the absolute `rtok` binary.
-With `--yes` the linked plugin carries both instead (below).
+The linked plugin carries both instead, by default (below).
 
 ## Modules
 
@@ -12,7 +12,7 @@ With `--yes` the linked plugin carries both instead (below).
 | hooks | yes | `hooks.enabled = true` and `hooks.events.<Event>[]` → `<abs rtok> hook <event>` with `timeoutMs` on PreToolUse (Bash, Read), PostToolUse, UserPromptSubmit, SessionStart; ZCode has no PreCompact, PostCompact or SessionEnd |
 | mcp | yes | `mcp.servers.rtok` → `<abs rtok> mcp` (off with `[setup] mcp = false`) |
 | proxy | no | ZCode providers are per-id tables with their own keys and base URLs; setup does not edit them |
-| plugin | `--yes` | links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` and lists it in `plugins.dirs` — ZCode loads inline plugin roots from there, enabled by default; while the plugin is linked it is the only call path, so setup strips its own config-file entries |
+| plugin | yes | links `plugins/zcode` to `~/.zcode/cli/plugins/local/rtok` by default, once ZCode itself is detected, and lists it in `plugins.dirs` — ZCode loads inline plugin roots from there, enabled by default; while the plugin is linked it is the only call path, so setup strips its own config-file entries; a stale or foreign destination is never overwritten |
 
 ZCode's hook protocol is Claude's: stdin `session_id`, `cwd`, `hook_event_name`, `tool_name`,
 `tool_input`; stdout `hookSpecificOutput`; exit 2 blocks. `rtok hook` runs unchanged with the

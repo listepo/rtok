@@ -1,6 +1,7 @@
 # rtok ZCode plugin
 
-Linked by `rtok agents install zcode --yes` to `~/.zcode/cli/plugins/local/rtok`, which setup
+Linked by `rtok agents install zcode` (by default, once ZCode itself is detected) to
+`~/.zcode/cli/plugins/local/rtok`, which setup
 also lists in `plugins.dirs` in `~/.zcode/cli/config.json` — ZCode loads every `plugins.dirs`
 entry as an inline plugin root and enables it by default (D21: hooks and MCP as one unit, one
 `rtok mcp` per store). `rtok agents remove zcode` unlinks it and drops the `plugins.dirs`
@@ -22,8 +23,11 @@ Files:
   PATH or the ketch store; a missing `rtok` fails the hook open (exit 0) and the MCP loudly
   (exit 1), both printing `ketch install listepo/rtok`.
 
-Windows: the hook launchers are POSIX, so on Windows prefer the plain
-`rtok agents install zcode` (no `--yes`), which writes the absolute exe into `config.json`.
+Windows: the hook launchers are POSIX, so the plugin cannot run there, but `rtok agents
+install zcode` still links it by default (T164) — it has no way to know a launcher will
+not run. `rtok agents remove zcode` unlinks it for the plain `config.json` hooks and
+`mcp.servers.rtok`, which write the absolute exe instead; a later `install` relinks the
+plugin again, since there is no flag yet to keep it off.
 
 ## Docs
 

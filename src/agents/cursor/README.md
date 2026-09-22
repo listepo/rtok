@@ -13,7 +13,7 @@ Plugin link: `~/.cursor/plugins/local/rtok` → `plugins/cursor/` from the rtok 
 | --- | --- | --- |
 | hooks | yes | `beforeShellExecution` → PreToolUse, `afterShellExecution` → PostToolUse, `preCompact` → PreCompact; all `--host cursor` |
 | mcp | yes | `mcpServers.rtok` in `mcp.json`, or served by the linked plugin (then `mcp.json` is left alone: one MCP per store) |
-| plugin | `--yes` | the offer links `plugins/cursor` (hooks + MCP as one unit); without a terminal only `--yes` accepts |
+| plugin | yes | links `plugins/cursor` (hooks + MCP as one unit) by default, once Cursor itself is detected; a stale or foreign destination is never overwritten |
 | proxy | no | Cursor has no base-URL setting to point at the proxy |
 
 ## rtok plugins this host reaches
