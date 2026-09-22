@@ -12,9 +12,8 @@ pub fn handoff(cx: &Ctx, budget_tokens: u32) -> String {
              enable [plugins.memory] handoff after sub-agents exceed 5 %."
         )
     } else {
-        format!(
-            "handoff(budget_tokens={budget_tokens}) is enabled but not yet measured on this workload."
-        )
+        build_brief(cx, budget_tokens, "")
+            .unwrap_or_else(|| "handoff: nothing read or edited yet.".into())
     };
     let before = 0u64;
     let after = text.len() as u64;
@@ -160,6 +159,31 @@ mod tests {
         let out = handoff(&ctx, 800);
         assert!(out.contains("disabled"));
         assert!(cx.store.measurement_count("memory").unwrap() >= 1);
+    }
+
+    /// T130 review fix: the enabled branch must actually call `build_brief` — the shared
+    /// digest builder behind both the `handoff` MCP tool and the `SubagentStart` hook —
+    /// instead of a placeholder string.
+    #[test]
+    fn handoff_enabled_shares_the_spawn_brief_builder() {
+        let mut cx = crate::plugin::Runtime::in_memory("t596-on").unwrap();
+        cx.config.plugins.memory.handoff = true;
+        touch(&cx, "Read", "/repo/a.rs");
+        let ctx = Ctx::new(&cx);
+        let out = handoff(&ctx, 300);
+        assert_eq!(out, build_brief(&ctx, 300, "").unwrap(), "{out}");
+        assert!(out.contains("/repo/a.rs"), "{out}");
+    }
+
+    /// Enabled but nothing read or edited yet: a fallback line, not the "not yet measured"
+    /// placeholder `build_brief` replaced.
+    #[test]
+    fn handoff_enabled_with_an_empty_ledger_falls_back() {
+        let mut cx = crate::plugin::Runtime::in_memory("t596-on-empty").unwrap();
+        cx.config.plugins.memory.handoff = true;
+        let ctx = Ctx::new(&cx);
+        let out = handoff(&ctx, 300);
+        assert_eq!(out, "handoff: nothing read or edited yet.");
     }
 
     /// Fabricates a `PreToolUse(<tool>)` row in the hook window `ledger()` scans (T130), the
