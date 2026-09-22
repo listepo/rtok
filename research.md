@@ -1425,3 +1425,18 @@ The harness lands on Claude Code's own p50 (20–23 ms), so the gap between the 
 | PostToolUse | 18.99 / 33.33 ms | 13.30 / 22.24 ms | 4.86 ms |
 
 About −6 ms, or 30 %, on every hook call. The T178 Check (p50 under 10 ms as Claude Code sees it) is **not met**: the shell floor plus `rtok --version` alone is 10.8 ms. What is left cannot come from trimming the hook path. Parse, config and store open together are 2.1 ms. Reaching 10 ms needs a process that starts in ~1–2 ms: a small hook client with no TLS or framework dependencies, talking to a resident process over a socket, and falling open when the process is absent.
+
+### 19.6 A locked store (2026-09-23)
+
+Where the waits came from: the hook opens the store fine with another writer holding the lock (WAL readers never wait), and its first write, `record_call`, waited out `busy_timeout = 1000` ms. The error was dropped, so the plugins ran on and each of their writes could wait another second. A migration run held on a fresh or upgraded store waits up to 30 s. Fix: `Store::open_with` takes a `LockWait` (per-statement `busy_timeout`, connect attempts, migration wait). `Store::open` keeps 1 s × 10 / 30 s; `rtok hook` passes 5 ms × 1 / 5 ms. When `record_call` comes back "database is locked", the hook returns `{}`: input unchanged, no row written, one `rtok: hook <event> skipped: store locked` line on stderr.
+
+`tests/hook_fail_open.rs` `a_locked_store_fails_the_hook_open_in_ms`: another thread holds `BEGIN IMMEDIATE` on the store, and `rtok hook` (debug build) runs with a Bash payload that the unlocked control run rewrites. Wall time of the whole process, start to exit:
+
+| event | before | after (3 runs) |
+| --- | --- | --- |
+| PreToolUse | 1.06 s, command still rewritten | 19–31 ms, `{}` |
+| PostToolUse | 2.13 s | 21–23 ms, `{}` |
+| UserPromptSubmit | 1.07 s | 21–22 ms, `{}` |
+| SessionStart | 1.07 s | 20–30 ms, `{}` |
+
+This does not reproduce a full 5 s cancellation. With the lock held, one event wrote at most two statements that waited, but UserPromptSubmit injection and a migration's 30 s wait can add more. After the fix, none of these waits exceeds 5 ms on the hook path.
