@@ -1,0 +1,320 @@
+//! T102: lossless round-trip — every plugin that writes an archive row gives back exactly
+//! what it archived through `rtok expand <id>`. One walk over all of them with fixtures
+//! that include CRLF, non-UTF-8 and an empty body, and a completeness test that fails when
+//! a shortening plugin is added without a driver (or a "never archives" plugin starts
+//! writing rows). Scope is `src/plugins/`; the hook and MCP surface wraps
+//! (`hooks/mod.rs`, `mcp/wrap.rs`) share the same `put_archive` → `expand` mechanism and
+//! pin their own round trips in `tests/mcp_wrap.rs` and `tests/archive_rewrite.rs`.
+
+use rtok_plugin_sdk::{Ctx, Plugin, PostToolUse, WireRequest};
+use serde_json::{Value, json};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const COVERED: &[&str] = &["archive", "cmd", "graph", "guard", "read", "toon"];
+const NEVER: &[&str] = &["compress", "inject", "measure", "memory", "proxy"];
+
+/// The fixture body per case: 50 lines so a capping plugin has something to drop, carrying
+/// the property under test. `empty` stays empty on purpose.
+fn fixture(kind: &str) -> Vec<u8> {
+    let text =
+        |f: fn(usize) -> String| -> Vec<u8> { (0..50).map(f).collect::<String>().into_bytes() };
+    match kind {
+        "plain" => text(|i| format!("line {i}\n")),
+        "crlf" => text(|i| format!("line {i}\r\n")),
+        "non-utf8" => {
+            let mut v = b"\xff\xfe line 0\n".to_vec();
+            v.extend(text(|i| format!("line {}\n", i + 1)));
+            v
+        }
+        "empty" => Vec::new(),
+        other => panic!("unknown fixture: {other}"),
+    }
+}
+
+fn tmp(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "rtok-t102-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn runtime(name: &str) -> (rtok::plugin::Runtime, PathBuf) {
+    let dir = tmp(name);
+    let mut cx = rtok::plugin::Runtime::in_memory(format!("t102-{name}")).unwrap();
+    cx.config.core.archive_dir = dir.join("archive");
+    cx.config.proxy.mode = "compress".into();
+    cx.config.plugins.archive.min_tokens = 1;
+    cx.config.plugins.archive.keep_turns = 0;
+    cx.config.plugins.toon.enabled = true;
+    cx.config.plugins.toon.min_rows = 3;
+    cx.config.plugins.graph.max_tokens = 1;
+    cx.config.plugins.read.allow_paths.push(dir.clone());
+    (cx, dir)
+}
+
+/// `rtok expand <id>`'s own fetch must return the archived bytes, byte for byte.
+fn round_trip(cx: &rtok::plugin::Runtime, who: &str, id: &str, want: &[u8]) -> usize {
+    let got = rtok::expand::fetch(cx, id)
+        .unwrap()
+        .unwrap_or_else(|| panic!("{who}: expand {id} lost the body"));
+    assert_eq!(got, want, "{who}: expand {id} is not the archived bytes");
+    1
+}
+
+fn last_ref_id(cx: &rtok::plugin::Runtime, plugin: &str) -> Option<String> {
+    cx.store
+        .list_measurements(plugin)
+        .unwrap()
+        .last()
+        .and_then(|r| r.ref_id.clone())
+}
+
+/// `cmd`: `emit_filtered` archives the raw output when it shortened something (T160) and
+/// the Measurement row names the id; a body nothing was dropped from stores nothing.
+fn cmd(kind: &str, body: &[u8]) -> usize {
+    let dir = tmp(&format!("cmd-{kind}"));
+    let mut cfg = rtok::config::Config::default();
+    cfg.core.db_path = dir.join("rtok.db");
+    cfg.core.archive_dir = dir.join("archive");
+    rtok::plugins::cmd::run::emit_filtered(&cfg, &["fixture".into()], body, 0);
+    let cx = rtok::plugin::Runtime::open(cfg, format!("t102-cmd-{kind}")).unwrap();
+    let n = match last_ref_id(&cx, "cmd") {
+        Some(ref_id) => {
+            let id = ref_id.split_once(':').map_or(ref_id.as_str(), |(_, id)| id);
+            round_trip(&cx, "cmd", id, body)
+        }
+        None => 0,
+    };
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+/// `read`: the re-read cache archives every body it remembers, bytes untouched.
+fn read(kind: &str, body: &[u8]) -> usize {
+    let (cx, dir) = runtime(&format!("read-{kind}"));
+    let id = rtok::plugins::read::cache::remember(&Ctx::new(&cx), &format!("full:{kind}"), body)
+        .unwrap();
+    let n = round_trip(&cx, "read", &id, body);
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+/// `guard`: the PostToolUse cache archives the tool's payload so a repeat can deny with a
+/// pointer at it. `post_tool` answers `None` and records no Measurement; the id is the
+/// archive it wrote — the one file under the archive dir on a fresh runtime.
+fn guard(kind: &str, body: &[u8]) -> usize {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return 0;
+    };
+    let (cx, dir) = runtime(&format!("guard-{kind}"));
+    let input = json!({ "file_path": format!("{kind}.txt") });
+    let response = Value::String(text.to_string());
+    let _ = rtok::plugins::guard::Guard.post_tool(
+        &PostToolUse {
+            tool_name: "Read",
+            tool_input: &input,
+            tool_response: &response,
+        },
+        &Ctx::new(&cx),
+    );
+    let ids: Vec<String> = fs::read_dir(dir.join("archive"))
+        .map(|rd| {
+            rd.map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let n = match ids.first() {
+        Some(id) => round_trip(&cx, "guard", id, body),
+        None => 0,
+    };
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+/// `toon`: a tabular block is replaced by a pointer plus its encoding; the archived
+/// original is the pretty JSON it replaced. JSON strings are UTF-8 by construction, so
+/// the non-UTF-8 fixture cannot reach this path.
+fn toon(kind: &str, body: &[u8]) -> usize {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return 0;
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() < 3 {
+        return 0;
+    }
+    let table = Value::Array(
+        lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| json!({ "a": i, "b": l, "c": i * 3 }))
+            .collect(),
+    );
+    let original = serde_json::to_string_pretty(&table).unwrap();
+    let (cx, dir) = runtime(&format!("toon-{kind}"));
+    let mut wire = json!({"messages": [{
+        "role": "user",
+        "content": [{
+            "type": "tool_result",
+            "tool_use_id": format!("t-{kind}"),
+            "content": original,
+        }],
+    }]});
+    let ms = rtok::plugins::toon::Toon.proxy_filter(
+        &mut WireRequest::new(&rtok::proxy::anthropic::ANTHROPIC, &mut wire),
+        &Ctx::new(&cx),
+    );
+    let id = ms
+        .first()
+        .and_then(|m| m.ref_id.clone())
+        .unwrap_or_else(|| panic!("toon left the {kind} table whole"));
+    let n = round_trip(&cx, "toon", &id, original.as_bytes());
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+/// `archive`: an old tool result is replaced by head/tail plus its archive id; the
+/// archived original is the result text (JSON strings are UTF-8, as for `toon`).
+fn archive(kind: &str, body: &[u8]) -> usize {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return 0;
+    };
+    let (cx, dir) = runtime(&format!("archive-{kind}"));
+    let mut wire = json!({"messages": [
+        {"role": "user", "content": [{"type": "text", "text": "prompt"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "working"}]},
+        {"role": "user", "content": [{
+            "type": "tool_result",
+            "tool_use_id": format!("t-{kind}"),
+            "content": text,
+        }]},
+    ]});
+    let ms = rtok::plugins::archive::Archive.proxy_filter(
+        &mut WireRequest::new(&rtok::proxy::anthropic::ANTHROPIC, &mut wire),
+        &Ctx::new(&cx),
+    );
+    let n = match ms.first().and_then(|m| m.ref_id.clone()) {
+        Some(id) => round_trip(&cx, "archive", &id, body),
+        None => 0,
+    };
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+/// `graph`: `outline` caps its answer and archives the uncapped text — which is exactly
+/// what `read`'s `map` mode returns for the same file.
+fn graph(kind: &str, body: &[u8]) -> usize {
+    let (cx, dir) = runtime(&format!("graph-{kind}"));
+    let file = dir.join("fixture.txt");
+    fs::write(&file, body).unwrap();
+    let path = file.to_string_lossy().into_owned();
+    // Two runtimes on purpose: `read`'s re-read cache would answer the call inside
+    // `outline` with a delta ("unchanged since …"), and the delta is what would be
+    // archived. A separate store reads the original; the fresh one archives it.
+    let mut probe = rtok::plugin::Runtime::in_memory("t102-graph-probe").unwrap();
+    probe.config.core.archive_dir = dir.join("probe-archive");
+    probe.config.plugins.read.allow_paths.push(dir.clone());
+    let Ok(original) = rtok::plugins::read::read(&Ctx::new(&probe), &path, "map", None) else {
+        // `read` refuses non-UTF-8 files, so no text ever reaches this plugin's cap.
+        let _ = fs::remove_dir_all(&dir);
+        return 0;
+    };
+    rtok::plugins::graph::outline(&Ctx::new(&cx), &path).unwrap();
+    let id = match last_ref_id(&cx, "graph") {
+        Some(id) => id,
+        None => {
+            let _ = fs::remove_dir_all(&dir);
+            return 0;
+        }
+    };
+    let n = round_trip(&cx, "graph", &id, original.as_bytes());
+    let _ = fs::remove_dir_all(&dir);
+    n
+}
+
+type Driver = fn(&str, &[u8]) -> usize;
+
+const WALK: &[(&str, Driver)] = &[
+    ("archive", archive),
+    ("cmd", cmd),
+    ("graph", graph),
+    ("guard", guard),
+    ("read", read),
+    ("toon", toon),
+];
+
+/// The walk: shorten a fixture, take the id, `expand` it, compare bytes — for every
+/// plugin that writes an archive row and every fixture its input shape can carry.
+#[test]
+fn every_archive_row_round_trips_through_expand() {
+    for (who, run) in WALK {
+        let mut archived = 0;
+        for kind in ["plain", "crlf", "non-utf8", "empty"] {
+            archived += run(kind, &fixture(kind));
+        }
+        assert!(
+            archived > 0,
+            "{who} archived nothing across the fixtures — its driver is broken or the plugin stopped shortening"
+        );
+    }
+}
+
+/// The completeness half of the Check: a plugin added to the catalogue must be classified
+/// here — with a fixture driver, or filed under NEVER and checked against its source.
+fn source_archives(id: &str) -> bool {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/plugins");
+    let mut files = Vec::new();
+    let dir = root.join(id);
+    if dir.is_dir() {
+        collect_rs(&dir, &mut files);
+    } else if root.join(format!("{id}.rs")).is_file() {
+        files.push(root.join(format!("{id}.rs")));
+    }
+    files.iter().any(|p| {
+        let src = fs::read_to_string(p).unwrap();
+        let production = src.split("mod tests").next().unwrap();
+        production.contains("put_archive(")
+    })
+}
+
+fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_rs(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn every_shortening_plugin_has_a_fixture() {
+    let mut classified: Vec<&str> = [COVERED, NEVER].concat();
+    classified.sort_unstable();
+    let mut catalogue: Vec<&str> = rtok::config::CATALOGUE.iter().map(|(id, _)| *id).collect();
+    catalogue.sort_unstable();
+    assert_eq!(
+        classified, catalogue,
+        "a plugin was added: give it a fixture driver or file it under NEVER"
+    );
+    for id in COVERED {
+        assert!(
+            source_archives(id),
+            "{id} writes no archive row outside its tests — fix the classification"
+        );
+    }
+    for id in NEVER {
+        assert!(
+            !source_archives(id),
+            "{id} now writes an archive row — give it a fixture driver"
+        );
+    }
+}

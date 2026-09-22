@@ -18,7 +18,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T100 | todo | P1 | 3 | 0% | |
-| T102 | todo | P2 | 3 | 0% | |
 | T116 | todo | P2 | 3 | 0% | |
 | T117 | todo | P2 | 3 | 0% | |
 | T118 | todo | P2 | 4 | 0% | |
@@ -188,12 +187,6 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 After T99. A `grok` host in `src/agents/`: detection (`~/.grok/bin/grok`, `GROK_HOME`), `support("plugin")` prints `grok plugin install <resolved plugins/grok> --trust`, `installed()` reports `plugin` from `grok plugin list --json` or `~/.grok/plugins/rtok`; MCP as `[mcp_servers.rtok]` in `~/.grok/config.toml` via `toml_edit` when the plugin is absent. D21 singleton: while rtok's Claude hooks are installed and `[compat.claude] hooks` is on, say so instead of adding a second set. Separately, on a live Grok: dump one `read_file` PreToolUse payload, and if its `toolInput` matches what the Read plugins rewrite, map `read_file` → `Read` and add the Read matcher to the plugin. `docs/agents.md` blessed, `src/agents/grok/README.md` with `## Docs`.
 
 Check: unit tests for offer, detection and singleton; `agents_doc` blessed; `just check`.
-
-### T102. Lossless round-trip for every plugin that shortens
-
-Rule: anything shortened is retrievable via `expand <id>`. Today each plugin checks its own path (`toon` in `tests/extra_cover.rs`, archive in `tests/archive_rewrite.rs`). One test walks every plugin that writes an archive row: shorten a fixture, take the id, `rtok expand <id>`, compare bytes. Fixtures include CRLF, non-UTF-8 and an empty body.
-
-Check: the test fails if a new shortening plugin is added without a fixture; `just test` green.
 
 ### T116. Copilot CLI plugin
 

@@ -1,15 +1,23 @@
-//! Kimi Code installer (`rtok agents install kimi`, plan T46.2).
+//! Kimi Code CLI + Desktop (`rtok agents install kimi`, plan T46.2, T86).
 //!
 //! Moonshot's Kimi Code CLI reads hooks as `[[hooks]]` tables in `~/.kimi-code/config.toml`
 //! (`event`, `matcher`, `command`, `timeout` in seconds; Claude-compatible stdin, exit 2
 //! blocks) and MCP from the sibling `mcp.json` (`mcpServers.<name> = {command, args}`, no
 //! `type`). The TOML goes through `toml_edit` so the user's comments and other hooks survive.
+//!
+//! T86 (plugin offer + D21 singleton): Kimi owns its plugin store
+//! (`<kimi home>/plugins/managed/`, no local directory to link), so install never writes
+//! there — it prints the exact `/plugins install <resolved plugins/kimi path>` line
+//! (dry-run and apply alike). While the plugin is installed
+//! (`<kimi home>/plugins/managed/rtok/kimi.plugin.json` exists), setup strips rtok's own
+//! `[[hooks]]` tables and `mcpServers.rtok` instead of adding them, so no event fires
+//! twice and one `rtok mcp` serves the store.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use rtok_agent_sdk::NO_CHANGES;
+use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES};
 use serde_json::json;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
 
@@ -19,15 +27,29 @@ use crate::config::Config;
 
 const NAME: &str = "rtok";
 
-/// Kimi Code CLI: `[[hooks]]` in `config.toml`, `mcpServers.rtok` in `mcp.json`.
+/// Kimi Code CLI + Desktop: `[[hooks]]` in `config.toml`, `mcpServers.rtok` in `mcp.json`.
+/// The desktop app (`Kimi Code.app`) manages the same files as the CLI.
 pub struct Kimi;
 
-static VARIANTS: [Variant; 1] = [Variant {
-    kind: Kind::Cli,
-    name: "Kimi Code",
-    bins: &["kimi"],
-    apps: &[],
-}];
+/// CLI (`kimi` on PATH) and Desktop (`Kimi Code.app`): one install writes the
+/// same two files (T86).
+static VARIANTS: [Variant; 2] = [
+    Variant {
+        kind: Kind::Cli,
+        name: "Kimi Code",
+        bins: &["kimi"],
+        apps: &[],
+    },
+    Variant {
+        kind: Kind::Desktop,
+        name: "Kimi Code Desktop",
+        bins: &[],
+        apps: &[
+            "/Applications/Kimi Code.app",
+            "$LOCALAPPDATA/Programs/Kimi Code/Kimi Code.exe",
+        ],
+    },
+];
 
 /// `mcp.json` lives beside `config.toml`; one key configures both.
 pub fn mcp_path(cfg: &Config) -> PathBuf {
@@ -55,6 +77,7 @@ impl Agent for Kimi {
     fn support(&self, _kind: Kind, module: &str) -> Support {
         match module {
             "hooks" | "mcp" => Support::Yes,
+            "plugin" => Support::Offer("--yes"),
             "proxy" => Support::No(
                 "Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them",
             ),
@@ -62,6 +85,17 @@ impl Agent for Kimi {
                 "Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link",
             ),
         }
+    }
+
+    fn plugin_surfaces(&self) -> &'static [rtok_plugin_sdk::Surface] {
+        &[
+            rtok_plugin_sdk::Surface::Hook,
+            rtok_plugin_sdk::Surface::Mcp,
+        ]
+    }
+
+    fn shared(&self) -> bool {
+        true
     }
 
     fn files(&self, cfg: &Config, _kind: Kind) -> Vec<PathBuf> {
@@ -76,19 +110,100 @@ impl Agent for Kimi {
         if super::read(&mcp_path(cfg)).contains("\"rtok\"") {
             out.push("mcp");
         }
+        if plugin_detected(cfg) {
+            out.push("plugin");
+        }
         out
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
         let remove = mode == Mode::Remove;
-        let mut lines = vec![run(cfg, remove)?];
         if remove {
+            let mut lines = vec![offer_plugin(cfg, true)?];
+            lines.push(run(cfg, true)?);
             lines.push(unregister_mcp(cfg)?);
-        } else if cfg.setup.mcp {
+            return Ok(lines);
+        }
+        if plugin_detected(cfg) {
+            // D21 singleton: the plugin serves hooks and MCP, so rtok's own
+            // tables go instead of coming (Cursor's `plugin_is_mcp` rule,
+            // for hooks too).
+            let mut lines = vec![offer_plugin(cfg, false)?];
+            lines.push(run(cfg, true)?);
+            lines.push(unregister_mcp(cfg)?);
+            return Ok(lines);
+        }
+        // Plain path: hooks + MCP lines first. The offer line follows only when
+        // something else changed and `--yes` is set — a repeat install is all
+        // `NO_CHANGES` and reads back as `already installed` (every line counts,
+        // including guidance).
+        let mut lines = vec![run(cfg, false)?];
+        if cfg.setup.mcp {
             lines.push(register_mcp(cfg)?);
+        }
+        if lines.iter().any(|l| l != NO_CHANGES) && cfg.setup.yes {
+            lines.insert(0, offer_plugin(cfg, false)?);
+        } else {
+            lines.insert(0, NO_CHANGES.into());
         }
         Ok(lines)
     }
+}
+
+/// The plugin marker rtok can honestly read (T86): the managed copy Kimi
+/// writes on `/plugins install <dir>` — `<kimi home>/plugins/managed/rtok/`,
+/// where `<kimi home>` is the dir holding `config.toml`.
+pub fn plugin_marker(cfg: &Config) -> PathBuf {
+    cfg.setup
+        .kimi
+        .config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("plugins")
+        .join("managed")
+        .join("rtok")
+        .join("kimi.plugin.json")
+}
+
+/// True while Kimi's own install of the plugin serves hooks and MCP (D21):
+/// setup then strips its own tables instead of adding them.
+pub fn plugin_detected(cfg: &Config) -> bool {
+    plugin_marker(cfg).is_file()
+}
+
+/// The `/plugins install <resolved plugins/kimi path>` line (T86): printed behind
+/// `--yes` only, on dry-run and apply alike; rtok never writes `plugins/managed/`
+/// or `installed.json` — that format is Kimi's and undocumented.
+/// On remove the managed copy is left alone with its own remove line.
+/// Gating on the flag matches `Support::Offer("--yes")`; the flag never turns
+/// the printed line into state (`installed()` reads the marker alone).
+pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
+    let a = apply(cfg);
+    if a.dry_run {
+        if !a.yes {
+            return Ok(NO_CHANGES.into());
+        }
+        return Ok(format!(
+            "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
+            super::plugin_src("plugins/kimi").display()
+        ));
+    }
+    if remove {
+        if plugin_detected(cfg) {
+            return Ok(
+                "keep plugins/managed/rtok (owned by Kimi; remove with `/plugins remove rtok`)"
+                    .into(),
+            );
+        }
+        return Ok(NO_CHANGES.into());
+    }
+    if !a.yes {
+        return Ok(NO_CHANGES.into());
+    }
+    Ok(format!(
+        "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
+        super::plugin_src("plugins/kimi").display()
+    ))
 }
 
 /// Apply, dry-run, or remove the `[[hooks]]` tables.
@@ -216,6 +331,8 @@ mod tests {
         c.setup.backup = false;
         (c, path)
     }
+
+    /// Shared fixture (T86 tests live in `t86_tests` below and reuse it).
 
     #[test]
     fn dry_run_names_nine_tables_and_touches_nothing() {
@@ -377,5 +494,69 @@ mod tests {
             m["mcpServers"],
             json!({NAME: {"command": "rtok", "args": ["mcp"]}})
         );
+    }
+
+    /// T86: the offer names `plugins/kimi` and `/plugins install` (dry-run and
+    /// apply alike) and writes nothing; Kimi's store is never touched by rtok.
+    #[test]
+    fn offer_names_the_plugin_path_and_ketch_hint() {
+        let (mut c, dir) = cfg("offer-dry", true);
+        // Without --yes the offer stays declined: NO_CHANGES, nothing written.
+        assert_eq!(offer_plugin(&c, false).unwrap(), NO_CHANGES);
+        assert!(!dir.join("plugins").exists(), "dry-run writes nothing");
+        c.setup.yes = true;
+        let line = offer_plugin(&c, false).unwrap();
+        assert!(line.contains("plugins/kimi"), "{line}");
+        assert!(line.contains("/plugins install"), "{line}");
+        assert!(line.contains("ketch install listepo/rtok"), "{line}");
+        assert!(!dir.join("plugins").exists(), "dry-run writes nothing");
+        c.setup.dry_run = false;
+        let line = offer_plugin(&c, false).unwrap();
+        assert!(line.contains("plugins/kimi"), "{line}");
+        assert!(line.contains("/plugins install"), "{line}");
+        assert!(!dir.join("plugins").exists(), "apply writes nothing either");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T86 D21 singleton: with a seeded `managed/rtok/kimi.plugin.json` a second
+    /// install removes the nine tables and `mcpServers.rtok` and reports `plugin`;
+    /// remove leaves the managed copy alone with its own remove line.
+    #[test]
+    fn plugin_detected_strips_own_tables_and_reports_plugin() {
+        let (mut c, dir) = cfg("singleton", false);
+        c.setup.yes = true;
+        // Plain install first: hooks + MCP land in the user files; the `--yes`
+        // offer prints alongside the changing run.
+        let first = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert_eq!(Kimi.installed(&c, Kind::Cli), ["hooks", "mcp"]);
+        assert!(first[0].contains("/plugins install"), "{first:?}");
+        // A repeat install changes nothing: every line is NO_CHANGES, so the
+        // matrix reads it back as `already installed`.
+        let repeat = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert!(repeat.iter().all(|l| l == NO_CHANGES), "{repeat:?}");
+        // Kimi installs the plugin: seed the managed copy it would write.
+        let marker = plugin_marker(&c);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, "{}").unwrap();
+        let second = Kimi.apply(&c, Kind::Cli, Mode::Install).unwrap();
+        assert_eq!(Kimi.installed(&c, Kind::Cli), ["plugin"]);
+        assert!(!super::super::read(&c.setup.kimi.config_path).contains("rtok hook"));
+        assert!(!super::super::read(&mcp_path(&c)).contains("\"rtok\""));
+        assert!(second[0].contains("/plugins install"), "{second:?}");
+        // Remove: own tables already gone, managed copy kept with its line.
+        let rm = Kimi.apply(&c, Kind::Cli, Mode::Remove).unwrap();
+        assert!(rm[0].contains("/plugins remove rtok"), "{rm:?}");
+        assert!(marker.is_file(), "remove leaves the managed copy alone");
+        assert_eq!(Kimi.installed(&c, Kind::Cli), ["plugin"]);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T86: remove on a clean home prints `NO_CHANGES` for the plugin line.
+    #[test]
+    fn remove_without_plugin_is_no_changes() {
+        let (c, dir) = cfg("rm-clean", false);
+        let rm = Kimi.apply(&c, Kind::Cli, Mode::Remove).unwrap();
+        assert!(rm.iter().all(|l| l == NO_CHANGES), "{rm:?}");
+        let _ = fs::remove_dir_all(dir);
     }
 }

@@ -327,7 +327,12 @@ agents
     hooks   not installed
     mcp     not installed
     proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
-    plugin  not supported: Kimi Code plugins live in plugins/managed/, owned by `kimi plugin install`; there is no local plugin directory to link
+    plugin  not installed (--yes)
+  kimi (desktop)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Kimi Code providers are [providers.<name>] tables with their own base_url and keys; setup does not edit them
+    plugin  not installed (--yes)
   vscode (desktop)
     hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
     mcp     not installed

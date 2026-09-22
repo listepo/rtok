@@ -107,6 +107,10 @@ pub enum Support {
     Yes,
     /// Written only when this flag is given (`--proxy`, `--yes`).
     Flag(&'static str),
+    /// Never written by `setup`: it prints how to install the module behind this flag and
+    /// the host's own installer owns the state (Kimi's `plugins/managed/`), so `expected()`
+    /// never demands it read back.
+    Offer(&'static str),
     /// Cannot be written today; the reason is the README's, in one line.
     No(&'static str),
 }
@@ -306,7 +310,9 @@ pub fn module_rows(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<ModuleRow
             } else {
                 match support {
                     Support::Yes => (ModuleState::NotInstalled, String::new()),
-                    Support::Flag(flag) => (ModuleState::NotInstalled, format!(" ({flag})")),
+                    Support::Flag(flag) | Support::Offer(flag) => {
+                        (ModuleState::NotInstalled, format!(" ({flag})"))
+                    }
                     Support::No(why) => (ModuleState::NotSupported, format!(": {why}")),
                 }
             };
@@ -368,7 +374,8 @@ pub fn module_lines(rows: &[ModuleRow], indent: &str, console: bool) -> String {
 }
 
 /// The modules an install should leave behind: every `Yes` module (`mcp` only with
-/// `[setup] mcp`), and a flag module only when its flag was given.
+/// `[setup] mcp`), and a flag module only when its flag was given. An `Offer` module is
+/// guidance, never expected.
 pub fn expected(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str> {
     MODULES
         .iter()
@@ -377,7 +384,7 @@ pub fn expected(agent: &dyn Agent, kind: Kind, cfg: &Config) -> Vec<&'static str
             Support::Yes => *m != "mcp" || cfg.setup.mcp,
             Support::Flag("--proxy") => cfg.setup.proxy,
             Support::Flag("--yes") => cfg.setup.yes,
-            Support::Flag(_) | Support::No(_) => false,
+            Support::Flag(_) | Support::Offer(_) | Support::No(_) => false,
         })
         .collect()
 }
@@ -1551,7 +1558,7 @@ mod tests {
                         .unwrap_or_else(|| panic!("{id} README has no row for {module}"));
                     let want = match agent.support(v.kind, module) {
                         Support::Yes => "yes".to_string(),
-                        Support::Flag(f) => format!("`{f}`"),
+                        Support::Flag(f) | Support::Offer(f) => format!("`{f}`"),
                         Support::No(reason) => {
                             assert_eq!(why, reason, "{id}: {key} reason");
                             "no".to_string()

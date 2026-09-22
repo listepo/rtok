@@ -17,7 +17,7 @@ const END: &str = "<!-- agents-table:end -->\n";
 fn cell(s: Support) -> String {
     match s {
         Support::Yes => "yes".into(),
-        Support::Flag(flag) => format!("`{flag}`"),
+        Support::Flag(flag) | Support::Offer(flag) => format!("`{flag}`"),
         Support::No(_) => "—".into(),
     }
 }
