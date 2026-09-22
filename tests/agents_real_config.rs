@@ -194,11 +194,26 @@ fn round_trip(host: &Host) {
             after
         })
         .collect();
-    assert!(
-        compared > 0,
-        "{}: nothing foreign in the seeded configs, so this proves nothing",
-        host.id
-    );
+    if compared == 0 {
+        // A machine whose real config carries nothing foreign has nothing this test can
+        // protect (T166): say so and skip instead of failing on machine state. Only our
+        // own entries present cannot be told apart from an old installer having dropped
+        // foreign ones (the Windsurf → Devin rename is that shape), so the reason names
+        // both cases rather than skipping silently.
+        let bare = seeded.iter().all(|(_, before, _)| !before.contains("rtok"));
+        let why = if bare {
+            "the real config is a bare default — nothing to protect"
+        } else {
+            "only rtok's own entries are here; if foreign ones once were, an old installer \
+             may have dropped them"
+        };
+        skip(&format!(
+            "{}: nothing foreign in the seeded configs — {why}",
+            host.id
+        ));
+        let _ = fs::remove_dir_all(&home);
+        return;
+    }
 
     // Idempotent on a real file, not just on one we wrote: a second install leaves the exact
     // bytes the first one produced.

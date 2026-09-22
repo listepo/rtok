@@ -4811,6 +4811,21 @@ Deviations: the walk's scope is `src/plugins/` — the hook and MCP surface wrap
 Status: done 2026-09-22
 Model: Command Code / claude-fable-5
 
+### T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
+
+Found 2026-09-22 on T160's `just check`, reproducing identically on clean `main` (so, pre-existing and machine-state): `windsurf_keeps_the_real_mcp_config_json` panics at `tests/agents_real_config.rs:197` — `nothing foreign in the seeded configs, so this proves nothing`. The file already has the portability mechanism this repo mandates for real-config-driven tests: `seed_real` finding nothing calls `skip(...)`. The same treatment fits `compared == 0` — the real config exists but has no foreign entry to protect, so the test has nothing to prove on this machine and must say so instead of failing. Decide per host whether `compared == 0` may also mean the installer's own seeding drifted (e.g. the Windsurf → Devin move) before silently skipping.
+
+Check: on a machine whose real config has no foreign entries the run skips with the host id and the reason; where foreign entries exist the `survives` assertions still run and `compared > 0` semantics are kept; `just test` green.
+
+Do (Command Code / claude-fable-5, 2026-09-22): `compared == 0` now skips in the suite's own way (`seed_real`-empty precedent) instead of panicking, with the host id and a reason that settles the card's drift question per case rather than per host: a seeded config that is a bare default (this machine's Windsurf `mcp_config.json` is literally `{"mcpServers": {}}`) skips as "nothing to protect"; one holding only rtok's own entries skips with the honest caveat that an old installer dropping foreign ones cannot be ruled out (the Windsurf → Devin rename is that shape). Nothing is silent either way, and where foreign entries exist the `survives` assertions and the `compared > 0` gate are untouched.
+
+Check result (2026-09-22): `--test agents_real_config` 9/9 green on this machine — `windsurf_keeps_the_real_mcp_config_json` skips with the host id and the bare-default reason instead of failing, and every host whose real config carries foreign entries (claude, codex, vscode, opencode, kimi, cursor, zcode) still runs the full `survives`/idempotency/remove assertions; `fmt --check` and `clippy -D warnings` green; `just check` fully green — 1460 passed / 0 failed / 3 skipped, the first all-green run of the suite (the T166 failure had been the only red on `main`, masking a `report_pdf` regression now fixed as T167).
+
+Deviations: the card's "decide per host" is taken per case (bare default vs rtok-only) inside the shared helper — the distinction that matters is what the file contains, not which host owns it. During verification two `agents_install` cases flaked on npm noise in the real `copilot --version` output and one `rustc` spawn died transiently — all green on re-run; the version-probe dependence on real host CLIs is filed as T168.
+
+Status: done 2026-09-22
+Model: Command Code / claude-fable-5
+
 ### T167. `report --format pdf` drops an orphan section heading
 
 Found 2026-09-22 by T166's first full `just check` (the T166 failure had been hiding the tail from every fail-fast run): `tests/report_pdf.rs::pdf_has_the_html_headings_in_order_and_the_charts` — the seeded PDF's body had no `Recommendations` heading at all, only its findings. Root cause in `src/report/pdf.rs::chunk`: the orphan-heading rule ("an orphan heading moves with the block it introduces") returned `Vec::new()` with the heading already consumed from the `Peekable` and dropped from `take`, so the heading vanished from the body (the contents page still listed it). The window is narrow — the heading fits a remainder of exactly its cost while the first block does not — so it only fires when content lengths land on it; the kimi merge's extra config keys widened the Config section into it.

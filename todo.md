@@ -36,4 +36,4 @@
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T165. Research: general HTTP(S) interception as a new surface
-- T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
+- T168. `agents list` tables flake on wrapper noise in `--version`

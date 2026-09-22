@@ -45,7 +45,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T159 | todo | P2 | 4 | 0% | |
 | T163 | todo | P2 | 5 | 0% | |
 | T165 | todo | P3 | 5 | 0% | |
-| T166 | todo | P2 | 1 | 0% | |
+| T168 | todo | P2 | 1 | 0% | |
 
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
@@ -323,11 +323,13 @@ Plan: (1) survey at least three alternatives with evidence and dates — e.g. mi
 
 Check: `research.md` gains a dated section with the survey table and the measured HTTP share; the privacy decision is written down and approved by the creator; either a "do not build" note or the split tasks go to `roadmap.md` for creator approval — none go straight into this table.
 
-### T166. `agents_real_config` fails on a machine whose real configs carry no foreign entries
+### T168. `agents list` tables flake on wrapper noise in `--version`
 
-Found 2026-09-22 on T160's `just check`, reproducing identically on clean `main` (so, pre-existing and machine-state): `windsurf_keeps_the_real_mcp_config_json` panics at `tests/agents_real_config.rs:197` — `nothing foreign in the seeded configs, so this proves nothing`. The file already has the portability mechanism this repo mandates for real-config-driven tests: `seed_real` finding nothing calls `skip(...)`. The same treatment fits `compared == 0` — the real config exists but has no foreign entry to protect, so the test has nothing to prove on this machine and must say so instead of failing. Decide per host whether `compared == 0` may also mean the installer's own seeding drifted (e.g. the Windsurf → Devin move) before silently skipping.
+Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_what_agents_prints` and `remove_twice_says_no_changes_and_the_second_takes_no_backup` failed on this machine with byte diffs in the `app … (version)` cell — the real `copilot` npm wrapper printed `Package extraction took 10612ms` / `Package extraction attempt 1/3 …` into its `--version` output during npm cache activity. Both passed on re-run once npm settled. The tests' fake-bin set carries `claude` and `codex` shims but not `copilot`, so the probe reached the real wrapper — the T166 family of machine-state dependence (taste: never test against real host processes).
 
-Check: on a machine whose real config has no foreign entries the run skips with the host id and the reason; where foreign entries exist the `survives` assertions still run and `compared > 0` semantics are kept; `just test` green.
+Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
+
+Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
 
 ## Reference
 
