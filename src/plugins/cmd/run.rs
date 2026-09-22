@@ -154,16 +154,107 @@ pub(crate) fn shell_args(shell: &str, body: &str) -> Vec<String> {
     }
 }
 
-/// Whether the printed output needs the `expand` pointer. A line count above
-/// `trailer_min_lines` is the old rule; anything the filter shortened needs it too, however
-/// short the command was.
+/// Whether the printed output needs the `expand` trailer. A line count above
+/// `trailer_min_lines` is the old rule. Below it the trailer is printed only when the
+/// shortening dropped something a reader could miss — a line, a cut string, bytes that
+/// are not valid UTF-8 — and not when it only folded whitespace or stripped ANSI
+/// colour (T160): there would be nothing to expand, and the ~110-byte trailer would
+/// cost more than the padding it "saved". When the output already names the archive
+/// (the rules' `… N lines omitted (expand <id>)` marker) the trailer would only repeat
+/// that pointer, so `named` suppresses it as well.
 pub(crate) fn needs_pointer(
     lines: u32,
     trailer_min_lines: u32,
-    printed: usize,
-    raw: usize,
+    body: &[u8],
+    filtered: &str,
+    named: bool,
 ) -> bool {
-    lines > trailer_min_lines || printed < raw
+    if lines > trailer_min_lines {
+        return true;
+    }
+    if canonical(body) == canonical(filtered.as_bytes()) {
+        return false;
+    }
+    !named
+}
+
+/// Whether `filtered` already names the archive id (an inline `expand <id>` marker).
+pub(crate) fn names_the_id(filtered: &str, id: &str) -> bool {
+    filtered.contains(&format!("expand {id}"))
+}
+
+/// `body` up to the noise a filter may remove without a reader losing anything:
+/// whitespace runs (padding, trailing newline) and ANSI escapes, compared line by line.
+/// Every other byte stays verbatim — a `\xff` that came back U+FFFD must read as a loss.
+fn canonical(body: &[u8]) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::with_capacity(body.len());
+    let mut line: Vec<u8> = Vec::new();
+    let mut i = 0usize;
+    while i < body.len() {
+        match body[i] {
+            0x1b => i = skip_escape(body, i),
+            b'\n' => {
+                push_canonical_line(&line, &mut out);
+                line.clear();
+                i += 1;
+            }
+            b' ' | b'\t' | b'\r' => {
+                while matches!(body.get(i), Some(b' ' | b'\t' | b'\r')) {
+                    i += 1;
+                }
+                if !line.is_empty() {
+                    line.push(b' ');
+                }
+            }
+            b => {
+                line.push(b);
+                i += 1;
+            }
+        }
+    }
+    push_canonical_line(&line, &mut out);
+    out
+}
+
+fn push_canonical_line(line: &[u8], out: &mut Vec<u8>) {
+    let t = line.trim_ascii();
+    if t.is_empty() {
+        return;
+    }
+    if !out.is_empty() {
+        out.push(b'\n');
+    }
+    out.extend_from_slice(t);
+}
+
+/// Skip one ANSI escape at `i` (CSI `ESC [ … final`, OSC `ESC ] … BEL|ESC \`, else
+/// `ESC` + one byte) and return the index after it.
+fn skip_escape(body: &[u8], i: usize) -> usize {
+    let mut j = i + 1;
+    match body.get(j) {
+        Some(b'[') => {
+            j += 1;
+            while matches!(body.get(j), Some(c) if !(0x40..=0x7e).contains(c)) {
+                j += 1;
+            }
+            j + 1
+        }
+        Some(b']') => {
+            j += 1;
+            while j < body.len() {
+                if body[j] == 0x07 {
+                    return j + 1;
+                }
+                if body[j] == 0x1b && body.get(j + 1) == Some(&b'\\') {
+                    return j + 2;
+                }
+                j += 1;
+            }
+            j
+        }
+        Some(_) => j + 1,
+        None => j,
+    }
 }
 
 /// Run `args` via the configured/host shell, archive stdout+stderr, print, return the exit code.
@@ -183,8 +274,8 @@ pub fn run(cfg: &Config, args: &[String]) -> Result<i32> {
     Ok(code)
 }
 
-/// Archive `body`, print the filtered text plus expand trailer, record a Measurement.
-/// Shared by `rtok run` and `rtok filter --archive`.
+/// Archive `body` when the shortening dropped something, print the filtered text plus
+/// expand trailer, record a Measurement. Shared by `rtok run` and `rtok filter --archive`.
 pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
     let before = String::from_utf8_lossy(body);
     let cx = match crate::plugin::Runtime::open(cfg.clone(), "run") {
@@ -204,38 +295,43 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
         println!("{msg}");
         return;
     }
-    // The archive keeps the command's bytes, not the lossy `String` used to filter and
-    // print them: `expand` must return what the command wrote, including invalid UTF-8.
-    let id = match cx.put_archive(body) {
-        Ok(id) => id,
-        Err(_) => {
+    // The id is the body's sha256, so the filter can name it before any store write.
+    let id = crate::store::hex_sha256(body);
+    let settings = rules::Settings::from_config(cfg);
+    let family = formatters::family(argv);
+    let (filtered, kind) = formatters::compress(&settings, argv, &before, exit, &id);
+    let lines = if body.is_empty() {
+        0
+    } else {
+        before.lines().count() as u32
+    };
+    // A formatter that trims a 29-line `git log` to 20 leaves the other 9 reachable only
+    // through this id. A shortening that took only whitespace/ANSI has nothing to expand
+    // (T160) — and then nothing references the id, so the archive row is skipped too.
+    let named = names_the_id(&filtered, &id);
+    let pointer = needs_pointer(
+        lines,
+        cfg.plugins.cmd.trailer_min_lines,
+        body,
+        &filtered,
+        named,
+    );
+    if pointer || named {
+        // The archive keeps the command's bytes, not the lossy `String` used to filter
+        // and print them: `expand` must return what the command wrote, including invalid UTF-8.
+        if cx.put_archive(body).is_err() {
             print!("{before}");
             if !before.is_empty() && !before.ends_with('\n') {
                 println!();
             }
             return;
         }
-    };
-    let settings = rules::Settings::from_config(cfg);
-    let family = formatters::family(argv);
-    let (filtered, kind) = formatters::compress(&settings, argv, &before, exit, &id);
+    }
     print!("{filtered}");
     if !filtered.is_empty() && !filtered.ends_with('\n') {
         println!();
     }
-    let lines = if body.is_empty() {
-        0
-    } else {
-        before.lines().count() as u32
-    };
-    // Any shortening prints the pointer, not only a long one: a formatter that trims a
-    // 29-line `git log` to 20 leaves the other 9 reachable only through this id.
-    if needs_pointer(
-        lines,
-        cfg.plugins.cmd.trailer_min_lines,
-        filtered.len(),
-        before.len(),
-    ) {
+    if pointer {
         println!("[rtok {id} · {lines} lines · expand: rtok expand {id}]");
     }
     let _ = cx.record(&Measurement {
@@ -245,7 +341,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
         after_bytes: filtered.len() as u64,
         est_before: cx.estimate(&before, Class::Code),
         est_after: cx.estimate(&filtered, Class::Code),
-        ref_id: Some(format!("{family}:{id}")),
+        ref_id: (pointer || named).then(|| format!("{family}:{id}")),
         call_id: None,
     });
 }
@@ -296,26 +392,35 @@ mod tests {
         let (c, dir) = cfg("printf");
         let code = run(&c, &["printf".into(), "a\nb\n".into()]).unwrap();
         assert_eq!(code, 0);
+        // T160: the trailing newline is noise — no pointer, so no archive row either.
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .collect();
-        assert_eq!(files.len(), 1);
-        let raw = fs::read(files[0].clone()).unwrap();
-        assert_eq!(raw, b"a\nb\n");
+            .map(|rd| rd.map(|e| e.unwrap().path()).collect())
+            .unwrap_or_default();
+        assert!(files.is_empty(), "nothing references an id: {files:?}");
+        let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1, "{v}");
+        assert!(
+            rows[0]["after"].as_i64() <= rows[0]["before"].as_i64(),
+            "{v}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn identical_output_from_different_commands_dedups() {
         let (c, dir) = cfg("dedup-hash");
+        // A body the filter shortens (80 lines > 40): T160 stores the archive only when
+        // something references its id, and a dedup pointer names exactly that id.
         let payload = format!(
-            "{}
-",
-            "x".repeat(300)
+            "{}\n",
+            (0..80)
+                .map(|i| format!("line {i}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         );
         assert_eq!(run(&c, &["printf".into(), payload.clone()]).unwrap(), 0);
-        let inner = format!("printf '%s\n' '{}'", "x".repeat(300));
+        let inner = format!("printf '%s\n' '{}'", payload.trim_end_matches('\n'));
         assert_eq!(run(&c, &["sh".into(), "-c".into(), inner]).unwrap(), 0);
         let store = crate::store::Store::open(&c.core.db_path).unwrap();
         let rows = store.list_measurements("cmd").unwrap();
@@ -371,13 +476,10 @@ mod tests {
         let (c, dir) = cfg("compound");
         let code = run(&c, &["printf a; printf b".into()]).unwrap();
         assert_eq!(code, 0);
-        let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .collect();
-        assert_eq!(files.len(), 1);
-        let raw = fs::read(&files[0]).unwrap();
-        assert_eq!(raw, b"ab");
+        // "ab" lost nothing, so T160 stores no archive — but the run is still measured.
+        let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows[0]["before"], 2, "{v}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -401,14 +503,65 @@ mod tests {
 
     /// A formatter that trims a short output still has to name the archive: `git log` keeps
     /// 20 of 29 lines, and the line threshold alone would leave the other 9 unreachable.
+    /// An in-place cut and destroyed bytes are losses too, however short the output was.
     #[test]
     fn a_shortened_output_needs_a_pointer_whatever_its_length() {
-        assert!(!needs_pointer(29, 40, 400, 400), "nothing was dropped");
+        let log = (0..29)
+            .map(|i| format!("c{i} msg"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cut = (0..20)
+            .map(|i| format!("c{i} msg"))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(
-            needs_pointer(29, 40, 300, 400),
+            needs_pointer(29, 40, log.as_bytes(), &cut, false),
             "trimmed under the threshold"
         );
-        assert!(needs_pointer(400, 40, 400, 400), "long enough on its own");
+        assert!(
+            !needs_pointer(29, 40, log.as_bytes(), &log, false),
+            "nothing dropped"
+        );
+        assert!(
+            needs_pointer(400, 40, log.as_bytes(), &log, false),
+            "long enough on its own"
+        );
+        assert!(
+            needs_pointer(1, 40, br#"{"blob":"xxxx"}"#, r#"blob: "xx… " (4)"#, false),
+            "a string cut in place"
+        );
+        assert!(
+            needs_pointer(1, 40, b"\xff\xfeok", "\u{FFFD}\u{FFFD}ok", false),
+            "bytes the lossy string destroyed"
+        );
+        assert!(
+            !needs_pointer(
+                10,
+                40,
+                log.as_bytes(),
+                "c0 msg\n… 27 lines omitted (expand abc)\nc28 msg",
+                true,
+            ),
+            "the marker already names the archive"
+        );
+    }
+
+    /// T160 repro: a 7-line summary whose only loss is column padding and the trailing
+    /// newline got the ~110-byte trailer. Whitespace and ANSI colour are noise — a reader
+    /// misses nothing, so there is nothing to expand and no trailer to pay for.
+    #[test]
+    fn padding_and_ansi_only_changes_need_no_pointer() {
+        let padded = "NAME   STATUS   AGE\nweb-0  Running  3d\napi-1  Pending  1h\n";
+        let collapsed = "NAME STATUS AGE\nweb-0 Running 3d\napi-1 Pending 1h";
+        assert!(!needs_pointer(3, 40, padded.as_bytes(), collapsed, false));
+        assert!(!needs_pointer(1, 40, b"\x1b[1mok\x1b[0m\n", "ok", false));
+        assert!(!needs_pointer(
+            1,
+            40,
+            b"hello-trycmd\n",
+            "hello-trycmd",
+            false
+        ));
     }
 
     #[test]
