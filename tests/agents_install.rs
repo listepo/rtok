@@ -14,12 +14,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// `(host, extra setup flags, the file whose backups we count)`; pi links a directory and
-/// edits no file, so it has nothing to back up. Hosts that offer a plugin take `--yes`: an
-/// unanswered offer is a step that changed nothing, so `already installed` needs the link.
+/// edits no file, so it has nothing to back up. claude, cursor, opencode, kilo, pi and
+/// zcode install their plugin by default (T139, T164); `--yes` is kept here only so
+/// `already installed` needs the link regardless of a future default change.
 fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)> {
     vec![
-        // T115: `--yes` installs the plugin (fake `claude`), which then serves hooks and MCP,
-        // so rtok itself writes no settings file there (D21).
+        // T115: the plugin installs by default (fake `claude`), which then serves hooks
+        // and MCP, so rtok itself writes no settings file there (D21).
         ("claude", vec!["--yes"], None),
         (
             "cursor",

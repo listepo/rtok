@@ -1,6 +1,7 @@
 # rtok Cursor plugin
 
-Linked by `rtok agents install cursor --yes` to `~/.cursor/plugins/local/rtok` (D21: hooks and
+Linked by `rtok agents install cursor` (by default, once Cursor itself is detected) to
+`~/.cursor/plugins/local/rtok` (D21: hooks and
 MCP as one unit, one `rtok mcp` per store). `rtok agents install cursor --remove` unlinks it.
 By hand: symlink this folder to `~/.cursor/plugins/local/rtok` and restart Cursor.
 

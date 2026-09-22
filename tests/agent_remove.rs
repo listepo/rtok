@@ -156,18 +156,40 @@ fn zcode_remove_keeps_foreign_events_and_servers() {
     )
     .unwrap();
 
+    // T164: no `--yes` — ZCode is detected by the explicit host name, so the plugin
+    // links by default and becomes the only call path, leaving the config-file hooks
+    // and mcp entries untouched (only the foreign ones were ever there).
     rtok(&["agents", "install", "zcode"], &cfg, &home);
-    let installed = fs::read_to_string(&path).unwrap();
-    assert!(installed.contains("hook PreToolUse"), "{installed}");
-    assert!(json(&path)["mcp"]["servers"]["rtok"].is_object());
+    let link = home.join(".zcode/cli/plugins/local/rtok");
+    assert!(link.symlink_metadata().is_ok(), "plugin linked by default");
+    let installed = json(&path);
+    let link_str = link.display().to_string();
+    assert!(
+        installed["plugins"]["dirs"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
+        "{installed}"
+    );
+    assert!(!installed.to_string().contains("PreToolUse"), "{installed}");
+    assert!(installed["mcp"]["servers"]["rtok"].is_null(), "{installed}");
+    assert!(
+        installed["mcp"]["servers"]["foreign"].is_object(),
+        "{installed}"
+    );
+    assert_eq!(
+        installed["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],
+        "echo other"
+    );
 
     rtok(&["agents", "remove", "zcode"], &cfg, &home);
+    assert!(link.symlink_metadata().is_err(), "plugin link unlinked");
     let left = json(&path);
     assert!(
-        !left.to_string().contains(" hook "),
-        "every hook goes: {left}"
+        !left["plugins"]["dirs"]
+            .as_array()
+            .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(link_str.as_str()))),
+        "{left}"
     );
-    assert!(left["mcp"]["servers"]["rtok"].is_null(), "{left}");
     assert!(left["mcp"]["servers"]["foreign"].is_object(), "{left}");
     assert_eq!(
         left["hooks"]["events"]["Stop"][0]["hooks"][0]["command"],

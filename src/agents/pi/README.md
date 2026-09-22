@@ -10,7 +10,7 @@ No config file is edited: the install is one linked extension, `<extensions_path
 
 | Module | Support | Why |
 | --- | --- | --- |
-| plugin | `--yes` | the offer links `plugins/pi`; without a terminal only `--yes` accepts |
+| plugin | yes | links `plugins/pi` by default, once pi itself is detected; a stale or foreign destination is never overwritten |
 | hooks | no | pi has no hook events; the extension owns the bash call path |
 | mcp | no | pi philosophy is no MCP; registerTool is the plugin path when setup.pi.tools is true |
 | proxy | no | pi provider base URLs live in its models config, which setup does not edit |

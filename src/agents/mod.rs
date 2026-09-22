@@ -1315,7 +1315,8 @@ mod tests {
         cfg.setup.claude.settings_path = std::env::temp_dir().join("rtok-no-such-dir/s.json");
         cfg.doctor.claude_json = std::env::temp_dir().join("rtok-no-such-dir/c.json");
         assert_eq!(expected(&codex::Codex, Kind::Cli, &cfg), ["hooks", "mcp"]);
-        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), Vec::<&str>::new());
+        // pi's plugin is expected by default, without `--yes` (T164).
+        assert_eq!(expected(&pi::Pi, Kind::Cli, &cfg), ["plugin"]);
         assert_eq!(expected(&claude::Claude, Kind::Desktop, &cfg), ["mcp"]);
         // Claude Code's plugin is expected by default, without `--yes` (T139).
         assert_eq!(
