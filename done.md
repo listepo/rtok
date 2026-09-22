@@ -4623,3 +4623,33 @@ Check: `cargo nextest run -E 'test(sleep_then_piped_cat_is_wrapped) | test(hook_
 Status: done 2026-09-22
 Check result: both tests pass; the e2e output starts at `line 21` of 50 and ends at `line 50`, so `tail -30` ran inside `rtok run`. A manual run of the installed hook on the same command printed `rtok run -- 'sleep 1; cat … | tail -30'` and the `[rtok … expand]` trailer. No wrap rule changed.
 Model: Claude Code / claude-opus-5
+
+### T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
+
+Plan: `HookInput::adapt_cline(event)` in `src/hooks/types.rs` beside `adapt_cursor` / `adapt_copilot` / `adapt_devin`; a `cline` arm in `dispatch_owned_strict` plus `cline_output` in `src/hooks/mod.rs`; `--host` list grows by `cline` (`config/default.toml`, `docs/config.md`, `src/cli.rs` help line, trycmd snapshots).
+
+Do (Muse Spark / rtok): `adapt_cline` lifts `hookName` / `taskId` / `workspaceRoots` / `tool_call` / `tool_result` to Claude fields; `run_commands` single-command → `Bash` + `command`, `read_files` → `Read`, multi-entry commands pass through untouched; lifecycle (`agent_start`, `agent_resume`, `prompt_submit`, `agent_end`, `agent_error`, `agent_abort`, `session_shutdown`) maps to SessionStart / UserPromptSubmit / SessionEnd / no-op. `cline_output` prints `overrideInput: {commands: [..]}` for rewrites, `context` for injections, `cancel: true` + `errorMessage` for denies, `{}` otherwise. Fail open: garbage stdin prints `{}` and exits 0.
+
+Status: done 2026-09-22
+Check result: `hooks::types::tests::cline_maps_tool_call_result_and_lifecycle`, `hooks::tests::cline_output_shapes_override_context_block_and_empty`, `hooks::tests::cline_pre_tool_use_rewrites_single_command_and_fails_open` green; `cargo test --lib` 908 passed; fmt + clippy clean.
+Model: Muse Spark / rtok
+
+### T95. Cline plugin tree (`plugins/cline/`)
+
+Plan: one POSIX script `plugins/cline/hooks/rtok-hook` taking the event from its file name; `plugins/cline/README.md` with `## Docs`; a `tests/` check (executable, fail-open without `rtok`, every linked event known to `adapt_cline`).
+
+Do (Muse Spark / rtok): `plugins/cline/hooks/rtok-hook` (`#!/bin/sh`, executable) runs `rtok hook <event> --host cline`, prints `{}` + ketch hint on stderr with `rtok` missing; `plugins/cline/README.md` with hand install, honoured / not-honoured notes and `## Docs` Cline links; `tests/cline_plugin.rs` pins the three behaviours.
+
+Status: done 2026-09-22
+Check result: `tests/cline_plugin.rs` 3 passed; `host_docs` 2 passed.
+Model: Muse Spark / rtok
+
+### T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
+
+Plan: new host `cline` in `src/agents/cline/` registered in `HOSTS` and `host()`; one `HostPlugin` per event into `~/Documents/Cline/Hooks`; MCP into both `cline_mcp_settings.json` files; `[setup.cline]` keys; docs bless; install matrix.
+
+Do (Muse Spark / rtok): `src/agents/cline/mod.rs` (CLI + VS Code extension variants, 5 per-event hook links, MCP register/unregister for CLI path + extension `globalStorage` path resolved via the `vscode` host, `support` hooks/mcp yes, plugin `--yes`, proxy no); `src/agents/cline/README.md`; `HOSTS` + `host()` + `restart.rs` desktop-name row; `[setup.cline] hooks_path` / `mcp_path` in `config/default.toml`, `src/config/mod.rs`, `docs/config.md`; `docs/agents.md` re-blessed; `tests/agents_install.rs` matrix row; trycmd snapshots re-blessed. Deviations: shipped whole (not split into T96.1/T96.2); extension MCP path is `<VS Code User>/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (globalStorage lives inside `User/`, verified on this machine); `CLINE_DIR` / `CLINE_MCP_SETTINGS_PATH` env overrides from the card not implemented.
+
+Status: done 2026-09-22
+Check result: `agents::cline` 3 passed; `agents_doc`, `host_docs`, `config_coverage`, `cline_plugin`, `cli_trycmd` green; lib 910 passed (1 pre-existing `list_prints` hang skipped — `codex --version` hangs on this machine, also on main); fmt + clippy clean.
+Model: Muse Spark / rtok
