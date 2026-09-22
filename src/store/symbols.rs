@@ -378,43 +378,62 @@ impl Store {
     /// Callees of each definition of `name`: `(path, line, callee, first_ref_line)` (T68.2).
     /// A reference row counts when it shares the definition's path and its `scope` is the
     /// definition's name; results are ordered by definition site then first reference line.
-    // Self-join `symbols` against itself grouped by `(d.path, d.line, r.name)`: Diesel's
-    // `alias!` self-join support has no `IsContainedInGroupBy` bridge for `AliasedField` (only
-    // `ValidGrouping<()>`, i.e. no `GROUP BY` at all), so a self-join `GROUP BY` genuinely
-    // cannot be expressed through the typed DSL here — hence `sql_ext::RawQuery` (T163).
+    // Self-join `symbols` against itself, grouped by `(d.path, d.line, r.name)`: Diesel's
+    // `alias!` self-join fields (`AliasedField`) have no `IsContainedInGroupBy` bridge (only
+    // `ValidGrouping<()>`, i.e. no `GROUP BY` at all), so the `GROUP BY` itself can't be
+    // expressed through the typed DSL — the join and filter can. Load the ungrouped rows with
+    // the typed DSL and do the `GROUP BY MIN(r.line)` / `ORDER BY` in Rust instead (T163.1).
     pub fn symbol_callees(
         &self,
         root: &str,
         name: &str,
     ) -> Result<Vec<(String, i32, String, i32)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Integer)]
-            line: i32,
-            #[diesel(sql_type = Text)]
-            callee: String,
-            #[diesel(sql_type = Integer)]
-            first_line: i32,
-        }
+        let (d, r) = alias!(symbols as d, symbols as r);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = RawQuery::new(
-            "SELECT d.path AS path, d.line AS line, r.name AS callee, MIN(r.line) AS first_line
-             FROM symbols d
-             JOIN symbols r
-               ON r.root = d.root AND r.path = d.path AND r.is_def = 0 AND r.scope = d.name
-             WHERE d.root = ? AND d.is_def = 1 AND d.name = ? AND r.name != ''
-             GROUP BY d.path, d.line, r.name
-             ORDER BY d.path, d.line, first_line, r.name",
-        )
-        .bind::<Text, _>(root.to_string())
-        .bind::<Text, _>(name.to_string())
-        .load(&mut *conn)?;
-        Ok(rows
+        let rows: Vec<(String, i32, String, i32)> = d
+            .inner_join(
+                r.on(r
+                    .field(symbols::root)
+                    .eq(d.field(symbols::root))
+                    .and(r.field(symbols::path).eq(d.field(symbols::path)))
+                    .and(r.field(symbols::is_def).eq(0))
+                    .and(r.field(symbols::scope).eq(d.field(symbols::name)))),
+            )
+            .filter(
+                d.field(symbols::root)
+                    .eq(root)
+                    .and(d.field(symbols::is_def).eq(1))
+                    .and(d.field(symbols::name).eq(name))
+                    .and(r.field(symbols::name).ne("")),
+            )
+            .select((
+                d.field(symbols::path),
+                d.field(symbols::line),
+                r.field(symbols::name),
+                r.field(symbols::line),
+            ))
+            .load(&mut *conn)?;
+
+        // GROUP BY (path, line, callee), keeping MIN(r.line) as first_line.
+        let mut groups: HashMap<(String, i32, String), i32> = HashMap::new();
+        for (path, line, callee, r_line) in rows {
+            groups
+                .entry((path, line, callee))
+                .and_modify(|first| *first = (*first).min(r_line))
+                .or_insert(r_line);
+        }
+        let mut out: Vec<(String, i32, String, i32)> = groups
             .into_iter()
-            .map(|r| (r.path, r.line, r.callee, r.first_line))
-            .collect())
+            .map(|((path, line, callee), first_line)| (path, line, callee, first_line))
+            .collect();
+        // ORDER BY d.path, d.line, first_line, r.name
+        out.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.3.cmp(&b.3))
+                .then(a.2.cmp(&b.2))
+        });
+        Ok(out)
     }
 
     /// Reference sites of `name` collapsed to one row per calling definition (T8.5):
