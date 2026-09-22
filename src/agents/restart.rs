@@ -495,6 +495,7 @@ mod tests {
             "GitHub Copilot" => "GitHub Copilot",
             "Cursor" => "Cursor",
             "Kilo Code for VS Code" => "Visual Studio Code",
+            "Kimi Code Desktop" => "Kimi Code",
             "OpenCode Desktop" => "OpenCode",
             "VS Code" => "Visual Studio Code",
             "VS Code - Insiders" => "Visual Studio Code - Insiders",
