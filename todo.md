@@ -34,3 +34,15 @@
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T165. Research: general HTTP(S) interception as a new surface
 - T168. `agents list` tables flake on wrapper noise in `--version`
+- T170. A slow hook is logged, not only printed to stderr
+- T171. Claude Code sees the rtok MCP server twice
+- T172. MCP tool failures always set `is_error`
+- T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
+- T174. Plugin hooks fail open when `rtok` is not on `PATH`
+- T175. No trailer on tiny outputs
+- T176. Explicitly bounded output is not cut again
+- T177. Large source dumps through `cat`/`sed`/`grep` get a filter
+- T178. Hook wall-clock time as Claude Code sees it
+- T179. Why `read/dedup` and `read/delta` rarely fire
+- T180. Research: filtering WebFetch, WebSearch and browser page text
+- T181. `graph/cap` records 0% saving

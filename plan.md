@@ -43,6 +43,18 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163 | todo | P2 | 5 | 0% | |
 | T165 | todo | P3 | 5 | 0% | |
 | T168 | todo | P2 | 1 | 0% | |
+| T170 | todo | P1 | 1 | 0% | |
+| T171 | todo | P1 | 2 | 0% | |
+| T172 | todo | P2 | 2 | 0% | |
+| T173 | todo | P2 | 1 | 0% | |
+| T174 | todo | P1 | 2 | 0% | |
+| T175 | todo | P2 | 2 | 0% | |
+| T176 | todo | P1 | 3 | 0% | |
+| T177 | todo | P2 | 3 | 0% | |
+| T178 | todo | P1 | 4 | 0% | |
+| T179 | todo | P2 | 3 | 0% | |
+| T180 | todo | P3 | 4 | 0% | |
+| T181 | todo | P3 | 2 | 0% | |
 
 
 ### T83. Fix the Windows test failures and empty the T82 exclusion list
@@ -313,6 +325,102 @@ Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_w
 Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
 
 Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
+
+### T170. A slow hook is logged, not only printed to stderr
+
+Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
+
+Plan: route the slow note through `crate::log::record` at `warn` (keep the stderr line); `rtok logs` and `rtok info`'s error count then show it.
+
+Check: a unit test with `max_ms = 0` finds one `warn` row in the log store after a hook run; `just test` green.
+
+### T171. Claude Code sees the rtok MCP server twice
+
+Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
+
+Plan: find which path writes the direct `mcpServers.rtok` entry next to the plugin (`src/agents/claude/`), make install keep only the plugin's server and remove a stale direct entry, and make doctor flag the pair as a duplicate.
+
+Check: install on a fake home with the plugin present leaves one rtok MCP server; doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
+
+### T172. MCP tool failures always set `is_error`
+
+Found in the 2026-09-22 audit: 40 `read`/`expand`/`search` results carried `path outside cwd: …` as plain text without `is_error` (the flag is set only for the other 77 failures), so the model may treat the refusal as file content. Timeouts read `Error: Error: Request timed out` (doubled prefix), and `read` rejects a range the model quoted, `"975-1015"`, with `invalid line range`.
+
+Plan: in `src/mcp.rs` map every tool `Err` (including the root guard in `src/plugins/read/mod.rs:202`) to `is_error: true` with one `Error:` prefix; strip surrounding quotes in the line-range parser.
+
+Check: unit tests for an outside-cwd read (`is_error` true), a quoted range (accepted) and the error text (one prefix); `just test` green.
+
+### T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
+
+Found in the 2026-09-22 audit. `count_hooks` (`src/doctor.rs:731-751`) reads only `settings.json` → `hooks`, so a plugin install prints `hooks 0` while the agents block says hooks ✓ installed. `anthropic_base()` (`src/doctor.rs:938-945`) treats any `ANTHROPIC_BASE_URL` as custom, so Claude Desktop's default `https://api.anthropic.com` prints "mcp_tool_search likely disabled".
+
+Plan: count plugin-carried hooks (the same install check the agents block uses); ignore a base URL equal to the default Anthropic endpoint (trailing slash tolerated).
+
+Check: doctor tests for a plugin-only home (hooks counted) and for the default URL (no warning); `just test` green.
+
+### T174. Plugin hooks fail open when `rtok` is not on `PATH`
+
+Found in the 2026-09-22 audit: 380 hook errors `/bin/sh: rtok: command not found` (exit 127) in 7 days, all in projects whose shell `PATH` lacks `~/.ketch/bin` — one non-blocking error on every tool call. D21 says a missing `rtok` fails open and says to install with ketch.
+
+Plan: make the Claude Code plugin's hook command resolve `rtok` (PATH, then `~/.ketch/bin/rtok`) and, when absent, exit 0 silently except one SessionStart note naming `ketch install listepo/rtok`; apply the same to the other host plugins that shell out to `rtok`.
+
+Check: a plugin test runs the hook command with an empty `PATH` and no binary: exit 0, empty stdout except the one SessionStart note; `just test` green.
+
+### T175. No trailer on tiny outputs
+
+Found in the 2026-09-22 audit: in 1 134 of 4 333 shortened Bash results the rtok trailer (174 B mean, up to 535 B) is longer than the content left (under 200 chars) — 198 KB of pure overhead in 7 days, mostly background polling (`until grep -q …; do sleep 30; done`, `tail -30 …/tasks/*.output`). `needs_pointer` (`src/plugins/cmd/run.rs:165`) adds the trailer whenever the canonical text changed.
+
+Plan: when the raw body is itself small (under the trailer's own size or a configured floor), emit it unfiltered with no trailer; keep lossless-by-default intact because nothing is cut.
+
+Check: unit test — a 150-byte body that the formatter would reshape comes back verbatim with no trailer; the `Measurement` row shows no negative saving; `just test` green.
+
+### T176. Explicitly bounded output is not cut again
+
+Found in the 2026-09-22 audit: 335 times the agent called `expand` on an id it had just been shown; the filtered results totalled 533 KB and the expands 1.47 MB (≈ 234 K tokens paid twice). Worst: `sed -n '1,620p' src/hooks/types.rs` cut to 1.8 KB of 28 KB; `cargo nextest run … | tail -300` lost the failing-test detail (4.7 KB of 20 KB). Reproduced in the audit session itself: a 43-line `grep -A`/`sed -n` result lost 23 lines.
+
+Plan: treat a command the agent already bounded (`sed -n a,bp`, `head`/`tail -n`, `grep -A/-B/-C`, `cat -n` of named files) as asked-for — pass it through; for test/build runners keep failure blocks whole. Measure the re-expand rate in `rtok stats` so the change shows up as a number.
+
+Check: rule tests for each bounded form (output unchanged) and for a failing nextest log (failure block kept); `rtok stats` reports an "expand right after" count; `just test` green.
+
+### T177. Large source dumps through `cat`/`sed`/`grep` get a filter
+
+Found in the 2026-09-22 audit: 77% of Bash result bytes (16.4 MB in 7 days) carry no rtok marker. Much of it is below the size gate by design, but the top groups are large source dumps with no rule: `sed` 2.7 MB, `grep` 2.0 MB, `cat` 1.4 MB, newline-separated multi-command scripts 2.4 MB (only `&&`/`;` chains are split), `git diff` 0.3 MB.
+
+Plan: first split the numbers by "below size gate" vs "no rule matched" in `rtok stats`; then add rules for unbounded multi-file `cat`, large `grep -r` hit lists and newline-joined scripts in `src/plugins/cmd/rules.rs`, coordinated with T176 so bounded reads stay whole.
+
+Check: `rtok stats` shows the unmatched-rule share; rule tests for each new family; saving recorded as `Measurement` rows; `just test` green.
+
+### T178. Hook wall-clock time as Claude Code sees it
+
+Found in the 2026-09-22 audit: in-process hook time is p50 0.3 ms, but Claude Code records p50 18–19 ms and p95 206–255 ms for PreToolUse/PostToolUse — process start of a 27 MB binary dominates and the ≤ 10 ms rule is broken on every call without rtok noticing. Ten hooks were cancelled at Claude Code's 5 s timeout (5 PreToolUse, 5 UserPromptSubmit with p50 5.6 s — no UserPromptSubmit rows exist in the store, so the owner is unconfirmed). SessionEnd (p50 18.9 ms) and PreCompact (p50 15.0 ms) are over budget in-process.
+
+Plan: research first — measure cold/warm start (`hyperfine`), find what runs before `main` dispatches (config parse, DB open, migrations), confirm who owns the UserPromptSubmit timeouts; then pick: lazy store open, a smaller hook path, or a resident process (`rtok demon`) the hook talks to. Record findings in `research.md`.
+
+Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
+
+### T179. Why `read/dedup` and `read/delta` rarely fire
+
+Found in the 2026-09-22 audit: 367 same-session re-reads of the same file (≈ 2.35 MB) while `read/dedup` and `read/delta` together fired about 272 times, and only 2% of native `Read` results carry any rtok marker. Worst: one file read 29× in a session. Part of the misses may be sessions where `rtok` was not on `PATH` (T174). T136 measures `outline`-answerable reads; this task is about repeat reads.
+
+Plan: from transcripts, classify each repeat read: hook not run, file changed (delta expected), range read, sub-agent context (T127), or dedup declined; fix the largest class.
+
+Check: `rtok stats` prints the repeat-read classes; the fixed class shrinks on a replayed transcript fixture; `just test` green.
+
+### T180. Research: filtering WebFetch, WebSearch and browser page text
+
+Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
+
+Plan: list the surfaces that can reach these results (proxy, T134 outcome, an MCP fetch tool), estimate the saving on the audit sample, and propose one option as a plan change.
+
+Check: a dated `research.md` section with the sample numbers and a recommendation.
+
+### T181. `graph/cap` records 0% saving
+
+Found in the 2026-09-22 audit: `graph/cap` wrote 17 `Measurement` rows with 8 759 → 8 759 B — it runs and records, but never caps anything on real sessions.
+
+Plan: find whether the cap threshold is never reached on real repos or the row is written before the cap applies; fix the measurement or the threshold, or stop recording no-op rows.
+
+Check: unit test where the cap applies records `after_bytes < before_bytes`; `just test` green.
 
 ## Reference
 
