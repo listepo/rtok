@@ -43,4 +43,4 @@
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T160. No expand trailer when shortening saved less than the trailer costs
-
+- T163. Replace raw SQL in `src/store/` with Diesel's query builder
