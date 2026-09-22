@@ -3,6 +3,8 @@
 //! every kind of bad stdin must exit 0, print the host's no-op reply, and never rewrite
 //! the input (D1). One case per combination in the nextest list.
 
+mod common;
+
 use assert_cmd::Command as AssertCmd;
 use rstest::rstest;
 use std::fs;
@@ -68,5 +70,54 @@ fn every_host_and_event_fails_open_on_bad_stdin(
         "{}",
         "{host}/{event}/{stdin}: the host's no-op reply, never a rewrite"
     );
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// T178: a store whose writer lock another process holds must not stall the hook. Every write
+/// used to wait out its own 1 s busy timeout, so Claude Code cancelled hooks at its 5 s limit;
+/// now the hook waits a few ms, passes the input through unchanged and writes no row.
+#[test]
+fn a_locked_store_fails_the_hook_open_in_ms() {
+    let home = tmp("locked-store");
+    let db = home.join("rtok.db");
+    let payload = serde_json::json!({
+        "hook_event_name": "PreToolUse",
+        "session_id": "t178",
+        "cwd": home,
+        "tool_name": "Bash",
+        "tool_input": {"command": "git status"}
+    })
+    .to_string();
+    let hook = || {
+        let start = std::time::Instant::now();
+        let out = AssertCmd::cargo_bin("rtok")
+            .unwrap()
+            .args(["hook", "PreToolUse"])
+            .env("RTOK_HOME", &home)
+            .env("HOME", &home)
+            .env("RTOK_CORE_DB_PATH", &db)
+            .write_stdin(payload.clone())
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (stdout, start.elapsed())
+    };
+    let (free, _) = hook();
+    assert_ne!(free, "{}", "unlocked, this call is rewritten");
+    let rows = || {
+        rtok::store::Store::open(&db)
+            .unwrap()
+            .count_call_io()
+            .unwrap()
+    };
+    let before = rows();
+    let holder = common::hold_store_writer(&db, std::time::Duration::from_secs(2));
+    let (locked, took) = hook();
+    holder.join().unwrap();
+    assert!(took.as_millis() < 500, "the hook waited {took:?}");
+    assert_eq!(locked, "{}", "a locked store passes the input through");
+    assert_eq!(rows(), before, "a skipped call writes no row");
     let _ = fs::remove_dir_all(&home);
 }
