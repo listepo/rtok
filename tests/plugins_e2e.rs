@@ -144,10 +144,20 @@ fn memory_save_then_search() {
 #[test]
 fn graph_outline_caps_with_measurement() {
     let home = tmp("graph");
+    // T181: an answer under the cap is unchanged and owes no row; only a capped one does.
     std::fs::write(home.0.join("a.rs"), "fn a() {}\n").unwrap();
     let out = tool(&home, &home.0, "outline", r#"{"path":"a.rs"}"#);
     assert!(out.contains("fn a"), "{out}");
-    assert!(kinds(&home, "graph").iter().any(|k| k == "cap"));
+    assert!(
+        kinds(&home, "graph").is_empty(),
+        "{:?}",
+        kinds(&home, "graph")
+    );
+    let big: String = (0..800).map(|i| format!("fn f{i}() {{}}\n")).collect();
+    std::fs::write(home.0.join("b.rs"), big).unwrap();
+    let out = tool(&home, &home.0, "outline", r#"{"path":"b.rs"}"#);
+    assert!(out.contains(" more, expand "), "{out}");
+    assert_eq!(kinds(&home, "graph"), ["cap"]);
 }
 #[test]
 fn graph_session_start_map_off_by_default_and_on_when_capped() {

@@ -66,7 +66,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T180 | todo | P3 | 4 | 0% | |
-| T181 | todo | P3 | 2 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
 | T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
@@ -512,14 +511,6 @@ Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude
 Plan: list the surfaces that can reach these results (proxy, T134 outcome, an MCP fetch tool), estimate the saving on the audit sample, and propose one option as a plan change.
 
 Check: a dated `research.md` section with the sample numbers and a recommendation.
-
-### T181. `graph/cap` records 0% saving
-
-Found in the 2026-09-22 audit: `graph/cap` wrote 17 `Measurement` rows with 8 759 → 8 759 B — it runs and records, but never caps anything on real sessions.
-
-Plan: find whether the cap threshold is never reached on real repos or the row is written before the cap applies; fix the measurement or the threshold, or stop recording no-op rows.
-
-Check: unit test where the cap applies records `after_bytes < before_bytes`; `just test` green.
 
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 
