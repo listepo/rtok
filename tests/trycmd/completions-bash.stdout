@@ -3006,7 +3006,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__hook)
-            opts="-h --host --config --help"
+            opts="-h --host --serve --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

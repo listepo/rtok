@@ -7,10 +7,10 @@ here: a server and a TTY are not snapshot material.
 $ rtok hook --help
 Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
 
-Usage: rtok hook [OPTIONS] <EVENT>
+Usage: rtok hook [OPTIONS] [EVENT]
 
 Arguments:
-  <EVENT>  
+  [EVENT]  
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)

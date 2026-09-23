@@ -33,9 +33,10 @@ _rtok() {
 _arguments "${_arguments_options[@]}" : /
 '--host=[Overlay /`/[hook/] host/` (/`claude/` | /`cursor/` | /`copilot/` | /`devin/`)]:HOST:_default' /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'(--host)--serve[Run the resident hook process /`rtok-hook/` talks to (T178, D32)]' /
 '-h[Print help]' /
 '--help[Print help]' /
-':event:_default' /
+'::event:_default' /
 && ret=0
 ;;
 (mcp)
