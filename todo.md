@@ -94,3 +94,4 @@
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 - T225.1. `rtok logs` through tailspin
+- T234. Skills have one source: host plugins link `skills/`, never copy

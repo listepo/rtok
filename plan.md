@@ -103,6 +103,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
 | T225.1 | todo | P2 | 2 | 0% | |
+| T234 | todo | P2 | 3 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -1022,3 +1023,16 @@ Done means: `rtok run` waits for the wrapped process, not for EOF — once the c
 Follow-up to T225 (creator question 2026-09-23: "will it be added to `rtok logs`?"). Today `rtok logs` colours lines itself (`log::screen`, T24.2) and tailspin is reachable only as `just logs` or a pipe. Done means: `rtok logs` and `rtok logs watch`, when stdout is a terminal and `tspin` is on `PATH`, feed the plain (`export`-shaped) lines through `tspin -p` instead of `screen`'s own colours; `[log] tspin = true` (config key, `RTOK_LOG_TSPIN=false` via the env layer) turns it off; no `tspin` on `PATH` or a pipe means today's output, unchanged. `rtok logs export` and `--json` never go through it.
 
 Plan: `log::screen` gets a `via_tspin` sibling that spawns `tspin -p` with piped stdin and falls back to the builtin colours on any spawn error (fail open); `Cmd::Logs` picks it under the three conditions; the key goes into `config/default.toml`, `docs/config.md`'s reference block and `tests/trycmd/config-init.toml` (`TRYCMD=overwrite`). Check: a `tests/logs.rs` case with a fake `tspin` script first on `PATH` that tags each line, asserting the tag appears with `[log] tspin = true` and not with `false`; `just check`.
+### T234. Skills have one source: host plugins link `skills/`, never copy
+
+`plugins/pi/skills/` carries copies of hub skills: `worktrees` byte for byte (kept equal only by `tests/pi_plugin.rs`) and `rtok` as a pi-flavoured variant. Every hub edit has to be repeated by hand (PR #226 did it for `worktrees`), and a missed copy drifts silently. Rule (in `AGENTS.md`): a skill lives only in `skills/<name>/`; a host plugin reaches it through a relative symlink or a manifest path, never a copy.
+
+Plan:
+
+1. `plugins/pi/skills/worktrees` becomes a relative symlink to `../../../skills/worktrees`. pi's skill loader (`dist/core/skills.js`) follows symlinked entries through `statSync`; confirm once that `pi` lists the skill from a linked `plugins/pi`.
+2. pi `rtok` variant: fold its pi-only lines (bash path through `rtok run` / `rtok filter`, no MCP per D21) into hub `skills/rtok/SKILL.md` as one host-neutral skill within the 2 KB body limit, then link it the same way. If it cannot fit, ask the creator before adding a second hub skill.
+3. Tests: replace `pi_bundles_the_worktrees_skill_byte_for_byte` with a test that fails on any `SKILL.md` under `plugins/` that is not a symlink resolving into `skills/<name>/` with the same name.
+4. Packaging: check that the release archive (ketch store) and `cargo package` (`include = ["plugins/", "skills/"]`) keep the link or dereference it into the real file, and that a Windows checkout (`core.symlinks=false`) still installs pi's skills; `skill_src` keeps its fallback for old archives.
+5. Docs: `plugins/pi/README.md`, `plugins/pi/AGENTS.md` say "link to the hub skill", not "copy".
+
+Check: `find plugins -name SKILL.md -type f` prints nothing; `pi` lists `rtok` and `worktrees` from the linked package; `just check` green on ubuntu, macos and windows.
