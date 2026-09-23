@@ -27,6 +27,13 @@ pub fn root(host: &str, cfg: &Config) -> Option<PathBuf> {
             .parent()
             .map(|p| p.join("skills")),
         "copilot" => Some(cfg.setup.copilot.dir.join("skills")),
+        // T234: pi reads user skills beside its extensions tree (`~/.pi/agent/skills`).
+        "pi" => cfg
+            .setup
+            .pi
+            .extensions_path
+            .parent()
+            .map(|p| p.join("skills")),
         _ => None,
     }
 }
@@ -43,6 +50,7 @@ fn label(host: &str) -> Option<&'static str> {
         "codex" => Some("~/.codex/skills"),
         "opencode" => Some("~/.config/opencode/skills"),
         "copilot" => Some("~/.copilot/skills"),
+        "pi" => Some("~/.pi/agent/skills"),
         _ => None,
     }
 }
@@ -157,7 +165,7 @@ mod tests {
         let cfg = Config::default();
         for id in HOSTS {
             match *id {
-                "claude" | "cursor" | "codex" | "opencode" | "copilot" => {
+                "claude" | "cursor" | "codex" | "opencode" | "copilot" | "pi" => {
                     assert!(root(id, &cfg).is_some(), "{id} has a §10.1 skill root");
                     assert!(label(id).is_some(), "{id} root has a label");
                 }
@@ -171,6 +179,7 @@ mod tests {
             ("codex", ".codex/skills"),
             ("opencode", "opencode/skills"),
             ("copilot", ".copilot/skills"),
+            ("pi", ".pi/agent/skills"),
         ] {
             assert!(root(host, &cfg).unwrap().ends_with(tail), "{host} root");
             for name in SKILLS {

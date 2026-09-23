@@ -1155,7 +1155,7 @@ mod tests {
             "foreign skills stay in the listing"
         );
         assert_eq!(rtok.source, "user");
-        assert_eq!(rtok.desc_chars, 112);
+        assert_eq!(rtok.desc_chars, 108);
         assert!(!rtok.warn_desc && !rtok.warn_body, "{rtok:?}");
     }
 
