@@ -160,3 +160,39 @@ fn watch_streams_a_line_from_another_process_and_survives_a_rotation() {
         "a pipe gets plain rows, not escapes: {got:?}"
     );
 }
+
+/// T225: the stderr debug log is `RUST_LOG`-gated — silent without it, argv with it.
+fn rtok_stderr(home: &Path, rust_log: Option<&str>) -> String {
+    let mut cmd = Command::new(bin());
+    cmd.args(["logs", "--lines", "1"])
+        .env("RTOK_HOME", home)
+        .env("HOME", home)
+        .env("RUST_LOG_STYLE", "never")
+        .env_remove("RUST_LOG");
+    if let Some(filter) = rust_log {
+        cmd.env("RUST_LOG", filter);
+    }
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn rust_log_off_leaves_stderr_empty() {
+    let home = home("rust-log-off");
+    seed_rotated(&home);
+    assert_eq!(rtok_stderr(&home, None), "");
+}
+
+#[test]
+fn rust_log_debug_prints_argv_on_stderr() {
+    let home = home("rust-log-debug");
+    seed_rotated(&home);
+    let err = rtok_stderr(&home, Some("rtok=debug"));
+    assert!(err.contains("DEBUG rtok::cli] argv"), "{err}");
+    assert!(err.contains("\"--lines\""), "{err}");
+}

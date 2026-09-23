@@ -445,6 +445,26 @@ RTOK_STATS_SINCE=7d rtok stats
 RTOK_CONFIG=./ci-config.toml rtok bench --dry-run
 ```
 
+## Debug log (`RUST_LOG`)
+
+`[log]` is the operator's log: a file with a configured level, plus `logs` rows. For debugging
+there is a second, stderr-only stream behind the `log` facade and `env_logger` (T225). It is off
+until `RUST_LOG` is set, so no hook, `mcp` or `proxy` run prints anything new by default:
+
+```bash
+RUST_LOG=rtok=debug rtok stats                       # argv, then every [log] line as it is written
+RUST_LOG=rtok::log=info rtok proxy                   # only the mirrored [log] stream
+RUST_LOG=rtok=debug RUST_LOG_STYLE=never rtok mcp    # no colour; stdout stays the MCP channel
+```
+
+The mirror ignores `[log] level`: the file keeps `info`, stderr shows what `RUST_LOG` asks for.
+The variable is `RUST_LOG`, not `RTOK_LOG`: `RTOK_<SECTION>_<KEY>` names belong to the
+environment layer above, and `RTOK_LOG` would collide with the `[log]` table.
+
+`just logs [flags]` opens the file in [tailspin](https://github.com/bensadeh/tailspin) (`tspin`,
+pinned in `mise.toml`), which highlights levels, dates, numbers and paths; `just logs -f` follows
+it. The debug stream pipes the same way: `RUST_LOG=rtok=debug rtok stats 2>&1 >/dev/null | tspin`.
+
 ## Why one file and not flags-only
 
 Hooks are spawned by the host with a fixed command line; the only way to tune them is a

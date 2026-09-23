@@ -21,3 +21,5 @@ colima = { version = "0.10.3", os = ["linux", "macos"] } # container runtime UI 
 lima = { version = "2.2.0", os = ["linux", "macos"] } # VM backend Colima drives (aqua:lima-vm/lima)
 docker-cli = "29.8.1" # `docker` client; talks to Colima's Docker daemon (aqua:docker/cli)
 docker-compose = "5.5.1" # standalone `docker-compose` (Compose v5) against the same daemon (github:docker/compose)
+
+"ubi:bensadeh/tailspin" = { version = "7.0.0", exe = "tspin" } # `just logs` (T225): highlights `~/.rtok/logs/rtok.log` and `RUST_LOG` stderr; a viewer, not a logger

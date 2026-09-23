@@ -102,6 +102,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
+| T225.1 | todo | P2 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -1015,3 +1016,9 @@ Findings from a load incident on the creator's machine (16 cores, load average ~
 - An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
 
 Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild; `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host); `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
+
+### T225.1. `rtok logs` through tailspin
+
+Follow-up to T225 (creator question 2026-09-23: "will it be added to `rtok logs`?"). Today `rtok logs` colours lines itself (`log::screen`, T24.2) and tailspin is reachable only as `just logs` or a pipe. Done means: `rtok logs` and `rtok logs watch`, when stdout is a terminal and `tspin` is on `PATH`, feed the plain (`export`-shaped) lines through `tspin -p` instead of `screen`'s own colours; `[log] tspin = true` (config key, `RTOK_LOG_TSPIN=false` via the env layer) turns it off; no `tspin` on `PATH` or a pipe means today's output, unchanged. `rtok logs export` and `--json` never go through it.
+
+Plan: `log::screen` gets a `via_tspin` sibling that spawns `tspin -p` with piped stdin and falls back to the builtin colours on any spawn error (fail open); `Cmd::Logs` picks it under the three conditions; the key goes into `config/default.toml`, `docs/config.md`'s reference block and `tests/trycmd/config-init.toml` (`TRYCMD=overwrite`). Check: a `tests/logs.rs` case with a fake `tspin` script first on `PATH` that tags each line, asserting the tag appears with `[log] tspin = true` and not with `false`; `just check`.
