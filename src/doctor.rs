@@ -1394,12 +1394,16 @@ mod tests {
         std::fs::create_dir_all(install.join("hooks")).unwrap();
         std::fs::create_dir_all(dir.join("plugins")).unwrap();
         std::fs::write(dir.join("settings.json"), "{}").unwrap();
+        // `serde_json::json!` (not a hand-formatted string) so a Windows install path's
+        // backslashes are JSON-escaped rather than landing raw in the file and failing
+        // to parse.
         std::fs::write(
             dir.join("plugins/installed_plugins.json"),
-            format!(
-                "{{\"version\":2,\"plugins\":{{\"rtok@rtok\":[{{\"installPath\":\"{}\"}}]}}}}",
-                install.display()
-            ),
+            serde_json::json!({
+                "version": 2,
+                "plugins": {"rtok@rtok": [{"installPath": install.to_string_lossy()}]}
+            })
+            .to_string(),
         )
         .unwrap();
         std::fs::write(
