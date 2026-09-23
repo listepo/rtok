@@ -69,7 +69,6 @@
 - T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
-- T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T202. `recent_hook_inputs` and the handoff ledger re-parse up to 200 × 64 KB per event
 - T203. PreCompact/SessionEnd read the whole transcript and open extra stores
