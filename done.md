@@ -5196,6 +5196,20 @@ Check result: `grep -cE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` 1
 Model: Claude Code / claude-sonnet-5
 
 
+### T170. A slow hook is logged, not only printed to stderr
+
+Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
+
+Plan: route the slow note through `crate::log::record` at `warn` (keep the stderr line); `rtok logs` and `rtok info`'s error count then show it.
+
+Check: a unit test with `max_ms = 0` finds one `warn` row in the log store after a hook run; `just test` green.
+
+Do (Claude Code / claude-sonnet-5, 2026-09-24): added `note_slow(cx, event, ms)`, called from `dispatch` after the existing `slow_note` check — it keeps the `eprintln!` and adds `cx.log("warn", "hook", event, &note)`, which funnels through `crate::log::record` (fails open; a lock error on the `logs` insert is swallowed with `let _ =`, so it never blocks the hook). Fixed a WIP regression found in review before landing: the WIP had flipped `slow_note`'s `max_ms = 0` from "budget disabled" to "zero budget" (`ms > max_ms as f64` unconditionally), which would have turned on a warn-per-call for every hook run for anyone who set `max_ms = 0`; restored the original `max_ms > 0 && ms > max_ms as f64` guard, its original doc comment, and the original assertion `slow_note(500.0, 0, ..) == None`.
+
+Deviation from the card's Check: the card's wording ("a unit test with `max_ms = 0`") assumed the buggy zero-budget semantics as a way to force the slow path deterministically. With the original semantics restored, `slow_hook_run_records_one_warn_row` instead sets `cx.config.hook.max_ms = 10` and calls `note_slow(&cx, "PreToolUse", 50.0)` directly (asserts one `warn` row) plus `note_slow(&cx, "PreToolUse", 5.0)` (asserts no additional row) — deterministic without depending on real elapsed time or a zero-budget special case. Verified the T178 lock-failure path (`dispatch`, "another process held the writer lock past `LOCK_WAIT`") returns `b"{}"` before reaching `note_slow`, so no extra write is attempted on that path; and confirmed `Runtime::log`/`crate::log::record` already fail open on a lock error — no code change needed there.
+
+Status: done 2026-09-24
+
 ### T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
 
 Found 2026-09-22 in the core pass: every hook event opens the shared DB and does 3-4 synchronous writes (`src/hooks/mod.rs:190-237`); `Store::open` retries a locked open 10× with 100 ms sleeps (`src/store/mod.rs:82-101`) and each connection waits up to 1 s on the busy handler (:104-114; 30 s mid-migrate at :146-184). When proxy/MCP/dashboard or a concurrent hook batch holds the write lock — the steady state — the open alone burns 100× the ≤ 10 ms budget before any plugin runs. D13's "blocking and fail-open with a 1 s bound" is incompatible with "exit 0 in ≤ 10 ms even on error"; this is the store half of T178's wall-clock family, distinct from process-start cost.
