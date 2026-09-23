@@ -68,7 +68,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T180 | todo | P3 | 4 | 0% | |
 | T181 | todo | P3 | 2 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
-| T183 | todo | P2 | 4 | 0% | |
+| T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
@@ -543,6 +543,8 @@ Scope:
 4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
 
 Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
+
+Execution plan: (1) survey every host in `plugins/` against its current docs (dated, linked): does a marketplace exist, and is publishing an API/CLI call, a git-hosted catalog (e.g. this repo as a Claude Code or Codex marketplace), or a manual submission form — only the first two get a module, the rest are listed as unsupported with the reason; (2) `tools/publish_marketplace/` Python package — entry `python -m publish_marketplace all|<host> [--dry-run]`, one module per supported host, a registry that refuses unknown or unsupported hosts with a clear error; stdlib only unless a maintained library is clearly better; (3) a `workflow_dispatch` workflow (`.github/workflows/marketplace.yml`) with a `host` input that runs the host module in CI; the script triggers it through `gh workflow run` and prints the run URL; `--dry-run` prints the hosts and workflow inputs and fires nothing; (4) pytest tests for the registry, dry-run output and the refusal path (no network); (5) README with the host table and how to add a host. Split into PRs of ≤ 200 LOC / ≤ 10 files (core + workflow + first host, then the remaining hosts). No agent triggers a real publish; the first real run is the creator's.
 
 ### T184. rtok never resolves its home to a relative `.rtok`
 
