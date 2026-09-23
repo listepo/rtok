@@ -178,6 +178,59 @@ async fn ws_expand_returns_payload_and_unknown_id() {
     task.abort();
 }
 
+/// T193: a cross-site page must not upgrade `/ws`; same-origin and header-less
+/// clients (tests/CLI) keep working. Raw HTTP: asserting the upgrade status
+/// needs no WebSocket client dependency.
+#[tokio::test]
+async fn ws_upgrade_rejects_foreign_origin() {
+    use std::time::Duration;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    async fn upgrade_status(addr: &str, origin: Option<&str>) -> u16 {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let mut req = format!(
+            "GET /ws HTTP/1.1\r\nHost: {addr}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+              Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n"
+        );
+        if let Some(o) = origin {
+            req.push_str(&format!("Origin: {o}\r\n"));
+        }
+        req.push_str("\r\n");
+        stream.write_all(req.as_bytes()).await.expect("write");
+        let mut line = String::new();
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            BufReader::new(&mut stream).read_line(&mut line),
+        )
+        .await
+        .expect("status within 10 s")
+        .expect("status");
+        line.split_whitespace()
+            .nth(1)
+            .expect("code")
+            .parse()
+            .expect("u16")
+    }
+
+    let (addr, _state, _dir, task) = serve("origin").await;
+    assert_eq!(
+        upgrade_status(&addr, Some("http://evil.example")).await,
+        403,
+        "foreign origin refused"
+    );
+    assert_eq!(
+        upgrade_status(&addr, Some(&format!("http://{addr}"))).await,
+        101,
+        "same origin upgrades"
+    );
+    assert_eq!(
+        upgrade_status(&addr, None).await,
+        101,
+        "header-less clients keep working"
+    );
+    task.abort();
+}
+
 /// T80: the bundle directory is resolved at run time. An installed binary has no
 /// source tree, and a 404 there reads as a broken build — the surface must say what
 /// is missing and still serve the API.

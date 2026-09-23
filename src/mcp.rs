@@ -119,10 +119,15 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
 const MAX_LINE: u64 = 8 << 20;
 
+fn rpc_error(id: Value, code: i32, message: &str) -> Value {
+    json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
 /// The next request line, `None` at EOF. `lines()` ended the server on one non-UTF-8 byte (its
 /// `Err` went up through `?`) and buffered a line of any length first. Now bad bytes become
-/// U+FFFD and fail JSON parsing like any junk line, and a line over `max` comes back empty
-/// (skipped by the loop) after the rest of it is drained unbuffered.
+/// U+FFFD and fail JSON parsing like any junk line, and a line over `max` answers `-32700`
+/// (the rest of it is drained unbuffered, and the truncated `"{"` stub fails parsing downstream
+/// instead of the loop skipping it as empty).
 fn next_line(r: &mut impl BufRead, buf: &mut Vec<u8>, max: u64) -> std::io::Result<Option<String>> {
     buf.clear();
     if (&mut *r).take(max + 1).read_until(b'\n', buf)? == 0 {
@@ -132,7 +137,7 @@ fn next_line(r: &mut impl BufRead, buf: &mut Vec<u8>, max: u64) -> std::io::Resu
         if buf.last() != Some(&b'\n') {
             r.skip_until(b'\n')?;
         }
-        return Ok(Some(String::new()));
+        return Ok(Some("{".to_owned()));
     }
     Ok(Some(String::from_utf8_lossy(buf).into_owned()))
 }
@@ -185,13 +190,16 @@ impl Server {
     /// One line in, at most one line out. A JSON-RPC batch (top-level array) answers with an
     /// array of the responses its members produced; an empty batch is `-32600` per JSON-RPC 2.0.
     fn handle_line(&self, line: &str) -> Option<String> {
-        let req: Value = serde_json::from_str(line).ok()?;
+        if line.trim().is_empty() {
+            return None;
+        }
+        let req: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => return Some(rpc_error(Value::Null, -32700, "parse error").to_string()),
+        };
         if let Some(items) = req.as_array() {
             if items.is_empty() {
-                return Some(
-                    json!({"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"empty batch"}})
-                        .to_string(),
-                );
+                return Some(rpc_error(Value::Null, -32600, "empty batch").to_string());
             }
             let out: Vec<Value> = items.iter().filter_map(|v| self.handle_value(v)).collect();
             return (!out.is_empty()).then(|| Value::Array(out).to_string());
@@ -200,11 +208,18 @@ impl Server {
     }
 
     fn handle_value(&self, req: &Value) -> Option<Value> {
-        let method = req["method"].as_str().unwrap_or("");
-        if req.get("id").is_none() || method.starts_with("notifications/") {
+        let obj = match req.as_object() {
+            Some(o) => o,
+            None => return Some(rpc_error(Value::Null, -32600, "invalid request")),
+        };
+        let method = obj.get("method").and_then(|m| m.as_str()).unwrap_or("");
+        if obj.get("id").is_none() || method.starts_with("notifications/") {
             return None;
         }
-        let id = req["id"].clone();
+        let id = obj["id"].clone();
+        if method.is_empty() {
+            return Some(rpc_error(id, -32600, "invalid request"));
+        }
         let result = match method {
             "initialize" => {
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
@@ -452,8 +467,8 @@ mod tests {
     use rstest::rstest;
     use std::fs;
 
-    /// A long line is dropped whole (the next request still parses) and a non-UTF-8 byte no
-    /// longer ends the read loop.
+    /// A long line answers `-32700` downstream (the next request still parses) and a
+    /// non-UTF-8 byte no longer ends the read loop.
     #[test]
     fn next_line_skips_long_lines_and_survives_bad_utf8() {
         let mut r: &[u8] = b"0123456789\n{\"id\":1}\n\xff\n1234\n";
@@ -462,13 +477,39 @@ mod tests {
         while let Some(l) = next_line(&mut r, &mut buf, 5).unwrap() {
             got.push(l);
         }
-        assert_eq!(got, ["", "", "\u{FFFD}\n", "1234\n"]);
+        assert_eq!(got, ["{", "{", "\u{FFFD}\n", "1234\n"]);
         let mut r: &[u8] = b"0123456789\n{\"id\":1}\n";
-        assert_eq!(next_line(&mut r, &mut buf, 5).unwrap().unwrap(), "");
+        assert_eq!(next_line(&mut r, &mut buf, 5).unwrap().unwrap(), "{");
         assert_eq!(
             next_line(&mut r, &mut buf, 64).unwrap().unwrap(),
             "{\"id\":1}\n"
         );
+    }
+
+    #[test]
+    fn malformed_line_answers_parse_error() {
+        let (cfg, dir) = tmp("mcp-bad");
+        let server = Server::new(&cfg).unwrap();
+        let v: Value = serde_json::from_str(&server.handle_line("{bad").unwrap()).unwrap();
+        assert_eq!(v["error"]["code"], -32700);
+        assert_eq!(v["id"], Value::Null);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn non_object_line_answers_invalid_request() {
+        let (cfg, dir) = tmp("mcp-nonobj");
+        let server = Server::new(&cfg).unwrap();
+        let v: Value = serde_json::from_str(&server.handle_line("123").unwrap()).unwrap();
+        assert_eq!(v["error"]["code"], -32600);
+        assert_eq!(v["id"], Value::Null);
+        assert!(server.handle_line("").is_none());
+        assert!(
+            server
+                .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/x"}"#)
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

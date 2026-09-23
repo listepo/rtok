@@ -211,6 +211,11 @@ pub(crate) fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
     if requested_b.is_some_and(|b| a > b) {
         bail!("invalid line range `{spec}`: start exceeds end");
     }
+    // A start past the last line would slice to nothing and print empty output
+    // with exit 0; fail loudly instead so the caller knows the range is wrong.
+    if a > n {
+        bail!("invalid line range `{spec}`: start exceeds line count {n}");
+    }
     Ok((a, requested_b.unwrap_or(n).min(n)))
 }
 
@@ -452,6 +457,18 @@ mod tests {
                 "{spec}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn parse_range_start_past_end_is_err_not_empty() {
+        for spec in ["100-200", "11", "11-"] {
+            let err = parse_range(spec, 10).unwrap_err();
+            assert!(
+                err.to_string().contains("start exceeds line count 10"),
+                "{spec}: {err}"
+            );
+        }
+        assert_eq!(parse_range("8-100", 10).unwrap(), (8, 10));
     }
 
     #[rstest]

@@ -136,7 +136,7 @@ tree-sitter-swift = { version = "0.7.3", optional = true } # lang-swift tags (T5
 tree-sitter-c-sharp = { version = "0.23.5", optional = true } # lang-csharp tags (T52.2)
 tree-sitter-ruby = { version = "0.23.1", optional = true } # lang-ruby tags (T52.2)
 tree-sitter-php = { version = "0.24.2", optional = true } # lang-php tags (T52.2)
-jsonc-parser = { version = "0.33.2", features = ["serde"] }
+jsonc-parser = { version = "0.33.2", features = ["serde"] } # JSONC (comments + trailing commas) parse of Zed settings (T222)
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)

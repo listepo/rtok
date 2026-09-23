@@ -461,6 +461,7 @@ pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
         let kind = crate::plugins::cmd::formatters::filter_kind(&settings, name);
         report.bash_filter.insert(name.clone(), kind.to_string());
     }
+    let mut samples: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for r in store.list_measurements("cmd")? {
         if r.kind != "rule" {
             continue;
@@ -475,15 +476,17 @@ pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
         {
             continue;
         }
+        let bytes = r.after_bytes.max(0) as u64;
         add(
             &mut report.bash_default_rule,
+            &mut samples,
             fam,
-            r.after_bytes.max(0) as u64,
-            est_tokens(r.after_bytes.max(0) as u64),
+            bytes,
+            est_tokens(bytes),
             0,
         );
     }
-    finish_rows(&mut report.bash_default_rule);
+    finish_rows(&mut report.bash_default_rule, &mut samples);
     Ok(())
 }
 fn format_section(title: &str, rows: &BTreeMap<String, SizeRow>) -> String {
@@ -744,7 +747,12 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
     let mut report = Report::default();
     let mut finals = Vec::new();
     let mut parents = Vec::new();
-    for p in super::codex::jsonl_paths(dir, cutoff) {
+    let mut samples = RowSamples::default();
+    // `read_dir` order varies run to run; the totals are order-free but the
+    // bounded p95 reservoir is not, so walk in path order.
+    let mut paths = super::codex::jsonl_paths(dir, cutoff);
+    paths.sort();
+    for p in paths {
         // T128: a sub-agent transcript is attributed to its parent below, never counted
         // as a session of its own.
         if super::subagents::is_subagent(&p) {
@@ -759,13 +767,23 @@ pub fn collect(dir: &Path, since: Duration, plugin: &str, replay: Replay) -> Res
         if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
             report.session_stems.push(stem.to_string());
         }
-        fold_session(&parsed, plugin, replay, &mut report, &mut finals);
+        fold_session(
+            &parsed,
+            plugin,
+            replay,
+            &mut report,
+            &mut samples,
+            &mut finals,
+        );
         parents.push(super::subagents::Parent::new(&p, &parsed));
     }
     report.no_checkpoint = report.sessions;
-    finish_rows(&mut report.tools);
-    finish_rows(&mut report.bash_families);
-    finish_rows(&mut report.mcp_groups);
+    finish_rows(&mut report.tools, &mut samples.tools);
+    finish_rows(&mut report.bash_families, &mut samples.bash);
+    finish_rows(&mut report.mcp_groups, &mut samples.mcp);
+    if let Some(skills) = report.skills.as_mut() {
+        finish_skills(skills, &mut samples.skills);
+    }
     let denom = report.usage_cache_read + report.usage_cache_create + report.usage_input;
     report.cache_hit_rate = if denom == 0 {
         0.0
@@ -803,6 +821,7 @@ fn fold_session(
     plugin: &str,
     replay: Replay,
     report: &mut Report,
+    samples: &mut RowSamples,
     finals: &mut Vec<u64>,
 ) {
     report.sessions += 1;
@@ -846,22 +865,43 @@ fn fold_session(
         if after != ctt {
             report.archive_candidates += 1;
         }
-        add(&mut report.tools, name, bytes, tokens, ctt);
+        add(
+            &mut report.tools,
+            &mut samples.tools,
+            name,
+            bytes,
+            tokens,
+            ctt,
+        );
         if name == "Bash" {
             let fam = id_family
                 .get(r.tool_use_id.as_str())
                 .map(String::as_str)
                 .unwrap_or("other");
-            add(&mut report.bash_families, fam, bytes, tokens, ctt);
+            add(
+                &mut report.bash_families,
+                &mut samples.bash,
+                fam,
+                bytes,
+                tokens,
+                ctt,
+            );
         }
         if let Some(grp) = mcp_group(name) {
-            add(&mut report.mcp_groups, grp, bytes, tokens, ctt);
+            add(
+                &mut report.mcp_groups,
+                &mut samples.mcp,
+                grp,
+                bytes,
+                tokens,
+                ctt,
+            );
         }
     }
 
     fold_thinking(parsed, report);
 
-    fold_skills(parsed, &id_skill, report);
+    fold_skills(parsed, &id_skill, report, &mut samples.skills);
     for u in &parsed.usages {
         report.usage_input += u64::from(u.input_tokens);
         report.usage_cache_create += u64::from(u.cache_creation_input_tokens);
@@ -887,7 +927,12 @@ fn fold_thinking(parsed: &Parsed, report: &mut Report) {
     report.thinking.bytes += parsed.thinking.iter().map(|t| t.bytes).sum::<u64>();
 }
 
-fn fold_skills(parsed: &Parsed, id_skill: &BTreeMap<&str, String>, report: &mut Report) {
+fn fold_skills(
+    parsed: &Parsed,
+    id_skill: &BTreeMap<&str, String>,
+    report: &mut Report,
+    samples: &mut BTreeMap<String, Vec<u64>>,
+) {
     if parsed.injected.is_empty() {
         return;
     }
@@ -903,10 +948,18 @@ fn fold_skills(parsed: &Parsed, id_skill: &BTreeMap<&str, String>, report: &mut 
         row.max = row.max.max(inj.bytes);
         row.est_tokens += est_tokens(inj.bytes);
         row.resident += inj.bytes.saturating_mul(later);
+        push_capped(samples.entry(name.clone()).or_default(), inj.bytes);
     }
-    for row in map.values_mut() {
+}
+
+/// Mean from totals; p95 nearest-rank over the sizes seen across every session.
+fn finish_skills(map: &mut BTreeMap<String, SkillRow>, samples: &mut BTreeMap<String, Vec<u64>>) {
+    for (name, row) in map.iter_mut() {
         row.mean = row.bytes.checked_div(row.count).unwrap_or(0);
-        row.p95 = row.max;
+        match samples.remove(name) {
+            Some(mut v) if !v.is_empty() => row.p95 = nearest_p95(&mut v),
+            _ => row.p95 = row.max,
+        }
     }
 }
 
@@ -1038,24 +1091,73 @@ pub(crate) fn pct(part: u64, whole: u64) -> f64 {
     }
 }
 
-fn add(map: &mut BTreeMap<String, SizeRow>, name: &str, bytes: u64, tokens: u64, ctt: u64) {
+fn add(
+    map: &mut BTreeMap<String, SizeRow>,
+    samples: &mut BTreeMap<String, Vec<u64>>,
+    name: &str,
+    bytes: u64,
+    tokens: u64,
+    ctt: u64,
+) {
     let row = map.entry(name.to_string()).or_default();
     row.count += 1;
     row.total_bytes += bytes;
     row.max = row.max.max(bytes);
     row.est_tokens += tokens;
     row.ctt += ctt;
-    // mean/p95 filled in finish_rows from totals; p95 needs samples — stash bytes in max-only
-    // for T1.2 we recompute mean from totals; p95 approximated as max until we store samples.
+    push_capped(samples.entry(name.to_string()).or_default(), bytes);
 }
 
-/// Samples live in `total_bytes` history via a side vec keyed... keep it simple: mean from
-/// totals; p95 = max for v0 (honest: we don't keep every size). Tests pin mean/ctt.
-fn finish_rows(map: &mut BTreeMap<String, SizeRow>) {
-    for row in map.values_mut() {
-        row.mean = row.total_bytes.checked_div(row.count).unwrap_or(0);
-        row.p95 = row.max;
+/// Bounded per-row sizes for the p95 column (T219). 2048 u64s ≈ 16 KiB per row.
+const P95_CAP: usize = 2048;
+
+/// Deterministic thinning once a row exceeds the cap: keep the even-indexed
+/// half, then take the new sample. No RNG anywhere in this path.
+fn push_capped(v: &mut Vec<u64>, bytes: u64) {
+    if v.len() < P95_CAP {
+        v.push(bytes);
+        return;
     }
+    let mut i = 0;
+    v.retain(|_| {
+        let keep = i % 2 == 0;
+        i += 1;
+        keep
+    });
+    v.push(bytes);
+}
+
+/// Nearest-rank p95: the `ceil(0.95·n)`-th smallest sample, integer math so the
+/// rank is exact. Sorts the sidecar, never the report row.
+fn nearest_p95(samples: &mut [u64]) -> u64 {
+    if samples.is_empty() {
+        return 0;
+    }
+    samples.sort_unstable();
+    let rank = (95 * samples.len()).div_ceil(100);
+    samples[rank.saturating_sub(1).min(samples.len() - 1)]
+}
+
+/// Mean from totals; p95 nearest-rank over the sidecar (falls back to max when
+/// a row somehow has no samples). The sidecar is consumed.
+fn finish_rows(map: &mut BTreeMap<String, SizeRow>, samples: &mut BTreeMap<String, Vec<u64>>) {
+    for (name, row) in map.iter_mut() {
+        row.mean = row.total_bytes.checked_div(row.count).unwrap_or(0);
+        match samples.remove(name) {
+            Some(mut v) if !v.is_empty() => row.p95 = nearest_p95(&mut v),
+            _ => row.p95 = row.max,
+        }
+    }
+}
+
+/// One sidecar per `SizeRow` map `collect` fills, so `add` stays allocation-free
+/// past the cap and `finish_rows` needs no extra lookup.
+#[derive(Debug, Default)]
+struct RowSamples {
+    tools: BTreeMap<String, Vec<u64>>,
+    bash: BTreeMap<String, Vec<u64>>,
+    mcp: BTreeMap<String, Vec<u64>>,
+    skills: BTreeMap<String, Vec<u64>>,
 }
 
 fn est_tokens(bytes: u64) -> u64 {
@@ -1265,6 +1367,37 @@ mod tests {
             json!({"type":"assistant","message":{"content":[{"type":"text","text":"done"}],"usage":{"input_tokens":20,"cache_read_input_tokens":80,"output_tokens":2}}})
         )
         .unwrap();
+        drop(f);
+        // p95 fixture: twenty 1-byte Reads and one 1000-byte Read. Nearest-rank
+        // p95 is the 20th of 21 samples, so 1 while max is 1000.
+        let mut g = fs::File::create(dir.join("p.jsonl")).unwrap();
+        for i in 0..20 {
+            writeln!(
+                g,
+                "{}",
+                json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":format!("r{i}"),"name":"Read","input":{"file_path":"a"}}]}})
+            )
+            .unwrap();
+            writeln!(
+                g,
+                "{}",
+                json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":format!("r{i}"),"content":"x"}]}})
+            )
+            .unwrap();
+        }
+        writeln!(
+            g,
+            "{}",
+            json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"big","name":"Read","input":{"file_path":"b"}}]}})
+        )
+        .unwrap();
+        writeln!(
+            g,
+            "{}",
+            json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"big","content":"y".repeat(1000)}]}})
+        )
+        .unwrap();
+        drop(g);
         let r = collect(
             &dir,
             Duration::from_secs(86400 * 60),
@@ -1272,14 +1405,47 @@ mod tests {
             Replay::from_cfg(&Config::default()),
         )
         .unwrap();
-        assert_eq!(r.sessions, 1);
+        assert_eq!(r.sessions, 2);
         let bash = r.tools.get("Bash").unwrap();
         assert_eq!(bash.count, 1);
         assert_eq!(bash.est_tokens, 4);
         assert_eq!(bash.ctt, 8);
         assert_eq!(r.bash_families.get("sed").unwrap().count, 1);
         assert_eq!(r.usage_cache_read, 80);
+        let read = r.tools.get("Read").unwrap();
+        assert_eq!(read.count, 21);
+        assert_eq!(read.max, 1000);
+        assert_eq!(read.p95, 1);
+        assert_ne!(read.p95, read.max);
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn p95_is_nearest_rank_not_max() {
+        let mut map = BTreeMap::new();
+        let mut samples = BTreeMap::new();
+        for _ in 0..100 {
+            add(&mut map, &mut samples, "Read", 1, 1, 0);
+        }
+        add(&mut map, &mut samples, "Read", 1000, 250, 0);
+        finish_rows(&mut map, &mut samples);
+        let row = map.get("Read").unwrap();
+        assert_eq!(row.max, 1000);
+        assert_eq!(row.p95, 1);
+        assert_ne!(row.p95, row.max);
+    }
+
+    #[test]
+    fn p95_survives_the_cap_without_rng() {
+        let mut v = Vec::new();
+        for i in 0..(P95_CAP + 100) {
+            push_capped(&mut v, i as u64);
+        }
+        assert!(v.len() <= P95_CAP);
+        let once = nearest_p95(&mut v.clone());
+        let twice = nearest_p95(&mut v.clone());
+        assert_eq!(once, twice);
+        assert!(once <= (P95_CAP + 100) as u64);
     }
 
     #[test]

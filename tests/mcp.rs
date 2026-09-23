@@ -37,6 +37,47 @@ fn tools_list_includes_expand() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// T191: a malformed line answers `-32700` instead of silence, and the next valid
+/// request on the same connection still answers.
+#[test]
+fn garbage_line_answers_parse_error_then_tools_list() {
+    let tmp = std::env::temp_dir().join(format!("rtok-mcp-garbage-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rtok"))
+        .arg("mcp")
+        .env("RTOK_HOME", &tmp)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rtok mcp");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(
+            br#"{bad
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        )
+        .expect("write");
+    let out = child.wait_with_output().expect("wait");
+    assert!(
+        out.status.success(),
+        "stderr {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    let first: serde_json::Value =
+        serde_json::from_str(lines.next().unwrap_or_default()).expect("error line");
+    assert_eq!(first["error"]["code"], -32700, "{stdout}");
+    assert_eq!(first["id"], serde_json::Value::Null, "{stdout}");
+    let rest: String = lines.collect::<Vec<_>>().join("\n");
+    assert!(rest.contains("expand"), "{stdout}");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// T75: another process holding the store's write lock at spawn time must not kill the
 /// server. The startup retention used to run a deferred read-then-write transaction that
 /// came back "database is locked" (instantly on SQLITE_BUSY_SNAPSHOT, which skips the

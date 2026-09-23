@@ -144,7 +144,10 @@ pub fn search_hits(
     max_bytes: u64,
     max_hits: usize,
 ) -> Vec<String> {
-    let re = Regex::new(pattern).expect("search pattern");
+    let re = Regex::new(pattern).or_else(|_| Regex::new(&regex::escape(pattern)));
+    let Ok(re) = re else {
+        return Vec::new();
+    };
     let mut hits = Vec::new();
     for entry in walk(fs, root, None) {
         if hits.len() >= max_hits {

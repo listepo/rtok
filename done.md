@@ -1,5 +1,105 @@
 # rtok — completed tasks
 
+### T233. `cmd` normalized dedupe panics on multibyte lines
+
+Found 2026-09-22 in a bug-hunt review (core pass), confirmed by read: `uuid_at` (`src/plugins/cmd/rules.rs:569-588`) slices `rest[pos..pos + len]` at :576 after only a length check — no char-boundary check — so any line where 8+ hex digits run into a multibyte char (e.g. `1234567é-…`) panics with "byte index is not a char boundary". `placeholder_token` runs it on every suffix of every line of untrusted tool/MCP output whenever a rule sets `dedupe = "normalized"` (`docs/cmd-rules.md`). The outer `catch_unwind` turns the panic into an empty event output (the other plugins' context for that turn is lost); `mcp::wrap::shorten` has no catch and dies mid-stream. Related: `normalize_line_key` builds keys with `b[i] as char` (:508), mojibaking multibyte lines into wrong fold groups.
+
+Plan: boundary-safe matching in `uuid_at` and the date probe (`get(pos..pos+len)`, `None` = no match); build `normalize_line_key` from `chars`. Failing unit tests first.
+
+Check: `uuid_at_multibyte_suffix_is_no_match` (`placeholder_token("1234567é-x")` → `None`, no panic) and `normalized_dedupe_survives_multibyte_lines` over CJK/accented fixture lines; `mise exec -- cargo nextest run plugins::cmd::rules` green; `just check`.
+
+Do (2026-09-23): renumbered from T187 (that id is taken by the Command Code host task). `uuid_at` and the date probe slice with `str::get` (a non-boundary is no match), and `normalize_line_key` pushes whole `char`s, so CJK/accented lines neither panic nor mojibake into wrong fold groups. `rules::apply` also recomputes `trace_kept` after the JSON rewrite and grouping, so a one-line JSON body with many items no longer indexes past the line vector. Check: `uuid_at_multibyte_suffix_is_no_match`, `normalized_dedupe_survives_multibyte_lines`, `single_line_json_with_many_items_does_not_panic` green.
+
+### T188. `inject::apply` emits one oversized injection whole — the D5 budget does not bind
+
+Found 2026-09-22 in the core pass: `apply` (`src/plugins/inject/mod.rs:112-152`) only drops whole candidates once `used >= budget`; a single candidate larger than `budget_tokens` is emitted whole. `modes_text` (:81-108) reads `modes_dir/<name>.md` with an uncapped `read_to_string`, so a large mode file becomes an equally large `additionalContext` and blows the ≤ 10 ms budget too. Every other offering source self-caps (`checkpoint_tokens`, `recall_tokens`, `map_tokens`, `spawn_brief_tokens`); the contract boundary does not. Breaks D5 ("per-turn token cap (default 800)").
+
+Plan: fit each accepted candidate to the remaining room (`crate::plugin::fit_budget`), marking what does not fit with the existing `dropped:` marker; cap each mode file by bytes/estimate before offering.
+
+Check: an injection of 10× `budget_tokens` returns `additionalContext` with `estimate <= budget_tokens`; a 1 MB `modes_dir/big.md` stays under budget and byte-stable across two runs; `just test` green.
+
+Do (2026-09-23): `inject::apply` emits a candidate within budget whole (T2.4 behaviour kept) and fits one larger than `budget_tokens` to the room left with `fit_budget`, naming the rest with the existing `dropped:<plugin>:<est>` marker. `modes_text` reads each mode file through a byte cap (`budget × estimator.prose + 1`) and fits it to the budget, so a 1 MB mode file is never read whole. Check: `single_10x_candidate_fits_budget_and_marks_dropped`, `one_mb_mode_file_stays_under_budget_and_stable` green.
+
+### T189. `cap_budget` drops PostToolUse context with no archive id
+
+Found 2026-09-22 in the core pass: when PostToolUse context exceeds `plugins.inject.budget_tokens`, `cap_budget` (`src/hooks/mod.rs:537-580`) discards every line after the first non-fitting one (marker `dropped:post_tool:<n>`, no id) and silently truncates an oversized first line through `fit_budget`. Nothing is archived, so the dropped remainder is unreachable — `rtok expand` cannot resolve the marker. Every sibling shortener (`read::cap`, `rules::apply`, `wrap::shorten_result`, `graph::cap_kind`) archives first and names `expand <id>`; architecture.md says every capped output carries an id. Breaks lossless-by-default (D4).
+
+Plan: `put_archive` the dropped/truncated remainder once in `cap_budget` and extend the marker to `dropped:post_tool:<est> · expand: rtok expand <id>` (same id for the prefix cut); budget accounting unchanged.
+
+Check: extended `cap_budget_marks_drop_when_first_line_exceeds` and `cap_budget_keeps_fitting_lines_and_names_the_rest` assert the marker carries a 64-hex id and `rtok expand <id>` returns the dropped bytes exactly (multi-line drop and single-line truncation); `just test` green.
+
+Do (2026-09-23): `cap_budget` archives the dropped remainder once and names it `dropped:post_tool:<est> · expand: rtok expand <id>`. Review fix: the id makes the marker ~20 tokens longer, and the old code returned the fitting lines without any marker when `lines + marker` overflowed, losing the rest with no id; `cap_budget` now gives kept lines back until the marker fits (priced with a 64-char placeholder, archived once). Check: `cap_budget_marks_drop_when_first_line_exceeds`, `cap_budget_keeps_fitting_lines_and_names_the_rest`, `cap_budget_gives_back_lines_so_the_marker_fits` (kept lines + `expand <id>` rebuild the input byte for byte) green.
+
+### T191. `rtok mcp` answers a malformed or oversized request with silence
+
+Found 2026-09-22 in the surfaces pass: `handle_line` (`src/mcp.rs:187-200`) does `serde_json::from_str(line).ok()?` — a parse failure returns `None` and the serve loop writes nothing instead of the JSON-RPC `-32700` response; `next_line` (:120-138) silently drops any line over `MAX_LINE` (8 MiB); valid-JSON non-requests (e.g. `123`, or an object without `method`) are dropped or mis-reported as `-32601` instead of `-32600`. One torn write, garbage line or large `mem_save` body wedges the host's MCP connection forever while the process looks healthy.
+
+Plan: answer every non-notification input — `-32700` for unparseable lines, `-32600` for non-objects/missing `method`, `-32601` only for well-formed unknown methods; on the over-cap path answer an error (id `null`) instead of skipping.
+
+Check: unit tests on `handle_line` for `"{bad"` and `123` (codes −32700/−32600); `tests/mcp.rs` case sends one garbage line then a valid `tools/list` and both the error line and the tool list arrive; `just test` green.
+
+Do (2026-09-23): `handle_line` answers `-32700` (id null) for an unparseable line, `-32600` for a non-object or a request without `method`, and stays silent only for blank lines and notifications; an over-cap line comes back as a `{` stub so it answers `-32700` instead of vanishing. Check: `malformed_line_answers_parse_error`, `non_object_line_answers_invalid_request`, updated `next_line_skips_long_lines_and_survives_bad_utf8`, and `tests/mcp.rs::garbage_line_answers_parse_error_then_tools_list` green.
+
+### T193. `rtok web` `/ws` accepts cross-origin WebSocket upgrades
+
+Found 2026-09-22 in the surfaces pass, confirmed by grep (`src/web/mod.rs` contains no `Origin` check): `ws_upgrade` (:241-246) validates nothing and the server binds `127.0.0.1` — reachable from any page the operator visits. A hostile page can open `ws://127.0.0.1:<port>/ws`, read every snapshot (sessions, calls, logs), pull raw archived tool output via `{"expand":"<id>"}` (secrets, code) and write the config through `{"set": …}` (guard on/off, plugin toggles) — `inbound` (:283-310) has no gate of its own. Store confidentiality and config integrity are open to cross-site abuse.
+
+Plan: reject upgrades whose `Origin` host does not match the request `Host` in `ws_upgrade` (keep header-less clients for tests/CLI); `inbound` mutations then sit behind the same gate.
+
+Check: `ws_upgrade_rejects_foreign_origin` — `Origin: http://evil.example` refused, same-origin and header-less upgrades succeed; `ws_set_accepts_plugin_enabled` and `ws_expand_returns_payload_and_unknown_id` stay green; `just test` green.
+
+Do (2026-09-23): `ws_upgrade` answers 403 when a present `Origin` host differs from `Host`. Review fix: an equal pair is also refused unless `Host` is an IP literal or `localhost`, because a DNS-rebinding page sends matching names. Header-less clients keep working. Check: `tests/web.rs::ws_upgrade_rejects_foreign_origin` (403 / 101 / 101) and `web::tests::origin_gate_blocks_cross_site_and_rebinding` green.
+
+### T197. `mcp` launcher scripts: masked exit code and dead files the READMEs still promise
+
+Found 2026-09-22 in the host-plugins pass: (1) `plugins/zcode/scripts/mcp.cmd:4-11` ends with `exit /b %ERRORLEVEL%` inside a parenthesized `if` block — cmd.exe expands `%VAR%` at parse time, so every `rtok mcp` failure exits 0 and the README's "exit 1 loudly" contract never fires (correct: bare `exit /b`, or `!ERRORLEVEL!` with delayed expansion). (2) The cursor (and zcode) `scripts/mcp.*` ketch-hint launchers are dead code: `mcp.json` spawns `rtok mcp` directly (the T85 / I-37 decision), yet `plugins/cursor/README.md:13-17` still presents the scripts as the MCP path with no "rtok must be on PATH" caveat (unlike Kimi's honest README) and `tests/cursor_plugin.rs:111-168` gives green assurance for unreachable code — D21's ketch hint is silently unmet on this surface.
+
+Plan: fix the exit-code masking; then decide per T85 — either wire the launchers where the host supports per-OS commands or delete `plugins/cursor/scripts/*` + their tests and add the Kimi-style PATH/ketch line to the READMEs (same decision for zcode's `mcp.cmd`).
+
+Check: Windows case mirroring `d21_missing_rtok_names_ketch_cmd` — stub `rtok` exiting 7 → `mcp.cmd` exits 7, missing rtok still exits 1 with the ketch hint; a repo test asserts every file under `plugins/*/scripts/` is referenced by a manifest/hooks file in its tree (or README-allowlisted); `just check` green.
+
+Do (2026-09-23): `plugins/zcode/scripts/mcp.cmd` forwards the exit code with a bare `exit /b`. Cursor's `scripts/mcp.*` are deleted: `mcp.json` spawns `rtok mcp` directly and has no per-OS slot, so the launchers could never run; the README now says `rtok` must be on PATH and names `ketch install listepo/rtok`. zcode's `mcp.cmd` stays as the README-allowlisted Windows counterpart. Check: `tests/plugin_scripts.rs` (every `plugins/*/scripts/*` referenced or allowlisted; static exit-code check; Windows runtime check with a stub exiting 7) and `tests/cursor_plugin.rs::d21_no_launcher_scripts_rtok_must_be_on_path` green.
+
+### T214. In-process plugin spawns have no timeout — a wedged `rtok` hangs the host
+
+Found 2026-09-22 in the host-plugins pass: every `hooks.json` entry budgets `timeout: 5`, but the TS plugins spawn `rtok` with none — `spawnSync` in `plugins/opencode/rtok.ts:31-43` blocks the whole host event loop per `tool.execute.*`/compaction event, and pi's `execFile` handlers (`plugins/pi/extensions/rtok.ts:34-51, 116-147`) await with neither timeout nor the event's abort signal (`signal: undefined`). A wedged `rtok` (DB lock, broken pipe) freezes the host session instead of failing open.
+
+Plan: `timeout: 5000` on the `spawnSync`/`execFile` options plus `event.signal` where available; a timeout kill then hits T195's `failed` path and keeps the original content.
+
+Check: vitest cases with a >5 s stub — `filterStdin` returns the original stdin within ~6 s (extend `tests/node/fake-rtok.ts` with a sleep helper) and the equivalent pi `tool_result` case; vitest green.
+
+Do (2026-09-23): opencode `spawnSync` and pi `execFile` spawn `rtok` with `timeout: 5000`; pi also passes the event's abort `signal`. A timeout, abort or non-zero exit resolves `failed`, and every pi handler keeps the original content on it. Review fix: pi's `rtok()` now listens for `error` on the child's stdin, so a child that dies before reading a large input (timeout kill, abort) no longer crashes the host with an unhandled EPIPE. Check: vitest `a wedged rtok times out …` (opencode and pi) and `an rtok that exits before reading stdin keeps the original (EPIPE fails open)` (fails without the fix); `tests/pi_plugin.rs`, `tests/filter.rs`, `tests/opencode_plugin.rs` green.
+
+### T217. `AGENTS.md` is ~4× its own 350-token budget
+
+Found 2026-09-22 in the docs pass: `AGENTS.md` instructs "Keep this file under 350 tokens; it is loaded into every session" and is ~7 KB / ~1,100 words — the "Rules that never bend", "Models" and "Testing" sections alone exceed the budget. Every session in every project pays several times the promised injection, the exact per-turn overhead rtok exists to reduce.
+
+Plan: trim to a true ≤ 350-token core (What / Read first / Workflow / Rules / Models one-liners) and move the Testing section and rule expansions to `plan.md` → Working agreement or `CONTRIBUTING.md`, keeping pointers. Creator sign-off before the trim lands (it rewrites the file every agent loads).
+
+Check: a `just check` assertion on an approximate token count (words × 1.33 < 350, or a tokenizer count in a small test) that fails on `main` today and passes after the trim; `CLAUDE.md` still symlinked to the same file.
+
+Do (2026-09-23): `AGENTS.md` trimmed from ~1 020 words to a What / Read first / Workflow / Rules / Models core (183 words, 1 298 B); the Testing section and the rule expansions moved to `CONTRIBUTING.md`. The creator asked for this change to land. Check: `tests/host_docs.rs::agents_md_stays_under_its_350_token_budget` (words × 4/3 and bytes / 4 both < 350; `CLAUDE.md` still a symlink to `AGENTS.md`) green.
+
+### T219. `rtok stats` p95 is the maximum
+
+Found 2026-09-22 in the store/accounting pass: every `p95` cell in the tool/bash/mcp/skill tables is set to `row.max` (`src/measure/stats.rs:1054-1058`, `fold_skills` :909 — "p95 approximated as max until we store samples"), so the column labelled `p95` systematically overstates the percentile. Only `src/web/model.rs:811-818` computes a real nearest-rank percentile. An operator comparing `rtok stats` p95 against `research.md` baselines or provider numbers gets maxima.
+
+Plan: keep a bounded reservoir of per-row sizes in `add()` and compute true nearest-rank p95 in `finish_rows`, or rename the column to `max` if the approximation is deliberate (creator's call — the rename keeps the number honest either way).
+
+Check: unit test with 100 samples of 1 and one of 1000 asserting `row.p95 != row.max` (fails today); `ctt_and_tool_totals_on_mini_session` snapshot extended with a p95 fixture; `just test` green.
+
+Do (2026-09-23): `add` keeps a bounded per-row sample sidecar (2 048 sizes, deterministic halving past the cap, no RNG) and `finish_rows` / `finish_skills` compute nearest-rank p95 from it; `collect` walks session files in path order so the sidecar is reproducible. Check: `p95_is_nearest_rank_not_max`, `p95_survives_the_cap_without_rng` and the extended `ctt_and_tool_totals_on_mini_session` fixture (21 Reads: p95 1, max 1 000) green.
+
+### T222. Seven direct dependencies with no `toolchain.md` row
+
+Found 2026-09-22 in the docs pass: `toolchain.md` claims to list direct packages from the manifests but misses `jsonc-parser` (`Cargo.toml:138` — also the only neighbouring dep without its one-line reason comment; used at `src/agents/zed/mod.rs:151`), `windows-sys` (`crates/rtok-sys/Cargo.toml:13`) and five wasm crates in `crates/rtok-webui/Cargo.toml:18-32`. The "no new dependency without a row" rule cannot be enforced against an incomplete table.
+
+Plan: one `toolchain.md` cargo row per missing crate ("Why here" citing the task) plus the missing `jsonc-parser` reason comment in `Cargo.toml`; update workspace-root `rust.md` in the same change. No version changes.
+
+Check: `tests/toolchain_rows.rs` (pattern of `tests/config_coverage.rs`) — the set of `[dependencies]`/`[dev-dependencies]` names across all workspace manifests minus path crates equals the `toolchain.md` cargo-table names (fails on `main` today with exactly these seven); `just check` green.
+
+Do (2026-09-23): `toolchain.md` cargo rows for `jsonc-parser`, `windows-sys`, `console_error_panic_hook`, `js-sys`, `wasm-bindgen`, `wasm-bindgen-futures`, `web-sys`; the missing reason comment on `jsonc-parser` in `Cargo.toml`; workspace `rust.md` rows added. No version changes. Check: `tests/toolchain_rows.rs::toolchain_rows_cover_manifests` (manifest deps minus path crates == `toolchain.md` cargo rows, both directions) green.
+
 ### T181. `graph/cap` records 0% saving
 
 Found in the 2026-09-22 audit: `graph/cap` wrote 17 `Measurement` rows with 8 759 → 8 759 B — it runs and records, but never caps anything on real sessions.

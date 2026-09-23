@@ -31,6 +31,10 @@ impl ReadFs for HostFs {
 
 /// Lexical join of `path` onto `root` (`..` pops, `.` drops) — no disk access, so a missing
 /// path still normalises. `read` resolves with it; `project` follows `gitdir:` / `commondir`.
+///
+/// Deliberately NOT clamped: `project` legitimately climbs above `root` (a linked
+/// worktree's `gitdir: ../../main/.git/...`). Confinement lives at the boundary —
+/// `read::resolve_with` rejects anything outside the allow-roots via `under()`.
 pub(crate) fn normalize(root: &Path, path: &Path) -> PathBuf {
     let mut out = if path.is_absolute() {
         PathBuf::new()

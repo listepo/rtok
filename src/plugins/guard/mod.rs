@@ -231,6 +231,7 @@ fn writer_marker(seg: &str) -> bool {
     let toks: Vec<&str> = seg.split_whitespace().collect();
     let stem = super::cmd::formatters::cmd_stem(toks.first().copied().unwrap_or(""));
     toks.iter().copied().any(is_redirect)
+        || has_unquoted_redirect(seg)
         || (stem == "find"
             && toks
                 .iter()
@@ -245,6 +246,26 @@ fn writer_marker(seg: &str) -> bool {
 fn is_redirect(t: &str) -> bool {
     let t = t.trim_start_matches(|c: char| c.is_ascii_digit());
     t.starts_with('>') || t.starts_with("&>")
+}
+
+/// A `>`/`>>` glued to a word (`echo x>file`, `cat a>a`): the whitespace-token
+/// scan in [`writer_marker`] never sees it as its own token, so the write is
+/// keyed as read-only and a repeat after it denies with stale data. Quote-aware
+/// like [`super::skip_word`]: `echo "a>b"` is not a redirect.
+fn has_unquoted_redirect(seg: &str) -> bool {
+    // Over-detecting is the safe direction: a false writer only skips a dedup,
+    // while a missed one denies with stale data.
+    let mut quote = None;
+    for b in seg.bytes() {
+        match quote {
+            Some(q) if b == q => quote = None,
+            Some(_) => {}
+            None if b == b'\'' || b == b'"' => quote = Some(b),
+            None if b == b'>' => return true,
+            None => {}
+        }
+    }
+    false
 }
 
 fn sed_in_place(t: &str) -> bool {
@@ -402,6 +423,26 @@ mod tests {
         );
         // Whitespace normalization survives the fold.
         assert_eq!(k("cd   a   &&   ls"), k("cd a && ls"));
+    }
+
+    /// A redirect glued to a word (`echo x>file`) is still a writer: the
+    /// whitespace-token scan never sees it, so without this the write is keyed
+    /// as read-only and a repeat after it denies with stale data.
+    #[test]
+    fn redirect_without_spaces_is_not_read_only() {
+        for w in [
+            "echo x>file",
+            "cat a>a",
+            "ls>>out",
+            "echo x > file",
+            "grep foo bar 2>err",
+        ] {
+            assert!(!read_only(w), "{w}");
+            assert!(cache_key("Bash", &json!({"command": w}), None).is_none());
+        }
+        for r in ["ls", "cat file", "grep foo bar", "grep 'a>b' file"] {
+            assert!(read_only(r), "{r}");
+        }
     }
 
     /// T55.9 rewrite of the cwd-blind pin: the same command behind a `cd` is a new

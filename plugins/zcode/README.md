@@ -19,9 +19,15 @@ Files:
 - `.mcp.json` — `mcpServers.rtok` → `scripts/mcp.sh` (`${ZCODE_PLUGIN_ROOT}` is expanded for
   plugin-provided servers; config-file servers get no expansion, which is why the config-file
   install writes the absolute binary instead).
-- `scripts/hook.sh`, `scripts/mcp.sh`, `scripts/mcp.cmd` — launchers that resolve `rtok` from
+- `scripts/hook.sh`, `scripts/mcp.sh` — launchers that resolve `rtok` from
   PATH or the ketch store; a missing `rtok` fails the hook open (exit 0) and the MCP loudly
   (exit 1), both printing `ketch install listepo/rtok`.
+- `scripts/mcp.cmd` — Windows counterpart of `scripts/mcp.sh` (T197: kept, exit-code
+  fix). `.mcp.json` has one `command` slot with `${ZCODE_PLUGIN_ROOT}` expansion and no
+  per-OS branch, so on Windows the config-file install (absolute `rtok mcp`, written by
+  `rtok agents install zcode`) is the path and this file is README-allowlisted rather
+  than manifest-referenced; it forwards `rtok mcp`'s exit code with a bare `exit /b`
+  (`exit /b %ERRORLEVEL%` inside the `if` block always expanded to 0).
 
 Windows: the hook launchers are POSIX, so the plugin cannot run there, but `rtok agents
 install zcode` still links it by default (T164) — it has no way to know a launcher will

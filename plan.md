@@ -77,6 +77,34 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
+| T190 | todo | P1 | 3 | 0% | |
+| T192 | todo | P2 | 2 | 0% | |
+| T194 | todo | P1 | 3 | 0% | |
+| T195 | todo | P1 | 3 | 0% | |
+| T196 | todo | P1 | 3 | 0% | |
+| T198 | todo | P2 | 2 | 0% | |
+| T199 | todo | P2 | 1 | 0% | |
+| T200 | todo | P2 | 2 | 0% | |
+| T201 | todo | P2 | 2 | 0% | |
+| T202 | todo | P2 | 3 | 0% | |
+| T203 | todo | P2 | 3 | 0% | |
+| T204 | todo | P3 | 2 | 0% | |
+| T205 | todo | P2 | 3 | 0% | |
+| T206 | todo | P2 | 3 | 0% | |
+| T207 | todo | P1 | 3 | 0% | |
+| T208 | todo | P1 | 3 | 0% | |
+| T209 | todo | P1 | 3 | 0% | |
+| T210 | todo | P2 | 2 | 0% | |
+| T211 | todo | P2 | 3 | 0% | |
+| T212 | todo | P2 | 2 | 0% | |
+| T213 | todo | P3 | 2 | 0% | |
+| T215 | todo | P2 | 2 | 0% | |
+| T216 | todo | P3 | 2 | 0% | |
+| T218 | todo | P2 | 2 | 0% | |
+| T220 | todo | P3 | 3 | 0% | |
+| T221 | todo | P2 | 2 | 0% | |
+| T223 | todo | P3 | 2 | 0% | |
+| T224 | todo | P3 | 1 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -716,7 +744,7 @@ None for the macOS/Linux happy path on current main. Windows correctness gaps be
 ### Nits
 
 1. ~~**T55.7**~~ — done (`skip_word`; quoted `cd` paths bucket by family).
-2. **`expand::parse_range` when start > line count** — empty slice quietly; optional clamp.
+2. ~~**`expand::parse_range` when start > line count**~~ — done 2026-09-23: a start past the last line errors (`start exceeds line count N`) instead of printing nothing with exit 0.
 3. **`guard::strip_wrap`** — updated in #49 for PowerShell `''`.
 4. **T55.8 / T55.9 / T55.10** — filed from the T55.7 code read: guard `read:` keys survive a mutating Bash, guard Bash key cwd-blind, three copies of `cmd_stem`.
 
@@ -793,4 +821,228 @@ Plan:
 4. Do not claim Termux/mobile as a separate variant unless install detection is distinct and stable.
 
 Check: `rtok agents list` shows `mimo`; install adds rtok under `mcp` in mimocode.json; `just check`.
+
+### T190. `after_mcp` shortens MCP results on a second, divergent path
+
+Found 2026-09-22 in the core pass: the `AfterMCPExecution` handler (`src/hooks/mod.rs:249-332`) re-implements MCP-result shortening beside the sanctioned `PostToolUse` → `wrap::shorten_result` path (D21: one call path per capability) and drifts on every axis: no `Measurement` row (only `put_archive`) — and a saving that is not a `Measurement` row does not exist; `isError` results are shortened instead of skipped; `mcp_result_text` joins all `content[].text` blocks with `\n`, archives the join, and `set_mcp_result_text` writes the shortened join into the first block only (blocks 2..n duplicated, structure destroyed); the output key serializes camelCase while the documented key is snake `updated_mcp_tool_output` (T70.4 records "no documented replacement" — likely a silent no-op); the threshold differs (`mcp.max_result_chars` vs `rule.max_lines`). On Cursor both events fire for one MCP call, so one result is processed twice.
+
+Plan: verify the host's documented output key first; then either delete the `after_mcp` shorten (return `HookOutput::default()`) so `postToolUse`'s `wrap::shorten_result` is the single call path, or delegate verbatim to `mcp::wrap::shorten_result` (per-block, `isError` skip, `Measurement`) and emit the documented key shape.
+
+Check: fixture test on `AfterMCPExecution` with two text blocks and with `isError: true` asserts byte-passthrough `{}` or exactly one `Measurement { plugin: "archive" }`, no block duplication, and an `expand` round trip of the original per-block bytes (mirror of `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`); `just test` green.
+
+### T192. `[mcp] tools` allow-list is dead config
+
+Found 2026-09-22 in the surfaces pass, confirmed by grep: `Mcp.tools` (`src/config/mod.rs:145-150`, `config/default.toml`, `docs/config.md`) is documented as "[] = all tools from enabled plugins; else an allow-list", shows in `rtok config show` — and is read by nothing. `Server::new` (`src/mcp.rs:150-179`) lists `expand` plus every enabled plugin's `mcp_tools()` and `invoke` serves all of them regardless. A user who narrows the surface still pays every description token per turn and can still call tools they tried to disable.
+
+Plan: in `Server::new`, filter `listed` to `cfg.mcp.tools` when non-empty (keep `expand` unconditional for D4 and say so in `docs/config.md`); `call_tool` falls through to "unknown tool" for filtered names.
+
+Check: `tools_allow_list_filters_listing_and_calls` — with `tools = ["read"]`, `tools()` lists only `read` + `expand` and `tools/call search` returns an unknown-tool error; `mise exec -- cargo nextest run mcp::` green.
+
+### T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
+
+Found 2026-09-22 in the surfaces pass: `read_frame` (`src/mcp/wrap.rs:87-124`) returns `None` on a header block without a parseable `Content-Length` and on a short body read, and both forwarding loops (:51-83) treat `None` as EOF — the pass-through pipe ends at the first broken header. The module doc (:5-7) and T59.4 promise "a malformed frame is forwarded byte-for-byte (fail open)"; the code contradicts the shipped claim. Secondary: when `Runtime::open` fails, `take_call` never runs and the `pending` map grows unbounded for the connection's lifetime.
+
+Plan: on a broken header forward the bytes consumed so far and resynchronize at the next newline (or fall back to line framing); reserve `None` for real EOF; run `take_call` regardless of `runtime`.
+
+Check: `tests/mcp_wrap.rs` fake-server case `content-length: 99\r\n\r\n{}` (short body) followed by a valid frame — the valid frame still reaches stdout and the malformed bytes are forwarded unchanged; `just test` green.
+
+### T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
+
+Found 2026-09-22 in the host-plugins pass of `plugins/pi/extensions/rtok.ts`: (1) `rtok()` (:34-43) treats only `ENOENT` as failure — a non-zero exit or a killed child falls through to `resolve({stdout})`, and `tool_result` (:137-147) then replaces the tool result with the partial stdout, so a crashed `rtok filter` truncates output carrying an `expand <id>` trailer and an abort kills results instead of passing them through (D1: unmodified input on error). `plugins/opencode/rtok.ts` tracks `failed` correctly; pi lost the distinction. (2) The T48.2 / I-36 fix regressed: the missing-`rtok` hint goes through `pi.appendEntry` (:53-57, :91-93) — TUI-only, invisible to the model — and the `tool_call` path bypasses `hintMissing`'s `pi._rtokHinted` once-guard, so it appends one entry per bash call. The vitest suite asserts the regressed behavior (`plugins/pi/tests/rtok.test.ts:22-32, 74-85`).
+
+Plan: resolve `{missing}` on ENOENT and a `failed` flag otherwise; `tool_result`/`guard`/tool `execute` keep the original on `failed`. Restore `pi.sendMessage({customType: "rtok-missing", …})` behind the session guard (fall back to `appendEntry` when absent) and route `tool_call` through the same guard. Fix the vitest expectations.
+
+Check: vitest — a stub exiting 1 after partial stdout (and an abort-killed stub) returns `undefined` (original kept); two bash `tool_call`s with `rtok` missing produce exactly one `sendMessage` matching `/ketch install listepo\/rtok/` and zero `appendEntry` when `sendMessage` exists, plus the one-`appendEntry` fallback case; vitest green.
+
+### T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
+
+Found 2026-09-22 in the host-plugins pass: `plugin_is_mcp` (`src/agents/cursor/mod.rs:184-199`) and `plugin_serves` (`src/agents/zcode/mod.rs:173-175, 238-252`) key on `PluginLink::linked()` — true for **anything** at the dest, including a foreign directory `PluginLink::run` rightly refuses to overwrite. With a foreign dir present, cursor's `offer_plugin` still runs `unregister_mcp` (its error discarded with `let _ =`) and `plugin_is_mcp` suppresses `register_mcp`; zcode goes further — `run(cfg, remove || plugin_serves(…))` strips working `hooks.events` entries and drops `mcp.servers.rtok`. Net: one `agents install cursor|zcode` run deletes the functioning plain-install hooks + MCP and installs nothing. `installed()` already uses `ours()` (the T75 lesson); these two predicates missed it. D21 singleton inverts into self-sabotage.
+
+Plan: key `plugin_is_mcp`, `plugin_serves` and cursor's leftover-cleanup on `PLUGIN.ours(cfg)` (foreign dir ⇒ behave like a declined offer and run the config-file install); report the unregister line instead of discarding it.
+
+Check: unit tests beside `linked_plugin_clears_leftover_mcp_json_on_later_setup` (cursor) and `linked_plugin_is_the_only_call_path` (zcode): foreign dir at the dest (no owned marker, different bytes) + seeded `mcpServers.rtok`/hooks → after `apply(Install)` the entries survive or are re-added and the foreign dir is untouched; `just test` green.
+
+### T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
+
+Found 2026-09-22 in the docs pass (all confirmed against the files): T126 appears as three table rows and three identical cards (plan.md `### T126` ×3); T123 has two full cards; `todo.md` carries T126 twice; T183's Check sits under T184's card (the `Check: dry-run with \`all\`…` paragraph after T184's own Check) so T183 has none and T184 appears to have two; three blank lines split the task table into four markdown tables that render as raw pipes on GitHub and the site; T122 still carries the fix scope handed to T127; and T122/T123/T125 — all `src/` code cards — are claimed by `claude-haiku-4-5`, the exact models AGENTS.md forbids for code ("on T122–T125 every Haiku code diff had a defect its report called green"). "One task = one card with a Check" is broken throughout.
+
+Plan: delete duplicate rows/cards (one T126, one T123), move the stray Check into the T183 card, remove the blank lines inside the table, trim T122's card to what T127 does not own, dedupe `todo.md`, and reassign T122/T123/T125 to a mid-tier model (T126 is docs-only and may stay). Docs only.
+
+Check: `tests/plan_unique_ids.rs` — every `| T… |` row id and `### T…` heading unique, exactly one `^Check:` per card, no blank line inside the task table, no low-cost model on a card whose Plan touches `src/`; `grep -c '^### T126\.' plan.md` = 1 and `grep -c 'T126\.' todo.md` = 1; `just site` builds.
+
+### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+
+Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected at once (the Rejected entry already carries T125's dated gate result while T125 is still `in progress`); I-87 appears twice in Open with contradictory states (unpromoted and "promoted T135"); the Promoted section is a headerless four-column pseudo-table whose `| ID | Became | Date |` header appears only at the bottom with three columns, and the I-28 row is truncated mid-word ("under the `inje"); the Open table also splits on a blank line. Breaks "an idea must not appear twice, or in both Open and Rejected".
+
+Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
+
+Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
+
+### T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
+
+Found 2026-09-22 in the core pass: every hook event opens the shared DB and does 3-4 synchronous writes (`src/hooks/mod.rs:190-237`); `Store::open` retries a locked open 10× with 100 ms sleeps (`src/store/mod.rs:82-101`) and each connection waits up to 1 s on the busy handler (:104-114; 30 s mid-migrate at :146-184). When proxy/MCP/dashboard or a concurrent hook batch holds the write lock — the steady state — the open alone burns 100× the ≤ 10 ms budget before any plugin runs. D13's "blocking and fail-open with a 1 s bound" is incompatible with "exit 0 in ≤ 10 ms even on error"; this is the store half of T178's wall-clock family, distinct from process-start cost.
+
+Plan: give the hook surface its own open policy — `busy_timeout` ≤ 50 ms, no retry-sleep loop, and "database is locked" on ledger writes fails open (skip `record_call`/`insert_call_io`, keep plugin outputs). Long waits stay for the long-running surfaces.
+
+Check: `tests/latency.rs` `hook_returns_despite_exclusive_lock` — a second connection holds `BEGIN EXCLUSIVE` for 500 ms while `hooks::run` executes; the round trip completes < 100 ms with valid JSON stdout and the p95 gate stays green; `just test` green.
+
+### T201. Hook path does unbounded reads and hashes bodies it never archives
+
+Found 2026-09-22 in the core pass: hook stdin is `read_to_end` with no cap and parsed whole (`src/hooks/mod.rs:22-23`); `insert_call_io` → `spill` (`src/store/mod.rs:541-563`) sha256s over-cap bodies even though the hook path passes `archive_dir = None` (the hash feeds only a metadata column); `guard::post_tool` (`src/plugins/guard/mod.rs:71-77, 330-339`) sha256s and writes the entire tool response to the archive dir synchronously on every cached Read/Bash. A 20 MB PostToolUse payload costs two full passes plus the JSON DOM per event — the ≤ 10 ms budget breaks deterministically per MB (T178 family).
+
+Plan: skip `hex_sha256` in `spill` when `archive_dir` is `None` and the body is over cap (store NULL sha); bound the stdin read (`Take` at a `core.hook_max_input_bytes`, above which the hook fails open to `{}`); defer or cap `guard`'s archive write over a size threshold.
+
+Check: `oversized_hook_call_io_does_not_archive` extended — over-cap bodies record NULL `request_sha256`/`response_sha256`; `spill_over_cap_without_archive_dir_skips_hashing`; latency gate with a 5 MB PostToolUse fixture dispatches < 50 ms; `just test` green.
+
+### T202. `recent_hook_inputs` and the handoff ledger re-parse up to 200 × 64 KB per event
+
+Found 2026-09-22 in the core pass: the Read-advice path fetches the newest 50 hook bodies (`request_json`, each up to `call_io_inline_bytes` = 64 KB ≈ 3 MB) and `serde_json::from_str`s all of them on **every native Read PreToolUse** (`src/plugins/read/hook.rs:51-86`), plus `fs::metadata`/`canonicalize` syscalls; `memory::handoff::ledger` (`src/plugins/memory/handoff.rs:50-100`) re-parses up to 200 rows on every `SubagentStart`. O(session history) work on the hot path: a session with several large Write/Bash payloads puts every later Read PreToolUse well past 10 ms. (T55.16 removed the guard body *read*; this JSON re-scan is the same class, untracked.)
+
+Plan: filter and trim in SQL — PostToolUse rows only, `tool_name IN ('Read','Edit','Write')`, `LIMIT 5` bodies for the edit window (lower limit for the handoff ledger) — selecting trimmed columns so per-event transfer is a few small rows regardless of history.
+
+Check: `hook_pre_tool_read_stays_under_budget_with_50_large_rows` — seed 50 × 60 KB hook rows, a `pre_tool_read.json` dispatch keeps p95 < 10 ms; `edited_file_reads_on` and the handoff tests unchanged; `just test` green.
+
+### T203. PreCompact/SessionEnd read the whole transcript and open extra stores
+
+Found 2026-09-22 in the core pass: `checkpoint::write` (`src/plugins/checkpoint.rs:202-212`) `read_to_string`s the entire JSONL transcript (hundreds of MB on real sessions) and `extract` walks every line inside `rtok hook`; `attach_ids` (:227-249) and `offer_session` (:258-280) then open a **second/third** `Store` on the same SQLite file even though the hook `Runtime` holds one — adding lock traffic exactly where T200 hurts (SessionStart with `startup_recall` does the extra open too). Unbounded memory + O(transcript) CPU + connection churn on PreCompact/SessionEnd/SessionStart.
+
+Plan: stream-extract with `BufRead::lines`, keeping only the bounded state `extract` retains (prompts, errors, path set, optional tail); route `attach_ids`/`offer_session` through the `Ctx`'s store via two capability methods (`session_live_archives`, `latest_session_note`) instead of `Store::open`.
+
+Check: `session_end_on_a_large_transcript_is_bounded` — a 50 MB generated transcript through `hooks::run("SessionEnd", …)` completes < 100 ms with the same note body as today; a counter asserts `Store::open` runs once per hook run; `checkpoint_fixture_has_three_paths_and_compact_injects_under_budget` and `session_end_note_and_startup_recall` unchanged; `just test` green.
+
+### T204. A panicking plugin is dropped silently — the error never reaches the log
+
+Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind` (`src/hooks/mod.rs:340-344, 381-385, 493-508, 202-205`) but the payload is discarded with `.ok()`/`let _` — no `logs` row, no stderr. architecture.md §4 and the Working agreement promise "that plugin's output is dropped, **the event is logged with the error**". Today a panicking plugin is indistinguishable from one returning `None`, so T233-class failures stay invisible in `rtok doctor` / `rtok logs`.
+
+Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
+
+Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
+
+### T205. Proxy bookkeeping blocks the tokio runtime before forwarding
+
+Found 2026-09-22 in the surfaces pass: `handle` (`src/proxy/mod.rs:203-251`) is async but does all bookkeeping synchronously on tokio workers — serde parse of up to 256 MB bodies, tokenizer estimates, a fresh `Runtime::open` per compress request (:546-602), archive file writes — and `finish` (:723-806) repeats sync inserts inside `tokio::spawn`. Nothing uses `spawn_blocking`; N concurrent requests pin N workers, and one huge body delays `/health`, other in-flight streams and TTFB.
+
+Plan: move request shaping (`record` + `compress` + `prepare`/`context_edits`/`rewrite_tools`) and `finish`'s store writes into `tokio::task::spawn_blocking`; keep the tee loop and channels async.
+
+Check: `health_stays_fast_while_a_large_request_is_recorded` — a ~20 MB compress request against a slow mock upstream while `GET /health` answers < 250 ms; the `proxy_*` suite unchanged; `just test` green.
+
+### T206. `rtok web` builds each snapshot inline while holding the config mutex
+
+Found 2026-09-22 in the surfaces pass: every 2 s tick per connection runs `model::snapshot` synchronously in `socket_loop` with `DashState::cfg` locked across the frame (`src/web/mod.rs:251-281`), and the snapshot includes `doctor_for_snapshot` (spawning MCP probes) and `stats_skills`' whole-transcript parse (I-87 / T135's ~36 s CPU per TTL miss) plus blocking `fetch_live` HTTP in the tick (`src/web/model.rs:1246-1251`). `health()` and `inbound()` take the same mutex, so one cache-miss freeze blocks every socket and `/health` (used by demon/doctor) — the process reads as hung. T113 fixed only the TUI thread; the `rtok web` async/lock defect itself is new.
+
+Plan: clone/`Arc` the `Config`, build each snapshot in `spawn_blocking` without holding the lock, and coalesce concurrent ticks into one in-flight build shared by all sockets. (The transcript-parse burn itself is T135.)
+
+Check: `health_answers_during_a_snapshot_build` — busy fixture store + several WS clients, `/health` p95 < 250 ms while ticks run; `ws_set_accepts_plugin_enabled` green; `just test` green.
+
+### T207. Measurement totals computed three ways; non-catalogue plugins and expand rows disagree
+
+Found 2026-09-22 in the store/accounting pass: `report_window.measurements` / `report_savings` (`src/web/model.rs:578-631`) sum only the 11 catalogue plugin ids via `list_measurements(id)` while labelling the numbers "Whole-ledger counts" — out-of-tree/WASM plugin measurements never appear; `stats --plugin` excludes `kind == "expand"` rows (:356-392) while `Model::plugin_stats` (:1204-1217) includes them; `otel_saved_totals` (`src/store/otel.rs:173-180`) sums per (plugin, kind) over all rows. The same store yields different "saved" totals on the report vs the OTLP export and different `rows` for one plugin on `stats` vs the Plugins page. Compounding: every `saves_tokens` page loads **all** `Measurement` rows into memory per 2 s tick and `report_window` adds an N+1 per session (`list_measurements` has no LIMIT — `src/store/mod.rs:1212-1220`). Breaks D3/D24 ("`rtok report` renders; it never computes a number of its own").
+
+Plan: one `Store::measurement_totals()` SQL aggregate (GROUP BY plugin, kind; plus grouped `usage` counts to kill the N+1) consumed by `report_window`, `report_savings`, `otel_saved_totals` and both `plugin_stats`, with one consistent expand-row policy.
+
+Check: fixture seeding a non-catalogue plugin's rows + an expand row — `report_window.measurements == store.count_measurements()`, `report_savings.total_saved == otel_saved_totals().sum(saved)`, `rows` equal in both `plugin_stats`; `plugin_stats_matches_sql_aggregates_on_10k_rows`; `just test` green.
+
+### T208. Multi-step store writes commit separately — freezes without a Measurement, orphan archives
+
+Found 2026-09-22 in the store/accounting pass: `expand::fetch` (`src/expand.rs:15-42`) commits `mark_expanded` (the decision freezes — every later request stops shortening the id) and only afterwards records the expand `Measurement` in a second transaction; a crash or `record()` error in between leaves the state permanently frozen with no ledger row and `report_expand.cost` under-counted. Similarly `insert_call_io` (`src/store/mod.rs:511-539`) chains `call_session`, up to two `write_archive` calls (file + `archive` row each) and the `call_io` insert as separate implicit transactions, and `upsert_model` (:249-272) chains four statements — a crash or `SQLITE_BUSY` after the spill strands `archive` rows and payload files the retention purge never collects (its `doomed` walk follows only `call_io`/decisions/read-cache references, :1741-1761).
+
+Plan: one `immediate_transaction` around each sequence — a single `Store::mark_expanded_recorded` (freeze + measurement) called from `fetch`, one around `insert_call_io`'s spills + insert (sha-named file writes are idempotent) and one around `upsert_model`.
+
+Check: `mark_and_record_are_atomic` — a forced measurement failure rolls back and the decision stays unexpanded; `insert_call_io_failure_leaves_no_orphan_archive` — a failed final insert leaves `SELECT COUNT(*) FROM archive` at 0; `write_api_round_trip_and_spill` and `retention_keeps_plugin_archives_without_call_io` green; `just test` green.
+
+### T209. `upsert_note` select-then-insert races a duplicate past the topic key
+
+Found 2026-09-22 in the store/accounting pass: the "one row per (project, kind, title)" contract (T66.1) is enforced by SELECT-newest-then-UPDATE/INSERT (`src/store/mod.rs:835-869`) with the mutex even dropped before the insert (:867) and **no UNIQUE index** (migrations 0015/0017) making a lost race impossible across processes — and the store's own comments list concurrent writers (hooks, MCP, proxy, `otel flush`); no writer lease backs the "one writer per store" singleton either. Two writers saving the same title both insert: `mem_search` returns a stale duplicate beside the new body (the exact T66.1 defect) and recall shows stale titles.
+
+Plan: migration `CREATE UNIQUE INDEX notes_topic ON notes (COALESCE(project,''), kind, title)` and replace the select/update/insert with one `INSERT … ON CONFLICT … DO UPDATE` (closing the lock-drop gap too).
+
+Check: `concurrent_upsert_note_yields_one_row` — two connections upsert the same key 50× concurrently → exactly one row; `migrations_list_matches_the_directory` and `schema_rs_matches_the_migrated_tables` green after the migration; `just test` green.
+
+### T210. `measurements (session, ts)` has no index on never-pruned tables
+
+Found 2026-09-22 in the store/accounting pass: `archive_in_session`'s per-lookup subquery filters `measurements` by `(session, ts)` (`src/store/mod.rs:583-597`) — no index covers it (only `measurements_plugin(plugin, ts)` exists), `usage_ctt` (:1470-1495) scans the whole `usage` table per dashboard tick, and `purge_calls_older_than` (:1715-1802) deliberately keeps `usage`/`measurements`/`read_cache` forever. `plugin::identical_result` calls `archive_in_session` per tool result on PostToolUse, so hook latency grows linearly with total history.
+
+Plan: one migration `CREATE INDEX measurements_session_ts ON measurements (session, ts)` (also serving `last_measurement_ref`'s ordering family); if the dashboard scan still shows up in `doctor` latency, follow with the grouped aggregate from T207.
+
+Check: `EXPLAIN QUERY PLAN` for `SELECT COUNT(*) FROM measurements WHERE session = ? AND ts > ?` reports `USING INDEX measurements_session_ts` (not `SCAN`); a latency fixture with 100 k measurement rows keeps `archive_in_session` under budget; `just test` green.
+
+### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
+
+Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:1823-1828`) stores bodies under the inline cap through `String::from_utf8_lossy` and hashes the *lossy* text, so `request_sha256`/`response_sha256` are not hashes of the wire bytes and `call_io_request` (:736-750) returns U+FFFD-corrupted bytes as if they were the original request. Consumers like `src/measure/cache.rs:106` see different bytes than the proxy sent; the stored sha cannot verify the true payload. Lossless-by-default holds for archived content but not for inline-kept content.
+
+Plan: store inline bodies as BLOB (or base64 in the TEXT column) with the sha of the raw bytes, keeping the lossy text only as a derived display column; migrate with a nullable column filled lazily on read.
+
+Check: extend `inline_sha256_matches_stored_text` (src/store/mod.rs:3048-3095) — `call_io_request` returns the exact input bytes for the `[…0xff, 0xfe…]` fixture and the sha matches the raw bytes (fails today); `just test` green.
+
+### T212. Semantic-cache key omits sampling params and tool schemas
+
+Found 2026-09-22 in the surfaces pass: `CachePrompt` / `canonical_hash` (`src/proxy/semantic_cache.rs:150-173, 311-315`) cover provider/model/system/messages and a tools fingerprint — but not `max_tokens`, `temperature`, `top_p`, `tool_choice`, `thinking`, stop sequences, and `tools_fingerprint` (:388-397) hashes tool *names* only. Requests differing only in generation params or tool schemas hash equal and the cached body is replayed — I-23's "a hit can be a wrong answer" (a temperature-0 extraction sharing an entry with a temperature-1 brainstorm for `ttl_s`). I-23 tracks the general false-hit risk; these key omissions are the concrete ones (the T55.14 fix covered tool_result text only).
+
+Plan: fold all non-message request fields into `canonical_hash` (serialize the body minus `messages`/`stream`) and hash each tool's full definition in `tools_fingerprint`.
+
+Check: `sampling_params_join_the_cache_key` and `tool_schemas_join_the_cache_key` — bodies differing only in `max_tokens`/`temperature`/tool schema hash differently; `p9_fixture_audit_zero_false_hits` green; `just test` green.
+
+### T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
+
+Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) discards `params.protocolVersion` and returns whatever `ServerInfo` serializes — no negotiation, and no test pins `result.protocolVersion`, so a dependency bump can silently change the advertised dialect (`src/doctor.rs:862` probes `2024-11-05` while tests send `2025-06-18`). `-32601` carries the raw method name as `message` instead of "Method not found". And `tools/call` coerces instead of validating: `mem_save` without `body` stores an empty note (`unwrap_or("")`, :332-339), a missing `expand` `id` becomes "unknown archive id: ", `handoff` truncates `budget_tokens` u64→u32 (:438-444) — schema-vs-handler drift turning client bugs into corrupt data.
+
+Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
+
+Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
+
+### T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
+
+Found 2026-09-22 in the host-plugins pass: `tests/agents_install.rs:20-71` `hosts()` covers 14 of `HOSTS`' 15 ids — `omp` has no row anywhere, so its install idempotency, one-backup and remove-keeps-foreign guarantees are unguarded at the integration level (exactly where T196-class bugs live), and `tests/common/agents.rs:118-140` `write_cfg` seeds no `.omp/agent`/`[setup.omp]` to support one. `tests/agents_real_config.rs:31-60` additionally omits kilo, grok, copilot and aider (all with real config files to seed). Separately `plugins/pi/tests/load.test.ts:16-33` probes `pi` with no PATHEXT variants, so on Windows `piPackage()` is null and the loader test — the one proving pi accepts the linked extension (T48.1) — skips silently.
+
+Plan: add `[setup.omp]` keys + the `.omp/agent` fixture to `write_cfg`, an `omp` row to `hosts()`, the four file-owning hosts to `agents_real_config.rs::HOSTS`; probe `pi`/`pi.cmd`/`pi.exe`/`pi.ps1` in the loader test and warn visibly on a skip.
+
+Check: `cargo nextest run --test agents_install --test agent_remove` shows omp in `setup_twice_takes_one_backup_and_says_already_installed` and `remove_twice_says_no_changes…`; `ci_hides_what_this_machine_really_has` iterates the extended list; on Windows with pi installed the loader test runs rather than skips; `just check` green.
+
+### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
+
+Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
+
+Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
+
+Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
+
+### T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
+
+Found 2026-09-22 in the docs pass: `site/content/docs/reference/_content.gotmpl:5-18` lists 12 pages but omits `docs/otel.md`, `docs/release.md`, `docs/plugin-plan-template.md` and `docs/getting-started.md` — mounted as assets yet never published (README/AGENTS point readers at `docs/otel.md` and `docs/release.md`). Separately `site/content/docs/getting-started.md:1-25` is a re-worded copy of `docs/getting-started.md` that already drifts — against "a repo file IS the page" and `site/hugo.toml:8-10` ("Nothing is copied").
+
+Plan: add rows for otel, release and plugin-plan-template (document an exemption if plugin-plan-template is internal); replace the site-local getting-started with a `_content.gotmpl` row mounting `repo/docs/getting-started.md` and delete the copy.
+
+Check: `tests/site_pages.rs` — every `docs/*.md` appears in `_content.gotmpl` (modulo a small explicit exemption list) and `site/content/docs/` holds no page duplicating a repo file; `just site` builds.
+
+### T220. Schema-drift guard compares column names only; seven tables escape it
+
+Found 2026-09-22 in the store/accounting pass: `schema_rs_matches_the_migrated_tables` (`src/store/mod.rs:3306-3328`) checks only that each `table!` macro's column *name* set equals `PRAGMA table_info` — not types, NOT NULL, defaults, PKs, and not a single index; and seven migrated tables (`kv`, `archive_decisions`, `extractor`, `symbol_stale`, `note_embeddings`, `schema_migrations`, `notes_fts`) have no `table!` macro at all (they are reached via raw SQL — T163), so T104's guard cannot see them. A changed default or a dropped index passes today.
+
+Plan: extend the guard to compare `PRAGMA table_xinfo` type/notnull/dflt/pk tuples (mapping Diesel type names), add an expected-index manifest checked against `PRAGMA index_list`, and assert the migrated-table set equals `table!` names ∪ an explicit raw-SQL allowlist.
+
+Check: mutation tests in the T104 style — changing a default in a migration or dropping `CREATE INDEX usage_call` from 0013 fails the extended guard; deleting a column from `schema.rs` still fails as today; `just test` green.
+
+### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
+
+Found 2026-09-22 in the docs pass: `README.md:399` and `Cargo.toml:157` claim "41 integration targets" — `ls tests/*.rs` is 64; `README.md:269, 385` cite an "±15 % error margin" that appears nowhere in `research.md`; `docs/comparison.md:130` cites "39 % on Fable/Mythos 5.1", likewise untraceable; `docs/comparison.md:180` ("18.9 MiB") and :215 ("+0.81 ms p95") match `research.md` rows but cite nothing. Two are vendor-style claims, two are staleness-undetectable — breaking "every number in `README.md`, `docs/` or the site cites a measured row, `research.md`, or a dated command".
+
+Plan: cite each figure inline (`research.md §2 row …, <date>`) in the style of `docs/comparison.md:173`; for ±15 % and 39 % either add the missing measurement to `research.md` or drop/soften the number; fix the integration-target count with a dated count command or state the rule instead of a number.
+
+Check: a `just readme-check` number lint — any `N %` / `N MiB` / `N ms` figure in `README.md`/`docs/**` sits within a few words of `research.md`, a test name or a date, and the README target count equals `ls tests/*.rs | wc -l` at run time (fails on `main` today); `just check` green.
+
+### T223. `windows-sys` linked in three versions
+
+Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
+
+Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
+
+Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
+
+### T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
+
+Found 2026-09-22 in the docs pass: `report.html` and `report/jscpd-report.json` are stale jscpd outputs (`.jscpd.json` now sets `reporters: ["console"]`, so they are unreproducible) and `dump/` holds nine captured stdout/stderr files — all in the tree; `.gitignore` covers `rtok.db`/`/~/` but not `/report.html` or `/dump/`. The `.rtok/`/`~`/`rtok.db` half of the cleanup is T184; this is the other half of "an artifact that is not reproducible from a command should not be in the repo".
+
+Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; extend `.gitignore` with `/report.html`, `/report/`, `/dump/`; the jscpd console workflow stays the way to regenerate reports.
+
+Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
 

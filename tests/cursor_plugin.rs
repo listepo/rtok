@@ -117,54 +117,21 @@ fn d21_mcp_json_invokes_rtok_directly() {
     assert_eq!(rtok["args"], serde_json::json!(["mcp"]));
 }
 
-#[cfg(unix)]
 #[test]
-fn d21_missing_rtok_names_ketch() {
-    let script = root().join("scripts/mcp.sh");
-    let out = Command::new("sh")
-        .arg(&script)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .output()
-        .expect("mcp.sh");
+fn d21_no_launcher_scripts_rtok_must_be_on_path() {
+    // T197 (T85/I-37): Cursor's `mcp.json` spawns `rtok mcp` directly through a
+    // single `command`/`args` pair with no per-OS slot, so launcher scripts could
+    // never run — the deleted `scripts/mcp.*` were dead code with green tests.
+    // The ketch hint lives in the README instead (Kimi-style), not in a script.
     assert!(
-        !out.status.success(),
-        "missing rtok must fail the MCP start"
+        !root().join("scripts").exists(),
+        "no scripts/ in plugins/cursor: mcp.json spawns rtok directly"
     );
-    let err = String::from_utf8_lossy(&out.stderr);
+    let readme = fs::read_to_string(root().join("README.md")).unwrap();
     assert!(
-        err.contains("ketch install listepo/rtok"),
-        "want ketch install, got {err}"
+        readme.contains("ketch install listepo/rtok"),
+        "README must name the ketch install: {readme}"
     );
-    assert!(err.contains("rtok is not installed"), "{err}");
-}
-
-#[cfg(windows)]
-#[test]
-fn d21_missing_rtok_names_ketch_cmd() {
-    let script = root().join("scripts/mcp.cmd");
-    let out = Command::new("cmd")
-        .args(["/C", script.to_str().unwrap()])
-        .env_clear()
-        .env("PATH", "C:\\Windows\\System32")
-        .output()
-        .expect("mcp.cmd");
-    assert!(
-        !out.status.success(),
-        "missing rtok must fail the MCP start"
-    );
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("ketch install listepo/rtok"),
-        "want ketch install, got {err}"
-    );
-    assert!(err.contains("rtok is not installed"), "{err}");
-}
-
-#[test]
-fn d21_ketch_helpers_exist_for_both_platforms() {
-    assert!(root().join("scripts/mcp.sh").is_file());
-    assert!(root().join("scripts/mcp.cmd").is_file());
 }
 
 #[test]
