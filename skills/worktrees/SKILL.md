@@ -1,12 +1,15 @@
 ---
 name: worktrees
-description: Git worktrees via rtok: one place, one name, one locked owner; list, gc, cache cleanup. Load before git worktree use.
+description: Load before editing a repo: each task gets its own git worktree via rtok unless AGENTS.md or the user says otherwise.
 ---
 
 # worktrees
 
-Git keeps no owner, age or size for a worktree and never cleans ignored build output. rtok
-records it all; use it, not raw `git worktree`, on every host.
+Every task that edits a repository gets its own worktree, never the shared main checkout,
+unless the project's `AGENTS.md` or the user says otherwise.
+
+Use rtok, not raw `git worktree`: git records no owner, age or size for a worktree
+and never cleans build output.
 
 No `rtok` on PATH? Install it: `ketch install listepo/rtok`. Until then, fall back to
 `git worktree add --lock --reason "<owner> | <task> | <date>" --no-track -b <task> <path> origin/main`.
@@ -14,24 +17,23 @@ No `rtok` on PATH? Install it: `ketch install listepo/rtok`. Until then, fall ba
 ## Create
 
 `rtok worktree add <task> [slug] --owner "<provider> / <model>"` — run inside the repository;
-it prints the new path. One location (`_worktrees/<repo>-<task>` beside the
-repository, never `/tmp`), one name (branch `<task>[-<slug>]` off a fresh `origin/<default>`
-with no upstream, so a bare `git push` cannot reach `main`), one owner (the lock reason
-`<owner> | <task> | <date>`), one worktree per task (an existing path is refused). If the host
-created the worktree itself, lock it as the first action:
+it prints the new path. One location (`_worktrees/<repo>-<task>` beside the repository, never
+`/tmp`), one name (branch `<task>[-<slug>]` off a fresh `origin/<default>` with no upstream, so
+a bare `git push` cannot reach `main`), one owner (lock reason `<owner> | <task> | <date>`), one
+worktree per task. If the host created the worktree, lock it first:
 `git worktree lock --reason "<owner> | <task> | <date>" .`
 
 ## See
 
-`rtok worktree list` — every worktree and orphan with its owner, state, last session, source
-and build-cache bytes; `rtok worktree list --json` for scripts.
+`rtok worktree list` — every worktree and orphan with owner, state, last session and
+sizes; `--json` for scripts.
 
 ## Finish
 
-After the PR is merged: `rtok worktree gc --owner "<provider> / <model>"` is a dry run; add
-`--yes` to remove merged, clean, idle worktrees you own with their branches, and to drop the
-records of directories someone deleted by hand (until then the branch counts as checked out).
-Then delete the remote branch if the forge did not, and `git fetch --prune`.
+After the PR is merged: `rtok worktree gc --owner "<provider> / <model>"` is a dry run; `--yes`
+removes merged, clean, idle worktrees you own with their branches, and drops records of
+directories deleted by hand (until then the branch counts as checked out). Then delete the
+remote branch if the forge did not, and `git fetch --prune`.
 
 ## Free disk
 

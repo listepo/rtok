@@ -8,6 +8,7 @@ use crate::store::Store;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -74,6 +75,7 @@ pub fn record(
     name: &str,
     message: &str,
 ) {
+    mirror(level, source, name, message);
     if !enabled(cfg, level) {
         return;
     }
@@ -88,10 +90,43 @@ pub fn record(
 /// Never fails upward: a log that cannot be written is not something the caller can act on, and a
 /// hook must exit 0 in 10 ms whatever the disk is doing (D1).
 pub fn append(cfg: &Config, level: &str, source: &str, name: &str, message: &str) {
+    mirror(level, source, name, message);
     if !enabled(cfg, level) {
         return;
     }
     append_line(cfg, level, source, name, message);
+}
+
+/// Target of every mirrored line, so `RUST_LOG=rtok::log=info` selects the D26 stream alone.
+const STDERR_TARGET: &str = "rtok::log";
+
+/// The debug log on stderr (T225): the `log` facade behind `env_logger`, on only while
+/// `RUST_LOG` is set (`RUST_LOG=rtok=debug`; `RUST_LOG_STYLE=never` drops colour). Unset, the
+/// filter is `off` — not env_logger's `error` default — so a hook, `mcp` or `proxy` prints
+/// nothing it did not print before, and the cost is one atomic store (D1). `RUST_LOG` rather
+/// than `RTOK_LOG`: the config env layer owns `RTOK_<SECTION>_<KEY>`, where `RTOK_LOG=debug`
+/// would read as a string in place of the `[log]` table. Called first thing in `cli::run`; a
+/// second call (a library user, a test) is a no-op.
+pub fn init_stderr() {
+    let env = env_logger::Env::default().default_filter_or("off");
+    let _ = env_logger::Builder::from_env(env).try_init();
+}
+
+/// Every D26 line also goes to the facade, *before* the `[log] level` gate: the file keeps its
+/// configured level, stderr shows what `RUST_LOG` asks for. `log!` checks the level first, so
+/// nothing is formatted while the stream is off.
+fn mirror(level: &str, source: &str, name: &str, message: &str) {
+    log::log!(target: STDERR_TARGET, facade_level(level), "{source}/{name}: {message}");
+}
+
+/// D26 level names onto the facade's; an unknown name ranks most severe, as in [`rank`].
+fn facade_level(level: &str) -> log::Level {
+    match level.to_ascii_lowercase().as_str() {
+        "warn" => log::Level::Warn,
+        "info" => log::Level::Info,
+        "debug" => log::Level::Debug,
+        _ => log::Level::Error,
+    }
 }
 
 /// [`append`] past the level check, for a caller that already made it.
@@ -208,11 +243,69 @@ fn tail_with(live: &[String], path: &Path, n: usize) -> Vec<String> {
 /// [`crate::render::log_line`] — one colour table, not a second one here. Pure rendering:
 /// the lines come from the operator model (T15.11), which owns the selection.
 pub fn screen(lines: &[String]) -> Vec<String> {
+    let coloured: Vec<String> = lines.iter().map(|l| crate::render::log_line(l)).collect();
+    numbered(&coloured)
+}
+
+/// The tail numbered `1` newest and nothing else: what [`screen`] colours, and what a viewer
+/// (T225.1) gets as-is so it can colour it its own way.
+pub fn numbered(lines: &[String]) -> Vec<String> {
     lines
         .iter()
         .enumerate()
-        .map(|(i, line)| format!("{} {}", i + 1, crate::render::log_line(line)))
+        .map(|(i, line)| format!("{} {line}", i + 1))
         .collect()
+}
+
+// ── T225.1: `rtok logs` through tailspin ─────────────────────────────────────────
+
+/// A running `tspin --print` that `rtok logs` writes its plain rows into. Print mode, no
+/// pager: the numbering and the stream shape stay rtok's, tailspin only colours.
+pub struct Tspin(Child);
+
+impl Tspin {
+    /// `[log] tspin`: `auto` starts the viewer when stdout is a terminal, `always` regardless
+    /// (a pipe then carries tailspin's colours), `off` never. `None` also when `tspin` is not on
+    /// `PATH` or will not start: the caller prints with [`screen`]'s own colours instead, so a
+    /// missing viewer never costs a line (D1).
+    pub fn start(cfg: &Config, tty: bool) -> Option<Self> {
+        let wanted = match cfg.log.tspin.as_str() {
+            "always" => true,
+            "auto" => tty,
+            _ => false,
+        };
+        if !wanted {
+            return None;
+        }
+        Command::new("tspin")
+            .arg("--print")
+            .stdin(Stdio::piped())
+            .spawn()
+            .ok()
+            .map(Self)
+    }
+
+    /// The viewer's stdin: where [`watch`] streams to.
+    pub fn sink(&mut self) -> &mut ChildStdin {
+        self.0.stdin.as_mut().expect("spawned with a piped stdin")
+    }
+
+    /// Hand the viewer every row, then [`finish`](Self::finish). A viewer that dies mid-stream
+    /// is not rtok's error: the rows were the log, not a result.
+    pub fn print(mut self, rows: &[String]) {
+        for row in rows {
+            if writeln!(self.sink(), "{row}").is_err() {
+                break;
+            }
+        }
+        self.finish();
+    }
+
+    /// Close the pipe and wait for tailspin to flush what it has coloured.
+    pub fn finish(mut self) {
+        drop(self.0.stdin.take());
+        let _ = self.0.wait();
+    }
 }
 
 // ── T24.3: `rtok logs watch` — follow the live file, newest first ─────────────────
@@ -441,6 +534,54 @@ mod tests {
         cfg.log.files = files;
         cfg.log.level = "debug".into();
         cfg
+    }
+
+    /// A facade sink the T225 mirror test can read back; `set_logger` is process-wide, so this
+    /// is the one test in the crate that installs a logger.
+    struct Capture(std::sync::Mutex<Vec<String>>);
+
+    impl log::Log for Capture {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, r: &log::Record<'_>) {
+            let line = format!("{} {} {}", r.level(), r.target(), r.args());
+            self.0.lock().unwrap().push(line);
+        }
+        fn flush(&self) {}
+    }
+
+    static CAPTURE: Capture = Capture(std::sync::Mutex::new(Vec::new()));
+
+    #[test]
+    fn stderr_mirror_ignores_the_file_level_and_keeps_source_and_name() {
+        log::set_logger(&CAPTURE).unwrap();
+        log::set_max_level(log::LevelFilter::Debug);
+        let dir = std::env::temp_dir().join(format!("rtok-t225-mirror-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut cfg = cfg_at(&dir, 1_048_576, 5);
+        cfg.log.level = "error".into();
+        append(&cfg, "debug", "demon", "proxy", "mirrored\nline");
+        assert!(
+            !cfg.log.path.exists(),
+            "the [log] level gate on the file still holds"
+        );
+        // An unknown level ranks most severe, so this one does reach the file (and the mirror).
+        append(&cfg, "bogus", "demon", "proxy", "unknown level");
+        let lines = CAPTURE.0.lock().unwrap();
+        // Other tests in this process may log too; the mirror's lines are what matters.
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == "DEBUG rtok::log demon/proxy: mirrored\nline"),
+            "{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l == "ERROR rtok::log demon/proxy: unknown level"),
+            "{lines:?}"
+        );
     }
 
     #[test]

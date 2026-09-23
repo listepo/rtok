@@ -53,13 +53,12 @@ fn state(home: &Path) -> Option<Value> {
     serde_json::from_str(&fs::read_to_string(home.join("demon/mcp.json")).ok()?).ok()
 }
 
-/// The kernel's answer, not the state file's.
+/// The kernel's answer, not the state file's. `demon.rs` itself asks through
+/// `rtok_sys::process_alive` (Unix `kill -0`, Windows `GetExitCodeProcess`); asking the same
+/// way here — rather than shelling out to a `kill` binary that doesn't exist on Windows —
+/// checks what the supervisor actually reads instead of merely a lookalike.
 fn alive(pid: i64) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    rtok_sys::process_alive(pid as i32)
 }
 
 /// Wait for the supervisor to have restarted the service at least `n` times.
@@ -102,10 +101,7 @@ fn status_asks_the_kernel_rather_than_believing_the_state_file() {
     let st = wait_restarts(&h, 1);
     let sup = st["supervisor"].as_i64().unwrap();
     // Kill it the way a machine would — the state file stays, saying "supervisor <pid>".
-    Command::new("kill")
-        .args(["-9", &sup.to_string()])
-        .output()
-        .unwrap();
+    rtok_sys::process_kill(sup as i32);
     for _ in 0..40 {
         if !alive(sup) {
             break;
@@ -138,11 +134,11 @@ fn a_second_start_is_refused_and_status_names_every_service() {
     );
 
     let status = rtok(&["demon", "status"], &h);
-    for s in ["proxy", "mcp", "web"] {
+    for s in ["proxy", "mcp", "web", "hook"] {
         assert!(status.contains(s), "status is missing {s}:\n{status}");
     }
-    // `proxy` and `web` were never started, so they must read as stopped, not as absent.
-    assert_eq!(status.matches("stopped").count(), 2, "{status}");
+    // `proxy`, `web` and `hook` were never started, so they must read as stopped, not as absent.
+    assert_eq!(status.matches("stopped").count(), 3, "{status}");
 
     let bad = Command::new(bin())
         .args(["demon", "start", "rm -rf /"])
@@ -275,5 +271,31 @@ fn upgrade_starts_again_when_replace_fails() {
     );
     wait_restarts(&h, 1);
     rtok(&["demon", "stop"], &h);
+    let _ = fs::remove_dir_all(&h);
+}
+
+/// Whether a resident answers on the home's endpoint (a connect, nothing sent).
+fn listening(home: &Path) -> bool {
+    rtok_hook::connect(&rtok_hook::endpoint(home).expect("endpoint")).is_some()
+}
+
+fn until(what: &str, f: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !f() {
+        assert!(Instant::now() < deadline, "{what} within 10s");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn the_hook_service_runs_the_resident_and_stop_takes_it_down() {
+    // Short: a Unix socket path must fit 104 bytes.
+    let h = std::env::temp_dir().join(format!("rtd-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&h);
+    fs::create_dir_all(&h).unwrap();
+    rtok(&["demon", "start", "hook"], &h);
+    until("the resident listens", || listening(&h));
+    rtok(&["demon", "stop", "hook"], &h);
+    until("the resident is gone", || !listening(&h));
     let _ = fs::remove_dir_all(&h);
 }

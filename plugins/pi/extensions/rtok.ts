@@ -51,6 +51,10 @@ function rtok(args, input, signal) {
     });
     // execFile without a callback `input` option: feed stdin, then close it
     // so a child that reads stdin (the test fake, `guard check`) cannot hang.
+    // A child that dies first (timeout kill, abort, missing binary) makes the
+    // write fail with EPIPE; unhandled, that `error` would crash the host
+    // instead of failing open. The callback above already reports the failure.
+    child.stdin.on("error", () => {});
     if (input !== undefined) {
       child.stdin.write(input);
     }
@@ -344,7 +348,11 @@ async function registerPiTools(pi) {
           return { content: [{ type: "text", text: KETCH_HINT }] };
         }
         if (out.failed) {
-          return { content: [{ type: "text", text: `rtok ${t.name} failed; retry or continue without it` }] };
+          return {
+            content: [
+              { type: "text", text: `rtok ${t.name} failed; retry or continue without it` },
+            ],
+          };
         }
         return { content: [{ type: "text", text: String(out.stdout ?? "") }] };
       },

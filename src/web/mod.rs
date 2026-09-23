@@ -252,7 +252,10 @@ async fn ws_upgrade(
 }
 
 /// Browsers send `Origin` on cross-site WebSocket upgrades; non-browser clients
-/// send none. Reject only a present `Origin` whose host differs from `Host`.
+/// send none. Reject a present `Origin` whose host differs from `Host`, and one
+/// whose `Host` is a DNS name other than `localhost`: a rebinding page
+/// (`evil.example` resolved to 127.0.0.1) sends a matching `Origin` and `Host`,
+/// and an IP literal or `localhost` is the only name it cannot point here.
 fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()) else {
         return true;
@@ -261,9 +264,15 @@ fn origin_allowed(headers: &HeaderMap) -> bool {
         return false;
     };
     match (origin_host(origin), host_host(host)) {
-        (Some(o), Some(h)) => o.eq_ignore_ascii_case(&h),
+        (Some(o), Some(h)) => o.eq_ignore_ascii_case(h) && rebind_safe(h),
         _ => false,
     }
+}
+
+fn rebind_safe(host: &str) -> bool {
+    host.parse::<std::net::IpAddr>().is_ok()
+        || host.eq_ignore_ascii_case("localhost")
+        || host.to_ascii_lowercase().ends_with(".localhost")
 }
 
 fn origin_host(origin: &str) -> Option<&str> {
@@ -377,4 +386,43 @@ fn allowlisted_plugin_enabled(cfg: &Config, key: &str) -> bool {
 
 fn message_frame(text: &str) -> String {
     json!({ "type": "message", "text": text }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(origin: Option<&str>, host: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("host", host.parse().unwrap());
+        if let Some(o) = origin {
+            h.insert("origin", o.parse().unwrap());
+        }
+        h
+    }
+
+    /// T193: same-origin loopback and header-less clients pass; a foreign page, an
+    /// opaque `null` origin and a DNS-rebinding name (matching Origin and Host) do not.
+    #[test]
+    fn origin_gate_blocks_cross_site_and_rebinding() {
+        for (origin, host) in [
+            (None, "evil.example:4444"),
+            (Some("http://127.0.0.1:4444"), "127.0.0.1:4444"),
+            (Some("http://localhost:4444"), "localhost:4444"),
+            (Some("http://[::1]:4444"), "[::1]:4444"),
+            (Some("http://192.168.1.5:4444"), "192.168.1.5:4444"),
+        ] {
+            assert!(origin_allowed(&headers(origin, host)), "{origin:?} {host}");
+        }
+        for (origin, host) in [
+            ("http://evil.example", "127.0.0.1:4444"),
+            ("null", "127.0.0.1:4444"),
+            ("http://evil.example:4444", "evil.example:4444"),
+        ] {
+            assert!(
+                !origin_allowed(&headers(Some(origin), host)),
+                "{origin} {host}"
+            );
+        }
+    }
 }

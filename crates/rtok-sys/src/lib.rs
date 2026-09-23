@@ -81,13 +81,42 @@ pub fn setsid() {
     }
 }
 
+/// Windows only: stop the next spawned child from inheriting this process's own stdio
+/// handles. `CreateProcess` inherits every already-inheritable handle the caller holds once a
+/// child is given any redirected stdio — not just the handles that child was assigned — so a
+/// supervisor spawned with `Stdio::null()` still keeps alive whatever piped our own stdout or
+/// stderr (a test harness's `Command::output()`, or any other parent that captured us). Held by
+/// a process meant to outlive us, that pipe's write end never closes, so the reader waiting on
+/// EOF (`output()`/`wait_with_output()`) blocks long after both it and we have exited — the
+/// hang behind T83.3. On Unix the equivalent fds are close-on-exec by default, so this is a
+/// no-op there.
+pub fn stop_inheriting_own_stdio() {
+    #[cfg(windows)]
+    {
+        win::stop_inheriting_std_handles();
+    }
+}
+
 #[cfg(windows)]
 mod win {
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, STILL_ACTIVE, SetHandleInformation,
+    };
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
     use windows_sys::Win32::System::Threading::{
         GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
         TerminateProcess,
     };
+
+    pub fn stop_inheriting_std_handles() {
+        for id in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            let handle = unsafe { GetStdHandle(id) };
+            if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+                continue;
+            }
+            unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) };
+        }
+    }
 
     pub fn alive(pid: i32) -> bool {
         if pid <= 0 {

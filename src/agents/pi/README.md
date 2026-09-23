@@ -4,7 +4,8 @@
 `~/.pi/agent/extensions` tree.
 
 No config file is edited: the install is one linked extension, `<extensions_path>/rtok` →
-`plugins/pi/` from the rtok install (D21). Nothing to back up; `remove` unlinks.
+`plugins/pi/` from the rtok install (D21). The hub skills (`skills/rtok`, `skills/worktrees`) are copied into
+`~/.pi/agent/skills/` like every other skill host (T234); the bundle carries none. Nothing to back up; `remove` unlinks.
 
 ## Modules
 
@@ -35,4 +36,5 @@ Host documentation setup writes against; re-check the links when this host chang
 
 - Extensions (`~/.pi/agent/extensions/*.ts` or `*/index.ts`; `tool_call` `{block, reason}`, `tool_result`, `context`, `registerTool`): https://pi.dev/docs/latest/extensions
 - Packages (`package.json` `pi` key, `pi install <path>`): https://pi.dev/docs/latest/packages
+- Skills (`~/.pi/agent/skills/<name>/`): https://pi.dev/docs/latest/skills
 - The linked bundle: `plugins/pi/README.md`

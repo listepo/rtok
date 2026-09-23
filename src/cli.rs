@@ -30,10 +30,14 @@ pub struct Cli {
 enum Cmd {
     /// Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
     Hook {
-        event: String,
+        #[arg(required_unless_present = "serve")]
+        event: Option<String>,
         /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
         #[arg(long)]
         host: Option<String>,
+        /// Run the resident hook process `rtok-hook` talks to (T178, D32)
+        #[arg(long, hide = true, conflicts_with_all = ["event", "host"])]
+        serve: bool,
     },
     /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
     Mcp {
@@ -696,6 +700,9 @@ enum ConfigCmd {
 }
 
 pub fn run() -> Result<()> {
+    // T225: `RUST_LOG` debug log on stderr, before clap so a parse failure is logged too.
+    crate::log::init_stderr();
+    log::debug!(target: "rtok::cli", "argv {:?}", std::env::args_os().collect::<Vec<_>>());
     let cli = Cli::parse();
     let config_file = cli.config.clone();
     match cli.cmd {
@@ -780,9 +787,10 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Hook { event, host } => {
+        Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
+        Cmd::Hook { event, host, .. } => {
             let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
-            crate::hooks::run(&event, io::stdin(), io::stdout(), &cfg);
+            crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
             let _ = io::stdout().flush();
         }
         Cmd::Stats {
@@ -1369,18 +1377,35 @@ pub fn run() -> Result<()> {
             json,
         } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let tty = io::stdout().is_terminal();
             let out = match action {
                 // T24.3: runs until Ctrl-C. The loop only ever writes characters — no raw
                 // mode, no alternate screen — so there is no terminal state to restore.
+                // T225.1: through tailspin the stream is a pipe from the loop's point of
+                // view; `tspin --print` colours each row as it arrives.
                 Some(LogsCmd::Watch) => {
-                    let mut out = io::stdout();
-                    let tty = out.is_terminal();
-                    crate::log::watch(&cfg, lines, &mut out, tty)?;
+                    if let Some(mut viewer) = crate::log::Tspin::start(&cfg, tty) {
+                        let watched = crate::log::watch(&cfg, lines, viewer.sink(), false);
+                        viewer.finish();
+                        watched?;
+                    } else {
+                        crate::log::watch(&cfg, lines, &mut io::stdout(), tty)?;
+                    }
                     return Ok(());
                 }
                 // The selection is the model's Logs page (T15.11); the numbering and colour
-                // are this command's rendering of it.
-                None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
+                // are this command's rendering of it — tailspin's when `[log] tspin` says so.
+                None => {
+                    let plain = model::Model::new(&cfg, None).log_lines(lines);
+                    if !json
+                        && !plain.is_empty()
+                        && let Some(viewer) = crate::log::Tspin::start(&cfg, tty)
+                    {
+                        viewer.print(&crate::log::numbered(&plain));
+                        return Ok(());
+                    }
+                    crate::log::screen(&plain)
+                }
                 Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };
             if json {
@@ -1626,7 +1651,7 @@ fn setup_flags(
     Some(flags)
 }
 
-fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
+pub(crate) fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
     let host = host?;
     use figment::value::{Dict, Value};
     let mut hook = Dict::new();

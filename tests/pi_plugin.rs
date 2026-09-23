@@ -77,22 +77,6 @@ fn pi_package_is_extension_and_skill_without_tools() {
     assert_eq!(exts.len(), 1, "one extension entry");
     assert!(exts[0].as_str().unwrap().ends_with("rtok.ts"), "{exts:?}");
     assert!(dir.join("extensions/rtok.ts").is_file());
-    assert!(dir.join("skills/rtok/SKILL.md").is_file());
-}
-
-/// T155: pi loads skills from the package itself, so the `worktrees` skill rides as a copy;
-/// unlike the pi-flavoured `rtok` skill it must stay byte-identical to the hub.
-#[test]
-fn pi_bundles_the_worktrees_skill_byte_for_byte() {
-    let hub = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills/worktrees/SKILL.md");
-    let copy = root().join("skills/worktrees/SKILL.md");
-    assert_eq!(
-        fs::read_to_string(&hub).unwrap(),
-        fs::read_to_string(&copy).unwrap_or_default(),
-        "{} must equal {}",
-        copy.display(),
-        hub.display()
-    );
 }
 
 #[test]

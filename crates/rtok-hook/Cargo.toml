@@ -1,0 +1,10 @@
+[package]
+name = "rtok-hook"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Wire format between the rtok-hook client and the resident `rtok hook --serve` (std only)"
+license = "MIT"
+
+[lints.rust]
+unsafe_code = "forbid"

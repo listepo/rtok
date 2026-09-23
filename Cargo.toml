@@ -2,7 +2,7 @@
 # plugin contract; `crates/rtok-webui` is excluded because it builds for wasm through its own
 # toolchain and must not join `cargo test` here.
 [workspace]
-members = ["crates/rtok-agent-sdk", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
+members = ["crates/rtok-agent-sdk", "crates/rtok-hook", "crates/rtok-plugin-sdk", "crates/rtok-sys", "crates/rtok-wasm-demo-guest"]
 exclude = ["crates/rtok-webui"]
 
 [package]
@@ -31,6 +31,11 @@ include = ["plugins/", "skills/"]
 [[bin]]
 name = "rtok"
 path = "src/main.rs"
+
+# T178/D32: the std-only hook client; a bin of this package so it shares rtok's version.
+[[bin]]
+name = "rtok-hook"
+path = "src/bin/rtok-hook.rs"
 
 [[bench]]
 name = "graph"
@@ -93,6 +98,7 @@ figment = { version = "0.10", features = ["toml", "env"] } # config layering + p
 diesel = { version = "2.2", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] } # D13 typed models
 libsqlite3-sys = { version = "0.38", features = ["bundled"] } # FTS5 in the SQLite bundle
 rtok-sys = { path = "crates/rtok-sys" } # demon kill/setsid + flock (Windows-safe shims; rustix stays inside rtok-sys on Unix)
+rtok-hook = { path = "crates/rtok-hook" } # T178/D31: wire format shared with the std-only hook client
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11" # call_io archive checksums (T13.3)
@@ -136,6 +142,8 @@ tree-sitter-c-sharp = { version = "0.23.5", optional = true } # lang-csharp tags
 tree-sitter-ruby = { version = "0.23.1", optional = true } # lang-ruby tags (T52.2)
 tree-sitter-php = { version = "0.24.2", optional = true } # lang-php tags (T52.2)
 jsonc-parser = { version = "0.33.2", features = ["serde"] } # JSONC (comments + trailing commas) parse of Zed settings (T222)
+log = "0.4.34" # T225: logging facade; env_logger drains it, every D26 line is mirrored into it
+env_logger = "0.11.11" # T225: `RUST_LOG` debug log on stderr; the filter defaults to `off`, not `error`
 
 [dev-dependencies]
 assert_cmd = "2" # CLI e2e through `Command::cargo_bin` (plan Working agreement)

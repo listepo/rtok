@@ -2,8 +2,9 @@
 //!
 //! One supervisor process per service. `start` detaches `rtok demon supervise <name>`; that
 //! process re-spawns `rtok <name>` every time the child exits, and stops only when `stop` drops
-//! a `<name>.stop` marker beside the state file. Nothing here runs on the hook path: `rtok hook`
-//! never reads this state and fails open whether a supervisor is up or not (D1).
+//! a `<name>.stop` marker beside the state file. `rtok hook` never reads this state and fails open
+//! whether a supervisor is up or not (D1); the `hook` service only keeps the optional resident
+//! `rtok hook --serve` up, which `rtok-hook` uses when it answers and bypasses when not (D32).
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -28,6 +29,7 @@ pub enum Service {
     Proxy,
     Mcp,
     Web,
+    Hook,
 }
 
 impl Service {
@@ -37,6 +39,17 @@ impl Service {
             Self::Proxy => "proxy",
             Self::Mcp => "mcp",
             Self::Web => "web",
+            Self::Hook => "hook",
+        }
+    }
+
+    /// What the supervisor runs: the subcommand, plus `--serve` for the resident hook (D32).
+    fn args(self) -> &'static [&'static str] {
+        match self {
+            Self::Proxy => &["proxy"],
+            Self::Mcp => &["mcp"],
+            Self::Web => &["web"],
+            Self::Hook => &["hook", "--serve"],
         }
     }
 
@@ -121,6 +134,10 @@ fn targets(cfg: &Config, named: &[Service], running_first: bool) -> Result<Vec<S
 pub fn start(cfg: &Config, config_file: Option<&Path>, named: &[Service]) -> Result<()> {
     fs::create_dir_all(&cfg.demon.state_dir)?;
     let exe = on_disk_exe()?;
+    // The supervisor below outlives this command; on Windows it would otherwise inherit
+    // whatever piped our own stdout/stderr (a test harness, a captured parent) and hold that
+    // pipe open forever, so the piper's read to EOF never returns (T83.3). No-op on Unix.
+    rtok_sys::stop_inheriting_own_stdio();
     for service in targets(cfg, named, false)? {
         // The supervisor's own lock is the truth; the state file can lag it or name a reused pid.
         if claim(cfg, service)?.is_none() {
@@ -501,7 +518,7 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
             cmd.arg("--config").arg(c);
         }
         let mut child = cmd
-            .arg(service.as_str())
+            .args(service.args())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

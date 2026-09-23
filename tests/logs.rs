@@ -160,3 +160,100 @@ fn watch_streams_a_line_from_another_process_and_survives_a_rotation() {
         "a pipe gets plain rows, not escapes: {got:?}"
     );
 }
+
+/// T225: the stderr debug log is `RUST_LOG`-gated — silent without it, argv with it.
+fn rtok_stderr(home: &Path, rust_log: Option<&str>) -> String {
+    let mut cmd = Command::new(bin());
+    cmd.args(["logs", "--lines", "1"])
+        .env("RTOK_HOME", home)
+        .env("HOME", home)
+        .env("RUST_LOG_STYLE", "never")
+        .env_remove("RUST_LOG");
+    if let Some(filter) = rust_log {
+        cmd.env("RUST_LOG", filter);
+    }
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[test]
+fn rust_log_off_leaves_stderr_empty() {
+    let home = home("rust-log-off");
+    seed_rotated(&home);
+    assert_eq!(rtok_stderr(&home, None), "");
+}
+
+#[test]
+fn rust_log_debug_prints_argv_on_stderr() {
+    let home = home("rust-log-debug");
+    seed_rotated(&home);
+    let err = rtok_stderr(&home, Some("rtok=debug"));
+    assert!(err.contains("DEBUG rtok::cli] argv"), "{err}");
+    assert!(err.contains("\"--lines\""), "{err}");
+}
+
+/// T225.1: `[log] tspin` hands the numbered rows to the `tspin` on `PATH`; a fake tailspin tags
+/// each row so the pipe is visible. `off` — and `auto` off a terminal — keep rtok's rendering.
+#[cfg(unix)]
+fn fake_tspin(home: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = home.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let exe = bin.join("tspin");
+    fs::write(
+        &exe,
+        "#!/bin/sh\n[ \"$1\" = --print ] || exit 2\nsed 's/^/TSPIN /'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+    bin
+}
+
+#[cfg(unix)]
+fn rtok_logs_with_tspin(home: &Path, mode: &str) -> String {
+    let path = std::env::var("PATH").unwrap_or_default();
+    let out = Command::new(bin())
+        .args(["logs", "--lines", "2"])
+        .env("RTOK_HOME", home)
+        .env("HOME", home)
+        .env("PATH", format!("{}:{path}", fake_tspin(home).display()))
+        .env("RTOK_LOG_TSPIN", mode)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn tspin_always_pipes_the_numbered_rows_through_the_viewer_on_path() {
+    let home = home("tspin-always");
+    seed_rotated(&home);
+    let out = rtok_logs_with_tspin(&home, "always");
+    assert_eq!(
+        out.lines().collect::<Vec<_>>(),
+        ["TSPIN 1 live-4", "TSPIN 2 live-3"],
+        "{out}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn tspin_auto_and_off_keep_the_builtin_rendering_on_a_pipe() {
+    let home = home("tspin-off");
+    seed_rotated(&home);
+    for mode in ["auto", "off"] {
+        let out = rtok_logs_with_tspin(&home, mode);
+        assert!(!out.contains("TSPIN"), "{mode}: {out}");
+        assert_eq!(out.lines().next(), Some("1 live-4"), "{mode}: {out}");
+    }
+}

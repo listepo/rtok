@@ -7,10 +7,10 @@ here: a server and a TTY are not snapshot material.
 $ rtok hook --help
 Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
 
-Usage: rtok hook [OPTIONS] <EVENT>
+Usage: rtok hook [OPTIONS] [EVENT]
 
 Arguments:
-  <EVENT>  
+  [EVENT]  
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -635,7 +635,7 @@ Detach a supervisor that restarts the service whenever it dies
 Usage: rtok demon start [OPTIONS] [SERVICE]...
 
 Arguments:
-  [SERVICE]...  [possible values: proxy, mcp, web]
+  [SERVICE]...  [possible values: proxy, mcp, web, hook]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -647,7 +647,7 @@ Ask the supervisor and its child to exit
 Usage: rtok demon stop [OPTIONS] [SERVICE]...
 
 Arguments:
-  [SERVICE]...  [possible values: proxy, mcp, web]
+  [SERVICE]...  [possible values: proxy, mcp, web, hook]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -659,7 +659,7 @@ Stop, then start
 Usage: rtok demon restart [OPTIONS] [SERVICE]...
 
 Arguments:
-  [SERVICE]...  [possible values: proxy, mcp, web]
+  [SERVICE]...  [possible values: proxy, mcp, web, hook]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -671,7 +671,7 @@ State, pids, uptime, restarts and log path; every service when none is named
 Usage: rtok demon status [OPTIONS] [SERVICE]...
 
 Arguments:
-  [SERVICE]...  [possible values: proxy, mcp, web]
+  [SERVICE]...  [possible values: proxy, mcp, web, hook]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
@@ -684,7 +684,7 @@ SIGKILL instead of SIGTERM, and drop the state file
 Usage: rtok demon kill [OPTIONS] [SERVICE]...
 
 Arguments:
-  [SERVICE]...  [possible values: proxy, mcp, web]
+  [SERVICE]...  [possible values: proxy, mcp, web, hook]
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)

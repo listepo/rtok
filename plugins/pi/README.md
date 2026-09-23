@@ -8,7 +8,7 @@ pi loads a directory in `extensions/` from its `package.json` `pi.extensions` fi
 
 Files:
 
-- `package.json` — pi manifest: `pi.extensions` → `extensions/rtok.ts`, `pi.skills` → `skills/`.
+- `package.json` — pi manifest: `pi.extensions` → `extensions/rtok.ts`. No `pi.skills`: `rtok agents install pi` copies the hub `skills/` into `~/.pi/agent/skills/` (T234).
 - `extensions/rtok.ts` — `tool_call` → `rtok guard check` (T70.5: `{block:true, reason}` when
   a duplicate read/command is denied; missing `rtok`, non-zero, unparsable or a deny without
   a reason fails open); bash then rewrites to `rtok run -- <command>`; `tool_result` seeds
@@ -21,8 +21,6 @@ Files:
   registers the measured MCP set through `pi.registerTool` as `rtok mcp --call` (T70.3).
   Missing `rtok` fails open and names ketch (`ketch install listepo/rtok`). Hook hosts
   (Claude/Cursor/Codex/Copilot) are T58.2.
-- `skills/rtok/SKILL.md` — tells the model how to recover full output (`rtok expand <id>`).
-- `skills/worktrees/SKILL.md` — copy of the hub `skills/worktrees/` skill (git worktrees via `rtok worktree`); kept byte-identical by `tests/pi_plugin.rs`.
 - `tests/load.test.ts` — loads the linked directory with pi's own `discoverAndLoadExtensions` and expects
   one extension with `tool_call` and `tool_result`; skipped when pi is not installed.
 - `tests/rtok.test.ts` — vitest unit test of the extension against a fake `rtok` on PATH (`tests/node/fake-rtok.ts`, every OS); run by

@@ -1,7 +1,7 @@
 // Unit test of the pi extension (T47.3): the extension talks to `rtok` on PATH, so each case
 // puts a fake `rtok` first on PATH (tests/node/fake-rtok.ts) and drives the two handlers through
 // a stub `pi`. Lives outside `extensions/` so pi never loads it.
-import { fakeHangingRtok, fakeRtok } from "../../../tests/node/fake-rtok.ts";
+import { fakeExitingRtok, fakeHangingRtok, fakeRtok } from "../../../tests/node/fake-rtok.ts";
 import extension from "../extensions/rtok.ts";
 
 /** `filter` prints `out`; `"echo"` prints stdin back. */
@@ -132,6 +132,16 @@ test("a wedged rtok times out and tool_result keeps the original", async () => {
   // Two sequential spawns (PostToolUse hook, then filter) each time out at 5 s.
   expect(Date.now() - start).toBeLessThan(20_000);
 }, 30_000);
+
+test("an rtok that exits before reading stdin keeps the original (EPIPE fails open)", async () => {
+  fakeExitingRtok();
+  const on: Record<string, Handler> = {};
+  extension({ on: (name: string, fn: Handler) => (on[name] = fn) });
+  // Far past the pipe buffer, so the write is still pending when the child exits.
+  const text = "x".repeat(4 << 20);
+  const result = await on.tool_result({ toolName: "bash", content: [{ type: "text", text }] });
+  expect(result, "the result passes through unchanged").toBeUndefined();
+});
 
 /** The `archive rewrite --stdin` fake: rewrites the first large toolResult to a pointer. */
 const ARCHIVE_REWRITES = `

@@ -1375,3 +1375,150 @@ No host accounts for build output. Claude Code exposes `WorktreeCreate`/`Worktre
 2. The always-safe operation is "delete tagged caches, keep the worktree"; `git worktree remove` cannot express it (it refuses the whole worktree when anything is uncommitted) → T152.
 3. Inventory first, then deletion: T150 → T151 → T152/T153. Conventions ship as a skill so they cost one description line, not `AGENTS.md` budget → T155.
 4. Every measured problem starts at creation (location, name, reason-less lock), and creation is the only moment the owner is known for certain. rtok creates the worktree itself → T158. A skill is advice; on Claude Code the `WorktreeCreate`/`WorktreeRemove` hooks are the one place the rules cannot be skipped, at the price of a decision on what fail-open and the 10 ms budget mean for a hook that must spawn git → T159.
+
+## 19. Hook wall-clock time as Claude Code sees it (2026-09-23)
+
+T178. Machine: the creator's Mac (Apple silicon, macOS, `/bin/sh` → bash), shared with other agents' cargo builds, so every run states its load average. Release build of `68760c6` (`target/release/rtok`, 26,831,904 bytes). All runs use an isolated `RTOK_HOME` and two payloads recorded in the store (a 968-byte `PreToolUse` Bash call and a 2,692-byte `PostToolUse` Bash call, `cwd` rewritten to the worktree). Not a token saving: no `Measurement` row follows.
+
+### 19.1 What Claude Code records
+
+Claude Code writes every hook run into the session transcript as an `attachment` (`hook_success`, `hook_cancelled`, `hook_non_blocking_error`) with `durationMs` and `command`. Command: `find ~/.claude/projects -name '*.jsonl' -mtime -3 | xargs cat | jq 'select(.type=="attachment") | .attachment | select(.durationMs!=null)'`, grouped by `command`.
+
+| `command` | runs | p10 | p50 | p95 |
+| --- | ---: | ---: | ---: | ---: |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PreToolUse` (plugin) | 5,997 | 18 ms | 23 ms | 71 ms |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PostToolUse` (plugin) | 7,976 | 18 ms | 20 ms | 52 ms |
+| `rtok hook PreToolUse` (settings-file install) | 3,246 | 14 ms | 17 ms | 78 ms |
+| `rtok hook PostToolUse` (settings-file install) | 4,566 | 13 ms | 16 ms | 80 ms |
+| another vendor's `/bin/sh` hook (reads stdin, prints `{}`, may POST to a local port) | 11,699 | 13 ms | 19 ms | 53 ms |
+
+### 19.2 Reproducing it: node `spawn(cmd, {shell: true})`, payload on stdin, clock stops on `close`
+
+A 30-line node harness spawns each command the way Claude Code does, round-robin so load drift hits every command equally. 300 rounds, load average 12.6 → 21.6:
+
+| command | p50 | p95 | delta |
+| --- | ---: | ---: | --- |
+| `true` | 5.19 ms | 7.27 ms | node + `/bin/sh` floor |
+| `rtok --version` | 10.81 ms | 13.59 ms | +5.6 ms: loading the 27 MB binary, clap |
+| `rtok hook PreToolUse` | 13.61 ms | 19.63 ms | +2.8 ms: the hook itself |
+| `"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" PreToolUse` (shipped) | 20.01 ms | 24.88 ms | +6.4 ms: the launcher |
+
+The harness lands on Claude Code's own p50 (20–23 ms), so the gap between the 0.3 ms in-process `calls.ms` and what Claude Code waits for is: shell floor 5 ms, binary start 5.6 ms, launcher 6.4 ms, hook work 2.8 ms. `hyperfine -N -w 10 -r 200` (no shell): `/bin/echo` 2.0 ms, `rtok --version` 5.3 ms, `rtok hook PreToolUse` 8.4 ms, `rtok hook PostToolUse` 8.6 ms.
+
+### 19.3 Root causes, largest first
+
+1. **The launcher, 6.4 ms.** Claude Code runs `/bin/sh -c`, which execs `hook.sh`, a second `/bin/sh` (bash in sh mode, ~5 ms to start on macOS), which forks once more for `$(command -v rtok)` before it execs `rtok`.
+2. **Binary start, 5.6 ms over the shell floor** (3.3 ms over `/bin/echo` in hyperfine). Two static initialisers only (`__mod_init_func` is 16 bytes); dyld maps 25 MB of `__TEXT`, rebases 860 KB of `__DATA_CONST` and loads Security, CoreFoundation and CoreServices. `DYLD_PRINT_STATISTICS` prints nothing on this macOS, and samply is not installed, so this was not split further.
+3. **In-process, 2.9 ms.** Temporary `Instant` marks (not committed), p50 of 200 runs, with a second connection held open as a live MCP server holds one: clap parse 0.23 ms, `Config::load_lenient` 1.07 ms (figment: defaults, user TOML, legacy fold, env), `Store::open` 0.84 ms (connection, pragmas, settled-migration check, host row), registry 0.01 ms, `calls` row and plugins 0.6 ms, `set_call_ms` and `call_io` 0.08 ms, drop 0.08 ms. With no other connection open, drop costs 1.1–2.1 ms more: the last connection checkpoints the WAL on close. Migrations do not run on a settled store (`migrate` returns after one `COUNT`).
+
+### 19.4 The 5 s cancellations and UserPromptSubmit
+
+`~/.claude/settings.json` has no `hooks` key; the only enabled plugin is `rtok@rtok`, whose `hooks.json` owns every `UserPromptSubmit` hook, with `timeout: 5` from `setup.hook_timeout_s`. The ten cancelled rtok hooks (5 `PreToolUse`, 5 `UserPromptSubmit`, 2026-09-14 to 2026-09-21) all ran the older settings-file command `rtok hook <event>`. The store does hold `UserPromptSubmit` rows (905, mean 0.52 ms in-process). For four of the ten, the matching `calls` row carries a timestamp 0–1 s before Claude Code logged the cancellation, 5 s after it started the hook, and recorded 0.3–0.6 ms in-process; the other six left no row in that window. So the stall came before `record_call`, which is `Config` load or `Store::open`. `Store::open` waits `busy_timeout = 1000` ms on a locked database and retries a locked open up to ten times (~11 s at worst), so this points at the SQLite write lock. Not reproduced here.
+
+### 19.5 Change and result
+
+`plugins/claude/hooks/hooks.json` now runs `command -v rtok >/dev/null 2>&1 && exec rtok hook <event>; exec "${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh" <event>`. `command -v` is a shell builtin, so with `rtok` on PATH Claude Code's own shell execs it directly; without it, `hook.sh` keeps the ketch-store lookup and the fail-open hint. Same harness, 500 rounds, load average 40 → 30:
+
+| event | before (`hook.sh`) p50 / p95 | after p50 / p95 | `true` floor p50 |
+| --- | --- | --- | ---: |
+| PreToolUse | 20.89 / 62.26 ms | 14.63 / 41.65 ms | 5.38 ms |
+| PostToolUse | 18.99 / 33.33 ms | 13.30 / 22.24 ms | 4.86 ms |
+
+About −6 ms, or 30 %, on every hook call. The T178 Check (p50 under 10 ms as Claude Code sees it) is **not met**: the shell floor plus `rtok --version` alone is 10.8 ms. What is left cannot come from trimming the hook path. Parse, config and store open together are 2.1 ms. Reaching 10 ms needs a process that starts in ~1–2 ms: a small hook client with no TLS or framework dependencies, talking to a resident process over a socket, and falling open when the process is absent.
+
+### 19.6 A locked store (2026-09-23)
+
+Where the waits came from: the hook opens the store fine with another writer holding the lock (WAL readers never wait), and its first write, `record_call`, waited out `busy_timeout = 1000` ms. The error was dropped, so the plugins ran on and each of their writes could wait another second. A migration run held on a fresh or upgraded store waits up to 30 s. Fix: `Store::open_with` takes a `LockWait` (per-statement `busy_timeout`, connect attempts, migration wait). `Store::open` keeps 1 s × 10 / 30 s; `rtok hook` passes 5 ms × 1 / 5 ms. When `record_call` comes back "database is locked", the hook returns `{}`: input unchanged, no row written, one `rtok: hook <event> skipped: store locked` line on stderr.
+
+`tests/hook_fail_open.rs` `a_locked_store_fails_the_hook_open_in_ms`: another thread holds `BEGIN IMMEDIATE` on the store, and `rtok hook` (debug build) runs with a Bash payload that the unlocked control run rewrites. Wall time of the whole process, start to exit:
+
+| event | before | after (3 runs) |
+| --- | --- | --- |
+| PreToolUse | 1.06 s, command still rewritten | 19–31 ms, `{}` |
+| PostToolUse | 2.13 s | 21–23 ms, `{}` |
+| UserPromptSubmit | 1.07 s | 21–22 ms, `{}` |
+| SessionStart | 1.07 s | 20–30 ms, `{}` |
+
+This does not reproduce a full 5 s cancellation. With the lock held, one event wrote at most two statements that waited, but UserPromptSubmit injection and a migration's 30 s wait can add more. After the fix, none of these waits exceeds 5 ms on the hook path.
+
+## 20. WebSearch, WebFetch and browser page text: size, reach, what would cut it (2026-09-23)
+
+T180. Corpus: `~/.claude/projects/**/*.jsonl` modified in the last 7 days — 347 files, 33,599 tool results, deduplicated by `tool_use_id` (resumed sessions copy history, which inflated the 2026-09-22 audit's figures). Bytes are the result text the model received, after any rtok shrinking. Claude Code 2.1.267. Scan scripts stayed in scratch.
+
+### 20.1 Size
+
+| Tool | Calls | Bytes | Share of all tool-result bytes | p50 | p90 | max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| all tools | 33,599 | 31,948,245 | 100 % | | | |
+| `WebSearch` | 552 | 1,544,421 | 4.83 % | 2,803 | 3,310 | 4,827 |
+| `WebFetch` | 513 | 1,039,970 | 3.26 % | 1,266 | 2,835 | 41,232 |
+| `Claude_Browser` `get_page_text` | 16 | 150,143 | 0.47 % | 4,561 | 25,477 | 40,447 |
+| `Claude_Browser` `read_page` | 13 | 95,083 | 0.30 % | 4,911 | 20,292 | 20,301 |
+| Bash calling `curl`/`wget`/`gh api` | 160 | 231,431 | 0.72 % | 575 | 3,920 | 17,258 |
+
+Web results together: 3.06 MB, 9.6 % of tool-result bytes — third after Bash (41.8 %) and file reads (`Read` + MCP reads, 34.7 %). `claude-in-chrome` did not appear in the window.
+
+### 20.2 Anatomy (400-result samples per tool)
+
+- **`WebSearch`**: a fixed header, a `Links: [...]` JSON array (title + url, usually 10 entries), prose written by the search sub-call, and a `REMINDER` line about citing sources. The `Links` array is **48.4 %** of the bytes. Only **12 %** of listed links (mean per result) are cited by url or host in the prose; the rest are often off-topic (a search for cargo cleanup tools lists Wikipedia pages on a spacecraft and a vacuum cleaner). 615 of 3,665 link mentions repeat a url already listed in an earlier result.
+- **`WebFetch`**: already reduced by the host — a small model answers the agent's prompt over the page, so p50 is 1.3 KB. The long tail is pages returned nearly verbatim (Markdown docs such as `code.claude.com`): 12 of 400 results above 8 KB hold 220 KB.
+- **Browser page text**: page text or an accessibility tree with `[ref_N]` handles the agent needs for clicks; 415 duplicate-line bytes in the largest page. Below the 1 % gate on its own.
+
+### 20.3 Offline estimate of candidate reductions
+
+| Reduction | Tool | Saving on sample | Lossless? |
+| --- | --- | ---: | --- |
+| `Links` JSON → one `- title <url>` line per link | `WebSearch` | 5.3 % | yes (format only) |
+| same, plus keep only links cited in the prose; the rest behind `expand <id>` | `WebSearch` | 42.8 % | via `expand` |
+| head/tail above 8 KB, rest behind `expand <id>` | `WebFetch` | 15.9 % (12 of 400 hit) | via `expand` |
+| head/tail above 4 KB | `WebFetch` | 25.8 % (34 of 400 hit) | via `expand` |
+
+Scaled to the week: WebSearch 42.8 % × 1.54 MB ≈ 661 KB, WebFetch (8 KB cap) 15.9 % × 1.04 MB ≈ 165 KB — ≈ 826 KB, **2.6 % of all tool-result bytes**, before counting that each result is re-sent (cached) on every later turn of its session. These are estimates on a scratch script, not `Measurement` rows; a built filter must record its own.
+
+### 20.4 Surfaces that can reach these results
+
+| Surface | Reaches | Today | Notes |
+| --- | --- | --- | --- |
+| `rtok proxy` `proxy_filter` on the Anthropic wire | every tool result in the request; tool name from the preceding `tool_use` | works for proxy users; **not the creator** — their `ANTHROPIC_BASE_URL` is `https://api.anthropic.com` | byte-stable rewrite on first sight keeps the cache prefix (the `archive` invariants); fail open on any parse error |
+| PostToolUse `updatedToolOutput` | native `WebSearch`/`WebFetch` in every Claude Code session | unknown — T134 is the probe | if honoured, the widest reach with no proxy |
+| PostToolUse `updatedMCPToolOutput` | MCP tools only (browser page text) | documented for MCP tools | browser text is 0.77 % — below the gate |
+| rtok MCP `fetch` replacing `WebFetch` (I-92) | pages the agent is steered to fetch through rtok | not built | loses the host's per-prompt summary, so a readable-text page (p50 several KB) would usually be **larger** than WebFetch's answer (p50 1.3 KB); wins only on the verbatim tail |
+| rtok replacing `WebSearch` | — | no | `WebSearch` is a server-side search; rtok has no search backend and should not add one |
+
+### 20.5 Recommendation
+
+One pure formatter for web results — `WebSearch`: compact the `Links` array and keep only cited links, the full array archived behind `expand <id>`; `WebFetch`: head/tail above a byte cap, archived — wired first behind whichever hook surface T134 opens for native tools, and into the proxy as a second consumer for proxy users. Do T134 before building anything: without `updatedToolOutput` the creator's own sessions see no saving. I-92 as written would grow context on the common case. Browser page text and Bash network calls stay below the gate. Proposed as I-97 in `ideas.md` for creator approval.
+
+## 21. General HTTP(S) interception as a surface: measured, not built (2026-09-23)
+
+T165. Question: would a local MITM proxy (`HTTPS_PROXY` + a CA the user trusts) reach agent tokens that `rtok proxy`, the hooks and MCP cannot? Corpus and method as §20: `~/.claude/projects`, last 7 days, 33,599 tool results deduplicated by `tool_use_id`, 31.9 MB of result text; Claude Code 2.1.267.
+
+### 21.1 How much agent context arrives over HTTP outside the model API
+
+| Result source | Share of tool-result bytes | How the bytes travel | Already reachable by |
+| --- | ---: | --- | --- |
+| `WebSearch` | 4.83 % | server-side search inside a model API call — not outside the API | `rtok proxy` (tool result in the next request); PostToolUse if T134 |
+| `WebFetch` | 3.26 % | the host fetches the page itself, then a small model answers the agent's prompt over it; some Markdown pages come back verbatim | `rtok proxy`; PostToolUse if T134 |
+| Bash `curl` / `wget` / `gh api` | 0.72 % | the command's own HTTP | Bash PreToolUse rewrite (`cmd`, `[curl]` rule) |
+| Browser page text (`Claude_Browser`) | 0.77 % | a separate browser renders the page; text returns as an MCP result | `updatedMCPToolOutput`; `rtok proxy` |
+| **Reachable only by interception** | **≈ 0 %** | | |
+
+Non-API HTTP carries 4.75 % of the bytes (WebFetch, Bash, browser), but every one of those results enters the context as a tool result that an existing surface already sees, and in its final form. An interceptor would see the raw page instead, and for WebFetch only before the host's summarizing call — so what it could shrink is that side call's input, not the agent's context. Below the card's 1 % gate: **do not build.** Creator approved the stop on 2026-09-23.
+
+Re-open when a host appears that fetches content client-side and places it in context through no hook, MCP or `*_BASE_URL` surface, and that share reaches ≥ 1 % of tool-result bytes on a 7-day scan.
+
+### 21.2 Survey (read 2026-09-23), kept for a re-open
+
+| Option | Version / date | Fit for rtok | CA install and removal | Pinning, HTTP/2, streaming |
+| --- | --- | --- | --- | --- |
+| mitmproxy | 12.2.3 (PyPI) | a second runtime (Python) beside the single rtok binary | own CA in `~/.mitmproxy`; the user trusts it per OS (Keychain, `update-ca-certificates`, `certutil`) | HTTP/1, 2, 3 and WebSockets; `ignore_hosts` passes hosts through untouched; TLS-failure hooks allow excluding a host after a pinning failure |
+| `hudsucker` (Rust) | 0.25.0, crates.io 2026-07-15 | in-process library on hyper + rustls, `rcgen` authority; fits the binary | rtok would generate the CA and script trust and removal itself | HTTP/2 feature, WebSocket interception; bypass for pinned hosts is rtok's job |
+| `http-mitm-proxy` (Rust) | 0.18.0, crates.io 2026-01-24 | lower-level library, smaller user base | same as `hudsucker` | SSE and WebSocket passed raw, no parsers |
+| Proxyman / Charles | desktop apps | not embeddable; GUI-first, commercial | `proxyman-cli install-root-cert … --trust` (macOS Keychain) | per-host SSL proxying toggles |
+| No MITM: `*_BASE_URL` proxy + hooks + MCP | shipped | the current design | none | nothing to pin; covers every row of §21.1 |
+
+Claude Code trusts its bundled Mozilla set plus the OS store by default (`CLAUDE_CODE_CERT_STORE=bundled,system`) and honours `HTTPS_PROXY`/`NO_PROXY` (code.claude.com network-config page, read 2026-09-23), so an interceptor would work for it without extra flags; clients that ship their own root set would reject the CA and must pass through untouched. Latency was not measured, since nothing is built.
+
+### 21.3 Privacy rule recorded for any future interception work
+
+Default-deny: no host is decrypted unless it is on an explicit allow-list of hosts that carry agent-visible text; everything else is a plain CONNECT tunnel. The CA key lives in `RTOK_HOME` with owner-only permissions, is never exported, and one command removes both the key and the trust entry. Nothing is stored beyond what `archive` already keeps under its retention. Creator choice, 2026-09-23.

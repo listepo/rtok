@@ -1,5 +1,4 @@
 - T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
-- T83.3. `tests/demon.rs` process-tree start/stop hangs on Windows (180 s timeouts)
 - T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
 - T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
 - T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
@@ -43,9 +42,11 @@
 - T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
-- T163.1. `src/store/symbols.rs` without raw SQL
 - T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
-- T165. Research: general HTTP(S) interception as a new surface
+- T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
+- T163.4. Migrations through `diesel_migrations`
+- T163.8. Retention without raw SQL; close T163
+- T163.9. Window and CTE queries through the shared extension module
 - T168. `agents list` tables flake on wrapper noise in `--version`
 - T170. A slow hook is logged, not only printed to stderr
 - T171. Claude Code sees the rtok MCP server twice
@@ -57,24 +58,15 @@
 - T177. Large source dumps through `cat`/`sed`/`grep` get a filter
 - T178. Hook wall-clock time as Claude Code sees it
 - T179. Why `read/dedup` and `read/delta` rarely fire
-- T180. Research: filtering WebFetch, WebSearch and browser page text
-- T181. `graph/cap` records 0% saving
 - T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
-- T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
 - T184. rtok never resolves its home to a relative `.rtok`
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
-- T187. `cmd` normalized dedupe panics on multibyte lines
-- T188. `inject::apply` emits one oversized injection whole — the D5 budget does not bind
-- T189. `cap_budget` drops PostToolUse context with no archive id
 - T190. `after_mcp` shortens MCP results on a second, divergent path
-- T191. `rtok mcp` answers a malformed or oversized request with silence
 - T192. `[mcp] tools` allow-list is dead config
-- T193. `rtok web` `/ws` accepts cross-origin WebSocket upgrades
 - T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
 - T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 - T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
-- T197. `mcp` launcher scripts: masked exit code and dead files the READMEs still promise
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
@@ -91,14 +83,20 @@
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T212. Semantic-cache key omits sampling params and tool schemas
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
-- T214. In-process plugin spawns have no timeout — a wedged `rtok` hangs the host
 - T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-- T217. `AGENTS.md` is ~4× its own 350-token budget
 - T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
-- T219. `rtok stats` p95 is the maximum
 - T220. Schema-drift guard compares column names only; seven tables escape it
 - T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
-- T222. Seven direct dependencies with no `toolchain.md` row
 - T223. `windows-sys` linked in three versions
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
+- T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
+- T225.1. `rtok logs` through tailspin
+- T234. Skills have one source: host plugins link `skills/`, never copy
+- T226. Web Sessions page: live-only filter and a help overlay
+- T227. `stats` page on `tui` and `web`
+- T228. Config page: `config show` / `config get` on `tui` and `web`
+- T229. Services page: `demon status` and `otel status` on `tui` and `web`
+- T230. Graph page: index status and dead symbols on `tui` and `web`
+- T231. Hosts page: `agents list` / `agents info` on `tui` and `web`
+- T232. Worktrees page: `worktree list` on `tui` and `web`

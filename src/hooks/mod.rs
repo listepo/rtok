@@ -3,6 +3,7 @@
 //! - [`types`] — stdin/stdout JSON contract (plan T0.6)
 //! - dispatcher — plan T2.1
 
+pub mod resident;
 pub mod types;
 
 use crate::config::Config;
@@ -13,6 +14,14 @@ use std::io::{Read, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::time::Instant;
 use types::{HookInput, HookOutput, HookSpecificOutput};
+
+/// T178: the hook's budget is 10 ms, so it waits 5 ms on another process's lock — one connect,
+/// migrations included — and then fails open. Every statement used to wait 1 s.
+const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
+    busy: std::time::Duration::from_millis(5),
+    attempts: 1,
+    migrate: std::time::Duration::from_millis(5),
+};
 
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
 /// With `[hook] fail_open = false` (debugging only) errors surface as a panic
@@ -101,7 +110,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let session = resolve_session(&input.session_id, &cfg.core.session_env, |k| {
         std::env::var(k).ok()
     });
-    let mut cx = Runtime::open(cfg.clone(), session)
+    let mut cx = Runtime::open_with(cfg.clone(), session, LOCK_WAIT)
         .map_err(|e| format!("hook {event}: store open: {e}"))?;
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
@@ -187,9 +196,16 @@ pub fn copilot_output(out: &HookOutput) -> Vec<u8> {
 pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     let start = Instant::now();
     let registry = Registry::new(&cx.config);
-    let parent = cx
-        .record_call("hook", "hook", Some(&input.hook_event_name))
-        .ok();
+    let parent = match cx.record_call("hook", "hook", Some(&input.hook_event_name)) {
+        Ok(id) => Some(id),
+        // T178: another process held the writer lock past `LOCK_WAIT`. Every later write would
+        // wait again, so pass the input through unchanged and record nothing.
+        Err(e) if crate::store::is_locked(&e) => {
+            eprintln!("rtok: hook {} skipped: store locked", input.hook_event_name);
+            return b"{}".to_vec();
+        }
+        Err(_) => None,
+    };
     let out = match input.hook_event_name.as_str() {
         "PreToolUse" => pre_tool(input, cx, &registry),
         "PostToolUse" => post_tool(input, cx, &registry),
@@ -534,53 +550,64 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
     }
 }
 
+/// Fit PostToolUse context to `plugins.inject.budget_tokens` (D5). Whatever does not fit is
+/// archived once and named by a `dropped:post_tool:<est> · expand: rtok expand <id>` marker
+/// (T189). The marker always survives: kept lines are given back until it fits, so a cut
+/// never loses the rest without an id.
 fn cap_budget(cx: &Runtime, text: &str) -> String {
     let budget = cx.config.plugins.inject.budget_tokens;
     if cx.estimate(text, Class::Prose) <= budget {
         return text.to_string();
     }
-    let mut out = String::new();
-    let mut rest = text.lines();
-    while let Some(line) = rest.next() {
-        let cand = if out.is_empty() {
-            line.to_string()
-        } else {
-            format!("{out}\n{line}")
-        };
-        if cx.estimate(&cand, Class::Prose) > budget {
-            let dropped = std::iter::once(line)
-                .chain(rest)
-                .collect::<Vec<_>>()
-                .join("\n");
-            let est = cx.estimate(&dropped, Class::Prose);
-            let marker = match rtok_plugin_sdk::Archive::put_archive(cx, dropped.as_bytes()) {
-                Ok(id) => format!("dropped:post_tool:{est} · expand: rtok expand {id}"),
-                Err(_) => format!("dropped:post_tool:{est}"),
-            };
-            if out.is_empty() {
-                // Estimates round up per part, so a prefix that fits the room left after
-                // `\n{marker}` keeps the whole line under budget.
-                let room = budget.saturating_sub(cx.estimate(&format!("\n{marker}"), Class::Prose));
-                let prefix = crate::plugin::fit_budget(&Ctx::new(cx), line, Class::Prose, room);
-                if !prefix.is_empty() {
-                    return format!("{prefix}\n{marker}");
-                }
-                return if cx.estimate(&marker, Class::Prose) <= budget {
-                    marker
-                } else {
-                    String::new()
-                };
-            }
-            let with = format!("{out}\n{marker}");
-            return if cx.estimate(&with, Class::Prose) <= budget {
-                with
-            } else {
-                out
-            };
-        }
-        out = cand;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut keep = 0;
+    while keep < lines.len() && cx.estimate(&lines[..=keep].join("\n"), Class::Prose) <= budget {
+        keep += 1;
     }
-    out
+    if keep == lines.len() {
+        return lines.join("\n");
+    }
+    // The id is 64 hex digits whatever the bytes, so a placeholder of the same length
+    // prices the marker before anything is archived.
+    let marker_for = |dropped: &str, id: &str| {
+        let est = cx.estimate(dropped, Class::Prose);
+        if id.is_empty() {
+            format!("dropped:post_tool:{est}")
+        } else {
+            format!("dropped:post_tool:{est} · expand: rtok expand {id}")
+        }
+    };
+    let placeholder = "0".repeat(64);
+    while keep > 0 {
+        let dropped = lines[keep..].join("\n");
+        let with = format!(
+            "{}\n{}",
+            lines[..keep].join("\n"),
+            marker_for(&dropped, &placeholder)
+        );
+        if cx.estimate(&with, Class::Prose) <= budget {
+            break;
+        }
+        keep -= 1;
+    }
+    let dropped = lines[keep..].join("\n");
+    let id = rtok_plugin_sdk::Archive::put_archive(cx, dropped.as_bytes()).unwrap_or_default();
+    let marker = marker_for(&dropped, &id);
+    if keep > 0 {
+        return format!("{}\n{marker}", lines[..keep].join("\n"));
+    }
+    // Estimates round up per part, so a prefix that fits the room left after `\n{marker}`
+    // keeps the whole line under budget. The archive holds the whole line, prefix included.
+    let room = budget.saturating_sub(cx.estimate(&format!("\n{marker}"), Class::Prose));
+    let prefix = crate::plugin::fit_budget(&Ctx::new(cx), lines[0], Class::Prose, room);
+    if !prefix.is_empty() {
+        return format!("{prefix}\n{marker}");
+    }
+    if cx.estimate(&marker, Class::Prose) <= budget {
+        marker
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -829,6 +856,29 @@ mod tests {
         let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
         assert_eq!(got, want.as_bytes(), "{marker}");
         assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
+    }
+
+    /// Lines that fit alone but leave no room for the id-carrying marker give lines
+    /// back: the marker is never dropped, and kept lines + `expand <id>` rebuild the input.
+    #[test]
+    fn cap_budget_gives_back_lines_so_the_marker_fits() {
+        let mut cx = Runtime::in_memory("cap-giveback").unwrap();
+        cx.config.plugins.inject.budget_tokens = 40;
+        let text = (0..200)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = cap_budget(&cx, &text);
+        assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
+        let (kept, marker) = out.rsplit_once('\n').expect("kept lines + marker");
+        assert!(marker.starts_with("dropped:post_tool:"), "{out}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
+        assert_eq!(id.len(), 64, "{marker}");
+        let rest = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(
+            format!("{kept}\n{}", String::from_utf8(rest).unwrap()),
+            text
+        );
     }
 
     #[test]

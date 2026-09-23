@@ -10,14 +10,16 @@ hugo := env("HUGO", "mise exec -- hugo --source site")
 jscpd := env("JSCPD", "mise exec -- jscpd")
 oxlint := env("OXLINT", "mise exec -- oxlint")
 oxfmt := env("OXFMT", "mise exec -- oxfmt")
+pytest := env("PYTEST", "mise exec -- pytest")
+tspin := env("TSPIN", "mise exec -- tspin")
 
 # Logical CPUs, portable across the OSes rtok's CI runs on (Linux/macOS/BSD, getconf fallback).
 cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *) getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4;; esac`
 
 default: check
 
-# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format
-check: fmt-check lint test build-min dup js
+# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format, Python tests
+check: fmt-check lint test build-min dup js python
 
 fmt:
     {{cargo}} fmt
@@ -47,18 +49,30 @@ js:
 js-fmt:
     {{oxfmt}} {{js_files}}
 
+# T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
+python:
+    {{pytest}} tools/tests
+
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 # `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml
 # reserve `num-test-threads`, which is this value.
-test:
+test: && dunnage
     {{cargo}} nextest run --workspace --test-threads {{cpus}}
 
 # Inner loop: build and run only the test targets the current change can reach. `nextest -E`
 # filters after the build, so the saving comes from cargo target selection (`--test <name>`);
 # tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an
 # accelerator, not a coverage proof — `just check` stays the gate before a commit.
-test-changed rev="HEAD":
+test-changed rev="HEAD": && dunnage
     NEXTEST_TEST_THREADS="{{cpus}}" CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
+
+# T236: lossless cleanup of ./target after tests (compress + dedupe); never deletes.
+# A no-op without dunnage (`ketch install dunnage`) or before the first build.
+dunnage:
+    #!/usr/bin/env sh
+    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    [ -d target ] || exit 0
+    dunnage run target || test $? -eq 2
 
 # T0.4: one plugin feature must build alone
 build-min:
@@ -157,3 +171,7 @@ codeql *langs="actions javascript-typescript python rust":
       [ "$n" = 0 ] || fail=1
     done
     exit $fail
+
+# Read rtok's own log (D26) through tailspin (T225); `just logs -f` follows it.
+logs *flags:
+    {{tspin}} {{flags}} "${RTOK_HOME:-$HOME/.rtok}/logs/rtok.log"

@@ -43,6 +43,19 @@ diesel::table! {
     }
 }
 
+// Composite PK (session, tool_use_id) since 0014: a repeated tool_use_id in a second
+// session is a second decision, not an ignored insert.
+diesel::table! {
+    archive_decisions (session, tool_use_id) {
+        session -> Text,
+        tool_use_id -> Text,
+        archive_id -> Text,
+        pointer -> Text,
+        expanded_ts -> Nullable<BigInt>,
+        ts -> BigInt,
+    }
+}
+
 diesel::table! {
     read_cache (session, path) {
         session -> Text,
@@ -197,6 +210,14 @@ diesel::table! {
     }
 }
 
+// 0018 (T69.6): hand-edit guard digest, keyed by name.
+diesel::table! {
+    kv (key) {
+        key -> Text,
+        value -> Text,
+    }
+}
+
 diesel::table! {
     symbols (id) {
         id -> Integer,
@@ -214,6 +235,24 @@ diesel::table! {
     }
 }
 
+// 0011 + 0016 (T68.3): one fingerprint and last index time per root.
+diesel::table! {
+    extractor (root) {
+        root -> Text,
+        fingerprint -> Text,
+        indexed_at -> Nullable<BigInt>,
+    }
+}
+
+// 0016 (T68.3): hook-staled files, listed until the next index replaces their rows.
+diesel::table! {
+    symbol_stale (root, path) {
+        root -> Text,
+        path -> Text,
+    }
+}
+
+diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
 diesel::joinable!(calls -> hosts (host_id));
@@ -230,6 +269,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     events,
     measurements,
     archive,
+    archive_decisions,
     read_cache,
     notes,
     usage,
@@ -242,4 +282,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     tokens,
     logs,
     symbols,
+    extractor,
+    symbol_stale,
 );

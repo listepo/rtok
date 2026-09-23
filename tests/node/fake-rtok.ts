@@ -48,3 +48,13 @@ export function fakeHangingRtok(ms = 30_000): void {
       `process.stdout.write("too late");`,
   );
 }
+
+/** A fake `rtok` that exits `code` at once without reading stdin, so a large
+ * write from the plugin hits a closed pipe (EPIPE): the plugin must fail open
+ * instead of crashing on the unhandled stream `error`. */
+export function fakeExitingRtok(code = 3): void {
+  const script = join(mkdtempSync(join(tmpdir(), "rtok-fake-exit-")), "rtok.cjs");
+  writeFileSync(script, `process.exit(${code});\n`);
+  process.env.PATH = [bin(), process.env.PATH ?? ""].join(delimiter);
+  process.env.NODE_OPTIONS = `--require "${script.replace(/\\/g, "/")}"`;
+}

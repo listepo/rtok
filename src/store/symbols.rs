@@ -3,15 +3,118 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
+use diesel::alias;
+use diesel::dsl::{count_star, exists, min, not};
 use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 
 use super::Store;
-use super::schema::symbols;
+use super::schema::{extractor, symbol_stale, symbols};
 
 const INSERT_CHUNK: usize = 999 / 11;
+
+/// SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999; a BFS level's frontier is chunked
+/// below that so a wide fan-out never blows the bind limit in one `eq_any`.
+const NAME_CHUNK: usize = 500;
+
+/// One level of `symbol_impact`'s walk: references of any name in `frontier`, as
+/// `(matched name, path, enclosing scope)` — the direct-caller edge (T163.1 BFS, replaces
+/// the old `WITH RECURSIVE` base/step: `s.name = w.scope`). The matched name comes back
+/// with each row so a caller batching several frontier tips in one query can route a result
+/// to the specific chain(s) it extends.
+fn impact_refs(
+    conn: &mut SqliteConnection,
+    root: &str,
+    frontier: &[String],
+) -> QueryResult<Vec<(String, String, String)>> {
+    let mut out = Vec::new();
+    for chunk in frontier.chunks(NAME_CHUNK) {
+        out.extend(
+            symbols::table
+                .filter(symbols::root.eq(root))
+                .filter(symbols::name.eq_any(chunk))
+                .filter(symbols::is_def.eq(0))
+                .filter(symbols::name.ne(""))
+                .filter(symbols::kind.ne("import"))
+                .select((symbols::name, symbols::path, symbols::scope))
+                .load::<(String, String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
+
+/// One level of `symbol_impact`'s walk: definitions in files that import any name in
+/// `frontier`, as `(matched name, path, def name)` — the import-follow edge (T163.1 BFS,
+/// replaces the old `WITH RECURSIVE` import branch). See [`impact_refs`] for why the
+/// matched name comes back with each row.
+fn impact_import_follow(
+    conn: &mut SqliteConnection,
+    root: &str,
+    frontier: &[String],
+) -> QueryResult<Vec<(String, String, String)>> {
+    let (i, d) = alias!(symbols as i, symbols as d);
+    let mut out = Vec::new();
+    for chunk in frontier.chunks(NAME_CHUNK) {
+        out.extend(
+            i.inner_join(
+                d.on(d
+                    .field(symbols::root)
+                    .eq(i.field(symbols::root))
+                    .and(d.field(symbols::path).eq(i.field(symbols::path)))
+                    .and(d.field(symbols::is_def).eq(1))
+                    .and(d.field(symbols::name).ne(""))),
+            )
+            .filter(i.field(symbols::root).eq(root))
+            .filter(i.field(symbols::name).eq_any(chunk))
+            .filter(i.field(symbols::kind).eq("import"))
+            .filter(i.field(symbols::is_def).eq(0))
+            .select((
+                i.field(symbols::name),
+                d.field(symbols::path),
+                d.field(symbols::name),
+            ))
+            .load::<(String, String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
+
+/// Groups one BFS level's flat query rows `(matched tip, value)` by that tip, deduping a
+/// repeated `value` under the same tip — shared by `symbol_impact`'s two edges and
+/// `symbol_paths`'s one so each builds a `tip -> Vec<value>` map of candidates to hand back
+/// to the partial chain(s) that produced the tip.
+fn group_by_tip<T: PartialEq>(rows: Vec<(String, T)>, by_tip: &mut HashMap<String, Vec<T>>) {
+    for (tip, value) in rows {
+        let values = by_tip.entry(tip).or_default();
+        if !values.contains(&value) {
+            values.push(value);
+        }
+    }
+}
+
+/// One step of `symbol_paths`'s walk: for every name in `tips`, the reference rows that
+/// could extend a chain through it — `(referenced name, enclosing scope)` (T163.1 BFS,
+/// replaces the old `WITH RECURSIVE` step: `s.name = w.tip`).
+fn path_next_hops(
+    conn: &mut SqliteConnection,
+    root: &str,
+    tips: &[String],
+) -> QueryResult<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for chunk in tips.chunks(NAME_CHUNK) {
+        out.extend(
+            symbols::table
+                .filter(symbols::root.eq(root))
+                .filter(symbols::name.eq_any(chunk))
+                .filter(symbols::is_def.eq(0))
+                .filter(symbols::scope.ne(""))
+                .filter(symbols::kind.ne("import"))
+                .select((symbols::name, symbols::scope))
+                .load::<(String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
 
 /// Every row of one file under one root, through the `(root, path)` index.
 fn delete_file(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<usize> {
@@ -20,9 +123,8 @@ fn delete_file(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResu
 }
 
 fn note_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
-    sql_query("INSERT OR IGNORE INTO symbol_stale (root, path) VALUES (?, ?)")
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(path)
+    diesel::insert_or_ignore_into(symbol_stale::table)
+        .values((symbol_stale::root.eq(root), symbol_stale::path.eq(path)))
         .execute(conn)?;
     Ok(())
 }
@@ -84,10 +186,10 @@ fn replace_one(
 }
 
 fn clear_stale(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<()> {
-    sql_query("DELETE FROM symbol_stale WHERE root = ? AND path = ?")
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(path)
-        .execute(conn)?;
+    diesel::delete(
+        symbol_stale::table.filter(symbol_stale::root.eq(root).and(symbol_stale::path.eq(path))),
+    )
+    .execute(conn)?;
     Ok(())
 }
 
@@ -115,17 +217,12 @@ impl Store {
 
     /// Paths still carrying the T8.3 stale mark (hook delete, not yet re-indexed).
     pub fn symbol_stale_paths(&self, root: &str) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            path: String,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> =
-            sql_query("SELECT path FROM symbol_stale WHERE root = ? ORDER BY path")
-                .bind::<Text, _>(root)
-                .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.path).collect())
+        Ok(symbol_stale::table
+            .filter(symbol_stale::root.eq(root))
+            .select(symbol_stale::path)
+            .order(symbol_stale::path.asc())
+            .load(&mut *conn)?)
     }
 
     /// Pending files: hook-staled rows plus indexed paths whose stat no longer matches disk.
@@ -292,53 +389,54 @@ impl Store {
 
     pub fn extractor_fingerprint(&self, root: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            fingerprint: String,
-        }
-        let rows: Vec<Row> = sql_query("SELECT fingerprint FROM extractor WHERE root = ?")
-            .bind::<Text, _>(root)
-            .load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.fingerprint.clone()))
+        Ok(extractor::table
+            .filter(extractor::root.eq(root))
+            .select(extractor::fingerprint)
+            .first(&mut *conn)
+            .optional()?)
     }
 
     pub fn set_extractor_fingerprint(&self, root: &str, fp: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO extractor (root, fingerprint) VALUES (?, ?)
-             ON CONFLICT(root) DO UPDATE SET fingerprint = excluded.fingerprint",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(fp)
-        .execute(&mut *conn)?;
+        diesel::insert_into(extractor::table)
+            .values((extractor::root.eq(root), extractor::fingerprint.eq(fp)))
+            .on_conflict(extractor::root)
+            .do_update()
+            .set(extractor::fingerprint.eq(fp))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
     pub fn symbol_indexed_at(&self, root: &str) -> Result<Option<i64>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Nullable<BigInt>)]
-            indexed_at: Option<i64>,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query("SELECT indexed_at FROM extractor WHERE root = ?")
-            .bind::<Text, _>(root)
-            .load(&mut *conn)?;
-        Ok(rows.first().and_then(|r| r.indexed_at))
+        let indexed_at: Option<Option<i64>> = extractor::table
+            .filter(extractor::root.eq(root))
+            .select(extractor::indexed_at)
+            .first(&mut *conn)
+            .optional()?;
+        Ok(indexed_at.flatten())
     }
 
     pub fn touch_symbol_indexed_at(&self, root: &str, ts: i64) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO extractor (root, fingerprint, indexed_at)
-             VALUES (?, COALESCE((SELECT fingerprint FROM extractor WHERE root = ?), ''), ?)
-             ON CONFLICT(root) DO UPDATE SET indexed_at = excluded.indexed_at",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(root)
-        .bind::<BigInt, _>(ts)
-        .execute(&mut *conn)?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            let existing_fingerprint: Option<String> = extractor::table
+                .filter(extractor::root.eq(root))
+                .select(extractor::fingerprint)
+                .first(conn)
+                .optional()?;
+            diesel::insert_into(extractor::table)
+                .values((
+                    extractor::root.eq(root),
+                    extractor::fingerprint.eq(existing_fingerprint.unwrap_or_default()),
+                    extractor::indexed_at.eq(ts),
+                ))
+                .on_conflict(extractor::root)
+                .do_update()
+                .set(extractor::indexed_at.eq(ts))
+                .execute(conn)?;
+            Ok(())
+        })?;
         Ok(())
     }
 
@@ -381,39 +479,62 @@ impl Store {
     /// Callees of each definition of `name`: `(path, line, callee, first_ref_line)` (T68.2).
     /// A reference row counts when it shares the definition's path and its `scope` is the
     /// definition's name; results are ordered by definition site then first reference line.
+    // Self-join `symbols` against itself, grouped by `(d.path, d.line, r.name)`: Diesel's
+    // `alias!` self-join fields (`AliasedField`) have no `IsContainedInGroupBy` bridge (only
+    // `ValidGrouping<()>`, i.e. no `GROUP BY` at all), so the `GROUP BY` itself can't be
+    // expressed through the typed DSL — the join and filter can. Load the ungrouped rows with
+    // the typed DSL and do the `GROUP BY MIN(r.line)` / `ORDER BY` in Rust instead (T163.1).
     pub fn symbol_callees(
         &self,
         root: &str,
         name: &str,
     ) -> Result<Vec<(String, i32, String, i32)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Integer)]
-            line: i32,
-            #[diesel(sql_type = Text)]
-            callee: String,
-            #[diesel(sql_type = Integer)]
-            first_line: i32,
-        }
+        let (d, r) = alias!(symbols as d, symbols as r);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT d.path AS path, d.line AS line, r.name AS callee, MIN(r.line) AS first_line
-             FROM symbols d
-             JOIN symbols r
-               ON r.root = d.root AND r.path = d.path AND r.is_def = 0 AND r.scope = d.name
-             WHERE d.root = ? AND d.is_def = 1 AND d.name = ? AND r.name != ''
-             GROUP BY d.path, d.line, r.name
-             ORDER BY d.path, d.line, first_line, r.name",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(name)
-        .load(&mut *conn)?;
-        Ok(rows
+        let rows: Vec<(String, i32, String, i32)> = d
+            .inner_join(
+                r.on(r
+                    .field(symbols::root)
+                    .eq(d.field(symbols::root))
+                    .and(r.field(symbols::path).eq(d.field(symbols::path)))
+                    .and(r.field(symbols::is_def).eq(0))
+                    .and(r.field(symbols::scope).eq(d.field(symbols::name)))),
+            )
+            .filter(
+                d.field(symbols::root)
+                    .eq(root)
+                    .and(d.field(symbols::is_def).eq(1))
+                    .and(d.field(symbols::name).eq(name))
+                    .and(r.field(symbols::name).ne("")),
+            )
+            .select((
+                d.field(symbols::path),
+                d.field(symbols::line),
+                r.field(symbols::name),
+                r.field(symbols::line),
+            ))
+            .load(&mut *conn)?;
+
+        // GROUP BY (path, line, callee), keeping MIN(r.line) as first_line.
+        let mut groups: HashMap<(String, i32, String), i32> = HashMap::new();
+        for (path, line, callee, r_line) in rows {
+            groups
+                .entry((path, line, callee))
+                .and_modify(|first| *first = (*first).min(r_line))
+                .or_insert(r_line);
+        }
+        let mut out: Vec<(String, i32, String, i32)> = groups
             .into_iter()
-            .map(|r| (r.path, r.line, r.callee, r.first_line))
-            .collect())
+            .map(|((path, line, callee), first_line)| (path, line, callee, first_line))
+            .collect();
+        // ORDER BY d.path, d.line, first_line, r.name
+        out.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.3.cmp(&b.3))
+                .then(a.2.cmp(&b.2))
+        });
+        Ok(out)
     }
 
     /// Reference sites of `name` collapsed to one row per calling definition (T8.5):
@@ -438,8 +559,8 @@ impl Store {
             .select((
                 symbols::path,
                 symbols::scope,
-                diesel::dsl::count_star(),
-                diesel::dsl::min(symbols::line),
+                count_star(),
+                min(symbols::line),
             ))
             .load(&mut *conn)?;
         Ok(rows
@@ -464,40 +585,44 @@ impl Store {
         root: &str,
         limit: i64,
     ) -> Result<Vec<(String, i64, String, i32)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = BigInt)]
-            refs: i64,
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Integer)]
-            line: i32,
-        }
+        let (d, r, e) = alias!(symbols as d, symbols as r, symbols as e);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT d.name AS name,
-                    (SELECT COUNT(*) FROM symbols r
-                      WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
-                        AND r.kind != 'import') AS refs,
-                    d.path AS path,
-                    d.line AS line
-             FROM symbols d
-             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
-               AND NOT EXISTS (
-                 SELECT 1 FROM symbols e
-                  WHERE e.root = d.root AND e.name = d.name AND e.is_def = 1
-                    AND (e.path < d.path OR (e.path = d.path AND e.line < d.line)))
-             ORDER BY refs DESC, name ASC
-             LIMIT ?",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Integer, _>(limit as i32)
-        .load(&mut *conn)?;
+        let refs_count = || {
+            r.filter(r.field(symbols::root).eq(d.field(symbols::root)))
+                .filter(r.field(symbols::name).eq(d.field(symbols::name)))
+                .filter(r.field(symbols::is_def).eq(0))
+                .filter(r.field(symbols::kind).ne("import"))
+                .count()
+                .single_value()
+        };
+        let earlier_def_exists = exists(
+            e.filter(e.field(symbols::root).eq(d.field(symbols::root)))
+                .filter(e.field(symbols::name).eq(d.field(symbols::name)))
+                .filter(e.field(symbols::is_def).eq(1))
+                .filter(
+                    e.field(symbols::path).lt(d.field(symbols::path)).or(e
+                        .field(symbols::path)
+                        .eq(d.field(symbols::path))
+                        .and(e.field(symbols::line).lt(d.field(symbols::line)))),
+                ),
+        );
+        let rows: Vec<(String, Option<i64>, String, i32)> = d
+            .filter(d.field(symbols::root).eq(root))
+            .filter(d.field(symbols::is_def).eq(1))
+            .filter(d.field(symbols::name).ne(""))
+            .filter(not(earlier_def_exists))
+            .select((
+                d.field(symbols::name),
+                refs_count(),
+                d.field(symbols::path),
+                d.field(symbols::line),
+            ))
+            .order((refs_count().desc(), d.field(symbols::name).asc()))
+            .limit(limit)
+            .load(&mut *conn)?;
         Ok(rows
             .into_iter()
-            .map(|r| (r.name, r.refs, r.path, r.line))
+            .map(|(name, refs, path, line)| (name, refs.unwrap_or(0), path, line))
             .collect())
     }
 
@@ -506,135 +631,156 @@ impl Store {
     /// name keeps every same-named definition live. Callers filter pub,
     /// trait impls, tests and macros from this candidate set.
     pub fn symbol_dead_candidates(&self, root: &str) -> Result<Vec<(String, String, String, i32)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Text)]
-            name: String,
-            #[diesel(sql_type = Text)]
-            kind: String,
-            #[diesel(sql_type = Integer)]
-            line: i32,
-        }
+        let (d, r) = alias!(symbols as d, symbols as r);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT d.path AS path, d.name AS name, d.kind AS kind, d.line AS line
-             FROM symbols d
-             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
-               AND NOT EXISTS (SELECT 1 FROM symbols r
-                 WHERE r.root = d.root AND r.name = d.name AND r.is_def = 0
-                   AND r.kind != 'import')
-             ORDER BY d.path, d.line",
-        )
-        .bind::<Text, _>(root)
-        .load(&mut *conn)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| (r.path, r.name, r.kind, r.line))
-            .collect())
+        let has_ref = exists(
+            r.filter(r.field(symbols::root).eq(d.field(symbols::root)))
+                .filter(r.field(symbols::name).eq(d.field(symbols::name)))
+                .filter(r.field(symbols::is_def).eq(0))
+                .filter(r.field(symbols::kind).ne("import")),
+        );
+        Ok(d.filter(d.field(symbols::root).eq(root))
+            .filter(d.field(symbols::is_def).eq(1))
+            .filter(d.field(symbols::name).ne(""))
+            .filter(not(has_ref))
+            .order((d.field(symbols::path).asc(), d.field(symbols::line).asc()))
+            .select((
+                d.field(symbols::path),
+                d.field(symbols::name),
+                d.field(symbols::kind),
+                d.field(symbols::line),
+            ))
+            .load(&mut *conn)?)
     }
 
     /// Callers of `name` out to `depth`, each `(path, scope)` at its first depth (T8.13).
+    ///
+    /// Level-by-level BFS (T163.1) over the same two edges the old `WITH RECURSIVE` walk
+    /// used: a direct reference (`impact_refs`, edge `s.name = frontier`) and an
+    /// import-follow hop (`impact_import_follow`, edge `i.name = frontier`). Like
+    /// `symbol_paths`, each partial chain keeps its own `seen` set (the old CTE's per-row
+    /// `seen`, seeded with the depth-1 row's own output — not `name` itself, matching the
+    /// old seed exactly) rather than a global visited set: a name already on *this* chain's
+    /// history is never re-emitted for it, but an unrelated chain that never saw that name
+    /// still can, and does, produce its own row. Both edges are tried from every chain's
+    /// tip at every level, exactly like the CTE's two recursive branches. `results` is keyed
+    /// by `(path, scope)` and filled in strictly increasing depth order, so the first write
+    /// per key is its minimum depth — the old `GROUP BY path, scope` + `MIN(depth)`.
     pub fn symbol_impact(
         &self,
         root: &str,
         name: &str,
         depth: u32,
     ) -> Result<Vec<(u32, String, String)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Integer)]
-            depth: i32,
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Text)]
-            scope: String,
+        struct Chain {
+            tip: String,
+            seen: HashSet<String>,
         }
-        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+
+        let max_depth = depth.clamp(1, 4);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "WITH RECURSIVE walk(depth, path, scope, seen) AS (
-                SELECT 1, path, scope, ',' || scope || ','
-                FROM symbols
-                WHERE root = ? AND name = ? AND is_def = 0 AND name != '' AND kind != 'import'
-                UNION ALL
-                SELECT 1, d.path, d.name, ',' || d.name || ','
-                FROM symbols i
-                JOIN symbols d
-                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
-                WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
-                UNION ALL
-                SELECT w.depth + 1, s.path, s.scope, w.seen || s.scope || ','
-                FROM walk w
-                JOIN symbols s
-                  ON s.root = ? AND s.name = w.scope AND s.is_def = 0 AND s.name != ''
-                 AND s.kind != 'import'
-                WHERE w.depth < ? AND w.scope != ''
-                  AND instr(w.seen, ',' || s.scope || ',') = 0
-                UNION ALL
-                SELECT w.depth + 1, d.path, d.name, w.seen || d.name || ','
-                FROM walk w
-                JOIN symbols i
-                  ON i.root = ? AND i.name = w.scope AND i.kind = 'import' AND i.is_def = 0
-                JOIN symbols d
-                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
-                WHERE w.depth < ? AND w.scope != ''
-                  AND instr(w.seen, ',' || d.name || ',') = 0
-            )
-            SELECT MIN(depth) AS depth, path, scope
-            FROM walk
-            GROUP BY path, scope
-            ORDER BY depth, path, scope",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(name)
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(name)
-        .bind::<Text, _>(root)
-        .bind::<Integer, _>(depth)
-        .bind::<Text, _>(root)
-        .bind::<Integer, _>(depth)
-        .load(&mut *conn)?;
-        Ok(rows
+        let mut results: HashMap<(String, String), u32> = HashMap::new();
+        let mut current = vec![Chain {
+            tip: name.to_string(),
+            seen: HashSet::new(),
+        }];
+        let mut level: u32 = 1;
+        while !current.is_empty() && level <= max_depth {
+            let tips: Vec<String> = {
+                let set: HashSet<&str> = current.iter().map(|c| c.tip.as_str()).collect();
+                set.into_iter().map(str::to_string).collect()
+            };
+            let mut by_tip: HashMap<String, Vec<(String, String)>> = HashMap::new();
+            group_by_tip(
+                impact_refs(&mut conn, root, &tips)?
+                    .into_iter()
+                    .map(|(tip, path, scope)| (tip, (path, scope)))
+                    .collect(),
+                &mut by_tip,
+            );
+            group_by_tip(
+                impact_import_follow(&mut conn, root, &tips)?
+                    .into_iter()
+                    .map(|(tip, path, def_name)| (tip, (path, def_name)))
+                    .collect(),
+                &mut by_tip,
+            );
+
+            let mut next = Vec::new();
+            for c in &current {
+                let Some(edges) = by_tip.get(&c.tip) else {
+                    continue;
+                };
+                for (path, out_name) in edges {
+                    if c.seen.contains(out_name) {
+                        continue;
+                    }
+                    results
+                        .entry((path.clone(), out_name.clone()))
+                        .or_insert(level);
+                    // The old CTE only recurses through a row whose `scope` isn't empty
+                    // (`impact_refs` never returns one anyway: `name.ne("")` on the frontier
+                    // side blocks it), but `impact_import_follow` has no such filter on the
+                    // import row's own name, so an empty `out_name` reaching here (from a
+                    // top-level reference with no enclosing scope) must stop here rather
+                    // than become the next tip -- else it would query `impact_import_follow`
+                    // with an empty frontier name and could follow an import row the CTE
+                    // never would (PR #206 review).
+                    if out_name.is_empty() {
+                        continue;
+                    }
+                    let mut seen = c.seen.clone();
+                    seen.insert(out_name.clone());
+                    next.push(Chain {
+                        tip: out_name.clone(),
+                        seen,
+                    });
+                }
+            }
+            current = next;
+            level += 1;
+        }
+        let mut out: Vec<(u32, String, String)> = results
             .into_iter()
-            .map(|r| (r.depth as u32, r.path, r.scope))
-            .collect())
+            .map(|((path, scope), depth)| (depth, path, scope))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        Ok(out)
     }
 
     /// T68.1: distinct definition names starting with `prefix`, best `limit` by
     /// reference count (ties by name, byte-stable) — `explore`'s fallback when a
     /// query token is not an exact definition name.
     pub fn symbol_name_prefix(&self, root: &str, prefix: &str, limit: i64) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            name: String,
-        }
+        // Only the correlated subquery needs a second `symbols` occurrence (`r`); the outer
+        // query groups by the real `symbols::name` column, which keeps `GROUP BY` on a plain
+        // (non-aliased) column — see `symbol_callees` for why an aliased self-join can't.
+        let r = alias!(symbols as r);
         let mut conn = self.lock()?;
         let escaped = prefix
             .replace('\\', "\\\\")
             .replace('%', "\\%")
             .replace('_', "\\_");
         let like = format!("{escaped}%");
-        let rows: Vec<Row> = sql_query(
-            "SELECT d.name AS name,
-                    (SELECT COUNT(*) FROM symbols r
-                      WHERE r.root = ? AND r.name = d.name AND r.is_def = 0
-                        AND r.kind != 'import') AS refs
-             FROM symbols d
-             WHERE d.root = ? AND d.is_def = 1 AND d.name != ''
-               AND d.name LIKE ? ESCAPE '\\'
-             GROUP BY d.name
-             ORDER BY refs DESC, name ASC
-             LIMIT ?",
-        )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(like)
-        .bind::<Integer, _>(limit as i32)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.name).collect())
+        let refs_count = || {
+            r.filter(r.field(symbols::root).eq(root))
+                .filter(r.field(symbols::name).eq(symbols::name))
+                .filter(r.field(symbols::is_def).eq(0))
+                .filter(r.field(symbols::kind).ne("import"))
+                .count()
+                .single_value()
+        };
+        let rows: Vec<(String, Option<i64>)> = symbols::table
+            .filter(symbols::root.eq(root))
+            .filter(symbols::is_def.eq(1))
+            .filter(symbols::name.ne(""))
+            .filter(symbols::name.like(&like).escape('\\'))
+            .group_by(symbols::name)
+            .select((symbols::name, refs_count()))
+            .order((refs_count().desc(), symbols::name.asc()))
+            .limit(limit)
+            .load(&mut *conn)?;
+        Ok(rows.into_iter().map(|(name, _)| name).collect())
     }
 
     /// T68.1: call chains `from → … → to` walked in the caller direction (the
@@ -650,40 +796,70 @@ impl Store {
         to: &str,
         depth: u32,
     ) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
+        // Simple-path enumeration (T163.1 BFS), one level of `path_next_hops` per step: unlike
+        // `symbol_impact`, every distinct chain string matters here, not just the shortest
+        // reach of a name, so each partial path keeps its own `seen` set of every name already
+        // on it (the old CTE's per-row `seen` chain) rather than a global visited set. A path
+        // whose tip already equals `to` stops extending (mirrors the old `WHERE w.tip != ?`)
+        // but was already recorded as a result at the depth it reached `to`.
+        struct Partial {
             chain: String,
+            tip: String,
+            seen: HashSet<String>,
         }
-        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+
+        let max_depth = depth.clamp(1, 4);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "WITH RECURSIVE walk(depth, chain, tip, seen) AS (
-                SELECT 1, ?, ?, ',' || ? || ','
-                UNION ALL
-                SELECT w.depth + 1,
-                       w.chain || ' → ' || s.scope,
-                       s.scope,
-                       w.seen || s.scope || ','
-                FROM walk w
-                JOIN symbols s ON s.root = ? AND s.name = w.tip
-                              AND s.is_def = 0 AND s.scope != ''
-                              AND s.kind != 'import'
-                WHERE w.depth < ? AND w.tip != ?
-                  AND instr(w.seen, ',' || s.scope || ',') = 0
-            )
-            SELECT chain, MIN(depth) AS depth FROM walk
-            WHERE tip = ? GROUP BY chain ORDER BY depth, chain",
-        )
-        .bind::<Text, _>(from)
-        .bind::<Text, _>(from)
-        .bind::<Text, _>(from)
-        .bind::<Text, _>(root)
-        .bind::<Integer, _>(depth)
-        .bind::<Text, _>(to)
-        .bind::<Text, _>(to)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.chain).collect())
+        let mut results: Vec<(u32, String)> = Vec::new();
+        if from == to {
+            results.push((1, from.to_string()));
+        }
+        let mut current = vec![Partial {
+            chain: from.to_string(),
+            tip: from.to_string(),
+            seen: HashSet::from([from.to_string()]),
+        }];
+        let mut level: u32 = 1;
+        while level < max_depth {
+            let active: Vec<&Partial> = current.iter().filter(|p| p.tip != to).collect();
+            if active.is_empty() {
+                break;
+            }
+            let tips: Vec<String> = {
+                let set: HashSet<&str> = active.iter().map(|p| p.tip.as_str()).collect();
+                set.into_iter().map(str::to_string).collect()
+            };
+            let mut by_tip: HashMap<String, Vec<String>> = HashMap::new();
+            group_by_tip(path_next_hops(&mut conn, root, &tips)?, &mut by_tip);
+
+            let mut next = Vec::new();
+            for p in active {
+                let Some(scopes) = by_tip.get(&p.tip) else {
+                    continue;
+                };
+                for scope in scopes {
+                    if p.seen.contains(scope) {
+                        continue;
+                    }
+                    let chain = format!("{} → {}", p.chain, scope);
+                    if scope == to {
+                        results.push((level + 1, chain.clone()));
+                    }
+                    let mut seen = p.seen.clone();
+                    seen.insert(scope.clone());
+                    next.push(Partial {
+                        chain,
+                        tip: scope.clone(),
+                        seen,
+                    });
+                }
+            }
+            current = next;
+            level += 1;
+        }
+
+        results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        Ok(results.into_iter().map(|(_, chain)| chain).collect())
     }
 
     /// T68.6: import rows of `path` as `(name, line)`, first-seen order.
@@ -720,26 +896,26 @@ impl Store {
 
     /// T68.6: definitions in files that import `name` — the extra impact hop.
     pub fn symbol_import_follow(&self, root: &str, name: &str) -> Result<Vec<(String, String)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Text)]
-            name: String,
-        }
+        let (i, d) = alias!(symbols as i, symbols as d);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT d.path AS path, d.name AS name
-             FROM symbols i
-             JOIN symbols d
-               ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
-             WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
-             ORDER BY d.path, d.line",
+        Ok(i.inner_join(
+            d.on(d
+                .field(symbols::root)
+                .eq(i.field(symbols::root))
+                .and(d.field(symbols::path).eq(i.field(symbols::path)))
+                .and(d.field(symbols::is_def).eq(1))
+                .and(d.field(symbols::name).ne(""))),
         )
-        .bind::<Text, _>(root)
-        .bind::<Text, _>(name)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| (r.path, r.name)).collect())
+        .filter(
+            i.field(symbols::root)
+                .eq(root)
+                .and(i.field(symbols::name).eq(name))
+                .and(i.field(symbols::kind).eq("import"))
+                .and(i.field(symbols::is_def).eq(0)),
+        )
+        .order((d.field(symbols::path).asc(), d.field(symbols::line).asc()))
+        .select((d.field(symbols::path), d.field(symbols::name)))
+        .load(&mut *conn)?)
     }
 }
 
@@ -766,6 +942,19 @@ mod tests {
             false,
             line,
             String::new(),
+        )
+    }
+
+    /// A reference row with an explicit enclosing `scope`, unlike `row`/`import` (always
+    /// `scope: ""`) — needed to build the `symbol_impact` chains below.
+    fn reference(name: &str, line: i32, scope: &str) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "function".into(),
+            line,
+            false,
+            line,
+            scope.into(),
         )
     }
 
@@ -821,5 +1010,95 @@ mod tests {
             .unwrap();
         let got = store.symbol_top_refs("/r", 4).unwrap();
         assert_eq!(got, vec![("dup".into(), 1, "a.rs".into(), 3)]);
+    }
+
+    // T163.1 regression (PR #206 review): `symbol_impact`'s BFS must exclude a candidate
+    // already on *that specific chain's* history, not just prune it from further expansion.
+    // Expected rows below were checked against the old `WITH RECURSIVE` query (from
+    // `origin/main` before this rework) run on the same fixtures via the sqlite3 CLI.
+
+    #[test]
+    fn impact_excludes_ref_edge_name_already_on_the_chain() {
+        // a.rs: fn X references N (depth-1 row: a.rs/X, chain seen={X}).
+        // b.rs: a different fn X calls X (self-recursive) — the depth-2 candidate is
+        // (b.rs, X), but X is already in that chain's seen, so the old CTE never emits it
+        // and no other chain reaches it either.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r1",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[row("X", 1, true), reference("N", 2, "X")],
+            )
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r1",
+                "b.rs",
+                "s",
+                (0, 0),
+                &[row("X", 1, true), reference("X", 2, "X")],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r1", "N", 4).unwrap();
+        assert_eq!(got, vec![(1, "a.rs".into(), "X".into())]);
+    }
+
+    #[test]
+    fn impact_excludes_import_follow_name_already_on_the_chain() {
+        // c.rs imports N2, which resolves to def M (depth-1 row: c.rs/M, chain seen={M}).
+        // e.rs imports M and also defines M — the depth-2 candidate is (e.rs, M), but M is
+        // already in that chain's seen, so the old CTE never emits it either.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r2",
+                "c.rs",
+                "s",
+                (0, 0),
+                &[import("N2", 1), row("M", 2, true)],
+            )
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r2",
+                "e.rs",
+                "s",
+                (0, 0),
+                &[import("M", 1), row("M", 2, true)],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r2", "N2", 4).unwrap();
+        assert_eq!(got, vec![(1, "c.rs".into(), "M".into())]);
+    }
+
+    #[test]
+    fn impact_records_an_empty_out_name_but_does_not_follow_it() {
+        // a.rs: a bare (unscoped) reference to N3 -- depth-1 row (a.rs, out_name ""), since
+        // `impact_refs` carries the row's `scope` through unfiltered and `row()` leaves it
+        // "". The old CTE's SELECT has no `scope != ''` guard either, so this row must still
+        // land in `results` -- but its `WHERE w.scope != ''` guard stops it from ever being
+        // used as a `w.tip` for the next level.
+        // b.rs: an import with an empty `name` next to a real def LEAK. If the empty
+        // out_name above were pushed as the next chain's tip, `impact_import_follow` (no
+        // `i.name != ''` filter) would match this import and surface (2, b.rs, LEAK), which
+        // the old CTE could never reach.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols("/r3", "a.rs", "s", (0, 0), &[row("N3", 2, false)])
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r3",
+                "b.rs",
+                "s",
+                (0, 0),
+                &[import("", 1), row("LEAK", 2, true)],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r3", "N3", 4).unwrap();
+        assert_eq!(got, vec![(1, "a.rs".into(), "".into())]);
     }
 }

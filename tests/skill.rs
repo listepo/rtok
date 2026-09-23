@@ -1,5 +1,6 @@
 //! T71.3 / T155: size limits for every shipped skill (`skills/<name>/SKILL.md`), and the
-//! `worktrees` skill names only commands `rtok worktree` really has.
+//! `worktrees` skill names only commands `rtok worktree` really has, and
+//! (T234) no host plugin bundles a copy of a skill.
 
 mod common;
 
@@ -114,4 +115,21 @@ fn install_copies_every_skill_and_remove_takes_them_away() {
     for name in SKILLS {
         assert!(!root.join(name).exists(), "{name}: {out}");
     }
+}
+
+/// T234: a skill lives only in `skills/<name>/`. Host plugins get it from `rtok agents install`
+/// (`skill::sync`), never as a bundled copy that drifts from the hub.
+#[test]
+fn no_host_plugin_bundles_a_skill() {
+    let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
+    let copies: Vec<_> = ignore::WalkBuilder::new(&plugins)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name() == "SKILL.md")
+        .map(|e| e.into_path())
+        .collect();
+    assert!(
+        copies.is_empty(),
+        "skills belong in skills/<name>/ only: {copies:?}"
+    );
 }

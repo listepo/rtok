@@ -15,6 +15,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+// T178: one resolver for rtok and the std-only `rtok-hook` client, so both find the same home.
+use rtok_hook::{expand_with, home_dir_from, user_home_from};
 use serde::{Deserialize, Serialize};
 
 /// The annotated reference file, written verbatim by `rtok config init`.
@@ -128,6 +130,7 @@ section! {
         lines: usize = 200,
         level: String = s("info"),
         to_db: bool = true,
+        tspin: String = s("auto"),
     }
 }
 
@@ -1051,86 +1054,10 @@ pub(crate) fn env_user_home() -> Option<PathBuf> {
     user_home_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
 }
 
-/// Resolve home from explicit env values (testable without mutating the process).
-pub(crate) fn user_home_from(
-    home: Option<std::ffi::OsString>,
-    userprofile: Option<std::ffi::OsString>,
-) -> Option<PathBuf> {
-    // Empty HOME must not block USERPROFILE (Windows PowerShell often has
-    // HOME="" rather than unset).
-    nonempty_home(home).or_else(|| nonempty_home(userprofile))
-}
-
-fn nonempty_home(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
-    value.filter(|v| !v.is_empty()).map(PathBuf::from)
-}
-
-/// [`Config::home_dir`] from explicit env values. A `~` in `RTOK_HOME` (set from a JSON `env`
-/// block, where no shell expands it) is expanded: left literal, every store path hung off it
-/// resolved against the cwd as `./~/.rtok/…` (T169).
-fn home_dir_from(rtok_home: Option<std::ffi::OsString>, user_home: Option<PathBuf>) -> PathBuf {
-    let default = user_home.clone().unwrap_or_default().join(".rtok");
-    match rtok_home {
-        Some(h) => expand_with(Path::new(&h), &default, user_home.as_deref()),
-        None => default,
-    }
-}
-
 /// [`expand_with`] against the process's own user home.
 #[cfg(test)]
 fn expand(path: &Path, home: &Path) -> PathBuf {
     expand_with(path, home, env_user_home().as_deref())
-}
-
-/// `~/.rtok/x` → `<rtok_home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` →
-/// `<user_home>/x`. Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them
-/// literal is how tests without `finish` used to create a `./~` directory in the repo. The
-/// user home is explicit so the Windows `USERPROFILE` fallback is testable without env.
-fn expand_with(path: &Path, rtok_home: &Path, user_home: Option<&Path>) -> PathBuf {
-    let raw = path.to_string_lossy();
-    if let Some(rest) = strip_rtok_home_prefix(&raw) {
-        return match rest {
-            "" => rtok_home.to_path_buf(),
-            rest => join_tilde_rest(rtok_home, rest),
-        };
-    }
-    if raw == "~" {
-        return user_home
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| path.to_path_buf());
-    }
-    if let Some(rest) = strip_home_prefix(&raw) {
-        return match user_home {
-            Some(h) => join_tilde_rest(h, rest),
-            None => path.to_path_buf(),
-        };
-    }
-    path.to_path_buf()
-}
-
-fn strip_rtok_home_prefix(raw: &str) -> Option<&str> {
-    for prefix in ["~/.rtok/", "~/.rtok\\", "~\\.rtok\\", "~\\.rtok/"] {
-        if let Some(rest) = raw.strip_prefix(prefix) {
-            return Some(rest);
-        }
-    }
-    match raw {
-        "~/.rtok" | "~/.rtok/" | "~/.rtok\\" | "~\\.rtok" | "~\\.rtok\\" | "~\\.rtok/" => Some(""),
-        _ => None,
-    }
-}
-
-fn strip_home_prefix(raw: &str) -> Option<&str> {
-    raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\"))
-}
-
-/// Join a tilde-relative remainder that may use `/` or `\\` separators.
-fn join_tilde_rest(base: &Path, rest: &str) -> PathBuf {
-    let mut out = base.to_path_buf();
-    for part in rest.split(['/', '\\']).filter(|s| !s.is_empty()) {
-        out.push(part);
-    }
-    out
 }
 
 #[cfg(test)]

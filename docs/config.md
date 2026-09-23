@@ -79,11 +79,12 @@ retain_calls_days    = 30             # 0 = keep `calls` forever
 
 [log]                                 # rtok's own log (D26); `rtok logs` reads it
 path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5
-max_bytes = 1048576                   # rotate past 1 MiB
-files     = 5                         # generations kept; older ones are deleted, never archived
+max_bytes = 1048576                   # rotate past 1 MiB (validate: ≥ 1024)
+files     = 5                         # generations kept; older ones are deleted, never archived (validate: ≤ 20)
 lines     = 200                       # what `rtok logs` prints when --lines is not given
 level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`
+tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5
@@ -444,6 +445,31 @@ RTOK_PLUGINS_WASM_ENABLED=true rtok config show --sources
 RTOK_STATS_SINCE=7d rtok stats
 RTOK_CONFIG=./ci-config.toml rtok bench --dry-run
 ```
+
+## Debug log (`RUST_LOG`)
+
+`[log]` is the operator's log: a file with a configured level, plus `logs` rows. For debugging
+there is a second, stderr-only stream behind the `log` facade and `env_logger` (T225). It is off
+until `RUST_LOG` is set, so no hook, `mcp` or `proxy` run prints anything new by default:
+
+```bash
+RUST_LOG=rtok=debug rtok stats                       # argv, then every [log] line as it is written
+RUST_LOG=rtok::log=info rtok proxy                   # only the mirrored [log] stream
+RUST_LOG=rtok=debug RUST_LOG_STYLE=never rtok mcp    # no colour; stdout stays the MCP channel
+```
+
+The mirror ignores `[log] level`: the file keeps `info`, stderr shows what `RUST_LOG` asks for.
+The variable is `RUST_LOG`, not `RTOK_LOG`: `RTOK_<SECTION>_<KEY>` names belong to the
+environment layer above, and `RTOK_LOG` would collide with the `[log]` table.
+
+`just logs [flags]` opens the file in [tailspin](https://github.com/bensadeh/tailspin) (`tspin`,
+pinned in `mise.toml`), which highlights levels, dates, numbers and paths; `just logs -f` follows
+it. The debug stream pipes the same way: `RUST_LOG=rtok=debug rtok stats 2>&1 >/dev/null | tspin`.
+
+`rtok logs` and `rtok logs watch` use tailspin themselves (T225.1). With `[log] tspin = "auto"`,
+the default, the numbered rows go through `tspin --print` when stdout is a terminal and `tspin`
+is on `PATH`; `"always"` does so on a pipe too, `"off"` keeps rtok's own colours. Without `tspin`
+the output is what it was. `rtok logs export` and `--json` never go through it.
 
 ## Why one file and not flags-only
 

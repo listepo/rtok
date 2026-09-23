@@ -5,83 +5,137 @@
 //! `plugins.<id>.enabled` through `config set`'s writer (T15.4); Calls (T15.5) lists
 //! ledger rows with a detail pane; Doctor (T15.6) and Logs (T15.7) render their model
 //! pages; a page the model adds ahead of its tab falls through to a placeholder that
-//! says so.
+//! says so. Every colour and frame comes from [`super::theme`] (T226): the body is one
+//! rounded pane with the tabs in its top border, tables have an accent header and a
+//! full-width cursor row, and the key hints are `key description` pairs.
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph, Row, Sparkline, Table, Tabs, Wrap};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Cell, Clear, Paragraph, Row, Sparkline, Table, Tabs, Wrap};
 
 use super::app::{App, keys_for};
+use super::theme::{self, ACCENT, ERR, OK, WARN};
 use crate::store::CallRow;
 use crate::web::model::{self, PluginPage};
 
-/// One screen: header · [alert] · tabs · body · footer, with the `?` overlay on top
-/// when it is open (T60.8). The alert row stays up for the whole disabled period
-/// (proxy/core enabled=false).
+/// One screen: header · [alert] · framed body with the tabs in its top border · footer,
+/// with the `?` overlay on top when it is open (T60.8). The alert row stays up for the
+/// whole disabled period (proxy/core enabled=false).
 pub(super) fn draw(frame: &mut Frame, app: &App) {
     let alert = app.snapshot().usage.alerts.first().cloned();
     let store_error = app.snapshot().error.clone();
-    let [header, alert_area, error_area, tabs, body, footer] = Layout::vertical([
+    let [header, alert_area, error_area, body, footer] = Layout::vertical([
         Constraint::Length(1),
         // Alert row: height 0 when absent, same slots either way.
         Constraint::Length(u16::from(alert.is_some())),
         Constraint::Length(u16::from(store_error.is_some())),
-        Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(1),
     ])
     .areas(frame.area());
-    frame.render_widget(Paragraph::new(header_line(frame.area())), header);
+    render_header(frame, app, header);
     if let Some(msg) = alert {
-        frame.render_widget(
-            Paragraph::new(format!("⚠ {msg}")).style(Style::new().bold()),
-            alert_area,
-        );
+        frame.render_widget(Paragraph::new(theme::banner('⚠', &msg, WARN)), alert_area);
     }
     if let Some(msg) = store_error {
-        frame.render_widget(
-            Paragraph::new(format!("✕ {msg}")).style(Style::new().bold()),
-            error_area,
-        );
+        frame.render_widget(Paragraph::new(theme::banner('✕', &msg, ERR)), error_area);
     }
+    let pane = theme::frame();
+    let inner = pane.inner(body);
+    frame.render_widget(pane, body);
+    // The tabs ride the pane's top border: `╭─ overview ─ plugins ─ … ─╮`.
+    let tabs = Rect::new(body.x + 2, body.y, body.width.saturating_sub(4), 1);
     frame.render_widget(tab_bar(app), tabs);
-    render_page(frame, app, body);
-    frame.render_widget(Paragraph::new(footer_line(app)), footer);
+    render_page(frame, app, inner);
+    frame.render_widget(Paragraph::new(footer_line()), footer);
     if app.help_open() {
         render_help(frame, app);
     }
 }
 
 /// The `?` overlay (T60.8): the global keys plus the current page's, generated from
-/// [`super::app::keys_for`] — never a hand-written list.
+/// [`super::app::keys_for`] — never a hand-written list. Centred, over a cleared box.
 fn render_help(frame: &mut Frame, app: &App) {
     let rows = keys_for(app.page());
-    let height = rows.len() as u16 + 2; // borders
-    let [_, mid, _] = Layout::vertical([
-        Constraint::Percentage(20),
-        Constraint::Length(height),
-        Constraint::Min(0),
-    ])
-    .areas(frame.area());
     let lines: Vec<Line<'static>> = rows
-        .into_iter()
-        .map(|(k, d)| Line::from(format!("{k:14} {d}")))
+        .iter()
+        .map(|(k, d)| {
+            Line::from(vec![
+                Span::styled(format!("{k:<13}"), theme::title()),
+                Span::raw(*d),
+            ])
+        })
         .collect();
+    let title = format!("keys — {}", app.page());
+    let width = lines
+        .iter()
+        .map(Line::width)
+        .max()
+        .unwrap_or(0)
+        .max(title.chars().count() + 12) as u16
+        + 4; // borders and padding
+    let height = lines.len() as u16 + 2;
+    let area = centered(frame.area(), width, height);
+    frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("keys — {} (? closes)", app.page())),
+            theme::pane(title)
+                .title_bottom(Line::styled(" ? closes ", theme::muted()).right_aligned()),
         ),
-        mid,
+        area,
     );
 }
 
-/// `rtok · <project> · <cols>x<rows>` — what, where, and the window it is in.
-fn header_line(area: Rect) -> String {
-    format!("rtok · {} · {}x{}", project(), area.width, area.height)
+/// A `width`×`height` box in the middle of `area`, clipped to it.
+fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let [_, mid, _] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(height),
+        Constraint::Fill(1),
+    ])
+    .areas(area);
+    let [_, rect, _] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(width),
+        Constraint::Fill(1),
+    ])
+    .areas(mid);
+    rect
+}
+
+/// The header: the badge, the project and the window on the left; the tick on the right.
+fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+    let status = header_status(app);
+    let [left, right] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(status.width() as u16),
+    ])
+    .areas(area);
+    frame.render_widget(Paragraph::new(header_line(frame.area())), left);
+    frame.render_widget(Paragraph::new(status), right);
+}
+
+/// ` rtok  <project>  <cols>×<rows>` — what, where, and the window it is in.
+fn header_line(area: Rect) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(" rtok ", theme::badge()),
+        Span::styled(format!(" {}", project()), Style::new().bold()),
+        Span::styled(format!("  {}×{}", area.width, area.height), theme::muted()),
+    ])
+}
+
+/// When the data last came off the model, and whether a read is in flight.
+fn header_status(app: &App) -> Line<'static> {
+    let stamp = crate::log::stamp(app.updated());
+    let time = stamp.rsplit_once(' ').map_or("-", |(_, t)| t).to_owned();
+    let mut spans = Vec::new();
+    if app.loading() {
+        spans.push(Span::styled("◌ loading  ", Style::new().fg(WARN)));
+    }
+    spans.push(Span::styled(format!("updated {time} UTC "), theme::muted()));
+    Line::from(spans)
 }
 
 /// The project is the current directory's name: the store the model reads is scoped
@@ -93,11 +147,19 @@ fn project() -> String {
         .unwrap_or_else(|| "-".into())
 }
 
-/// The model's pages in order, the selected one highlighted.
-fn tab_bar(app: &App) -> Tabs<'_> {
-    Tabs::new(app.tab_names())
+/// The model's pages in order, the selected one as a badge, `─` between them so the
+/// row reads as the pane's border.
+fn tab_bar(app: &App) -> Tabs<'static> {
+    let titles = app
+        .tab_names()
+        .into_iter()
+        .map(|name| format!(" {name} "))
+        .collect::<Vec<_>>();
+    Tabs::new(titles)
         .select(app.selected())
-        .highlight_style(Style::new().bold())
+        .padding("", "")
+        .divider(Span::styled("─", theme::muted()))
+        .highlight_style(theme::selected())
 }
 
 /// The selected page's body. No catch-all: a page the model adds ahead of its TUI
@@ -116,19 +178,44 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// The model's Overview page (T15.3): usage totals, CTT, one savings bar per measured
-/// plugin, and the per-turn sparkline — every number off the snapshot the model served
-/// (D23), never a second query.
+/// An empty-state line, muted.
+fn empty(msg: &str) -> Paragraph<'static> {
+    Paragraph::new(Line::styled(msg.to_owned(), theme::muted()))
+}
+
+/// The model's Overview page (T15.3): usage totals as cards, CTT, one savings bar per
+/// measured plugin, and the per-turn sparkline — every number off the snapshot the
+/// model served (D23), never a second query.
 fn render_overview(frame: &mut Frame, app: &App, area: Rect) {
-    let [top, spark] = Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).areas(area);
-    frame.render_widget(overview_text(app), top);
-    let data: Vec<u64> = app
-        .snapshot()
-        .usage
-        .turns
+    let usage = &app.snapshot().usage;
+    let [alerts, totals, cards, savings, spark] = Layout::vertical([
+        Constraint::Length(usage.alerts.len() as u16),
+        Constraint::Length(1),
+        Constraint::Length(4),
+        Constraint::Min(0),
+        Constraint::Length(3),
+    ])
+    .areas(area);
+    let alert_lines: Vec<Line<'static>> = usage
+        .alerts
         .iter()
-        .map(|t| (*t).max(0) as u64)
+        .map(|a| theme::banner('⚠', a, WARN))
         .collect();
+    frame.render_widget(Paragraph::new(alert_lines), alerts);
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            "usage totals (usage rows, all apis) · ctt = input-side tok × turns after",
+            theme::muted(),
+        )),
+        totals,
+    );
+    render_cards(frame, app, cards);
+    frame.render_widget(
+        Paragraph::new(savings_lines(&app.snapshot().plugins))
+            .block(theme::section("saved by plugin (Measurement rows)")),
+        savings,
+    );
+    let data: Vec<u64> = usage.turns.iter().map(|t| (*t).max(0) as u64).collect();
     let title = if data.is_empty() {
         "ctx tokens per turn (no usage rows yet)".to_string()
     } else {
@@ -136,34 +223,35 @@ fn render_overview(frame: &mut Frame, app: &App, area: Rect) {
     };
     frame.render_widget(
         Sparkline::default()
-            .block(Block::default().title(title))
+            .block(theme::section(title))
+            .style(Style::new().fg(ACCENT))
             .data(&data),
         spark,
     );
 }
 
-/// Totals, CTT and the bars as text; the sparkline is the widget below.
-fn overview_text(app: &App) -> Paragraph<'static> {
+/// Five cards in one row: the four usage counters and CTT.
+fn render_cards(frame: &mut Frame, app: &App, area: Rect) {
     let usage = &app.snapshot().usage;
-    let totals = &usage.totals;
-    let mut lines = Vec::new();
-    for a in &usage.alerts {
-        lines.push(Line::from(format!("⚠ {a}")));
+    let t = &usage.totals;
+    let cards = [
+        ("input", t.input),
+        ("output", t.output),
+        ("cache create", t.cache_create),
+        ("cache read", t.cache_read),
+        ("ctt", usage.ctt),
+    ];
+    let areas = Layout::horizontal([Constraint::Fill(1); 5])
+        .spacing(1)
+        .split(area);
+    for ((label, value), rect) in cards.into_iter().zip(areas.iter()) {
+        let card = Paragraph::new(vec![
+            Line::styled(value.to_string(), theme::title()),
+            Line::styled(label, theme::muted()),
+        ])
+        .block(theme::frame());
+        frame.render_widget(card, *rect);
     }
-    lines.extend([
-        Line::from("usage totals (usage rows, all apis)"),
-        Line::from(format!("input        {}", totals.input)),
-        Line::from(format!("output       {}", totals.output)),
-        Line::from(format!("cache create {}", totals.cache_create)),
-        Line::from(format!("cache read   {}", totals.cache_read)),
-        Line::from(format!(
-            "ctt          {} (input-side tok × turns after)",
-            usage.ctt
-        )),
-        Line::from("saved by plugin (Measurement rows)"),
-    ]);
-    lines.extend(savings_lines(&app.snapshot().plugins));
-    Paragraph::new(lines)
 }
 
 /// One bar per plugin that measured a saving, busiest saver first, each scaled to the
@@ -177,13 +265,22 @@ fn savings_lines(plugins: &[PluginPage]) -> Vec<Line<'static>> {
         .filter(|(_, saved)| *saved > 0)
         .collect();
     if saved.is_empty() {
-        return vec![Line::from("no measured savings yet")];
+        return vec![Line::styled("no measured savings yet", theme::muted())];
     }
     saved.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     let max = saved.iter().map(|(_, s)| *s).max().unwrap_or(0);
     saved
         .into_iter()
-        .map(|(id, s)| Line::from(format!("{id:9} {} {s} tok", bar(s, max))))
+        .map(|(id, s)| {
+            Line::from(vec![
+                Span::styled(format!("{id:9} "), Style::new().bold()),
+                Span::styled(
+                    format!("{:<BAR_WIDTH$}", bar(s, max)),
+                    Style::new().fg(ACCENT),
+                ),
+                Span::styled(format!(" {s} tok"), theme::muted()),
+            ])
+        })
         .collect()
 }
 
@@ -203,7 +300,7 @@ fn bar(saved: i64, max: i64) -> String {
 /// 80-column terminal with room to spare.
 const BAR_WIDTH: usize = 16;
 
-/// The model's Plugins page (T15.4): the catalogue table with a text cursor marking
+/// The model's Plugins page (T15.4): the catalogue table with a cursor row marking
 /// the row a toggle would hit, and a status line below — the keys, and what the last
 /// toggle did. The toggle itself is [`App`]'s; this only renders what it left behind.
 fn render_plugins(frame: &mut Frame, app: &App, area: Rect) {
@@ -212,7 +309,7 @@ fn render_plugins(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(plugins_status_line(app)), status);
 }
 
-/// One row per catalogue plugin, `>` on the cursor row, the `on` column saying what the
+/// One row per catalogue plugin, `▸` on the cursor row, the `on` column saying what the
 /// model last read — which, after a toggle, is what the file now says.
 fn plugins_table(app: &App) -> Table<'static> {
     let cursor = app.plugin_cursor();
@@ -222,12 +319,17 @@ fn plugins_table(app: &App) -> Table<'static> {
         .iter()
         .enumerate()
         .map(|(i, plugin)| {
-            Row::new([
-                if i == cursor { ">" } else { " " }.to_string(),
-                plugin.id.to_string(),
-                plugin.title.clone(),
-                if plugin.enabled { "on" } else { "off" }.to_string(),
-                plugin.stats.as_ref().map_or_else(
+            let on = if plugin.enabled {
+                Cell::from("on").style(Style::new().fg(OK))
+            } else {
+                Cell::from("off").style(theme::muted())
+            };
+            let row = Row::new(vec![
+                Cell::from(if i == cursor { "▸" } else { " " }),
+                Cell::from(plugin.id.to_string()),
+                Cell::from(plugin.title.clone()),
+                on,
+                Cell::from(plugin.stats.as_ref().map_or_else(
                     || "-".into(),
                     |stats| {
                         format!(
@@ -237,8 +339,13 @@ fn plugins_table(app: &App) -> Table<'static> {
                             rows = stats.rows
                         )
                     },
-                ),
-            ])
+                )),
+            ]);
+            if i == cursor {
+                row.style(theme::selected())
+            } else {
+                row
+            }
         });
     Table::new(
         rows,
@@ -250,33 +357,49 @@ fn plugins_table(app: &App) -> Table<'static> {
             Constraint::Min(24),
         ],
     )
-    .header(Row::new(["", "id", "title", "on", "saved"]))
+    .header(theme::header(["", "id", "title", "on", "saved"]))
 }
 
 /// The Plugins tab's status line: the row keys, and the last toggle's outcome until
 /// the cursor moves.
-fn plugins_status_line(app: &App) -> String {
+fn plugins_status_line(app: &App) -> Line<'static> {
     // T60.8: the hints are the KEYS table's plugin rows.
-    let keys = keys_for("plugins")
-        .iter()
-        .map(|(k, _)| *k)
-        .collect::<Vec<_>>()
-        .join(" · ");
-    match app.plugin_status() {
-        "" => keys,
-        status => format!("{keys} · {status}"),
+    status_line("plugins", app.plugin_status())
+}
+
+/// A page's status row: its key hints, then a note (a filter, a toggle's outcome).
+fn status_line(page: &str, note: &str) -> Line<'static> {
+    let page_keys: Vec<_> = keys_for(page)
+        .into_iter()
+        .filter(|(k, _)| !keys_for("").iter().any(|(g, _)| g == k))
+        .collect();
+    let mut line = theme::hints(&page_keys);
+    if !note.is_empty() {
+        line.push_span(Span::styled(format!("  {note}"), Style::new().fg(WARN)));
     }
+    line
 }
 
 /// The model's Doctor page (T15.6), verbatim: the same text `rtok doctor` prints, from
 /// the same model query the command renders (D27) — the snapshot already carries it,
 /// so this is a rendering, not a second probe run. `None` is a failed tick, not an
-/// empty page.
+/// empty page. Section heads (unindented lines) are bold.
 fn doctor(app: &App) -> Paragraph<'static> {
-    Paragraph::new(app.snapshot().doctor.as_ref().map_or_else(
-        || "doctor did not answer this tick — `rtok doctor` has the details".to_string(),
-        |report| report.to_text(),
-    ))
+    let Some(report) = app.snapshot().doctor.as_ref() else {
+        return empty("doctor did not answer this tick — `rtok doctor` has the details");
+    };
+    let lines = report
+        .to_text()
+        .lines()
+        .map(|l| {
+            if l.starts_with(' ') {
+                Line::from(l.to_owned())
+            } else {
+                Line::styled(l.to_owned(), Style::new().bold())
+            }
+        })
+        .collect::<Vec<_>>();
+    Paragraph::new(lines)
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,
@@ -291,7 +414,7 @@ fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             "no calls yet (the ledger fills as hooks, MCP and the proxy run)"
         };
-        frame.render_widget(Paragraph::new(msg), area);
+        frame.render_widget(empty(msg), area);
         return;
     }
     let expand = app.calls_expand();
@@ -299,7 +422,7 @@ fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
         (true, true) => {
             let [l, d, e] = Layout::vertical([
                 Constraint::Min(0),
-                Constraint::Length(7),
+                Constraint::Length(8),
                 Constraint::Min(6),
             ])
             .areas(area);
@@ -325,8 +448,9 @@ fn render_calls(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// The list: one row per call, the selected one bold. Tokens are the linked usage
-/// row's four counters summed; a dash says the ledger carries none there.
+/// The list: one row per call, the selected one as the cursor row, a failed call in
+/// red. Tokens are the linked usage row's four counters summed; a dash says the ledger
+/// carries none there.
 fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
     let table_rows = rows.iter().enumerate().map(|(i, c)| {
         let row = Row::new([
@@ -339,11 +463,22 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
             model::call_size_label(c),
         ]);
         if i == selected {
-            row.style(Style::new().bold())
+            row.style(theme::selected())
+        } else if c.ok == 0 {
+            row.style(Style::new().fg(ERR))
         } else {
             row
         }
     });
+    let live = rows.iter().filter(|c| c.kind == "live_passthrough").count();
+    let title = if live > 0 {
+        format!(
+            "calls (last {n}, {live} live passthrough — not recorded)",
+            n = rows.len()
+        )
+    } else {
+        format!("calls (last {}, newest first)", rows.len())
+    };
     Table::new(
         table_rows,
         [
@@ -356,20 +491,10 @@ fn calls_table(rows: &[CallRow], selected: usize) -> Table<'static> {
             Constraint::Length(10),
         ],
     )
-    .header(Row::new([
+    .header(theme::header([
         "when", "surf", "kind", "name", "session", "ms", "tok",
     ]))
-    .block(Block::default().title({
-        let live = rows.iter().filter(|c| c.kind == "live_passthrough").count();
-        if live > 0 {
-            format!(
-                "calls (last {n}, {live} live passthrough — not recorded)",
-                n = rows.len()
-            )
-        } else {
-            format!("calls (last {}, newest first)", rows.len())
-        }
-    }))
+    .block(theme::section(title))
 }
 
 /// The selected row's full fields: every column the ledger keeps, the slugs its ids
@@ -422,7 +547,7 @@ fn call_detail(c: &CallRow, app: &App) -> Paragraph<'static> {
         ),
         _ => "usage no row linked (only an api request records one)".to_string(),
     }));
-    Paragraph::new(lines).block(Block::default().title(format!("call {}", c.id)))
+    Paragraph::new(lines).block(theme::section(format!("call {}", c.id)))
 }
 
 fn expand_pane(
@@ -440,7 +565,7 @@ fn expand_pane(
     Paragraph::new(text.to_string())
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0))
-        .block(Block::default().title(title))
+        .block(theme::section(title))
 }
 
 /// `HH:MM:SS` — `log::stamp`'s time half; the full date is in the detail view.
@@ -451,10 +576,10 @@ fn time_of(ts: i64) -> String {
 }
 
 /// The model's Sessions page (T25.1 / D23), now with the same row model as Calls
-/// (T60.10): a cursor (`↑/↓`), the selected row bold, `l` toggling the live-only
-/// filter the CLI exposes as a flag, the table scrolled so the cursor row stays
-/// visible on a store taller than the terminal, and `Enter` expanding the selected
-/// row through [`model::session_detail`] (T60.3).
+/// (T60.10): a cursor (`↑/↓`), the selected row as the cursor row, live rows green,
+/// `l` toggling the live-only filter the CLI exposes as a flag, the table scrolled so
+/// the cursor row stays visible on a store taller than the terminal, and `Enter`
+/// expanding the selected row through [`model::session_detail`] (T60.3).
 fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
     let live_only = app.sessions_live_only();
     let rows: Vec<&crate::store::SessionTotals> = app
@@ -470,7 +595,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             "no sessions yet"
         };
-        frame.render_widget(Paragraph::new(msg), body);
+        frame.render_widget(empty(msg), body);
         frame.render_widget(Paragraph::new(sessions_status_line(live_only)), status);
         return;
     }
@@ -504,7 +629,7 @@ fn render_sessions(frame: &mut Frame, app: &App, area: Rect) {
 /// that id — [`model::session_detail`], never a second query (T60.3 / D23).
 fn session_pane(snapshot: &model::Snapshot, id: &str) -> Paragraph<'static> {
     let Some((s, calls)) = model::session_detail(snapshot, id) else {
-        return Paragraph::new("no session");
+        return empty("no session");
     };
     let dash = |v: Option<&str>| v.unwrap_or("-").to_string();
     let ended = s
@@ -528,15 +653,18 @@ fn session_pane(snapshot: &model::Snapshot, id: &str) -> Paragraph<'static> {
         Line::from(format!("calls {}", calls.len())),
     ];
     for c in calls {
-        lines.push(Line::from(format!(
-            "{} {} {} {}",
-            time_of(c.ts),
-            c.surface,
-            c.kind,
-            c.name.as_deref().unwrap_or("-")
-        )));
+        lines.push(Line::styled(
+            format!(
+                "{} {} {} {}",
+                time_of(c.ts),
+                c.surface,
+                c.kind,
+                c.name.as_deref().unwrap_or("-")
+            ),
+            theme::muted(),
+        ));
     }
-    Paragraph::new(lines).block(Block::default().title(format!("session {}", s.id)))
+    Paragraph::new(lines).block(theme::section(format!("session {}", s.id)))
 }
 
 fn sessions_row(s: &crate::store::SessionTotals, selected: bool) -> Row<'static> {
@@ -563,7 +691,9 @@ fn sessions_row(s: &crate::store::SessionTotals, selected: bool) -> Row<'static>
         crate::render::duration(run),
     ]);
     if selected {
-        row.style(Style::new().bold())
+        row.style(theme::selected())
+    } else if s.ended_at.is_none() {
+        row.style(Style::new().fg(OK))
     } else {
         row
     }
@@ -584,7 +714,7 @@ fn sessions_table(rows: Vec<Row<'static>>) -> Table<'static> {
             Constraint::Min(6),
         ],
     )
-    .header(Row::new([
+    .header(theme::header([
         "agent",
         "provider",
         "model",
@@ -612,14 +742,20 @@ fn render_skills(frame: &mut Frame, app: &App, area: Rect) {
         Constraint::Length(1),
     ])
     .areas(area);
-    frame.render_widget(Paragraph::new(app.snapshot().skills.header.clone()), head);
+    frame.render_widget(
+        Paragraph::new(Line::styled(
+            app.snapshot().skills.header.clone(),
+            theme::muted(),
+        )),
+        head,
+    );
     if rows.is_empty() {
         let msg = if never_only {
             "no never-invoked skills"
         } else {
             "no skills listed"
         };
-        frame.render_widget(Paragraph::new(msg), body);
+        frame.render_widget(empty(msg), body);
         frame.render_widget(Paragraph::new(skills_status_line(never_only)), status);
         return;
     }
@@ -637,6 +773,7 @@ fn render_skills(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(skills_status_line(never_only)), status);
 }
 
+/// A never-invoked skill is the finding the page exists for, so its row is yellow.
 fn skills_row(r: &model::SkillPageRow, selected: bool) -> Row<'static> {
     let row = Row::new([
         r.name.clone(),
@@ -648,7 +785,9 @@ fn skills_row(r: &model::SkillPageRow, selected: bool) -> Row<'static> {
         r.last_invoked.clone(),
     ]);
     if selected {
-        row.style(Style::new().bold())
+        row.style(theme::selected())
+    } else if r.never {
+        row.style(Style::new().fg(WARN))
     } else {
         row
     }
@@ -667,60 +806,51 @@ fn skills_table(rows: Vec<Row<'static>>) -> Table<'static> {
             Constraint::Min(5),
         ],
     )
-    .header(Row::new([
+    .header(theme::header([
         "name", "source", "desc", "body", "calls", "resident", "last",
     ]))
 }
 
-fn skills_status_line(never_only: bool) -> String {
-    let mut keys = keys_for("skills")
-        .iter()
-        .map(|(k, _)| *k)
-        .collect::<Vec<_>>()
-        .join(" · ");
-    if never_only {
-        keys.push_str(" · n again shows all");
-    }
-    keys
+fn skills_status_line(never_only: bool) -> Line<'static> {
+    status_line("skills", if never_only { "n again shows all" } else { "" })
 }
 
-fn sessions_status_line(live_only: bool) -> String {
-    let mut keys = keys_for("sessions")
-        .iter()
-        .map(|(k, _)| *k)
-        .collect::<Vec<_>>()
-        .join(" · ");
-    if live_only {
-        keys.push_str(" · l again shows all");
-    }
-    keys
+fn sessions_status_line(live_only: bool) -> Line<'static> {
+    status_line("sessions", if live_only { "l again shows all" } else { "" })
 }
 
 /// The model's Logs page (T15.7): the snapshot's log lines verbatim, newest first —
 /// the selection (last `[log] lines`, newest first) is the model's, the same one
-/// `rtok logs` screens; the numbering and colour are the CLI's, not a second table
-/// here. Nothing scrolls yet (T15.2 owns the keys): the page shows the newest lines
-/// the bound allows, long lines truncated by the terminal's width.
+/// `rtok logs` screens; the numbering is the CLI's, not a second table here. A line
+/// that names an error is red, a warning yellow. Nothing scrolls yet (T15.2 owns the
+/// keys): the page shows the newest lines the bound allows, long lines truncated by
+/// the terminal's width.
 fn logs_text(app: &App) -> Paragraph<'static> {
     let logs = &app.snapshot().logs;
     if logs.is_empty() {
-        return Paragraph::new("no logs yet");
+        return empty("no logs yet");
     }
-    Paragraph::new(logs.iter().cloned().map(Line::from).collect::<Vec<_>>())
+    let lines = logs
+        .iter()
+        .map(|l| {
+            let lower = l.to_ascii_lowercase();
+            let style = if lower.contains("error") {
+                Style::new().fg(ERR)
+            } else if lower.contains("warn") {
+                Style::new().fg(WARN)
+            } else {
+                Style::new()
+            };
+            Line::styled(l.clone(), style)
+        })
+        .collect::<Vec<_>>();
+    Paragraph::new(lines)
 }
 
-/// Key hints and when the data last came off the model.
-fn footer_line(app: &App) -> String {
-    let stamp = crate::log::stamp(app.updated());
-    let time = stamp.rsplit_once(' ').map_or("-", |(_, t)| t);
-    // T60.8: the hints are the KEYS table's global rows, never hand-written text.
-    let hints = keys_for("")
-        .iter()
-        .map(|(k, _)| *k)
-        .collect::<Vec<_>>()
-        .join(" · ");
-    let loading = if app.loading() { " · loading…" } else { "" };
-    format!("{hints} · updated {time} UTC{loading}")
+/// The global key hints, `key description` pairs off the KEYS table (T60.8) — never
+/// hand-written text. The tick moved to the header (T226).
+fn footer_line() -> Line<'static> {
+    theme::hints(&keys_for(""))
 }
 
 #[cfg(test)]
@@ -865,11 +995,11 @@ mod tests {
             "the key hint comes from the KEYS table"
         );
         assert!(
-            first.contains("> measure"),
+            first.contains("▸ measure"),
             "the cursor marks the first row"
         );
         app.key(KeyCode::Down, KeyModifiers::NONE);
-        assert!(screen(&app).contains("> cmd"), "the cursor follows Down");
+        assert!(screen(&app).contains("▸ cmd"), "the cursor follows Down");
     }
 
     /// T15.4: a toggle writes `<home>/config.toml` through `config set`'s writer and
@@ -1246,21 +1376,22 @@ mod tests {
 
     #[test]
     fn header_names_the_project_and_the_window() {
-        let line = header_line(Rect::new(0, 0, 120, 40));
-        assert!(line.starts_with("rtok · "), "line: {line}");
-        assert!(line.ends_with("120x40"), "line: {line}");
+        let line = header_line(Rect::new(0, 0, 120, 40)).to_string();
+        assert!(line.contains("rtok"), "line: {line}");
+        assert!(line.ends_with("120×40"), "line: {line}");
     }
 
     #[test]
     fn footer_hints_the_keys_and_the_last_tick() {
         let app = App::new(&config());
-        let line = footer_line(&app);
+        let line = footer_line().to_string();
         assert!(line.contains("q/Esc"), "line: {line}");
         assert!(
             line.contains("?") && line.contains("r"),
             "the footer names the T60.8 keys: {line}"
         );
-        assert!(line.contains("UTC"), "line: {line}");
+        let status = header_status(&app).to_string();
+        assert!(status.contains("UTC"), "status: {status}");
     }
 
     /// A session total whose model column carries the marker — the row field the
@@ -1498,8 +1629,9 @@ mod tests {
         let mut app = App::new(&cfg);
         select(&mut app, "sessions");
         let closed = screen(&app);
-        assert!(!closed.contains("keys —"), "closed until ?");
-        assert!(!closed.contains("live-only filter"), "{closed}");
+        // T226: the status line hints `l live-only filter` itself, so the overlay is
+        // told apart by its title.
+        assert!(!closed.contains("keys —"), "closed until ?: {closed}");
         app.key(KeyCode::Char('?'), KeyModifiers::NONE);
         let open = screen(&app);
         assert!(open.contains("keys — sessions"), "{open}");

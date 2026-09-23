@@ -17,7 +17,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D14) and 
 | A saving that is not a `Measurement` row does not exist | `plugin::Measurement` is the only type `Ctx::record` accepts; `measurements` table |
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
-| v0.1: no daemon on the hook path, no subprocess plugins, no WASM (D1/D6); `rtok demon` supervises long-running surfaces only (D22) | plugins are in-tree modules behind Cargo features; WASM remains Later |
+| v0.1: no daemon on the hook path, no subprocess plugins, no WASM (D1/D6); `rtok demon` supervises long-running surfaces only (D22); the one exception is the optional resident `rtok hook --serve`, which the `rtok-hook` client bypasses when it does not answer (D32) | plugins are in-tree modules behind Cargo features; WASM remains Later |
 | Every plugin is written here from scratch; no third-party tool on any code path (D6) | `Manifest` has no adapter kind; T0.8 Check greps `src/plugins` for retired tool names |
 | Every CLI flag is a config key; one precedence rule (D12, D14) | clap 4 derive; figment layers + provenance; toml_edit for `config set`; `tests/config_coverage.rs` walks the clap tree |
 
@@ -76,7 +76,7 @@ Dependencies point downward only. Surfaces know about the registry; plugins know
 | `src/proxy/wire.rs`, `anthropic.rs`, `openai_chat.rs`, `openai_responses.rs` | `Wire` adapters: one per API format, exposing tool results and `usage` in one normalised shape (D11) | P11 |
 | `src/tui/` | ratatui operator dashboard: `rtok tui` (D17, P15) | P15 |
 | `src/otel/` | OTLP/HTTP JSON projection of the ledgers: `otlp.rs` encoder, `map.rs` GenAI semconv mapping, `export.rs` flush + watermarks, `metrics.rs` sums; `rtok otel flush | status` (D19) | P16 |
-| `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Serves the D23 operator model `rtok tui` also renders; the WASM UI itself is still thin (Plugins strip) vs `model::pages()` — Sessions/Calls/Logs/Doctor are T19.4. UI crate `crates/rtok-webui` is not linked into the hook binary. | P19 |
+| `src/web/` | axum WebSocket + static Slint WASM UI: `rtok web` (D20; `rtok dashboard` is the deprecated spelling). Serves the D23 operator model `rtok tui` also renders; the WASM UI itself is still thin (Plugins strip) vs `model::pages()` — Sessions/Calls/Logs/Doctor are T19.4. UI crate `crates/rtok-webui` is not linked into the hook binary. `/ws` refuses a browser upgrade whose `Origin` host differs from `Host`, or whose `Host` is a DNS name other than `localhost` (DNS rebinding); header-less clients pass (T193). | P19 |
 | `src/measure/` | JSONL ingest, `rtok stats`, baselines, cache report | P1 |
 | `src/agents/` | agent hosts (`rtok agents install\|remove\|list`): one folder per host, each `<host>/mod.rs` implementing the `Agent` contract (variants, files, installed modules, apply) and `<host>/README.md` saying which rtok modules it takes and why the rest cannot be taken; a test keeps README and `support()` in step. Backups and `--dry-run` come from `rtok-agent-sdk`; a host that ships a plugin declares it as one `agents::plugin::HostPlugin` (source, destination, label, host name) instead of respelling the link cycle. | T2.3, P10, T44.2, T77 |
 | `examples/hello_plugin.rs` | smallest complete plugin, run by CI | — |
@@ -149,9 +149,9 @@ third-party plugins.
 ## 7. Data
 
 One SQLite file, WAL mode, opened per invocation (hooks are short-lived processes; SQLite
-handles the concurrency). Migrations are `migrations/NNNN.sql`, embedded with
+handles the concurrency). Migrations are `migrations/NNNN_<slug>/up.sql`, embedded with
 `include_str!`, applied once each and recorded in `schema_migrations`. Editing an applied
-migration is forbidden; add the next file.
+migration is forbidden; add the next directory.
 
 | Table | Written by | Read by |
 |-------|-----------|---------|
