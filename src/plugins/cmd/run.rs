@@ -517,33 +517,28 @@ mod tests {
 
     /// D4 at the byte level: a command that emits invalid UTF-8 must come back whole from
     /// `expand`. The archive used to store the lossy string, so every such byte was U+FFFD.
-    /// Emit bytes with POSIX octal `printf` escapes (`\\377`), not bash-only `\\xHH`:
-    /// dash `/bin/sh` leaves `\\xHH` literal, which made this test fail when `SHELL` is unset.
+    /// This is `emit_filtered`'s job, not the host shell's: earlier drafts padded the
+    /// fixture through a real `rtok run` subprocess (a `printf` octal escape, then a file
+    /// read via `cat`/`type`) and hit a different Windows shell-quoting failure each time
+    /// — cmd.exe mangles backslash escapes and treats `%` as expansion, and even a plain
+    /// `type <path>` came back empty on that runner. None of that exercises the archive
+    /// logic under test, so call `emit_filtered` directly, like
+    /// `emit_filtered_archives_stdin_and_records` above.
     #[test]
     fn archive_keeps_bytes_that_are_not_utf8() {
         let (c, dir) = cfg("bytes");
         // T175 passes bodies smaller than their own trailer through with no archive, so
         // this fixture pads past the ~170 B trailer to still exercise the archive path.
-        // `rtok run` always reaches the command through a real shell (cmd.exe on
-        // Windows, see `shell()`), and cmd.exe's own re-quoting mangles backslash
-        // octal escapes and treats `%` as variable expansion — a `printf '\377...'`
-        // argument does not round-trip there. Writing the bytes to a file and reading
-        // them back with a plain, argument-free-of-punctuation `cat`/`type` sidesteps
-        // shell quoting entirely (T175 review, Windows CI).
-        let mut expected = b"\xff\xfeok\n".to_vec();
-        expected.extend(std::iter::repeat_n(b'x', 300));
-        expected.push(b'\n');
-        let src = dir.join("raw.bin");
-        fs::write(&src, &expected).unwrap();
-        let reader = if cfg!(windows) { "type" } else { "cat" };
-        let code = run(&c, &[reader.into(), src.to_string_lossy().into_owned()]).unwrap();
-        assert_eq!(code, 0);
+        let mut body = b"\xff\xfeok\n".to_vec();
+        body.extend(std::iter::repeat_n(b'x', 300));
+        body.push(b'\n');
+        emit_filtered(&c, &["cat".into()], &body, 0);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
         let raw = fs::read(&files[0]).unwrap();
-        assert_eq!(raw, expected);
+        assert_eq!(raw, body);
         let _ = fs::remove_dir_all(&dir);
     }
 
