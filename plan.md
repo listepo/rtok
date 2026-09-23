@@ -58,7 +58,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T168 | todo | P2 | 1 | 0% | |
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
@@ -472,13 +471,6 @@ Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `sessi
 Execution plan: (1) wait for T163.1 on `main`; (2) move the three statements, signatures and row order unchanged; (3) the `session_totals` and `recent_calls` tests unchanged and green, `rtok stats` unchanged on a DB clone; (4) `just check`.
 
 Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
-### T168. `agents list` tables flake on wrapper noise in `--version`
-
-Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_what_agents_prints` and `remove_twice_says_no_changes_and_the_second_takes_no_backup` failed on this machine with byte diffs in the `app … (version)` cell — the real `copilot` npm wrapper printed `Package extraction took 10612ms` / `Package extraction attempt 1/3 …` into its `--version` output during npm cache activity. Both passed on re-run once npm settled. The tests' fake-bin set carries `claude` and `codex` shims but not `copilot`, so the probe reached the real wrapper — the T166 family of machine-state dependence (taste: never test against real host processes).
-
-Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
-
-Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
 
 ### T171. Claude Code sees the rtok MCP server twice
 

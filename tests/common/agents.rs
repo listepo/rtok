@@ -171,7 +171,10 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// resolves the way it resolves the real thing.
 /// A fake `copilot` beside the fake `claude`, so `rtok()`'s PATH picks it up: logs every
 /// call to `$HOME/copilot.log` and mirrors `plugin install` / `plugin uninstall` into the
-/// `installed-plugins/` marker layout the real CLI writes (T116).
+/// `installed-plugins/` marker layout the real CLI writes (T116). `--version` prints
+/// deterministic wrapper noise ahead of the version (T168): the real npm wrapper leaks
+/// `Package extraction …` lines into `--version`, so the shim carries a fixed noise line
+/// and the byte-comparing tables stay hermetic without caring what npm prints.
 pub fn fake_copilot(home: &Path) {
     let dir = home.join(".fake-bin");
     fs::create_dir_all(&dir).unwrap();
@@ -183,7 +186,7 @@ pub fn fake_copilot(home: &Path) {
             fs::write(
                 &bin,
                 r#"#!/bin/sh
-[ "$1" = --version ] && { echo "0.1.0 (fake copilot)"; exit 0; }
+[ "$1" = --version ] && { echo "Package extraction took 1234ms"; echo "0.1.0 (fake copilot)"; exit 0; }
 echo "$*" >> "$HOME/copilot.log"
 plugins="${COPILOT_HOME:-$HOME/.copilot}/installed-plugins"
 case "$*" in
@@ -204,6 +207,11 @@ esac
             fs::write(
                 &bin,
                 r#"@echo off
+if "%~1"=="--version" (
+  echo Package extraction took 1234ms
+  echo 0.1.0 ^(fake copilot^)
+  exit /b 0
+)
 set "ALLARGS=%*"
 echo %ALLARGS%>>"%HOME%\copilot.log"
 if defined COPILOT_HOME (set "PLUGINS=%COPILOT_HOME%\installed-plugins") else (set "PLUGINS=%HOME%\.copilot\installed-plugins")
@@ -220,6 +228,10 @@ if "%ALLARGS%"=="plugin uninstall rtok" rmdir /s /q "%PLUGINS%\_direct\x" 2>nul
 }
 
 pub fn fake_claude_path(home: &Path) -> std::ffi::OsString {
+    // T168: the copilot shim lives beside claude/codex so every `raw`/`rtok` probe is
+    // hermetic — without it `app_version` reached the real npm wrapper, whose
+    // `Package extraction …` noise flakes the byte-compared `agents list` tables.
+    fake_copilot(home);
     let path = std::env::var_os("PATH").unwrap_or_default();
     #[cfg(unix)]
     {

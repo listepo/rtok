@@ -47,7 +47,6 @@
 - T163.4. Migrations through `diesel_migrations`
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
-- T168. `agents list` tables flake on wrapper noise in `--version`
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
 - T174. Plugin hooks fail open when `rtok` is not on `PATH`
