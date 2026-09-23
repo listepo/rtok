@@ -56,8 +56,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.6 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T163.7 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T168 | todo | P2 | 1 | 0% | |
 | T170 | todo | P1 | 1 | 0% | |
 | T171 | todo | P1 | 2 | 0% | |
@@ -417,7 +417,7 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 
 **Split (2026-09-23).** T163.1 takes `symbols.rs`; T163.2 takes `otel.rs` and `embed.rs`. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
 
-**Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last.
+**Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last. T163.9 (window and CTE queries T163.7 could not express) was split off T163.7 on 2026-09-23 and also waits for `sql_ext.rs`.
 
 ### T163.1. `src/store/symbols.rs` without raw SQL
 
@@ -459,22 +459,22 @@ Execution plan: (1) add any missing `table!` columns; (2) rewrite site by site, 
 
 Check: none of the listed functions or tests hold `sql_query`; archive and expand tests green; `just check`.
 
-### T163.7. Usage and stats aggregates in the typed DSL
-
-`memory_note_aggs`, `memory_recall_totals`, `memory_mcp_calls`, `insert_usage`, `insert_provider_tokens`, `usage_sessions`, `usage_rows`, `usage_ctt`, `usage_by_api`, `usage_by_model`, `recent_session_totals`, `recent_calls`, `model_slug_of_call`, and the ts-rewrite helpers in `session_totals_sums_each_session_exactly`. Aggregates via `diesel::dsl::{count, sum, min, max}` and `group_by`; anything the DSL cannot express goes to `sql_ext.rs`, with a comment why.
-
-Execution plan: (1) rewrite one function at a time against the existing tests, which pin the numbers; (2) `rtok stats` output on a copy of a real `rtok.db` byte-identical before/after; (3) `just check`.
-
-Check: none of the listed functions or tests hold `sql_query`; `rtok stats` unchanged on the same DB; `just check`.
 
 ### T163.8. Retention without raw SQL; close T163
 
-`purge_calls_older_than` and `run_retention` (dynamic `DELETE`s, archive path collection) and the remaining test sites (`purge_drops_old_calls…`, `retention_keeps_plugin_archives…`, `archive_in_session…`), then T163's full Check. Last slice: it runs after T163.3–T163.7 and removes `use diesel::sql_query` from `mod.rs`.
+`purge_calls_older_than` and `run_retention` (dynamic `DELETE`s, archive path collection) and the remaining test sites (`purge_drops_old_calls…`, `retention_keeps_plugin_archives…`, `archive_in_session…`), then T163's full Check. Last slice: it runs after T163.3–T163.7 and removes `use diesel::sql_query` from `mod.rs`; it runs after T163.9 too.
 
 Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed updates inside the existing transaction; (2) T163's `grep` over `src` finds nothing; (3) hook path still ≤ 10 ms (`rtok bench` or the existing timing test); (4) move T163 and all its slices to `done.md`.
 
 Check: T163's Check.
 
+### T163.9. Window and CTE queries through the shared extension module
+
+Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `session_totals`/`recent_session_totals` (four CTEs, `UNION ALL`, per-group `MAX(id)` subqueries) and `recent_calls` (correlated `MAX(id)` subquery in a `LEFT JOIN`) have no form in Diesel 2.3.13's typed DSL. They move into T163.1's `src/store/sql_ext.rs` as typed `QueryFragment`s with bound parameters, each with a comment naming the construct the DSL lacks (the rulebook's exception for statements the ORM cannot express).
+
+Execution plan: (1) wait for T163.1 on `main`; (2) move the three statements, signatures and row order unchanged; (3) the `session_totals` and `recent_calls` tests unchanged and green, `rtok stats` unchanged on a DB clone; (4) `just check`.
+
+Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
 ### T168. `agents list` tables flake on wrapper noise in `--version`
 
 Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_what_agents_prints` and `remove_twice_says_no_changes_and_the_second_takes_no_backup` failed on this machine with byte diffs in the `app … (version)` cell — the real `copilot` npm wrapper printed `Package extraction took 10612ms` / `Package extraction attempt 1/3 …` into its `--version` output during npm cache activity. Both passed on re-run once npm settled. The tests' fake-bin set carries `claude` and `codex` shims but not `copilot`, so the probe reached the real wrapper — the T166 family of machine-state dependence (taste: never test against real host processes).

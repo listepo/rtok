@@ -47,8 +47,8 @@
 - T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
 - T163.4. Migrations through `diesel_migrations`
 - T163.6. Archive, `call_io` and `read_cache` in the typed DSL
-- T163.7. Usage and stats aggregates in the typed DSL
 - T163.8. Retention without raw SQL; close T163
+- T163.9. Window and CTE queries through the shared extension module
 - T168. `agents list` tables flake on wrapper noise in `--version`
 - T170. A slow hook is logged, not only printed to stderr
 - T171. Claude Code sees the rtok MCP server twice

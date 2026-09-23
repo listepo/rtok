@@ -7,7 +7,7 @@ pub mod schema;
 // Symbol index (graph plugin) — SQLite only (D18 loser deleted; P39: Ladybug/Grafeo removed).
 mod symbols;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text};
+use diesel::sql_types::{BigInt, Bool, Double, Integer, Nullable, Text};
 use diesel::sqlite::SqliteConnection;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -29,7 +29,7 @@ pub use crate::plugin::{ArchiveDecision, NoteHit};
 // own `pub mod models` of Diesel row structs, so upsert_model qualifies it as `schema::models`.
 use schema::{
     archive, call_io, calls, hosts, kv, logs, measurements, notes, providers, read_cache, sessions,
-    tokens,
+    tokens, usage,
 };
 
 /// `COALESCE(x, y)` for an upsert `DO UPDATE SET` (T163.5): not one of Diesel's built-in
@@ -40,6 +40,19 @@ extern "SQL" {
         x: diesel::sql_types::Nullable<T>,
         y: diesel::sql_types::Nullable<T>,
     ) -> diesel::sql_types::Nullable<T>;
+}
+
+// SQLite `length()`: character count of a TEXT value (not byte count) — matches what the
+// raw SQL it replaces computed, so `memory_note_aggs`'s `body_bytes` stays unchanged.
+diesel::define_sql_function!(fn length(x: Text) -> BigInt);
+// `SUM` declared to return `Nullable<BigInt>`: Diesel's generic `sum()` widens every
+// integer sum to `Nullable<Numeric>` (ANSI's overflow-safe rule, via `Foldable`), which
+// this crate has no `bigdecimal` support to deserialize. SQLite has no separate NUMERIC
+// storage class — an integer sum is still an integer — so a `BigInt` result is exact.
+diesel::define_sql_function! {
+    #[aggregate]
+    #[sql_name = "SUM"]
+    fn sum_bigint(x: BigInt) -> Nullable<BigInt>;
 }
 
 /// Embedded migrations, applied in order, each exactly once.
@@ -1267,75 +1280,112 @@ impl Store {
 
     /// Per `(project, kind)` note counts for `memory status` (T69.4).
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
+        use diesel::IntoSql;
+        use diesel::dsl::{case_when, max, min};
+        type Row = (
+            Option<String>,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        );
         let mut conn = self.lock()?;
-        let base = "SELECT project, kind,
-                SUM(CASE WHEN retired IS NULL THEN 1 ELSE 0 END) AS live,
-                SUM(CASE WHEN retired IS NULL AND pinned != 0 THEN 1 ELSE 0 END) AS pinned,
-                SUM(CASE WHEN retired IS NOT NULL THEN 1 ELSE 0 END) AS retired,
-                SUM(length(body)) AS body_bytes,
-                MIN(ts) AS oldest_ts,
-                MAX(ts) AS newest_ts
-         FROM notes
-         WHERE kind NOT LIKE 'checkpoint%'";
-        let rows: Vec<MemoryNoteKindAggRow> = match project {
-            Some(p) => sql_query(format!(
-                "{base} AND project = ? GROUP BY project, kind ORDER BY project, kind"
+        // One statement for both `project` cases: `project.is_none()` is bound as a SQL
+        // boolean literal and OR'd ahead of the equality check, so a `None` short-circuits
+        // the whole condition to true (no project filter) while `Some(p)` falls through to
+        // `notes::project.eq(p)` — the same filter the two-statement version used per branch.
+        let no_project_filter = project.is_none().into_sql::<Bool>().nullable();
+        let rows: Vec<Row> = notes::table
+            .filter(notes::kind.not_like("checkpoint%"))
+            .filter(no_project_filter.or(notes::project.eq(project.unwrap_or_default())))
+            .group_by((notes::project, notes::kind))
+            .select((
+                notes::project,
+                notes::kind,
+                sum_bigint(
+                    case_when::<_, _, BigInt>(notes::retired.is_null(), 1i64).otherwise(0i64),
+                ),
+                sum_bigint(
+                    case_when::<_, _, BigInt>(
+                        notes::retired.is_null().and(notes::pinned.ne(0)),
+                        1i64,
+                    )
+                    .otherwise(0i64),
+                ),
+                sum_bigint(
+                    case_when::<_, _, BigInt>(notes::retired.is_not_null(), 1i64).otherwise(0i64),
+                ),
+                sum_bigint(length(notes::body)),
+                min(notes::ts),
+                max(notes::ts),
             ))
-            .bind::<Text, _>(p)
-            .load(&mut *conn)?,
-            None => sql_query(format!(
-                "{base} GROUP BY project, kind ORDER BY project, kind"
-            ))
-            .load(&mut *conn)?,
-        };
+            .order((notes::project, notes::kind))
+            .load(&mut *conn)?;
         Ok(rows
             .into_iter()
-            .map(|r| MemoryNoteKindAgg {
-                project: r.project,
-                kind: r.kind,
-                live: u64::try_from(r.live).unwrap_or(0),
-                pinned: u64::try_from(r.pinned).unwrap_or(0),
-                retired: u64::try_from(r.retired).unwrap_or(0),
-                body_bytes: r.body_bytes,
-                oldest_ts: r.oldest_ts,
-                newest_ts: r.newest_ts,
-            })
+            .map(
+                |(project, kind, live, pinned, retired, body_bytes, oldest_ts, newest_ts)| {
+                    MemoryNoteKindAgg {
+                        project,
+                        kind,
+                        live: u64::try_from(live.unwrap_or(0)).unwrap_or(0),
+                        pinned: u64::try_from(pinned.unwrap_or(0)).unwrap_or(0),
+                        retired: u64::try_from(retired.unwrap_or(0)).unwrap_or(0),
+                        body_bytes: body_bytes.unwrap_or(0),
+                        oldest_ts: oldest_ts.unwrap_or(0),
+                        newest_ts: newest_ts.unwrap_or(0),
+                    }
+                },
+            )
             .collect())
     }
 
     /// SessionStart recall measurements in a time window (T69.4).
     pub fn memory_recall_totals(&self, since_unix: i64) -> Result<(u64, i64, i64)> {
+        use diesel::dsl::count_star;
         let mut conn = self.lock()?;
-        let rows: Vec<MemoryRecallAggRow> = sql_query(
-            "SELECT COUNT(*) AS recalls,
-                    COALESCE(SUM(before_bytes), 0) AS stood_for_bytes,
-                    COALESCE(SUM(after_bytes), 0) AS injected_bytes
-             FROM measurements
-             WHERE plugin = 'memory' AND kind = 'recall' AND ts >= ?",
-        )
-        .bind::<BigInt, _>(since_unix)
-        .load(&mut *conn)?;
-        let r = rows.first().map_or((0, 0, 0), |x| {
-            (x.recalls, x.stood_for_bytes, x.injected_bytes)
-        });
-        Ok((u64::try_from(r.0).unwrap_or(0), r.1, r.2))
+        let (recalls, stood_for_bytes, injected_bytes): (i64, Option<i64>, Option<i64>) =
+            measurements::table
+                .filter(measurements::plugin.eq("memory"))
+                .filter(measurements::kind.eq("recall"))
+                .filter(measurements::ts.ge(since_unix))
+                .select((
+                    count_star(),
+                    sum_bigint(measurements::before_bytes),
+                    sum_bigint(measurements::after_bytes),
+                ))
+                .first(&mut *conn)?;
+        Ok((
+            u64::try_from(recalls).unwrap_or(0),
+            stood_for_bytes.unwrap_or(0),
+            injected_bytes.unwrap_or(0),
+        ))
     }
 
     /// MCP `mem_search` / `mem_get` calls in a time window (T69.4).
     pub fn memory_mcp_calls(&self, since_unix: i64) -> Result<(u64, u64)> {
+        use diesel::dsl::case_when;
         let mut conn = self.lock()?;
-        let rows: Vec<MemoryMcpCallsRow> = sql_query(
-            "SELECT COALESCE(SUM(CASE WHEN name = 'mem_search' THEN 1 ELSE 0 END), 0) AS mem_search,
-                    COALESCE(SUM(CASE WHEN name = 'mem_get' THEN 1 ELSE 0 END), 0) AS mem_get
-             FROM calls
-             WHERE plugin = 'memory' AND surface = 'mcp' AND kind = 'mcp_call' AND ts >= ?",
-        )
-        .bind::<BigInt, _>(since_unix)
-        .load(&mut *conn)?;
-        let r = rows.first().map_or((0, 0), |x| (x.mem_search, x.mem_get));
+        let (mem_search, mem_get): (Option<i64>, Option<i64>) = calls::table
+            .filter(calls::plugin.eq("memory"))
+            .filter(calls::surface.eq("mcp"))
+            .filter(calls::kind.eq("mcp_call"))
+            .filter(calls::ts.ge(since_unix))
+            .select((
+                sum_bigint(
+                    case_when::<_, _, BigInt>(calls::name.eq("mem_search"), 1i64).otherwise(0i64),
+                ),
+                sum_bigint(
+                    case_when::<_, _, BigInt>(calls::name.eq("mem_get"), 1i64).otherwise(0i64),
+                ),
+            ))
+            .first(&mut *conn)?;
         Ok((
-            u64::try_from(r.0).unwrap_or(0),
-            u64::try_from(r.1).unwrap_or(0),
+            u64::try_from(mem_search.unwrap_or(0)).unwrap_or(0),
+            u64::try_from(mem_get.unwrap_or(0)).unwrap_or(0),
         ))
     }
 
@@ -1379,8 +1429,7 @@ impl Store {
         Ok(())
     }
 
-    /// Proxy ground truth (plan T5.1): one `usage` row per API request. Raw SQL — the
-    /// `usage` table predates P13's Diesel schema and has no model.
+    /// Proxy ground truth (plan T5.1): one `usage` row per API request.
     #[allow(clippy::too_many_arguments)]
     pub fn insert_usage(
         &self,
@@ -1394,19 +1443,18 @@ impl Store {
         call_id: i32,
     ) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO usage (session, model, api, input, cache_create, cache_read, output, call_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind::<Text, _>(session)
-        .bind::<Nullable<Text>, _>(model)
-        .bind::<Text, _>(api)
-        .bind::<BigInt, _>(input)
-        .bind::<BigInt, _>(cache_create)
-        .bind::<BigInt, _>(cache_read)
-        .bind::<BigInt, _>(output)
-        .bind::<Integer, _>(call_id)
-        .execute(&mut *conn)?;
+        diesel::insert_into(usage::table)
+            .values((
+                usage::session.eq(session),
+                usage::model.eq(model),
+                usage::api.eq(api),
+                usage::input.eq(input),
+                usage::cache_create.eq(cache_create),
+                usage::cache_read.eq(cache_read),
+                usage::output.eq(output),
+                usage::call_id.eq(call_id),
+            ))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
@@ -1459,44 +1507,76 @@ impl Store {
         output: i64,
     ) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO tokens (call_id, phase, source, tokens, input, output, cache_create, cache_read)
-             VALUES (?, 'after', 'provider', ?, ?, ?, ?, ?)",
-        )
-        .bind::<Integer, _>(call_id)
-        .bind::<BigInt, _>(total)
-        .bind::<BigInt, _>(input)
-        .bind::<BigInt, _>(output)
-        .bind::<BigInt, _>(cache_create)
-        .bind::<BigInt, _>(cache_read)
-        .execute(&mut *conn)?;
+        diesel::insert_into(tokens::table)
+            .values((
+                tokens::call_id.eq(call_id),
+                tokens::phase.eq("after"),
+                tokens::source.eq("provider"),
+                tokens::n_tokens.eq(total),
+                tokens::input.eq(input),
+                tokens::output.eq(output),
+                tokens::cache_create.eq(cache_create),
+                tokens::cache_read.eq(cache_read),
+            ))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
     /// Sessions that have usage rows, oldest first (`rtok stats --cache`, T5.5).
     pub fn usage_sessions(&self) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct S {
-            #[diesel(sql_type = Text)]
-            session: String,
-        }
+        use diesel::dsl::min;
         let mut conn = self.lock()?;
-        let rows: Vec<S> =
-            sql_query("SELECT session FROM usage GROUP BY session ORDER BY MIN(ts), MIN(id)")
-                .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.session).collect())
+        usage::table
+            .group_by(usage::session)
+            .select(usage::session)
+            .order((min(usage::ts), min(usage::id)))
+            .load::<String>(&mut *conn)
+            .map_err(Into::into)
     }
 
     /// Usage rows for one session, newest first (proxy Check, later `stats`).
     pub fn usage_rows(&self, session: &str) -> Result<Vec<UsageRow>> {
         let mut conn = self.lock()?;
-        sql_query(
-            "SELECT session, model, api, input, cache_create, cache_read, output, call_id
-             FROM usage WHERE session = ? ORDER BY ts DESC, id DESC",
-        )
-        .bind::<Text, _>(session)
-        .load::<UsageRow>(&mut *conn)
-        .map_err(Into::into)
+        let rows = usage::table
+            .filter(usage::session.eq(session))
+            .order((usage::ts.desc(), usage::id.desc()))
+            .select((
+                usage::session,
+                usage::model,
+                usage::api,
+                usage::input,
+                usage::cache_create,
+                usage::cache_read,
+                usage::output,
+                usage::call_id,
+            ))
+            .load::<(
+                String,
+                Option<String>,
+                String,
+                i64,
+                i64,
+                i64,
+                i64,
+                Option<i32>,
+            )>(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(session, model, api, input, cache_create, cache_read, output, call_id)| {
+                    UsageRow {
+                        session,
+                        model,
+                        api,
+                        input,
+                        cache_create,
+                        cache_read,
+                        output,
+                        call_id: call_id.map(i64::from),
+                    }
+                },
+            )
+            .collect())
     }
 
     /// The dashboard Overview's CTT and its last `turns` per-turn contexts, in the order of
@@ -1530,78 +1610,75 @@ impl Store {
     }
 
     pub fn usage_by_api(&self) -> Result<Vec<ApiUsage>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            api: String,
-            #[diesel(sql_type = BigInt)]
-            input: i64,
-            #[diesel(sql_type = BigInt)]
-            cache_create: i64,
-            #[diesel(sql_type = BigInt)]
-            cache_read: i64,
-            #[diesel(sql_type = BigInt)]
-            output: i64,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT api,
-                    COALESCE(SUM(input),0) AS input,
-                    COALESCE(SUM(cache_create),0) AS cache_create,
-                    COALESCE(SUM(cache_read),0) AS cache_read,
-                    COALESCE(SUM(output),0) AS output
-             FROM usage GROUP BY api ORDER BY api",
-        )
-        .load(&mut *conn)?;
+        let rows = usage::table
+            .group_by(usage::api)
+            .select((
+                usage::api,
+                sum_bigint(usage::input),
+                sum_bigint(usage::cache_create),
+                sum_bigint(usage::cache_read),
+                sum_bigint(usage::output),
+            ))
+            .order(usage::api)
+            .load::<(String, Option<i64>, Option<i64>, Option<i64>, Option<i64>)>(&mut *conn)?;
         Ok(rows
             .into_iter()
-            .map(|r| ApiUsage {
-                api: r.api,
-                input: r.input,
-                cache_create: r.cache_create,
-                cache_read: r.cache_read,
-                output: r.output,
+            .map(|(api, input, cache_create, cache_read, output)| ApiUsage {
+                api,
+                input: input.unwrap_or(0),
+                cache_create: cache_create.unwrap_or(0),
+                cache_read: cache_read.unwrap_or(0),
+                output: output.unwrap_or(0),
             })
             .collect())
     }
 
     /// Usage totals grouped by model (`rtok stats --price`, T49.1). One statement,
-    /// like [`Self::usage_by_api`]: `NULL` models group together and read back as
-    /// `"unknown"`.
+    /// like [`Self::usage_by_api`]: `NULL` models already group into one bucket under
+    /// plain `GROUP BY model` (grouping treats every `NULL` as equal), so the SQL side
+    /// only needs the raw column. The old raw SQL grouped by `COALESCE(model, 'unknown')`,
+    /// so a `NULL`-model group and a row whose model is literally `"unknown"` merged into
+    /// one row — replicated here by folding the `NULL → "unknown"` rows into a
+    /// `BTreeMap<String, ModelUsage>` keyed by the display name, which also gives the sort
+    /// (Diesel cannot validate a `CASE` as the same grouped expression once it also appears
+    /// inside `ORDER BY`/`SELECT` — a Diesel 2.3.13 `GROUP BY`-over-computed-expression gap,
+    /// not a raw-SQL fallback).
     pub fn usage_by_model(&self) -> Result<Vec<ModelUsage>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            model: String,
-            #[diesel(sql_type = BigInt)]
-            input: i64,
-            #[diesel(sql_type = BigInt)]
-            cache_create: i64,
-            #[diesel(sql_type = BigInt)]
-            cache_read: i64,
-            #[diesel(sql_type = BigInt)]
-            output: i64,
-        }
+        type Row = (
+            Option<String>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        );
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT COALESCE(model, 'unknown') AS model,
-                    COALESCE(SUM(input),0) AS input,
-                    COALESCE(SUM(cache_create),0) AS cache_create,
-                    COALESCE(SUM(cache_read),0) AS cache_read,
-                    COALESCE(SUM(output),0) AS output
-             FROM usage GROUP BY model ORDER BY model",
-        )
-        .load(&mut *conn)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| ModelUsage {
-                model: r.model,
-                input: r.input,
-                cache_create: r.cache_create,
-                cache_read: r.cache_read,
-                output: r.output,
-            })
-            .collect())
+        let rows: Vec<Row> = usage::table
+            .group_by(usage::model)
+            .select((
+                usage::model,
+                sum_bigint(usage::input),
+                sum_bigint(usage::cache_create),
+                sum_bigint(usage::cache_read),
+                sum_bigint(usage::output),
+            ))
+            .load(&mut *conn)?;
+        let mut by_model: BTreeMap<String, ModelUsage> = BTreeMap::new();
+        for (model, input, cache_create, cache_read, output) in rows {
+            let model = model.unwrap_or_else(|| "unknown".to_string());
+            let entry = by_model.entry(model.clone()).or_insert(ModelUsage {
+                model,
+                input: 0,
+                cache_create: 0,
+                cache_read: 0,
+                output: 0,
+            });
+            entry.input += input.unwrap_or(0);
+            entry.cache_create += cache_create.unwrap_or(0);
+            entry.cache_read += cache_read.unwrap_or(0);
+            entry.output += output.unwrap_or(0);
+        }
+        Ok(by_model.into_values().collect())
     }
 
     /// One row per session the store knows (T25.1, D27): the single read behind the
@@ -1703,17 +1780,13 @@ impl Store {
     /// `models.slug` recorded on a call — the proxy Check asserts it equals the request `model`.
     pub fn model_slug_of_call(&self, call_id: i32) -> Result<Option<String>> {
         let mut conn = self.lock()?;
-        #[derive(QueryableByName)]
-        struct Slug {
-            #[diesel(sql_type = Text)]
-            slug: String,
-        }
-        let rows: Vec<Slug> = sql_query(
-            "SELECT m.slug AS slug FROM models m JOIN calls c ON c.model_id = m.id WHERE c.id = ?",
-        )
-        .bind::<Integer, _>(call_id)
-        .load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.slug.clone()))
+        calls::table
+            .inner_join(schema::models::table)
+            .filter(calls::id.eq(call_id))
+            .select(schema::models::slug)
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1921,44 +1994,6 @@ pub struct MemoryNoteKindAgg {
     pub newest_ts: i64,
 }
 
-#[derive(Debug, QueryableByName)]
-struct MemoryNoteKindAggRow {
-    #[diesel(sql_type = Nullable<Text>)]
-    project: Option<String>,
-    #[diesel(sql_type = Text)]
-    kind: String,
-    #[diesel(sql_type = BigInt)]
-    live: i64,
-    #[diesel(sql_type = BigInt)]
-    pinned: i64,
-    #[diesel(sql_type = BigInt)]
-    retired: i64,
-    #[diesel(sql_type = BigInt)]
-    body_bytes: i64,
-    #[diesel(sql_type = BigInt)]
-    oldest_ts: i64,
-    #[diesel(sql_type = BigInt)]
-    newest_ts: i64,
-}
-
-#[derive(Debug, QueryableByName)]
-struct MemoryRecallAggRow {
-    #[diesel(sql_type = BigInt)]
-    recalls: i64,
-    #[diesel(sql_type = BigInt)]
-    stood_for_bytes: i64,
-    #[diesel(sql_type = BigInt)]
-    injected_bytes: i64,
-}
-
-#[derive(Debug, QueryableByName)]
-struct MemoryMcpCallsRow {
-    #[diesel(sql_type = BigInt)]
-    mem_search: i64,
-    #[diesel(sql_type = BigInt)]
-    mem_get: i64,
-}
-
 /// One `measurements` row for `stats --plugin`.
 #[derive(Debug, Queryable)]
 pub struct MeasRow {
@@ -2010,23 +2045,15 @@ pub struct ModelUsage {
 }
 
 /// One `usage` row (proxy ground truth, T5.1).
-#[derive(Debug, QueryableByName)]
+#[derive(Debug)]
 pub struct UsageRow {
-    #[diesel(sql_type = Text)]
     pub session: String,
-    #[diesel(sql_type = Nullable<Text>)]
     pub model: Option<String>,
-    #[diesel(sql_type = Text)]
     pub api: String,
-    #[diesel(sql_type = BigInt)]
     pub input: i64,
-    #[diesel(sql_type = BigInt)]
     pub cache_create: i64,
-    #[diesel(sql_type = BigInt)]
     pub cache_read: i64,
-    #[diesel(sql_type = BigInt)]
     pub output: i64,
-    #[diesel(sql_type = Nullable<BigInt>)]
     pub call_id: Option<i64>,
 }
 
@@ -2514,6 +2541,43 @@ mod tests {
         assert_eq!(store.usage_by_api().unwrap().len(), 2);
     }
 
+    /// The old raw SQL grouped by `COALESCE(model, 'unknown')`, so a `NULL`-model row and
+    /// a row whose model is literally `"unknown"` summed into a single bucket. The typed
+    /// DSL groups by the raw column, so `usage_by_model` must fold those two groups back
+    /// together in Rust to keep that behaviour.
+    #[test]
+    fn usage_by_model_merges_null_and_literal_unknown() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s1", None, None, None, Some("proxy"))
+            .unwrap();
+        let call = store
+            .insert_call(
+                "s1",
+                "proxy",
+                "api_request",
+                None,
+                None,
+                None,
+                None,
+                Some("/v1/messages"),
+            )
+            .unwrap();
+        store
+            .insert_usage("s1", None, "anthropic", 10, 1, 2, 3, call)
+            .unwrap();
+        store
+            .insert_usage("s1", Some("unknown"), "anthropic", 5, 0, 1, 2, call)
+            .unwrap();
+        let rows = store.usage_by_model().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].model, "unknown");
+        assert_eq!(rows[0].input, 15);
+        assert_eq!(rows[0].cache_create, 1);
+        assert_eq!(rows[0].cache_read, 3);
+        assert_eq!(rows[0].output, 5);
+    }
+
     /// T25.1's Check: three sessions across the two hosts the migrations seed
     /// (`claude` from 0002, `pi` from 0010), one ended, one with no usage yet —
     /// `session_totals` sums each one's tokens exactly, newest first, and `since`
@@ -2579,23 +2643,20 @@ mod tests {
         {
             let mut conn = store.lock().unwrap();
             for (id, started) in [("a", 1000i64), ("b", 2000), ("c", 3000)] {
-                sql_query("UPDATE sessions SET started_at = ? WHERE id = ?")
-                    .bind::<BigInt, _>(started)
-                    .bind::<Text, _>(id)
+                diesel::update(sessions::table.filter(sessions::id.eq(id)))
+                    .set(sessions::started_at.eq(started))
                     .execute(&mut *conn)
                     .unwrap();
             }
-            for (rowid, ts) in [(1i64, 1100i64), (2, 1200), (3, 2100)] {
-                sql_query("UPDATE usage SET ts = ? WHERE rowid = ?")
-                    .bind::<BigInt, _>(ts)
-                    .bind::<BigInt, _>(rowid)
+            for (id, ts) in [(1i32, 1100i64), (2, 1200), (3, 2100)] {
+                diesel::update(usage::table.filter(usage::id.eq(id)))
+                    .set(usage::ts.eq(ts))
                     .execute(&mut *conn)
                     .unwrap();
             }
-            for (id, ts) in [(call_a as i64, 1500i64), (call_b as i64, 2100)] {
-                sql_query("UPDATE calls SET ts = ? WHERE id = ?")
-                    .bind::<BigInt, _>(ts)
-                    .bind::<BigInt, _>(id)
+            for (id, ts) in [(call_a, 1500i64), (call_b, 2100)] {
+                diesel::update(calls::table.filter(calls::id.eq(id)))
+                    .set(calls::ts.eq(ts))
                     .execute(&mut *conn)
                     .unwrap();
             }
