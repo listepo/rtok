@@ -1490,7 +1490,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__kill)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1508,7 +1508,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__restart)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1526,7 +1526,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__start)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1544,7 +1544,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__status)
-            opts="-h --json --config --help proxy mcp web"
+            opts="-h --json --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1562,7 +1562,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__stop)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1580,7 +1580,7 @@ _rtok() {
             return 0
             ;;
         rtok__subcmd__demon__subcmd__supervise)
-            opts="-h --config --help proxy mcp web"
+            opts="-h --config --help proxy mcp web hook"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

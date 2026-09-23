@@ -17,7 +17,7 @@ This document describes the shape; `plan.md` holds the decisions (D1–D14) and 
 | A saving that is not a `Measurement` row does not exist | `plugin::Measurement` is the only type `Ctx::record` accepts; `measurements` table |
 | Injected context is budgeted and byte-stable | single `inject` plugin; `core.inject_budget_tokens` |
 | PostToolUse can only add context | `Plugin::post_tool` returns `Option<String>` (additionalContext), nothing else |
-| v0.1: no daemon on the hook path, no subprocess plugins, no WASM (D1/D6); `rtok demon` supervises long-running surfaces only (D22) | plugins are in-tree modules behind Cargo features; WASM remains Later |
+| v0.1: no daemon on the hook path, no subprocess plugins, no WASM (D1/D6); `rtok demon` supervises long-running surfaces only (D22); the one exception is the optional resident `rtok hook --serve`, which the `rtok-hook` client bypasses when it does not answer (D32) | plugins are in-tree modules behind Cargo features; WASM remains Later |
 | Every plugin is written here from scratch; no third-party tool on any code path (D6) | `Manifest` has no adapter kind; T0.8 Check greps `src/plugins` for retired tool names |
 | Every CLI flag is a config key; one precedence rule (D12, D14) | clap 4 derive; figment layers + provenance; toml_edit for `config set`; `tests/config_coverage.rs` walks the clap tree |
 
