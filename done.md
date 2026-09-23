@@ -5114,3 +5114,18 @@ Check result: `cargo test --lib store::` 42 passed; `cargo clippy --lib --tests 
 
 Status: done 2026-09-23
 Model: Claude Code / claude-opus-5-5
+
+### T163.7. Usage and stats aggregates in the typed DSL
+
+`memory_note_aggs`, `memory_recall_totals`, `memory_mcp_calls`, `insert_usage`, `insert_provider_tokens`, `usage_sessions`, `usage_rows`, `usage_ctt`, `usage_by_api`, `usage_by_model`, `recent_session_totals`, `recent_calls`, `model_slug_of_call`, and the ts-rewrite helpers in `session_totals_sums_each_session_exactly`. Aggregates via `diesel::dsl::{count, sum, min, max}` and `group_by`; anything the DSL cannot express goes to `sql_ext.rs`, with a comment why.
+
+Execution plan: (1) rewrite one function at a time against the existing tests, which pin the numbers; (2) `rtok stats` output on a copy of a real `rtok.db` byte-identical before/after; (3) `just check`.
+
+Check: none of the listed functions or tests hold `sql_query`; `rtok stats` unchanged on the same DB; `just check`.
+
+Do (Claude Code / claude-opus-5-5 supervising claude-sonnet-5, 2026-09-23): `memory_note_aggs`, `memory_recall_totals`, `memory_mcp_calls`, `insert_usage`, `insert_provider_tokens`, `usage_sessions`, `usage_rows`, `usage_by_api`, `usage_by_model`, `model_slug_of_call` and the `session_totals_sums_each_session_exactly` ts helpers moved to the typed DSL. Two typed SQL functions: `length` and `sum_bigint` (`SUM` declared as `Nullable<BigInt>`, since Diesel's `sum()` widens integers to `Numeric` and rtok has no `bigdecimal`); CASE counts via `case_when`. `usage_by_model` groups on the raw column and folds `NULL` and `"unknown"` into one row in Rust, as `GROUP BY COALESCE(model, 'unknown')` did (new test `usage_by_model_merges_null_and_literal_unknown`). `memory_note_aggs` is one statement with a bound boolean for the optional project. `usage_ctt`, `session_totals`/`recent_session_totals` and `recent_calls` use window functions and CTEs the DSL cannot express — split off as T163.9.
+
+Check result: `cargo test --lib store::` 43 passed, `cargo test --lib stats` 22 passed; clippy `-D warnings` and `fmt --check` clean; `rtok memory status --json --since 36500d` byte-identical before/after on an APFS clone of the real `rtok.db`; the clone's `usage` table is empty, so `usage_by_api`/`usage_by_model` rest on their unit tests. `sql_query|sql::<|batch_execute` in `mod.rs` 70 → 57. Full `just check` in CI.
+
+Status: done 2026-09-23
+Model: Claude Code / claude-opus-5-5
