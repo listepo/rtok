@@ -6,6 +6,7 @@
 //! [`view`] the screen (T15.2; pages T15.3+). The TTY guard is T15.9.
 
 mod app;
+mod theme;
 mod view;
 
 use std::io::{self, IsTerminal};
