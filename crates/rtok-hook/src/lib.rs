@@ -1,5 +1,6 @@
-//! T178 / D32: the wire between `rtok-hook`, a std-only client a host starts once per hook call,
-//! and `rtok hook --serve`, the optional resident that runs the hook without a process start.
+//! T178 / D32: rtok's home resolver ([`home`]), and the wire between `rtok-hook`, a std-only
+//! client a host starts once per hook call, and `rtok hook --serve`, the optional resident that
+//! runs the hook without a process start.
 //!
 //! A frame is a little-endian `u32` length, then the body. Request body: length-prefixed fields
 //! `version, fingerprint, event, host, cwd, stdin`. Response body: status byte `0` and the hook's
@@ -127,14 +128,81 @@ pub fn fingerprint(vars: impl IntoIterator<Item = (OsString, OsString)>) -> u64 
     fnv(&bytes)
 }
 
-/// The resident's home from raw variables: `$RTOK_HOME` when absolute, else
-/// `<HOME or USERPROFILE>/.rtok`. `None` (no resident) when `RTOK_HOME` needs `~` expansion.
+/// rtok's home from raw variables, resolved exactly as `rtok` resolves it ([`home_dir_from`]),
+/// so client and resident agree on the endpoint. `None` when that is not absolute: no resident
+/// hangs off the cwd.
 pub fn home(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    let set = |k: &str| var(k).filter(|v| !v.is_empty());
-    match set("RTOK_HOME") {
-        Some(h) => Some(PathBuf::from(h)).filter(|p| p.is_absolute()),
-        None => Some(PathBuf::from(set("HOME").or_else(|| set("USERPROFILE"))?).join(".rtok")),
+    let user_home = user_home_from(var("HOME"), var("USERPROFILE"));
+    Some(home_dir_from(var("RTOK_HOME"), user_home)).filter(|p| p.is_absolute())
+}
+
+/// The user home: `HOME`, else `USERPROFILE`. Native Windows PowerShell often has `HOME` unset or
+/// empty, and an empty one must not block the fallback.
+pub fn user_home_from(home: Option<OsString>, userprofile: Option<OsString>) -> Option<PathBuf> {
+    let nonempty = |v: Option<OsString>| v.filter(|v| !v.is_empty()).map(PathBuf::from);
+    nonempty(home).or_else(|| nonempty(userprofile))
+}
+
+/// `$RTOK_HOME`, else `<user home>/.rtok`. A `~` in `RTOK_HOME` (set from a JSON `env` block,
+/// where no shell expands it) is expanded: left literal, every store path hung off it resolved
+/// against the cwd as `./~/.rtok/…` (T169).
+pub fn home_dir_from(rtok_home: Option<OsString>, user_home: Option<PathBuf>) -> PathBuf {
+    let default = user_home.clone().unwrap_or_default().join(".rtok");
+    match rtok_home {
+        Some(h) => expand_with(Path::new(&h), &default, user_home.as_deref()),
+        None => default,
     }
+}
+
+/// `~/.rtok/x` → `<rtok_home>/x` (so `RTOK_HOME` moves the whole tree), other `~/x` →
+/// `<user_home>/x`. Bare `~` and `~/.rtok` (no trailing slash) expand too — leaving them
+/// literal is how tests without `finish` used to create a `./~` directory in the repo. The
+/// user home is explicit so the Windows `USERPROFILE` fallback is testable without env.
+pub fn expand_with(path: &Path, rtok_home: &Path, user_home: Option<&Path>) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = strip_rtok_home_prefix(&raw) {
+        return match rest {
+            "" => rtok_home.to_path_buf(),
+            rest => join_tilde_rest(rtok_home, rest),
+        };
+    }
+    if raw == "~" {
+        return user_home
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+    if let Some(rest) = strip_home_prefix(&raw) {
+        return match user_home {
+            Some(h) => join_tilde_rest(h, rest),
+            None => path.to_path_buf(),
+        };
+    }
+    path.to_path_buf()
+}
+
+fn strip_rtok_home_prefix(raw: &str) -> Option<&str> {
+    for prefix in ["~/.rtok/", "~/.rtok\\", "~\\.rtok\\", "~\\.rtok/"] {
+        if let Some(rest) = raw.strip_prefix(prefix) {
+            return Some(rest);
+        }
+    }
+    match raw {
+        "~/.rtok" | "~/.rtok/" | "~/.rtok\\" | "~\\.rtok" | "~\\.rtok\\" | "~\\.rtok/" => Some(""),
+        _ => None,
+    }
+}
+
+fn strip_home_prefix(raw: &str) -> Option<&str> {
+    raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\"))
+}
+
+/// Join a tilde-relative remainder that may use `/` or `\\` separators.
+fn join_tilde_rest(base: &Path, rest: &str) -> PathBuf {
+    let mut out = base.to_path_buf();
+    for part in rest.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        out.push(part);
+    }
+    out
 }
 
 /// Unix: `<home>/hook.sock`, `None` past the 104-byte `sun_path`. Windows: a pipe named by home.
@@ -199,17 +267,27 @@ mod tests {
     }
 
     #[test]
-    fn home_needs_an_absolute_rtok_home_or_a_user_home() {
+    fn home_is_rtoks_own_and_never_relative() {
         let home_of = |pairs: &[(&str, &str)]| {
             let env = vars(pairs);
             home(|k| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()))
         };
-        let abs = if cfg!(windows) { r"C:\h" } else { "/h" };
-        assert_eq!(home_of(&[("RTOK_HOME", "~/x"), ("HOME", "/u")]), None);
+        let (abs, user) = if cfg!(windows) {
+            (r"C:\h", r"C:\u")
+        } else {
+            ("/h", "/u")
+        };
+        let user_home = Path::new(user);
         assert_eq!(home_of(&[("RTOK_HOME", abs)]), Some(abs.into()));
-        assert_eq!(
-            home_of(&[("HOME", "/u")]),
-            Some(Path::new("/u").join(".rtok"))
-        );
+        // T169: a literal `~` expands, as `rtok` expands it.
+        let tilde = home_of(&[("RTOK_HOME", "~/x"), ("HOME", user)]);
+        assert_eq!(tilde, Some(user_home.join("x")));
+        let rtok_tilde = home_of(&[("RTOK_HOME", "~/.rtok"), ("HOME", user)]);
+        assert_eq!(rtok_tilde, Some(user_home.join(".rtok")));
+        let profile = home_of(&[("HOME", ""), ("USERPROFILE", user)]);
+        assert_eq!(profile, Some(user_home.join(".rtok")));
+        // A home relative to the cwd (T184) serves no resident.
+        assert_eq!(home_of(&[("RTOK_HOME", "rel")]), None);
+        assert_eq!(home_of(&[]), None);
     }
 }
