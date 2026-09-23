@@ -81,3 +81,58 @@ fn latency_hook_post_tool_p95_under_10ms() {
         include_bytes!("fixtures/hooks/post_tool.json"),
     );
 }
+
+/// T200: a second connection holding `BEGIN EXCLUSIVE` for 500 ms must not stall
+/// the hook. `hooks::run` fails open through its few-ms lock bound and still
+/// prints valid JSON, well under 100 ms.
+#[test]
+fn hook_returns_despite_exclusive_lock() {
+    use diesel::Connection;
+    use diesel::connection::SimpleConnection;
+
+    let tmp = std::env::temp_dir().join(format!("rtok-latency-locked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("temp home");
+    let db = tmp.join("rtok.db");
+    let mut cfg = rtok::config::Config::default();
+    cfg.core.db_path = db.clone();
+    cfg.core.archive_dir = tmp.join("archive");
+
+    // Warm the store once so the locked run exercises contention, not migration.
+    let fixture = include_bytes!("fixtures/hooks/pre_tool_read.json");
+    let mut warm = Vec::new();
+    rtok::hooks::run("PreToolUse", &fixture[..], &mut warm, &cfg);
+    assert!(
+        serde_json::from_slice::<serde_json::Value>(&warm).is_ok(),
+        "warmup hook must print valid JSON"
+    );
+
+    let (held, held_ack) = std::sync::mpsc::channel();
+    let url = db.to_str().unwrap().to_string();
+    let holder = std::thread::spawn(move || {
+        let mut conn = diesel::sqlite::SqliteConnection::establish(&url).unwrap();
+        conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
+            .unwrap();
+        conn.batch_execute("BEGIN EXCLUSIVE;").unwrap();
+        held.send(()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        conn.batch_execute("COMMIT;").unwrap();
+    });
+    held_ack.recv().unwrap();
+
+    let start = std::time::Instant::now();
+    let mut out = Vec::new();
+    rtok::hooks::run("PreToolUse", &fixture[..], &mut out, &cfg);
+    let took = start.elapsed();
+    holder.join().unwrap();
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out).expect("locked hook must print valid JSON");
+    assert!(v.is_object(), "{v}");
+    assert!(
+        took < std::time::Duration::from_millis(100),
+        "hook waited {took:?} under an exclusive lock"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
