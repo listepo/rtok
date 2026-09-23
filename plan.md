@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T168 | todo | P2 | 1 | 0% | |
-| T170 | todo | P1 | 1 | 0% | |
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T173 | todo | P2 | 1 | 0% | |
@@ -483,14 +482,6 @@ Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_w
 Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
 
 Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
-
-### T170. A slow hook is logged, not only printed to stderr
-
-Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
-
-Plan: route the slow note through `crate::log::record` at `warn` (keep the stderr line); `rtok logs` and `rtok info`'s error count then show it.
-
-Check: a unit test with `max_ms = 0` finds one `warn` row in the log store after a hook run; `just test` green.
 
 ### T171. Claude Code sees the rtok MCP server twice
 
