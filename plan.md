@@ -103,6 +103,13 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T235 | todo | P1 | 3 | 0% | |
 | T225.1 | todo | P2 | 2 | 0% | |
 | T234 | todo | P2 | 3 | 0% | |
+| T226 | todo | P2 | 2 | 0% | |
+| T227 | todo | P1 | 4 | 0% | |
+| T228 | todo | P2 | 2 | 0% | |
+| T229 | todo | P2 | 2 | 0% | |
+| T230 | todo | P2 | 3 | 0% | |
+| T231 | todo | P2 | 3 | 0% | |
+| T232 | todo | P3 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -584,6 +591,61 @@ Check: after `just test`, no `./.rtok` and no `./~` in the checkout; `env -i rto
 
 Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
 
+### T226. Web Sessions page: live-only filter and a help overlay
+
+Found 2026-09-23 in the D23 surface audit: the TUI Sessions tab filters live sessions with `l` (`src/tui/app.rs:32,133,417-419`) and `?` opens an overlay listing `KEYS` (`src/tui/view.rs:59`); the web `SessionList` in `crates/rtok-webui/ui/app.slint` has no live toggle and the web has no help at all. `ended_at` already rides the wire (`crates/rtok-webui/src/lib.rs:273-274`), so the filter is UI-only.
+
+Plan: a "live only" `CheckBox` on the web sessions page bound to a `sessions_live_only` property filtered in `lib.rs` (same shape as the skills "never invoked only" box); a `?` help button/overlay listing the web actions (expand, filter, toggle, theme, live). No new snapshot fields.
+
+Check: `tests/surface_parity.rs` gains `sessions_live_filter_exists_on_both_surfaces` (source scan like `skills_page_exists_on_both_surfaces`); `just check` green.
+
+### T227. `stats` page on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `rtok stats` — transcript report, per-plugin CTT, cache health, `--price` per-model USD, baseline compare — is CLI-only; `tests/surface_parity.rs:384` exempts it as "no snapshot page yet". The data already flows through `web::model::stats_report`, `cache_health`, `plugin_stats` and `store::usage_by_model` (`src/store/mod.rs:1536`, read only by `measure/stats.rs:655`); the Overview page carries `usage_by_api` only, so the P15 gate ("Overview numbers match `rtok stats --json`") covers a fraction of the command.
+
+Plan: `model::pages()` gains `("stats", "stats")`; the snapshot carries the stats report rows, cache health, per-model usage and cost; one TUI tab and one Slint page render them; `stats` moves from `EXEMPT` to `COMMAND_PAGES`. Reuse the accessors — no second aggregation (T207 owns the totals).
+
+Check: `stats_page_exists_on_both_surfaces`; on the fixture store every number on the page equals `rtok stats --json` / `--price`; `just check` green.
+
+### T228. Config page: `config show` / `config get` on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `config show` and `config get` are exempt (`tests/surface_parity.rs:401-408`) although `model::config_entries` (`src/web/model.rs:1055`) already lists every key with its value and D12 source.
+
+Plan: page `("config", "config")` — key, effective value, source (default / user file / project file / env / flag); read-only on both surfaces (writes stay CLI, D27); TUI tab with a `/` filter, Slint list with a filter box; both commands move to `COMMAND_PAGES`.
+
+Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp config with one env override shows the env source; `just check` green.
+
+### T229. Services page: `demon status` and `otel status` on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `demon status` and `otel status` are exempt (`tests/surface_parity.rs:371-374,413`) while `Model::demon` and `model::otel_status` already produce their JSON; an operator cannot see supervisor or exporter health without a shell.
+
+Plan: page `("services", "services")` — one row per supervised service (name, state, pid, uptime, last error) and an OTel block (endpoint, per-stream watermark, pending rows, last flush); both commands move to `COMMAND_PAGES`. Read-only; `demon start/stop` and `otel flush` stay CLI.
+
+Check: `services_page_exists_on_both_surfaces`; `tests/web.rs` fixture with a stopped service and a non-zero watermark; `just check` green.
+
+### T230. Graph page: index status and dead symbols on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `graph status`, `graph dead`, `graph impact` and `graph affected` are exempt (`tests/surface_parity.rs:385-400`) though they are pure reads over `symbols`; I-80 rejected new export formats because "D27 says the web/TUI page is the surface", yet no page exists.
+
+Plan: page `("graph", "graph")` — index status (roots, files, symbols, edges, the T68.3 staleness line) and the dead-symbol list with path and line; `graph status` and `graph dead` move to `COMMAND_PAGES`. `impact` and `affected` need a target and stay CLI/MCP: keep them exempt with that reason written in the test.
+
+Check: `graph_page_exists_on_both_surfaces`; snapshot on a fixture index lists the same dead symbols as `graph dead --json`; `just check` green.
+
+### T231. Hosts page: `agents list` / `agents info` on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `agents list` and `agents info` are exempt and the comment block files them under "writing" commands (`tests/surface_parity.rs:281-291`) although they only read host state.
+
+Plan: page `("hosts", "hosts")` — per known host: kind (CLI / desktop / IDE), detected version, installed surfaces (hooks, MCP, plugin), config path; reuse the `agents list` probe and its cache so T168's `--version` wrapper noise cannot flake the page; fix the "writing" comment; both commands move to `COMMAND_PAGES`.
+
+Check: `hosts_page_exists_on_both_surfaces`; the page rows equal `agents list --json` on the host-fixture matrix; `just check` green.
+
+### T232. Worktrees page: `worktree list` on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` are exempt as "reads git/filesystem, not the store"; still the only view of owner locks, age and `target/` disk cost is the CLI.
+
+Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
+
+Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
 
 ## Reference
 
