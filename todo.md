@@ -64,3 +64,41 @@
 - T184. rtok never resolves its home to a relative `.rtok`
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
+- T187. `cmd` normalized dedupe panics on multibyte lines
+- T188. `inject::apply` emits one oversized injection whole — the D5 budget does not bind
+- T189. `cap_budget` drops PostToolUse context with no archive id
+- T190. `after_mcp` shortens MCP results on a second, divergent path
+- T191. `rtok mcp` answers a malformed or oversized request with silence
+- T192. `[mcp] tools` allow-list is dead config
+- T193. `rtok web` `/ws` accepts cross-origin WebSocket upgrades
+- T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
+- T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
+- T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)
+- T197. `mcp` launcher scripts: masked exit code and dead files the READMEs still promise
+- T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
+- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+- T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
+- T201. Hook path does unbounded reads and hashes bodies it never archives
+- T202. `recent_hook_inputs` and the handoff ledger re-parse up to 200 × 64 KB per event
+- T203. PreCompact/SessionEnd read the whole transcript and open extra stores
+- T204. A panicking plugin is dropped silently — the error never reaches the log
+- T205. Proxy bookkeeping blocks the tokio runtime before forwarding
+- T206. `rtok web` builds each snapshot inline while holding the config mutex
+- T207. Measurement totals computed three ways; non-catalogue plugins and expand rows disagree
+- T208. Multi-step store writes commit separately — freezes without a Measurement, orphan archives
+- T209. `upsert_note` select-then-insert races a duplicate past the topic key
+- T210. `measurements (session, ts)` has no index on never-pruned tables
+- T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
+- T212. Semantic-cache key omits sampling params and tool schemas
+- T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
+- T214. In-process plugin spawns have no timeout — a wedged `rtok` hangs the host
+- T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
+- T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
+- T217. `AGENTS.md` is ~4× its own 350-token budget
+- T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
+- T219. `rtok stats` p95 is the maximum
+- T220. Schema-drift guard compares column names only; seven tables escape it
+- T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
+- T222. Seven direct dependencies with no `toolchain.md` row
+- T223. `windows-sys` linked in three versions
+- T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`

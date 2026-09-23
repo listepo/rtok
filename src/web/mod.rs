@@ -16,6 +16,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use serde_json::{Value, json};
@@ -239,10 +240,58 @@ async fn health(State(state): State<Arc<DashState>>) -> Json<Value> {
 }
 
 async fn ws_upgrade(
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     State(state): State<Arc<DashState>>,
 ) -> impl IntoResponse {
+    if !origin_allowed(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     ws.on_upgrade(move |socket| socket_loop(socket, state))
+        .into_response()
+}
+
+/// Browsers send `Origin` on cross-site WebSocket upgrades; non-browser clients
+/// send none. Reject only a present `Origin` whose host differs from `Host`.
+fn origin_allowed(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
+    let Some(host) = headers.get("host").and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
+    match (origin_host(origin), host_host(host)) {
+        (Some(o), Some(h)) => o.eq_ignore_ascii_case(&h),
+        _ => false,
+    }
+}
+
+fn origin_host(origin: &str) -> Option<&str> {
+    let rest = origin.split("://").nth(1)?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    Some(strip_port(authority.split('@').next_back()?))
+}
+
+fn host_host(host: &str) -> Option<&str> {
+    let host = host.split(',').next_back()?.trim();
+    if host.is_empty() {
+        return None;
+    }
+    Some(strip_port(host.split('@').next_back()?))
+}
+
+fn strip_port(authority: &str) -> &str {
+    if let Some(rest) = authority.strip_prefix('[')
+        && let Some(end) = rest.find(']')
+    {
+        return &rest[..end];
+    }
+    if authority.matches(':').count() == 1
+        && let Some((h, _)) = authority.split_once(':')
+    {
+        return h;
+    }
+    authority
 }
 
 /// One snapshot per tick, rendered from the operator model. Keys come out sorted, which

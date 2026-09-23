@@ -262,10 +262,12 @@ pub(super) fn collect_skill_refs<'a>(messages: &'a mut [Value], total: usize) ->
                 .get("text")
                 .and_then(Value::as_str)
                 .is_some_and(|s| s.starts_with(SKILL_BODY));
-            let Some((id, name)) = pending.take() else {
-                continue;
-            };
-            if body && let Some(content) = block.get_mut("text") {
+            // Take only on a body match: an earlier non-body block must not eat
+            // the pair the skill text behind it needs (mirrors the string path).
+            if body
+                && let Some((id, name)) = pending.take()
+                && let Some(content) = block.get_mut("text")
+            {
                 out.push(SkillRef {
                     id,
                     name,

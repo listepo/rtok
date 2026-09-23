@@ -39,6 +39,7 @@ Project programs and direct packages from the manifests.
 | clap | local | https://crates.io/crates/clap | CLI |
 | clap_complete | local | https://crates.io/crates/clap_complete | `rtok completions` shell scripts (T53.2) |
 | clap_mangen | local | https://crates.io/crates/clap_mangen | `rtok man` roff page (T53.2) |
+| console_error_panic_hook | local | https://crates.io/crates/console_error_panic_hook | WASM panic hook for the Slint web UI (T222) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal |
 | diesel | local | https://crates.io/crates/diesel | SQLite ORM |
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
@@ -51,6 +52,8 @@ Project programs and direct packages from the manifests.
 | ignore | local | https://crates.io/crates/ignore | Rust dependency |
 | indicatif | local | https://crates.io/crates/indicatif | Rust dependency |
 | insta | local | https://crates.io/crates/insta | Snapshot tests for stable text output |
+| js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
+| jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
@@ -90,6 +93,10 @@ Project programs and direct packages from the manifests.
 | tree-sitter-typescript | local | https://crates.io/crates/tree-sitter-typescript | Rust dependency |
 | trycmd | local | https://crates.io/crates/trycmd | Full CLI command-output fixtures in tests/trycmd/ |
 | tokio-tungstenite | local | https://crates.io/crates/tokio-tungstenite | WebSocket client for the `rtok web` e2e (tests/web_e2e.rs) |
+| wasm-bindgen | local | https://crates.io/crates/wasm-bindgen | JS glue for the Slint web UI (T222) |
+| wasm-bindgen-futures | local | https://crates.io/crates/wasm-bindgen-futures | JS futures for the Slint web UI (T222) |
 | wasmi | local | https://crates.io/crates/wasmi | Rust dependency |
 | watchman_client | local | https://crates.io/crates/watchman_client | Rust dependency |
+| web-sys | local | https://crates.io/crates/web-sys | Web APIs for the Slint web UI (T222) |
 | webpki-roots | local | https://crates.io/crates/webpki-roots | Mozilla roots without the platform verifier (T53.3) |
+| windows-sys | local | https://crates.io/crates/windows-sys | Windows process + file-lock shims in rtok-sys (T222) |

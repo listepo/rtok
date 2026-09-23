@@ -60,11 +60,18 @@ fn canonical_base(cwd: &Path) -> PathBuf {
 }
 
 fn display_rel(path: &Path, root: &Path, base: &Path) -> String {
-    strip_prefix_ci(path, base)
+    let rel = strip_prefix_ci(path, base)
         .or_else(|| strip_prefix_ci(path, root))
-        .unwrap_or_else(|| path.to_path_buf())
-        .display()
-        .to_string()
+        .unwrap_or_else(|| path.to_path_buf());
+    // A hit on the root itself strips to "": name the file instead of
+    // printing `:1: snippet` with no path.
+    if rel.as_os_str().is_empty() {
+        return path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+    }
+    rel.display().to_string()
 }
 
 /// `WalkBuilder::hidden(false)` also descends into `.git/`; no tool wants object files,
@@ -83,7 +90,9 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
         &cfg.allow_paths,
     )?;
     let cap = max.unwrap_or(cfg.search_max).max(1) as usize;
-    let re = Regex::new(pattern)?;
+    // Same grammar as `expand --grep`: an invalid regex searches literally
+    // instead of erroring the whole call.
+    let re = Regex::new(pattern).or_else(|_| Regex::new(&regex::escape(pattern)))?;
     let base = canonical_base(&cwd);
     let mut hits = Vec::new();
     for entry in WalkBuilder::new(&root)
@@ -183,6 +192,23 @@ mod tests {
         let cx = cx("max");
         let out = search(&Ctx::new(&cx), "the", ".", Some(3)).unwrap();
         assert!(out.lines().count() <= 3, "{out}");
+    }
+
+    #[test]
+    fn display_rel_names_the_root_file_instead_of_empty() {
+        let root = Path::new("/repo");
+        let got = display_rel(Path::new("/repo"), root, Path::new("/repo"));
+        assert_eq!(got, "repo");
+    }
+
+    /// Same grammar as `expand --grep`: `read(` is a literal search, not an error.
+    #[test]
+    fn invalid_regex_searches_literally() {
+        let (rt, dir) = crate::plugins::read::tests::cx("litsearch");
+        std::fs::write(dir.join("a.txt"), "read(x) literally\n").unwrap();
+        let out = search(&Ctx::new(&rt), "read(", dir.to_str().unwrap(), None).unwrap();
+        assert!(out.contains("a.txt:1:"), "{out}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

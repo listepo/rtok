@@ -552,7 +552,11 @@ fn cap_budget(cx: &Runtime, text: &str) -> String {
                 .chain(rest)
                 .collect::<Vec<_>>()
                 .join("\n");
-            let marker = format!("dropped:post_tool:{}", cx.estimate(&dropped, Class::Prose));
+            let est = cx.estimate(&dropped, Class::Prose);
+            let marker = match rtok_plugin_sdk::Archive::put_archive(cx, dropped.as_bytes()) {
+                Ok(id) => format!("dropped:post_tool:{est} · expand: rtok expand {id}"),
+                Err(_) => format!("dropped:post_tool:{est}"),
+            };
             if out.is_empty() {
                 // Estimates round up per part, so a prefix that fits the room left after
                 // `\n{marker}` keeps the whole line under budget.
@@ -807,15 +811,24 @@ mod tests {
     #[test]
     fn cap_budget_marks_drop_when_first_line_exceeds() {
         let mut cx = Runtime::in_memory("cap-first").unwrap();
-        cx.config.plugins.inject.budget_tokens = 20;
+        cx.config.plugins.inject.budget_tokens = 40;
         let huge = "word ".repeat(400);
-        let out = cap_budget(&cx, huge.trim_end());
+        let want = huge.trim_end().to_string();
+        let out = cap_budget(&cx, &want);
         assert!(!out.is_empty(), "must not swallow the whole payload");
+        let marker = out
+            .lines()
+            .find(|l| l.starts_with("dropped:post_tool:"))
+            .unwrap_or_else(|| panic!("marker missing: {out}"));
+        assert!(marker.contains(" · expand: rtok expand "), "{marker}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
         assert!(
-            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
-            "{out}"
+            id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
+            "{marker}"
         );
-        assert!(cx.estimate(&out, Class::Prose) <= 20, "{out}");
+        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(got, want.as_bytes(), "{marker}");
+        assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
     }
 
     #[test]
@@ -824,13 +837,22 @@ mod tests {
         cx.config.plugins.inject.budget_tokens = 30;
         let small = "ok";
         let huge = "word ".repeat(400);
-        let text = format!("{small}\n{}", huge.trim_end());
+        let want = huge.trim_end().to_string();
+        let text = format!("{small}\n{want}");
         let out = cap_budget(&cx, &text);
         assert!(out.starts_with("ok\n"), "{out}");
+        let marker = out
+            .lines()
+            .find(|l| l.starts_with("dropped:post_tool:"))
+            .unwrap_or_else(|| panic!("marker missing: {out}"));
+        assert!(marker.contains(" · expand: rtok expand "), "{marker}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
         assert!(
-            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
-            "{out}"
+            id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
+            "{marker}"
         );
+        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(got, want.as_bytes(), "{marker}");
         assert!(cx.estimate(&out, Class::Prose) <= 30, "{out}");
     }
 
