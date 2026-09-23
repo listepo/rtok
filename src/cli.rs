@@ -1372,18 +1372,35 @@ pub fn run() -> Result<()> {
             json,
         } => {
             let cfg = Config::load_with(config_file.as_deref(), None)?;
+            let tty = io::stdout().is_terminal();
             let out = match action {
                 // T24.3: runs until Ctrl-C. The loop only ever writes characters — no raw
                 // mode, no alternate screen — so there is no terminal state to restore.
+                // T225.1: through tailspin the stream is a pipe from the loop's point of
+                // view; `tspin --print` colours each row as it arrives.
                 Some(LogsCmd::Watch) => {
-                    let mut out = io::stdout();
-                    let tty = out.is_terminal();
-                    crate::log::watch(&cfg, lines, &mut out, tty)?;
+                    if let Some(mut viewer) = crate::log::Tspin::start(&cfg, tty) {
+                        let watched = crate::log::watch(&cfg, lines, viewer.sink(), false);
+                        viewer.finish();
+                        watched?;
+                    } else {
+                        crate::log::watch(&cfg, lines, &mut io::stdout(), tty)?;
+                    }
                     return Ok(());
                 }
                 // The selection is the model's Logs page (T15.11); the numbering and colour
-                // are this command's rendering of it.
-                None => crate::log::screen(&model::Model::new(&cfg, None).log_lines(lines)),
+                // are this command's rendering of it — tailspin's when `[log] tspin` says so.
+                None => {
+                    let plain = model::Model::new(&cfg, None).log_lines(lines);
+                    if !json
+                        && !plain.is_empty()
+                        && let Some(viewer) = crate::log::Tspin::start(&cfg, tty)
+                    {
+                        viewer.print(&crate::log::numbered(&plain));
+                        return Ok(());
+                    }
+                    crate::log::screen(&plain)
+                }
                 Some(LogsCmd::Export) => model::Model::new(&cfg, None).log_lines(lines),
             };
             if json {

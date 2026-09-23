@@ -17,6 +17,7 @@ files     = 5                         # generations kept; older ones are deleted
 lines     = 200                       # what `rtok logs` prints when --lines is not given
 level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`
+tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5

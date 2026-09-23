@@ -130,6 +130,7 @@ section! {
         lines: usize = 200,
         level: String = s("info"),
         to_db: bool = true,
+        tspin: String = s("auto"),
     }
 }
 

@@ -84,6 +84,7 @@ files     = 5                         # generations kept; older ones are deleted
 lines     = 200                       # what `rtok logs` prints when --lines is not given
 level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`
+tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 
 [estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 code  = 3.5
@@ -464,6 +465,11 @@ environment layer above, and `RTOK_LOG` would collide with the `[log]` table.
 `just logs [flags]` opens the file in [tailspin](https://github.com/bensadeh/tailspin) (`tspin`,
 pinned in `mise.toml`), which highlights levels, dates, numbers and paths; `just logs -f` follows
 it. The debug stream pipes the same way: `RUST_LOG=rtok=debug rtok stats 2>&1 >/dev/null | tspin`.
+
+`rtok logs` and `rtok logs watch` use tailspin themselves (T225.1). With `[log] tspin = "auto"`,
+the default, the numbered rows go through `tspin --print` when stdout is a terminal and `tspin`
+is on `PATH`; `"always"` does so on a pipe too, `"off"` keeps rtok's own colours. Without `tspin`
+the output is what it was. `rtok logs export` and `--json` never go through it.
 
 ## Why one file and not flags-only
 
