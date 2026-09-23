@@ -249,7 +249,10 @@ pub fn app_path(v: &Variant) -> Option<PathBuf> {
 }
 
 /// Version of the installed app, or `"-"` when unknown.
-/// Probes `<bin> --version` and keeps the first non-empty line (32 chars max).
+/// Probes `<bin> --version` and keeps the first line that looks like a version (T168: some
+/// wrappers, e.g. npm-installed CLIs, print noise like `Package extraction took 1234ms`
+/// ahead of the real version line); falls back to the first non-empty line when no line
+/// looks like a version. 32 chars max.
 pub fn app_version(v: &Variant) -> String {
     for bin in v.bins {
         let out = std::process::Command::new(bin).arg("--version").output();
@@ -258,12 +261,43 @@ pub fn app_version(v: &Variant) -> String {
         if s.trim().is_empty() {
             s = String::from_utf8_lossy(&out.stderr).into_owned();
         }
-        let line = s.lines().next().unwrap_or("").trim();
-        if !line.is_empty() {
+        let mut fallback: Option<&str> = None;
+        for raw in s.lines() {
+            let line = raw.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if fallback.is_none() {
+                fallback = Some(line);
+            }
+            if looks_like_a_version(line) {
+                return line.chars().take(32).collect();
+            }
+        }
+        if let Some(line) = fallback {
             return line.chars().take(32).collect();
         }
     }
     "-".into()
+}
+
+/// A digit, then later a dot, then later another digit — enough to tell a version
+/// (`0.1.0 (fake copilot)`, `git version 2.43.0`) from wrapper noise (`Package extraction
+/// took 1234ms`) with a small char scan, no regex dependency.
+fn looks_like_a_version(line: &str) -> bool {
+    let mut saw_digit = false;
+    let mut saw_dot_after_digit = false;
+    for c in line.chars() {
+        if c.is_ascii_digit() {
+            if saw_dot_after_digit {
+                return true;
+            }
+            saw_digit = true;
+        } else if c == '.' && saw_digit {
+            saw_dot_after_digit = true;
+        }
+    }
+    false
 }
 
 pub(crate) fn read(path: &Path) -> String {
@@ -1477,6 +1511,64 @@ mod tests {
         };
         assert_eq!(app_version(&ghost), "-");
         assert!(app_path(&ghost).is_none());
+    }
+
+    #[test]
+    fn looks_like_a_version_tells_a_number_from_wrapper_noise() {
+        assert!(looks_like_a_version("0.1.0 (fake copilot)"));
+        assert!(looks_like_a_version("git version 2.43.0"));
+        assert!(!looks_like_a_version("Package extraction took 1234ms"));
+        assert!(!looks_like_a_version("some cli"));
+        assert!(!looks_like_a_version(""));
+    }
+
+    /// T168: an npm-installed CLI's `--version` can print setup noise (e.g. `Package
+    /// extraction took 1234ms`) on the line before the real version. The old code took
+    /// the first non-empty line unconditionally and would have returned that noise.
+    #[test]
+    fn app_version_skips_wrapper_noise_ahead_of_the_real_version() {
+        let dir =
+            std::env::temp_dir().join(format!("rtok-app-version-noise-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join(if cfg!(windows) {
+            "rtok-test-noisy.cmd"
+        } else {
+            "rtok-test-noisy"
+        });
+        #[cfg(unix)]
+        {
+            std::fs::write(
+                &bin,
+                "#!/bin/sh\necho 'Package extraction took 1234ms'\necho '0.1.0 (fake copilot)'\n",
+            )
+            .unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&bin).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&bin, perms).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            std::fs::write(
+                &bin,
+                "@echo off\r\necho Package extraction took 1234ms\r\necho 0.1.0 (fake copilot)\r\n",
+            )
+            .unwrap();
+        }
+        // Command::new resolves a path containing a separator directly (no PATH search),
+        // so an absolute path stands in for a `bins` entry here; `Variant::bins` needs a
+        // `'static` str, hence the leak (test-only, scoped to this one process).
+        let path: &'static str = Box::leak(bin.to_string_lossy().into_owned().into_boxed_str());
+        let bins: &'static [&'static str] = Box::leak(vec![path].into_boxed_slice());
+        let noisy = Variant {
+            kind: Kind::Cli,
+            name: "noisy",
+            bins,
+            apps: &[],
+        };
+        assert_eq!(app_version(&noisy), "0.1.0 (fake copilot)");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// `| module | support | why |` rows of a host README, keyed by the first cell.
