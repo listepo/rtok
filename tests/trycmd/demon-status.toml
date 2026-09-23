@@ -5,6 +5,7 @@ service    state      endpoint          supervisor  child     uptime    restarts
 proxy      stopped    127.0.0.1:8790    -           -         -         -         [..]/demon/proxy.log
 mcp        stopped    -                 -           -         -         -         [..]/demon/mcp.log
 web        stopped    -                 -           -         -         -         [..]/demon/web.log
+hook       stopped    -                 -           -         -         -         target/tmp/t60-2-demon-status/demon/hook.log
 """
 
 # Hermetic by construction: isolated HOME/RTOK_HOME, inherit = false.

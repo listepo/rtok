@@ -2,8 +2,9 @@
 //!
 //! One supervisor process per service. `start` detaches `rtok demon supervise <name>`; that
 //! process re-spawns `rtok <name>` every time the child exits, and stops only when `stop` drops
-//! a `<name>.stop` marker beside the state file. Nothing here runs on the hook path: `rtok hook`
-//! never reads this state and fails open whether a supervisor is up or not (D1).
+//! a `<name>.stop` marker beside the state file. `rtok hook` never reads this state and fails open
+//! whether a supervisor is up or not (D1); the `hook` service only keeps the optional resident
+//! `rtok hook --serve` up, which `rtok-hook` uses when it answers and bypasses when not (D32).
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -28,6 +29,7 @@ pub enum Service {
     Proxy,
     Mcp,
     Web,
+    Hook,
 }
 
 impl Service {
@@ -37,6 +39,17 @@ impl Service {
             Self::Proxy => "proxy",
             Self::Mcp => "mcp",
             Self::Web => "web",
+            Self::Hook => "hook",
+        }
+    }
+
+    /// What the supervisor runs: the subcommand, plus `--serve` for the resident hook (D32).
+    fn args(self) -> &'static [&'static str] {
+        match self {
+            Self::Proxy => &["proxy"],
+            Self::Mcp => &["mcp"],
+            Self::Web => &["web"],
+            Self::Hook => &["hook", "--serve"],
         }
     }
 
@@ -505,7 +518,7 @@ pub fn supervise(cfg: &Config, config_file: Option<&Path>, service: Service) -> 
             cmd.arg("--config").arg(c);
         }
         let mut child = cmd
-            .arg(service.as_str())
+            .args(service.args())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

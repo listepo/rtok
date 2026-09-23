@@ -28,5 +28,15 @@
     "uptime_secs": null,
     "restarts": null,
     "log": "[..]/demon/web.log"
+  },
+  {
+    "service": "hook",
+    "running": false,
+    "endpoint": null,
+    "supervisor": null,
+    "child": null,
+    "uptime_secs": null,
+    "restarts": null,
+    "log": ".rtok/demon/hook.log"
   }
 ]
