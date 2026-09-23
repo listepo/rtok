@@ -24,7 +24,7 @@ if split out per T2.5.
   (dedupe by sha256 of body).
 - Search returns the right note first for the T6.1 fixture (three notes, one obvious match).
 
-**Schema** lives in `migrations/0001.sql` (`notes`, `notes_fts` + triggers). Changing it means a
-new migration file, never an edit to `0001.sql`.
+**Schema** lives in `migrations/0001_schema_v1/up.sql` (`notes`, `notes_fts` + triggers). Changing
+it means a new migration directory, never an edit to `0001_schema_v1/up.sql`.
 
 **Checks**: `plan.md` T2.5, T6.1–T6.3.
