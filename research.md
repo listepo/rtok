@@ -1440,3 +1440,51 @@ Where the waits came from: the hook opens the store fine with another writer hol
 | SessionStart | 1.07 s | 20–30 ms, `{}` |
 
 This does not reproduce a full 5 s cancellation. With the lock held, one event wrote at most two statements that waited, but UserPromptSubmit injection and a migration's 30 s wait can add more. After the fix, none of these waits exceeds 5 ms on the hook path.
+
+## 20. WebSearch, WebFetch and browser page text: size, reach, what would cut it (2026-09-23)
+
+T180. Corpus: `~/.claude/projects/**/*.jsonl` modified in the last 7 days — 347 files, 33,599 tool results, deduplicated by `tool_use_id` (resumed sessions copy history, which inflated the 2026-09-22 audit's figures). Bytes are the result text the model received, after any rtok shrinking. Claude Code 2.1.267. Scan scripts stayed in scratch.
+
+### 20.1 Size
+
+| Tool | Calls | Bytes | Share of all tool-result bytes | p50 | p90 | max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| all tools | 33,599 | 31,948,245 | 100 % | | | |
+| `WebSearch` | 552 | 1,544,421 | 4.83 % | 2,803 | 3,310 | 4,827 |
+| `WebFetch` | 513 | 1,039,970 | 3.26 % | 1,266 | 2,835 | 41,232 |
+| `Claude_Browser` `get_page_text` | 16 | 150,143 | 0.47 % | 4,561 | 25,477 | 40,447 |
+| `Claude_Browser` `read_page` | 13 | 95,083 | 0.30 % | 4,911 | 20,292 | 20,301 |
+| Bash calling `curl`/`wget`/`gh api` | 160 | 231,431 | 0.72 % | 575 | 3,920 | 17,258 |
+
+Web results together: 3.06 MB, 9.6 % of tool-result bytes — third after Bash (41.8 %) and file reads (`Read` + MCP reads, 34.7 %). `claude-in-chrome` did not appear in the window.
+
+### 20.2 Anatomy (400-result samples per tool)
+
+- **`WebSearch`**: a fixed header, a `Links: [...]` JSON array (title + url, usually 10 entries), prose written by the search sub-call, and a `REMINDER` line about citing sources. The `Links` array is **48.4 %** of the bytes. Only **12 %** of listed links (mean per result) are cited by url or host in the prose; the rest are often off-topic (a search for cargo cleanup tools lists Wikipedia pages on a spacecraft and a vacuum cleaner). 615 of 3,665 link mentions repeat a url already listed in an earlier result.
+- **`WebFetch`**: already reduced by the host — a small model answers the agent's prompt over the page, so p50 is 1.3 KB. The long tail is pages returned nearly verbatim (Markdown docs such as `code.claude.com`): 12 of 400 results above 8 KB hold 220 KB.
+- **Browser page text**: page text or an accessibility tree with `[ref_N]` handles the agent needs for clicks; 415 duplicate-line bytes in the largest page. Below the 1 % gate on its own.
+
+### 20.3 Offline estimate of candidate reductions
+
+| Reduction | Tool | Saving on sample | Lossless? |
+| --- | --- | ---: | --- |
+| `Links` JSON → one `- title <url>` line per link | `WebSearch` | 5.3 % | yes (format only) |
+| same, plus keep only links cited in the prose; the rest behind `expand <id>` | `WebSearch` | 42.8 % | via `expand` |
+| head/tail above 8 KB, rest behind `expand <id>` | `WebFetch` | 15.9 % (12 of 400 hit) | via `expand` |
+| head/tail above 4 KB | `WebFetch` | 25.8 % (34 of 400 hit) | via `expand` |
+
+Scaled to the week: WebSearch 42.8 % × 1.54 MB ≈ 661 KB, WebFetch (8 KB cap) 15.9 % × 1.04 MB ≈ 165 KB — ≈ 826 KB, **2.6 % of all tool-result bytes**, before counting that each result is re-sent (cached) on every later turn of its session. These are estimates on a scratch script, not `Measurement` rows; a built filter must record its own.
+
+### 20.4 Surfaces that can reach these results
+
+| Surface | Reaches | Today | Notes |
+| --- | --- | --- | --- |
+| `rtok proxy` `proxy_filter` on the Anthropic wire | every tool result in the request; tool name from the preceding `tool_use` | works for proxy users; **not the creator** — their `ANTHROPIC_BASE_URL` is `https://api.anthropic.com` | byte-stable rewrite on first sight keeps the cache prefix (the `archive` invariants); fail open on any parse error |
+| PostToolUse `updatedToolOutput` | native `WebSearch`/`WebFetch` in every Claude Code session | unknown — T134 is the probe | if honoured, the widest reach with no proxy |
+| PostToolUse `updatedMCPToolOutput` | MCP tools only (browser page text) | documented for MCP tools | browser text is 0.77 % — below the gate |
+| rtok MCP `fetch` replacing `WebFetch` (I-92) | pages the agent is steered to fetch through rtok | not built | loses the host's per-prompt summary, so a readable-text page (p50 several KB) would usually be **larger** than WebFetch's answer (p50 1.3 KB); wins only on the verbatim tail |
+| rtok replacing `WebSearch` | — | no | `WebSearch` is a server-side search; rtok has no search backend and should not add one |
+
+### 20.5 Recommendation
+
+One pure formatter for web results — `WebSearch`: compact the `Links` array and keep only cited links, the full array archived behind `expand <id>`; `WebFetch`: head/tail above a byte cap, archived — wired first behind whichever hook surface T134 opens for native tools, and into the proxy as a second consumer for proxy users. Do T134 before building anything: without `updatedToolOutput` the creator's own sessions see no saving. I-92 as written would grow context on the common case. Browser page text and Bash network calls stay below the gate. Proposed as I-97 in `ideas.md` for creator approval.
