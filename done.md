@@ -5195,6 +5195,19 @@ Status: done 2026-09-23
 Check result: `grep -cE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` 15 → 0. `cargo nextest run --lib store::` 42/42 pass, including `schema_rs_matches_the_migrated_tables` (T104 drift guard, now covering the two new tables) and both `symbols::tests::top_refs_*`. `cargo nextest run --test graph_truth --test graph_contract --test graph_lsp_gate` 14/14 pass byte-exact, exercising `symbol_impact`/`symbol_paths`/`symbol_callees`/`symbol_import_follow` through the `graph` plugin's `explore`/`impact`/`callers`/`callees` CLI paths.
 Model: Claude Code / claude-sonnet-5
 
+### T168. `agents list` tables flake on wrapper noise in `--version`
+
+Found 2026-09-22 while verifying T166: `agents_install::the_agent_alias_prints_what_agents_prints` and `remove_twice_says_no_changes_and_the_second_takes_no_backup` failed on this machine with byte diffs in the `app … (version)` cell — the real `copilot` npm wrapper printed `Package extraction took 10612ms` / `Package extraction attempt 1/3 …` into its `--version` output during npm cache activity. Both passed on re-run once npm settled. The tests' fake-bin set carries `claude` and `codex` shims but not `copilot`, so the probe reached the real wrapper — the T166 family of machine-state dependence (taste: never test against real host processes).
+
+Plan: give the probes a fake `copilot` shim like the others (preferred), or normalise wrapper noise out of the captured version line; the byte-comparing tests then stop caring what npm prints.
+
+Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
+
+Status: done 2026-09-24
+Done: added `fake_copilot` to `tests/common/agents.rs`'s fake-bin set so every probe in the test harness has a hermetic `copilot` shim printing noisy `Package extraction ...` lines ahead of its version, matching `claude`/`codex`. Fixed a real bug surfaced by review: `app_version` was taking the first non-empty output line regardless of content, which would have picked up the wrapper's `Package extraction ...` noise as the "version" instead of skipping to the actual version line — it now scans for a line that looks like a version (leading digit, contains a `.`) before falling back to the old first-non-empty-line behavior, via a new private `looks_like_a_version` helper with two new unit tests (`looks_like_a_version_tells_a_number_from_wrapper_noise`, `app_version_skips_wrapper_noise_ahead_of_the_real_version`, the latter driving a real fake executable script through the probe). Also fixed a Windows `.cmd` shim bug where an unescaped `(fake copilot)` inside an `if ... ( ... )` block would have broken batch parsing; escaped the parentheses (`^(fake copilot^)`).
+Check result: `cargo nextest run --lib -E 'test(agents::tests)'` 27/27 pass, including both new tests. `cargo fmt --check` and `cargo clippy --lib --tests --all-features -- -D warnings` clean. `cargo nextest run --all-features` across all 13 integration-test binaries that build on `tests/common/agents.rs` (`agent_remove`, `agents_doc`, `agents_install`, `agents_real_config`, `claude_plugin`, `codex_plugin_install`, `copilot_plugin`, `hook_fail_open`, `mcp`, `mcp_call_lsp_orphan`, `opencode_plugin`, `pi_plugin`, `skill`) 271/271 pass, confirming the fake `copilot` shim installed everywhere breaks nothing else.
+Model: Claude Code / claude-sonnet-5
+
 ### T175. No trailer on tiny outputs
 
 Found in the 2026-09-22 audit: in 1 134 of 4 333 shortened Bash results the rtok trailer (174 B mean, up to 535 B) is longer than the content left (under 200 chars) — 198 KB of pure overhead in 7 days, mostly background polling (`until grep -q …; do sleep 30; done`, `tail -30 …/tasks/*.output`). `needs_pointer` (`src/plugins/cmd/run.rs:165`) adds the trailer whenever the canonical text changed.
