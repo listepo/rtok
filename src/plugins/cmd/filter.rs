@@ -50,9 +50,8 @@ pub fn run_with_store(cfg: &Config, cmd: &str, input: &str) -> String {
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
-        out.push_str(&format!(
-            "[rtok {id} · {lines} lines · expand: rtok expand {id}]\n"
-        ));
+        out.push_str(&super::run::trailer(&id, lines));
+        out.push('\n');
     }
     let family = formatters::family(&argv);
     let _ = cx.record(&Measurement {

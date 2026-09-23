@@ -53,7 +53,6 @@
 - T172. MCP tool failures always set `is_error`
 - T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
 - T174. Plugin hooks fail open when `rtok` is not on `PATH`
-- T175. No trailer on tiny outputs
 - T176. Explicitly bounded output is not cut again
 - T177. Large source dumps through `cat`/`sed`/`grep` get a filter
 - T178. Hook wall-clock time as Claude Code sees it
