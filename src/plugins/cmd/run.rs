@@ -524,22 +524,25 @@ mod tests {
         let (c, dir) = cfg("bytes");
         // T175 passes bodies smaller than their own trailer through with no archive, so
         // this fixture pads past the ~170 B trailer to still exercise the archive path.
-        // Padding via printf's own `%s` argument (not a shell pipeline) keeps this test
-        // running the same on Windows as the original single-argv `printf` call did.
-        let code = run(
-            &c,
-            &["printf".into(), r"\377\376ok\n%s\n".into(), "x".repeat(300)],
-        )
-        .unwrap();
+        // `rtok run` always reaches the command through a real shell (cmd.exe on
+        // Windows, see `shell()`), and cmd.exe's own re-quoting mangles backslash
+        // octal escapes and treats `%` as variable expansion — a `printf '\377...'`
+        // argument does not round-trip there. Writing the bytes to a file and reading
+        // them back with a plain, argument-free-of-punctuation `cat`/`type` sidesteps
+        // shell quoting entirely (T175 review, Windows CI).
+        let mut expected = b"\xff\xfeok\n".to_vec();
+        expected.extend(std::iter::repeat_n(b'x', 300));
+        expected.push(b'\n');
+        let src = dir.join("raw.bin");
+        fs::write(&src, &expected).unwrap();
+        let reader = if cfg!(windows) { "type" } else { "cat" };
+        let code = run(&c, &[reader.into(), src.to_string_lossy().into_owned()]).unwrap();
         assert_eq!(code, 0);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
         let raw = fs::read(&files[0]).unwrap();
-        let mut expected = b"\xff\xfeok\n".to_vec();
-        expected.extend(std::iter::repeat_n(b'x', 300));
-        expected.push(b'\n');
         assert_eq!(raw, expected);
         let _ = fs::remove_dir_all(&dir);
     }
