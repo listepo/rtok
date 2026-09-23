@@ -718,6 +718,17 @@ impl Store {
                     results
                         .entry((path.clone(), out_name.clone()))
                         .or_insert(level);
+                    // The old CTE only recurses through a row whose `scope` isn't empty
+                    // (`impact_refs` never returns one anyway: `name.ne("")` on the frontier
+                    // side blocks it), but `impact_import_follow` has no such filter on the
+                    // import row's own name, so an empty `out_name` reaching here (from a
+                    // top-level reference with no enclosing scope) must stop here rather
+                    // than become the next tip -- else it would query `impact_import_follow`
+                    // with an empty frontier name and could follow an import row the CTE
+                    // never would (PR #206 review).
+                    if out_name.is_empty() {
+                        continue;
+                    }
                     let mut seen = c.seen.clone();
                     seen.insert(out_name.clone());
                     next.push(Chain {
@@ -1061,5 +1072,33 @@ mod tests {
             .unwrap();
         let got = store.symbol_impact("/r2", "N2", 4).unwrap();
         assert_eq!(got, vec![(1, "c.rs".into(), "M".into())]);
+    }
+
+    #[test]
+    fn impact_records_an_empty_out_name_but_does_not_follow_it() {
+        // a.rs: a bare (unscoped) reference to N3 -- depth-1 row (a.rs, out_name ""), since
+        // `impact_refs` carries the row's `scope` through unfiltered and `row()` leaves it
+        // "". The old CTE's SELECT has no `scope != ''` guard either, so this row must still
+        // land in `results` -- but its `WHERE w.scope != ''` guard stops it from ever being
+        // used as a `w.tip` for the next level.
+        // b.rs: an import with an empty `name` next to a real def LEAK. If the empty
+        // out_name above were pushed as the next chain's tip, `impact_import_follow` (no
+        // `i.name != ''` filter) would match this import and surface (2, b.rs, LEAK), which
+        // the old CTE could never reach.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols("/r3", "a.rs", "s", (0, 0), &[row("N3", 2, false)])
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r3",
+                "b.rs",
+                "s",
+                (0, 0),
+                &[import("", 1), row("LEAK", 2, true)],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r3", "N3", 4).unwrap();
+        assert_eq!(got, vec![(1, "a.rs".into(), "".into())]);
     }
 }
