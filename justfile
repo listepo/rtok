@@ -10,14 +10,15 @@ hugo := env("HUGO", "mise exec -- hugo --source site")
 jscpd := env("JSCPD", "mise exec -- jscpd")
 oxlint := env("OXLINT", "mise exec -- oxlint")
 oxfmt := env("OXFMT", "mise exec -- oxfmt")
+pytest := env("PYTEST", "mise exec -- pytest")
 
 # Logical CPUs, portable across the OSes rtok's CI runs on (Linux/macOS/BSD, getconf fallback).
 cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *) getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4;; esac`
 
 default: check
 
-# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format
-check: fmt-check lint test build-min dup js
+# fmt --check, clippy -D warnings, tests, min-feature build, copy-paste detector, JS/TS lint+format, Python tests
+check: fmt-check lint test build-min dup js python
 
 fmt:
     {{cargo}} fmt
@@ -46,6 +47,10 @@ js:
 
 js-fmt:
     {{oxfmt}} {{js_files}}
+
+# T183: tools/publish_marketplace's own test suite (no network, no real `gh`).
+python:
+    {{pytest}} tools/tests
 
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 # `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml

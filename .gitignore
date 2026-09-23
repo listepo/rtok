@@ -19,3 +19,7 @@ rtok.db
 rtok.db-shm
 rtok.db-wal
 /.commandcode
+
+# T183: tools/publish_marketplace's own test runs
+__pycache__/
+.pytest_cache/

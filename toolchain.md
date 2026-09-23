@@ -16,6 +16,8 @@ Project programs and direct packages from the manifests.
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
 | just | mise | Command recipes | https://github.com/casey/just |
 | node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does | https://github.com/nodejs/node |
+| python | mise | T183: `tools/publish_marketplace` and its tests | https://github.com/python/cpython |
+| pytest | mise (`pipx:pytest`) | T183: `just python` runs `tools/tests` | https://github.com/pytest-dev/pytest |
 | jscpd | mise | `just dup` (T26.0): copy-paste detector, config in .jscpd.json | https://github.com/kucherenko/jscpd |
 | oxlint | mise (`npm:oxlint`) | `just js` (T110): lint for the TS host plugins and tests/node, `--deny-warnings` | https://github.com/oxc-project/oxc |
 | oxfmt | mise (`npm:oxfmt`) | `just js` / `just js-fmt` (T110): formatter for the same JS/TS files | https://github.com/oxc-project/oxc |
