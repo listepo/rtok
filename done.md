@@ -5194,3 +5194,16 @@ Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` finds no
 Status: done 2026-09-23
 Check result: `grep -cE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` 15 → 0. `cargo nextest run --lib store::` 42/42 pass, including `schema_rs_matches_the_migrated_tables` (T104 drift guard, now covering the two new tables) and both `symbols::tests::top_refs_*`. `cargo nextest run --test graph_truth --test graph_contract --test graph_lsp_gate` 14/14 pass byte-exact, exercising `symbol_impact`/`symbol_paths`/`symbol_callees`/`symbol_import_follow` through the `graph` plugin's `explore`/`impact`/`callers`/`callees` CLI paths.
 Model: Claude Code / claude-sonnet-5
+
+### T192. `[mcp] tools` allow-list is dead config
+
+Found 2026-09-22 in the surfaces pass, confirmed by grep: `Mcp.tools` (`src/config/mod.rs:145-150`, `config/default.toml`, `docs/config.md`) is documented as "[] = all tools from enabled plugins; else an allow-list", shows in `rtok config show` — and is read by nothing. `Server::new` (`src/mcp.rs:150-179`) lists `expand` plus every enabled plugin's `mcp_tools()` and `invoke` serves all of them regardless. A user who narrows the surface still pays every description token per turn and can still call tools they tried to disable.
+
+Plan: in `Server::new`, filter `listed` to `cfg.mcp.tools` when non-empty (keep `expand` unconditional for D4 and say so in `docs/config.md`); `call_tool` falls through to "unknown tool" for filtered names.
+
+Check: `tools_allow_list_filters_listing_and_calls` — with `tools = ["read"]`, `tools()` lists only `read` + `expand` and `tools/call search` returns an unknown-tool error; `mise exec -- cargo nextest run mcp::` green.
+
+Shipped: `Server::new` filters `listed` to `cfg.mcp.tools` (keeping `expand` per D4), `Server::allows` backs both `tools/call` and the one-shot `call()`. Review fixes on top of the WIP: `config/default.toml` and `docs/config.md` now say in the `tools = []` comment that `expand` always stays listed (D4), byte-mirrored in `tests/trycmd/config-init.toml`; the "unknown tool: <name>" text is built once (`unknown_tool` helper) and shared by `invoke`'s catch-all, `call_tool`'s disallowed branch and the one-shot `call()` gate, instead of formatting the string a second time; added a `call()` assertion for a filtered name to the existing test. Checked other tool-list consumers (`rtok doctor`'s own-MCP-surface probe, `proxy::tools_rewrite`, `graph`/`memory` `mcp_tools()` token-budget tests) — none count rtok's tools independently of `Server::new`: doctor spawns the real `rtok mcp` binary and reads its live `tools/list`, so it already honours the allow-list transitively; `tools_rewrite` rewrites the *client's* request body, unrelated to `cfg.mcp.tools`. No changes needed there.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5
