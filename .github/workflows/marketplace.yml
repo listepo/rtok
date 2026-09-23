@@ -1,0 +1,43 @@
+name: marketplace
+
+# T183: manual re-check that a supported host's marketplace catalog (already committed in this
+# repo, under version control) still points at its plugin dir. A git-hosted catalog's "publish"
+# is the git push that merges the PR — this job runs no network call and pushes nothing; it only
+# re-verifies the checked-out tree via `GitCatalogHost.verify_local`. Triggered by
+# `python -m publish_marketplace <host>` (see tools/publish_marketplace), which shells out to
+# `gh workflow run marketplace.yml -f host=<host>`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "'all' or a single supported host id (see tools/publish_marketplace/registry.py)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - name: Verify marketplace catalog(s)
+        working-directory: tools
+        env:
+          HOST: ${{ inputs.host }}
+        run: |
+          mise exec -- python3 -c "
+          import os
+          from pathlib import Path
+          from publish_marketplace import registry
+
+          host_arg = os.environ['HOST']
+          hosts = registry.supported_hosts() if host_arg == 'all' else [host_arg]
+          repo_root = Path.cwd().parent
+          for host in hosts:
+              entry = registry.require_supported(host).verify_local(repo_root)
+              print(f'{host}: ok - {entry}')
+          "

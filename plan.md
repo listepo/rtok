@@ -69,7 +69,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
-| T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
@@ -574,20 +573,6 @@ Scope:
 Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, archive retention if any); add the CLI subcommand + tests; run the doc survey as a dated research row; wire clear to the surveyed paths only after creator sign-off on the map.
 
 Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
-
-### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
-
-Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
-
-Scope:
-1. **One entry script** (e.g. `scripts/publish_marketplace.py` or under `tools/`) that accepts `all` | `<host-id>` and refuses hosts without marketplace support with a clear error.
-2. **Per-host Python modules** — one module per marketplace-capable host (discover which of today's `HOSTS` already have a documented marketplace/plugin store path: Claude Code marketplace, Codex `plugin marketplace add`, Cursor, Copilot, Kimi `/plugins`, … — verify against current host docs before coding). Each module owns auth assumptions, package layout under `plugins/<host>/`, and the publish API or CLI the marketplace expects.
-3. **CI trigger from Python** — the script does not hand-upload in production; it triggers the repo's CI workflow that builds and publishes (workflow_dispatch or equivalent), and reports the run URL. Local dry-run prints the planned host list and the workflow inputs without firing CI.
-4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
-
-Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
-
-Execution plan: (1) survey every host in `plugins/` against its current docs (dated, linked): does a marketplace exist, and is publishing an API/CLI call, a git-hosted catalog (e.g. this repo as a Claude Code or Codex marketplace), or a manual submission form — only the first two get a module, the rest are listed as unsupported with the reason; (2) `tools/publish_marketplace/` Python package — entry `python -m publish_marketplace all|<host> [--dry-run]`, one module per supported host, a registry that refuses unknown or unsupported hosts with a clear error; stdlib only unless a maintained library is clearly better; (3) a `workflow_dispatch` workflow (`.github/workflows/marketplace.yml`) with a `host` input that runs the host module in CI; the script triggers it through `gh workflow run` and prints the run URL; `--dry-run` prints the hosts and workflow inputs and fires nothing; (4) pytest tests for the registry, dry-run output and the refusal path (no network); (5) README with the host table and how to add a host. Split into PRs of ≤ 200 LOC / ≤ 10 files (core + workflow + first host, then the remaining hosts). No agent triggers a real publish; the first real run is the creator's.
 
 ### T184. rtok never resolves its home to a relative `.rtok`
 
