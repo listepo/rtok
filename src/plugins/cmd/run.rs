@@ -522,15 +522,13 @@ mod tests {
     #[test]
     fn archive_keeps_bytes_that_are_not_utf8() {
         let (c, dir) = cfg("bytes");
-        // T175 passes bodies smaller than their own trailer through with no archive,
-        // so this fixture pads past the ~170 B trailer to still exercise the archive path.
+        // T175 passes bodies smaller than their own trailer through with no archive, so
+        // this fixture pads past the ~170 B trailer to still exercise the archive path.
+        // Padding via printf's own `%s` argument (not a shell pipeline) keeps this test
+        // running the same on Windows as the original single-argv `printf` call did.
         let code = run(
             &c,
-            &[
-                "sh".into(),
-                "-c".into(),
-                r"printf '\377\376ok\n'; yes x | head -150".into(),
-            ],
+            &["printf".into(), r"\377\376ok\n%s\n".into(), "x".repeat(300)],
         )
         .unwrap();
         assert_eq!(code, 0);
@@ -540,7 +538,8 @@ mod tests {
             .collect();
         let raw = fs::read(&files[0]).unwrap();
         let mut expected = b"\xff\xfeok\n".to_vec();
-        expected.extend(std::iter::repeat_n(b"x\n", 150).flatten());
+        expected.extend(std::iter::repeat_n(b'x', 300));
+        expected.push(b'\n');
         assert_eq!(raw, expected);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -653,11 +652,6 @@ mod tests {
         assert_eq!(rows[0].after_bytes, rows[0].before_bytes, "{rows:?}");
         assert_eq!(rows[0].est_after, rows[0].est_before, "{rows:?}");
         assert!(rows[0].ref_id.is_none(), "{rows:?}");
-        assert!(
-            rows[0].before_bytes - rows[0].after_bytes >= 0
-                && i64::from(rows[0].est_before) - i64::from(rows[0].est_after) >= 0,
-            "no negative saving: {rows:?}"
-        );
         let _ = fs::remove_dir_all(&dir);
     }
 
