@@ -30,10 +30,14 @@ pub struct Cli {
 enum Cmd {
     /// Claude Code hook entry point: reads the event JSON on stdin, writes JSON to stdout
     Hook {
-        event: String,
+        #[arg(required_unless_present = "serve")]
+        event: Option<String>,
         /// Overlay `[hook] host` (`claude` | `cursor` | `copilot` | `devin`)
         #[arg(long)]
         host: Option<String>,
+        /// Run the resident hook process `rtok-hook` talks to (T178, D32)
+        #[arg(long, hide = true, conflicts_with_all = ["event", "host"])]
+        serve: bool,
     },
     /// Serve MCP tools over stdio; `-- <server argv>` wraps a foreign server instead
     Mcp {
@@ -783,9 +787,10 @@ pub fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Hook { event, host } => {
+        Cmd::Hook { serve: true, .. } => crate::hooks::resident::serve()?,
+        Cmd::Hook { event, host, .. } => {
             let cfg = Config::load_lenient(config_file.as_deref(), hook_host_flag(host));
-            crate::hooks::run(&event, io::stdin(), io::stdout(), &cfg);
+            crate::hooks::run(&event.unwrap_or_default(), io::stdin(), io::stdout(), &cfg);
             let _ = io::stdout().flush();
         }
         Cmd::Stats {
@@ -1646,7 +1651,7 @@ fn setup_flags(
     Some(flags)
 }
 
-fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
+pub(crate) fn hook_host_flag(host: Option<String>) -> Option<figment::value::Dict> {
     let host = host?;
     use figment::value::{Dict, Value};
     let mut hook = Dict::new();

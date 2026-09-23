@@ -34,6 +34,7 @@ const ALLOW: &[&str] = &[
     "cli",        // action: agent setup variant filter (T37.0); not a setting
     "desktop",    // action: agents install variant filter (T37.0); not a setting
     "no-restart", // action: skip this call's close/reopen of a running desktop app (T141); not a setting
+    "serve", // action: rtok hook --serve runs the resident hook process (T178, D32); not a setting
 ];
 
 /// Flags that are actions on one command rather than settings, so they get no config key.
