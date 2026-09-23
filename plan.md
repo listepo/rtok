@@ -455,7 +455,7 @@ Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4
 
 `archive_ref_ids`' `call_io` query, `archive_in_session`, `archive_decision`, `put_archive_decision`, `session_live_archives`, `live_zone_pointer`, `mark_expanded`, `archive_decision_counts`, `put_read_cache`, `clear_read_cache`, and the tests reading `call_io`/`archive` (`inline_sha256_matches_stored_text`, `spill_archive_carries_session`, `write_api_round_trip_and_spill`'s `call_io` read).
 
-Execution plan: same as T163.5; joins via `inner_join`/`left_join` over `schema.rs`, `NOT EXISTS` via `exists().not()`.
+Execution plan: (1) add any missing `table!` columns; (2) rewrite site by site, signatures and row order unchanged; (3) store tests unchanged and green, `just check`. Joins via `inner_join`/`left_join` over `schema.rs`, `NOT EXISTS` via `exists().not()`.
 
 Check: none of the listed functions or tests hold `sql_query`; archive and expand tests green; `just check`.
 
