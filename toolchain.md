@@ -17,6 +17,7 @@ Project programs and direct packages from the manifests.
 | just | mise | Command recipes | https://github.com/casey/just |
 | ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
 | dunnage | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/dunnage |
+| tailspin | mise (`ubi:bensadeh/tailspin`) | `just logs` (T225): `tspin` highlights `~/.rtok/logs/rtok.log` and the `RUST_LOG` stderr stream; a viewer, not a logger | https://github.com/bensadeh/tailspin |
 | node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does | https://github.com/nodejs/node |
 | python | mise | T183: `tools/publish_marketplace` and its tests | https://github.com/python/cpython |
 | pytest | mise (`pipx:pytest`) | T183: `just python` runs `tools/tests` | https://github.com/pytest-dev/pytest |
@@ -55,6 +56,7 @@ Project programs and direct packages from the manifests.
 | divan | local | https://crates.io/crates/divan | Divan benches in benches/ |
 | dotenvy | local | https://crates.io/crates/dotenvy | Rust dependency |
 | dunce | local | https://crates.io/crates/dunce | Canonicalize without Windows UNC prefixes |
+| env_logger | local | https://crates.io/crates/env_logger | T225: `RUST_LOG` debug log on stderr, off by default |
 | figment | local | https://crates.io/crates/figment | Config |
 | futures-util | local | https://crates.io/crates/futures-util | Rust dependency |
 | httpmock | local | https://crates.io/crates/httpmock | Rust dependency |
@@ -65,6 +67,7 @@ Project programs and direct packages from the manifests.
 | js-sys | local | https://crates.io/crates/js-sys | JS bindings for the Slint web UI (T222) |
 | jsonc-parser | local | https://crates.io/crates/jsonc-parser | JSONC parse for Zed settings (T222) |
 | libsqlite3-sys | local | https://crates.io/crates/libsqlite3-sys | Rust dependency |
+| log | local | https://crates.io/crates/log | T225: logging facade env_logger drains; D26 lines are mirrored into it |
 | notify | local | https://crates.io/crates/notify | Rust dependency |
 | owo-colors | local | https://crates.io/crates/owo-colors | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |

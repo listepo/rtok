@@ -11,6 +11,7 @@ jscpd := env("JSCPD", "mise exec -- jscpd")
 oxlint := env("OXLINT", "mise exec -- oxlint")
 oxfmt := env("OXFMT", "mise exec -- oxfmt")
 pytest := env("PYTEST", "mise exec -- pytest")
+tspin := env("TSPIN", "mise exec -- tspin")
 
 # Logical CPUs, portable across the OSes rtok's CI runs on (Linux/macOS/BSD, getconf fallback).
 cpus := `case "$(uname -s)" in Linux) nproc;; Darwin|*BSD) sysctl -n hw.ncpu;; *) getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4;; esac`
@@ -170,3 +171,7 @@ codeql *langs="actions javascript-typescript python rust":
       [ "$n" = 0 ] || fail=1
     done
     exit $fail
+
+# Read rtok's own log (D26) through tailspin (T225); `just logs -f` follows it.
+logs *flags:
+    {{tspin}} {{flags}} "${RTOK_HOME:-$HOME/.rtok}/logs/rtok.log"

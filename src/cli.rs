@@ -696,6 +696,9 @@ enum ConfigCmd {
 }
 
 pub fn run() -> Result<()> {
+    // T225: `RUST_LOG` debug log on stderr, before clap so a parse failure is logged too.
+    crate::log::init_stderr();
+    log::debug!(target: "rtok::cli", "argv {:?}", std::env::args_os().collect::<Vec<_>>());
     let cli = Cli::parse();
     let config_file = cli.config.clone();
     match cli.cmd {
