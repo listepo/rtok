@@ -5221,3 +5221,17 @@ Shipped: `Server::new` filters `listed` to `cfg.mcp.tools` (keeping `expand` per
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5
+
+### T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
+
+Found 2026-09-22 in the core pass: every hook event opens the shared DB and does 3-4 synchronous writes (`src/hooks/mod.rs:190-237`); `Store::open` retries a locked open 10× with 100 ms sleeps (`src/store/mod.rs:82-101`) and each connection waits up to 1 s on the busy handler (:104-114; 30 s mid-migrate at :146-184). When proxy/MCP/dashboard or a concurrent hook batch holds the write lock — the steady state — the open alone burns 100× the ≤ 10 ms budget before any plugin runs. D13's "blocking and fail-open with a 1 s bound" is incompatible with "exit 0 in ≤ 10 ms even on error"; this is the store half of T178's wall-clock family, distinct from process-start cost.
+
+Plan: give the hook surface its own open policy — `busy_timeout` ≤ 50 ms, no retry-sleep loop, and "database is locked" on ledger writes fails open (skip `record_call`/`insert_call_io`, keep plugin outputs). Long waits stay for the long-running surfaces.
+
+Check: `tests/latency.rs` `hook_returns_despite_exclusive_lock` — a second connection holds `BEGIN EXCLUSIVE` for 500 ms while `hooks::run` executes; the round trip completes < 100 ms with valid JSON stdout and the p95 gate stays green; `just test` green.
+
+Do (Claude Code / claude-sonnet-5, 2026-09-24): the hook's own open policy already shipped with T178 (#203) — `const LOCK_WAIT` in `src/hooks/mod.rs` (5 ms busy, 1 attempt, 5 ms mid-migrate) — so this task's remaining work was the regression gate: added `tests/latency.rs::hook_returns_despite_exclusive_lock`, which warms a real store, has a second connection hold `BEGIN EXCLUSIVE` for 500 ms, then runs `hooks::run("PreToolUse", ..)` and asserts the round trip returns valid JSON in well under 100 ms. Hermetic: a unique `std::env::temp_dir()` directory keyed by PID, removed at start and end. Ran it 6 times back to back (once standalone, five in a loop): all passed at ~0.54-0.57 s wall time for the whole test (holder thread's 500 ms sleep dominates), with the measured hook round trip itself well clear of the 100 ms bound — no flake, so no further investigation into wait behavior was needed.
+
+Verified the plan's other point directly in `dispatch` (`src/hooks/mod.rs`): a "database is locked" `record_call` error takes the existing T178 branch and returns `b"{}"` immediately (skip `record_call`, and `insert_call_io`/`set_call_ms` never run since `parent` stays unset); every other ledger write in `dispatch` (`end_session`, `set_call_ms`, `insert_call_io`) already discards its `Result` unconditionally (`let _ = ...`), so a lock there fails open regardless. One caveat versus the card's literal "keep plugin outputs": on the `record_call` lock branch specifically, `dispatch` returns before the event match runs, so plugins do not execute and the output is the bare default rather than a real plugin decision. This is the existing, already-merged T178 behavior (not something introduced or changed by this task) and is what keeps the round trip inside the latency bound the new test enforces — running plugins during lock contention risked further store access re-hitting the same lock. No code change made; flagging the wording gap rather than altering shipped T178 behavior without the creator's sign-off.
+
+Status: done 2026-09-24

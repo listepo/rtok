@@ -78,7 +78,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T196 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
-| T200 | todo | P2 | 2 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T202 | todo | P2 | 3 | 0% | |
 | T203 | todo | P2 | 3 | 0% | |
@@ -870,14 +869,6 @@ Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected a
 Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
 
 Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
-
-### T200. Hook path waits on the SQLite lock — seconds, not 10 ms, under contention
-
-Found 2026-09-22 in the core pass: every hook event opens the shared DB and does 3-4 synchronous writes (`src/hooks/mod.rs:190-237`); `Store::open` retries a locked open 10× with 100 ms sleeps (`src/store/mod.rs:82-101`) and each connection waits up to 1 s on the busy handler (:104-114; 30 s mid-migrate at :146-184). When proxy/MCP/dashboard or a concurrent hook batch holds the write lock — the steady state — the open alone burns 100× the ≤ 10 ms budget before any plugin runs. D13's "blocking and fail-open with a 1 s bound" is incompatible with "exit 0 in ≤ 10 ms even on error"; this is the store half of T178's wall-clock family, distinct from process-start cost.
-
-Plan: give the hook surface its own open policy — `busy_timeout` ≤ 50 ms, no retry-sleep loop, and "database is locked" on ledger writes fails open (skip `record_call`/`insert_call_io`, keep plugin outputs). Long waits stay for the long-running surfaces.
-
-Check: `tests/latency.rs` `hook_returns_despite_exclusive_lock` — a second connection holds `BEGIN EXCLUSIVE` for 500 ms while `hooks::run` executes; the round trip completes < 100 ms with valid JSON stdout and the p95 gate stays green; `just test` green.
 
 ### T201. Hook path does unbounded reads and hashes bodies it never archives
 
