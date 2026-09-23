@@ -1488,3 +1488,37 @@ Scaled to the week: WebSearch 42.8 % × 1.54 MB ≈ 661 KB, WebFetch (8 KB cap) 
 ### 20.5 Recommendation
 
 One pure formatter for web results — `WebSearch`: compact the `Links` array and keep only cited links, the full array archived behind `expand <id>`; `WebFetch`: head/tail above a byte cap, archived — wired first behind whichever hook surface T134 opens for native tools, and into the proxy as a second consumer for proxy users. Do T134 before building anything: without `updatedToolOutput` the creator's own sessions see no saving. I-92 as written would grow context on the common case. Browser page text and Bash network calls stay below the gate. Proposed as I-97 in `ideas.md` for creator approval.
+
+## 21. General HTTP(S) interception as a surface: measured, not built (2026-09-23)
+
+T165. Question: would a local MITM proxy (`HTTPS_PROXY` + a CA the user trusts) reach agent tokens that `rtok proxy`, the hooks and MCP cannot? Corpus and method as §20: `~/.claude/projects`, last 7 days, 33,599 tool results deduplicated by `tool_use_id`, 31.9 MB of result text; Claude Code 2.1.267.
+
+### 21.1 How much agent context arrives over HTTP outside the model API
+
+| Result source | Share of tool-result bytes | How the bytes travel | Already reachable by |
+| --- | ---: | --- | --- |
+| `WebSearch` | 4.83 % | server-side search inside a model API call — not outside the API | `rtok proxy` (tool result in the next request); PostToolUse if T134 |
+| `WebFetch` | 3.26 % | the host fetches the page itself, then a small model answers the agent's prompt over it; some Markdown pages come back verbatim | `rtok proxy`; PostToolUse if T134 |
+| Bash `curl` / `wget` / `gh api` | 0.72 % | the command's own HTTP | Bash PreToolUse rewrite (`cmd`, `[curl]` rule) |
+| Browser page text (`Claude_Browser`) | 0.77 % | a separate browser renders the page; text returns as an MCP result | `updatedMCPToolOutput`; `rtok proxy` |
+| **Reachable only by interception** | **≈ 0 %** | | |
+
+Non-API HTTP carries 4.75 % of the bytes (WebFetch, Bash, browser), but every one of those results enters the context as a tool result that an existing surface already sees, and in its final form. An interceptor would see the raw page instead, and for WebFetch only before the host's summarizing call — so what it could shrink is that side call's input, not the agent's context. Below the card's 1 % gate: **do not build.** Creator approved the stop on 2026-09-23.
+
+Re-open when a host appears that fetches content client-side and places it in context through no hook, MCP or `*_BASE_URL` surface, and that share reaches ≥ 1 % of tool-result bytes on a 7-day scan.
+
+### 21.2 Survey (read 2026-09-23), kept for a re-open
+
+| Option | Version / date | Fit for rtok | CA install and removal | Pinning, HTTP/2, streaming |
+| --- | --- | --- | --- | --- |
+| mitmproxy | 12.2.3 (PyPI) | a second runtime (Python) beside the single rtok binary | own CA in `~/.mitmproxy`; the user trusts it per OS (Keychain, `update-ca-certificates`, `certutil`) | HTTP/1, 2, 3 and WebSockets; `ignore_hosts` passes hosts through untouched; TLS-failure hooks allow excluding a host after a pinning failure |
+| `hudsucker` (Rust) | 0.25.0, crates.io 2026-07-15 | in-process library on hyper + rustls, `rcgen` authority; fits the binary | rtok would generate the CA and script trust and removal itself | HTTP/2 feature, WebSocket interception; bypass for pinned hosts is rtok's job |
+| `http-mitm-proxy` (Rust) | 0.18.0, crates.io 2026-01-24 | lower-level library, smaller user base | same as `hudsucker` | SSE and WebSocket passed raw, no parsers |
+| Proxyman / Charles | desktop apps | not embeddable; GUI-first, commercial | `proxyman-cli install-root-cert … --trust` (macOS Keychain) | per-host SSL proxying toggles |
+| No MITM: `*_BASE_URL` proxy + hooks + MCP | shipped | the current design | none | nothing to pin; covers every row of §21.1 |
+
+Claude Code trusts its bundled Mozilla set plus the OS store by default (`CLAUDE_CODE_CERT_STORE=bundled,system`) and honours `HTTPS_PROXY`/`NO_PROXY` (code.claude.com network-config page, read 2026-09-23), so an interceptor would work for it without extra flags; clients that ship their own root set would reject the CA and must pass through untouched. Latency was not measured, since nothing is built.
+
+### 21.3 Privacy rule recorded for any future interception work
+
+Default-deny: no host is decrypted unless it is on an explicit allow-list of hosts that carry agent-visible text; everything else is a plain CONNECT tunnel. The CA key lives in `RTOK_HOME` with owner-only permissions, is never exported, and one command removes both the key and the trust entry. Nothing is stored beyond what `archive` already keeps under its retention. Creator choice, 2026-09-23.
