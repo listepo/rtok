@@ -150,8 +150,7 @@ fn the_resident_answers_like_rtok_hook_and_refuses_or_exits_otherwise() {
             match std::fs::remove_dir_all(&home.0) {
                 Ok(()) => break,
                 Err(e)
-                    if e.raw_os_error() == Some(32)
-                        && start.elapsed() < Duration::from_secs(5) =>
+                    if e.raw_os_error() == Some(32) && start.elapsed() < Duration::from_secs(5) =>
                 {
                     std::thread::sleep(Duration::from_millis(20));
                 }
