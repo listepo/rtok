@@ -6,14 +6,95 @@ use anyhow::Result;
 use diesel::alias;
 use diesel::dsl::{count_star, exists, min, not};
 use diesel::prelude::*;
-use diesel::sql_types::{Integer, Text};
 use diesel::sqlite::SqliteConnection;
 
 use super::Store;
 use super::schema::{extractor, symbol_stale, symbols};
-use super::sql_ext::RawQuery;
 
 const INSERT_CHUNK: usize = 999 / 11;
+
+/// SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999; a BFS level's frontier is chunked
+/// below that so a wide fan-out never blows the bind limit in one `eq_any`.
+const NAME_CHUNK: usize = 500;
+
+/// One level of `symbol_impact`'s walk: references of any name in `frontier`, as
+/// `(path, enclosing scope)` — the direct-caller edge (T163.1 BFS, replaces the old
+/// `WITH RECURSIVE` base/step: `s.name = w.scope`).
+fn impact_refs(
+    conn: &mut SqliteConnection,
+    root: &str,
+    frontier: &[String],
+) -> QueryResult<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for chunk in frontier.chunks(NAME_CHUNK) {
+        out.extend(
+            symbols::table
+                .filter(symbols::root.eq(root))
+                .filter(symbols::name.eq_any(chunk))
+                .filter(symbols::is_def.eq(0))
+                .filter(symbols::name.ne(""))
+                .filter(symbols::kind.ne("import"))
+                .select((symbols::path, symbols::scope))
+                .load::<(String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
+
+/// One level of `symbol_impact`'s walk: definitions in files that import any name in
+/// `frontier`, as `(path, def name)` — the import-follow edge (T163.1 BFS, replaces the old
+/// `WITH RECURSIVE` import branch).
+fn impact_import_follow(
+    conn: &mut SqliteConnection,
+    root: &str,
+    frontier: &[String],
+) -> QueryResult<Vec<(String, String)>> {
+    let (i, d) = alias!(symbols as i, symbols as d);
+    let mut out = Vec::new();
+    for chunk in frontier.chunks(NAME_CHUNK) {
+        out.extend(
+            i.inner_join(
+                d.on(d
+                    .field(symbols::root)
+                    .eq(i.field(symbols::root))
+                    .and(d.field(symbols::path).eq(i.field(symbols::path)))
+                    .and(d.field(symbols::is_def).eq(1))
+                    .and(d.field(symbols::name).ne(""))),
+            )
+            .filter(i.field(symbols::root).eq(root))
+            .filter(i.field(symbols::name).eq_any(chunk))
+            .filter(i.field(symbols::kind).eq("import"))
+            .filter(i.field(symbols::is_def).eq(0))
+            .select((d.field(symbols::path), d.field(symbols::name)))
+            .load::<(String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
+
+/// One step of `symbol_paths`'s walk: for every name in `tips`, the reference rows that
+/// could extend a chain through it — `(referenced name, enclosing scope)` (T163.1 BFS,
+/// replaces the old `WITH RECURSIVE` step: `s.name = w.tip`).
+fn path_next_hops(
+    conn: &mut SqliteConnection,
+    root: &str,
+    tips: &[String],
+) -> QueryResult<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    for chunk in tips.chunks(NAME_CHUNK) {
+        out.extend(
+            symbols::table
+                .filter(symbols::root.eq(root))
+                .filter(symbols::name.eq_any(chunk))
+                .filter(symbols::is_def.eq(0))
+                .filter(symbols::scope.ne(""))
+                .filter(symbols::kind.ne("import"))
+                .select((symbols::name, symbols::scope))
+                .load::<(String, String)>(conn)?,
+        );
+    }
+    Ok(out)
+}
 
 /// Every row of one file under one root, through the `(root, path)` index.
 fn delete_file(conn: &mut SqliteConnection, root: &str, path: &str) -> QueryResult<usize> {
@@ -553,70 +634,57 @@ impl Store {
     }
 
     /// Callers of `name` out to `depth`, each `(path, scope)` at its first depth (T8.13).
+    ///
+    /// Level-by-level BFS (T163.1) over the same two edges the old `WITH RECURSIVE` walk
+    /// used: a direct reference (`impact_refs`, edge `s.name = frontier`) and an
+    /// import-follow hop (`impact_import_follow`, edge `i.name = frontier`). `visited` is a
+    /// *global* dedup of names already used as a search key, not the old per-branch `seen`
+    /// chain — sound here because BFS discovers every name at its true minimum depth on
+    /// first sight, so re-expanding it later could only ever produce rows at an equal or
+    /// larger depth that the final `MIN(depth)` grouping would discard anyway. `results` is
+    /// keyed by `(path, scope)` (not just `scope`) so the same name reached through two
+    /// different files still yields two rows, exactly as the old `GROUP BY path, scope` did.
     pub fn symbol_impact(
         &self,
         root: &str,
         name: &str,
         depth: u32,
     ) -> Result<Vec<(u32, String, String)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Integer)]
-            depth: i32,
-            #[diesel(sql_type = Text)]
-            path: String,
-            #[diesel(sql_type = Text)]
-            scope: String,
-        }
-        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+        let max_depth = depth.clamp(1, 4);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = RawQuery::new(
-            "WITH RECURSIVE walk(depth, path, scope, seen) AS (
-                SELECT 1, path, scope, ',' || scope || ','
-                FROM symbols
-                WHERE root = ? AND name = ? AND is_def = 0 AND name != '' AND kind != 'import'
-                UNION ALL
-                SELECT 1, d.path, d.name, ',' || d.name || ','
-                FROM symbols i
-                JOIN symbols d
-                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
-                WHERE i.root = ? AND i.name = ? AND i.kind = 'import' AND i.is_def = 0
-                UNION ALL
-                SELECT w.depth + 1, s.path, s.scope, w.seen || s.scope || ','
-                FROM walk w
-                JOIN symbols s
-                  ON s.root = ? AND s.name = w.scope AND s.is_def = 0 AND s.name != ''
-                 AND s.kind != 'import'
-                WHERE w.depth < ? AND w.scope != ''
-                  AND instr(w.seen, ',' || s.scope || ',') = 0
-                UNION ALL
-                SELECT w.depth + 1, d.path, d.name, w.seen || d.name || ','
-                FROM walk w
-                JOIN symbols i
-                  ON i.root = ? AND i.name = w.scope AND i.kind = 'import' AND i.is_def = 0
-                JOIN symbols d
-                  ON d.root = i.root AND d.path = i.path AND d.is_def = 1 AND d.name != ''
-                WHERE w.depth < ? AND w.scope != ''
-                  AND instr(w.seen, ',' || d.name || ',') = 0
-            )
-            SELECT MIN(depth) AS depth, path, scope
-            FROM walk
-            GROUP BY path, scope
-            ORDER BY depth, path, scope",
-        )
-        .bind::<Text, _>(root.to_string())
-        .bind::<Text, _>(name.to_string())
-        .bind::<Text, _>(root.to_string())
-        .bind::<Text, _>(name.to_string())
-        .bind::<Text, _>(root.to_string())
-        .bind::<Integer, _>(depth)
-        .bind::<Text, _>(root.to_string())
-        .bind::<Integer, _>(depth)
-        .load(&mut *conn)?;
-        Ok(rows
+        let mut results: HashMap<(String, String), u32> = HashMap::new();
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut frontier: Vec<String> = vec![name.to_string()];
+        let mut level: u32 = 1;
+        while !frontier.is_empty() && level <= max_depth {
+            visited.extend(frontier.iter().cloned());
+            let mut next: HashSet<String> = HashSet::new();
+            // Record one edge's target at the current level, keeping the first (smallest)
+            // depth per (path, out_name), and queue `out_name` for the next level unless it's
+            // empty or already used as a search key (shared by both edges below).
+            let mut record = |path: String, out_name: String, next: &mut HashSet<String>| {
+                results.entry((path, out_name.clone())).or_insert(level);
+                if !out_name.is_empty() && !visited.contains(&out_name) {
+                    next.insert(out_name);
+                }
+            };
+
+            for (path, scope) in impact_refs(&mut conn, root, &frontier)? {
+                record(path, scope, &mut next);
+            }
+            for (path, def_name) in impact_import_follow(&mut conn, root, &frontier)? {
+                record(path, def_name, &mut next);
+            }
+
+            frontier = next.into_iter().collect();
+            level += 1;
+        }
+        let mut out: Vec<(u32, String, String)> = results
             .into_iter()
-            .map(|r| (r.depth as u32, r.path, r.scope))
-            .collect())
+            .map(|((path, scope), depth)| (depth, path, scope))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        Ok(out)
     }
 
     /// T68.1: distinct definition names starting with `prefix`, best `limit` by
@@ -667,40 +735,75 @@ impl Store {
         to: &str,
         depth: u32,
     ) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
+        // Simple-path enumeration (T163.1 BFS), one level of `path_next_hops` per step: unlike
+        // `symbol_impact`, every distinct chain string matters here, not just the shortest
+        // reach of a name, so each partial path keeps its own `seen` set of every name already
+        // on it (the old CTE's per-row `seen` chain) rather than a global visited set. A path
+        // whose tip already equals `to` stops extending (mirrors the old `WHERE w.tip != ?`)
+        // but was already recorded as a result at the depth it reached `to`.
+        struct Partial {
             chain: String,
+            tip: String,
+            seen: HashSet<String>,
         }
-        let depth = i32::try_from(depth.clamp(1, 4)).unwrap_or(4);
+
+        let max_depth = depth.clamp(1, 4);
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = RawQuery::new(
-            "WITH RECURSIVE walk(depth, chain, tip, seen) AS (
-                SELECT 1, ?, ?, ',' || ? || ','
-                UNION ALL
-                SELECT w.depth + 1,
-                       w.chain || ' → ' || s.scope,
-                       s.scope,
-                       w.seen || s.scope || ','
-                FROM walk w
-                JOIN symbols s ON s.root = ? AND s.name = w.tip
-                              AND s.is_def = 0 AND s.scope != ''
-                              AND s.kind != 'import'
-                WHERE w.depth < ? AND w.tip != ?
-                  AND instr(w.seen, ',' || s.scope || ',') = 0
-            )
-            SELECT chain, MIN(depth) AS depth FROM walk
-            WHERE tip = ? GROUP BY chain ORDER BY depth, chain",
-        )
-        .bind::<Text, _>(from.to_string())
-        .bind::<Text, _>(from.to_string())
-        .bind::<Text, _>(from.to_string())
-        .bind::<Text, _>(root.to_string())
-        .bind::<Integer, _>(depth)
-        .bind::<Text, _>(to.to_string())
-        .bind::<Text, _>(to.to_string())
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| r.chain).collect())
+        let mut results: Vec<(u32, String)> = Vec::new();
+        if from == to {
+            results.push((1, from.to_string()));
+        }
+        let mut current = vec![Partial {
+            chain: from.to_string(),
+            tip: from.to_string(),
+            seen: HashSet::from([from.to_string()]),
+        }];
+        let mut level: u32 = 1;
+        while level < max_depth {
+            let active: Vec<&Partial> = current.iter().filter(|p| p.tip != to).collect();
+            if active.is_empty() {
+                break;
+            }
+            let tips: Vec<String> = {
+                let set: HashSet<&str> = active.iter().map(|p| p.tip.as_str()).collect();
+                set.into_iter().map(str::to_string).collect()
+            };
+            let mut by_tip: HashMap<String, Vec<String>> = HashMap::new();
+            for (tip_name, scope) in path_next_hops(&mut conn, root, &tips)? {
+                let scopes = by_tip.entry(tip_name).or_default();
+                if !scopes.contains(&scope) {
+                    scopes.push(scope);
+                }
+            }
+
+            let mut next = Vec::new();
+            for p in active {
+                let Some(scopes) = by_tip.get(&p.tip) else {
+                    continue;
+                };
+                for scope in scopes {
+                    if p.seen.contains(scope) {
+                        continue;
+                    }
+                    let chain = format!("{} → {}", p.chain, scope);
+                    if scope == to {
+                        results.push((level + 1, chain.clone()));
+                    }
+                    let mut seen = p.seen.clone();
+                    seen.insert(scope.clone());
+                    next.push(Partial {
+                        chain,
+                        tip: scope.clone(),
+                        seen,
+                    });
+                }
+            }
+            current = next;
+            level += 1;
+        }
+
+        results.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        Ok(results.into_iter().map(|(_, chain)| chain).collect())
     }
 
     /// T68.6: import rows of `path` as `(name, line)`, first-seen order.
