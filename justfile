@@ -50,15 +50,23 @@ js-fmt:
 # --workspace so `rtok-plugin-sdk` (the published contract, D25) is in the same gate.
 # `-j` is the number of concurrent test threads; heavy tests in .config/nextest.toml
 # reserve `num-test-threads`, which is this value.
-test:
+test: && dunnage
     {{cargo}} nextest run --workspace --test-threads {{cpus}}
 
 # Inner loop: build and run only the test targets the current change can reach. `nextest -E`
 # filters after the build, so the saving comes from cargo target selection (`--test <name>`);
 # tools/test-changed.sh maps the diff onto it. Selection is by name, so this is an
 # accelerator, not a coverage proof — `just check` stays the gate before a commit.
-test-changed rev="HEAD":
+test-changed rev="HEAD": && dunnage
     NEXTEST_TEST_THREADS="{{cpus}}" CARGO="{{cargo}}" tools/test-changed.sh {{rev}}
+
+# T236: lossless cleanup of ./target after tests (compress + dedupe); never deletes.
+# A no-op without dunnage (`ketch install dunnage`) or before the first build.
+dunnage:
+    #!/usr/bin/env sh
+    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    [ -d target ] || exit 0
+    dunnage run target || test $? -eq 2
 
 # T0.4: one plugin feature must build alone
 build-min:

@@ -5129,3 +5129,7 @@ Check result: `cargo test --lib store::` 43 passed, `cargo test --lib stats` 22 
 
 Status: done 2026-09-23
 Model: Claude Code / claude-opus-5-5
+
+### T236. Clean up target dirs with dunnage after tests
+
+`just test` and `just test-changed` now end with `just dunnage` (a just post-dependency; `just check` gets it through `test`). `dunnage run target` compresses and dedupes `./target` losslessly — it never deletes and keeps mtimes, so nothing rebuilds. Exit code 2 (a build held the lock) counts as success; a checkout with no `target/` yet or a machine without `dunnage` is a no-op with an install hint. dunnage is installed with `ketch install dunnage`; `toolchain.md` lists ketch and dunnage and gains a `ketch` package table.

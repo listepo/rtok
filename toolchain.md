@@ -15,6 +15,8 @@ Project programs and direct packages from the manifests.
 | go | mise | hugo resolves the hextra theme as a Go module (site/go.mod) | https://github.com/golang/go |
 | hugo | mise | Documentation site | https://github.com/gohugoio/hugo |
 | just | mise | Command recipes | https://github.com/casey/just |
+| ketch | see its README | Installs dunnage | https://github.com/listepo/ketch |
+| dunnage | ketch | `just test` / `just test-changed` end with a lossless cleanup of `target/` (T236) | https://github.com/listepo/dunnage |
 | node | mise | jscpd, oxlint, oxfmt and vitest run on it; nothing in the binary does | https://github.com/nodejs/node |
 | jscpd | mise | `just dup` (T26.0): copy-paste detector, config in .jscpd.json | https://github.com/kucherenko/jscpd |
 | oxlint | mise (`npm:oxlint`) | `just js` (T110): lint for the TS host plugins and tests/node, `--deny-warnings` | https://github.com/oxc-project/oxc |
@@ -28,6 +30,12 @@ Project programs and direct packages from the manifests.
 | lima | mise | Linux VM Colima drives; install via mise, usually started only through `colima start` | https://github.com/lima-vm/lima |
 | docker-cli | mise | `docker` client; points at Colima's Docker context when Colima is running | https://github.com/docker/cli |
 | docker-compose | mise | Standalone `docker-compose` against the same Colima daemon (~Docker-compatible; not Podman) | https://github.com/docker/compose |
+
+## ketch
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| dunnage | global | https://github.com/listepo/dunnage | Lossless `target/` cleanup after tests |
 
 ## cargo
 
