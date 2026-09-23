@@ -149,9 +149,9 @@ third-party plugins.
 ## 7. Data
 
 One SQLite file, WAL mode, opened per invocation (hooks are short-lived processes; SQLite
-handles the concurrency). Migrations are `migrations/NNNN.sql`, embedded with
+handles the concurrency). Migrations are `migrations/NNNN_<slug>/up.sql`, embedded with
 `include_str!`, applied once each and recorded in `schema_migrations`. Editing an applied
-migration is forbidden; add the next file.
+migration is forbidden; add the next directory.
 
 | Table | Written by | Read by |
 |-------|-----------|---------|

@@ -57,24 +57,78 @@ diesel::define_sql_function! {
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
-    ("0001.sql", include_str!("../../migrations/0001.sql")),
-    ("0002.sql", include_str!("../../migrations/0002.sql")),
-    ("0003.sql", include_str!("../../migrations/0003.sql")),
-    ("0004.sql", include_str!("../../migrations/0004.sql")),
-    ("0005.sql", include_str!("../../migrations/0005.sql")),
-    ("0006.sql", include_str!("../../migrations/0006.sql")),
-    ("0007.sql", include_str!("../../migrations/0007.sql")),
-    ("0008.sql", include_str!("../../migrations/0008.sql")),
-    ("0009.sql", include_str!("../../migrations/0009.sql")),
-    ("0010.sql", include_str!("../../migrations/0010.sql")),
-    ("0011.sql", include_str!("../../migrations/0011.sql")),
-    ("0012.sql", include_str!("../../migrations/0012.sql")),
-    ("0013.sql", include_str!("../../migrations/0013.sql")),
-    ("0014.sql", include_str!("../../migrations/0014.sql")),
-    ("0015.sql", include_str!("../../migrations/0015.sql")),
-    ("0016.sql", include_str!("../../migrations/0016.sql")),
-    ("0017.sql", include_str!("../../migrations/0017.sql")),
-    ("0018.sql", include_str!("../../migrations/0018.sql")),
+    (
+        "0001.sql",
+        include_str!("../../migrations/0001_schema_v1/up.sql"),
+    ),
+    (
+        "0002.sql",
+        include_str!("../../migrations/0002_schema_v2/up.sql"),
+    ),
+    (
+        "0003.sql",
+        include_str!("../../migrations/0003_symbol_index/up.sql"),
+    ),
+    (
+        "0004.sql",
+        include_str!("../../migrations/0004_archive_decisions/up.sql"),
+    ),
+    (
+        "0005.sql",
+        include_str!("../../migrations/0005_usage_api/up.sql"),
+    ),
+    (
+        "0006.sql",
+        include_str!("../../migrations/0006_symbols_root/up.sql"),
+    ),
+    (
+        "0007.sql",
+        include_str!("../../migrations/0007_symbols_freshness/up.sql"),
+    ),
+    (
+        "0008.sql",
+        include_str!("../../migrations/0008_call_edges/up.sql"),
+    ),
+    (
+        "0009.sql",
+        include_str!("../../migrations/0009_otel_export/up.sql"),
+    ),
+    (
+        "0010.sql",
+        include_str!("../../migrations/0010_seed_pi_host/up.sql"),
+    ),
+    (
+        "0011.sql",
+        include_str!("../../migrations/0011_extractor/up.sql"),
+    ),
+    (
+        "0012.sql",
+        include_str!("../../migrations/0012_note_embeddings/up.sql"),
+    ),
+    (
+        "0013.sql",
+        include_str!("../../migrations/0013_call_id_indexes/up.sql"),
+    ),
+    (
+        "0014.sql",
+        include_str!("../../migrations/0014_archive_decisions_pk/up.sql"),
+    ),
+    (
+        "0015.sql",
+        include_str!("../../migrations/0015_notes_lifecycle/up.sql"),
+    ),
+    (
+        "0016.sql",
+        include_str!("../../migrations/0016_symbol_stale/up.sql"),
+    ),
+    (
+        "0017.sql",
+        include_str!("../../migrations/0017_notes_recall/up.sql"),
+    ),
+    (
+        "0018.sql",
+        include_str!("../../migrations/0018_kv_guard/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -3356,14 +3410,21 @@ mod tests {
     #[test]
     fn migrations_list_matches_the_directory() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let mut files: Vec<String> = std::fs::read_dir(&dir)
+        // Each migration is a `<version>_<slug>/up.sql` directory (Diesel's own layout);
+        // `MIGRATIONS` still keys by the pre-T163.4 `NNNN.sql` name, so compare prefixes.
+        let mut dirs: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".sql"))
+            .map(|e| e.unwrap())
+            .filter(|e| e.path().join("up.sql").is_file())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        files.sort();
-        let listed: Vec<&str> = MIGRATIONS.iter().map(|(n, _)| *n).collect();
-        assert_eq!(listed, files, "MIGRATIONS drifted from migrations/");
+        dirs.sort();
+        let dir_versions: Vec<&str> = dirs.iter().map(|d| d.split('_').next().unwrap()).collect();
+        let listed: Vec<&str> = MIGRATIONS
+            .iter()
+            .map(|(n, _)| n.strip_suffix(".sql").unwrap())
+            .collect();
+        assert_eq!(listed, dir_versions, "MIGRATIONS drifted from migrations/");
     }
 
     /// `(table, columns)` for every `diesel::table!` in `schema.rs`, with `#[sql_name]`
