@@ -5080,5 +5080,19 @@ Do (Claude Code / claude-opus-5-5, 2026-09-23): 7-day scan of `~/.claude/project
 
 Check result: `research.md` §20 (2026-09-23) holds the sample numbers (§20.1–§20.3) and the recommendation (§20.5); I-97 awaits creator approval.
 
+### T165. Research: general HTTP(S) interception as a new surface
+
+Creator request 2026-09-22. Research only — no product code in this task. Today `rtok proxy` reaches one API through `ANTHROPIC_BASE_URL`; a general interceptor would see every HTTP call an agent makes (docs fetches, package registries, other model APIs). That is a new surface on the level of `proxy` and `mcp`: a local CA whose root the user trusts, TLS termination on loopback only, CONNECT proxying via `HTTPS_PROXY`, and fail open whenever a client bypasses the proxy, pins certificates or rejects the CA. It is the most contested item in the plan — it touches the user's trust store and sees all their traffic — so it is scheduled last.
+
+Plan: (1) survey at least three alternatives with evidence and dates — e.g. mitmproxy, `hudsucker`/`http-mitm-proxy` (Rust), Proxyman/Charles, and the no-MITM option (per-host `*_BASE_URL` plus MCP only) — covering CA install/removal per OS, cert pinning failures, HTTP/2 and streaming, latency cost, and what share of an agent's tokens actually travels over HTTP outside the API (measure from `~/.claude/projects` like I-71; below 1 % → stop and record); (2) a privacy decision for the creator: default-deny with an allow-list, or an exclude-list of hosts/domains never decrypted (banks, auth/SSO, OS update, password managers, anything with pinning), what is stored and for how long, how the CA key is protected and removed; (3) if the survey says build, split the surface into tasks of ≤ 200 LOC / ≤ 10 files each (CA generate/trust/uninstall, CONNECT tunnel passthrough, TLS termination for allow-listed hosts, bypass detection and fail open, `Measurement` rows, docs), with the decision row proposed as the next free D id.
+
+Check: `research.md` gains a dated section with the survey table and the measured HTTP share; the privacy decision is written down and approved by the creator; either a "do not build" note or the split tasks go to `roadmap.md` for creator approval — none go straight into this table.
+
+Execution plan: (1) measure first, reusing T180's scan of `~/.claude/projects` (last 7 days): bytes and estimated tokens of results that travelled over HTTP outside the model API (`WebFetch`, `WebSearch`, `curl`/`wget` in Bash, MCP fetch tools, browser page text) against all tool-result bytes; below 1 % → skip the survey, write the stop note; (2) otherwise survey mitmproxy, `hudsucker`, `http-mitm-proxy`, Proxyman/Charles and the no-MITM option on the dimensions above, sources dated; (3) put the privacy options to the creator in chat and record the answer; (4) `research.md` §20, `roadmap.md` entry, card to `done.md`. One docs-only PR.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-23): measured on the T180 scan (7 days, 33,599 tool results). Non-API HTTP carries 4.75 % of tool-result bytes (WebFetch 3.26 %, browser page text 0.77 %, Bash `curl`/`wget`/`gh api` 0.72 %); `WebSearch` (4.83 %) runs inside a model API call. Every one of those results reaches the context through a surface rtok already has — `rtok proxy`, the Bash hook, `updatedMCPToolOutput` — so the share reachable only by interception is ≈ 0 %, below the 1 % gate. Survey kept for a re-open: mitmproxy 12.2.3, `hudsucker` 0.25.0, `http-mitm-proxy` 0.18.0, Proxyman/Charles, and the no-MITM design. Creator chose "do not build" and a default-deny allow-list rule for any future work (2026-09-23).
+
+Check result: `research.md` §21 (dated) holds the survey table and the measured HTTP share; the privacy decision is written down (§21.3) and approved by the creator; the "do not build" note is in `roadmap.md` under `proxy`.
+
 Status: done 2026-09-23
 Model: Claude Code / claude-opus-5-5

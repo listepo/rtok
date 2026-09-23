@@ -160,6 +160,8 @@ Legend: **blocked by** = tasks that must land first; **gate** = keep-or-revert r
 
 **Status.** Lane done — T14.5, T5.0–T5.2, T11.1–T11.3, T11.5 done (see `done.md` P5/P11).
 
+**Not planned.** General HTTP(S) interception (`HTTPS_PROXY` + a local CA) — T165 measured ≈ 0 % of agent context reachable only that way; re-open condition and privacy rule in `research.md` §21 (creator decision 2026-09-23).
+
 ---
 
 ## `archive`
