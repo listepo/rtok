@@ -18,13 +18,15 @@ const INSERT_CHUNK: usize = 999 / 11;
 const NAME_CHUNK: usize = 500;
 
 /// One level of `symbol_impact`'s walk: references of any name in `frontier`, as
-/// `(path, enclosing scope)` — the direct-caller edge (T163.1 BFS, replaces the old
-/// `WITH RECURSIVE` base/step: `s.name = w.scope`).
+/// `(matched name, path, enclosing scope)` — the direct-caller edge (T163.1 BFS, replaces
+/// the old `WITH RECURSIVE` base/step: `s.name = w.scope`). The matched name comes back
+/// with each row so a caller batching several frontier tips in one query can route a result
+/// to the specific chain(s) it extends.
 fn impact_refs(
     conn: &mut SqliteConnection,
     root: &str,
     frontier: &[String],
-) -> QueryResult<Vec<(String, String)>> {
+) -> QueryResult<Vec<(String, String, String)>> {
     let mut out = Vec::new();
     for chunk in frontier.chunks(NAME_CHUNK) {
         out.extend(
@@ -34,21 +36,22 @@ fn impact_refs(
                 .filter(symbols::is_def.eq(0))
                 .filter(symbols::name.ne(""))
                 .filter(symbols::kind.ne("import"))
-                .select((symbols::path, symbols::scope))
-                .load::<(String, String)>(conn)?,
+                .select((symbols::name, symbols::path, symbols::scope))
+                .load::<(String, String, String)>(conn)?,
         );
     }
     Ok(out)
 }
 
 /// One level of `symbol_impact`'s walk: definitions in files that import any name in
-/// `frontier`, as `(path, def name)` — the import-follow edge (T163.1 BFS, replaces the old
-/// `WITH RECURSIVE` import branch).
+/// `frontier`, as `(matched name, path, def name)` — the import-follow edge (T163.1 BFS,
+/// replaces the old `WITH RECURSIVE` import branch). See [`impact_refs`] for why the
+/// matched name comes back with each row.
 fn impact_import_follow(
     conn: &mut SqliteConnection,
     root: &str,
     frontier: &[String],
-) -> QueryResult<Vec<(String, String)>> {
+) -> QueryResult<Vec<(String, String, String)>> {
     let (i, d) = alias!(symbols as i, symbols as d);
     let mut out = Vec::new();
     for chunk in frontier.chunks(NAME_CHUNK) {
@@ -65,11 +68,28 @@ fn impact_import_follow(
             .filter(i.field(symbols::name).eq_any(chunk))
             .filter(i.field(symbols::kind).eq("import"))
             .filter(i.field(symbols::is_def).eq(0))
-            .select((d.field(symbols::path), d.field(symbols::name)))
-            .load::<(String, String)>(conn)?,
+            .select((
+                i.field(symbols::name),
+                d.field(symbols::path),
+                d.field(symbols::name),
+            ))
+            .load::<(String, String, String)>(conn)?,
         );
     }
     Ok(out)
+}
+
+/// Groups one BFS level's flat query rows `(matched tip, value)` by that tip, deduping a
+/// repeated `value` under the same tip — shared by `symbol_impact`'s two edges and
+/// `symbol_paths`'s one so each builds a `tip -> Vec<value>` map of candidates to hand back
+/// to the partial chain(s) that produced the tip.
+fn group_by_tip<T: PartialEq>(rows: Vec<(String, T)>, by_tip: &mut HashMap<String, Vec<T>>) {
+    for (tip, value) in rows {
+        let values = by_tip.entry(tip).or_default();
+        if !values.contains(&value) {
+            values.push(value);
+        }
+    }
 }
 
 /// One step of `symbol_paths`'s walk: for every name in `tips`, the reference rows that
@@ -637,46 +657,76 @@ impl Store {
     ///
     /// Level-by-level BFS (T163.1) over the same two edges the old `WITH RECURSIVE` walk
     /// used: a direct reference (`impact_refs`, edge `s.name = frontier`) and an
-    /// import-follow hop (`impact_import_follow`, edge `i.name = frontier`). `visited` is a
-    /// *global* dedup of names already used as a search key, not the old per-branch `seen`
-    /// chain — sound here because BFS discovers every name at its true minimum depth on
-    /// first sight, so re-expanding it later could only ever produce rows at an equal or
-    /// larger depth that the final `MIN(depth)` grouping would discard anyway. `results` is
-    /// keyed by `(path, scope)` (not just `scope`) so the same name reached through two
-    /// different files still yields two rows, exactly as the old `GROUP BY path, scope` did.
+    /// import-follow hop (`impact_import_follow`, edge `i.name = frontier`). Like
+    /// `symbol_paths`, each partial chain keeps its own `seen` set (the old CTE's per-row
+    /// `seen`, seeded with the depth-1 row's own output — not `name` itself, matching the
+    /// old seed exactly) rather than a global visited set: a name already on *this* chain's
+    /// history is never re-emitted for it, but an unrelated chain that never saw that name
+    /// still can, and does, produce its own row. Both edges are tried from every chain's
+    /// tip at every level, exactly like the CTE's two recursive branches. `results` is keyed
+    /// by `(path, scope)` and filled in strictly increasing depth order, so the first write
+    /// per key is its minimum depth — the old `GROUP BY path, scope` + `MIN(depth)`.
     pub fn symbol_impact(
         &self,
         root: &str,
         name: &str,
         depth: u32,
     ) -> Result<Vec<(u32, String, String)>> {
+        struct Chain {
+            tip: String,
+            seen: HashSet<String>,
+        }
+
         let max_depth = depth.clamp(1, 4);
         let mut conn = self.lock()?;
         let mut results: HashMap<(String, String), u32> = HashMap::new();
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut frontier: Vec<String> = vec![name.to_string()];
+        let mut current = vec![Chain {
+            tip: name.to_string(),
+            seen: HashSet::new(),
+        }];
         let mut level: u32 = 1;
-        while !frontier.is_empty() && level <= max_depth {
-            visited.extend(frontier.iter().cloned());
-            let mut next: HashSet<String> = HashSet::new();
-            // Record one edge's target at the current level, keeping the first (smallest)
-            // depth per (path, out_name), and queue `out_name` for the next level unless it's
-            // empty or already used as a search key (shared by both edges below).
-            let mut record = |path: String, out_name: String, next: &mut HashSet<String>| {
-                results.entry((path, out_name.clone())).or_insert(level);
-                if !out_name.is_empty() && !visited.contains(&out_name) {
-                    next.insert(out_name);
-                }
+        while !current.is_empty() && level <= max_depth {
+            let tips: Vec<String> = {
+                let set: HashSet<&str> = current.iter().map(|c| c.tip.as_str()).collect();
+                set.into_iter().map(str::to_string).collect()
             };
+            let mut by_tip: HashMap<String, Vec<(String, String)>> = HashMap::new();
+            group_by_tip(
+                impact_refs(&mut conn, root, &tips)?
+                    .into_iter()
+                    .map(|(tip, path, scope)| (tip, (path, scope)))
+                    .collect(),
+                &mut by_tip,
+            );
+            group_by_tip(
+                impact_import_follow(&mut conn, root, &tips)?
+                    .into_iter()
+                    .map(|(tip, path, def_name)| (tip, (path, def_name)))
+                    .collect(),
+                &mut by_tip,
+            );
 
-            for (path, scope) in impact_refs(&mut conn, root, &frontier)? {
-                record(path, scope, &mut next);
+            let mut next = Vec::new();
+            for c in &current {
+                let Some(edges) = by_tip.get(&c.tip) else {
+                    continue;
+                };
+                for (path, out_name) in edges {
+                    if c.seen.contains(out_name) {
+                        continue;
+                    }
+                    results
+                        .entry((path.clone(), out_name.clone()))
+                        .or_insert(level);
+                    let mut seen = c.seen.clone();
+                    seen.insert(out_name.clone());
+                    next.push(Chain {
+                        tip: out_name.clone(),
+                        seen,
+                    });
+                }
             }
-            for (path, def_name) in impact_import_follow(&mut conn, root, &frontier)? {
-                record(path, def_name, &mut next);
-            }
-
-            frontier = next.into_iter().collect();
+            current = next;
             level += 1;
         }
         let mut out: Vec<(u32, String, String)> = results
@@ -769,12 +819,7 @@ impl Store {
                 set.into_iter().map(str::to_string).collect()
             };
             let mut by_tip: HashMap<String, Vec<String>> = HashMap::new();
-            for (tip_name, scope) in path_next_hops(&mut conn, root, &tips)? {
-                let scopes = by_tip.entry(tip_name).or_default();
-                if !scopes.contains(&scope) {
-                    scopes.push(scope);
-                }
-            }
+            group_by_tip(path_next_hops(&mut conn, root, &tips)?, &mut by_tip);
 
             let mut next = Vec::new();
             for p in active {
@@ -889,6 +934,19 @@ mod tests {
         )
     }
 
+    /// A reference row with an explicit enclosing `scope`, unlike `row`/`import` (always
+    /// `scope: ""`) — needed to build the `symbol_impact` chains below.
+    fn reference(name: &str, line: i32, scope: &str) -> (String, String, i32, bool, i32, String) {
+        (
+            name.into(),
+            "function".into(),
+            line,
+            false,
+            line,
+            scope.into(),
+        )
+    }
+
     #[test]
     fn top_refs_rank_by_count_then_name() {
         let store = Store::open_in_memory().unwrap();
@@ -941,5 +999,67 @@ mod tests {
             .unwrap();
         let got = store.symbol_top_refs("/r", 4).unwrap();
         assert_eq!(got, vec![("dup".into(), 1, "a.rs".into(), 3)]);
+    }
+
+    // T163.1 regression (PR #206 review): `symbol_impact`'s BFS must exclude a candidate
+    // already on *that specific chain's* history, not just prune it from further expansion.
+    // Expected rows below were checked against the old `WITH RECURSIVE` query (from
+    // `origin/main` before this rework) run on the same fixtures via the sqlite3 CLI.
+
+    #[test]
+    fn impact_excludes_ref_edge_name_already_on_the_chain() {
+        // a.rs: fn X references N (depth-1 row: a.rs/X, chain seen={X}).
+        // b.rs: a different fn X calls X (self-recursive) — the depth-2 candidate is
+        // (b.rs, X), but X is already in that chain's seen, so the old CTE never emits it
+        // and no other chain reaches it either.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r1",
+                "a.rs",
+                "s",
+                (0, 0),
+                &[row("X", 1, true), reference("N", 2, "X")],
+            )
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r1",
+                "b.rs",
+                "s",
+                (0, 0),
+                &[row("X", 1, true), reference("X", 2, "X")],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r1", "N", 4).unwrap();
+        assert_eq!(got, vec![(1, "a.rs".into(), "X".into())]);
+    }
+
+    #[test]
+    fn impact_excludes_import_follow_name_already_on_the_chain() {
+        // c.rs imports N2, which resolves to def M (depth-1 row: c.rs/M, chain seen={M}).
+        // e.rs imports M and also defines M — the depth-2 candidate is (e.rs, M), but M is
+        // already in that chain's seen, so the old CTE never emits it either.
+        let store = Store::open_in_memory().unwrap();
+        store
+            .replace_symbols(
+                "/r2",
+                "c.rs",
+                "s",
+                (0, 0),
+                &[import("N2", 1), row("M", 2, true)],
+            )
+            .unwrap();
+        store
+            .replace_symbols(
+                "/r2",
+                "e.rs",
+                "s",
+                (0, 0),
+                &[import("M", 1), row("M", 2, true)],
+            )
+            .unwrap();
+        let got = store.symbol_impact("/r2", "N2", 4).unwrap();
+        assert_eq!(got, vec![(1, "c.rs".into(), "M".into())]);
     }
 }
