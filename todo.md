@@ -48,7 +48,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T168. `agents list` tables flake on wrapper noise in `--version`
-- T170. A slow hook is logged, not only printed to stderr
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
 - T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
