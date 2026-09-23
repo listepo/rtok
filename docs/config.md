@@ -100,7 +100,7 @@ max_ms    = 10                        # soft budget; over it, the event is logge
 fail_open = true                      # any error → `{}` and exit 0; false only for debugging
 
 [mcp]                                 # rtok mcp
-tools                   = []          # [] = all tools from enabled plugins; else an allow-list
+tools                   = []          # [] = all tools from enabled plugins; else an allow-list; `expand` always stays listed (D4)
 max_description_tokens  = 60          # enforced by a test (T4.1)
 max_result_chars        = 20000       # above this, head/tail + archive id
 
