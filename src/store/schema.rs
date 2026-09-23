@@ -197,6 +197,14 @@ diesel::table! {
     }
 }
 
+// 0018 (T69.6): hand-edit guard digest, keyed by name.
+diesel::table! {
+    kv (key) {
+        key -> Text,
+        value -> Text,
+    }
+}
+
 diesel::table! {
     symbols (id) {
         id -> Integer,

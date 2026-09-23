@@ -25,9 +25,22 @@ use crate::plugin::Measurement;
 // The two row shapes a plugin sees are the contract's (D25); the diesel rows below feed them.
 pub use crate::plugin::{ArchiveDecision, NoteHit};
 
+// `models` (the schema::models table) is not imported bare: it collides with this file's
+// own `pub mod models` of Diesel row structs, so upsert_model qualifies it as `schema::models`.
 use schema::{
-    archive, call_io, calls, hosts, logs, measurements, notes, read_cache, sessions, tokens,
+    archive, call_io, calls, hosts, kv, logs, measurements, notes, providers, read_cache, sessions,
+    tokens,
 };
+
+/// `COALESCE(x, y)` for an upsert `DO UPDATE SET` (T163.5): not one of Diesel's built-in
+/// functions, so declared here rather than dropping to raw SQL.
+#[diesel::declare_sql_function]
+extern "SQL" {
+    fn coalesce<T: diesel::sql_types::SqlType + diesel::sql_types::SingleValue>(
+        x: diesel::sql_types::Nullable<T>,
+        y: diesel::sql_types::Nullable<T>,
+    ) -> diesel::sql_types::Nullable<T>;
+}
 
 /// Embedded migrations, applied in order, each exactly once.
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -246,10 +259,10 @@ impl Store {
     /// Count `measurements` for one plugin. Used by `examples/hello_plugin.rs`.
     pub fn measurement_count(&self, plugin: &str) -> Result<i64> {
         let mut conn = self.lock()?;
-        let rows: Vec<Count> = sql_query("SELECT COUNT(*) AS n FROM measurements WHERE plugin = ?")
-            .bind::<Text, _>(plugin)
-            .load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.n).unwrap_or(0))
+        Ok(measurements::table
+            .filter(measurements::plugin.eq(plugin))
+            .count()
+            .get_result(&mut *conn)?)
     }
 
     pub fn upsert_session(
@@ -264,20 +277,35 @@ impl Store {
         // COALESCE keeps a non-NULL value: a later writer that does not know the
         // attribution (proxy/mcp pass None for project/cwd; Runtime::insert_call
         // passes None for source) must not wipe what an earlier hook already set.
-        sql_query(
-            "INSERT INTO sessions (id, host_id, project, cwd, source) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-               host_id = COALESCE(excluded.host_id, sessions.host_id),
-               project = COALESCE(excluded.project, sessions.project),
-               cwd = COALESCE(excluded.cwd, sessions.cwd),
-               source = COALESCE(excluded.source, sessions.source)",
-        )
-        .bind::<Text, _>(id)
-        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(host_id)
-        .bind::<diesel::sql_types::Nullable<Text>, _>(project)
-        .bind::<diesel::sql_types::Nullable<Text>, _>(cwd)
-        .bind::<diesel::sql_types::Nullable<Text>, _>(source)
-        .execute(&mut *conn)?;
+        diesel::insert_into(sessions::table)
+            .values((
+                sessions::id.eq(id),
+                sessions::host_id.eq(host_id),
+                sessions::project.eq(project),
+                sessions::cwd.eq(cwd),
+                sessions::source.eq(source),
+            ))
+            .on_conflict(sessions::id)
+            .do_update()
+            .set((
+                sessions::host_id.eq(coalesce(
+                    diesel::upsert::excluded(sessions::host_id),
+                    sessions::host_id,
+                )),
+                sessions::project.eq(coalesce(
+                    diesel::upsert::excluded(sessions::project),
+                    sessions::project,
+                )),
+                sessions::cwd.eq(coalesce(
+                    diesel::upsert::excluded(sessions::cwd),
+                    sessions::cwd,
+                )),
+                sessions::source.eq(coalesce(
+                    diesel::upsert::excluded(sessions::source),
+                    sessions::source,
+                )),
+            ))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
@@ -285,27 +313,32 @@ impl Store {
     /// the request `model` must resolve to a `models` row (plan T5.1 Check).
     pub fn upsert_model(&self, provider_slug: &str, model_slug: &str) -> Result<(i32, i32)> {
         let mut conn = self.lock()?;
-        sql_query("INSERT INTO providers (slug, name) VALUES (?, ?) ON CONFLICT(slug) DO NOTHING")
-            .bind::<Text, _>(provider_slug)
-            .bind::<Text, _>(provider_slug)
+        diesel::insert_or_ignore_into(providers::table)
+            .values((
+                providers::slug.eq(provider_slug),
+                providers::name.eq(provider_slug),
+            ))
             .execute(&mut *conn)?;
-        let pid: Vec<Count> = sql_query("SELECT id AS n FROM providers WHERE slug = ?")
-            .bind::<Text, _>(provider_slug)
-            .load(&mut *conn)?;
-        let provider_id = i32::try_from(pid.first().context("provider")?.n)?;
-        sql_query(
-            "INSERT INTO models (provider_id, slug) VALUES (?, ?)
-             ON CONFLICT(provider_id, slug) DO NOTHING",
-        )
-        .bind::<diesel::sql_types::Integer, _>(provider_id)
-        .bind::<Text, _>(model_slug)
-        .execute(&mut *conn)?;
-        let mid: Vec<Count> =
-            sql_query("SELECT id AS n FROM models WHERE provider_id = ? AND slug = ?")
-                .bind::<diesel::sql_types::Integer, _>(provider_id)
-                .bind::<Text, _>(model_slug)
-                .load(&mut *conn)?;
-        Ok((provider_id, i32::try_from(mid.first().context("model")?.n)?))
+        let provider_id: i32 = providers::table
+            .filter(providers::slug.eq(provider_slug))
+            .select(providers::id)
+            .first(&mut *conn)
+            .optional()?
+            .context("provider")?;
+        diesel::insert_or_ignore_into(schema::models::table)
+            .values((
+                schema::models::provider_id.eq(provider_id),
+                schema::models::slug.eq(model_slug),
+            ))
+            .execute(&mut *conn)?;
+        let model_id: i32 = schema::models::table
+            .filter(schema::models::provider_id.eq(provider_id))
+            .filter(schema::models::slug.eq(model_slug))
+            .select(schema::models::id)
+            .first(&mut *conn)
+            .optional()?
+            .context("model")?;
+        Ok((provider_id, model_id))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -414,19 +447,15 @@ impl Store {
                 out.insert(row.call_id, id);
             }
         }
-        #[derive(QueryableByName)]
-        struct Meas {
-            #[diesel(sql_type = Integer)]
-            call_id: i32,
-            #[diesel(sql_type = Text)]
-            ref_id: String,
-        }
-        let ms: Vec<Meas> = sql_query(format!(
-            "SELECT call_id, ref_id FROM measurements WHERE call_id IN ({list}) AND ref_id IS NOT NULL"
-        ))
-        .load(&mut *conn)?;
-        for row in ms {
-            out.entry(row.call_id).or_insert(row.ref_id);
+        let ms: Vec<(Option<i32>, Option<String>)> = measurements::table
+            .filter(measurements::call_id.eq_any(call_ids.iter().copied()))
+            .filter(measurements::ref_id.is_not_null())
+            .select((measurements::call_id, measurements::ref_id))
+            .load(&mut *conn)?;
+        for (call_id, ref_id) in ms {
+            if let (Some(call_id), Some(ref_id)) = (call_id, ref_id) {
+                out.entry(call_id).or_insert(ref_id);
+            }
         }
         Ok(out)
     }
@@ -452,24 +481,14 @@ impl Store {
     /// a hook run left rather than re-deriving it from `upsert_session`'s arguments.
     #[cfg(test)]
     pub fn session_row(&self, id: &str) -> Result<Option<SessionRow>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Nullable<Text>)]
-            slug: Option<String>,
-            #[diesel(sql_type = Nullable<Text>)]
-            project: Option<String>,
-            #[diesel(sql_type = Nullable<Text>)]
-            cwd: Option<String>,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT hosts.slug AS slug, sessions.project AS project, sessions.cwd AS cwd
-             FROM sessions LEFT JOIN hosts ON hosts.id = sessions.host_id
-             WHERE sessions.id = ?",
-        )
-        .bind::<Text, _>(id)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().next().map(|r| (r.slug, r.project, r.cwd)))
+        sessions::table
+            .left_join(hosts::table)
+            .filter(sessions::id.eq(id))
+            .select((hosts::slug.nullable(), sessions::project, sessions::cwd))
+            .first::<SessionRow>(&mut *conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     /// Every session with a `cwd`, newest activity first (T154): the worktree ownership
@@ -529,9 +548,8 @@ impl Store {
     #[cfg(test)]
     pub fn set_call_ts(&self, call_id: i32, ts: i64) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query("UPDATE calls SET ts = ?1 WHERE id = ?2")
-            .bind::<BigInt, _>(ts)
-            .bind::<Integer, _>(call_id)
+        diesel::update(calls::table.filter(calls::id.eq(call_id)))
+            .set(calls::ts.eq(ts))
             .execute(&mut *conn)?;
         Ok(())
     }
@@ -1055,35 +1073,29 @@ impl Store {
 
     /// Last-written `rtok memory sync` block digest (T69.6 hand-edit guard).
     pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            value: String,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query("SELECT value FROM kv WHERE key = ?")
-            .bind::<Text, _>(key)
-            .load(&mut *conn)?;
-        Ok(rows.into_iter().next().map(|r| r.value))
+        kv::table
+            .filter(kv::key.eq(key))
+            .select(kv::value)
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     pub fn kv_set(&self, key: &str, value: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO kv (key, value) VALUES (?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        )
-        .bind::<Text, _>(key)
-        .bind::<Text, _>(value)
-        .execute(&mut *conn)?;
+        diesel::insert_into(kv::table)
+            .values((kv::key.eq(key), kv::value.eq(value)))
+            .on_conflict(kv::key)
+            .do_update()
+            .set(kv::value.eq(value))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
     pub fn kv_delete(&self, key: &str) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query("DELETE FROM kv WHERE key = ?")
-            .bind::<Text, _>(key)
-            .execute(&mut *conn)?;
+        diesel::delete(kv::table.filter(kv::key.eq(key))).execute(&mut *conn)?;
         Ok(())
     }
 
@@ -1213,36 +1225,26 @@ impl Store {
     /// rows is what made a 70 KiB `Write` followed by a native `Read` of the same file end in
     /// a deny.
     pub fn recent_hook_inputs(&self, session: &str, limit: i64) -> Result<Vec<String>> {
-        #[derive(QueryableByName)]
-        struct Body {
-            #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
-            request_json: Option<String>,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Body> = sql_query(
-            "SELECT call_io.request_json AS request_json FROM calls
-             JOIN call_io ON call_io.call_id = calls.id
-             WHERE calls.session_id = ? AND calls.kind = 'hook'
-             ORDER BY calls.id DESC LIMIT ?",
-        )
-        .bind::<Text, _>(session)
-        .bind::<BigInt, _>(limit)
-        .load(&mut *conn)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| r.request_json.unwrap_or_default())
-            .collect())
+        let rows: Vec<Option<String>> = calls::table
+            .inner_join(call_io::table)
+            .filter(calls::session_id.eq(session))
+            .filter(calls::kind.eq("hook"))
+            .order(calls::id.desc())
+            .limit(limit)
+            .select(call_io::request_json)
+            .load(&mut *conn)?;
+        Ok(rows.into_iter().map(Option::unwrap_or_default).collect())
     }
 
     /// Hook/call rows in this session at or after `ts` (window for `guard`).
     pub fn calls_since(&self, session: &str, ts: i64) -> Result<i64> {
         let mut conn = self.lock()?;
-        let rows: Vec<Count> =
-            sql_query("SELECT COUNT(*) AS n FROM calls WHERE session_id = ? AND ts >= ?")
-                .bind::<Text, _>(session)
-                .bind::<BigInt, _>(ts)
-                .load(&mut *conn)?;
-        Ok(rows.first().map(|r| r.n).unwrap_or(0))
+        Ok(calls::table
+            .filter(calls::session_id.eq(session))
+            .filter(calls::ts.ge(ts))
+            .count()
+            .get_result(&mut *conn)?)
     }
 
     /// Measurement rows for `rtok stats --plugin <id>` (T3.6).
@@ -1344,20 +1346,16 @@ impl Store {
         plugin: &str,
         kind: &str,
     ) -> Result<Option<String>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Nullable<Text>)]
-            ref_id: Option<String>,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT ref_id FROM measurements WHERE session = ? AND plugin = ? AND kind = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind::<Text, _>(session)
-        .bind::<Text, _>(plugin)
-        .bind::<Text, _>(kind)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().next().and_then(|r| r.ref_id))
+        let ref_id: Option<Option<String>> = measurements::table
+            .filter(measurements::session.eq(session))
+            .filter(measurements::plugin.eq(plugin))
+            .filter(measurements::kind.eq(kind))
+            .order(measurements::id.desc())
+            .select(measurements::ref_id)
+            .first(&mut *conn)
+            .optional()?;
+        Ok(ref_id.flatten())
     }
 
     pub fn insert_tokens(
@@ -2409,17 +2407,19 @@ mod tests {
             )
             .unwrap();
         let mut conn = store.lock().unwrap();
-        let n: Vec<Count> = sql_query("SELECT count(*) AS n FROM tokens WHERE call_id = ?")
-            .bind::<diesel::sql_types::Integer, _>(id)
-            .load(&mut *conn)
+        let n: i64 = tokens::table
+            .filter(tokens::call_id.eq(id))
+            .count()
+            .get_result(&mut *conn)
             .unwrap();
-        assert_eq!(n[0].n, 3);
-        let logs_n: Vec<Count> =
-            sql_query("SELECT count(*) AS n FROM logs WHERE source = 'plugin' AND call_id = ?")
-                .bind::<diesel::sql_types::Integer, _>(id)
-                .load(&mut *conn)
-                .unwrap();
-        assert_eq!(logs_n[0].n, 1);
+        assert_eq!(n, 3);
+        let logs_n: i64 = logs::table
+            .filter(logs::source.eq("plugin"))
+            .filter(logs::call_id.eq(id))
+            .count()
+            .get_result(&mut *conn)
+            .unwrap();
+        assert_eq!(logs_n, 1);
         drop(conn);
 
         let big = vec![b'x'; 70 * 1024];
@@ -2483,28 +2483,25 @@ mod tests {
             "cwd survived a None upsert"
         );
         let mut conn = store.lock().unwrap();
-        #[derive(QueryableByName)]
-        struct Src {
-            #[diesel(sql_type = Nullable<Text>)]
-            source: Option<String>,
-        }
-        let rows: Vec<Src> = sql_query("SELECT source FROM sessions WHERE id = ?")
-            .bind::<Text, _>("s1")
-            .load(&mut *conn)
+        let source: Option<String> = sessions::table
+            .filter(sessions::id.eq("s1"))
+            .select(sessions::source)
+            .first(&mut *conn)
             .unwrap();
-        assert_eq!(rows[0].source.as_deref(), Some("proxy"));
+        assert_eq!(source.as_deref(), Some("proxy"));
         // And a Runtime-shaped upsert (source None) must keep the proxy source.
         drop(conn);
         store
             .upsert_session("s1", Some(claude), None, None, None)
             .unwrap();
         let mut conn = store.lock().unwrap();
-        let rows: Vec<Src> = sql_query("SELECT source FROM sessions WHERE id = ?")
-            .bind::<Text, _>("s1")
-            .load(&mut *conn)
+        let source: Option<String> = sessions::table
+            .filter(sessions::id.eq("s1"))
+            .select(sessions::source)
+            .first(&mut *conn)
             .unwrap();
         assert_eq!(
-            rows[0].source.as_deref(),
+            source.as_deref(),
             Some("proxy"),
             "source survived a None upsert"
         );
@@ -3208,8 +3205,8 @@ mod tests {
             .as_secs() as i64;
         {
             let mut conn = store.lock().unwrap();
-            sql_query("UPDATE measurements SET ts = ?1 WHERE session = 's1'")
-                .bind::<BigInt, _>(now - 86_400)
+            diesel::update(measurements::table.filter(measurements::session.eq("s1")))
+                .set(measurements::ts.eq(now - 86_400))
                 .execute(&mut *conn)
                 .unwrap();
         }
