@@ -62,7 +62,6 @@
 - T177. Large source dumps through `cat`/`sed`/`grep` get a filter
 - T178. Hook wall-clock time as Claude Code sees it
 - T179. Why `read/dedup` and `read/delta` rarely fire
-- T180. Research: filtering WebFetch, WebSearch and browser page text
 - T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 - T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
 - T184. rtok never resolves its home to a relative `.rtok`
