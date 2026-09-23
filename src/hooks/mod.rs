@@ -65,7 +65,8 @@ fn resolve_session(
 }
 
 /// `Some(message)` when `[hook] max_ms` is non-zero and the event ran over budget.
-/// `max_ms = 0` disables the budget. Pure so the slow path stays one `eprintln!`.
+/// `max_ms = 0` disables the budget. Pure so the slow path stays one `eprintln!`
+/// plus one `warn` log row (see `note_slow`, T170).
 fn slow_note(ms: f64, max_ms: u64, event: &str) -> Option<String> {
     if max_ms > 0 && ms > max_ms as f64 {
         Some(format!(
@@ -73,6 +74,16 @@ fn slow_note(ms: f64, max_ms: u64, event: &str) -> Option<String> {
         ))
     } else {
         None
+    }
+}
+
+/// T170: an over-budget event is logged at `warn` through the log funnel, not only printed
+/// to stderr — hook stderr never reaches the operator, so `eprintln!` alone left `rtok.log`
+/// and the `logs` table empty. `Runtime::log` fails open, so a dead store still exits 0 (D1).
+fn note_slow(cx: &Runtime, event: &str, ms: f64) {
+    if let Some(note) = slow_note(ms, cx.config.hook.max_ms, event) {
+        eprintln!("rtok: {note}");
+        cx.log("warn", "hook", event, &note);
     }
 }
 
@@ -241,9 +252,7 @@ pub fn dispatch(stdin: &[u8], input: &HookInput, cx: &Runtime) -> Vec<u8> {
     };
     let bytes = serde_json::to_vec(&out).unwrap_or_else(|_| b"{}".to_vec());
     let ms = start.elapsed().as_secs_f64() * 1000.0;
-    if let Some(note) = slow_note(ms, cx.config.hook.max_ms, &input.hook_event_name) {
-        eprintln!("rtok: {note}");
-    }
+    note_slow(cx, &input.hook_event_name, ms);
     if let Some(id) = parent {
         let _ = cx.store.set_call_ms(id, ms);
         let cap = cx.config.core.call_io_inline_bytes as usize;
@@ -749,6 +758,25 @@ mod tests {
         assert!(slow_note(12.0, 10, "PreToolUse").is_some());
         assert_eq!(slow_note(9.9, 10, "PreToolUse"), None);
         assert_eq!(slow_note(500.0, 0, "PreToolUse"), None);
+    }
+
+    /// T170: an over-budget hook run lands one `warn` row in the log store, not
+    /// just a stderr line; a run inside the budget adds no row. Deterministic:
+    /// drives `note_slow` directly with fixed millisecond values rather than
+    /// timing a real hook run.
+    #[test]
+    fn slow_hook_run_records_one_warn_row() {
+        let mut cx = Runtime::in_memory("b1e2c3d4-0000-4000-8000-0000000000b1").unwrap();
+        cx.config.hook.max_ms = 10;
+        note_slow(&cx, "PreToolUse", 50.0);
+        let rows = cx.store.logs_after(0, 10).unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].level, "warn");
+        assert!(rows[0].message.contains("slow"), "{}", rows[0].message);
+
+        note_slow(&cx, "PreToolUse", 5.0);
+        let rows = cx.store.logs_after(0, 10).unwrap();
+        assert_eq!(rows.len(), 1, "under-budget run added a row: {rows:?}");
     }
 
     /// T45.4: `fail_open = false` surfaces a bad payload instead of `{}`.
