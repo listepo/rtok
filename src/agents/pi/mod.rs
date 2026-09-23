@@ -72,7 +72,11 @@ impl Agent for Pi {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        Ok(vec![PLUGIN.offer(cfg, mode == Mode::Remove)?])
+        let remove = mode == Mode::Remove;
+        Ok(vec![
+            PLUGIN.offer(cfg, remove)?,
+            super::skill::sync("pi", cfg, remove)?,
+        ])
     }
 }
 

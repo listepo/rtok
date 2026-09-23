@@ -6,7 +6,7 @@
 
 **Workflow.** Claim a `todo` row in `plan.md` first. One task = one branch = one PR off `origin/main`; ≤200 LOC, ≤10 files. Finish: `just check`, commit `<id>: <title>`, move task to `done.md`.
 
-**Rules.** Fail open: hook exits 0 in ≤10 ms unmodified. Lossless: shortened output via `expand <id>`. No `Measurement` row = no saving, in code or prose. Injections budgeted, byte-stable. PostToolUse adds context only. No new dep without one-line reason. No raw SQL (Diesel + `schema.rs`). No duplicated logic. Skills live only in `skills/`; plugins link, never copy (T234). New plugins/hosts obey D21.
+**Rules.** Fail open: hook exits 0 in ≤10 ms unmodified. Lossless: shortened output via `expand <id>`. No `Measurement` row = no saving, in code or prose. Injections budgeted, byte-stable. PostToolUse adds context only. No new dep without one-line reason. No raw SQL (Diesel + `schema.rs`). No duplicated logic. Skills live only in `skills/`; installers copy them, plugins never bundle one (T234). New plugins/hosts obey D21.
 
 **Models.** Any provider. Low-cost: docs, scans, commands — never code. Mid-tier: all code. High-performance: research only with user OK. Re-run tests and read the diff; sub-agent "green" is not evidence.
 
