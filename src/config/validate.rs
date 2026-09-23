@@ -219,6 +219,9 @@ fn check_table(
     }
 }
 
+/// String keys that take one of a fixed set of values (`rtok config validate` names the set).
+const CHOICES: &[(&str, &[&str])] = &[("log.tspin", &["auto", "always", "off"])];
+
 fn check_leaf(
     path: &Path,
     src: &str,
@@ -230,9 +233,18 @@ fn check_leaf(
     let at = loc(path, src, item);
     match expected {
         FigValue::String(..) => {
-            if item.as_str().is_none() {
+            let Some(value) = item.as_str() else {
                 errors.push(format!("{at}: {dotted}: expected string"));
                 return;
+            };
+            // A closed set is rejected here, not at the one call site that would read it.
+            if let Some((_, choices)) = CHOICES.iter().find(|(key, _)| *key == dotted)
+                && !choices.contains(&value)
+            {
+                errors.push(format!(
+                    "{at}: {dotted}: expected one of {}",
+                    choices.join(" | ")
+                ));
             }
         }
         FigValue::Bool(..) => {
@@ -363,6 +375,25 @@ mod tests {
         assert_ne!(std::fs::metadata(&path).unwrap().ino(), ino);
         assert!(std::fs::read_to_string(&path).unwrap().contains("9999"));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// T225.1: `log.tspin` is a closed set; the message names it.
+    #[test]
+    fn a_tspin_value_outside_the_set_is_rejected_by_name() {
+        let dir = tmp("tspin");
+        let path = dir.join("c.toml");
+        std::fs::write(&path, "[log]\ntspin = \"sometimes\"\n").unwrap();
+        let errs = issues(&path).unwrap();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("log.tspin") && e.contains("auto | always | off")),
+            "{errs:?}"
+        );
+        for ok in ["auto", "always", "off"] {
+            std::fs::write(&path, format!("[log]\ntspin = \"{ok}\"\n")).unwrap();
+            assert!(issues(&path).unwrap().is_empty(), "{ok}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

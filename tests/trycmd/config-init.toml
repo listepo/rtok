@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,299 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -24,6 +24,7 @@ target/tmp/t60-2-config-init.toml
 +lines     = 200                       # what `rtok logs` prints when --lines is not given
 +level     = "info"                    # error | warn | info | debug
 +to_db     = true                      # also write a `logs` row for `rtok otel`
++tspin     = "auto"                    # `rtok logs` through tailspin: auto = terminal and tspin on PATH | always | off (T225.1)
 +
 +[estimator]                           # chars per token per class, ±15 %; `rtok stats --calibrate` rewrites
 +code  = 3.5

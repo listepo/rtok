@@ -8,6 +8,7 @@ use crate::store::Store;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -242,11 +243,69 @@ fn tail_with(live: &[String], path: &Path, n: usize) -> Vec<String> {
 /// [`crate::render::log_line`] — one colour table, not a second one here. Pure rendering:
 /// the lines come from the operator model (T15.11), which owns the selection.
 pub fn screen(lines: &[String]) -> Vec<String> {
+    let coloured: Vec<String> = lines.iter().map(|l| crate::render::log_line(l)).collect();
+    numbered(&coloured)
+}
+
+/// The tail numbered `1` newest and nothing else: what [`screen`] colours, and what a viewer
+/// (T225.1) gets as-is so it can colour it its own way.
+pub fn numbered(lines: &[String]) -> Vec<String> {
     lines
         .iter()
         .enumerate()
-        .map(|(i, line)| format!("{} {}", i + 1, crate::render::log_line(line)))
+        .map(|(i, line)| format!("{} {line}", i + 1))
         .collect()
+}
+
+// ── T225.1: `rtok logs` through tailspin ─────────────────────────────────────────
+
+/// A running `tspin --print` that `rtok logs` writes its plain rows into. Print mode, no
+/// pager: the numbering and the stream shape stay rtok's, tailspin only colours.
+pub struct Tspin(Child);
+
+impl Tspin {
+    /// `[log] tspin`: `auto` starts the viewer when stdout is a terminal, `always` regardless
+    /// (a pipe then carries tailspin's colours), `off` never. `None` also when `tspin` is not on
+    /// `PATH` or will not start: the caller prints with [`screen`]'s own colours instead, so a
+    /// missing viewer never costs a line (D1).
+    pub fn start(cfg: &Config, tty: bool) -> Option<Self> {
+        let wanted = match cfg.log.tspin.as_str() {
+            "always" => true,
+            "auto" => tty,
+            _ => false,
+        };
+        if !wanted {
+            return None;
+        }
+        Command::new("tspin")
+            .arg("--print")
+            .stdin(Stdio::piped())
+            .spawn()
+            .ok()
+            .map(Self)
+    }
+
+    /// The viewer's stdin: where [`watch`] streams to.
+    pub fn sink(&mut self) -> &mut ChildStdin {
+        self.0.stdin.as_mut().expect("spawned with a piped stdin")
+    }
+
+    /// Hand the viewer every row, then [`finish`](Self::finish). A viewer that dies mid-stream
+    /// is not rtok's error: the rows were the log, not a result.
+    pub fn print(mut self, rows: &[String]) {
+        for row in rows {
+            if writeln!(self.sink(), "{row}").is_err() {
+                break;
+            }
+        }
+        self.finish();
+    }
+
+    /// Close the pipe and wait for tailspin to flush what it has coloured.
+    pub fn finish(mut self) {
+        drop(self.0.stdin.take());
+        let _ = self.0.wait();
+    }
 }
 
 // ── T24.3: `rtok logs watch` — follow the live file, newest first ─────────────────

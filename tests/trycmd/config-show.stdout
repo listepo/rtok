@@ -41,6 +41,7 @@ log.lines = 200
 log.max_bytes = 1048576
 log.path = ~/.rtok/logs/rtok.log
 log.to_db = true
+log.tspin = auto
 mcp.max_description_tokens = 60
 mcp.max_result_chars = 20000
 mcp.tools = []
