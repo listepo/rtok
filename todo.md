@@ -51,7 +51,6 @@
 - T170. A slow hook is logged, not only printed to stderr
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
-- T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
 - T174. Plugin hooks fail open when `rtok` is not on `PATH`
 - T175. No trailer on tiny outputs
 - T176. Explicitly bounded output is not cut again

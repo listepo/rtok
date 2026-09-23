@@ -5194,3 +5194,16 @@ Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` finds no
 Status: done 2026-09-23
 Check result: `grep -cE 'sql_query|sql::<|batch_execute' src/store/symbols.rs` 15 → 0. `cargo nextest run --lib store::` 42/42 pass, including `schema_rs_matches_the_migrated_tables` (T104 drift guard, now covering the two new tables) and both `symbols::tests::top_refs_*`. `cargo nextest run --test graph_truth --test graph_contract --test graph_lsp_gate` 14/14 pass byte-exact, exercising `symbol_impact`/`symbol_paths`/`symbol_callees`/`symbol_import_follow` through the `graph` plugin's `explore`/`impact`/`callers`/`callees` CLI paths.
 Model: Claude Code / claude-sonnet-5
+
+### T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
+
+Found in the 2026-09-22 audit. `count_hooks` (`src/doctor.rs:731-751`) reads only `settings.json` → `hooks`, so a plugin install prints `hooks 0` while the agents block says hooks ✓ installed. `anthropic_base()` (`src/doctor.rs:938-945`) treats any `ANTHROPIC_BASE_URL` as custom, so Claude Desktop's default `https://api.anthropic.com` prints "mcp_tool_search likely disabled".
+
+Plan: count plugin-carried hooks (the same install check the agents block uses); ignore a base URL equal to the default Anthropic endpoint (trailing slash tolerated).
+
+Check: doctor tests for a plugin-only home (hooks counted) and for the default URL (no warning); `just test` green.
+
+Shipped: `page()` adds `plugin_hooks(cfg)` to `count_hooks`'s result, and `anthropic_base` treats `https://api.anthropic.com` (trailing slash tolerated) from either settings or env as unset, keeping "settings wins over env" ordering. Review fixes on top of the WIP: `plugin_hooks` no longer re-implements the install check and the `installed_plugins.json` walk — it calls `agents::claude::plugin_installed` (widened `pub(super)` → `pub(crate)`, alongside `config_dir` and `PLUGIN_ID` for the same reason) so it can never drift from the boolean the agents block already computes through `Claude::installed`. The recursive `collect_install_paths` walker was replaced with `plugin_install_paths`, a small shared helper for the `{"plugins": {"<id>": [{"installPath": …}]}}` V2 shape; `plugin_skill_dirs` (pre-existing, same file) now calls it too instead of carrying its own copy of the same loop. Checked the two new `page(&cfg)` tests for hermeticity: both override `cfg.doctor.settings_path` and `cfg.setup.claude.settings_path` to the same temp file (stricter than most existing `page()` tests, which override only `cfg.doctor.*`), so `plugin_installed`/`Claude::installed` never touch the real `~/.claude`; neither test sets a custom `ANTHROPIC_BASE_URL` that would trigger a real proxy probe. `detected_hosts`/the per-host `agents:` block still read the real `$HOME` for hosts other than Claude (e.g. `~/.cursor`, `~/.codex`) — a pre-existing property of every `page()` test in this file (no test anywhere overrides `$HOME`), not something introduced or worsened here; left as is.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5

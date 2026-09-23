@@ -163,7 +163,9 @@ pub fn unregister_mcp(cfg: &Config) -> Result<String> {
 
 /// The plugin tree (T114) and its id in the one-plugin marketplace that tree also is.
 const PLUGIN_SRC: &str = "plugins/claude";
-const PLUGIN_ID: &str = "rtok@rtok";
+/// `doctor::plugin_hooks` (T173) also names this id when it walks
+/// `installed_plugins.json` for the hooks the installed plugin carries.
+pub(crate) const PLUGIN_ID: &str = "rtok@rtok";
 
 /// GitHub `owner/repo` shorthand `claude plugin marketplace add` resolves (T139): the repo
 /// root's `.claude-plugin/marketplace.json` names this one marketplace `rtok`, whose only
@@ -172,7 +174,9 @@ const PLUGIN_ID: &str = "rtok@rtok";
 const MARKETPLACE_REPO: &str = "listepo/rtok";
 
 /// Claude Code's config dir: the one `settings_path` lives in (`~/.claude`).
-fn config_dir(cfg: &Config) -> PathBuf {
+/// `pub(crate)`: `doctor::plugin_hooks` (T173) locates `installed_plugins.json` the
+/// same way `plugin_installed` does.
+pub(crate) fn config_dir(cfg: &Config) -> PathBuf {
     let s = &cfg.setup.claude.settings_path;
     s.parent().map(PathBuf::from).unwrap_or_else(|| s.clone())
 }
@@ -194,8 +198,9 @@ pub fn files_serve_rtok(cfg: &Config) -> Vec<&'static str> {
 }
 
 /// True when Claude Code lists `rtok@rtok` as installed. Read from its own record, so a
-/// plugin removed through `/plugin` stops counting at once (T75).
-pub(super) fn plugin_installed(cfg: &Config) -> bool {
+/// plugin removed through `/plugin` stops counting at once (T75). `pub(crate)`: also the
+/// install check `doctor::plugin_hooks` uses (T173), so the two never drift apart.
+pub(crate) fn plugin_installed(cfg: &Config) -> bool {
     super::read(&config_dir(cfg).join("plugins/installed_plugins.json"))
         .contains(&format!("\"{PLUGIN_ID}\""))
 }
