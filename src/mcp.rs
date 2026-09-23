@@ -97,6 +97,9 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     #[cfg(feature = "graph")]
     let _lsp_guard = LspGuard;
     let server = Server::new(cfg)?;
+    if !server.allows(name) {
+        bail!("unknown tool: {name}");
+    }
     let plugin = server
         .listed
         .iter()
@@ -180,11 +183,21 @@ impl Server {
                 listed.push(Listed { plugin: id, def });
             }
         }
+        if !cfg.mcp.tools.is_empty() {
+            // `expand` stays listed whatever the allow-list says: D4 losslessness.
+            listed.retain(|t| {
+                t.def.name == "expand" || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
+            });
+        }
         Ok(Self { cx, listed })
     }
 
     fn tools(&self) -> Vec<Tool> {
         self.listed.iter().map(|t| to_tool(&t.def)).collect()
+    }
+
+    fn allows(&self, name: &str) -> bool {
+        self.listed.iter().any(|t| t.def.name == name)
     }
 
     /// One line in, at most one line out. A JSON-RPC batch (top-level array) answers with an
@@ -259,9 +272,13 @@ impl Server {
         };
         // A failure is an `isError` result with the same message text, not a success block
         // the model has to recognise by wording.
-        let (text, ok) = match invoke(&self.cx, name, &args) {
-            Ok(t) => (t, true),
-            Err(e) => (e.to_string(), false),
+        let (text, ok) = if self.allows(name) {
+            match invoke(&self.cx, name, &args) {
+                Ok(t) => (t, true),
+                Err(e) => (e.to_string(), false),
+            }
+        } else {
+            (format!("unknown tool: {name}"), false)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
         let content = vec![ContentBlock::text(text)];
@@ -612,6 +629,27 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` stays
+    /// listed unconditionally (D4 losslessness).
+    #[test]
+    fn tools_allow_list_filters_listing_and_calls() {
+        let (mut cfg, dir) = tmp("allow");
+        cfg.mcp.tools = vec!["read".to_string()];
+        let server = Server::new(&cfg).unwrap();
+        let mut names: Vec<String> = server.tools().iter().map(|t| t.name.to_string()).collect();
+        names.sort();
+        assert_eq!(names, ["expand", "read"]);
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"pattern":"x"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "unknown tool: search");
+        let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "unknown archive id: x");
         let _ = fs::remove_dir_all(dir);
     }
 

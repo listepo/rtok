@@ -29,14 +29,11 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T117 | todo | P2 | 3 | 0% | |
 | T118.2 | todo | P2 | 3 | 0% | |
 | T118.3 | todo | P2 | 3 | 0% | |
-| T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
-
-| T122 | in progress | P1 | 3 | 5% | Claude Code / claude-haiku-4-5 |
+| T123 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
+| T122 | in progress | P1 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T124 | todo | P3 | 2 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
-
-| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
+| T125 | in progress | P2 | 2 | 5% | Claude Code / claude-sonnet-5 |
 | T130.2 | todo | P2 | 3 | 0% | |
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
@@ -44,9 +41,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T135 | todo | P2 | 3 | 0% | |
 | T136 | todo | P2 | 3 | 0% | |
 | T137 | todo | P3 | 3 | 0% | |
-
 | T127 | todo | P2 | 3 | 0% | |
-| T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
@@ -69,16 +64,17 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
+| T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
 | T190 | todo | P1 | 3 | 0% | |
-| T192 | todo | P2 | 2 | 0% | |
+| T192 | in progress | P2 | 2 | 5% | Command Code / Muse Spark |
 | T194 | todo | P1 | 3 | 0% | |
 | T195 | todo | P1 | 3 | 0% | |
 | T196 | todo | P1 | 3 | 0% | |
-| T198 | todo | P2 | 2 | 0% | |
-| T199 | todo | P2 | 1 | 0% | |
+| T198 | in progress | P2 | 2 | 5% | Command Code / Muse Spark |
+| T199 | in progress | P2 | 1 | 5% | Command Code / Muse Spark |
 | T200 | todo | P2 | 2 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T202 | todo | P2 | 3 | 0% | |
@@ -340,14 +336,9 @@ Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key
 Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
 
 ### T122. A dedup pointer reaches a context that never saw the body
-Seen 2026-09-21 in a Claude Code session: a Haiku sub-agent read `research.md` and `ideas.md`; the parent's first MCP `read` of the same files (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file. Two defects: (1) `plugin::identical_result` (T65.1) keys on the host session, which sub-agents share with the parent, so the pointer names a body that is not in the caller's context and every such read costs a second `expand` round trip — a loss, recorded as a `dedup` saving; (2) the ranged read was hashed or archived as the whole file, so two different ranges are "identical". The same question holds after a `compact_boundary`: the earlier body is gone from context. Reproduce first with a test, then fix at the responsible layer: hash the bytes actually returned, and return a pointer only when the earlier result was delivered to the same context (the hook payload's agent/transcript id where the surface has one; when the surface cannot tell — MCP — a body under a size threshold is returned as is). Lossless rule unchanged.
-Plan: failing test first in `src/plugins/read/mod.rs` tests (two ranges of one file → distinct results; body archived under one context, read from another → body). Fix in `plugin::identical_result` / `read::mod` hash of the returned bytes; context key from the hook payload where present, size threshold on MCP. `mise exec -- cargo nextest run read:: plugin::`.
-Check: a test where session S archives body B under sub-agent context A, then context P reads B → P gets the body, not a pointer; two different ranges of one file never share an id; `just test` green; no `dedup` Measurement row on the returned-body path.
-### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
-`research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.
-Plan: field + advice line in `src/doctor.rs` (`Report`, `render`), threshold key under `[doctor]` in `src/config/mod.rs` + `config/default.toml`; bless trycmd config fixtures; unit tests on `render` for each condition.
-Check: unit tests on `Report::render` for the four conditions (line present only when all hold); `just test` green; ≤ 100 LOC.
-
+Seen 2026-09-21 in a Claude Code session: the parent's first MCP `read` of `research.md` and `ideas.md` (`mode=lines`, ranges `14-30` and `1230-1260`) answered `[rtok <id> · identical to a result 1 turns ago …]` for both ranges with one id, and `expand <id>` returned the whole file — the ranged read was hashed or archived as the whole file, so two different ranges are "identical". (The other half of that session's finding — a pointer naming a body that is not in the caller's context because `plugin::identical_result` keys on the host session — was split out as T127 and is out of scope here.) Reproduce first with a test, then fix at the responsible layer: hash the bytes actually returned. Lossless rule unchanged.
+Plan: failing test first in `src/plugins/read/mod.rs` tests (two ranges of one file → distinct results). Fix the hash of the returned bytes in `plugin::identical_result` / `read::mod`. `mise exec -- cargo nextest run read:: plugin::`.
+Check: two different ranges of one file never share an id; `just test` green; no `dedup` Measurement row on the returned-body path.
 
 ### T124. Realized `tools_rewrite` saving as a dated `research.md` row
 6.2 % (T59.5) is the ceiling, not a saving: no dated row shows what `[proxy.tools_rewrite]` removes with the default `max_description_tokens = 60`. Precondition, by the creator: turn it on for this machine's proxy for at least 20 sessions. Then sum the `kind = tools_rewrite` Measurement rows against session input for the same window (`rtok stats` / `rtok gain`, dated command in the row), and write one row into `research.md` §2 next to the T59.5 row; update `docs/comparison.md` only if it cites the number. If the realized share is under the 3 % gate, say so in the row and leave the default off.
@@ -365,19 +356,6 @@ Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row h
 I-86 (strip or pointer prior reasoning blocks on replay) has no number. First read the provider docs for what is already dropped server-side from earlier turns and cite it in the row. Then measure in `measure::stats` (same walk and unique-`message.id` rule as the other rows): bytes of `thinking` content blocks in assistant messages, per session and as a share of session input across the turns that re-send them. Gate 3 % of session input: above → promote I-86 to a task with an A/B Check; below → move I-86 to Rejected with the row as evidence.
 Plan: count `thinking` blocks in `src/measure/stats.rs` (same unique-`message.id` walk), text + JSON line, fixture unit test; run `rtok stats --since 30d`, add the dated row to `research.md` §2, update I-86 in `ideas.md` by the 3 % gate.
 Check: a `thinking` line in `rtok stats --since 30d` (text and JSON), a unit test on a fixture transcript, a dated row in `research.md` §2, and I-86 updated either way; ≤ 150 LOC.
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
-
-
-### T126. `roadmap.md` and `research.md` §16.2 list shipped work as open
-
-`roadmap.md` still carries T59.5, T58.1 and T61.2, all in `done.md` (`## T59.5 —`, `## T58.1 —`, `## T61.2 —`); `research.md` §16.2 says T58.1 "needs changed-file share count first" while §2 has that count (7.3 %) and the feature shipped. An agent reading either file re-researches finished work — spent tokens with no row to show for it. Reconcile every id in `roadmap.md` against `done.md` headings and open PR branches; drop or mark the shipped ones; give §16.2 a status column (shipped / off by default / open) dated the day of the change. Docs only, no code.
-
-Plan: list every id in `roadmap.md`, match against `done.md` task headings and open PR branches; drop shipped ids; add a status column to `research.md` §16.2 (shipped / off by default / open, dated). Docs only; `just site`.
-
-Check: no id in `roadmap.md` has a task heading in `done.md`; every §16.2 row has a status; `just site` builds.
 
 ### T127. A dedup pointer reaches a sub-agent that never saw the body
 
@@ -574,6 +552,22 @@ Plan: inventory existing cleanup (`rtok worktree clean|gc`, D26 log rotation, ar
 
 Check: `rtok agents junk clear --dry-run` lists only owned/safe paths; apply on a fixture home deletes those paths and leaves the store and referenced archives; unit/trycmd coverage; `just check`. Research row names each `HOSTS` id and its junk folders with doc URLs/dates.
 
+### T183. Python utility: publish host plugins to marketplaces (per agent, via CI)
+
+Creator request 2026-09-22 (voice): a single Python script that publishes an agent plugin to a marketplace — only for hosts that support marketplace publishing. For each AirTalk/rtok host that has this capability, implement a corresponding Python module with that host's publish logic. Invoking the script with the key `all` or a specific agent name deploys/publishes that agent's plugin to its marketplace via CI, triggered from Python.
+
+Scope:
+1. **One entry script** (e.g. `scripts/publish_marketplace.py` or under `tools/`) that accepts `all` | `<host-id>` and refuses hosts without marketplace support with a clear error.
+2. **Per-host Python modules** — one module per marketplace-capable host (discover which of today's `HOSTS` already have a documented marketplace/plugin store path: Claude Code marketplace, Codex `plugin marketplace add`, Cursor, Copilot, Kimi `/plugins`, … — verify against current host docs before coding). Each module owns auth assumptions, package layout under `plugins/<host>/`, and the publish API or CLI the marketplace expects.
+3. **CI trigger from Python** — the script does not hand-upload in production; it triggers the repo's CI workflow that builds and publishes (workflow_dispatch or equivalent), and reports the run URL. Local dry-run prints the planned host list and the workflow inputs without firing CI.
+4. **Docs** — short README for the script; list which hosts are supported and how to add a new host module when a new marketplace-capable agent joins `HOSTS`.
+
+Out of scope: inventing marketplaces for hosts that only support local link/copy install; changing Rust installer behaviour (T139/T140-style install stays separate).
+
+Execution plan: (1) survey every host in `plugins/` against its current docs (dated, linked): does a marketplace exist, and is publishing an API/CLI call, a git-hosted catalog (e.g. this repo as a Claude Code or Codex marketplace), or a manual submission form — only the first two get a module, the rest are listed as unsupported with the reason; (2) `tools/publish_marketplace/` Python package — entry `python -m publish_marketplace all|<host> [--dry-run]`, one module per supported host, a registry that refuses unknown or unsupported hosts with a clear error; stdlib only unless a maintained library is clearly better; (3) a `workflow_dispatch` workflow (`.github/workflows/marketplace.yml`) with a `host` input that runs the host module in CI; the script triggers it through `gh workflow run` and prints the run URL; `--dry-run` prints the hosts and workflow inputs and fires nothing; (4) pytest tests for the registry, dry-run output and the refusal path (no network); (5) README with the host table and how to add a host. Split into PRs of ≤ 200 LOC / ≤ 10 files (core + workflow + first host, then the remaining hosts). No agent triggers a real publish; the first real run is the creator's.
+
+Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
+
 ### T184. rtok never resolves its home to a relative `.rtok`
 
 Found 2026-09-22 while closing T169: `cli_trycmd` writes `./.rtok/config.toml` and `./.rtok/rtok.db` into the checkout. Bisected to five cases — `agents-sessions-json`, `doctor-json`, `otel-json`, `plugins-json`, `stats-price`. Ten `tests/trycmd/*.toml` cases put their variables straight under `[env]` (`RTOK_HOME = "target/tmp/…"`). trycmd 1.2.1's `Env` knows only `inherit`, `add` and `remove`, has no `deny_unknown_fields`, and drops those keys silently; the 26 other cases use `[env.add]` correctly. With `inherit = false` the binary then runs with neither `HOME` nor `RTOK_HOME`, and `Config::home_dir` returns `"".join(".rtok")`, a path relative to the cwd. Reproduced: `env -i rtok --config tests/trycmd/input/json-readers.toml plugins --json` in the repo root creates `./.rtok/`; with `RTOK_HOME` set it does not. The tracked `.rtok/config.toml` (added by `1a40127`, a stale copy of `config/default.toml`) is the same output committed; the project layer reads `<git root>/.rtok.toml`, not that file.
@@ -581,8 +575,6 @@ Found 2026-09-22 while closing T169: `cli_trycmd` writes `./.rtok/config.toml` a
 Plan: (1) move the ten cases' variables under `[env.add]`, re-bless whatever output then changes, and add a test that fails on any bare key under `[env]` in `tests/trycmd/*.toml`; (2) `Config::home_dir` (`home_dir_from`, `src/config/mod.rs`) falls back to `std::env::home_dir()` (not deprecated in the pinned Rust 1.97.1; on Unix it reads `getpwuid_r` when `HOME` is unset) and never returns a relative path — when no home resolves, pick a behaviour that keeps hooks fail-open (for example the OS temp dir) and cover it with a unit test; (3) untrack `.rtok/config.toml` and ignore `/.rtok/`.
 
 Check: after `just test`, no `./.rtok` and no `./~` in the checkout; `env -i rtok plugins --json` from the repo root creates nothing in the cwd; the new trycmd-schema test fails on `main`; `just check` green.
-
-Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
 
 
 ## Reference
