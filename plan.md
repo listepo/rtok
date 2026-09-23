@@ -102,6 +102,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T221 | todo | P2 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
+| T235 | todo | P2 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -1015,3 +1016,11 @@ Plan: `git rm --cached` `report.html`, `report/jscpd-report.json`, `dump/*`; ext
 
 Check: `git ls-files report.html report/ dump/` prints nothing; after `just test` and `just dup`, `git status --porcelain` stays clean (T184's Check covers the rest); `just check` green.
 
+### T235. `rtok run` pays for a login shell on every call; `rtok logs watch` outlives its parent
+
+Findings from a load incident on the creator's machine (16 cores, load average ~120). The load came from a stress script in another agent session (24 busy loops plus repeated `cargo nextest`), not from rtok: every rtok process sat at ~0% CPU — 15 `rtok mcp` (one per agent session, every parent alive, ~15 MB RSS each) and `rtok demon supervise proxy` with its `rtok proxy`. Two rtok costs still showed up:
+
+- Every agent Bash call runs as `rtok run -- <cmd>`, which spawns `/bin/zsh -lc` — a login shell — although the harness has already sourced its own shell snapshot (`zsh -c source <snapshot> && rtok run -- ...`), so each call starts two shells. Idle cost measured: `rtok run -- true` 0.16 s, `zsh -lc true` 0.15 s, `zsh -c true` 0.00 s — nearly all of the wrapper's cost is the login shell. Under that load even `rtok run -- echo hi` did not return within 30 s (a fresh terminal shell did not reach its prompt either, so load was the root cause, but the login shell multiplies it per call).
+- An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
+
+Done means: `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host); `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
