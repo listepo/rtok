@@ -50,10 +50,16 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T156 | todo | P3 | 3 | 0% | |
 | T157 | todo | P2 | 1 | 0% | |
 | T159 | todo | P2 | 4 | 0% | |
-| T163 | todo | P2 | 5 | 0% | |
+| T163 | in progress | P2 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T163.1 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
-| T165 | todo | P3 | 5 | 0% | |
+| T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
+| T163.5 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T163.6 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T163.7 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
+| T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
+| T165 | in progress | P3 | 5 | 0% | Claude Code / claude-opus-5-5 |
 | T168 | todo | P2 | 1 | 0% | |
 | T170 | todo | P1 | 1 | 0% | |
 | T171 | todo | P1 | 2 | 0% | |
@@ -65,7 +71,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T177 | todo | P2 | 3 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
-| T180 | todo | P3 | 4 | 0% | |
+| T180 | in progress | P3 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T182 | todo | P2 | 3 | 0% | |
 | T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
@@ -386,6 +392,8 @@ Check: `grep -rE 'sql_query|sql::<|batch_execute' src` finds nothing; existing s
 
 **Split (2026-09-23).** T163.1 takes `symbols.rs`; T163.2 takes `otel.rs` and `embed.rs`. `mod.rs` (92 sites, including migration DDL and PRAGMA) stays in this card and is split further when claimed; `diesel_migrations` is approved (2026-09-23).
 
+**Split of `mod.rs` (2026-09-23).** Six slices by area, each ≤ 200 LOC: T163.3 PRAGMA, `unixepoch()` and FTS5 in the shared extension module; T163.4 migrations; T163.5 sessions, calls, measurements and `kv`; T163.6 archive, `call_io` and `read_cache`; T163.7 usage and stats aggregates; T163.8 retention and the last test helpers, which also runs this card's full Check and closes T163. Raw SQL in `mod.rs` tests moves with the slice that owns the table it touches. Execution: T163.3 waits for T163.1's `sql_ext.rs` to land on `main` (one module, never a second); T163.4–T163.7 do not depend on each other; T163.8 goes last.
+
 ### T163.1. `src/store/symbols.rs` without raw SQL
 
 First slice of T163: the 15 `sql_query` sites in `symbols.rs` (`symbol_stale`, `extractor`, symbol lookups) move to the Diesel DSL over `schema.rs`; `INSERT OR IGNORE` becomes `insert_or_ignore_into`, upserts use `on_conflict`. Anything the DSL cannot express goes through one shared extension module (`define_sql_function!` or a custom `QueryFragment`) that T163.2 and the `mod.rs` slices reuse — never a second one.
@@ -402,6 +410,54 @@ Execution plan: (1) map each site to `schema.rs`; (2) rewrite, keeping signature
 
 Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/embed.rs` finds nothing; tests unchanged and green; `just check`.
 
+### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
+
+`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated.
+
+Execution plan: (1) wait for T163.1 on `main`, reuse its module; (2) add the helpers with unit tests; (3) swap the call sites, signatures unchanged; (4) store tests unchanged and green, `just check`.
+
+Check: no `sql_query|sql::<|batch_execute` left in the listed functions and tests; `note_search_treats_query_text_literally` and the WAL test green; `just check`.
+
+### T163.4. Migrations through `diesel_migrations`
+
+`migrate()` (`schema_migrations` bookkeeping plus `batch_execute` of each file) moves to `diesel_migrations` (approved 2026-09-23). Existing databases must not re-run anything: the names already in `schema_migrations` map onto Diesel's version table in a one-time, idempotent bridge, and a DB that was never migrated still gets every file once. Tests move with it: `migration_is_idempotent`, `concurrent_opens_of_a_fresh_store_all_migrate`, `migration_0015_adds_lifecycle_columns_to_a_previous_schema_db`, `schema_0002_seeds_hosts_and_rejects_bad_fk`, `migrations_list_matches_the_directory`, `schema_rs_matches_the_migrated_tables`. The `.sql` files stay raw SQL (the rulebook allows it in migrations).
+
+Execution plan: (1) choose between Diesel's `<version>/up.sql` layout and a `MigrationSource` over the flat `migrations/NNNN.sql` files — the layout move alone touches every file, so if chosen it lands as its own mechanical PR; (2) write the bridge and a test that opens a DB migrated by the current code and sees no re-run; (3) toolchain row for `diesel_migrations`; (4) `just check`.
+
+Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
+
+### T163.5. Sessions, calls, measurements and `kv` in the typed DSL
+
+`measurement_count`, `upsert_session`, `upsert_model`, `archive_ref_ids`' measurement query, `session_row`, `sessions_by_cwd`, `set_call_ts`, `kv_get`/`kv_set`/`kv_delete`, `recent_hook_inputs`, `calls_since`, `last_measurement_ref`, and the test helpers that touch these tables (`upsert_session_keeps_non_null_attribution`, `write_api_round_trip_and_spill` counts, `memory_recall_totals_sums_recalls_in_the_window_only` ts update). Upserts via `on_conflict`, `INSERT OR IGNORE` via `insert_or_ignore_into`.
+
+Execution plan: (1) add any missing `table!` columns; (2) rewrite site by site, signatures and row order unchanged; (3) store tests unchanged and green, `just check`.
+
+Check: none of the listed functions or tests hold `sql_query`; `just check`.
+
+### T163.6. Archive, `call_io` and `read_cache` in the typed DSL
+
+`archive_ref_ids`' `call_io` query, `archive_in_session`, `archive_decision`, `put_archive_decision`, `session_live_archives`, `live_zone_pointer`, `mark_expanded`, `archive_decision_counts`, `put_read_cache`, `clear_read_cache`, and the tests reading `call_io`/`archive` (`inline_sha256_matches_stored_text`, `spill_archive_carries_session`, `write_api_round_trip_and_spill`'s `call_io` read).
+
+Execution plan: same as T163.5; joins via `inner_join`/`left_join` over `schema.rs`, `NOT EXISTS` via `exists().not()`.
+
+Check: none of the listed functions or tests hold `sql_query`; archive and expand tests green; `just check`.
+
+### T163.7. Usage and stats aggregates in the typed DSL
+
+`memory_note_aggs`, `memory_recall_totals`, `memory_mcp_calls`, `insert_usage`, `insert_provider_tokens`, `usage_sessions`, `usage_rows`, `usage_ctt`, `usage_by_api`, `usage_by_model`, `recent_session_totals`, `recent_calls`, `model_slug_of_call`, and the ts-rewrite helpers in `session_totals_sums_each_session_exactly`. Aggregates via `diesel::dsl::{count, sum, min, max}` and `group_by`; anything the DSL cannot express goes to `sql_ext.rs`, with a comment why.
+
+Execution plan: (1) rewrite one function at a time against the existing tests, which pin the numbers; (2) `rtok stats` output on a copy of a real `rtok.db` byte-identical before/after; (3) `just check`.
+
+Check: none of the listed functions or tests hold `sql_query`; `rtok stats` unchanged on the same DB; `just check`.
+
+### T163.8. Retention without raw SQL; close T163
+
+`purge_calls_older_than` and `run_retention` (dynamic `DELETE`s, archive path collection) and the remaining test sites (`purge_drops_old_calls…`, `retention_keeps_plugin_archives…`, `archive_in_session…`), then T163's full Check. Last slice: it runs after T163.3–T163.7 and removes `use diesel::sql_query` from `mod.rs`.
+
+Execution plan: (1) rewrite with `diesel::delete(...).filter(...)` and typed updates inside the existing transaction; (2) T163's `grep` over `src` finds nothing; (3) hook path still ≤ 10 ms (`rtok bench` or the existing timing test); (4) move T163 and all its slices to `done.md`.
+
+Check: T163's Check.
+
 ### T165. Research: general HTTP(S) interception as a new surface
 
 Creator request 2026-09-22. Research only — no product code in this task. Today `rtok proxy` reaches one API through `ANTHROPIC_BASE_URL`; a general interceptor would see every HTTP call an agent makes (docs fetches, package registries, other model APIs). That is a new surface on the level of `proxy` and `mcp`: a local CA whose root the user trusts, TLS termination on loopback only, CONNECT proxying via `HTTPS_PROXY`, and fail open whenever a client bypasses the proxy, pins certificates or rejects the CA. It is the most contested item in the plan — it touches the user's trust store and sees all their traffic — so it is scheduled last.
@@ -409,6 +465,8 @@ Creator request 2026-09-22. Research only — no product code in this task. Toda
 Plan: (1) survey at least three alternatives with evidence and dates — e.g. mitmproxy, `hudsucker`/`http-mitm-proxy` (Rust), Proxyman/Charles, and the no-MITM option (per-host `*_BASE_URL` plus MCP only) — covering CA install/removal per OS, cert pinning failures, HTTP/2 and streaming, latency cost, and what share of an agent's tokens actually travels over HTTP outside the API (measure from `~/.claude/projects` like I-71; below 1 % → stop and record); (2) a privacy decision for the creator: default-deny with an allow-list, or an exclude-list of hosts/domains never decrypted (banks, auth/SSO, OS update, password managers, anything with pinning), what is stored and for how long, how the CA key is protected and removed; (3) if the survey says build, split the surface into tasks of ≤ 200 LOC / ≤ 10 files each (CA generate/trust/uninstall, CONNECT tunnel passthrough, TLS termination for allow-listed hosts, bypass detection and fail open, `Measurement` rows, docs), with the decision row proposed as the next free D id.
 
 Check: `research.md` gains a dated section with the survey table and the measured HTTP share; the privacy decision is written down and approved by the creator; either a "do not build" note or the split tasks go to `roadmap.md` for creator approval — none go straight into this table.
+
+Execution plan: (1) measure first, reusing T180's scan of `~/.claude/projects` (last 7 days): bytes and estimated tokens of results that travelled over HTTP outside the model API (`WebFetch`, `WebSearch`, `curl`/`wget` in Bash, MCP fetch tools, browser page text) against all tool-result bytes; below 1 % → skip the survey, write the stop note; (2) otherwise survey mitmproxy, `hudsucker`, `http-mitm-proxy`, Proxyman/Charles and the no-MITM option on the dimensions above, sources dated; (3) put the privacy options to the creator in chat and record the answer; (4) `research.md` §20, `roadmap.md` entry, card to `done.md`. One docs-only PR.
 
 ### T168. `agents list` tables flake on wrapper noise in `--version`
 
@@ -511,6 +569,8 @@ Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude
 Plan: list the surfaces that can reach these results (proxy, T134 outcome, an MCP fetch tool), estimate the saving on the audit sample, and propose one option as a plan change.
 
 Check: a dated `research.md` section with the sample numbers and a recommendation.
+
+Execution plan: (1) re-measure on `~/.claude/projects` (last 7 days, scratch script, not committed): calls, result bytes and size distribution for `WebSearch`, `WebFetch`, `Claude_Browser` and `claude-in-chrome` page-text tools; (2) per surface — proxy rewriting `tool_result` blocks in the request, a PreToolUse redirect to an rtok MCP fetch/search tool, T134's `updatedToolOutput` if honoured, and doing nothing — note what it can reach, fail-open and lossless story; (3) estimate the saving by running candidate reductions (HTML→text, dedup of repeated search snippets, head/tail with archive) offline on the sample; (4) `research.md` dated section with the numbers, one recommended option as a `roadmap.md` entry for creator approval, card to `done.md`. One docs-only PR, done before T165 so T165 reuses the scan.
 
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 
