@@ -138,12 +138,33 @@ fn the_resident_answers_like_rtok_hook_and_refuses_or_exits_otherwise() {
     assert!(exits(&mut resident), "and the stale resident exits");
 
     let mut resident = home.serve();
-    // Windows keeps an open `hook.lock` from being deleted; there the test stops its own child.
+    // Windows keeps an open `hook.lock` from being deleted; there the test stops its
+    // own child, waits for handles to release, then removes the home with a short retry
+    // for ERROR_SHARING_VIOLATION (32).
     #[cfg(windows)]
-    resident.kill().unwrap();
-    std::fs::remove_dir_all(&home.0).unwrap();
-    assert!(
-        exits(&mut resident),
-        "a resident exits once its home is gone"
-    );
+    {
+        resident.kill().unwrap();
+        assert!(exits(&mut resident), "killed resident exits");
+        let start = Instant::now();
+        loop {
+            match std::fs::remove_dir_all(&home.0) {
+                Ok(()) => break,
+                Err(e)
+                    if e.raw_os_error() == Some(32)
+                        && start.elapsed() < Duration::from_secs(5) =>
+                {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => panic!("remove home: {e}"),
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::remove_dir_all(&home.0).unwrap();
+        assert!(
+            exits(&mut resident),
+            "a resident exits once its home is gone"
+        );
+    }
 }
