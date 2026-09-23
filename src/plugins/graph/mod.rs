@@ -8,7 +8,8 @@
 //! directory (unchanged files are skipped by sha256, so a call costs one directory walk),
 //! then answers from the `symbols` table. Every response is capped at
 //! `plugins.graph.max_tokens`: the head lines that fit, then `N more, expand <id>` with the
-//! full text archived. One `cap` measurement per call records capped vs uncapped estimate.
+//! full text archived. A `cap` measurement records capped vs uncapped estimate only when
+//! the answer was actually shortened; an unchanged answer writes no row (T181).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -1074,9 +1075,10 @@ fn repo_map(cx: &Ctx) -> Option<Injection> {
 }
 
 /// Cap at `plugins.graph.max_tokens`: whole head lines that fit, then `N more, expand <id>`.
-/// Always records one measurement; `ref_id` when truncated. `before_bytes` is the
-/// uncapped text for the four plain tools, and the sum of the calls `explore`
-/// replaced for `kind = "explore"` (T68.1).
+/// Records one measurement only when something was shortened: truncated (`ref_id` set)
+/// or smaller than what it stands for. An unchanged answer is not a saving and writes
+/// no row (T181). `before_bytes` is the uncapped text for the four plain tools, and the
+/// sum of the calls `explore` replaced for `kind = "explore"` (T68.1).
 fn cap_kind(cx: &Ctx, text: String, before_bytes: u64, kind: &'static str) -> Result<String> {
     let max = cx.plugin_config::<crate::config::Graph>("graph").max_tokens;
     let est = cx.estimate(&text, Class::Code);
@@ -1104,16 +1106,19 @@ fn cap_kind(cx: &Ctx, text: String, before_bytes: u64, kind: &'static str) -> Re
             Some(id),
         )
     };
-    cx.record(&Measurement {
-        plugin: "graph",
-        kind,
-        before_bytes,
-        after_bytes: out.len() as u64,
-        est_before: est,
-        est_after: cx.estimate(&out, Class::Code),
-        ref_id,
-        call_id: cx.call_id(),
-    })?;
+    let after_bytes = out.len() as u64;
+    if ref_id.is_some() || after_bytes < before_bytes {
+        cx.record(&Measurement {
+            plugin: "graph",
+            kind,
+            before_bytes,
+            after_bytes,
+            est_before: est,
+            est_after: cx.estimate(&out, Class::Code),
+            ref_id,
+            call_id: cx.call_id(),
+        })?;
+    }
     Ok(out)
 }
 
@@ -1149,6 +1154,8 @@ mod tests {
             out.lines().any(|l| l.contains("src/plugins/graph/mod.rs:")),
             "{out}"
         );
+        // T181: an answer under the cap is unchanged, so it is not a saving and writes no row.
+        assert_eq!(cx.store.measurement_count("graph").unwrap(), 0);
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1248,7 +1255,15 @@ mod tests {
         let max = cx.config.plugins.graph.max_tokens;
         let est = cx.estimate(&out, Class::Code);
         assert!(est <= max, "{est} > {max}");
-        assert_eq!(cx.store.measurement_count("graph").unwrap(), 1);
+        // T181: the one row records a real saving, not `before == after`.
+        let rows = cx.store.list_measurements("graph").unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.kind, "cap");
+        assert_eq!(row.after_bytes, out.len() as i64);
+        assert!(row.after_bytes < row.before_bytes, "{row:?}");
+        assert!(row.est_after < row.est_before, "{row:?}");
+        assert_eq!(row.ref_id.as_deref(), Some(id));
         let _ = fs::remove_dir_all(dir);
     }
 
