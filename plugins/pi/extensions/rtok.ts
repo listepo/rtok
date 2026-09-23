@@ -33,16 +33,28 @@ const FILE_TOOLS = new Set(["read", "grep", "find", "ls"]);
 
 function rtok(args, input, signal) {
   return new Promise((resolve) => {
-    const child = execFile("rtok", args, { signal }, (error, stdout, stderr) => {
+    // T214: `timeout` bounds a wedged `rtok` (DB lock, broken pipe) so the
+    // host session never freezes; `signal` lets the host abort cut it short.
+    const child = execFile("rtok", args, { timeout: 5000, signal }, (error, stdout, stderr) => {
       if (error && error.code === "ENOENT") {
         resolve({ missing: true });
         return;
       }
-      // Fail open (D1): any plugin error keeps the unmodified input/output.
+      // Fail open (D1): any plugin error (non-zero exit, timeout kill, abort)
+      // resolves `failed`, and every handler below keeps the original content
+      // on it. The keep-original handling lives here, not in T195.
+      if (error) {
+        resolve({ failed: true, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+        return;
+      }
       resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
     });
     // execFile without a callback `input` option: feed stdin, then close it
     // so a child that reads stdin (the test fake, `guard check`) cannot hang.
+    // A child that dies first (timeout kill, abort, missing binary) makes the
+    // write fail with EPIPE; unhandled, that `error` would crash the host
+    // instead of failing open. The callback above already reports the failure.
+    child.stdin.on("error", () => {});
     if (input !== undefined) {
       child.stdin.write(input);
     }
@@ -90,7 +102,7 @@ export default function (pi) {
     );
     if (g.missing) {
       if (event.toolName === "bash") pi.appendEntry?.("system", KETCH_HINT);
-    } else {
+    } else if (!g.failed) {
       try {
         const v = JSON.parse(g.stdout);
         if (v && v.allow === false && typeof v.reason === "string" && v.reason) {
@@ -133,11 +145,12 @@ export default function (pi) {
     }
     const args = filterArgs(event);
     if (!args || !text) return;
-    const r = await rtok(args, text, undefined);
+    const r = await rtok(args, text, event?.signal);
     if (r.missing) {
       hintMissing(pi);
       return;
     }
+    if (r.failed) return;
     if (!r.stdout) return;
     const out = r.stdout.trimEnd();
     if (out && out !== text.trimEnd()) {
@@ -155,8 +168,8 @@ export default function (pi) {
     if (!Array.isArray(event.messages)) return;
     let messages = event.messages;
     const input = JSON.stringify(event.messages);
-    const r = await rtok(["archive", "rewrite", "--stdin"], input, undefined);
-    if (!r.missing && r.stdout && r.stdout !== input) {
+    const r = await rtok(["archive", "rewrite", "--stdin"], input, event?.signal);
+    if (!r.missing && !r.failed && r.stdout && r.stdout !== input) {
       try {
         messages = JSON.parse(r.stdout);
       } catch {
@@ -172,7 +185,7 @@ export default function (pi) {
           session_id: compactSession,
         }),
       );
-      const text = additionalContext(c.stdout);
+      const text = c.failed ? "" : additionalContext(c.stdout);
       if (text) {
         messages = [...messages, { role: "user", content: [{ type: "text", text }] }];
       }
@@ -333,6 +346,13 @@ async function registerPiTools(pi) {
         );
         if (out.missing) {
           return { content: [{ type: "text", text: KETCH_HINT }] };
+        }
+        if (out.failed) {
+          return {
+            content: [
+              { type: "text", text: `rtok ${t.name} failed; retry or continue without it` },
+            ],
+          };
         }
         return { content: [{ type: "text", text: String(out.stdout ?? "") }] };
       },

@@ -505,8 +505,9 @@ fn normalize_line_key(line: &str) -> String {
             i += n;
             continue;
         }
-        out.push(b[i] as char);
-        i += 1;
+        let c = rest.chars().next().unwrap();
+        out.push(c);
+        i += c.len_utf8();
     }
     out
 }
@@ -539,7 +540,9 @@ fn placeholder_token(rest: &str) -> Option<(usize, &'static str)> {
         && b[12..14].iter().all(|c| c.is_ascii_digit())
         && b[15..17].iter().all(|c| c.is_ascii_digit())
         && b[18..20].iter().all(|c| c.is_ascii_digit())
-        && rest[3..6].chars().all(|c| c.is_ascii_alphabetic())
+        && rest
+            .get(3..6)
+            .is_some_and(|s| s.chars().all(|c| c.is_ascii_alphabetic()))
     {
         return Some((20, "<TS>"));
     }
@@ -570,10 +573,8 @@ fn uuid_at(rest: &str) -> Option<(usize, ())> {
     let need = [(8, b'-'), (4, b'-'), (4, b'-'), (4, b'-'), (12, 0)];
     let mut pos = 0usize;
     for (len, sep) in need {
-        if rest.len() < pos + len {
-            return None;
-        }
-        if !rest[pos..pos + len].bytes().all(|c| c.is_ascii_hexdigit()) {
+        let seg = rest.get(pos..pos + len)?;
+        if !seg.bytes().all(|c| c.is_ascii_hexdigit()) {
             return None;
         }
         pos += len;
@@ -995,6 +996,8 @@ pub fn apply(
     }
     // T65.2: rewrite a JSON body after grouping and before the cut. Parse the
     // original payload so drop/keep/dedupe cannot poison a pretty-printed object.
+    // The rewrite replaces `lines`, so `trace_kept` (indexed by line below) is
+    // recomputed after every transform that can change the line count.
     if let Some(compacted) = compact_json(output, rule.json_items, rule.json_string) {
         lines = compacted.lines().map(str::to_string).collect();
     }
@@ -1003,6 +1006,7 @@ pub fn apply(
         Group::Diag => lines = group_diag(lines),
         Group::Off => {}
     }
+    let trace_kept = trace_blocks(&lines);
     let max = rule.max_lines.max(1) as usize;
     if lines.len() <= max {
         return lines.join("\n");
@@ -1251,6 +1255,26 @@ mod tests {
         let out = normalized_dedupe(lines);
         assert_eq!(out.len(), 2);
         assert!(out[0].contains("(×2, also lines 3)"), "{}", out[0]);
+    }
+
+    #[test]
+    fn uuid_at_multibyte_suffix_is_no_match() {
+        assert_eq!(placeholder_token("1234567é-x"), None);
+    }
+
+    #[test]
+    fn normalized_dedupe_survives_multibyte_lines() {
+        let lines = vec![
+            "日本語テスト 1234567é-x done".into(),
+            "日本語テスト 1234567é-x done".into(),
+            "café 2026-09-18T10:00:01 warn: slow".into(),
+            "café 2026-09-18T10:00:02 warn: slow".into(),
+            "plain line".into(),
+        ];
+        let out = normalized_dedupe(lines);
+        assert_eq!(out.len(), 3, "{out:?}");
+        assert!(out[0].contains("(×2, also lines 2)"), "{}", out[0]);
+        assert!(out[1].contains("(×2, also lines 4)"), "{}", out[1]);
     }
 
     #[test]
@@ -1855,5 +1879,25 @@ mod tests {
         let out = apply(&s, &lines.join("\n"), 0, &uncut(Group::Diag), "arc");
         assert!(out.contains("TS2322 ×1:"), "{out}");
         assert!(out.contains("lines omitted (expand arc)"), "{out}");
+    }
+
+    #[test]
+    fn single_line_json_with_many_items_does_not_panic() {
+        let body = format!(
+            "[{}]",
+            (0..30)
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let rule = Rule {
+            max_lines: 5,
+            head: 2,
+            tail: 2,
+            ..Rule::default()
+        };
+        let s = settings(80);
+        let out = apply(&s, &body, 0, &rule, "id");
+        assert!(out.contains("… +10 more"), "{out}");
     }
 }

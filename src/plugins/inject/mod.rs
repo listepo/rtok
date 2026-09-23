@@ -4,6 +4,8 @@ use rtok_plugin_sdk::{
     Class, Ctx, DashboardPage, Injection, Manifest, Measurement, Plugin, PreCompact, SessionStart,
     Surface,
 };
+use std::io::Read as _;
+
 /// Catalogue plugin `inject`.
 pub struct Inject;
 
@@ -89,22 +91,52 @@ fn modes_text(cx: &Ctx) -> Option<String> {
     if names.is_empty() {
         return None;
     }
+    let budget = cfg.budget_tokens;
+    let rate = cx
+        .config::<crate::config::Estimator>("estimator")
+        .prose
+        .max(0.1);
     let dir = &cfg.modes_dir;
     let mut text = String::new();
     for name in names {
         let path = dir.join(format!("{name}.md"));
-        let Some(body) = std::fs::read_to_string(&path)
-            .ok()
-            .or_else(|| builtin(name).map(str::to_string))
-        else {
+        let Some(body) = read_mode(&path, builtin(name), budget, rate) else {
             continue;
         };
+        let body = crate::plugin::fit_budget(cx, &body, Class::Prose, budget);
         text.push_str(&body);
         if !body.ends_with('\n') {
             text.push('\n');
         }
     }
     Some(text)
+}
+
+fn read_mode(
+    path: &std::path::Path,
+    builtin: Option<&str>,
+    budget: u32,
+    rate: f32,
+) -> Option<String> {
+    let mut f = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return builtin.map(str::to_string),
+    };
+    let cap = (f64::from(budget) * f64::from(rate)).ceil() as usize + 1;
+    let mut buf = vec![0u8; cap];
+    let mut n = 0usize;
+    while n < cap {
+        match f.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(_) => return builtin.map(str::to_string),
+        }
+    }
+    let mut body = String::from_utf8_lossy(&buf[..n]).into_owned();
+    while body.len() > cap {
+        body.pop();
+    }
+    Some(body)
 }
 
 /// Pick injections in priority order until the budget. A candidate that starts
@@ -114,7 +146,7 @@ pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
     let budget = cx
         .plugin_config::<crate::config::Inject>("inject")
         .budget_tokens;
-    let mut parts = Vec::new();
+    let mut parts: Vec<String> = Vec::new();
     let mut dropped = Vec::new();
     let mut used = 0u32;
     let mut before = 0u32;
@@ -127,8 +159,26 @@ pub fn apply(cx: &Ctx, mut offered: Vec<Injection>) -> String {
             dropped.push(format!("dropped:{}:{t}", i.plugin));
             continue;
         }
-        used += t;
-        parts.push(i.text.as_str());
+        if t <= budget {
+            used += t;
+            parts.push(i.text.clone());
+            continue;
+        }
+        let marker = format!("dropped:{}:{t}", i.plugin);
+        let marker_cost = cx.estimate(&format!("\n{marker}"), Class::Prose);
+        let mut room = budget.saturating_sub(used).saturating_sub(marker_cost);
+        if !parts.is_empty() {
+            room = room.saturating_sub(1);
+        }
+        let prefix = crate::plugin::fit_budget(cx, &i.text, Class::Prose, room);
+        if prefix.is_empty() {
+            dropped.push(marker);
+            used = budget;
+            continue;
+        }
+        used = budget;
+        parts.push(prefix);
+        dropped.push(marker);
     }
     let mut text = parts.join("\n");
     if !dropped.is_empty() {
@@ -203,6 +253,60 @@ mod tests {
             "two emitted + one dropped line"
         );
         assert_eq!(cx.store.measurement_count("inject").unwrap(), 2);
+    }
+
+    #[test]
+    fn single_10x_candidate_fits_budget_and_marks_dropped() {
+        let cx = crate::plugin::Runtime::in_memory("inject-t188-huge").unwrap();
+        let budget = cx.config.plugins.inject.budget_tokens;
+        let text = blob(budget * 10, &Ctx::new(&cx));
+        let t = cx.estimate(&text, Class::Prose);
+        assert_eq!(t, budget * 10);
+        let offered = vec![Injection {
+            plugin: "huge",
+            text,
+            priority: 5,
+        }];
+        let once = apply(&Ctx::new(&cx), offered.clone());
+        let twice = apply(&Ctx::new(&cx), offered);
+        assert_eq!(once, twice);
+        assert!(
+            once.lines().any(|l| l == format!("dropped:huge:{t}")),
+            "{once}"
+        );
+        assert!(cx.estimate(&once, Class::Prose) <= budget, "{once}");
+    }
+
+    #[test]
+    fn one_mb_mode_file_stays_under_budget_and_stable() {
+        let dir = std::env::temp_dir().join("rtok-t188-big-mode");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("big.md"), "y".repeat(1 << 20)).unwrap();
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes_dir = dir.clone();
+        cfg.plugins.inject.modes = vec!["big".into()];
+        let budget = cfg.plugins.inject.budget_tokens;
+        let start = serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "t188",
+            "source": "startup"
+        });
+        let run = || {
+            let mut out = Vec::new();
+            crate::hooks::run("SessionStart", start.to_string().as_bytes(), &mut out, &cfg);
+            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            v["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let (once, twice) = (run(), run());
+        assert_eq!(once, twice);
+        let cx = crate::plugin::Runtime::in_memory("t188").unwrap();
+        assert!(cx.estimate(&once, Class::Prose) <= budget, "{once}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T53.1: the opt-in nudge set is data (D7) inside the mode budget (≤250),

@@ -294,6 +294,16 @@ fn check_leaf(
             "plugins.read.max_chars" if n < 100 => {
                 errors.push(format!("{at}: {dotted} must be ≥ 100"));
             }
+            // Every line rotates when the file has no room: O(files) renames on the
+            // hook path (D1 ≤ 10 ms). Zero disables rotation only by deleting history.
+            "log.max_bytes" if n < 1024 => {
+                errors.push(format!("{at}: {dotted} must be ≥ 1024"));
+            }
+            // Rotation is one rename per kept file; past a handful it is all cost, no
+            // history an operator scrolls through (`rtok logs` shows `[log] lines`).
+            "log.files" if n > 20 => {
+                errors.push(format!("{at}: {dotted} must be ≤ 20"));
+            }
             _ => {}
         }
     }
@@ -311,6 +321,18 @@ fn check_leaf(
             }
             "plugins.graph.watch" if !matches!(s, "off" | "notify" | "watchman") => {
                 errors.push(format!("{at}: {dotted} must be off, notify, or watchman"));
+            }
+            // An unknown level ranks most severe (`log::rank`), so a typo silently
+            // drops everything below error while `validate` says ok.
+            "log.level"
+                if !matches!(
+                    s.to_ascii_lowercase().as_str(),
+                    "error" | "warn" | "info" | "debug"
+                ) =>
+            {
+                errors.push(format!(
+                    "{at}: {dotted} must be error, warn, info, or debug"
+                ));
             }
             _ => {}
         }
@@ -354,6 +376,28 @@ mod tests {
             "{errs:?}"
         );
         std::fs::write(&path, "[plugins.read]\nmax_chars = 100\n").unwrap();
+        assert!(issues(&path).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_level_typo_and_hook_path_killing_bounds_are_rejected() {
+        let dir = tmp("logbounds");
+        let path = dir.join("c.toml");
+        for (body, key) in [
+            ("[log]\nlevel = \"verbose\"\n", "log.level"),
+            ("[log]\nmax_bytes = 0\n", "log.max_bytes"),
+            ("[log]\nfiles = 100\n", "log.files"),
+        ] {
+            std::fs::write(&path, body).unwrap();
+            let errs = issues(&path).unwrap();
+            assert!(errs.iter().any(|e| e.contains(key)), "{body}: {errs:?}");
+        }
+        std::fs::write(
+            &path,
+            "[log]\nlevel = \"Warn\"\nmax_bytes = 1024\nfiles = 20\n",
+        )
+        .unwrap();
         assert!(issues(&path).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }

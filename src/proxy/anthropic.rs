@@ -322,4 +322,19 @@ mod tests {
         ]});
         assert!(ANTHROPIC.skill_refs(&mut skip).is_empty());
     }
+
+    #[test]
+    fn a_non_body_block_before_the_skill_text_does_not_eat_the_pair() {
+        let mut msgs = json!({"messages":[
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"tu1","content":"Launching skill: slint"},
+                {"type":"text","text":"working on it"},
+                {"type":"text","text":"Base directory for this skill: /s/slint\n\n# Slint\n"}
+            ]}
+        ]});
+        let refs = ANTHROPIC.skill_refs(&mut msgs);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].id, "tu1");
+        assert_eq!(refs[0].name, "slint");
+    }
 }

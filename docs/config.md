@@ -79,8 +79,8 @@ retain_calls_days    = 30             # 0 = keep `calls` forever
 
 [log]                                 # rtok's own log (D26); `rtok logs` reads it
 path      = "~/.rtok/logs/rtok.log"   # rotated siblings live beside it: rtok.log.1 … .5
-max_bytes = 1048576                   # rotate past 1 MiB
-files     = 5                         # generations kept; older ones are deleted, never archived
+max_bytes = 1048576                   # rotate past 1 MiB (validate: ≥ 1024)
+files     = 5                         # generations kept; older ones are deleted, never archived (validate: ≤ 20)
 lines     = 200                       # what `rtok logs` prints when --lines is not given
 level     = "info"                    # error | warn | info | debug
 to_db     = true                      # also write a `logs` row for `rtok otel`

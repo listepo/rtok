@@ -326,12 +326,23 @@ fn ps_aux(output: &str) -> Option<String> {
         return None;
     }
     let mut rows = Vec::new();
+    // The PID column is not always first: BSD `ps aux` prints `USER PID …`,
+    // the macOS `ps aux` shape in the goldens prints `PID …` first.
+    let pid_at = header
+        .split_whitespace()
+        .position(|h| h.eq_ignore_ascii_case("PID"))
+        .unwrap_or(0);
     for line in lines {
         let fields: Vec<&str> = line.split_whitespace().collect();
-        let pid = fields.first()?;
-        if !pid.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
+        // One bad line (a repeated header, a localized string, a wrapped row)
+        // skips itself — returning None here would drop every good row with it.
+        let pid_ok = fields
+            .get(pid_at)
+            .is_some_and(|pid| pid.bytes().all(|b| b.is_ascii_digit()));
+        if !pid_ok {
+            continue;
         }
+        let pid = fields[pid_at];
         let cmd = fields
             .iter()
             .copied()
@@ -340,7 +351,7 @@ fn ps_aux(output: &str) -> Option<String> {
             .unwrap_or("");
         let base = cmd.rsplit('/').next().unwrap_or(cmd);
         let tail = fields.last().copied().unwrap_or("");
-        if tail != base && tail != *pid {
+        if tail != base && tail != pid {
             rows.push(format!("{pid} {base} {tail}"));
         } else {
             rows.push(format!("{pid} {base}"));
@@ -602,5 +613,17 @@ mod tests {
                 ungrouped.len()
             );
         }
+    }
+
+    #[test]
+    fn ps_aux_skips_a_bad_line_instead_of_dropping_every_row() {
+        let output = "USER PID %CPU COMMAND\n\
+            root 1 0.0 /sbin/init\n\
+            USER PID %CPU COMMAND\n\
+            root 42 0.1 /usr/bin/worker-7\n";
+        let got = ps_aux(output).expect("good rows survive a repeated header");
+        assert!(got.contains("1 init"), "{got}");
+        assert!(got.contains("42 worker-7"), "{got}");
+        assert!(!got.contains("PID"), "{got}");
     }
 }

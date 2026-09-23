@@ -1,4 +1,4 @@
-import { fakeRtok } from "../../tests/node/fake-rtok.ts";
+import { fakeHangingRtok, fakeRtok } from "../../tests/node/fake-rtok.ts";
 import { createPlugin, filterStdin, guardCheck, hookStdin } from "./rtok.ts";
 
 test("replaces bash output via the injected filter", async () => {
@@ -78,6 +78,13 @@ test("filterStdin fails open on a non-zero exit", () => {
   fakeRtok(`process.stdout.write("partial"); process.exit(1);`);
   expect(filterStdin("ls", "original")).toBe("original");
 });
+
+test("a wedged rtok times out and filterStdin returns the original stdin", () => {
+  fakeHangingRtok();
+  const start = Date.now();
+  expect(filterStdin("ls", "original")).toBe("original");
+  expect(Date.now() - start).toBeLessThan(10_000);
+}, 15_000);
 
 test("missing rtok fails open and names ketch once", () => {
   fakeRtok(null);

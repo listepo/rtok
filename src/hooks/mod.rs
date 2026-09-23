@@ -549,49 +549,64 @@ fn inject_event(input: &HookInput, cx: &Runtime, registry: &Registry) -> HookOut
     }
 }
 
+/// Fit PostToolUse context to `plugins.inject.budget_tokens` (D5). Whatever does not fit is
+/// archived once and named by a `dropped:post_tool:<est> · expand: rtok expand <id>` marker
+/// (T189). The marker always survives: kept lines are given back until it fits, so a cut
+/// never loses the rest without an id.
 fn cap_budget(cx: &Runtime, text: &str) -> String {
     let budget = cx.config.plugins.inject.budget_tokens;
     if cx.estimate(text, Class::Prose) <= budget {
         return text.to_string();
     }
-    let mut out = String::new();
-    let mut rest = text.lines();
-    while let Some(line) = rest.next() {
-        let cand = if out.is_empty() {
-            line.to_string()
-        } else {
-            format!("{out}\n{line}")
-        };
-        if cx.estimate(&cand, Class::Prose) > budget {
-            let dropped = std::iter::once(line)
-                .chain(rest)
-                .collect::<Vec<_>>()
-                .join("\n");
-            let marker = format!("dropped:post_tool:{}", cx.estimate(&dropped, Class::Prose));
-            if out.is_empty() {
-                // Estimates round up per part, so a prefix that fits the room left after
-                // `\n{marker}` keeps the whole line under budget.
-                let room = budget.saturating_sub(cx.estimate(&format!("\n{marker}"), Class::Prose));
-                let prefix = crate::plugin::fit_budget(&Ctx::new(cx), line, Class::Prose, room);
-                if !prefix.is_empty() {
-                    return format!("{prefix}\n{marker}");
-                }
-                return if cx.estimate(&marker, Class::Prose) <= budget {
-                    marker
-                } else {
-                    String::new()
-                };
-            }
-            let with = format!("{out}\n{marker}");
-            return if cx.estimate(&with, Class::Prose) <= budget {
-                with
-            } else {
-                out
-            };
-        }
-        out = cand;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut keep = 0;
+    while keep < lines.len() && cx.estimate(&lines[..=keep].join("\n"), Class::Prose) <= budget {
+        keep += 1;
     }
-    out
+    if keep == lines.len() {
+        return lines.join("\n");
+    }
+    // The id is 64 hex digits whatever the bytes, so a placeholder of the same length
+    // prices the marker before anything is archived.
+    let marker_for = |dropped: &str, id: &str| {
+        let est = cx.estimate(dropped, Class::Prose);
+        if id.is_empty() {
+            format!("dropped:post_tool:{est}")
+        } else {
+            format!("dropped:post_tool:{est} · expand: rtok expand {id}")
+        }
+    };
+    let placeholder = "0".repeat(64);
+    while keep > 0 {
+        let dropped = lines[keep..].join("\n");
+        let with = format!(
+            "{}\n{}",
+            lines[..keep].join("\n"),
+            marker_for(&dropped, &placeholder)
+        );
+        if cx.estimate(&with, Class::Prose) <= budget {
+            break;
+        }
+        keep -= 1;
+    }
+    let dropped = lines[keep..].join("\n");
+    let id = rtok_plugin_sdk::Archive::put_archive(cx, dropped.as_bytes()).unwrap_or_default();
+    let marker = marker_for(&dropped, &id);
+    if keep > 0 {
+        return format!("{}\n{marker}", lines[..keep].join("\n"));
+    }
+    // Estimates round up per part, so a prefix that fits the room left after `\n{marker}`
+    // keeps the whole line under budget. The archive holds the whole line, prefix included.
+    let room = budget.saturating_sub(cx.estimate(&format!("\n{marker}"), Class::Prose));
+    let prefix = crate::plugin::fit_budget(&Ctx::new(cx), lines[0], Class::Prose, room);
+    if !prefix.is_empty() {
+        return format!("{prefix}\n{marker}");
+    }
+    if cx.estimate(&marker, Class::Prose) <= budget {
+        marker
+    } else {
+        String::new()
+    }
 }
 
 #[cfg(test)]
@@ -822,15 +837,47 @@ mod tests {
     #[test]
     fn cap_budget_marks_drop_when_first_line_exceeds() {
         let mut cx = Runtime::in_memory("cap-first").unwrap();
-        cx.config.plugins.inject.budget_tokens = 20;
+        cx.config.plugins.inject.budget_tokens = 40;
         let huge = "word ".repeat(400);
-        let out = cap_budget(&cx, huge.trim_end());
+        let want = huge.trim_end().to_string();
+        let out = cap_budget(&cx, &want);
         assert!(!out.is_empty(), "must not swallow the whole payload");
+        let marker = out
+            .lines()
+            .find(|l| l.starts_with("dropped:post_tool:"))
+            .unwrap_or_else(|| panic!("marker missing: {out}"));
+        assert!(marker.contains(" · expand: rtok expand "), "{marker}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
         assert!(
-            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
-            "{out}"
+            id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
+            "{marker}"
         );
-        assert!(cx.estimate(&out, Class::Prose) <= 20, "{out}");
+        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(got, want.as_bytes(), "{marker}");
+        assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
+    }
+
+    /// Lines that fit alone but leave no room for the id-carrying marker give lines
+    /// back: the marker is never dropped, and kept lines + `expand <id>` rebuild the input.
+    #[test]
+    fn cap_budget_gives_back_lines_so_the_marker_fits() {
+        let mut cx = Runtime::in_memory("cap-giveback").unwrap();
+        cx.config.plugins.inject.budget_tokens = 40;
+        let text = (0..200)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = cap_budget(&cx, &text);
+        assert!(cx.estimate(&out, Class::Prose) <= 40, "{out}");
+        let (kept, marker) = out.rsplit_once('\n').expect("kept lines + marker");
+        assert!(marker.starts_with("dropped:post_tool:"), "{out}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
+        assert_eq!(id.len(), 64, "{marker}");
+        let rest = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(
+            format!("{kept}\n{}", String::from_utf8(rest).unwrap()),
+            text
+        );
     }
 
     #[test]
@@ -839,13 +886,22 @@ mod tests {
         cx.config.plugins.inject.budget_tokens = 30;
         let small = "ok";
         let huge = "word ".repeat(400);
-        let text = format!("{small}\n{}", huge.trim_end());
+        let want = huge.trim_end().to_string();
+        let text = format!("{small}\n{want}");
         let out = cap_budget(&cx, &text);
         assert!(out.starts_with("ok\n"), "{out}");
+        let marker = out
+            .lines()
+            .find(|l| l.starts_with("dropped:post_tool:"))
+            .unwrap_or_else(|| panic!("marker missing: {out}"));
+        assert!(marker.contains(" · expand: rtok expand "), "{marker}");
+        let id = marker.rsplit("rtok expand ").next().unwrap();
         assert!(
-            out.lines().any(|l| l.starts_with("dropped:post_tool:")),
-            "{out}"
+            id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()),
+            "{marker}"
         );
+        let got = crate::expand::fetch(&cx, id).unwrap().unwrap();
+        assert_eq!(got, want.as_bytes(), "{marker}");
         assert!(cx.estimate(&out, Class::Prose) <= 30, "{out}");
     }
 

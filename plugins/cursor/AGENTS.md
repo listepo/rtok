@@ -8,7 +8,7 @@ Agent rules for the **Cursor** host package. Humans: [`README.md`](README.md). S
 | --- | --- |
 | Manifest / entry | `.cursor-plugin/plugin.json`, root `plugin.json`, `hooks/hooks.json`, `mcp.json` |
 | Hooks | `hooks/hooks.json` → `rtok hook … --host cursor` |
-| MCP | `mcp.json` / `scripts/mcp.sh` / `scripts/mcp.cmd` |
+| MCP | `mcp.json` → `rtok mcp` directly (no `scripts/`; T85/I-37) |
 | Installer | [`../src/agents/cursor/README.md`](../src/agents/cursor/README.md) |
 | Root human guide | [`../README.md`](../README.md) |
 

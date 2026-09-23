@@ -12,10 +12,13 @@ Files:
   `afterShellExecution` → `rtok hook PostToolUse --host cursor`, `afterMCPExecution` →
   `rtok hook AfterMCPExecution --host cursor`, `postToolUse` (matcher `MCP:`) →
   `rtok hook PostToolUse --host cursor` (replaces long MCP results via `updated_mcp_tool_output`).
-- `mcp.json` — `mcpServers.rtok` → `rtok mcp`.
+- `mcp.json` — `mcpServers.rtok` → `rtok mcp` directly (T85/I-37: launcher
+  scripts never run; Cursor has a single `command`/`args` pair with no per-OS
+  slot to wire them into, so there is no `scripts/` tree).
 - `plugin.json` — Agent Plugins manifest (root `plugin.json`) for other hosts of that spec.
-- `scripts/mcp.sh`, `scripts/mcp.cmd` — `rtok mcp` launchers that print the ketch install hint
-  when `rtok` is missing (`ketch install listepo/rtok`).
+
+`rtok` must be on `PATH`. If it is missing, the MCP server does not start;
+install it with ketch: `ketch install listepo/rtok`.
 
 ## Docs
 

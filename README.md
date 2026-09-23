@@ -295,7 +295,7 @@ What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/pro
 | `rtok mcp` | serve read, memory, graph, and expansion tools over stdio |
 | `rtok mcp -- <server argv>` | wrap a foreign stdio MCP server: long `tools/call` text blocks are archived and cut by the `[mcp]` rule, everything else passes byte-for-byte, `rtok expand <id>` returns the raw block |
 | `rtok proxy` | capture API usage; optionally archive older tool results |
-| `rtok web` | local Slint/WASM UI + WebSocket API at `http://127.0.0.1:3333` (default `[web] host`/`port`; `--host`, `--port`; `rtok dashboard` is the deprecated spelling) |
+| `rtok web` | local Slint/WASM UI + WebSocket API at `http://127.0.0.1:3333` (default `[web] host`/`port`; `--host`, `--port`; `rtok dashboard` is the deprecated spelling). Open it as `127.0.0.1`/`localhost`: `/ws` refuses cross-site and DNS-name origins |
 | `rtok stats` | report transcript and proxy measurements |
 | `rtok bench` | run the fixed A/B schedule |
 | `rtok doctor` | inspect hooks, MCP servers and the proxy chain |

@@ -27,9 +27,11 @@ let hinted = false;
 
 type Spawn = { missing: boolean; failed: boolean; stdout: string };
 
-/** Fail open: on spawn/error, return the original stdin. A missing `rtok` says so once (D21). */
+/** Fail open: on spawn/error, return the original stdin. A missing `rtok` says so once (D21).
+ * T214: `timeout` bounds a wedged `rtok` — the kill surfaces as `r.error`
+ * (ETIMEDOUT), so it lands on the `failed` path and the caller keeps the original. */
 function spawnRtok(args: string[], stdin = ""): Spawn {
-  const r = spawnSync("rtok", args, { input: stdin, encoding: "utf8" });
+  const r = spawnSync("rtok", args, { input: stdin, encoding: "utf8", timeout: 5000 });
   const missing = Boolean(r.error && (r.error as NodeJS.ErrnoException).code === "ENOENT");
   if (missing && !hinted) {
     hinted = true;
