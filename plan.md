@@ -71,7 +71,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T177 | todo | P2 | 3 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
-| T180 | in progress | P3 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T182 | todo | P2 | 3 | 0% | |
 | T183 | in progress | P2 | 4 | 5% | Claude Code / claude-sonnet-5 |
 | T184 | todo | P1 | 2 | 0% | |
@@ -561,16 +560,6 @@ Found in the 2026-09-22 audit: 367 same-session re-reads of the same file (≈ 2
 Plan: from transcripts, classify each repeat read: hook not run, file changed (delta expected), range read, sub-agent context (T127), or dedup declined; fix the largest class.
 
 Check: `rtok stats` prints the repeat-read classes; the fixed class shrinks on a replayed transcript fixture; `just test` green.
-
-### T180. Research: filtering WebFetch, WebSearch and browser page text
-
-Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
-
-Plan: list the surfaces that can reach these results (proxy, T134 outcome, an MCP fetch tool), estimate the saving on the audit sample, and propose one option as a plan change.
-
-Check: a dated `research.md` section with the sample numbers and a recommendation.
-
-Execution plan: (1) re-measure on `~/.claude/projects` (last 7 days, scratch script, not committed): calls, result bytes and size distribution for `WebSearch`, `WebFetch`, `Claude_Browser` and `claude-in-chrome` page-text tools; (2) per surface — proxy rewriting `tool_result` blocks in the request, a PreToolUse redirect to an rtok MCP fetch/search tool, T134's `updatedToolOutput` if honoured, and doing nothing — note what it can reach, fail-open and lossless story; (3) estimate the saving by running candidate reductions (HTML→text, dedup of repeated search snippets, head/tail with archive) offline on the sample; (4) `research.md` dated section with the numbers, one recommended option as a `roadmap.md` entry for creator approval, card to `done.md`. One docs-only PR, done before T165 so T165 reuses the scan.
 
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 
