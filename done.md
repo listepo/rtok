@@ -5080,6 +5080,9 @@ Do (Claude Code / claude-opus-5-5, 2026-09-23): 7-day scan of `~/.claude/project
 
 Check result: `research.md` §20 (2026-09-23) holds the sample numbers (§20.1–§20.3) and the recommendation (§20.5); I-97 awaits creator approval.
 
+Status: done 2026-09-23
+Model: Claude Code / claude-opus-5-5
+
 ### T165. Research: general HTTP(S) interception as a new surface
 
 Creator request 2026-09-22. Research only — no product code in this task. Today `rtok proxy` reaches one API through `ANTHROPIC_BASE_URL`; a general interceptor would see every HTTP call an agent makes (docs fetches, package registries, other model APIs). That is a new surface on the level of `proxy` and `mcp`: a local CA whose root the user trusts, TLS termination on loopback only, CONNECT proxying via `HTTPS_PROXY`, and fail open whenever a client bypasses the proxy, pins certificates or rejects the CA. It is the most contested item in the plan — it touches the user's trust store and sees all their traffic — so it is scheduled last.
