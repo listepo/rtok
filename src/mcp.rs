@@ -97,6 +97,9 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     #[cfg(feature = "graph")]
     let _lsp_guard = LspGuard;
     let server = Server::new(cfg)?;
+    if !server.allows(name) {
+        return Err(unknown_tool(name));
+    }
     let plugin = server
         .listed
         .iter()
@@ -121,6 +124,13 @@ const MAX_LINE: u64 = 8 << 20;
 
 fn rpc_error(id: Value, code: i32, message: &str) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+
+/// The one place `"unknown tool: <name>"` is worded — a name `invoke` never heard of and a
+/// name the allow-list dropped (T192) must read identically, so both paths call this instead
+/// of formatting the string a second time.
+fn unknown_tool(name: &str) -> anyhow::Error {
+    anyhow::anyhow!("unknown tool: {name}")
 }
 
 /// The next request line, `None` at EOF. `lines()` ended the server on one non-UTF-8 byte (its
@@ -180,11 +190,21 @@ impl Server {
                 listed.push(Listed { plugin: id, def });
             }
         }
+        if !cfg.mcp.tools.is_empty() {
+            // `expand` stays listed whatever the allow-list says: D4 losslessness.
+            listed.retain(|t| {
+                t.def.name == "expand" || cfg.mcp.tools.iter().any(|n| n.as_str() == t.def.name)
+            });
+        }
         Ok(Self { cx, listed })
     }
 
     fn tools(&self) -> Vec<Tool> {
         self.listed.iter().map(|t| to_tool(&t.def)).collect()
+    }
+
+    fn allows(&self, name: &str) -> bool {
+        self.listed.iter().any(|t| t.def.name == name)
     }
 
     /// One line in, at most one line out. A JSON-RPC batch (top-level array) answers with an
@@ -258,10 +278,16 @@ impl Server {
             args.clone()
         };
         // A failure is an `isError` result with the same message text, not a success block
-        // the model has to recognise by wording.
-        let (text, ok) = match invoke(&self.cx, name, &args) {
-            Ok(t) => (t, true),
-            Err(e) => (e.to_string(), false),
+        // the model has to recognise by wording. A name the allow-list dropped never reaches
+        // `invoke` — it must not run a tool the config says is off — but it fails with the
+        // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192).
+        let (text, ok) = if self.allows(name) {
+            match invoke(&self.cx, name, &args) {
+                Ok(t) => (t, true),
+                Err(e) => (e.to_string(), false),
+            }
+        } else {
+            (unknown_tool(name).to_string(), false)
         };
         let _ = record(&self.cx, plugin, name, &args, &text);
         let content = vec![ContentBlock::text(text)];
@@ -305,7 +331,7 @@ fn invoke(cx: &Runtime, name: &str, args: &Value) -> Result<String> {
         "symbol" | "callers" | "impact" | "outline" | "explore" => {
             crate::plugins::graph::call(&crate::plugin::Ctx::new(cx), name, args)
         }
-        _ => bail!("unknown tool: {name}"),
+        _ => Err(unknown_tool(name)),
     }
 }
 
@@ -612,6 +638,33 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T192: `cfg.mcp.tools` allow-list filters listing and calls; `expand` stays
+    /// listed unconditionally (D4 losslessness).
+    #[test]
+    fn tools_allow_list_filters_listing_and_calls() {
+        let (mut cfg, dir) = tmp("allow");
+        cfg.mcp.tools = vec!["read".to_string()];
+        let server = Server::new(&cfg).unwrap();
+        let mut names: Vec<String> = server.tools().iter().map(|t| t.name.to_string()).collect();
+        names.sort();
+        assert_eq!(names, ["expand", "read"]);
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"pattern":"x"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "unknown tool: search");
+        let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert_eq!(v["result"]["content"][0]["text"], "unknown archive id: x");
+        // The one-shot `call()` path (used by hosts that cannot speak MCP) rejects a
+        // filtered name with the same text, never running it.
+        let err = call(&cfg, "search", &json!({"pattern": "x"}))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "unknown tool: search");
         let _ = fs::remove_dir_all(dir);
     }
 

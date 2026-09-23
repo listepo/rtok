@@ -61,7 +61,6 @@
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
 - T190. `after_mcp` shortens MCP results on a second, divergent path
-- T192. `[mcp] tools` allow-list is dead config
 - T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
 - T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 - T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)

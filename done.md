@@ -5209,6 +5209,19 @@ Deviation from the card's Check: the card's wording ("a unit test with `max_ms =
 
 Status: done 2026-09-24
 
+### T192. `[mcp] tools` allow-list is dead config
+
+Found 2026-09-22 in the surfaces pass, confirmed by grep: `Mcp.tools` (`src/config/mod.rs:145-150`, `config/default.toml`, `docs/config.md`) is documented as "[] = all tools from enabled plugins; else an allow-list", shows in `rtok config show` — and is read by nothing. `Server::new` (`src/mcp.rs:150-179`) lists `expand` plus every enabled plugin's `mcp_tools()` and `invoke` serves all of them regardless. A user who narrows the surface still pays every description token per turn and can still call tools they tried to disable.
+
+Plan: in `Server::new`, filter `listed` to `cfg.mcp.tools` when non-empty (keep `expand` unconditional for D4 and say so in `docs/config.md`); `call_tool` falls through to "unknown tool" for filtered names.
+
+Check: `tools_allow_list_filters_listing_and_calls` — with `tools = ["read"]`, `tools()` lists only `read` + `expand` and `tools/call search` returns an unknown-tool error; `mise exec -- cargo nextest run mcp::` green.
+
+Shipped: `Server::new` filters `listed` to `cfg.mcp.tools` (keeping `expand` per D4), `Server::allows` backs both `tools/call` and the one-shot `call()`. Review fixes on top of the WIP: `config/default.toml` and `docs/config.md` now say in the `tools = []` comment that `expand` always stays listed (D4), byte-mirrored in `tests/trycmd/config-init.toml`; the "unknown tool: <name>" text is built once (`unknown_tool` helper) and shared by `invoke`'s catch-all, `call_tool`'s disallowed branch and the one-shot `call()` gate, instead of formatting the string a second time; added a `call()` assertion for a filtered name to the existing test. Checked other tool-list consumers (`rtok doctor`'s own-MCP-surface probe, `proxy::tools_rewrite`, `graph`/`memory` `mcp_tools()` token-budget tests) — none count rtok's tools independently of `Server::new`: doctor spawns the real `rtok mcp` binary and reads its live `tools/list`, so it already honours the allow-list transitively; `tools_rewrite` rewrites the *client's* request body, unrelated to `cfg.mcp.tools`. No changes needed there.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5
+
 ### T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
 
 Found in the 2026-09-22 audit. `count_hooks` (`src/doctor.rs:731-751`) reads only `settings.json` → `hooks`, so a plugin install prints `hooks 0` while the agents block says hooks ✓ installed. `anthropic_base()` (`src/doctor.rs:938-945`) treats any `ANTHROPIC_BASE_URL` as custom, so Claude Desktop's default `https://api.anthropic.com` prints "mcp_tool_search likely disabled".
