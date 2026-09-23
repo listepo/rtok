@@ -48,7 +48,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T168. `agents list` tables flake on wrapper noise in `--version`
-- T170. A slow hook is logged, not only printed to stderr
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
 - T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
@@ -62,7 +61,6 @@
 - T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
 - T190. `after_mcp` shortens MCP results on a second, divergent path
-- T192. `[mcp] tools` allow-list is dead config
 - T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
 - T195. pi extension: fail-open breaks on non-zero `rtok`, and the ketch hint regressed
 - T196. `linked()` at the plugin dest strips a working plain install (cursor, zcode)

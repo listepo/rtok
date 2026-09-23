@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T168 | todo | P2 | 1 | 0% | |
-| T170 | todo | P1 | 1 | 0% | |
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T173 | todo | P2 | 1 | 0% | |
@@ -73,7 +72,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
 | T190 | todo | P1 | 3 | 0% | |
-| T192 | todo | P2 | 2 | 0% | |
 | T194 | todo | P1 | 3 | 0% | |
 | T195 | todo | P1 | 3 | 0% | |
 | T196 | todo | P1 | 3 | 0% | |
@@ -483,14 +481,6 @@ Plan: give the probes a fake `copilot` shim like the others (preferred), or norm
 
 Check: the two tests green while a fake `copilot` prints noise alongside its version; `just test` green.
 
-### T170. A slow hook is logged, not only printed to stderr
-
-Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
-
-Plan: route the slow note through `crate::log::record` at `warn` (keep the stderr line); `rtok logs` and `rtok info`'s error count then show it.
-
-Check: a unit test with `max_ms = 0` finds one `warn` row in the log store after a hook run; `just test` green.
-
 ### T171. Claude Code sees the rtok MCP server twice
 
 Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
@@ -831,14 +821,6 @@ Found 2026-09-22 in the core pass: the `AfterMCPExecution` handler (`src/hooks/m
 Plan: verify the host's documented output key first; then either delete the `after_mcp` shorten (return `HookOutput::default()`) so `postToolUse`'s `wrap::shorten_result` is the single call path, or delegate verbatim to `mcp::wrap::shorten_result` (per-block, `isError` skip, `Measurement`) and emit the documented key shape.
 
 Check: fixture test on `AfterMCPExecution` with two text blocks and with `isError: true` asserts byte-passthrough `{}` or exactly one `Measurement { plugin: "archive" }`, no block duplication, and an `expand` round trip of the original per-block bytes (mirror of `cursor_mcp_post_tool_use_shortens_only_foreign_long_results`); `just test` green.
-
-### T192. `[mcp] tools` allow-list is dead config
-
-Found 2026-09-22 in the surfaces pass, confirmed by grep: `Mcp.tools` (`src/config/mod.rs:145-150`, `config/default.toml`, `docs/config.md`) is documented as "[] = all tools from enabled plugins; else an allow-list", shows in `rtok config show` — and is read by nothing. `Server::new` (`src/mcp.rs:150-179`) lists `expand` plus every enabled plugin's `mcp_tools()` and `invoke` serves all of them regardless. A user who narrows the surface still pays every description token per turn and can still call tools they tried to disable.
-
-Plan: in `Server::new`, filter `listed` to `cfg.mcp.tools` when non-empty (keep `expand` unconditional for D4 and say so in `docs/config.md`); `call_tool` falls through to "unknown tool" for filtered names.
-
-Check: `tools_allow_list_filters_listing_and_calls` — with `tools = ["read"]`, `tools()` lists only `read` + `expand` and `tools/call search` returns an unknown-tool error; `mise exec -- cargo nextest run mcp::` green.
 
 ### T194. `rtok mcp --wrap` stops forwarding at the first malformed frame
 
