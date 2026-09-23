@@ -55,7 +55,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.2 | in progress | P2 | 3 | 5% | Claude Code / claude-sonnet-5 |
 | T163.3 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
-| T163.6 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T168 | todo | P2 | 1 | 0% | |
@@ -438,7 +437,7 @@ Check: `grep -nE 'sql_query|sql::<|batch_execute' src/store/otel.rs src/store/em
 
 ### T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
 
-`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The `coalesce` function T163.5 declared in `mod.rs` moves there too.
+`mod.rs` sites the typed DSL cannot express: the PRAGMAs in `set_busy`, `connect`, `init`, `set_query_only` and `purge_calls_older_than`; `sql::<>("unixepoch()")` in `upsert_note` and `retire_note`; FTS5 `MATCH`/`bm25()` in `search_notes`; tests `open_on_disk_uses_wal`, `fts5_match_finds_inserted_note`. They become typed helpers in T163.1's `src/store/sql_ext.rs` (`define_sql_function!` for `unixepoch`, a `QueryFragment` per PRAGMA and for the FTS5 match), the only home for non-DSL SQL; `schema.rs`'s `notes_fts` comment is updated. The typed SQL functions declared in `mod.rs` move there too: `coalesce` (T163.5), `length` and `sum_bigint` (T163.7), `substr` (T163.6).
 
 Execution plan: (1) wait for T163.1 on `main`, reuse its module; (2) add the helpers with unit tests; (3) swap the call sites, signatures unchanged; (4) store tests unchanged and green, `just check`.
 
@@ -451,15 +450,6 @@ Check: no `sql_query|sql::<|batch_execute` left in the listed functions and test
 Execution plan: (1) choose between Diesel's `<version>/up.sql` layout and a `MigrationSource` over the flat `migrations/NNNN.sql` files — the layout move alone touches every file, so if chosen it lands as its own mechanical PR; (2) write the bridge and a test that opens a DB migrated by the current code and sees no re-run; (3) toolchain row for `diesel_migrations`; (4) `just check`.
 
 Check: `migrate()` and its tests hold no `sql_query|batch_execute`; a pre-T163.4 database opens, keeps its data and applies only newer migrations; fresh and concurrent opens green; `just check`.
-
-### T163.6. Archive, `call_io` and `read_cache` in the typed DSL
-
-`archive_ref_ids`' `call_io` query, `archive_in_session`, `archive_decision`, `put_archive_decision`, `session_live_archives`, `live_zone_pointer`, `mark_expanded`, `archive_decision_counts`, `put_read_cache`, `clear_read_cache`, and the tests reading `call_io`/`archive` (`inline_sha256_matches_stored_text`, `spill_archive_carries_session`, `write_api_round_trip_and_spill`'s `call_io` read).
-
-Execution plan: (1) add any missing `table!` columns; (2) rewrite site by site, signatures and row order unchanged; (3) store tests unchanged and green, `just check`. Joins via `inner_join`/`left_join` over `schema.rs`, `NOT EXISTS` via `exists().not()`.
-
-Check: none of the listed functions or tests hold `sql_query`; archive and expand tests green; `just check`.
-
 
 ### T163.8. Retention without raw SQL; close T163
 

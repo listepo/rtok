@@ -46,7 +46,6 @@
 - T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
 - T163.3. PRAGMA, `unixepoch()` and FTS5 through the shared extension module
 - T163.4. Migrations through `diesel_migrations`
-- T163.6. Archive, `call_io` and `read_cache` in the typed DSL
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T168. `agents list` tables flake on wrapper noise in `--version`

@@ -43,6 +43,19 @@ diesel::table! {
     }
 }
 
+// Composite PK (session, tool_use_id) since 0014: a repeated tool_use_id in a second
+// session is a second decision, not an ignored insert.
+diesel::table! {
+    archive_decisions (session, tool_use_id) {
+        session -> Text,
+        tool_use_id -> Text,
+        archive_id -> Text,
+        pointer -> Text,
+        expanded_ts -> Nullable<BigInt>,
+        ts -> BigInt,
+    }
+}
+
 diesel::table! {
     read_cache (session, path) {
         session -> Text,
@@ -222,6 +235,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
 diesel::joinable!(calls -> hosts (host_id));
@@ -238,6 +252,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     events,
     measurements,
     archive,
+    archive_decisions,
     read_cache,
     notes,
     usage,

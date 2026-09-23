@@ -28,8 +28,8 @@ pub use crate::plugin::{ArchiveDecision, NoteHit};
 // `models` (the schema::models table) is not imported bare: it collides with this file's
 // own `pub mod models` of Diesel row structs, so upsert_model qualifies it as `schema::models`.
 use schema::{
-    archive, call_io, calls, hosts, kv, logs, measurements, notes, providers, read_cache, sessions,
-    tokens, usage,
+    archive, archive_decisions, call_io, calls, hosts, kv, logs, measurements, notes, providers,
+    read_cache, sessions, tokens, usage,
 };
 
 /// `COALESCE(x, y)` for an upsert `DO UPDATE SET` (T163.5): not one of Diesel's built-in
@@ -53,6 +53,17 @@ diesel::define_sql_function! {
     #[aggregate]
     #[sql_name = "SUM"]
     fn sum_bigint(x: BigInt) -> Nullable<BigInt>;
+}
+
+/// `substr(text, start, length)` for a byte-prefix compare (T163.6): `read_cache.path` can
+/// itself hold `%`/`_`, so `LIKE` cannot express "starts with" — not one of Diesel's built-ins.
+#[diesel::declare_sql_function]
+extern "SQL" {
+    fn substr(
+        x: diesel::sql_types::Text,
+        start: diesel::sql_types::Integer,
+        length: diesel::sql_types::Integer,
+    ) -> diesel::sql_types::Text;
 }
 
 /// Embedded migrations, applied in order, each exactly once.
@@ -490,28 +501,18 @@ impl Store {
         if call_ids.is_empty() {
             return Ok(out);
         }
-        let list = call_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
         let mut conn = self.lock()?;
-        #[derive(QueryableByName)]
-        struct Io {
-            #[diesel(sql_type = Integer)]
-            call_id: i32,
-            #[diesel(sql_type = Nullable<Text>)]
-            request_archive: Option<String>,
-            #[diesel(sql_type = Nullable<Text>)]
-            response_archive: Option<String>,
-        }
-        let io: Vec<Io> = sql_query(format!(
-            "SELECT call_id, request_archive, response_archive FROM call_io WHERE call_id IN ({list})"
-        ))
-        .load(&mut *conn)?;
-        for row in io {
-            if let Some(id) = row.response_archive.or(row.request_archive) {
-                out.insert(row.call_id, id);
+        let io: Vec<(i32, Option<String>, Option<String>)> = call_io::table
+            .filter(call_io::call_id.eq_any(call_ids.iter().copied()))
+            .select((
+                call_io::call_id,
+                call_io::request_archive,
+                call_io::response_archive,
+            ))
+            .load(&mut *conn)?;
+        for (call_id, request_archive, response_archive) in io {
+            if let Some(id) = response_archive.or(request_archive) {
+                out.insert(call_id, id);
             }
         }
         let ms: Vec<(Option<i32>, Option<String>)> = measurements::table
@@ -695,27 +696,20 @@ impl Store {
     /// later `measurements` in that session (a proxy for "N turns ago"); 0 if none.
     pub fn archive_in_session(&self, session: &str, sha: &str) -> Result<Option<(String, u64)>> {
         let mut conn = self.lock()?;
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            id: String,
-            #[diesel(sql_type = BigInt)]
-            turns: i64,
-        }
-        let rows: Vec<Row> = sql_query(
-            "SELECT id,
-                    (SELECT COUNT(*) FROM measurements
-                     WHERE measurements.session = archive.session
-                       AND measurements.ts > archive.ts) AS turns
-             FROM archive WHERE id = ? AND session = ? LIMIT 1",
-        )
-        .bind::<Text, _>(sha)
-        .bind::<Text, _>(session)
-        .load(&mut *conn)?;
-        Ok(rows
-            .into_iter()
-            .next()
-            .map(|r| (r.id, r.turns.max(0) as u64)))
+        // Correlated subquery: turns is later measurements in archive's own session, as a
+        // scalar column on the archive row — `.single_value()` keeps it one query.
+        let turns = measurements::table
+            .filter(measurements::session.eq(archive::session))
+            .filter(measurements::ts.gt(archive::ts))
+            .count()
+            .single_value();
+        let row: Option<(String, Option<i64>)> = archive::table
+            .filter(archive::id.eq(sha))
+            .filter(archive::session.eq(session))
+            .select((archive::id, turns))
+            .first(&mut *conn)
+            .optional()?;
+        Ok(row.map(|(id, turns)| (id, turns.unwrap_or(0).max(0) as u64)))
     }
 
     /// The one archive write behind [`Self::put_archive`] and `call_io` spills: the body under
@@ -754,17 +748,20 @@ impl Store {
         tool_use_id: &str,
     ) -> Result<Option<ArchiveDecision>> {
         let mut conn = self.lock()?;
-        let rows: Vec<ArchiveDecisionRow> = sql_query(
-            "SELECT archive_id, pointer, expanded_ts IS NOT NULL AS expanded
-             FROM archive_decisions WHERE session = ? AND tool_use_id = ?",
-        )
-        .bind::<Text, _>(session)
-        .bind::<Text, _>(tool_use_id)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().next().map(|r| ArchiveDecision {
-            archive_id: r.archive_id,
-            pointer: r.pointer,
-            expanded: r.expanded,
+        let row: Option<(String, String, bool)> = archive_decisions::table
+            .filter(archive_decisions::session.eq(session))
+            .filter(archive_decisions::tool_use_id.eq(tool_use_id))
+            .select((
+                archive_decisions::archive_id,
+                archive_decisions::pointer,
+                archive_decisions::expanded_ts.is_not_null(),
+            ))
+            .first(&mut *conn)
+            .optional()?;
+        Ok(row.map(|(archive_id, pointer, expanded)| ArchiveDecision {
+            archive_id,
+            pointer,
+            expanded,
         }))
     }
 
@@ -777,40 +774,33 @@ impl Store {
         pointer: &str,
     ) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT OR IGNORE INTO archive_decisions (tool_use_id, archive_id, session, pointer)
-             VALUES (?, ?, ?, ?)",
-        )
-        .bind::<Text, _>(tool_use_id)
-        .bind::<Text, _>(archive_id)
-        .bind::<Text, _>(session)
-        .bind::<Text, _>(pointer)
-        .execute(&mut *conn)?;
+        diesel::insert_or_ignore_into(archive_decisions::table)
+            .values((
+                archive_decisions::tool_use_id.eq(tool_use_id),
+                archive_decisions::archive_id.eq(archive_id),
+                archive_decisions::session.eq(session),
+                archive_decisions::pointer.eq(pointer),
+            ))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
     /// This session's archived tool results still in the live window, newest first (T58.2).
     pub fn session_live_archives(&self, session: &str) -> Result<Vec<(String, String, i64)>> {
-        #[derive(QueryableByName)]
-        struct Row {
-            #[diesel(sql_type = Text)]
-            id: String,
-            #[diesel(sql_type = Text)]
-            tool: String,
-            #[diesel(sql_type = BigInt)]
-            bytes: i64,
-        }
         let mut conn = self.lock()?;
-        let rows: Vec<Row> = sql_query(
-            "SELECT a.id AS id, COALESCE(NULLIF(a.tool, ''), '-') AS tool, a.bytes AS bytes
-             FROM archive_decisions d
-             JOIN archive a ON a.id = d.archive_id
-             WHERE d.session = ?1
-             ORDER BY a.ts DESC, a.id DESC",
-        )
-        .bind::<Text, _>(session)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().map(|r| (r.id, r.tool, r.bytes)).collect())
+        let rows: Vec<(String, Option<String>, i64)> = archive_decisions::table
+            .inner_join(archive::table)
+            .filter(archive_decisions::session.eq(session))
+            .order((archive::ts.desc(), archive::id.desc()))
+            .select((archive::id, archive::tool, archive::bytes))
+            .load(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, tool, bytes)| {
+                let tool = tool.filter(|t| !t.is_empty()).unwrap_or_else(|| "-".into());
+                (id, tool, bytes)
+            })
+            .collect())
     }
 
     /// Any pointer text for one archive id (T36.2: attribute expand rows to toon vs archive;
@@ -818,13 +808,13 @@ impl Store {
     /// with the proxy that wrote the decision, so the lookup is by archive id alone).
     pub fn live_zone_pointer(&self, archive_id: &str) -> Result<Option<String>> {
         let mut conn = self.lock()?;
-        let rows: Vec<PointerRow> = sql_query(
-            "SELECT pointer FROM archive_decisions WHERE archive_id = ?
-             ORDER BY tool_use_id, session LIMIT 1",
-        )
-        .bind::<Text, _>(archive_id)
-        .load(&mut *conn)?;
-        Ok(rows.into_iter().next().map(|r| r.pointer))
+        archive_decisions::table
+            .filter(archive_decisions::archive_id.eq(archive_id))
+            .order((archive_decisions::tool_use_id, archive_decisions::session))
+            .select(archive_decisions::pointer)
+            .first(&mut *conn)
+            .optional()
+            .map_err(Into::into)
     }
 
     /// T5.4/T55.11: an `expand <id>` freezes every decision pointing at that archive id.
@@ -834,24 +824,26 @@ impl Store {
     /// Returns how many decisions changed (0 = nothing pointed at the id).
     pub fn mark_expanded(&self, archive_id: &str) -> Result<usize> {
         let mut conn = self.lock()?;
-        Ok(sql_query(
-            "UPDATE archive_decisions SET expanded_ts = unixepoch()
-             WHERE archive_id = ? AND expanded_ts IS NULL",
+        // `unixepoch()` has no typed-DSL form; bind Rust's now.
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+        Ok(diesel::update(
+            archive_decisions::table
+                .filter(archive_decisions::archive_id.eq(archive_id))
+                .filter(archive_decisions::expanded_ts.is_null()),
         )
-        .bind::<Text, _>(archive_id)
+        .set(archive_decisions::expanded_ts.eq(now))
         .execute(&mut *conn)?)
     }
 
     /// `(decisions, expanded)` — the expand rate is the archive plugin's honesty metric (T5.4).
     pub fn archive_decision_counts(&self) -> Result<(i64, i64)> {
         let mut conn = self.lock()?;
-        let rows: Vec<Count> =
-            sql_query("SELECT COUNT(*) AS n FROM archive_decisions").load(&mut *conn)?;
-        let total = rows.first().map(|r| r.n).unwrap_or(0);
-        let rows: Vec<Count> =
-            sql_query("SELECT COUNT(*) AS n FROM archive_decisions WHERE expanded_ts IS NOT NULL")
-                .load(&mut *conn)?;
-        Ok((total, rows.first().map(|r| r.n).unwrap_or(0)))
+        let total: i64 = archive_decisions::table.count().get_result(&mut *conn)?;
+        let expanded: i64 = archive_decisions::table
+            .filter(archive_decisions::expanded_ts.is_not_null())
+            .count()
+            .get_result(&mut *conn)?;
+        Ok((total, expanded))
     }
 
     /// The request bytes recorded for a call (inline `call_io.request_json`, else the archive).
@@ -1235,18 +1227,23 @@ impl Store {
         archive_id: Option<&str>,
     ) -> Result<()> {
         let mut conn = self.lock()?;
-        sql_query(
-            "INSERT INTO read_cache (session, path, sha256, archive_id) VALUES (?, ?, ?, ?)
-             ON CONFLICT(session, path) DO UPDATE SET
-               sha256 = excluded.sha256,
-               ts = unixepoch(),
-               archive_id = excluded.archive_id",
-        )
-        .bind::<Text, _>(session)
-        .bind::<Text, _>(path)
-        .bind::<Text, _>(sha256)
-        .bind::<Nullable<Text>, _>(archive_id)
-        .execute(&mut *conn)?;
+        // `unixepoch()` has no typed-DSL form; bind Rust's now.
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
+        diesel::insert_into(read_cache::table)
+            .values((
+                read_cache::session.eq(session),
+                read_cache::path.eq(path),
+                read_cache::sha256.eq(sha256),
+                read_cache::archive_id.eq(archive_id),
+            ))
+            .on_conflict((read_cache::session, read_cache::path))
+            .do_update()
+            .set((
+                read_cache::sha256.eq(sha256),
+                read_cache::ts.eq(now),
+                read_cache::archive_id.eq(archive_id),
+            ))
+            .execute(&mut *conn)?;
         Ok(())
     }
 
@@ -1270,13 +1267,16 @@ impl Store {
     pub fn clear_read_cache(&self, session: &str, path: &str) -> Result<()> {
         let mut conn = self.lock()?;
         let keyed = format!("{path}\t");
-        sql_query(
-            "DELETE FROM read_cache WHERE session = ? AND (path = ? OR substr(path, 1, length(?)) = ?)",
+        let keyed_len = i32::try_from(keyed.chars().count()).unwrap_or(i32::MAX);
+        diesel::delete(
+            read_cache::table
+                .filter(read_cache::session.eq(session))
+                .filter(
+                    read_cache::path
+                        .eq(path)
+                        .or(substr(read_cache::path, 1, keyed_len).eq(keyed)),
+                ),
         )
-        .bind::<Text, _>(session)
-        .bind::<Text, _>(path)
-        .bind::<Text, _>(&keyed)
-        .bind::<Text, _>(&keyed)
         .execute(&mut *conn)?;
         Ok(())
     }
@@ -1878,9 +1878,7 @@ impl Store {
         if days <= 0 {
             return Ok(0);
         }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
         let cutoff = now.saturating_sub(days.saturating_mul(86_400));
         let old = "(SELECT id FROM calls WHERE ts < ?1)";
         let mut conn = self.lock()?;
@@ -2057,24 +2055,6 @@ pub struct MeasRow {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
-}
-
-#[derive(Debug, QueryableByName)]
-struct PointerRow {
-    #[diesel(sql_type = Text)]
-    pointer: String,
-}
-
-/// T5.3 archive decision: the frozen pointer text for one `tool_use_id`. Same story as
-/// [`NoteHitRow`] — the type plugins see is the contract's.
-#[derive(Debug, QueryableByName)]
-struct ArchiveDecisionRow {
-    #[diesel(sql_type = Text)]
-    archive_id: String,
-    #[diesel(sql_type = Text)]
-    pointer: String,
-    #[diesel(sql_type = diesel::sql_types::Bool)]
-    expanded: bool,
 }
 
 /// Aggregated usage totals grouped by API (T11.6).
@@ -2520,20 +2500,13 @@ mod tests {
             .insert_call_io(id2, Some(&big), None, 64 * 1024, Some(&dir))
             .unwrap();
         let mut conn = store.lock().unwrap();
-        #[derive(QueryableByName)]
-        struct Io {
-            #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
-            request_json: Option<String>,
-            #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
-            request_archive: Option<String>,
-        }
-        let io: Vec<Io> =
-            sql_query("SELECT request_json, request_archive FROM call_io WHERE call_id = ?")
-                .bind::<diesel::sql_types::Integer, _>(id2)
-                .load(&mut *conn)
-                .unwrap();
-        assert!(io[0].request_json.is_none());
-        assert!(io[0].request_archive.is_some());
+        let (request_json, request_archive): (Option<String>, Option<String>) = call_io::table
+            .filter(call_io::call_id.eq(id2))
+            .select((call_io::request_json, call_io::request_archive))
+            .first(&mut *conn)
+            .unwrap();
+        assert!(request_json.is_none());
+        assert!(request_archive.is_some());
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -3173,15 +3146,11 @@ mod tests {
             .insert_call_io(call_id, Some(&body), None, 64 * 1024, Some(&dir))
             .unwrap();
         let mut conn = store.lock().unwrap();
-        #[derive(QueryableByName)]
-        struct Arch {
-            #[diesel(sql_type = Text)]
-            session: String,
-        }
-        let arch: Arch = sql_query("SELECT session FROM archive LIMIT 1")
-            .get_result(&mut *conn)
+        let session: String = archive::table
+            .select(archive::session)
+            .first(&mut *conn)
             .unwrap();
-        assert_eq!(arch.session, "sess-a");
+        assert_eq!(session, "sess-a");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -3206,23 +3175,16 @@ mod tests {
         store
             .insert_call_io(call_id, Some(b"plain"), None, 1 << 20, None)
             .unwrap();
-        #[derive(QueryableByName)]
-        struct Io {
-            #[diesel(sql_type = Nullable<Text>)]
-            request_json: Option<String>,
-            #[diesel(sql_type = Nullable<Text>)]
-            request_sha256: Option<String>,
-        }
         {
             let mut conn = store.lock().unwrap();
-            let row: Io =
-                sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
-                    .bind::<Integer, _>(call_id)
-                    .get_result(&mut *conn)
-                    .unwrap();
-            let text = row.request_json.unwrap();
+            let (request_json, request_sha256): (Option<String>, Option<String>) = call_io::table
+                .filter(call_io::call_id.eq(call_id))
+                .select((call_io::request_json, call_io::request_sha256))
+                .first(&mut *conn)
+                .unwrap();
+            let text = request_json.unwrap();
             assert_eq!(text, "plain");
-            assert_eq!(row.request_sha256.unwrap(), hex_sha256(text.as_bytes()));
+            assert_eq!(request_sha256.unwrap(), hex_sha256(text.as_bytes()));
         }
 
         let bad = [b'b', b'a', b'd', 0xff, 0xfe, b'o', b'k'];
@@ -3233,14 +3195,14 @@ mod tests {
             .insert_call_io(call_id2, Some(&bad), None, 1 << 20, None)
             .unwrap();
         let mut conn = store.lock().unwrap();
-        let row2: Io =
-            sql_query("SELECT request_json, request_sha256 FROM call_io WHERE call_id = ?")
-                .bind::<Integer, _>(call_id2)
-                .get_result(&mut *conn)
-                .unwrap();
-        let text2 = row2.request_json.unwrap();
+        let (request_json2, request_sha256_2): (Option<String>, Option<String>) = call_io::table
+            .filter(call_io::call_id.eq(call_id2))
+            .select((call_io::request_json, call_io::request_sha256))
+            .first(&mut *conn)
+            .unwrap();
+        let text2 = request_json2.unwrap();
         assert_eq!(text2, String::from_utf8_lossy(&bad));
-        assert_eq!(row2.request_sha256.unwrap(), hex_sha256(text2.as_bytes()));
+        assert_eq!(request_sha256_2.unwrap(), hex_sha256(text2.as_bytes()));
     }
 
     #[rstest]
@@ -3314,10 +3276,7 @@ mod tests {
         );
 
         // Age s1's row out of the window.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = i64::try_from(crate::log::now()).unwrap_or(i64::MAX);
         {
             let mut conn = store.lock().unwrap();
             diesel::update(measurements::table.filter(measurements::session.eq("s1")))
