@@ -276,15 +276,7 @@ fn upgrade_starts_again_when_replace_fails() {
 
 /// Whether a resident answers on the home's endpoint (a connect, nothing sent).
 fn listening(home: &Path) -> bool {
-    let endpoint = rtok_hook::endpoint(home).expect("endpoint");
-    #[cfg(unix)]
-    return std::os::unix::net::UnixStream::connect(endpoint).is_ok();
-    #[cfg(windows)]
-    return fs::File::options()
-        .read(true)
-        .write(true)
-        .open(endpoint)
-        .is_ok();
+    rtok_hook::connect(&rtok_hook::endpoint(home).expect("endpoint")).is_some()
 }
 
 fn until(what: &str, f: impl Fn() -> bool) {

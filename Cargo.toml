@@ -32,6 +32,11 @@ include = ["plugins/", "skills/"]
 name = "rtok"
 path = "src/main.rs"
 
+# T178/D32: the std-only hook client; a bin of this package so it shares rtok's version.
+[[bin]]
+name = "rtok-hook"
+path = "src/bin/rtok-hook.rs"
+
 [[bench]]
 name = "graph"
 harness = false

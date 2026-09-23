@@ -1,6 +1,8 @@
 //! T178 / D32: `rtok hook --serve` answers what `rtok hook` prints, refuses a client whose
 //! environment or version differs, runs once per home, and exits on a newer client or a deleted
-//! home. Every resident here is this test's own child in its own temp home.
+//! home. `rtok-hook` prints a resident's answer, runs `rtok hook` when none answers or one
+//! refuses, and prints `{}` for one too slow. Every resident here is this test's own: a child in
+//! its own temp home, or a fake listener.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -10,13 +12,22 @@ use std::time::{Duration, Instant};
 use rtok_hook::Request;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const CLIENT: &str = env!("CARGO_BIN_EXE_rtok-hook");
 
 struct Home(PathBuf);
 
 impl Home {
-    /// `rtok` in this home with nothing else from the test's environment.
-    fn rtok(&self, args: &[&str]) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_rtok"));
+    /// A fresh temp home. Short: a Unix socket path must fit 104 bytes.
+    fn new(tag: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!("rt{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+
+    /// `bin` in this home with nothing else from the test's environment.
+    fn cmd(&self, bin: &str, args: &[&str]) -> Command {
+        let mut cmd = Command::new(bin);
         cmd.args(args)
             .env_clear()
             .envs(self.env())
@@ -25,6 +36,10 @@ impl Home {
             std::env::var_os(k).map(|v| cmd.env(k, v));
         }
         cmd
+    }
+
+    fn rtok(&self, args: &[&str]) -> Command {
+        self.cmd(env!("CARGO_BIN_EXE_rtok"), args)
     }
 
     fn env(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
@@ -40,16 +55,32 @@ impl Home {
         .into_bytes()
     }
 
+    /// `cmd`'s stdout for the payload on its stdin.
+    fn output(&self, mut cmd: Command) -> Vec<u8> {
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let payload = self.payload();
+        child.stdin.take().unwrap().write_all(&payload).unwrap();
+        child.wait_with_output().unwrap().stdout
+    }
+
+    /// What `rtok hook PreToolUse` prints for the payload: a rewrite.
+    fn expected(&self) -> Vec<u8> {
+        let out = self.output(self.rtok(&["hook", "PreToolUse"]));
+        let text = String::from_utf8_lossy(&out);
+        assert!(
+            text.contains("rtok run"),
+            "the control run rewrites: {text}"
+        );
+        out
+    }
+
     fn call(&self, version: &str, fingerprint: u64) -> Option<Option<Vec<u8>>> {
         let endpoint = rtok_hook::endpoint(&self.0).expect("endpoint");
-        #[cfg(unix)]
-        let mut s = std::os::unix::net::UnixStream::connect(endpoint).ok()?;
-        #[cfg(windows)]
-        let mut s = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .open(endpoint)
-            .ok()?;
+        let mut s = rtok_hook::connect(&endpoint)?;
         let (event, host, stdin) = ("PreToolUse".into(), String::new(), self.payload());
         let cwd = self.0.to_str().unwrap().into();
         let req = Request {
@@ -60,8 +91,7 @@ impl Home {
             cwd,
             stdin,
         };
-        s.write_all(&req.encode()).ok()?;
-        rtok_hook::decode_response(&rtok_hook::read_frame(&mut s).ok()?)
+        rtok_hook::exchange(&mut s, &req.encode())
     }
 
     /// A resident, once it answers (a refused probe).
@@ -95,28 +125,8 @@ fn exits(child: &mut Child) -> bool {
 
 #[test]
 fn the_resident_answers_like_rtok_hook_and_refuses_or_exits_otherwise() {
-    // Short: a Unix socket path must fit 104 bytes.
-    let home = Home(std::env::temp_dir().join(format!("rtr-{}", std::process::id())));
-    let _ = std::fs::remove_dir_all(&home.0);
-    std::fs::create_dir_all(&home.0).unwrap();
-    let mut direct = home.rtok(&["hook", "PreToolUse"]);
-    let mut direct = direct
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    direct
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&home.payload())
-        .unwrap();
-    let expected = direct.wait_with_output().unwrap().stdout;
-    assert!(
-        String::from_utf8_lossy(&expected).contains("rtok run"),
-        "the control run rewrites"
-    );
-
+    let home = Home::new("r");
+    let expected = home.expected();
     let fp = rtok_hook::fingerprint(home.env());
     let mut resident = home.serve();
     assert_eq!(home.call(VERSION, fp), Some(Some(expected)));
@@ -166,4 +176,67 @@ fn the_resident_answers_like_rtok_hook_and_refuses_or_exits_otherwise() {
             "a resident exits once its home is gone"
         );
     }
+}
+
+#[test]
+fn with_no_resident_the_client_runs_rtok_hook() {
+    let home = Home::new("n");
+    let expected = home.expected();
+    assert_eq!(home.output(home.cmd(CLIENT, &["PreToolUse"])), expected);
+    let _ = std::fs::remove_dir_all(&home.0);
+}
+
+/// A fake resident: it answers each call with the next of `answers` (`None` holds the call past
+/// the client's timeout) and hands back each request.
+#[cfg(unix)]
+fn fake(
+    home: &Home,
+    answers: Vec<Option<Option<&'static [u8]>>>,
+) -> std::sync::mpsc::Receiver<Request> {
+    let endpoint = rtok_hook::endpoint(&home.0).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(endpoint).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for answer in answers {
+            let (mut s, _) = listener.accept().unwrap();
+            let req = Request::decode(&rtok_hook::read_frame(&mut s).unwrap()).unwrap();
+            tx.send(req).unwrap();
+            match answer {
+                Some(out) => s.write_all(&rtok_hook::encode_response(out)).unwrap(),
+                None => std::thread::sleep(Duration::from_secs(3)),
+            }
+        }
+    });
+    rx
+}
+
+#[cfg(unix)]
+#[test]
+fn the_client_prints_the_answer_runs_rtok_hook_on_refusal_and_fails_open_when_slow() {
+    let home = Home::new("c");
+    let expected = home.expected();
+    let requests = fake(&home, vec![Some(Some(b"served")), Some(None), None]);
+
+    let served = home.output(home.cmd(CLIENT, &["PreToolUse", "--host", "cursor"]));
+    assert_eq!(served, b"served");
+    let req = requests.recv().unwrap();
+    assert_eq!(
+        (req.version.as_str(), req.event.as_str(), req.host.as_str()),
+        (VERSION, "PreToolUse", "cursor")
+    );
+    assert_eq!(req.fingerprint, rtok_hook::fingerprint(home.env()));
+    assert_eq!(req.stdin, home.payload());
+
+    let refused = home.output(home.cmd(CLIENT, &["PreToolUse"]));
+    assert_eq!(refused, expected, "a refusal runs rtok hook");
+
+    let start = Instant::now();
+    let slow = home.output(home.cmd(CLIENT, &["PreToolUse"]));
+    assert_eq!(slow, b"{}", "a slow resident fails open");
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        start.elapsed()
+    );
+    let _ = std::fs::remove_dir_all(&home.0);
 }

@@ -7,11 +7,16 @@
 //! stdout, or `1` alone — refused, and the client runs `rtok hook` itself.
 
 use std::ffi::OsString;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Largest body either end accepts: a PostToolUse payload carries the whole tool output.
 pub const MAX_FRAME: usize = 64 << 20;
+
+/// Variables the hook reads per call instead of from its config. A client that has one runs
+/// `rtok hook` itself, and they are part of [`fingerprint`] so a resident started with one serves
+/// no call without it.
+pub const HOST_VARS: &[&str] = &["GROK_HOOK_EVENT", "DEVIN_PROJECT_DIR"];
 
 /// Variables besides `RTOK_*` that change the hook's config.
 const CONFIG_VARS: &[&str] = &[
@@ -107,14 +112,34 @@ pub fn frame_len(header: [u8; 4]) -> io::Result<usize> {
     Ok(len)
 }
 
-/// FNV-1a over the `RTOK_*` and [`CONFIG_VARS`] pairs of `vars`, in any order; every other
-/// variable is ignored. Equal fingerprints mean `rtok hook` would load the same config.
+/// A connection to the resident at `endpoint`: a Unix socket, or a named pipe on Windows. `None`
+/// when nothing listens there.
+pub fn connect(endpoint: &Path) -> Option<impl Read + Write + Send + 'static> {
+    #[cfg(unix)]
+    return std::os::unix::net::UnixStream::connect(endpoint).ok();
+    #[cfg(windows)]
+    return std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(endpoint)
+        .ok();
+}
+
+/// Send one request frame and read the answer, as [`decode_response`] reads it; `None` on any
+/// I/O error or a malformed answer.
+pub fn exchange(s: &mut (impl Read + Write), frame: &[u8]) -> Option<Option<Vec<u8>>> {
+    s.write_all(frame).ok()?;
+    decode_response(&read_frame(s).ok()?)
+}
+
+/// FNV-1a over the `RTOK_*`, [`CONFIG_VARS`] and [`HOST_VARS`] pairs of `vars`, in any order;
+/// every other variable is ignored. Equal fingerprints mean `rtok hook` reads the same inputs.
 pub fn fingerprint(vars: impl IntoIterator<Item = (OsString, OsString)>) -> u64 {
     let mut kept: Vec<_> = vars
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            k.starts_with("RTOK_") || CONFIG_VARS.contains(&k.as_ref())
+            k.starts_with("RTOK_") || CONFIG_VARS.iter().chain(HOST_VARS).any(|v| *v == k)
         })
         .collect();
     kept.sort();

@@ -1210,8 +1210,16 @@ mod tests {
     #[test]
     fn symbol_main_is_in_src_main_rs() {
         let (cx, dir) = cx("symbol");
-        let out = symbol(&Ctx::new(&cx), &crate_root(), "main").unwrap();
-        assert!(out.lines().any(|l| l.starts_with("src/main.rs:")), "{out}");
+        // The repo has many `main`s, listed in path order under the output cap; `src/` holds
+        // both binaries' (T178 added `rtok-hook`).
+        let src = Filter {
+            path: "src/".into(),
+            kind: String::new(),
+        };
+        let out = symbol_filtered(&Ctx::new(&cx), &crate_root(), "main", &src).unwrap();
+        for bin in ["src/main.rs:", "src/bin/rtok-hook.rs:"] {
+            assert!(out.lines().any(|l| l.starts_with(bin)), "{bin}\n{out}");
+        }
         assert_eq!(
             symbol(&Ctx::new(&cx), &crate_root(), "no_such_fn").unwrap(),
             "no definition of no_such_fn"
