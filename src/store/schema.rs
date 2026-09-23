@@ -235,6 +235,23 @@ diesel::table! {
     }
 }
 
+// 0011 + 0016 (T68.3): one fingerprint and last index time per root.
+diesel::table! {
+    extractor (root) {
+        root -> Text,
+        fingerprint -> Text,
+        indexed_at -> Nullable<BigInt>,
+    }
+}
+
+// 0016 (T68.3): hook-staled files, listed until the next index replaces their rows.
+diesel::table! {
+    symbol_stale (root, path) {
+        root -> Text,
+        path -> Text,
+    }
+}
+
 diesel::joinable!(archive_decisions -> archive (archive_id));
 diesel::joinable!(models -> providers (provider_id));
 diesel::joinable!(sessions -> hosts (host_id));
@@ -265,4 +282,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     tokens,
     logs,
     symbols,
+    extractor,
+    symbol_stale,
 );
