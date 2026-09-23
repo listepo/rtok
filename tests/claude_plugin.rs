@@ -98,7 +98,8 @@ fn hook_commands_exec_rtok_from_path_and_fall_back_to_hook_sh() {
     );
     script(
         home.join("root/scripts/hook.sh"),
-        r#"printf 'fallback %s' "$1""#,
+        // Drains stdin first: exiting before the test's write lands made it fail with EPIPE.
+        r#"cat >/dev/null; printf 'fallback %s' "$1""#,
     );
     let run = |cmd: &str, path: String| {
         let mut child = Command::new("/bin/sh")
