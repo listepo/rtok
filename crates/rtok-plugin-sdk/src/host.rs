@@ -239,6 +239,14 @@ pub trait Archive {
     fn archive_in_session(&self, _sha256: &str) -> Result<Option<ArchiveHit>> {
         Ok(None)
     }
+
+    /// This session's archived tool results still in the live window, newest first
+    /// (T58.2): `(archive_id, tool, bytes)`. Lets `checkpoint::attach_ids` read through the
+    /// host's own connection instead of opening a second `Store` (T203). Default
+    /// `Ok(Vec::new())` fails open for a host that does not track a live window.
+    fn session_live_archives(&self, _session: &str) -> Result<Vec<(String, String, i64)>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Durable notes the host can search — what a plugin remembers between sessions.
@@ -270,6 +278,14 @@ pub trait Notes {
         project: Option<&str>,
         kind_prefix: &str,
     ) -> Result<Option<String>>;
+
+    /// Newest `session:*` note body for `project` (`None` = unbound), id order. Lets
+    /// `checkpoint::offer_session` read through the host's own connection instead of
+    /// opening a second `Store` (T203). Default `Ok(None)` fails open for a host with no
+    /// session notes.
+    fn latest_session_note(&self, _project: Option<&str>) -> Result<Option<String>> {
+        Ok(None)
+    }
 
     /// The `limit` most recent `(id, title)` pairs, newest first.
     fn list_note_titles(&self, project: Option<&str>, limit: u32) -> Result<Vec<(i32, String)>>;

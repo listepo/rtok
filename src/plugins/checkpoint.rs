@@ -3,6 +3,7 @@
 use rtok_plugin_sdk::{Class, Ctx, Injection, Measurement};
 use serde_json::Value;
 use std::collections::{BTreeSet, VecDeque};
+use std::io::BufRead;
 use std::path::Path;
 
 /// Parsed compact snapshot.
@@ -63,14 +64,50 @@ impl Checkpoint {
 }
 
 /// Last 20 user prompts (≤ 300 chars), file paths, and the last 8 error lines from a JSONL
-/// transcript.
+/// transcript held entirely in memory. [`extract_path`] is the streamed twin `write` uses on
+/// a transcript file, so a real (possibly hundreds-of-MB) session never sits in memory at
+/// once (T203); both share [`extract_lines`], so the two extractions never drift apart.
 pub fn extract(jsonl: &str) -> Checkpoint {
-    let mut prompts = Vec::new();
+    extract_lines(jsonl.as_bytes().lines())
+}
+
+/// [`extract`], streamed line by line from `path` instead of read whole. Returns the default
+/// (empty) checkpoint when the file is missing or unreadable — the same fallback
+/// `read_to_string(..).unwrap_or_default()` gave before T203.
+fn extract_path(path: &Path) -> Checkpoint {
+    match std::fs::File::open(path) {
+        Ok(f) => extract_lines(std::io::BufReader::new(f).lines()),
+        Err(_) => Checkpoint::default(),
+    }
+}
+
+/// [`extract_lines_with`] with the prefilter on — what `extract`/`extract_path` use.
+fn extract_lines<I: Iterator<Item = std::io::Result<String>>>(lines: I) -> Checkpoint {
+    extract_lines_with(lines, true)
+}
+
+/// Shared extraction loop: bounded state only (last 20 prompts, last 8 errors, the path set,
+/// skill bodies), so memory never grows with the transcript's length. With `filter` on,
+/// [`worth_parsing`] skips the serde_json parse (and the tree walk after it) on a line that
+/// cannot hold a path, an error, a prompt or a skill body — the lever that keeps a
+/// multi-hundred-MB transcript, most of which is large tool output with none of those,
+/// inside a hook's time budget. `filter = false` runs the identical loop unfiltered, so
+/// `prefilter_is_a_true_superset_*` below can assert the two agree instead of trusting that
+/// claim to a comment.
+fn extract_lines_with<I: Iterator<Item = std::io::Result<String>>>(
+    lines: I,
+    filter: bool,
+) -> Checkpoint {
+    let mut prompts: VecDeque<String> = VecDeque::new();
     let mut paths = BTreeSet::new();
     let mut errors = VecDeque::new();
     let mut skills = Vec::new();
-    for line in jsonl.lines() {
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
+    for line in lines {
+        let Ok(line) = line else { continue };
+        if filter && !worth_parsing(&line) {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
         walk(&v, &mut paths, &mut |s| {
@@ -86,19 +123,51 @@ pub fn extract(jsonl: &str) -> Checkpoint {
         if let Some(s) = skill_body(&v) {
             skills.push(s);
         } else if let Some(p) = user_prompt(&v) {
-            prompts.push(p);
+            if prompts.len() == 20 {
+                prompts.pop_front();
+            }
+            prompts.push_back(p);
         }
     }
-    if prompts.len() > 20 {
-        prompts = prompts.split_off(prompts.len() - 20);
-    }
     Checkpoint {
-        prompts,
+        prompts: prompts.into(),
         paths: paths.into_iter().collect(),
         errors: errors.into(),
         skills,
         ..Default::default()
     }
+}
+
+/// A raw JSONL line that cannot contribute anything [`extract_lines_with`] keeps.
+///
+/// `file_path` and the three error spellings survive JSON string escaping unchanged, so
+/// checking for them is a safe superset of what the tree walk would find. A `"type":"user"`
+/// record is only interesting through [`user_prompt`]/[`skill_body`], and both read only
+/// through [`user_text`]: a bare string `message.content`, or an array with a
+/// `"type":"text"` block. Neither reads a `tool_result` block (marked by `"tool_use_id"`),
+/// which is the shape that dominates a real transcript's bytes — a large Bash/Read result is
+/// echoed back as a `user` turn, not typed by anyone — so that is the one case this filter
+/// excludes. `skill_body` also needs `"isMeta":true` and `"sourceToolUseID"`, both specific
+/// enough that a false hit in ordinary transcript text is effectively impossible, so a line
+/// carrying both is always let through.
+///
+/// `prefilter_is_a_true_superset_on_fixtures_and_a_large_transcript` (below) checks this
+/// claim empirically — with the filter on and off — rather than trusting it to this comment.
+fn worth_parsing(line: &str) -> bool {
+    if line.contains("file_path")
+        || line.contains("error")
+        || line.contains("Error")
+        || line.contains("ERROR")
+    {
+        return true;
+    }
+    if !line.contains("\"type\":\"user\"") {
+        return false;
+    }
+    if line.contains("\"isMeta\":true") && line.contains("\"sourceToolUseID\"") {
+        return true;
+    }
+    !line.contains("\"tool_use_id\"")
 }
 
 /// A skill body the host injected: a `user` record flagged `isMeta` with a
@@ -205,7 +274,7 @@ fn write(
     kind: &str,
     project: Option<&str>,
 ) -> anyhow::Result<Checkpoint> {
-    let mut cp = extract(&std::fs::read_to_string(Path::new(transcript_path)).unwrap_or_default());
+    let mut cp = extract_path(Path::new(transcript_path));
     attach_ids(&mut cp, cx);
     cx.insert_note(project, kind, "compact", &cp.render())?;
     Ok(cp)
@@ -223,16 +292,10 @@ fn checkpoint_cap(cx: &Ctx) -> u32 {
         .max(1)
 }
 
-/// Newest live archive ids that still fit `plugins.memory.checkpoint_tokens`.
+/// Newest live archive ids that still fit `plugins.memory.checkpoint_tokens`. Reads through
+/// the hook `Runtime`'s own store (T203) instead of opening a second one on the same file.
 fn attach_ids(cp: &mut Checkpoint, cx: &Ctx) {
-    let db: std::path::PathBuf = cx.config("core.db_path");
-    if db.as_os_str().is_empty() {
-        return;
-    }
-    let Ok(store) = crate::store::Store::open(&db) else {
-        return;
-    };
-    let Ok(rows) = store.session_live_archives(cx.session()) else {
+    let Ok(rows) = cx.session_live_archives(cx.session()) else {
         return;
     };
     let cap = checkpoint_cap(cx);
@@ -255,13 +318,9 @@ pub fn offer(cx: &Ctx) -> Option<Injection> {
 }
 
 /// Newest `session:*` note of the hook cwd's project, same render and budget as [`offer`].
+/// Reads through the hook `Runtime`'s own store (T203) instead of opening a third one.
 pub fn offer_session(cx: &Ctx) -> Option<Injection> {
-    let db: std::path::PathBuf = cx.config("core.db_path");
-    if db.as_os_str().is_empty() {
-        return None;
-    }
-    let store = crate::store::Store::open(&db).ok()?;
-    let raw = store
+    let raw = cx
         .latest_session_note(project_of_cx(cx).as_deref())
         .ok()
         .flatten()?;
@@ -598,5 +657,130 @@ mod tests {
         assert_eq!(claude, pi);
         assert_eq!(claude, opencode);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ~50 MB shaped like a real session: mostly `type":"user"` lines carrying a
+    /// `tool_result` block (a large Bash/Read result the harness echoes back — the shape
+    /// that dominates a real transcript's bytes, per T203 code review), a few large
+    /// assistant text blocks, and a real prompt/path/error line planted every `PERIOD`
+    /// lines so the extraction is exercised at scale and not just on filler.
+    fn big_transcript(target_bytes: usize) -> String {
+        const PERIOD: usize = 500;
+        let tool_output = "line of bash output ".repeat(6);
+        let prose = "lorem ipsum dolor sit amet consectetur adipiscing elit ".repeat(3);
+        let mut s = String::with_capacity(target_bytes + 4096);
+        let mut i = 0usize;
+        while s.len() < target_bytes {
+            if i.is_multiple_of(PERIOD) {
+                for v in [
+                    serde_json::json!({"type":"user","message":{"content":format!("prompt {i}")}}),
+                    serde_json::json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":format!("src/file{i}.rs")}}]}}),
+                    serde_json::json!({"type":"user","message":{"content":[{"type":"text","text":format!("still failing with error: boom {i}")}]}}),
+                ] {
+                    s.push_str(&v.to_string());
+                    s.push('\n');
+                }
+            } else if i.is_multiple_of(2) {
+                // The dominant real-world shape (T203 review): a tool result, not typed
+                // by anyone, echoed back as a `user` turn.
+                let v = serde_json::json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":format!("toolu_{i}"),"content":tool_output}]}});
+                s.push_str(&v.to_string());
+                s.push('\n');
+            } else {
+                let v = serde_json::json!({"type":"assistant","message":{"content":[{"type":"text","text":prose}]}});
+                s.push_str(&v.to_string());
+                s.push('\n');
+            }
+            i += 1;
+        }
+        s
+    }
+
+    /// T203: `checkpoint::write` used to `read_to_string` the whole transcript and
+    /// `attach_ids`/`offer_session` each opened a second/third `Store` on the same SQLite
+    /// file the hook `Runtime` already holds open. On a ~50 MB transcript this checks the
+    /// streamed extractor stays fast, opens the store exactly once for the whole hook run,
+    /// and yields the same note body [`extract`] (the in-memory extractor) computes for the
+    /// same bytes.
+    #[test]
+    fn session_end_on_a_large_transcript_is_bounded() {
+        let dir = std::env::temp_dir().join("rtok-t203-large-transcript");
+        let _ = std::fs::remove_dir_all(&dir);
+        let repo = dir.join("bigproj");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let content = big_transcript(50 * 1024 * 1024);
+        std::fs::write(repo.join("t.jsonl"), &content).unwrap();
+        let expected = extract(&content);
+        assert!(!expected.paths.is_empty() && !expected.errors.is_empty());
+
+        let mut cfg = crate::config::Config::default();
+        cfg.core.db_path = dir.join("rtok.db");
+        cfg.plugins.inject.modes.clear();
+        let end = serde_json::json!({
+            "hook_event_name":"SessionEnd",
+            "session_id":"t203",
+            "transcript_path":repo.join("t.jsonl").to_str().unwrap(),
+            "cwd":repo.display().to_string(),
+            "reason":"clear"
+        });
+        let mut out = Vec::new();
+        let before = crate::store::OPEN_COUNT.with(|n| n.get());
+        let started = std::time::Instant::now();
+        crate::hooks::run("SessionEnd", end.to_string().as_bytes(), &mut out, &cfg);
+        let elapsed = started.elapsed();
+        let after = crate::store::OPEN_COUNT.with(|n| n.get());
+        assert_eq!(out, b"{}");
+        assert_eq!(after - before, 1, "one Store::open per hook run");
+        // Measured on this machine with this (tool_result-dominated) transcript: ~57 ms
+        // `--release`, under the task's 100 ms bound; ~960 ms unoptimized `cargo test`,
+        // where serde_json and every `str::contains` run unoptimized. Shared CI runners are
+        // several times slower still, so the bound only catches a quadratic regression; the
+        // open count above and the streaming read are what keep the hook bounded.
+        assert!(
+            elapsed.as_secs() < 10,
+            "SessionEnd on a 50 MB transcript took {elapsed:?}"
+        );
+
+        let body = crate::store::Store::open(&cfg.core.db_path)
+            .unwrap()
+            .latest_session_note(Some("bigproj"))
+            .unwrap()
+            .expect("session note");
+        assert_eq!(body, expected.render());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T203 code review: `worth_parsing`'s claim to be a superset (never skips a line a full
+    /// parse would have found something in) is checked here, not just asserted in a
+    /// comment — on every fixture already used in this module, and on the ~50 MB
+    /// transcript above whose bulk is exactly the shape (`tool_result` blocks) the filter
+    /// is supposed to skip.
+    #[test]
+    fn prefilter_is_a_true_superset_on_fixtures_and_a_large_transcript() {
+        let skill_fixture = {
+            let body = "Base directory for this skill: /home/u/.claude/skills/slint\n\n# Slint\n"
+                .to_string()
+                + &"x".repeat(5000);
+            [
+                r#"{"type":"user","message":{"content":"make it blue"}}"#.to_string(),
+                serde_json::json!({"type":"user","isMeta":true,"sourceToolUseID":"toolu_1","message":{"content":[{"type":"text","text":body}]}}).to_string(),
+                serde_json::json!({"type":"user","isMeta":true,"sourceToolUseID":"toolu_2","message":{"content":[{"type":"text","text":"Base directory for this skill: C:\\u\\.claude\\plugins\\cache\\p\\1.0\\skills\\ponytail\n\n# P"}]}}).to_string(),
+                r#"{"type":"user","isMeta":true,"message":{"content":"Base directory for this skill: /x/y"}}"#.to_string(),
+            ]
+            .join("\n")
+        };
+        let big = big_transcript(2 * 1024 * 1024);
+        for (name, content) in [
+            ("FIXTURE", FIXTURE),
+            ("skill fixture", &skill_fixture),
+            ("2 MB transcript", &big),
+        ] {
+            let filtered = extract_lines_with(content.as_bytes().lines(), true);
+            let unfiltered = extract_lines_with(content.as_bytes().lines(), false);
+            assert_eq!(
+                filtered, unfiltered,
+                "prefilter dropped something on {name}"
+            );
+        }
     }
 }

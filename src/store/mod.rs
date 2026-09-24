@@ -199,6 +199,14 @@ pub(crate) fn fts_phrase_query(query: &str) -> Option<String> {
     (!quoted.is_empty()).then(|| quoted.join(" "))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Test-only tally of fresh SQLite connections on this thread (T203): PreCompact,
+    /// SessionEnd and SessionStart used to open a second or third `Store` beside the one the
+    /// hook `Runtime` already holds; the count lets a test assert one open per hook run.
+    pub(crate) static OPEN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl Store {
     /// Open (creating directories and the file as needed) and migrate.
     pub fn open(path: &Path) -> Result<Self> {
@@ -246,6 +254,8 @@ impl Store {
     }
 
     fn init(mut conn: SqliteConnection, wait: LockWait) -> Result<Self> {
+        #[cfg(test)]
+        OPEN_COUNT.with(|n| n.set(n.get() + 1));
         conn.batch_execute("PRAGMA foreign_keys = ON;")?;
         let store = Self {
             conn: Mutex::new(conn),
