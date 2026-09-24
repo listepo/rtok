@@ -5,4 +5,6 @@ args = "--config tests/trycmd/input/json-readers.toml demon status --json"
 # target/ via RTOK_HOME, and a cleared env keeps ambient RTOK_* / HOME out.
 [env]
 inherit = false
+
+[env.add]
 RTOK_HOME = "target/tmp/t60-1-demon-json"

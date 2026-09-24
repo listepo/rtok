@@ -1,6 +1,8 @@
 bin.name = "rtok"
 args = "--config tests/trycmd/input/memory-status.toml memory status"
-inherit = false
 
 [env]
+inherit = false
+
+[env.add]
 RTOK_HOME = "target/tmp/trycmd-memory-status"

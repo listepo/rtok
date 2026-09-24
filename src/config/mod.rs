@@ -12,6 +12,7 @@ pub mod layers;
 pub mod validate;
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
@@ -798,9 +799,20 @@ pub struct Config {
 }
 
 impl Config {
-    /// `$RTOK_HOME` or `$HOME/.rtok`.
+    /// `$RTOK_HOME` or `$HOME/.rtok`; always absolute (T184).
+    ///
+    /// Unlike [`env_user_home`], this falls all the way to `std::env::home_dir()` (Unix:
+    /// `getpwuid_r` when `HOME` is unset too; not deprecated on the pinned 1.97.1) before
+    /// giving up on a user home — scoped to *this* one lookup so it does not also widen every
+    /// other `~/x` config default's fallback (see [`env_user_home`]'s doc).
     pub fn home_dir() -> PathBuf {
-        home_dir_from(std::env::var_os("RTOK_HOME"), env_user_home())
+        let user_home = env_user_home().or_else(std::env::home_dir);
+        home_dir_absolute(
+            std::env::var_os("RTOK_HOME"),
+            user_home,
+            || std::env::current_dir().ok(),
+            || std::env::temp_dir().join(".rtok"),
+        )
     }
 
     /// `<home>/config.toml`.
@@ -1075,8 +1087,44 @@ pub(crate) fn apply_legacy_fold(cfg: &mut Config) {
 /// Prefer `HOME` (Unix and Git Bash). On native Windows PowerShell `HOME` is
 /// often unset — fall back to `USERPROFILE` so `rtok agents install` finds
 /// `~/.claude` / `~/.cursor` instead of skipping with "not found".
+///
+/// Deliberately does *not* fall further to `std::env::home_dir()`: every other `~/x` config
+/// default (`stats.codex_dir` and friends) is expanded against whatever this returns, and the
+/// trycmd fixtures rely on a cleared `HOME` making those resolve to nothing rather than to the
+/// real machine's passwd entry (T184) — `getpwuid_r` does not read `HOME` and would defeat that
+/// isolation. [`Config::home_dir`] adds that one extra fallback itself, scoped to locating
+/// rtok's own home.
 pub(crate) fn env_user_home() -> Option<PathBuf> {
     user_home_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
+
+/// [`home_dir_from`], made absolute (T184).
+///
+/// A relative result out of `home_dir_from` is explicit input — a caller set `RTOK_HOME` or
+/// `HOME`/`USERPROFILE` to a relative value (trycmd's fixtures rely on exactly this:
+/// `RTOK_HOME = "target/tmp/…"` is meant to land under the crate root they run from) — so it is
+/// resolved against `cwd()`, matching ordinary shell path semantics.
+///
+/// With no explicit input at all (`rtok_home` unset/empty and `user_home` unset) there is
+/// nothing to resolve relative to except the caller's cwd, which is exactly the bug this closes:
+/// a hook run from an arbitrary project directory must not create `.rtok/` in it (T169). That
+/// case uses `fallback()` (the OS temp dir in production) instead, keeping hooks fail-open
+/// without ever touching the cwd.
+fn home_dir_absolute(
+    rtok_home: Option<OsString>,
+    user_home: Option<PathBuf>,
+    cwd: impl FnOnce() -> Option<PathBuf>,
+    fallback: impl FnOnce() -> PathBuf,
+) -> PathBuf {
+    let explicit = rtok_home.as_ref().is_some_and(|h| !h.is_empty()) || user_home.is_some();
+    let home = home_dir_from(rtok_home, user_home);
+    if home.is_absolute() {
+        return home;
+    }
+    if !explicit {
+        return fallback();
+    }
+    cwd().map(|c| c.join(&home)).unwrap_or(home)
 }
 
 /// [`expand_with`] against the process's own user home.
@@ -1446,6 +1494,62 @@ bogus = true
     fn rtok_home_expands_a_literal_tilde(#[case] env: Option<&str>, #[case] want: &str) {
         let got = home_dir_from(env.map(Into::into), Some(PathBuf::from("/Users/me")));
         assert_eq!(got, PathBuf::from(want));
+    }
+
+    /// T184: `Config::home_dir` never hands back a path relative to an unknown cwd.
+    #[test]
+    fn home_dir_absolute_never_relative() {
+        // Nothing resolves at all: fail open to the fallback, never the cwd.
+        assert_eq!(
+            home_dir_absolute(
+                None,
+                None,
+                || Some(PathBuf::from("/cwd")),
+                || { PathBuf::from("/tmp/rtok-fallback/.rtok") }
+            ),
+            PathBuf::from("/tmp/rtok-fallback/.rtok")
+        );
+        // An explicit relative RTOK_HOME (trycmd's `RTOK_HOME = "target/tmp/…"`) resolves
+        // against the cwd, not the fallback.
+        assert_eq!(
+            home_dir_absolute(
+                Some(OsString::from("target/tmp/case")),
+                None,
+                || Some(PathBuf::from("/repo")),
+                || PathBuf::from("/tmp/rtok-fallback/.rtok"),
+            ),
+            PathBuf::from("/repo/target/tmp/case")
+        );
+        // An already-absolute result is returned as-is; cwd/fallback are not consulted.
+        assert_eq!(
+            home_dir_absolute(
+                Some(OsString::from("/srv/rtok")),
+                None,
+                || panic!("cwd should not be read"),
+                || panic!("fallback should not run"),
+            ),
+            PathBuf::from("/srv/rtok")
+        );
+        // A relative HOME (no RTOK_HOME) is explicit input too: absolutized, not defaulted.
+        assert_eq!(
+            home_dir_absolute(
+                None,
+                Some(PathBuf::from("rel-home")),
+                || Some(PathBuf::from("/repo")),
+                || PathBuf::from("/tmp/rtok-fallback/.rtok"),
+            ),
+            PathBuf::from("/repo/rel-home/.rtok")
+        );
+        // An empty RTOK_HOME counts as unset, not as explicit input.
+        assert_eq!(
+            home_dir_absolute(
+                Some(OsString::new()),
+                None,
+                || Some(PathBuf::from("/cwd")),
+                || { PathBuf::from("/tmp/rtok-fallback/.rtok") }
+            ),
+            PathBuf::from("/tmp/rtok-fallback/.rtok")
+        );
     }
 
     #[test]
