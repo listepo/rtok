@@ -60,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
-| T210 | todo | P2 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T212 | todo | P2 | 2 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
@@ -721,14 +720,6 @@ Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind
 Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
 
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
-
-### T210. `measurements (session, ts)` has no index on never-pruned tables
-
-Found 2026-09-22 in the store/accounting pass: `archive_in_session`'s per-lookup subquery filters `measurements` by `(session, ts)` (`src/store/mod.rs:583-597`) — no index covers it (only `measurements_plugin(plugin, ts)` exists), `usage_ctt` (:1470-1495) scans the whole `usage` table per dashboard tick, and `purge_calls_older_than` (:1715-1802) deliberately keeps `usage`/`measurements`/`read_cache` forever. `plugin::identical_result` calls `archive_in_session` per tool result on PostToolUse, so hook latency grows linearly with total history.
-
-Plan: one migration `CREATE INDEX measurements_session_ts ON measurements (session, ts)` (also serving `last_measurement_ref`'s ordering family); if the dashboard scan still shows up in `doctor` latency, follow with the grouped aggregate from T207.
-
-Check: `EXPLAIN QUERY PLAN` for `SELECT COUNT(*) FROM measurements WHERE session = ? AND ts > ?` reports `USING INDEX measurements_session_ts` (not `SCAN`); a latency fixture with 100 k measurement rows keeps `archive_in_session` under budget; `just test` green.
 
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 

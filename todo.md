@@ -49,7 +49,6 @@
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T204. A panicking plugin is dropped silently — the error never reaches the log
-- T210. `measurements (session, ts)` has no index on never-pruned tables
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T212. Semantic-cache key omits sampling params and tool schemas
 - T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
