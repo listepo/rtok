@@ -735,7 +735,12 @@ enum ConfigCmd {
         json: bool,
     },
     /// Print one key's effective value
-    Get { key: String },
+    Get {
+        key: String,
+        /// JSON `{key,value,source}` instead of the bare value (T228)
+        #[arg(long)]
+        json: bool,
+    },
     /// Reject unknown keys, wrong types, and out-of-range values
     Validate {
         /// File to check (else the user config file)
@@ -789,9 +794,10 @@ pub fn run() -> Result<()> {
                     let rows = model::config_entries(&home, config_file.as_deref())?;
                     show(&rows, sources, json)?;
                 }
-                ConfigCmd::Get { key } => {
+                ConfigCmd::Get { key, json } => {
                     let rows = model::config_entries(&home, config_file.as_deref())?;
                     match rows.into_iter().find(|r| r.key == key) {
+                        Some(r) if json => print_json(&r)?,
                         Some(r) => println!("{}", r.value),
                         None => bail!("unknown key: {key}"),
                     }

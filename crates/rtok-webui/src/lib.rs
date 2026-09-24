@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
     "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats", "graph",
-    "hosts",
+    "hosts", "config",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -42,6 +42,7 @@ pub mod snapshot {
         pub stats_text: String,
         pub graph_text: String,
         pub hosts_text: String,
+        pub config_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -114,6 +115,7 @@ pub mod snapshot {
             stats_text: stats_of(&v["stats"]),
             graph_text: graph_of(&v["graph"]),
             hosts_text: hosts_of(&v["hosts"]),
+            config_text: config_of(&v["config"]),
         }
     }
 
@@ -453,6 +455,13 @@ pub mod snapshot {
         v.as_str().unwrap_or_default().to_string()
     }
 
+    /// The Config page (T228): one rendered string, like [`stats_of`]/[`graph_of`].
+    fn config_of(v: &Value) -> String {
+        v.as_str().map(str::to_string).unwrap_or_else(|| {
+            "config did not answer this tick — `rtok config show` has the details".into()
+        })
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -546,6 +555,16 @@ fn filter_expand(text: &str, needle: &str) -> String {
         .join("\n")
 }
 
+/// Reapply the Config page's filter box on a snapshot tick (T228), like the archive
+/// pane's [`filter_expand`]. A no-op on a plain native build, like that fn itself.
+#[cfg(any(target_family = "wasm", test))]
+fn sync_config_view(ui: &MainWindow, text: &str) {
+    let needle = ui.get_config_filter();
+    ui.set_config_view(SharedString::from(filter_expand(text, needle.as_str())));
+}
+#[cfg(not(any(target_family = "wasm", test)))]
+fn sync_config_view(_ui: &MainWindow, _text: &str) {}
+
 /// Apply one `/ws` snapshot onto the window: the one call path the WASM
 /// client and the e2e tests share. Fail-open like [`snapshot::parse`]:
 /// missing keys become empty pages, never a panic.
@@ -562,6 +581,8 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     ui.set_stats_text(SharedString::from(view.stats_text));
     ui.set_graph_text(SharedString::from(view.graph_text));
     ui.set_hosts_text(SharedString::from(view.hosts_text));
+    ui.set_config_text(SharedString::from(view.config_text.clone()));
+    sync_config_view(ui, &view.config_text);
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -806,6 +827,17 @@ mod wasm {
                 needle.as_str(),
             )));
         });
+        let ui_config_filter = ui.as_weak();
+        ui.on_filter_config(move |needle| {
+            let Some(ui) = ui_config_filter.upgrade() else {
+                return;
+            };
+            let body = ui.get_config_text();
+            ui.set_config_view(SharedString::from(filter_expand(
+                body.as_str(),
+                needle.as_str(),
+            )));
+        });
         let on_msg = Closure::<dyn FnMut(MessageEvent)>::new(move |ev: MessageEvent| {
             let Some(text) = ev.data().as_string() else {
                 return;
@@ -876,7 +908,7 @@ mod tests {
             PAGE_IDS,
             [
                 "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
-                "graph", "hosts"
+                "graph", "hosts", "config"
             ]
         );
     }
@@ -920,7 +952,8 @@ mod tests {
             "logs": ["2026-09-10 07:00:00 info web/serve: up"],
             "stats": "sessions 1  compact 0  checkpoint 0  no_checkpoint 1  lines 1  malformed 0\n",
             "graph": "root .  rows 3  files 2  pending 0\nwatch off\nindexed_at -\ndead symbols\n none\n",
-            "hosts": "CLI: Codex\n  app     -\n"
+            "hosts": "CLI: Codex\n  app     -\n",
+            "config": "proxy.port = 8899 (default)\n"
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -933,7 +966,8 @@ mod tests {
                 && PAGE_IDS.contains(&"skills")
                 && PAGE_IDS.contains(&"stats")
                 && PAGE_IDS.contains(&"graph")
-                && PAGE_IDS.contains(&"hosts"),
+                && PAGE_IDS.contains(&"hosts")
+            && PAGE_IDS.contains(&"config"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -952,6 +986,7 @@ mod tests {
         assert!(view.stats_text.contains("sessions 1"));
         assert!(view.graph_text.contains("rows 3"));
         assert!(view.hosts_text.contains("CLI: Codex"));
+        assert!(view.config_text.contains("proxy.port = 8899"));
     }
 
     #[test]
@@ -1028,5 +1063,12 @@ mod tests {
         let v = json!({"type": "snapshot", "graph": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
         let view = snapshot::parse(&v);
         assert!(view.graph_text.contains("did not answer"));
+    }
+
+    #[test]
+    fn missing_config_is_a_failed_tick_not_empty() {
+        let v = json!({"type": "snapshot", "config": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
+        let view = snapshot::parse(&v);
+        assert!(view.config_text.contains("did not answer"));
     }
 }

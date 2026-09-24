@@ -347,6 +347,10 @@ export component MainWindow inherits Window {
     in property <string> stats-text;
     in property <string> graph-text;
     in property <string> hosts-text;
+    in property <string> config-text;
+    in-out property <string> config-view;
+    in-out property <string> config-filter;
+    callback filter-config(string);
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
@@ -754,6 +758,22 @@ export component MainWindow inherits Window {
                     }
                     BodyText {
                         text: hosts-text;
+                    }
+                }
+
+                if page-id == "config": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "config";
+                    }
+                    LineEdit {
+                        placeholder-text: "filter";
+                        text <=> root.config-filter;
+                        edited => { root.filter-config(self.text); }
+                    }
+                    BodyText {
+                        text: root.config-view;
                     }
                 }
             }

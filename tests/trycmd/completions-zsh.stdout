@@ -933,6 +933,7 @@ _arguments "${_arguments_options[@]}" : /
 (get)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON /`{key,value,source}/` instead of the bare value (T228)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 ':key:_default' /

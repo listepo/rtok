@@ -32,6 +32,7 @@ pub(crate) const KEYS: &[(&str, &str, &str)] = &[
     ("sessions", "l", "live-only filter"),
     ("skills", "↑/↓", "move selection"),
     ("skills", "n", "never-invoked only"),
+    ("config", "/", "filter entries"),
 ];
 
 /// The key rows for one page: globals first, then the page's own.
@@ -64,6 +65,8 @@ pub struct App {
     /// live-only filter is on.
     sessions: SessionsState,
     skills: SkillsState,
+    /// The Config page's own state (T228): `/` filter text and whether it is capturing.
+    config: ConfigState,
     /// Whether the `?` help overlay is up (T60.8).
     help: bool,
     /// The running TUI's model reader: a snapshot parses transcripts and probes the
@@ -134,6 +137,14 @@ struct SessionsState {
     detail: bool,
 }
 
+/// The Config page's `/` filter state (T228): same capture shape as the Calls expand
+/// pane's filter (T60.4), applied to the page itself since there is no sub-pane here.
+#[derive(Default)]
+struct ConfigState {
+    filter: String,
+    filtering: bool,
+}
+
 #[derive(Default)]
 struct SkillsState {
     selected: usize,
@@ -178,6 +189,7 @@ impl App {
             calls: CallsState::default(),
             sessions: SessionsState::default(),
             skills: SkillsState::default(),
+            config: ConfigState::default(),
             help: false,
             worker: None,
             requested: 0,
@@ -390,6 +402,33 @@ impl App {
         }
     }
 
+    /// The Config page's `/` filter (T228): `Char('/')` starts capturing, `Esc`/`Enter`
+    /// stops, `Backspace` edits — the same capture shape as the Calls expand pane's
+    /// filter (T60.4). Returns `true` when the key was consumed.
+    fn config_key(&mut self, code: KeyCode) -> bool {
+        if self.config.filtering {
+            match code {
+                KeyCode::Esc | KeyCode::Enter => self.config.filtering = false,
+                KeyCode::Backspace => {
+                    self.config.filter.pop();
+                }
+                KeyCode::Char(c) => self.config.filter.push(c),
+                _ => {}
+            }
+            return true;
+        }
+        if code == KeyCode::Char('/') {
+            self.config.filtering = true;
+            return true;
+        }
+        false
+    }
+
+    /// The Config page's filter state: whether `/` is capturing keys, and the filter text.
+    pub fn config_filter(&self) -> (bool, &str) {
+        (self.config.filtering, self.config.filter.as_str())
+    }
+
     #[cfg(test)]
     pub(in crate::tui) fn set_skills(&mut self, skills: model::SkillsPage) {
         self.snapshot.skills = skills;
@@ -540,6 +579,9 @@ impl App {
             return false;
         }
         if self.page() == "skills" && self.skills_key(code) {
+            return false;
+        }
+        if self.page() == "config" && self.config_key(code) {
             return false;
         }
         match code {
