@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Result, bail};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, JsonObject, ListToolsResult, ProtocolVersion,
-    ServerCapabilities, ServerInfo, Tool,
+    ServerCapabilities, ServerConfig, Tool,
 };
 use serde_json::{Value, json};
 
@@ -318,7 +318,7 @@ impl Server {
                 // Default `Implementation` still comes from rmcp's build env (`name: "rmcp"`).
                 // 3.x types are non_exhaustive; construct via the public builders.
                 let version = negotiate_protocol_version(&req["params"]["protocolVersion"]);
-                let info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+                let info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
                     .with_server_info(Implementation::new("rtok", env!("CARGO_PKG_VERSION")))
                     .with_protocol_version(version);
                 serde_json::to_value(&info).unwrap_or(json!({}))

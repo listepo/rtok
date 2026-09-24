@@ -110,7 +110,7 @@ dunce = "1" # canonicalize without Windows UNC prefixes (graph index keys + file
 pathdiff = "0.2" # relative path of a file under a repo root (graph LSP + index)
 rmcp = { version = "3.2" } # stdio MCP types + JSON-RPC (T4.1)
 ignore = "0.4" # gitignore-aware walk for search/tree (T4.5)
-notify = "8" # recursive file watching for the graph background indexer (T8.16; 9 is an RC)
+notify = "9.0.0-rc.5" # recursive file watching for the graph background indexer (T8.16); 9 drops windows-sys 0.60 (T223)
 watchman_client = { version = "0.9", optional = true } # Meta's watchman client for the T8.17 watcher backend (tokio, already a dependency); behind `graph-watchman`
 indicatif = "0.18" # progress for `graph index` (T21.2); `ProgressBar::hidden()` keeps it off the MCP path
 owo-colors = { version = "4", features = ["supports-colors"] } # ANSI + the tty/NO_COLOR/CLICOLOR/TERM=dumb question in one call (T20.2)
