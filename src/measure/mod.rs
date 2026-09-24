@@ -7,3 +7,4 @@ pub mod jsonl;
 pub mod skills_listing;
 pub mod stats;
 pub mod subagents;
+pub mod transcript_cache;
