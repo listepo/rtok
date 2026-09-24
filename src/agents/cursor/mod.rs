@@ -221,7 +221,16 @@ fn insert_ours(root: &mut Value) -> String {
         ("preCompact", compact.as_str()),
     ] {
         let arr = array_at(hooks, event);
-        if !arr.iter().any(|e| is_cmd(e, cmd)) {
+        // T242.5: an rtok hook written by another binary path is rewritten in its slot.
+        let mut found = false;
+        for e in arr.iter_mut().filter(|e| is_ours(e)) {
+            found = true;
+            if !is_cmd(e, cmd) {
+                e["command"] = json!(cmd);
+                added.push(format!("~ {event} {cmd}"));
+            }
+        }
+        if !found {
             arr.push(json!({"command": cmd}));
             added.push(format!("+ {event} {cmd}"));
         }
@@ -557,5 +566,27 @@ mod tests {
             .unwrap();
         assert!(note.is_some(), "preCompact must save a checkpoint");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T242.5: an rtok hook on another binary path is rewritten in its slot, a foreign hook
+    /// beside it stays, and a second pass changes nothing.
+    #[test]
+    fn stale_rtok_hook_is_rewritten_in_place() {
+        let mut root = json!({"hooks": {"beforeShellExecution": [
+            {"command": "audit.sh"},
+            {"command": "/old/store/rtok/v0.1.0/rtok hook PreToolUse --host cursor"}
+        ]}});
+        let out = insert_ours(&mut root);
+        assert!(
+            out.contains(&format!("~ beforeShellExecution {}", pre_cmd())),
+            "{out}"
+        );
+        let arr = root["hooks"]["beforeShellExecution"].as_array().unwrap();
+        assert_eq!(arr.len(), 2, "{root}");
+        assert_eq!(arr[0]["command"], "audit.sh");
+        assert_eq!(arr[1]["command"], pre_cmd());
+        let current = root.clone();
+        assert_eq!(insert_ours(&mut root), NO_CHANGES);
+        assert_eq!(root, current);
     }
 }

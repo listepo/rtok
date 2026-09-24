@@ -258,6 +258,10 @@ fn table_is_ours(t: &Table, event: &str, matcher: &str) -> bool {
             .is_some_and(|c| is_ours(c, event))
 }
 
+/// Add an rtok `[[hooks]]` table per `ENTRIES` pair and bring the existing ones up to date
+/// (T242.5, T242.1's rule): an rtok table on another binary path or timeout is rewritten in
+/// place, and one on a pair `ENTRIES` no longer lists (a changed matcher) is dropped. Foreign
+/// tables are never touched.
 fn insert_ours(doc: &mut DocumentMut, timeout: u64) -> Result<String> {
     let hooks = doc
         .entry("hooks")
@@ -265,13 +269,50 @@ fn insert_ours(doc: &mut DocumentMut, timeout: u64) -> Result<String> {
     let Some(hooks) = hooks.as_array_of_tables_mut() else {
         bail!("`hooks` is not an array of tables");
     };
+    let show = |m: &str| {
+        if m.is_empty() {
+            String::new()
+        } else {
+            format!(" {m}")
+        }
+    };
+    let mut lines = Vec::new();
+    hooks.retain(|t| {
+        let event = t.get("event").and_then(Item::as_str).unwrap_or("");
+        let matcher = t.get("matcher").and_then(Item::as_str).unwrap_or("");
+        let ours = t
+            .get("command")
+            .and_then(Item::as_str)
+            .is_some_and(|c| is_ours(c, event));
+        let keep = !ours || ENTRIES.iter().any(|&(e, m)| e == event && m == matcher);
+        if !keep {
+            lines.push(format!("- [[hooks]] {event}{}", show(matcher)));
+        }
+        keep
+    });
+    let removed = lines.len();
     let bin = super::rtok_hook_bin();
-    let mut added = Vec::new();
+    let (mut added, mut updated) = (0usize, 0usize);
     for &(event, matcher) in ENTRIES {
-        if hooks.iter().any(|t| table_is_ours(t, event, matcher)) {
+        let cmd = format!("{bin} hook {event}");
+        let mut found = false;
+        for t in hooks
+            .iter_mut()
+            .filter(|t| table_is_ours(t, event, matcher))
+        {
+            found = true;
+            if t.get("command").and_then(Item::as_str) != Some(cmd.as_str())
+                || t.get("timeout").and_then(Item::as_integer) != Some(timeout as i64)
+            {
+                t["command"] = value(cmd.as_str());
+                t["timeout"] = value(timeout as i64);
+                lines.push(format!("~ [[hooks]] {event}{} {cmd}", show(matcher)));
+                updated += 1;
+            }
+        }
+        if found {
             continue;
         }
-        let cmd = format!("{bin} hook {event}");
         let mut t = Table::new();
         t["event"] = value(event);
         if !matcher.is_empty() {
@@ -280,18 +321,23 @@ fn insert_ours(doc: &mut DocumentMut, timeout: u64) -> Result<String> {
         t["command"] = value(cmd.as_str());
         t["timeout"] = value(timeout as i64);
         hooks.push(t);
-        let m = if matcher.is_empty() {
-            String::new()
-        } else {
-            format!(" {matcher}")
-        };
-        added.push(format!("+ [[hooks]] {event}{m} {cmd}"));
+        lines.push(format!("+ [[hooks]] {event}{} {cmd}", show(matcher)));
+        added += 1;
     }
-    if added.is_empty() {
-        Ok(NO_CHANGES.into())
-    } else {
-        Ok(format!("{}\n{} additions", added.join("\n"), added.len()))
+    if lines.is_empty() {
+        return Ok(NO_CHANGES.into());
     }
+    let counts = [
+        (added, "additions"),
+        (updated, "updates"),
+        (removed, "removals"),
+    ]
+    .iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(n, what)| format!("{n} {what}"))
+    .collect::<Vec<_>>()
+    .join(", ");
+    Ok(format!("{}\n{counts}", lines.join("\n")))
 }
 
 fn strip_ours(doc: &mut DocumentMut) -> String {
@@ -558,5 +604,37 @@ mod tests {
         let rm = Kimi.apply(&c, Kind::Cli, Mode::Remove).unwrap();
         assert!(rm.iter().all(|l| l == NO_CHANGES), "{rm:?}");
         let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T242.5: a stale rtok table (other binary path, other timeout) is rewritten in place, an
+    /// rtok table on a pair rtok no longer installs is dropped, a foreign table stays, and a
+    /// second pass changes nothing.
+    #[test]
+    fn stale_rtok_tables_are_rewritten_and_pruned() {
+        let mut doc: DocumentMut = "[[hooks]]\nevent = \"PreToolUse\"\nmatcher = \"Bash\"\n\
+command = \"/old/store/rtok/v0.1.0/rtok hook PreToolUse\"\ntimeout = 1\n\n\
+[[hooks]]\nevent = \"PostToolUse\"\nmatcher = \"Bash\"\ncommand = \"rtok hook PostToolUse\"\n\n\
+[[hooks]]\nevent = \"Stop\"\ncommand = \"echo other\"\n"
+            .parse()
+            .unwrap();
+        let out = insert_ours(&mut doc, 5).unwrap();
+        assert!(out.contains("- [[hooks]] PostToolUse Bash"), "{out}");
+        assert!(out.ends_with("8 additions, 1 updates, 1 removals"), "{out}");
+        let hooks = doc["hooks"].as_array_of_tables().unwrap();
+        assert_eq!(hooks.len(), 10, "{doc}");
+        let bash = hooks.get(0).unwrap();
+        let bin = super::super::rtok_hook_bin();
+        assert_eq!(
+            bash["command"].as_str(),
+            Some(format!("{bin} hook PreToolUse").as_str())
+        );
+        assert_eq!(bash["timeout"].as_integer(), Some(5));
+        assert_eq!(
+            hooks.get(1).unwrap()["command"].as_str(),
+            Some("echo other")
+        );
+        let current = doc.to_string();
+        assert_eq!(insert_ours(&mut doc, 5).unwrap(), NO_CHANGES);
+        assert_eq!(doc.to_string(), current);
     }
 }
