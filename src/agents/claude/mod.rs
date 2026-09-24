@@ -5,11 +5,16 @@
 
 pub mod migrate;
 
+use std::fmt;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::config::Config;
 use anyhow::Result;
 use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, array_at, edit_json, object_at};
+use serde::Deserialize;
+use serde::de::{Deserializer, MapAccess, Visitor};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -29,18 +34,57 @@ pub(super) const ENTRIES: &[(&str, &str)] = &[
     ("SessionEnd", ""),
 ];
 
-/// Claude's own list: [`ENTRIES`] plus `SubagentStart`, the spawn brief's event (T130.2).
-/// Kimi takes `ENTRIES` wholesale and has not been cleared for it, so it stays out of there.
-const CLAUDE_ENTRIES: &[(&str, &str)] = &{
-    let mut out = [("", ""); ENTRIES.len() + 1];
-    let mut i = 0;
-    while i < ENTRIES.len() {
-        out[i] = ENTRIES[i];
-        i += 1;
+/// Claude's own list, read from the plugin's `hooks/hooks.json` in file order — the one place
+/// it is written (T262.1), so the GitHub plugin install and the settings-file install cannot
+/// drift. It is [`ENTRIES`] plus `SubagentStart`, the spawn brief's event (T130.2); Kimi takes
+/// `ENTRIES` wholesale and discards a `SubagentStart` hook's output, so it stays out of there.
+fn claude_entries() -> &'static [(&'static str, &'static str)] {
+    static LIST: LazyLock<Vec<(&str, &str)>> = LazyLock::new(|| {
+        serde_json::from_str::<PluginHooks>(include_str!(
+            "../../../plugins/claude/hooks/hooks.json"
+        ))
+        .expect("plugins/claude/hooks/hooks.json parses (plugin_tree_matches_the_installer)")
+        .hooks
+        .0
+    });
+    &LIST
+}
+
+#[derive(Deserialize)]
+struct PluginHooks<'a> {
+    #[serde(borrow)]
+    hooks: Events<'a>,
+}
+
+#[derive(Deserialize)]
+struct Matcher<'a> {
+    #[serde(borrow)]
+    matcher: Option<&'a str>,
+}
+
+/// `(event, matcher)` pairs of a `hooks` object in file order; a `Value` would sort the events
+/// (no `preserve_order` here) and reorder every install report.
+struct Events<'a>(Vec<(&'a str, &'a str)>);
+
+impl<'de: 'a, 'a> Deserialize<'de> for Events<'a> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Visit<'a>(PhantomData<&'a ()>);
+        impl<'de: 'a, 'a> Visitor<'de> for Visit<'a> {
+            type Value = Events<'a>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a map of hook events")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Events<'a>, A::Error> {
+                let mut out = Vec::new();
+                while let Some((event, list)) = map.next_entry::<&'a str, Vec<Matcher<'a>>>()? {
+                    out.extend(list.into_iter().map(|m| (event, m.matcher.unwrap_or(""))));
+                }
+                Ok(Events(out))
+            }
+        }
+        d.deserialize_map(Visit(PhantomData))
     }
-    out[i] = ("SubagentStart", "");
-    out
-};
+}
 
 /// T174: `rtok_command()` deliberately keeps the bare name on non-Windows even when PATH
 /// lookup fails (an absolute path is the Windows spawn edge, not a Unix one) — so a settings
@@ -84,7 +128,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
                 &a,
                 path,
                 root.get_mut("hooks"),
-                CLAUDE_ENTRIES,
+                claude_entries(),
                 "timeout",
                 timeout,
             )
@@ -92,7 +136,7 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
             let bin = super::rtok_hook_bin();
             insert_ours(
                 object_at(root, "hooks"),
-                CLAUDE_ENTRIES,
+                claude_entries(),
                 &bin,
                 "timeout",
                 cfg.setup.hook_timeout_s,
@@ -903,14 +947,14 @@ mod tests {
                 &yes,
                 at,
                 root.get_mut("hooks"),
-                CLAUDE_ENTRIES,
+                claude_entries(),
                 "timeout",
                 5,
             )
         } else {
             insert_ours(
                 object_at(&mut root, "hooks"),
-                CLAUDE_ENTRIES,
+                claude_entries(),
                 "rtok",
                 "timeout",
                 5,
@@ -1084,8 +1128,11 @@ mod tests {
         let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
         let hooks = parse(include_str!("../../../plugins/claude/hooks/hooks.json"));
         let timeout = Config::default().setup.hook_timeout_s;
+        // T262.1: the file is the list; the shared `ENTRIES` other hosts take must lead it.
+        assert_eq!(claude_entries()[..ENTRIES.len()], *ENTRIES);
+        assert!(claude_entries().contains(&("SubagentStart", "")));
         let mut want = json!({});
-        for &(event, matcher) in CLAUDE_ENTRIES {
+        for &(event, matcher) in claude_entries() {
             // T178: `rtok` on PATH is exec'd from Claude Code's own shell; `hook.sh` (a second
             // shell, ~6 ms) only runs when PATH has no `rtok` (desktop app, fail-open hint).
             let cmd = format!(
