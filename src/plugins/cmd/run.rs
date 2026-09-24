@@ -547,15 +547,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         );
-        assert_eq!(
-            run(&c, &["printf".into(), payload.clone()], None).unwrap(),
-            0
-        );
-        let inner = format!("printf '%s\n' '{}'", payload.trim_end_matches('\n'));
-        assert_eq!(
-            run(&c, &["sh".into(), "-c".into(), inner], None).unwrap(),
-            0
-        );
+        // Two argv lists, one output: the same bytes in two files, each printed by the host
+        // shell's own file printer — cmd.exe has no `printf` and a newline ends its command
+        // line (T83.11).
+        let print = if shell_kind(&shell(&c)) == ShellKind::Cmd {
+            "type"
+        } else {
+            "cat"
+        };
+        for name in ["a.txt", "b.txt"] {
+            let path = dir.join(name);
+            fs::write(&path, &payload).unwrap();
+            let argv = [print.into(), path.display().to_string()];
+            assert_eq!(run(&c, &argv, None).unwrap(), 0);
+        }
         let store = crate::store::Store::open(&c.core.db_path).unwrap();
         let rows = store.list_measurements("cmd").unwrap();
         let dedup = rows.iter().filter(|r| r.kind == "dedup").count();
