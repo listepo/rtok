@@ -64,7 +64,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
-| T206 | todo | P2 | 3 | 0% | |
 | T210 | todo | P2 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T212 | todo | P2 | 2 | 0% | |
@@ -771,14 +770,6 @@ Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind
 Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
 
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
-
-### T206. `rtok web` builds each snapshot inline while holding the config mutex
-
-Found 2026-09-22 in the surfaces pass: every 2 s tick per connection runs `model::snapshot` synchronously in `socket_loop` with `DashState::cfg` locked across the frame (`src/web/mod.rs:251-281`), and the snapshot includes `doctor_for_snapshot` (spawning MCP probes) and `stats_skills`' whole-transcript parse (I-87 / T135's ~36 s CPU per TTL miss) plus blocking `fetch_live` HTTP in the tick (`src/web/model.rs:1246-1251`). `health()` and `inbound()` take the same mutex, so one cache-miss freeze blocks every socket and `/health` (used by demon/doctor) — the process reads as hung. T113 fixed only the TUI thread; the `rtok web` async/lock defect itself is new.
-
-Plan: clone/`Arc` the `Config`, build each snapshot in `spawn_blocking` without holding the lock, and coalesce concurrent ticks into one in-flight build shared by all sockets. (The transcript-parse burn itself is T135.)
-
-Check: `health_answers_during_a_snapshot_build` — busy fixture store + several WS clients, `/health` p95 < 250 ms while ticks run; `ws_set_accepts_plugin_enabled` green; `just test` green.
 
 ### T210. `measurements (session, ts)` has no index on never-pruned tables
 
