@@ -71,3 +71,7 @@
 - T246.3. Hook entries
 - T246.4. Shipped skills
 - T246.5. zed and grok MCP entries
+- T248.1. Codex plugin hooks find `rtok` off `PATH`
+- T248.2. Copilot hooks find `rtok` off `PATH`
+- T248.3. Cursor hooks find `rtok` off `PATH`
+- T248.4. Grok plugin hooks find `rtok` off `PATH`
