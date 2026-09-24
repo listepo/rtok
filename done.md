@@ -5326,6 +5326,23 @@ Done: `emit_filtered` (`src/plugins/cmd/run.rs`) now short-circuits when `body.l
 Check result: `cargo nextest run` for `plugins::cmd::run::tests` (18/18, including `tiny_body_passes_through_verbatim_with_no_negative_saving` and the padded `archive_keeps_bytes_that_are_not_utf8`), `plugins::cmd::filter::tests` (3/3) and `--test lossless_roundtrip` (2/2) all green; `just check` (fmt, clippy, full test suite) green.
 Model: Claude Code / claude-sonnet-5
 
+### T235.1. `rtok run` waits for the wrapped process, not for EOF on its pipe
+
+Findings from a load incident on the creator's machine (16 cores, load average ~120). The load came from a stress script in another agent session (24 busy loops plus repeated `cargo nextest`), not from rtok: every rtok process sat at ~0% CPU — 15 `rtok mcp` (one per agent session, every parent alive, ~15 MB RSS each) and `rtok demon supervise proxy` with its `rtok proxy`. Two rtok costs still showed up:
+
+- `rtok run` hangs after the wrapped command has exited when a detached grandchild inherits its output pipe. Reproduced with `rtok run -- ... wt.sh new ...` in a repository with `core.fsmonitor=true`: `git worktree add` started `git fsmonitor--daemon run --detach`, which keeps fd 6 — the write end of rtok's capture pipe (`lsof` shows the pair `rtok 6 PIPE ->` / `git 6 PIPE ->`). The child zsh was already `<defunct>` (exited, not reaped) while `rtok run` still blocked reading for EOF, so the agent's call ran into its 60 s timeout and had to be killed. Any daemonising command (fsmonitor, `gradle --daemon`, `sccache`, a backgrounded server) triggers it.
+
+Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild. Split 2026-09-24 into T235.1–T235.3 (one PR each). 
+
+Execution plan: (1) `plugins/cmd/run.rs::run` — spawn with piped stdout/stderr instead of `output()`; one reader thread per pipe appends into a shared buffer; `wait()` the child, then give the readers a bounded drain (200 ms) and take what is buffered, leaving a reader still blocked by a grandchild behind (the process exits anyway); (2) unit test: `rtok run` of a script that backgrounds `sleep 30` holding stdout returns in well under the sleep with the parent's output and exit code; (3) `just check`.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `run` used `Command::output()`, which reads both pipes to EOF, so any descendant holding the write end kept `rtok run` blocked after the shell had exited. New `capture` in `plugins/cmd/run.rs`: stdout and stderr each go to a reader thread appending into a shared buffer; the main thread `wait()`s the shell, then waits at most `DRAIN_AFTER_EXIT` (200 ms) for both readers to reach EOF and takes what is buffered. A reader still blocked by a grandchild is left behind and dies with the process. Output order (stdout, then stderr) and exit code are unchanged; stdin stays null as with `output()`. Without a descendant both readers hit EOF right away, so the common path gains no wait.
+
+Check result: new unit test `capture_returns_when_the_child_exits_though_a_grandchild_holds_the_pipe` (`sh -c 'echo hi; sleep 20 & exit 4'`) returns `hi\n` and exit 4 in 0.28 s. With `output()` it would block for the full 20 s. `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T170. A slow hook is logged, not only printed to stderr
 
 Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.
