@@ -47,7 +47,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T204 | todo | P3 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
-| T216 | todo | P3 | 2 | 0% | |
 | T221 | todo | P2 | 2 | 0% | |
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
@@ -617,14 +616,6 @@ Found 2026-09-22 in the surfaces pass: `initialize` (`src/mcp.rs:208-231`) disca
 Plan: return the client's `protocolVersion` when supported (else a pinned constant) and pin it in tests; `message: "Method not found"`; one `require_str`/`require_int` helper per handler enforcing each schema's `required` list before any store write, mapped to `-32602` in `call_tool`.
 
 Check: `initialize_names_the_server_rtok` asserts the pinned `result.protocolVersion`; `batch_answers_with_an_array` asserts "Method not found"; `mem_save` with `{"title":"t"}` returns `isError` "invalid params: missing `body`" and the notes table stays empty; `just test` green.
-
-### T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-
-Found 2026-09-22 in the host-plugins pass: `tests/trycmd/agents-list*.toml` match `stdout = """…"""` / `[…]` — wildcards that assert nothing, so a lost host row, a broken block header or a malformed `--json` array all pass and "re-blessing" is a no-op. And `tests/host_docs.rs:20-40` slices `text.split("## Docs").nth(1)` to end-of-file and requires `links >= 1` — a `## Docs` list with zero links passes when any later section has an `https://` line, and nothing checks the links are the host's current config/plugin docs. Both blind spots are why drift like T197's README contradiction survives.
-
-Plan: normalize machine-specific lines and snapshot the remainder per host id (or one Rust test looping `HOSTS` × `variants()` asserting block headers); slice `## Docs` to the next `\n## ` heading and require ≥ 2 links with per-host URL needles (extending the `SKILL_HOSTS` pattern).
-
-Check: deleting one variant from a host's `VARIANTS` fails `cargo nextest run --test cli_trycmd` (or the header-loop test); an emptied `## Docs` list with links only in a later section fails `host_docs`; `RTOK_BLESS=1` re-bless restores; `just check` green.
 
 ### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 
