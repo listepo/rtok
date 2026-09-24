@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rtok_agent_sdk::{Apply, KETCH_INSTALL, NO_CHANGES, edit_json};
+use rtok_agent_sdk::{Apply, NO_CHANGES, edit_json};
 use serde_json::{Value, json};
 
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -121,26 +121,28 @@ impl Agent for Copilot {
     }
 
     fn apply(&self, cfg: &Config, _kind: Kind, mode: Mode) -> Result<Vec<String>> {
-        let remove = mode == Mode::Remove;
-        let head = plugin(cfg, remove)?;
-        if remove || plugin_installed(cfg) {
-            // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so
-            // rtok's own hooks/rtok.json and mcp-config.json entry go instead of coming
-            // (kimi's `plugin_detected` rule), on the same run that installs it too.
-            return Ok(vec![
-                head,
-                run(cfg, true)?,
-                unregister_mcp(cfg)?,
-                super::skill::sync("copilot", cfg, remove)?,
-            ]);
-        }
-        let mut lines = vec![head, run(cfg, false)?];
-        if cfg.setup.mcp {
-            lines.push(register_mcp(cfg)?);
-        }
-        lines.push(super::skill::sync("copilot", cfg, false)?);
-        Ok(lines)
+        // D21: the plugin is the unit — its hooks and `rtok mcp` serve already, so rtok's
+        // own hooks/rtok.json and mcp-config.json entry go instead of coming (kimi's
+        // `plugin_detected` rule), on the same run that installs it too.
+        super::d21_plugin_apply(
+            cfg,
+            mode,
+            super::D21Plugin {
+                offer: plugin,
+                plugin_installed,
+                run,
+                register_mcp,
+                unregister_mcp,
+            },
+            skill_sync,
+        )
     }
+}
+
+/// The [`super::d21_plugin_apply`] `extra` for Copilot: `skill::sync` runs on every apply,
+/// install or remove alike (T234).
+fn skill_sync(cfg: &Config, remove: bool) -> Result<Option<String>> {
+    Ok(Some(super::skill::sync("copilot", cfg, remove)?))
 }
 
 /// Write, dry-run, or delete `hooks/rtok.json`. The file is rtok's, so apply means "make it
@@ -229,12 +231,7 @@ pub fn plugin_installed(cfg: &Config) -> bool {
             .into_iter()
             .flatten()
             .flatten()
-            .any(|e| {
-                fs::read_to_string(e.path().join("plugin.json"))
-                    .ok()
-                    .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-                    .is_some_and(|v| v.get("name").and_then(Value::as_str) == Some(NAME))
-            })
+            .any(|e| super::manifest_names(&e.path(), "plugin.json", NAME))
     })
 }
 
@@ -253,44 +250,22 @@ fn copilot_cli(cfg: &Config, args: &[&str]) -> std::result::Result<(), String> {
 /// `installed-plugins/`, that store is Copilot's, so the flag never turns the printed line
 /// into state (`installed()` reads the marker alone). A failing or missing `copilot` keeps
 /// the offer open instead of failing the install: the settings-file hooks still go in.
+/// Shares its skeleton with `gemini::plugin` through `super::offer_plugin` (D21).
 fn plugin(cfg: &Config, remove: bool) -> Result<String> {
-    let a = apply(cfg);
     let installed = plugin_installed(cfg);
-    if remove {
-        if !installed {
-            return Ok(NO_CHANGES.into());
-        }
-    } else if installed || !a.yes {
-        return Ok(NO_CHANGES.into());
-    }
-    let src = super::plugin_src(PLUGIN_SRC);
-    let shown = if remove {
-        format!("copilot plugin uninstall {NAME}")
-    } else {
-        format!("copilot plugin install {}", src.display())
-    };
-    if a.dry_run {
-        return Ok(if remove {
-            format!("- plugin {NAME} ({shown})")
-        } else {
-            format!("offer {PLUGIN_SRC} → {shown} {KETCH_INSTALL}")
-        });
-    }
-    let args: Vec<&str> = if remove {
-        vec!["plugin", "uninstall", NAME]
-    } else {
-        vec!["plugin", "install", src.to_str().unwrap_or_default()]
-    };
-    match copilot_cli(cfg, &args) {
-        Ok(()) => Ok(if remove {
-            format!("- plugin {NAME}")
-        } else {
-            format!("+ plugin {PLUGIN_SRC} → {NAME}")
-        }),
-        Err(e) => Ok(format!(
-            "offer {PLUGIN_SRC} → {shown} (copilot failed: {e})"
-        )),
-    }
+    super::offer_plugin(
+        cfg,
+        remove,
+        installed,
+        super::PluginOffer {
+            bin: "copilot",
+            name: NAME,
+            src_rel: PLUGIN_SRC,
+            install_verb: &["plugin", "install"],
+            uninstall_verb: &["plugin", "uninstall"],
+        },
+        |args| copilot_cli(cfg, args),
+    )
 }
 
 #[cfg(test)]

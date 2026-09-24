@@ -11,7 +11,7 @@
 | hooks | yes | `hooks.<Event>[]` → `{hooks: [{type: "command", command: "rtok hook <Event> --host gemini", timeout}]}` on BeforeTool, AfterTool, BeforeAgent, SessionStart, SessionEnd, PreCompress — no `matcher`, so every call fires (a Claude-shaped tool-name matcher would never match Gemini's own tool names) |
 | mcp | yes | `mcpServers.rtok` → `rtok mcp` in `settings.json` as `{command, args}` (off with `[setup] mcp = false`) |
 | proxy | no | Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API |
-| plugin | no | the extension tree ships in T118.3; no local plugin directory to link yet |
+| plugin | `--yes` | `gemini extensions link <plugins/gemini>` (T118.3); D21 — while linked, `hooks`/`mcp` above go instead of coming |
 
 `--host gemini` (T118.1) maps Gemini's own event names to Claude's before the shared
 plugins run (`BeforeTool`→`PreToolUse`, `AfterTool`→`PostToolUse`, `BeforeAgent`→
@@ -37,4 +37,4 @@ Host documentation setup writes against; re-check the links when this host chang
 - Hooks (`hooks.<Event>[]`, event names, `matcher`/`hooks`/`type`/`command`/`timeout` shape): https://geminicli.com/docs/hooks/reference/
 - MCP (`mcpServers.<name>`, `command`/`args`/`env`/`timeout`/`trust`): https://geminicli.com/docs/tools/mcp-server/
 - Enterprise/base-URL configuration (no proxy-able model endpoint): https://geminicli.com/docs/cli/enterprise/
-- Extensions (`gemini extensions install/link/uninstall`, T118.3): https://geminicli.com/docs/extensions/reference/
+- Extensions (`gemini-extension.json` fields, `hooks/hooks.json`, `~/.gemini/extensions/`, `gemini extensions link/install/uninstall`, T118.3, fetched 2026-09-24): https://geminicli.com/docs/extensions/reference/
