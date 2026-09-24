@@ -58,7 +58,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
-| T177 | todo | P2 | 3 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
@@ -468,14 +467,6 @@ Found in the 2026-09-22 audit: 380 hook errors `/bin/sh: rtok: command not found
 Plan: make the Claude Code plugin's hook command resolve `rtok` (PATH, then `~/.ketch/bin/rtok`) and, when absent, exit 0 silently except one SessionStart note naming `ketch install listepo/rtok`; apply the same to the other host plugins that shell out to `rtok`.
 
 Check: a plugin test runs the hook command with an empty `PATH` and no binary: exit 0, empty stdout except the one SessionStart note; `just test` green.
-
-### T177. Large source dumps through `cat`/`sed`/`grep` get a filter
-
-Found in the 2026-09-22 audit: 77% of Bash result bytes (16.4 MB in 7 days) carry no rtok marker. Much of it is below the size gate by design, but the top groups are large source dumps with no rule: `sed` 2.7 MB, `grep` 2.0 MB, `cat` 1.4 MB, newline-separated multi-command scripts 2.4 MB (only `&&`/`;` chains are split), `git diff` 0.3 MB.
-
-Plan: first split the numbers by "below size gate" vs "no rule matched" in `rtok stats`; then add rules for unbounded multi-file `cat`, large `grep -r` hit lists and newline-joined scripts in `src/plugins/cmd/rules.rs`, coordinated with T176 so bounded reads stay whole.
-
-Check: `rtok stats` shows the unmatched-rule share; rule tests for each new family; saving recorded as `Measurement` rows; `just test` green.
 
 ### T178. Hook wall-clock time as Claude Code sees it
 

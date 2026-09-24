@@ -232,7 +232,7 @@ Stated plainly, because §4 is only worth reading if this section exists.
   supersede / pin) landed in T69.1. The plant-and-recall bench (T69.3, `research.md` §14)
   is 20/20 FTS5 and P29 hybrid at N=100 against this generator; `half_life_days` ranking
   did not ship (T69.2), so that row is N/A. Never cite graymatter's 83 % as rtok's.
-- **Smaller filter library than rtk and sqz.** 27 rule families in `rules/default.toml` plus
+- **Smaller filter library than rtk and sqz.** 28 rule families in `rules/default.toml` plus
   ten per-family formatters, against rtk's ~80 filters and sqz's 45+ (`research.md` §11;
   the T65.1 content-hash dedup, T65.2 JSON compact and T65.3 column collapse are in —
   the library itself is still the smallest of the three).

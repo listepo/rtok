@@ -23,7 +23,11 @@ file is skipped at runtime (fail open) and reported by
 
 One TOML table per command family. The table name is the command's first word
 (`[grep]`, `[pytest]`); unknown families fall back to the default rule
-(`max_lines = 40`, `head = 10`, `tail = 10`, dedupe on).
+(`max_lines = 40`, `head = 10`, `tail = 10`, dedupe on). One exception: a single Bash
+string that chains 2+ DISTINCT programs with `&&`, `;`, or a newline (T177) is not one
+family's output — it is matched against `[script]` instead. A same-program chain
+(`cargo build && cargo test`, or with a leading `cd`/`export`) keeps using that program's
+own formatter/rule.
 
 The same engine cuts foreign MCP results behind `rtok mcp -- <server argv>` (T59.4): a
 `[mcp]` section is the rule for every wrapped server's `tools/call` text block, the default
