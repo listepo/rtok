@@ -547,6 +547,9 @@ fn dry_run_remove_writes_nothing() {
 /// stick: a host materializes our plugin symlink into a plain copy, so the dest holds
 /// our tree with no marker and no link; `installed()` counted any metadata there, so
 /// the mark stayed on while remove left the "foreign" directory in place.
+/// Unix only (T83.13): Windows installs a marked copy that `windows_copy` rewrites, not a
+/// link, so there is no symlink for a host to materialize.
+#[cfg(unix)]
 #[test]
 fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
     let home = tmp("cursor-marks");
@@ -585,6 +588,7 @@ fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
 }
 
 /// `fs::copy` has no directory form; the tree here is small and shallow enough.
+#[cfg(unix)]
 fn copy_tree(src: &std::path::Path, dest: &std::path::Path) {
     fs::create_dir_all(dest).unwrap();
     for entry in fs::read_dir(src).unwrap() {
