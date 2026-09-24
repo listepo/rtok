@@ -37,7 +37,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T223 | todo | P3 | 2 | 0% | |
 | T235.2 | todo | P1 | 2 | 0% | |
 | T260 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
@@ -502,16 +501,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
 
-
-### T223. `windows-sys` linked in three versions
-
-Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
-
-Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
-
-Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
-
-Blocked (2026-09-24, checked against the lockfile): no in-range update removes a copy. `windows-sys` 0.52.0 comes from `ring` 0.17.14 (latest release; pulled by `rustls-webpki` / `quinn-proto`), 0.60.2 from `notify` 8.2.0 (latest stable; 9 is `9.0.0-rc.5`). Needs a creator decision: `notify` 9 once it leaves RC (drops 0.60), and a rustls crypto provider other than `ring` or a new `ring` release (drops 0.52).
 
 ### T235.2. `rtok run` starts no login shell per call
 
