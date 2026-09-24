@@ -273,6 +273,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Also remove rtok entries you changed, without asking (T246)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -281,6 +282,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Also remove rtok entries you changed, without asking (T246)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -289,6 +291,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Also remove rtok entries you changed, without asking (T246)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break
@@ -297,6 +300,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Print what would be removed and exit')
             [CompletionResult]::new('--no-restart', '--no-restart', [CompletionResultType]::ParameterName, 'Skip closing/reopening a running desktop app around the write (T141)')
+            [CompletionResult]::new('--yes', '--yes', [CompletionResultType]::ParameterName, 'Also remove rtok entries you changed, without asking (T246)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
             break

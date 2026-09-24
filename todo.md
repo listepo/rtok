@@ -74,4 +74,6 @@
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
 - T245. One tool call is processed once
-- T246. Removal takes back only what rtok wrote, and asks about what the user changed
+- T246.2. MCP entries of the remaining hosts
+- T246.3. Hook entries
+- T246.4. Shipped skills

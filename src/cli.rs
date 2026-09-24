@@ -608,6 +608,9 @@ struct RemoveArgs {
     /// Skip closing/reopening a running desktop app around the write (T141)
     #[arg(long)]
     no_restart: bool,
+    /// Also remove rtok entries you changed, without asking (T246)
+    #[arg(long)]
+    yes: bool,
 }
 
 #[derive(clap::Args)]
@@ -679,7 +682,7 @@ impl SetupArgs {
             dry_run: args.dry_run,
             remove: true,
             mode: Vec::new(),
-            yes: false,
+            yes: args.yes,
             replace: false,
             mcp: false,
             proxy: false,

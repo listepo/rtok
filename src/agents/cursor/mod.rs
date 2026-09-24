@@ -154,7 +154,7 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
 
 /// Drop `mcpServers.rtok` from `~/.cursor/mcp.json` (`rtok agents remove cursor`).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_mcp(&apply(cfg), &mcp_path(cfg), "rtok")
+    super::unregister_mcp_ours(cfg, &mcp_path(cfg), "rtok")
 }
 
 /// The linked Cursor plugin (D21, T10.5). Dry-run and the unaccepted offer MUST contain the

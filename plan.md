@@ -85,7 +85,9 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T245 | todo | P2 | 3 | 0% | |
-| T246 | todo | P1 | 4 | 0% | |
+| T246.2 | todo | P1 | 2 | 0% | |
+| T246.3 | todo | P1 | 3 | 0% | |
+| T246.4 | todo | P2 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -537,11 +539,21 @@ Plan: `tests/one_call_once.rs` — per host payload fixture set, feed every even
 
 Check: the test goes red when the `afterMCPExecution` path records its own row; `just check` green.
 
-### T246. Removal takes back only what rtok wrote, and asks about what the user changed
+### T246.2. MCP entries of the remaining hosts
 
-Creator request 2026-09-24: removing rtok (`agents remove <host>`, and the plugin-supersedes strips of T243) must take back only what rtok itself wrote; anything the user changed in it is asked about — remove or keep. Today `rtok_agent_sdk::unregister_server` drops any entry named `rtok` whatever its command, and `skill::sync` removes a marked rtok skill even after the user edited it. Hooks already go through `strip_ours` + `is_rtok_bin`, but a user-edited rtok hook (other matcher, timeout, extra args) goes silently too.
+T246.1–T246.4 (T246.1 done), creator request 2026-09-24: removing rtok (`agents remove <host>`, and the plugin-supersedes strips of T243) must take back only what rtok itself wrote; anything the user changed in it is asked about — remove or keep. Today `rtok_agent_sdk::unregister_server` drops any entry named `rtok` whatever its command, and `skill::sync` removes a marked rtok skill even after the user edited it. Hooks already go through `strip_ours` + `is_rtok_bin`, but a user-edited rtok hook (other matcher, timeout, extra args) goes silently too.
 
-Plan: one ownership check per kind, three outcomes — **ours, unchanged** (equal to what the installer writes now): remove; **ours, changed by the user**: ask `? remove <what> in <file>? you changed it [y/N]` through a new SDK prompt whose default (Enter, EOF) is keep, `--yes` removes, no terminal keeps and names it in the report (`leave … (changed by you; remove by hand)`); **not ours**: leave and name it. Split: T246.1 MCP entries (`unregister_server` compares the entry with the one `register_server` would write; `is_rtok_bin` on the command) and hook entries (per host `strip_ours` compares with the written shape); T246.2 shipped skills (compare the copy with `skills/<name>`). Tests per outcome in `crates/rtok-agent-sdk` and `tests/agent_remove.rs`: unchanged entry removed, edited entry kept without `--yes` on a pipe and removed with it, foreign `rtok` entry untouched; the same three for a skill.
+Outcomes, one ownership check per kind: **ours, unchanged** (equal to what the installer writes now, any rtok binary path counting as the same): remove; **ours, changed by the user** (it runs rtok, but differs): ask `? remove <what> in <file>? you changed it [y/N]` through a new SDK prompt whose default (Enter, EOF) is keep; `--yes` removes; no terminal keeps and reports `leave … (changed by you; remove by hand)`; **not ours** (named `rtok` but not running rtok): leave it and report `leave … (not rtok's; remove by hand)`. A `leave` report writes nothing. Split below so each PR stays under 10 files.
+
+gemini, copilot, omp, windsurf, vscode, kimi, opencode (and kilo through it), zcode: each builds its entry in one `mcp_entry(cmd)` used by register and `unregister_ours`; then the name-only `rtok_agent_sdk::unregister_server`/`unregister_mcp` go private or go. zed (JSONC editor) and grok (TOML) take the same check on their own writers.
+
+### T246.3. Hook entries
+
+Per host `strip_ours` compares each rtok hook with the shape the installer writes; an edited rtok hook (matcher, timeout, extra args) is asked about.
+
+### T246.4. Shipped skills
+
+`skill::sync` compares the marked copy with `skills/<name>`; an edited copy is asked about.
 
 Check: those tests green; `just check` green.
 

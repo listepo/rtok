@@ -304,9 +304,20 @@ pub fn register_mcp(
     command: &str,
     args: &[&str],
 ) -> Result<String> {
-    let entry = json!({"type": "stdio", "command": command, "args": args});
     let summary = format!("{command} {}", args.join(" "));
-    register_server(apply, path, "mcpServers", name, entry, &summary)
+    register_server(
+        apply,
+        path,
+        "mcpServers",
+        name,
+        mcp_entry(command, args),
+        &summary,
+    )
+}
+
+/// The `mcpServers.<name>` entry [`register_mcp`] writes.
+pub fn mcp_entry(command: &str, args: &[&str]) -> Value {
+    json!({"type": "stdio", "command": command, "args": args})
 }
 
 /// [`register_mcp`] for a host whose server map or entry has another shape: OpenCode keeps
@@ -363,6 +374,69 @@ pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> R
     })
 }
 
+/// [`unregister_server`] that takes back only what rtok wrote (T246). `ours` is the entry the
+/// installer writes now; `is_bin` says whether a string names the rtok binary, so any rtok
+/// path counts as the same. An entry equal to `ours` goes. One that runs rtok but differs was
+/// changed by the user: it goes only when [`confirmed`]; else it stays and the report says
+/// `leave …`, which writes nothing. One that does not run rtok is not rtok's and stays.
+pub fn unregister_owned(
+    apply: &Apply,
+    path: &Path,
+    key: &str,
+    name: &str,
+    ours: &Value,
+    is_bin: fn(&str) -> bool,
+) -> Result<String> {
+    let have = key
+        .split('.')
+        .try_fold(&read_json(path)?, |o, k| o.get(k))
+        .and_then(|s| s.get(name))
+        .cloned();
+    let Some(have) = have else {
+        return Ok(NO_CHANGES.into());
+    };
+    let at = format!("{key}.{name} in {}", path.display());
+    if !runs_bin(&have, is_bin) {
+        return Ok(format!("leave {at} (not rtok's; remove by hand)"));
+    }
+    let changed = rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin);
+    if changed && apply.dry_run && !apply.yes {
+        return Ok(format!("? {at} (changed by you; remove asks)"));
+    }
+    if changed && !confirmed(apply, &format!("remove {at}? you changed it")) {
+        return Ok(format!("leave {at} (changed by you; remove by hand)"));
+    }
+    unregister_server(apply, path, key, name)
+}
+
+fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
+    match v {
+        Value::String(s) => is_bin(s),
+        Value::Array(a) => a.iter().any(|x| runs_bin(x, is_bin)),
+        Value::Object(m) => m.values().any(|x| runs_bin(x, is_bin)),
+        _ => false,
+    }
+}
+
+/// `v` with every string naming the rtok binary replaced by one placeholder.
+fn rtok_as_one(v: &Value, is_bin: fn(&str) -> bool) -> Value {
+    match v {
+        Value::String(s) if is_bin(s) => Value::Null,
+        Value::Array(a) => a.iter().map(|x| rtok_as_one(x, is_bin)).collect(),
+        Value::Object(m) => m
+            .iter()
+            .map(|(k, x)| (k.clone(), rtok_as_one(x, is_bin)))
+            .collect(),
+        _ => v.clone(),
+    }
+}
+
+/// [`accepted`] for a question whose default is no: `[y/N]`, and Enter keeps what is there.
+/// `--yes` still accepts; no terminal is a no.
+pub fn confirmed(apply: &Apply, question: &str) -> bool {
+    ask(apply, question, false)
+}
+
 /// Ask, unless the answer is already known. `--yes` accepts without asking; a terminal gets
 /// one plain line on stdout (`? {question} [Y/n] `) — no raw mode, no hidden cursor, and a
 /// redirected or busy stderr can never hide the question (T81). Enter takes the default
@@ -370,6 +444,10 @@ pub fn unregister_server(apply: &Apply, path: &Path, key: &str, name: &str) -> R
 /// acts. Anywhere without a terminal an unanswered question is a no, so `agents install`
 /// stays non-interactive by default.
 pub fn accepted(apply: &Apply, question: &str) -> bool {
+    ask(apply, question, true)
+}
+
+fn ask(apply: &Apply, question: &str, default: bool) -> bool {
     if apply.yes {
         return true;
     }
@@ -378,7 +456,8 @@ pub fn accepted(apply: &Apply, question: &str) -> bool {
     }
     use std::io::Write;
     let mut out = std::io::stdout();
-    let _ = write!(out, "? {question} [Y/n] ");
+    let hint = if default { "[Y/n]" } else { "[y/N]" };
+    let _ = write!(out, "? {question} {hint} ");
     let _ = out.flush();
     let mut line = String::new();
     let read = std::io::stdin().read_line(&mut line);
@@ -386,14 +465,17 @@ pub fn accepted(apply: &Apply, question: &str) -> bool {
     match read {
         // 0 bytes is EOF: never act on a question nobody answered.
         Ok(0) => false,
-        Ok(_) => line_is_yes(&line),
+        Ok(_) => answer(&line, default),
         Err(_) => false,
     }
 }
 
-/// Enter keeps the default (`y`); explicit y/yes accept; anything else declines.
-fn line_is_yes(line: &str) -> bool {
-    matches!(line.trim().to_ascii_lowercase().as_str(), "" | "y" | "yes")
+/// Enter takes `default`; explicit y/yes accept; anything else declines.
+fn answer(line: &str, default: bool) -> bool {
+    match line.trim().to_ascii_lowercase().as_str() {
+        "" => default,
+        a => matches!(a, "y" | "yes"),
+    }
 }
 
 /// A host plugin directory this repo ships, and where that host loads it from (D21 (6)).
@@ -802,13 +884,74 @@ mod tests {
     /// dialoguer `.default(true)` contract), and only y/yes spell yes.
     #[test]
     fn the_answer_line_keeps_the_default_yes_contract() {
-        assert!(line_is_yes("\n"));
-        assert!(line_is_yes(""));
-        assert!(line_is_yes(" y \n"));
-        assert!(line_is_yes("YES\n"));
-        assert!(!line_is_yes("n\n"));
-        assert!(!line_is_yes("no\n"));
-        assert!(!line_is_yes("maybe\n"));
+        assert!(answer("\n", true));
+        assert!(answer("", true));
+        assert!(answer(" y \n", true));
+        assert!(answer("YES\n", true));
+        assert!(!answer("n\n", true));
+        assert!(!answer("no\n", true));
+        assert!(!answer("maybe\n", true));
+    }
+
+    #[test]
+    fn enter_keeps_the_default_no_of_a_confirm() {
+        assert!(!answer("\n", false));
+        assert!(!answer("", false));
+        assert!(answer("y\n", false));
+        assert!(!confirmed(&apply(), "remove?"), "a headless run must keep");
+        assert!(confirmed(&YES, "remove?"));
+    }
+
+    fn rtok_stem(s: &str) -> bool {
+        Path::new(s).file_name().is_some_and(|n| n == "rtok")
+    }
+
+    /// T246: remove takes back an entry as rtok wrote it — any rtok path counts as the same —
+    /// keeps an edited one without `--yes` (and without writing), removes it with `--yes`, and
+    /// never touches an entry named `rtok` that does not run rtok.
+    #[test]
+    fn unregister_owned_takes_back_only_what_rtok_wrote() {
+        let path = tmp("owned").join("mcp.json");
+        let ours = mcp_entry("rtok", &["mcp"]);
+        let go = |a: &Apply| unregister_owned(a, &path, "mcpServers", "rtok", &ours, rtok_stem);
+        let seed = |entry: Value| {
+            let body = json!({"mcpServers": {"rtok": entry, "other": {"command": "x"}}});
+            fs::write(&path, body.to_string()).unwrap();
+        };
+
+        seed(mcp_entry("/opt/bin/rtok", &["mcp"]));
+        assert_eq!(go(&apply()).unwrap(), "- mcpServers.rtok");
+        assert!(read_json(&path).unwrap()["mcpServers"]["other"].is_object());
+        assert_eq!(go(&apply()).unwrap(), NO_CHANGES);
+
+        let edited =
+            json!({"type": "stdio", "command": "rtok", "args": ["mcp"], "env": {"A": "1"}});
+        seed(edited.clone());
+        let before = fs::read_to_string(&path).unwrap();
+        let dry = Apply {
+            dry_run: true,
+            ..apply()
+        };
+        assert!(
+            go(&dry).unwrap().starts_with("? mcpServers.rtok"),
+            "dry run never asks"
+        );
+        let kept = go(&apply()).unwrap();
+        assert!(
+            kept.starts_with("leave mcpServers.rtok") && kept.contains("changed by you"),
+            "{kept}"
+        );
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            before,
+            "a kept entry writes nothing"
+        );
+        assert_eq!(go(&YES).unwrap(), "- mcpServers.rtok");
+
+        seed(json!({"command": "/usr/bin/node", "args": ["server.js"]}));
+        let foreign = go(&YES).unwrap();
+        assert!(foreign.contains("not rtok's"), "{foreign}");
+        assert!(read_json(&path).unwrap()["mcpServers"]["rtok"].is_object());
     }
 
     #[test]

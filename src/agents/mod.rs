@@ -870,6 +870,28 @@ pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
     }
 }
 
+/// Drop `<key>.<name>` from a host's JSON config only as far as rtok wrote it: `ours` is the
+/// entry the host's installer writes (T246, [`rtok_agent_sdk::unregister_owned`]).
+pub(crate) fn unregister_ours(
+    cfg: &crate::config::Config,
+    path: &std::path::Path,
+    key: &str,
+    name: &str,
+    ours: &serde_json::Value,
+) -> Result<String> {
+    rtok_agent_sdk::unregister_owned(&apply(cfg), path, key, name, ours, is_rtok_bin)
+}
+
+/// [`unregister_ours`] for the `mcpServers` entry [`rtok_agent_sdk::register_mcp`] writes.
+pub(crate) fn unregister_mcp_ours(
+    cfg: &crate::config::Config,
+    path: &std::path::Path,
+    name: &str,
+) -> Result<String> {
+    let ours = rtok_agent_sdk::mcp_entry("rtok", &["mcp"]);
+    unregister_ours(cfg, path, "mcpServers", name, &ours)
+}
+
 /// [`Agent::apply`] for a host whose install is exactly "write the hook, then register or
 /// unregister the MCP server" — the shape every hooks+MCP host beyond the first repeats
 /// verbatim (T185).
