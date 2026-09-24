@@ -145,6 +145,11 @@ fn strip_ours(hooks: &mut Value) -> String {
     }
 }
 
+/// The `mcpServers.rtok` entry [`register_mcp`] writes.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"command": cmd, "args": ["mcp"]})
+}
+
 /// `mcpServers.rtok = {command, args}` — the minimal stdio shape the Gemini MCP docs show.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let bin = super::rtok_command();
@@ -153,14 +158,20 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         &settings_path(cfg),
         "mcpServers",
         NAME,
-        json!({"command": bin, "args": ["mcp"]}),
+        mcp_entry(&bin),
         &format!("{bin} mcp"),
     )
 }
 
-/// Drop `mcpServers.rtok` from `settings.json`.
+/// Drop `mcpServers.rtok` from `settings.json`, unless the user edited it (T246.2).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &settings_path(cfg), "mcpServers", NAME)
+    super::unregister_ours(
+        cfg,
+        &settings_path(cfg),
+        "mcpServers",
+        NAME,
+        &mcp_entry("rtok"),
+    )
 }
 
 impl Agent for Gemini {

@@ -72,27 +72,32 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
+/// The `mcp.servers.rtok` entry [`register_mcp`] writes.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"command": cmd, "args": ["mcp"]})
+}
+
 /// `mcp.servers.rtok` → `<abs rtok> mcp`.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = desktop_command();
-    let entry = json!({"command": cmd, "args": ["mcp"]});
     rtok_agent_sdk::register_server(
         &apply(cfg),
         &cfg.setup.zcode.config_path,
         "mcp.servers",
         NAME,
-        entry,
+        mcp_entry(&cmd),
         &format!("{cmd} mcp"),
     )
 }
 
-/// Drop `mcp.servers.rtok` (`rtok agents remove zcode`).
+/// Drop `mcp.servers.rtok` (`rtok agents remove zcode`), unless the user edited it (T246.2).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(
-        &apply(cfg),
+    super::unregister_ours(
+        cfg,
         &cfg.setup.zcode.config_path,
         "mcp.servers",
         NAME,
+        &mcp_entry("rtok"),
     )
 }
 

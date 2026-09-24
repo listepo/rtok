@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::plugin::HostPlugin;
 use super::{Agent, Kind, Mode, Support, Variant, apply};
@@ -108,6 +108,11 @@ pub fn plugin_dest(cfg: &Config) -> PathBuf {
     cfg.setup.omp.extensions_path.join(NAME)
 }
 
+/// The `mcpServers.rtok` entry [`register_mcp`] writes.
+fn mcp_entry(cmd: &str) -> Value {
+    json!({"command": cmd, "args": ["mcp"]})
+}
+
 /// `mcpServers.rtok = {command, args}` — omp's documented shape carries no `type`.
 pub fn register_mcp(cfg: &Config) -> Result<String> {
     let cmd = super::rtok_command();
@@ -116,14 +121,20 @@ pub fn register_mcp(cfg: &Config) -> Result<String> {
         &cfg.setup.omp.mcp_path,
         "mcpServers",
         NAME,
-        json!({"command": cmd, "args": ["mcp"]}),
+        mcp_entry(&cmd),
         &format!("{cmd} mcp"),
     )
 }
 
-/// Drop `mcpServers.rtok`, keeping every foreign server.
+/// Drop `mcpServers.rtok`, keeping every foreign server, unless the user edited it (T246.2).
 pub fn unregister_mcp(cfg: &Config) -> Result<String> {
-    rtok_agent_sdk::unregister_server(&apply(cfg), &cfg.setup.omp.mcp_path, "mcpServers", NAME)
+    super::unregister_ours(
+        cfg,
+        &cfg.setup.omp.mcp_path,
+        "mcpServers",
+        NAME,
+        &mcp_entry("rtok"),
+    )
 }
 
 #[cfg(test)]
