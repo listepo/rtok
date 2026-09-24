@@ -5941,3 +5941,20 @@ Result: `plugins/codex/hooks/hooks.json` PreCompact and PostCompact now run `com
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T249. Bounded `_backup` generations per file
+
+`rtok_agent_sdk::backup` copies a host config to `_backup/<name>.bak-<ts>` before rtok's first write each run and skips only byte-identical copies, so a settings file rtok edits for months grows `_backup` without bound — unlike `[log] files` or `core.retain_calls_days`. Done: a new `setup.backup_files` key (default 5, `0` keeps all) caps the `<name>.bak-<ts>[-<n>]` generations per base name; after a kept copy the oldest ones beyond the cap are deleted.
+
+Safety: the copy just taken is never deleted; only regular files named `<name>.bak-<digits>[-<digits>]` inside a directory named `_backup` are candidates (foreign names, other base names and symlinks are left alone); every fs error during pruning is ignored (fail open) and never fails the backup.
+
+Plan: `crates/rtok-agent-sdk/src/lib.rs` — `Apply.backup_files`, `backup(path, keep)`, public `prune_backups(kept, keep)`; `write` passes `apply.backup_files`. `src/agents/mod.rs` — the up-front copies are taken with `keep = 0` and pruned only when the run changed something (a no-change run deletes its copies, so pruning first would lose a generation). Callers in `src/agents/copilot/mod.rs`, `src/plugins/memory/sync.rs`. Config: `src/config/mod.rs`, `config/default.toml`, `docs/config.md`, trycmd `config-show`/`report-md`. Check: SDK unit tests — cap keeps the newest N, the just-taken copy survives even when an older name sorts newer, foreign/other-name/symlink entries survive, `0` keeps all, a no-change `agents setup` run prunes nothing; `just check` green.
+
+Result: `[setup] backup_files` (default 5, `0` keeps all) caps `_backup/<name>.bak-<ts>[-<n>]` per base name. `rtok_agent_sdk::backup(path, keep)` prunes after each kept copy; `Apply.backup_files` carries the cap into `write` and Copilot's `remove_file`; `memory sync` passes the key too. `agents install|remove` take their up-front copies with `keep = 0` and call `prune_backups` only when the run changed something, so a no-change run (which deletes its own copies) never costs an older generation. The tests found one more bug: within one second a new copy could reuse a `bak-<ts>` slot pruning had freed and sort oldest; `backup_at` now numbers past the highest `-<n>` of that second.
+
+Check: SDK units `prune_keeps_the_newest_generations_of_that_name_only` (foreign shapes, other base names, `0`, a non-`_backup` parent all untouched), `prune_never_deletes_the_copy_just_taken`, `a_copy_in_the_same_second_sorts_after_every_kept_one`, `backup_caps_generations_per_file`; e2e `agents_install::backup_files_caps_copies_and_a_no_change_run_prunes_nothing` (codex, cap 1). Golden `config-init`, `config-show`, `report-md` updated for the new key. `just check` green.
+
+Note: keeping only the newest N means the oldest copy — the pre-rtok original — is eventually pruned too.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

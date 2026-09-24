@@ -703,7 +703,7 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
                     if seen.contains(&path) {
                         continue;
                     }
-                    if let Some(bak) = rtok_agent_sdk::backup(&path)? {
+                    if let Some(bak) = rtok_agent_sdk::backup(&path, 0)? {
                         taken.push(bak);
                     }
                     seen.push(path);
@@ -714,7 +714,9 @@ pub fn run(cfg: &mut Config, req: &Request) -> Result<String> {
     }
     let (blocks, changed) = apply_all(cfg, req, &agents, want)?;
     if changed {
+        // Pruned only now: a no-change run deletes its copies, which would cost a generation.
         for bak in &taken {
+            rtok_agent_sdk::prune_backups(bak, cfg.setup.backup_files as usize);
             out.push_str(&format!("backup {}\n", bak.display()));
         }
     } else {
@@ -872,6 +874,7 @@ pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
     rtok_agent_sdk::Apply {
         dry_run: cfg.setup.dry_run,
         backup: cfg.setup.backup,
+        backup_files: cfg.setup.backup_files as usize,
         yes: cfg.setup.yes,
     }
 }

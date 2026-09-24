@@ -350,6 +350,7 @@ section! {
         dry_run: bool = false,
         yes: bool = false,
         backup: bool = true,
+        backup_files: u32 = 5,
         hook_timeout_s: u64 = 5,
         modes: Vec<String> = Vec::new(),
         mcp: bool = true,

@@ -183,7 +183,7 @@ fn remove_file(apply: &Apply, path: &Path) -> Result<String> {
     let report = format!("- {}", path.display());
     if apply.writes(&report) {
         if apply.backup {
-            rtok_agent_sdk::backup(path)?;
+            rtok_agent_sdk::backup(path, apply.backup_files)?;
         }
         fs::remove_file(path).with_context(|| path.display().to_string())?;
     }

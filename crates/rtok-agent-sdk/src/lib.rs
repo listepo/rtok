@@ -20,7 +20,7 @@
 //! let dir = std::env::temp_dir().join(format!("rtok-agent-sdk-doc-{}", std::process::id()));
 //! std::fs::create_dir_all(&dir).unwrap();
 //! let path = dir.join("mcp.json");
-//! let apply = Apply { dry_run: false, backup: true, yes: false };
+//! let apply = Apply { dry_run: false, backup: true, backup_files: 0, yes: false };
 //! let first = register_mcp(&apply, &path, "rtok", "rtok", &["mcp"]).unwrap();
 //! assert_eq!(first, "mcpServers.rtok: rtok mcp");
 //! assert_eq!(register_mcp(&apply, &path, "rtok", "rtok", &["mcp"]).unwrap(), NO_CHANGES);
@@ -54,6 +54,8 @@ pub struct Apply {
     pub dry_run: bool,
     /// Copy each file to `_backup/<name>.bak-<unix-seconds>` before the first write to it.
     pub backup: bool,
+    /// Newest `.bak-*` generations kept per file after a backup; `0` keeps all.
+    pub backup_files: usize,
     /// Accept every offer without asking. The only way to say yes without a terminal.
     pub yes: bool,
 }
@@ -71,7 +73,9 @@ pub const BACKUP_DIR: &str = "_backup";
 /// Copy `path` to `_backup/<name>.bak-<unix-seconds>` beside it. `None` when there is no file
 /// yet, or when any file in that folder already holds the same bytes — a second install or
 /// uninstall of unchanged content is the same undo, whatever the copy is named.
-pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
+///
+/// After a copy is taken, [`prune_backups`] keeps the newest `keep` generations of that name.
+pub fn backup(path: &Path, keep: usize) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -79,7 +83,61 @@ pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    backup_at(path, ts)
+    let bak = backup_at(path, ts)?;
+    if let Some(b) = &bak {
+        prune_backups(b, keep);
+    }
+    Ok(bak)
+}
+
+/// Delete the oldest `_backup/<name>.bak-<ts>[-<n>]` generations beside `kept` — a copy
+/// [`backup`] returned — until `keep` remain. `kept` itself is never deleted; `0` keeps all.
+/// Only regular files with that exact name shape inside a `_backup` folder are candidates.
+/// Best effort: an fs error leaves the rest in place and is not reported.
+pub fn prune_backups(kept: &Path, keep: usize) {
+    let (Some(dir), Some(file)) = (kept.parent(), kept.file_name().and_then(|f| f.to_str())) else {
+        return;
+    };
+    if keep == 0 || dir.file_name().is_none_or(|d| d != BACKUP_DIR) {
+        return;
+    }
+    let Some((name, _)) = file.rsplit_once(".bak-") else {
+        return;
+    };
+    let mut older = generations(dir, name);
+    older.retain(|(_, p)| p != kept);
+    older.sort();
+    let excess = (older.len() + 1).saturating_sub(keep);
+    for (_, p) in older.into_iter().take(excess) {
+        let _ = fs::remove_file(p);
+    }
+}
+
+/// Regular files in `dir` named `<name>.bak-<ts>[-<n>]`, with `(ts, n)` to sort them by.
+fn generations(dir: &Path, name: &str) -> Vec<((u64, u64), PathBuf)> {
+    let prefix = format!("{name}.bak-");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| {
+            let f = e.file_name().into_string().ok()?;
+            Some((generation(f.strip_prefix(&prefix)?)?, e.path()))
+        })
+        .collect()
+}
+
+/// `<ts>` or `<ts>-<n>`, the suffix [`backup`] writes, as a sortable pair; anything else is `None`.
+fn generation(suffix: &str) -> Option<(u64, u64)> {
+    let (ts, n) = suffix.split_once('-').unwrap_or((suffix, "0"));
+    let num = |s: &str| {
+        (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| s.parse().ok())
+            .flatten()
+    };
+    Some((num(ts)?, num(n)?))
 }
 
 fn backup_dir(path: &Path) -> Option<PathBuf> {
@@ -97,11 +155,22 @@ fn backup_at(path: &Path, ts: u64) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
     fs::create_dir_all(&dir).with_context(|| dir.display().to_string())?;
-    let mut n = 0u32;
-    let mut bak = dir.join(format!("{name}.bak-{ts}"));
+    // Past the highest `-<n>` of this second, never a slot pruning freed: the new copy must
+    // sort newest, or the next prune would delete it first.
+    let mut n = generations(&dir, &name)
+        .iter()
+        .filter(|((t, _), _)| *t == ts)
+        .map(|((_, n), _)| n + 1)
+        .max()
+        .unwrap_or(0);
+    let slot = |n: u64| match n {
+        0 => dir.join(format!("{name}.bak-{ts}")),
+        n => dir.join(format!("{name}.bak-{ts}-{n}")),
+    };
+    let mut bak = slot(n);
     while bak.exists() {
         n += 1;
-        bak = dir.join(format!("{name}.bak-{ts}-{n}"));
+        bak = slot(n);
     }
     fs::copy(path, &bak).with_context(|| bak.display().to_string())?;
     Ok(Some(bak))
@@ -209,7 +278,7 @@ pub fn write(apply: &Apply, path: &Path, body: &str, report: &str) -> Result<()>
         return Ok(());
     }
     if apply.backup {
-        backup(path)?;
+        backup(path, apply.backup_files)?;
     }
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).ok();
@@ -823,6 +892,7 @@ mod tests {
     const YES: Apply = Apply {
         dry_run: false,
         backup: false,
+        backup_files: 0,
         yes: true,
     };
 
@@ -866,6 +936,7 @@ mod tests {
         Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: false,
         }
     }
@@ -961,6 +1032,7 @@ mod tests {
         let dry = Apply {
             dry_run: true,
             backup: true,
+            backup_files: 0,
             yes: false,
         };
         write(&dry, &path, "{}", "+ something").unwrap();
@@ -1070,6 +1142,115 @@ mod tests {
             None,
             "bytes anywhere in _backup count"
         );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// T249: a cap keeps the newest generations of one name and nothing else is touched.
+    #[test]
+    fn prune_keeps_the_newest_generations_of_that_name_only() {
+        let dir = tmp("backup-prune");
+        let path = dir.join("settings.json");
+        let backup = dir.join(BACKUP_DIR);
+        for (i, ts) in [(1, "10"), (2, "10-1"), (3, "10-2"), (4, "11"), (5, "9")] {
+            fs::write(&path, format!("v{i}")).unwrap();
+            let b = backup_at(&path, 0).unwrap().unwrap();
+            fs::rename(b, backup.join(format!("settings.json.bak-{ts}"))).unwrap();
+        }
+        let foreign = [
+            "settings.json.bak-old",
+            "settings.json.bak-1-x",
+            "settings.json.bak-+1",
+            "settings.json.bak-",
+            "settings.json.bak-1.bak-2",
+            "mcp.json.bak-1",
+            "notes.txt",
+        ];
+        for f in foreign {
+            fs::write(backup.join(f), f).unwrap();
+        }
+        fs::write(&path, "v6").unwrap();
+        let kept = backup_at(&path, 12).unwrap().unwrap();
+        prune_backups(&kept, 3);
+        let mut want: Vec<String> = foreign.iter().map(|s| s.to_string()).collect();
+        want.extend(
+            [
+                "settings.json.bak-10-2",
+                "settings.json.bak-11",
+                "settings.json.bak-12",
+            ]
+            .map(String::from),
+        );
+        want.sort();
+        assert_eq!(names(&backup), want);
+        // 0 keeps all; a copy outside a `_backup` folder prunes nothing.
+        prune_backups(&kept, 0);
+        prune_backups(&dir.join("settings.json.bak-99"), 1);
+        assert_eq!(names(&backup), want);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: the copy just taken is never deleted, even when an older name sorts newer.
+    #[test]
+    fn prune_never_deletes_the_copy_just_taken() {
+        let dir = tmp("backup-prune-kept");
+        let path = dir.join("settings.json");
+        fs::write(&path, "future").unwrap();
+        let future = backup_at(&path, 99).unwrap().unwrap();
+        fs::write(&path, "now").unwrap();
+        let kept = backup_at(&path, 5).unwrap().unwrap();
+        prune_backups(&kept, 1);
+        assert!(kept.exists(), "just taken");
+        assert!(!future.exists(), "over the cap");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: within one second a new copy never reuses a slot pruning freed, so it sorts newest.
+    #[test]
+    fn a_copy_in_the_same_second_sorts_after_every_kept_one() {
+        let dir = tmp("backup-slot");
+        let path = dir.join("settings.json");
+        fs::write(&path, "a").unwrap();
+        let first = backup_at(&path, 7).unwrap().unwrap();
+        fs::write(&path, "b").unwrap();
+        backup_at(&path, 7).unwrap().unwrap();
+        fs::remove_file(&first).unwrap();
+        fs::write(&path, "c").unwrap();
+        let third = backup_at(&path, 7).unwrap().unwrap();
+        assert!(
+            third.ends_with("settings.json.bak-7-2"),
+            "{}",
+            third.display()
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T249: `backup` itself prunes after a copy; a skipped (identical) copy prunes nothing.
+    #[test]
+    fn backup_caps_generations_per_file() {
+        let dir = tmp("backup-cap");
+        let path = dir.join("settings.json");
+        for i in 0..4 {
+            fs::write(&path, format!("v{i}")).unwrap();
+            backup(&path, 2).unwrap().expect("new bytes are copied");
+        }
+        let backup_dir = dir.join(BACKUP_DIR);
+        assert_eq!(names(&backup_dir).len(), 2);
+        let bodies: Vec<String> = names(&backup_dir)
+            .iter()
+            .map(|n| fs::read_to_string(backup_dir.join(n)).unwrap())
+            .collect();
+        assert_eq!(bodies, ["v2", "v3"], "the newest two survive");
+        assert_eq!(backup(&path, 1).unwrap(), None, "identical: no copy");
+        assert_eq!(names(&backup_dir).len(), 2, "and no prune");
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1330,6 +1511,7 @@ mod tests {
                 &Apply {
                     dry_run: true,
                     backup: false,
+                    backup_files: 0,
                     yes: false,
                 },
                 false,
@@ -1358,6 +1540,7 @@ mod tests {
                 &Apply {
                     dry_run: true,
                     backup: false,
+                    backup_files: 0,
                     yes: false,
                 },
                 false,
@@ -1383,6 +1566,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         assert_eq!(
@@ -1416,6 +1600,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         let report = link.run(&yes, true).unwrap();
@@ -1444,6 +1629,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
 
@@ -1476,6 +1662,7 @@ mod tests {
         let yes = Apply {
             dry_run: false,
             backup: false,
+            backup_files: 0,
             yes: true,
         };
         let report = link.run(&yes, true).unwrap();
