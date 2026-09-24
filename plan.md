@@ -78,7 +78,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T235 | todo | P1 | 3 | 0% | |
 | T242.3 | todo | P1 | 3 | 0% | |
 | T242.4 | todo | P2 | 3 | 0% | |
-| T242.5 | todo | P2 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
@@ -865,6 +864,3 @@ After T242.2. Under `Mode::Update` with `rtok@rtok` installed from the GitHub ma
 
 After T242.2. Under `Mode::Update` with `rtok@rtok` in Codex's config: `codex plugin marketplace upgrade rtok`, then `plugin remove` + `plugin add` only if the upgrade fails. Fake `codex` learns `marketplace upgrade`. Check: argv log for both paths, `config.toml` tables intact.
 
-### T242.5. Cursor, Kimi and Gemini hooks: refresh stale rtok entries on install/update
-
-After T242.1. Cursor's `hooks.json`, Gemini's `settings.json` and Kimi's TOML `[[hooks]]` skip a slot as soon as an rtok command sits there, the same bug T242.1 fixes for Claude-shaped JSON. Apply the same rewrite/prune rule in `src/agents/cursor/mod.rs`, `src/agents/gemini/mod.rs` and `src/agents/kimi/mod.rs` (Kimi keeps comments via `toml_edit`). Check: unit tests per host (stale bin, stale timeout, foreign kept, idempotent).

@@ -84,20 +84,43 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
 
 fn insert_ours(hooks: &mut Value, bin: &str, timeout_s: u64) -> String {
     let mut added = Vec::new();
+    let mut updated = 0usize;
     for &(gevent, cevent) in EVENTS {
-        if array_at(hooks, gevent).iter().any(|e| has_ours(e, cevent)) {
+        let cmd = command(bin, cevent);
+        let ms = timeout_s * 1000;
+        // T242.5: an rtok hook on another binary path or timeout is rewritten in its slot.
+        let mut found = false;
+        for entry in array_at(hooks, gevent).iter_mut() {
+            for h in entry["hooks"].as_array_mut().into_iter().flatten() {
+                if !h["command"].as_str().is_some_and(|c| is_ours(c, cevent)) {
+                    continue;
+                }
+                found = true;
+                if h["command"] != json!(cmd) || h["timeout"] != json!(ms) {
+                    h["command"] = json!(cmd);
+                    h["timeout"] = json!(ms);
+                    added.push(format!("~ {gevent} {cmd}"));
+                    updated += 1;
+                }
+            }
+        }
+        if found {
             continue;
         }
-        let cmd = command(bin, cevent);
-        let entry =
-            json!({"hooks": [{"type": "command", "command": cmd, "timeout": timeout_s * 1000}]});
+        let entry = json!({"hooks": [{"type": "command", "command": cmd, "timeout": ms}]});
         array_at(hooks, gevent).push(entry);
         added.push(format!("+ {gevent} {cmd}"));
     }
     if added.is_empty() {
         NO_CHANGES.into()
     } else {
-        format!("{}\n{} additions", added.join("\n"), added.len())
+        let counts = [(added.len() - updated, "additions"), (updated, "updates")]
+            .iter()
+            .filter(|(n, _)| *n > 0)
+            .map(|(n, what)| format!("{n} {what}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{}\n{counts}", added.join("\n"))
     }
 }
 
@@ -287,5 +310,30 @@ mod tests {
             Gemini.support(Kind::Cli, "plugin"),
             Support::No(_)
         ));
+    }
+
+    /// T242.5: an rtok hook on another binary path and timeout is rewritten in its slot, a
+    /// foreign hook in the same entry stays, and a second pass changes nothing.
+    #[test]
+    fn stale_rtok_hook_is_rewritten_in_place() {
+        let (gevent, cevent) = EVENTS[0];
+        let stale = command("/old/store/rtok/v0.1.0/rtok", cevent);
+        let mut hooks = json!({gevent: [{"matcher": "run_shell_command", "hooks": [
+            {"type": "command", "command": "audit.sh"},
+            {"type": "command", "command": stale, "timeout": 1000}
+        ]}]});
+        let out = insert_ours(&mut hooks, "rtok", 5);
+        let want = command("rtok", cevent);
+        assert!(out.contains(&format!("~ {gevent} {want}")), "{out}");
+        assert!(out.ends_with(" updates"), "{out}");
+        let entries = hooks[gevent].as_array().unwrap();
+        assert_eq!(entries.len(), 1, "no second entry: {hooks}");
+        assert_eq!(entries[0]["matcher"], "run_shell_command");
+        assert_eq!(entries[0]["hooks"][0]["command"], "audit.sh");
+        assert_eq!(entries[0]["hooks"][1]["command"], want.as_str());
+        assert_eq!(entries[0]["hooks"][1]["timeout"], 5000);
+        let current = hooks.clone();
+        assert_eq!(insert_ours(&mut hooks, "rtok", 5), NO_CHANGES);
+        assert_eq!(hooks, current);
     }
 }

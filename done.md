@@ -5761,5 +5761,13 @@ Deviation: 15 files, because the new `--yes` flag regenerates five `tests/trycmd
 
 Check: `cargo test -p rtok-agent-sdk` 27 passed; `cargo nextest --test agent_remove --test agents_install --test claude_plugin --test cli_trycmd` 32/32; `just check` green.
 
+### T242.5. Cursor, Kimi and Gemini hooks: refresh stale rtok entries on install/update
+
+After T242.1. Cursor's `hooks.json`, Gemini's `settings.json` and Kimi's TOML `[[hooks]]` skip a slot as soon as an rtok command sits there, the same bug T242.1 fixes for Claude-shaped JSON. Apply the same rewrite/prune rule in `src/agents/cursor/mod.rs`, `src/agents/gemini/mod.rs` and `src/agents/kimi/mod.rs` (Kimi keeps comments via `toml_edit`). Check: unit tests per host (stale bin, stale timeout, foreign kept, idempotent).
+
+Plan: same rule as T242.1's `claude::insert_ours` in each host's `insert_ours`: every rtok hook on a listed slot whose command (or timeout, where the host has one) differs from what install writes now is rewritten in place with a `~` report line; a slot with none gets the `+` entry as before; a current file stays `NO_CHANGES`. Kimi also drops rtok `[[hooks]]` tables on an `(event, matcher)` pair `ENTRIES` no longer lists, as T242.1 does. Cursor has no timeout; Gemini's is milliseconds. Unit tests in each `mod.rs`: stale bin, stale timeout, foreign kept, idempotent.
+
+Result: Cursor's `hooks.json`, Gemini's `settings.json` and Kimi's `[[hooks]]` tables now refresh as well as add: an rtok hook on another binary path (and, for Gemini and Kimi, another timeout) is rewritten in its slot with a `~` report line, foreign hooks stay, and a current file reports `NO_CHANGES`. Kimi also drops rtok tables on a pair `ENTRIES` no longer lists. Unit tests: `stale_rtok_hook_is_rewritten_in_place` (Cursor, Gemini), `stale_rtok_tables_are_rewritten_and_pruned` (Kimi).
+
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
