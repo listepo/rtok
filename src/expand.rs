@@ -189,8 +189,21 @@ pub fn run(
     Ok(())
 }
 
+/// Strips one matching pair of surrounding quotes (`"a-b"` or `'a-b'`). A model that
+/// quotes a range it copied from prior output (T172) should not fail parsing over it.
+fn strip_quotes(spec: &str) -> &str {
+    let bytes = spec.as_bytes();
+    if bytes.len() >= 2 {
+        let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return &spec[1..spec.len() - 1];
+        }
+    }
+    spec
+}
+
 pub(crate) fn parse_range(spec: &str, n: usize) -> Result<(usize, usize)> {
-    let spec = spec.trim();
+    let spec = strip_quotes(spec.trim()).trim();
     if spec.is_empty() {
         bail!("invalid line range `{spec}`: expected a positive line or a-b");
     }
@@ -451,6 +464,18 @@ mod tests {
         assert_eq!(parse_range("5-5", 20).unwrap(), (5, 5));
         assert_eq!(parse_range("-5", 20).unwrap(), (1, 5));
         assert_eq!(parse_range("5-", 20).unwrap(), (5, 20));
+    }
+
+    /// T172: a range the model quoted (double or single) parses the same as the
+    /// bare form instead of failing with `invalid line range`.
+    #[test]
+    fn parse_range_strips_surrounding_quotes() {
+        assert_eq!(parse_range("\"5-10\"", 20).unwrap(), (5, 10));
+        assert_eq!(parse_range("'5-10'", 20).unwrap(), (5, 10));
+        assert_eq!(parse_range(" \"5-10\" ", 20).unwrap(), (5, 10));
+        // A lone or mismatched quote is not a pair — still rejected, not silently stripped.
+        assert!(parse_range("\"5-10", 20).is_err());
+        assert!(parse_range("\"5-10'", 20).is_err());
     }
 
     #[test]

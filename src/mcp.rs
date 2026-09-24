@@ -111,12 +111,22 @@ pub fn call(cfg: &Config, name: &str, args: &Value) -> Result<String> {
     } else {
         args.clone()
     };
-    let (text, ok) = match invoke(&server.cx, name, &args) {
-        Ok(t) => (t, true),
-        Err(e) => (e.to_string(), false),
-    };
+    let (text, ok) = invoke_text(&server.cx, name, &args);
     let _ = record(&server.cx, plugin, name, &args, &text);
     if ok { Ok(text) } else { bail!("{text}") }
+}
+
+/// Runs `invoke` and maps its `Result` to `(text, ok)` — the one place that happens, so
+/// `tools/call` (`call_tool`) and the one-shot `--call` (`call` above) read a tool failure
+/// identically instead of keeping two copies of the same match arms in sync by hand.
+/// `anyhow::Error`'s `Display` (`{e}`, not the chained `{e:#}`) is always the bare message
+/// with no prefix of its own (T172: a failure must not read `Error: Error: …`), so nothing
+/// here needs to guard against doubling one up.
+fn invoke_text(cx: &Runtime, name: &str, args: &Value) -> (String, bool) {
+    match invoke(cx, name, args) {
+        Ok(t) => (t, true),
+        Err(e) => (e.to_string(), false),
+    }
 }
 
 /// Longest request line kept in memory. Tool arguments are notes and paths, far below this.
@@ -282,10 +292,7 @@ impl Server {
         // `invoke` — it must not run a tool the config says is off — but it fails with the
         // exact text `invoke`'s own unknown-name arm would give (`unknown_tool`, T192).
         let (text, ok) = if self.allows(name) {
-            match invoke(&self.cx, name, &args) {
-                Ok(t) => (t, true),
-                Err(e) => (e.to_string(), false),
-            }
+            invoke_text(&self.cx, name, &args)
         } else {
             (unknown_tool(name).to_string(), false)
         };
@@ -638,6 +645,69 @@ mod tests {
         let line = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"expand","arguments":{"id":"x","lines":"wat"}}}"#;
         let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
         assert_eq!(v["result"]["isError"], true, "{v}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T172: the `read` root guard (`src/plugins/read/mod.rs`'s `resolve_with`) answers
+    /// `isError: true` with the refusal text, never a plain-text success block the model
+    /// could mistake for file content.
+    #[test]
+    fn read_outside_cwd_sets_is_error() {
+        let (cfg, dir) = tmp("outside-cwd");
+        let server = Server::new(&cfg).unwrap();
+        let line = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"path":"/etc/hosts"}}}"#;
+        let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+        assert_eq!(v["result"]["isError"], true, "{v}");
+        assert!(
+            v["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("path outside cwd"),
+            "{v}"
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T172: a range the model quotes verbatim (`"1-1"`, copied from earlier output) reads
+    /// the same file the bare form does instead of failing with `invalid line range`.
+    #[test]
+    fn read_accepts_a_quoted_range() {
+        let (cfg, dir) = tmp("quoted-range");
+        let server = Server::new(&cfg).unwrap();
+        let bare = r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"1-1"}}}"#;
+        let quoted = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"\"1-1\""}}}"#;
+        let v_bare: Value = serde_json::from_str(&server.handle_line(bare).unwrap()).unwrap();
+        let v_quoted: Value = serde_json::from_str(&server.handle_line(quoted).unwrap()).unwrap();
+        assert_eq!(v_bare["result"]["isError"], false, "{v_bare}");
+        assert_eq!(v_quoted["result"]["isError"], false, "{v_quoted}");
+        assert_eq!(
+            v_bare["result"]["content"][0]["text"],
+            v_quoted["result"]["content"][0]["text"]
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T172: `invoke_text` never doubles an `Error:` prefix onto a failure's text — there is
+    /// exactly one site (`invoke_text`) that turns a tool `Err` into content text, and it
+    /// never adds a prefix of its own, across the tool surfaces most likely to fail (an
+    /// unknown name, the read root guard, and a malformed range — the audit's "timeout"
+    /// case is the same code path once the error reaches `invoke_text`).
+    #[test]
+    fn failed_call_text_never_doubles_the_error_prefix() {
+        let (cfg, dir) = tmp("no-double-prefix");
+        let server = Server::new(&cfg).unwrap();
+        let lines = [
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"/etc/hosts"}}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read","arguments":{"path":"Cargo.toml","range":"975-1015"}}}"#,
+        ];
+        for line in lines {
+            let v: Value = serde_json::from_str(&server.handle_line(line).unwrap()).unwrap();
+            assert_eq!(v["result"]["isError"], true, "{v}");
+            let text = v["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(!text.contains("Error: Error:"), "{text}");
+            assert!(text.matches("Error:").count() <= 1, "{text}");
+        }
         let _ = fs::remove_dir_all(dir);
     }
 
