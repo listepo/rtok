@@ -626,6 +626,13 @@ impl PluginLink<'_> {
     /// Offer, link, or unlink. Returns the one-line report; a dry run and a declined offer both
     /// describe the offer and touch nothing.
     pub fn run(&self, apply: &Apply, remove: bool) -> Result<String> {
+        self.run_with(apply, remove, keep_bytes)
+    }
+
+    /// [`run`](Self::run) whose owned copy (the non-Unix install) passes every file through
+    /// `fix`; the up-to-date check compares against the fixed bytes, so a fixed copy is not
+    /// reinstalled on every run (T250.3: Cursor's POSIX hook lines go back to bare `rtok`).
+    pub fn run_with(&self, apply: &Apply, remove: bool, fix: CopyFix) -> Result<String> {
         if apply.dry_run {
             return Ok(format!(
                 "offer {} → {} {KETCH_INSTALL}",
@@ -649,7 +656,7 @@ impl PluginLink<'_> {
             return Ok(format!("- plugin {}", self.dest.display()));
         }
         if self.linked() {
-            if self.up_to_date() {
+            if self.up_to_date(fix) {
                 return Ok(NO_CHANGES.into());
             }
             // Something else is at the destination: never overwrite ground we did not
@@ -681,7 +688,7 @@ impl PluginLink<'_> {
         if let Some(dir) = self.dest.parent() {
             fs::create_dir_all(dir).ok();
         }
-        install_plugin(&self.src, &self.dest)?;
+        install_plugin(&self.src, &self.dest, fix)?;
         let label = self.label.map(|l| format!(" {l}")).unwrap_or_default();
         Ok(format!(
             "+ plugin {} → {}{}",
@@ -710,7 +717,7 @@ impl PluginLink<'_> {
     /// elsewhere. A link into a different — typically older — ketch store version, or a
     /// dangling one, is not up to date: [`run`] relinks it like a fresh install instead of
     /// reporting [`NO_CHANGES`] forever (T164).
-    fn up_to_date(&self) -> bool {
+    fn up_to_date(&self, fix: CopyFix) -> bool {
         let Ok(meta) = self.dest.symlink_metadata() else {
             return false;
         };
@@ -721,7 +728,7 @@ impl PluginLink<'_> {
         if meta.file_type().is_file() {
             return self.src.is_file() && fs::read(&self.dest).ok() == fs::read(&self.src).ok();
         }
-        meta.is_dir() && tree_copies(&self.src, &self.dest)
+        meta.is_dir() && tree_copies_with(&self.src, &self.dest, fix, Path::new(""))
     }
 }
 
@@ -848,6 +855,11 @@ fn edited_since_marked(dest: &Path) -> bool {
 /// (which fails the first differing byte) still stands. An empty or unreadable `src`
 /// proves nothing.
 fn tree_copies(src: &Path, dest: &Path) -> bool {
+    tree_copies_with(src, dest, keep_bytes, Path::new(""))
+}
+
+/// [`tree_copies`] against `fix`ed source bytes; `rel` is `src`'s path under the plugin root.
+fn tree_copies_with(src: &Path, dest: &Path, fix: CopyFix, rel: &Path) -> bool {
     let Ok(entries) = fs::read_dir(src) else {
         return false;
     };
@@ -858,15 +870,16 @@ fn tree_copies(src: &Path, dest: &Path) -> bool {
             return false;
         };
         let there = dest.join(entry.file_name());
+        let rel = rel.join(entry.file_name());
         if ft.is_dir() {
-            if !there.is_dir() || !tree_copies(&entry.path(), &there) {
+            if !there.is_dir() || !tree_copies_with(&entry.path(), &there, fix, &rel) {
                 return false;
             }
         } else {
             let (Ok(a), Ok(b)) = (fs::read(entry.path()), fs::read(&there)) else {
                 return false;
             };
-            if a != b {
+            if fix(&rel, a) != b {
                 return false;
             }
         }
@@ -874,30 +887,44 @@ fn tree_copies(src: &Path, dest: &Path) -> bool {
     seen > 0
 }
 
+/// Rewrites one plugin file on its way into an owned copy: `(path under the plugin root,
+/// source bytes) → bytes written`. A symlinked install carries the source unchanged.
+pub type CopyFix = fn(&Path, Vec<u8>) -> Vec<u8>;
+
+/// The [`CopyFix`] that changes nothing.
+pub fn keep_bytes(_: &Path, bytes: Vec<u8>) -> Vec<u8> {
+    bytes
+}
+
 /// Install the plugin tree at `dest`: symlink on Unix, owned copy elsewhere.
-fn install_plugin(src: &Path, dest: &Path) -> Result<()> {
+fn install_plugin(src: &Path, dest: &Path, fix: CopyFix) -> Result<()> {
     #[cfg(unix)]
     {
+        let _ = fix;
         std::os::unix::fs::symlink(src, dest)
             .with_context(|| format!("symlink {} → {}", src.display(), dest.display()))
     }
     #[cfg(not(unix))]
     {
-        copy_owned(src, dest)
+        copy_owned_with(src, dest, fix)
     }
 }
 
 /// Recursively copy `src` into `dest` and leave [`OWNED_MARKER`] so remove can undo it.
 /// A single-file plugin (OpenCode's `rtok.ts`) is one copy; remove already unlinks a plain
 /// file. Compiled on every target so unit tests cover the Windows install path on Unix CI too.
-#[allow(dead_code)] // used on non-unix install and by unit tests
 fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
+    copy_owned_with(src, dest, keep_bytes)
+}
+
+/// [`copy_owned`] with every tree file passed through `fix`.
+fn copy_owned_with(src: &Path, dest: &Path, fix: CopyFix) -> Result<()> {
     if src.is_file() {
         fs::copy(src, dest)
             .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
         return Ok(());
     }
-    copy_dir(src, dest)
+    copy_dir(src, dest, fix, Path::new(""))
         .with_context(|| format!("copy plugin {} → {}", src.display(), dest.display()))?;
     fs::write(dest.join(OWNED_MARKER), b"")
         .with_context(|| format!("mark owned {}", dest.display()))?;
@@ -905,19 +932,26 @@ fn copy_owned(src: &Path, dest: &Path) -> Result<()> {
 }
 
 #[allow(dead_code)]
-fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
+fn copy_dir(src: &Path, dest: &Path, fix: CopyFix, rel: &Path) -> Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let from = entry.path();
         let to = dest.join(entry.file_name());
+        let rel = rel.join(entry.file_name());
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            copy_dir(&from, &to)?;
+            copy_dir(&from, &to, fix, &rel)?;
         } else {
             // Plain files and symlink targets we can read: plugins ship as a normal tree.
+            // `fs::copy` keeps the mode (a skill's scripts); a fix rewrites the bytes after.
             fs::copy(&from, &to)
                 .with_context(|| format!("copy {} → {}", from.display(), to.display()))?;
+            let bytes = fs::read(&to)?;
+            let fixed = fix(&rel, bytes.clone());
+            if fixed != bytes {
+                fs::write(&to, fixed).with_context(|| format!("fix {}", to.display()))?;
+            }
         }
     }
     Ok(())
@@ -1469,7 +1503,10 @@ mod tests {
         let dest = dir.join("host/rtok");
         std::os::unix::fs::symlink(&old_src, &dest).unwrap();
         let link = demo_link(new_src.clone(), dest.clone());
-        assert!(!link.up_to_date(), "an old version is not up to date");
+        assert!(
+            !link.up_to_date(keep_bytes),
+            "an old version is not up to date"
+        );
         assert_eq!(
             link.run(&YES, false).unwrap(),
             format!("+ plugin plugins/demo → {}", dest.display())
@@ -1492,12 +1529,45 @@ mod tests {
         fs::write(dest.join("plugin.json"), "v1").unwrap(); // an older, now-stale copy
         let link = demo_link(src, dest.clone());
         assert!(link.ours(), "an owned copy with our marker is ours");
-        assert!(!link.up_to_date(), "stale content is not up to date");
+        assert!(
+            !link.up_to_date(keep_bytes),
+            "stale content is not up to date"
+        );
         assert_eq!(
             link.run(&YES, false).unwrap(),
             format!("+ plugin plugins/demo → {}", dest.display())
         );
         assert_eq!(fs::read_to_string(dest.join("plugin.json")).unwrap(), "v2");
+    }
+
+    /// T250.3: a `CopyFix` rewrites only the file it names on the way into an owned copy,
+    /// and that fixed copy counts as up to date — not as stale bytes to reinstall each run.
+    #[test]
+    fn a_fixed_owned_copy_is_up_to_date() {
+        fn upper_hooks(rel: &Path, bytes: Vec<u8>) -> Vec<u8> {
+            if rel == Path::new("hooks/hooks.json") {
+                bytes.to_ascii_uppercase()
+            } else {
+                bytes
+            }
+        }
+        let dir = tmp("fixed-copy");
+        let src = dir.join("plugins/demo");
+        fs::create_dir_all(src.join("hooks")).unwrap();
+        fs::write(src.join("plugin.json"), "v1").unwrap();
+        fs::write(src.join("hooks/hooks.json"), "posix").unwrap();
+        let dest = dir.join("host/plugins/rtok");
+        copy_owned_with(&src, &dest, upper_hooks).unwrap();
+        assert_eq!(
+            fs::read_to_string(dest.join("hooks/hooks.json")).unwrap(),
+            "POSIX"
+        );
+        assert_eq!(fs::read_to_string(dest.join("plugin.json")).unwrap(), "v1");
+        let link = demo_link(src, dest);
+        assert!(link.ours());
+        assert!(link.up_to_date(upper_hooks));
+        assert!(!link.up_to_date(keep_bytes), "unfixed source bytes differ");
+        assert_eq!(link.run_with(&YES, false, upper_hooks).unwrap(), NO_CHANGES);
     }
 
     /// T164: default-install hosts must never overwrite a foreign directory at the plugin
