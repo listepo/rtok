@@ -891,6 +891,48 @@ pub(crate) fn unregister_ours(
     rtok_agent_sdk::unregister_owned(&apply(cfg), path, key, name, ours, is_rtok_bin)
 }
 
+/// Whether a host's `strip_ours` takes an rtok hook it found (T246.3, T246.6): one still as
+/// the installer writes it (`unchanged`) goes; one the user changed goes only as
+/// [`rtok_agent_sdk::keep_edited`] decides, its `leave`/`?` line (naming `at`) joining `kept`.
+pub(crate) fn takes_hook(
+    apply: &rtok_agent_sdk::Apply,
+    unchanged: bool,
+    at: impl FnOnce() -> String,
+    kept: &mut Vec<String>,
+) -> bool {
+    if unchanged {
+        return true;
+    }
+    match rtok_agent_sdk::keep_edited(apply, &at()) {
+        Some(line) => {
+            kept.push(line);
+            false
+        }
+        None => true,
+    }
+}
+
+/// `{n} removed`, or [`NO_CHANGES`] for none — the tail of a `strip_ours` report.
+pub(crate) fn removed_report(removed: usize) -> String {
+    if removed == 0 {
+        NO_CHANGES.into()
+    } else {
+        format!("{removed} removed")
+    }
+}
+
+/// A `strip_ours` report: the `kept` lines, then `report` unless it is [`NO_CHANGES`].
+pub(crate) fn with_kept(mut kept: Vec<String>, report: String) -> String {
+    if report != NO_CHANGES {
+        kept.push(report);
+    }
+    if kept.is_empty() {
+        NO_CHANGES.into()
+    } else {
+        kept.join("\n")
+    }
+}
+
 /// [`unregister_ours`] for the `mcpServers` entry [`rtok_agent_sdk::register_mcp`] writes.
 pub(crate) fn unregister_mcp_ours(
     cfg: &crate::config::Config,
