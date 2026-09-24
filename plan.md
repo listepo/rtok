@@ -321,11 +321,15 @@ Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--ye
 
 `research.md` §23: Codex fires `SubagentStart` and adds the hook's stdout (or its hook-specific context) to the subagent as developer context. Add `SubagentStart` to `plugins/codex/hooks/hooks.json` and the Codex installer's list, and make `rtok hook SubagentStart` answer in the shape Codex reads.
 
+Blocked (found 2026-09-24 while claiming): the brief is built from `PreToolUse` rows whose `tool_name` is `Read|Edit|Write` (`ledger()` in `src/plugins/memory/handoff.rs`), and rtok installs no `PreToolUse` hook for Codex (only `PreCompact`/`PostCompact`), so a Codex brief would always be empty. Needs Codex `PreToolUse` wiring first (idea I-88), which the creator has not approved.
+
 Check: a Codex `SubagentStart` payload through `rtok hook` returns the brief in Codex's shape (test); `just check` green.
 
 ### T262.4. Copilot CLI: spawn brief on `subagentStart`
 
 `research.md` §23: Copilot CLI's `subagentStart` prepends `additionalContext` to the subagent's prompt (not for the built-in general-purpose agent). Add it to `plugins/copilot/hooks/hooks.json` and the Copilot installer, and map Copilot's payload to rtok's `SubagentStart`.
+
+Blocked (found 2026-09-24): Copilot's `preToolUse` is installed, but `hooks::run` stores the raw stdin (`toolName`/`toolArgs`, camelCase) and `ledger()` reads `tool_name`/`tool_input` from it, so Copilot rows never reach the brief. Fix first: `ledger()` reads host-adapted input (store the adapted JSON, or run the host adapter on read).
 
 Check: a Copilot `subagentStart` payload through `rtok hook` returns `additionalContext` with the brief (test); `just check` green.
 
