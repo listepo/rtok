@@ -41,7 +41,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
-| T136 | todo | P2 | 3 | 0% | |
 | T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
@@ -319,10 +318,6 @@ Check: `rtok agents install claude` offers the agent file and removal takes it a
 Gate for I-91 (`research.md` §17.2). The Agent SDK hooks page says `updatedToolOutput` "works for any tool"; rtok's standing rule says PostToolUse can only add context. If the CLI honours it, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied — that changes the design of `cmd`, `read` and `guard`, so it is a creator decision, not a silent change. No product code in this task.
 Plan: throwaway hook script (scratch, not committed) returning `hookSpecificOutput.updatedToolOutput` for `Read` and `Bash` on the current Claude Code; run one Read and one Bash; check what the model received in the transcript. Repeat for an MCP tool.
 Check: a dated row in `research.md` §3 with the Claude Code version, the payload sent and what the transcript shows, per tool kind. Honoured → the `AGENTS.md` rule line and I-91 are put to the creator with the row; not honoured → I-91 closes with the date.
-### T136. `rtok stats`: whole-file native Reads that `outline` would have answered
-Gate for I-82 (deny a native Read of an indexed source file). §2: Read is 15 % of tool-result tokens and the eight largest results are all whole-file Reads of 38–68 K chars. I-82 is parked on exactly this missing number.
-Plan: in `src/measure/stats.rs`, a `read_whole` row: native `Read` calls with no `offset`/`limit`, on a path whose extension has a tree-sitter grammar in the graph plugin, result ≥ the outline threshold; bytes and share of Read bytes and of all tool-result bytes; how many were followed by an Edit of the same path within the guard window (those needed the body). Reuse the grammar list and read-tool detection — no copies.
-Check: fixture test; dated `rtok stats --since 30d` row in `research.md` §2. Reads not followed by an Edit ≥ 5 % of tool-result tokens → I-82 goes to the creator with the number; below → I-82 closes with it.
 ### T137. `rtok stats`: image blocks row
 Gate for a multimodal token gate (`research.md` §16.3 #9). Screenshots from browser and simulator tools enter the live zone as image blocks; rtok measures bytes of text only, so their share is unknown.
 Plan: count `image` content blocks in tool results and user messages per tool; bytes; pixel size from the PNG `IHDR` / JPEG `SOF` header (fixed-offset parse, no new dependency); estimated tokens by the provider's published formula, cited in the code comment and in the row.

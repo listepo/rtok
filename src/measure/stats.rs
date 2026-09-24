@@ -80,6 +80,9 @@ pub struct Report {
     /// of that path in between. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "ReadDeltaRow::is_empty")]
     pub read_delta: ReadDeltaRow,
+    /// T136: whole-file Reads an outline could have answered. Absent when none.
+    #[serde(default, skip_serializing_if = "ReadWholeRow::is_empty")]
+    pub read_whole: ReadWholeRow,
     /// T65.1: tool_result bytes whose SHA-256 matches an earlier result in the
     /// same session. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "RepeatRow::is_empty")]
@@ -132,6 +135,27 @@ pub struct ReadDeltaRow {
 }
 
 impl ReadDeltaRow {
+    fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
+}
+
+/// T136, the gate for I-82: native `Read`s with no `offset`/`limit` of a file `outline`
+/// has a grammar for, at or above `[plugins.read] native_max_bytes`. `edited` of them
+/// were followed by an Edit/Write/MultiEdit of the same path within `[plugins.guard]
+/// window_turns` — those needed the body; the rest is what an outline could have answered.
+/// `read_bytes` and `result_bytes` are every Read / every tool_result — the denominators.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadWholeRow {
+    pub calls: u64,
+    pub bytes: u64,
+    pub edited: u64,
+    pub edited_bytes: u64,
+    pub read_bytes: u64,
+    pub result_bytes: u64,
+}
+
+impl ReadWholeRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
     }
@@ -232,13 +256,18 @@ pub struct CostReport {
     pub total_saved: f64,
 }
 
-/// The `[plugins.archive]` knobs the replay needs, so `collect` stays usable without a `Config`.
-#[derive(Debug, Clone, Copy)]
+/// The config knobs the fold needs, so `collect` stays usable without a `Config`: the
+/// `[plugins.archive]` replay, and the T136 `read_whole` thresholds.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Replay {
     pub keep_turns: u64,
     pub min_tokens: u64,
     pub head_lines: usize,
     pub tail_lines: usize,
+    /// `[plugins.read] native_max_bytes`: the size above which the hook denies a native Read.
+    pub read_whole_min: u64,
+    /// `[plugins.guard] window_turns`: an Edit this close after a Read needed its body.
+    pub edit_window_turns: u64,
 }
 
 impl Replay {
@@ -249,6 +278,8 @@ impl Replay {
             min_tokens: u64::from(a.min_tokens),
             head_lines: a.head_lines as usize,
             tail_lines: a.tail_lines as usize,
+            read_whole_min: cfg.plugins.read.native_max_bytes,
+            edit_window_turns: u64::from(cfg.plugins.guard.window_turns),
         }
     }
 }
@@ -370,6 +401,21 @@ impl Report {
                 d.bytes,
                 d.read_bytes,
                 pct(d.bytes, d.read_bytes)
+            ));
+        }
+        if self.read_whole.calls > 0 {
+            let d = &self.read_whole;
+            let plain = d.bytes - d.edited_bytes;
+            s.push_str(&format!(
+                "read whole calls {}  bytes {}  {:.1}% of Read  {:.1}% of results  \
+                 not edited {} bytes {:.1}% of results  edited after {}\n",
+                d.calls,
+                d.bytes,
+                pct(d.bytes, d.read_bytes),
+                pct(d.bytes, d.result_bytes),
+                d.calls - d.edited,
+                pct(plain, d.result_bytes),
+                d.edited
             ));
         }
         if self.thinking.blocks > 0 {
@@ -872,6 +918,7 @@ fn fold_session(
         fold_edits(&mut report.edits, u);
     }
     fold_read_delta(&mut report.read_delta, parsed);
+    fold_read_whole(&mut report.read_whole, parsed, replay);
     fold_repeat(&mut report.repeat, parsed);
     fold_expand_after(&mut report.expand_after, parsed);
     for r in &parsed.tool_results {
@@ -1133,6 +1180,54 @@ fn fold_read_delta(row: &mut ReadDeltaRow, parsed: &Parsed) {
             _ => {}
         }
     }
+}
+
+/// T136: see [`ReadWholeRow`]. The grammar list is `read::outline::supported`; without
+/// the `read` feature nothing has an outline, so nothing counts.
+fn fold_read_whole(row: &mut ReadWholeRow, parsed: &Parsed, rp: Replay) {
+    let sizes: BTreeMap<&str, u64> = parsed
+        .tool_results
+        .iter()
+        .map(|r| (r.tool_use_id.as_str(), r.content.len() as u64))
+        .collect();
+    row.result_bytes += sizes.values().sum::<u64>();
+    for (i, u) in parsed.tool_uses.iter().enumerate() {
+        if u.name != "Read" {
+            continue;
+        }
+        let bytes = sizes.get(u.id.as_str()).copied().unwrap_or(0);
+        row.read_bytes += bytes;
+        let ranged = u.input.get("offset").is_some() || u.input.get("limit").is_some();
+        let Some(path) = tool_path(&u.input) else {
+            continue;
+        };
+        if ranged || bytes < rp.read_whole_min.max(1) || !has_outline(path) {
+            continue;
+        }
+        row.calls += 1;
+        row.bytes += bytes;
+        let edited = parsed.tool_uses[i + 1..]
+            .iter()
+            .take_while(|e| u64::from(e.turn) <= u64::from(u.turn) + rp.edit_window_turns)
+            .any(|e| {
+                matches!(e.name.as_str(), "Edit" | "Write" | "MultiEdit")
+                    && tool_path(&e.input).is_some_and(|p| same_path(p, path))
+            });
+        if edited {
+            row.edited += 1;
+            row.edited_bytes += bytes;
+        }
+    }
+}
+
+#[cfg(feature = "read")]
+fn has_outline(path: &str) -> bool {
+    crate::plugins::read::outline::supported(Path::new(path))
+}
+
+#[cfg(not(feature = "read"))]
+fn has_outline(_path: &str) -> bool {
+    false
 }
 
 pub(crate) fn tool_path(input: &Value) -> Option<&str> {
@@ -1545,6 +1640,7 @@ mod tests {
                 min_tokens: 0,
                 head_lines: 0,
                 tail_lines: 0,
+                ..Replay::default()
             },
         )
         .unwrap();
@@ -1675,6 +1771,43 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    /// T136: of five Reads only the two whole, large, outline-able ones count; the one an
+    /// Edit follows is split out as having needed its body.
+    #[cfg(feature = "read")]
+    #[test]
+    fn read_whole_counts_large_unranged_reads_of_outlined_files() {
+        let dir = tempfile_dir();
+        let big = "x".repeat(40_000);
+        let read = |id: &str, input: Value| json!({"type":"assistant","message":{"id":format!("m{id}"),"content":[{"type":"tool_use","id":id,"name":"Read","input":input}]}});
+        let result = |id: &str, body: &str| json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":id,"content":body}]}});
+        let lines = [
+            read("t1", json!({"file_path":"src/a.rs"})),
+            result("t1", &big),
+            read("t2", json!({"file_path":"src/b.rs"})),
+            result("t2", &big),
+            json!({"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"Edit","input":{"file_path":"src/b.rs","old_string":"x","new_string":"y"}}]}}),
+            read("t4", json!({"file_path":"src/c.rs","limit":50})),
+            result("t4", &big),
+            read("t5", json!({"file_path":"notes.txt"})),
+            result("t5", &big),
+            read("t6", json!({"file_path":"src/small.rs"})),
+            result("t6", "fn main() {}"),
+        ];
+        let r = write_and_collect(&dir, "w.jsonl", &lines);
+        let d = &r.read_whole;
+        assert_eq!(
+            (d.calls, d.bytes, d.edited, d.edited_bytes),
+            (2, 80_000, 1, 40_000)
+        );
+        assert_eq!(d.read_bytes, 160_012);
+        let table = r.to_table();
+        assert!(
+            table.contains("read whole calls 2  bytes 80000  50.0% of Read  50.0% of results  not edited 1 bytes 25.0% of results  edited after 1"),
+            "{table}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn read_delta_counts_reread_after_edit_not_unchanged_reread() {
         let dir = tempfile_dir();
@@ -1761,6 +1894,7 @@ mod tests {
             min_tokens: 100,
             head_lines: 1,
             tail_lines: 1,
+            ..Replay::default()
         };
         let content = "x".repeat(50) + "\n" + &"y".repeat(500) + "\n" + &"z".repeat(50);
         let tokens = est_tokens(content.len() as u64);

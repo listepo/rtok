@@ -84,6 +84,20 @@ on `t65.1`, 2026-09-18. Estimator 4 chars/token.
 
 Verdict: `mode=stripped` wins; imports-only skipped (loses the bodies a Read of these files is for).
 
+### Whole-file native Reads an outline could answer (T136, 2026-09-24)
+
+`rtok stats --since 30d` on this machine (367 sessions, 423 630 transcript lines), `read_whole` row: native `Read` with no `offset`/`limit`, of a file `read::outline::supported` has a grammar for, result ≥ `[plugins.read] native_max_bytes` (32 768 B).
+
+| Metric | Value |
+| --- | --- |
+| Calls | 6 |
+| Bytes | 216 364 |
+| Share of Read bytes (14 150 009) | 1.5 % |
+| Share of all tool-result bytes | 0.3 % |
+| Followed by an Edit of the path within `[plugins.guard] window_turns` (8) | 0 |
+
+Under the 5 % gate: I-82 (deny such Reads, point at `outline`) is rejected with this number. The `read` plugin's advice deny (T4.6) already turns most such Reads away before they produce a result; these six got through.
+
 ### `graph` index accuracy (T8.8, 2026-09-04)
 
 30 symbols of this repo labelled by hand from a plain-text scan, independent of the index that is
