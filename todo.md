@@ -35,7 +35,8 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
 - T223. `windows-sys` linked in three versions
-- T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
+- T235.2. `rtok run` starts no login shell per call
+- T235.3. `rtok logs watch` exits when its parent goes away
 - T260. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
