@@ -72,6 +72,20 @@ pub fn process_kill(pid: i32) {
     }
 }
 
+/// This process's parent pid, to notice being orphaned: it changes when the parent exits
+/// and the kernel reparents us (to 1, or a subreaper). `None` on Windows, where a parent
+/// pid is never updated and so says nothing about the parent still being there.
+pub fn parent_pid() -> Option<i32> {
+    #[cfg(unix)]
+    {
+        rustix::process::getppid().map(|p| p.as_raw_nonzero().get())
+    }
+    #[cfg(windows)]
+    {
+        None
+    }
+}
+
 /// Become a session leader so closing the terminal does not take the tree down.
 /// No-op on Windows.
 pub fn setsid() {

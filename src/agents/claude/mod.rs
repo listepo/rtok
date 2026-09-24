@@ -859,8 +859,14 @@ mod tests {
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
         rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        // Compare the parsed value: a Windows path's `\` is `\\` in the raw JSON (T83.5).
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains(&desktop_command()), "{raw}");
+        let written: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            written["mcpServers"]["rtok"]["command"],
+            json!(desktop_command()),
+            "{raw}"
+        );
         assert_ne!(
             rtok_agent_sdk::unregister_mcp(&a, &path, "rtok").unwrap(),
             NO_CHANGES
@@ -1106,6 +1112,27 @@ mod tests {
         ));
         assert_eq!(market["plugins"][0]["name"], manifest["name"]);
         assert_eq!(market["plugins"][0]["source"], "./");
+    }
+
+    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the plugin-scoped
+    /// rtok MCP tool names Claude Code resolves for a plugin's own server
+    /// (`mcp__plugin_<plugin>_<server>__<tool>`, per the plugins reference doc) — a bare or
+    /// unscoped name would silently never fire.
+    #[test]
+    fn scout_agent_ships_with_the_cheap_scoped_frontmatter() {
+        let text = include_str!("../../../plugins/claude/agents/rtok-scout.md");
+        let front = text
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---\n"))
+            .expect("frontmatter fenced by `---`")
+            .0;
+        assert!(front.contains("name: rtok-scout"), "{front}");
+        assert!(front.contains("model: haiku"), "{front}");
+        for tool in ["read", "search", "outline", "explore", "expand"] {
+            let want = format!("mcp__plugin_rtok_rtok__{tool}");
+            assert!(front.contains(&want), "{front}: missing {want}");
+        }
+        assert!(!front.contains("mcp__rtok__"), "{front}: unscoped MCP name");
     }
 
     // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---
