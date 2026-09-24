@@ -33,4 +33,3 @@
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
 - T262.3. Codex: spawn brief on `SubagentStart`
-- T262.4. Copilot CLI: spawn brief on `subagentStart`

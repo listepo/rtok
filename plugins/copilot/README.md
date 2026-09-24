@@ -27,7 +27,7 @@ Files:
 - `plugin.json` — legacy manifest: `name` plus the `hooks` and `mcpServers` component paths.
 - `hooks/hooks.json` — the resolver line above running `hook <event> --host copilot` on
   `preToolUse`, `postToolUse`, `userPromptSubmitted`, `sessionStart`, `sessionEnd`,
-  `preCompact`, each `timeoutSec: 5` (the same six events `~/.copilot/hooks/rtok.json` carries;
+  `preCompact`, `subagentStart` (the T130 spawn brief), each `timeoutSec: 5` (the same seven events `~/.copilot/hooks/rtok.json` carries;
   checked by `tests/copilot_plugin.rs`).
 - `.mcp.json` — `mcpServers.rtok` → `rtok mcp` (`{type: "local", command, args, tools}`).
 

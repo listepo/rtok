@@ -48,6 +48,14 @@
         "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook PreCompact --host copilot; exit $LASTEXITCODE }; exit 0",
         "timeoutSec": 5
       }
+    ],
+    "subagentStart": [
+      {
+        "type": "command",
+        "bash": "command -v rtok >/dev/null 2>&1 && exec rtok hook SubagentStart --host copilot; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook SubagentStart --host copilot; true; exit 0",
+        "powershell": "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) { $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) { $r = $k } }; if ($r) { & $r hook SubagentStart --host copilot; exit $LASTEXITCODE }; exit 0",
+        "timeoutSec": 5
+      }
     ]
   }
 }
