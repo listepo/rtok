@@ -555,9 +555,16 @@ fn uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy() {
     // The host "materialized" the link: replace it with a plain copy of the tree —
     // same bytes, no OWNED_MARKER, the exact shape the check got stuck on.
     let dest = home.join(".cursor/plugins/local/rtok");
-    let src = fs::read_link(&dest).expect("install linked the plugin");
-    fs::remove_file(&dest).unwrap();
-    copy_tree(std::path::Path::new(&src), &dest);
+    if dest.is_symlink() {
+        let src = fs::read_link(&dest).unwrap();
+        fs::remove_file(&dest).unwrap();
+        copy_tree(std::path::Path::new(&src), &dest);
+    } else {
+        // Windows installs a marked copy, not a link (`PluginLink`); unmarked, it is the
+        // same shape (T83.13).
+        fs::remove_file(dest.join(rtok_agent_sdk::OWNED_MARKER))
+            .expect("install copied the plugin");
+    }
 
     let installed_marks = |cfg: &std::path::Path, home: &std::path::Path| -> usize {
         let out = rtok(&["agents", "info", "cursor", "--json"], cfg, home);
