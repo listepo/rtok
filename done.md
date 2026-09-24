@@ -6226,6 +6226,15 @@ Plan: in a scratch clone, enable `worktree.useRelativePaths`, add a worktree, th
 Check: `research.md` §18.2 gains a dated compatibility table; if every reader passes, the `worktrees` skill (T155) and `AGENTS.md` gain the one-line setting; if any fails, the finding is recorded and the setting stays off.
 
 Result: research.md §18.2 gains a dated probe table: git 2.54, cargo 1.97.1 (VCS dirty check) and gh 2.101 all open a relative-link worktree (extensions.relativeWorktrees, format v1); moving the common parent keeps relative links working without repair while the absolute control breaks. Editors are untested (interactive), so the setting stays off and the worktrees skill/AGENTS.md are unchanged.
+### T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
+
+Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected at once (the Rejected entry already carries T125's dated gate result while T125 is still `in progress`); I-87 appears twice in Open with contradictory states (unpromoted and "promoted T135"); the Promoted section is a headerless four-column pseudo-table whose `| ID | Became | Date |` header appears only at the bottom with three columns, and the I-28 row is truncated mid-word ("under the `inje"); the Open table also splits on a blank line. Breaks "an idea must not appear twice, or in both Open and Rejected".
+
+Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
+
+Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
+
+Result: I-87 duplicate, Promoted header and I-28 were already fixed by #239; this drops the Open I-86 row (Rejected keeps T125's evidence) and the duplicate I-17 (pi only) Promoted row (the I-17 row already records T10.6). New tests/ideas_md.rs: every I-NN has exactly one defining row across Open/Later/Rejected/Promoted and every pipe-table has header+separator; fails on a re-added I-86 or a doubled I-87.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
