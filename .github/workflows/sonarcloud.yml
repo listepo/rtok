@@ -4,7 +4,7 @@ name: sonarcloud
 # workflow_dispatch). Draft/PR noise stays on the regular `ci` workflow.
 on:
   push:
-    branches: [main]
+    branches: [main, ci/sonarcloud-oss]
   workflow_dispatch:
 
 concurrency:
