@@ -19,6 +19,6 @@ Plan / diffs only for token-economy work. Drawn from `research.md`,
 
 ### To add
 
-- **Batch / Flex API path** — ~50% provider discount (and cache stacking where supported) for async or Flex-tier traffic; rtok today only rides sync agent calls.
+- **Batch / Flex API path** — ~50% provider discount (and cache stacking where supported) for async or Flex-tier traffic; rtok today only rides sync agent calls. **Planned** opt-in CLI (not implemented): `rtok batch submit <jsonl>`, `rtok batch status <id>`, `rtok batch fetch <id> <out>` — pass-through to provider `/v1/batches` via `rtok proxy`, outside the agent loop, does not replace agent `BASE_URL` (`docs/batch-flex.md`).
 - **Model routing (small → large)** — cheap model for classify/route/simple edits, large only on hard turns; not in plan today.
 - **LLM soft compression (P28)** — Later / default-off LLMLingua-class shrink of archived context; ship only if a bench beats v0.1 lossless (`plan.md` P28, I-21).

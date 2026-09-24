@@ -90,6 +90,24 @@ Anthropic `Wire` adapter — no `proxy_filter`, no context-management injection.
   policy remains “never”, unless an explicit opt-in tool/CLI is designed later).
 - Not visible to hooks/MCP.
 
+### Planned CLI skeleton (opt-in, not implemented)
+
+A thin **opt-in** surface for humans/scripts that already speak provider Batch —
+outside the agent loop. It does **not** replace an agent's `ANTHROPIC_BASE_URL` /
+`OPENAI_BASE_URL` (those stay on sync chat wires). Commands talk to the same
+`rtok proxy` hop and **pass through** provider Batch paths (`/v1/batches`,
+`/v1/messages/batches`, …); no sync→Batch conversion.
+
+**Planned** (not in the binary yet):
+
+| Command | Role |
+|---------|------|
+| `rtok batch submit <jsonl>` | upload/create a batch (JSONL → provider create) |
+| `rtok batch status <id>` | poll batch status |
+| `rtok batch fetch <id> <out>` | download results to `<out>` |
+
+See also `next.md` (token-saving backlog). Promote into `plan.md` before coding.
+
 ## Flex API (sync, cheaper tier)
 
 OpenAI Flex processing is the same Chat Completions / Responses HTTP surface
