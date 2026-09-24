@@ -84,7 +84,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
-| T231 | todo | P2 | 3 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
 
 
@@ -512,14 +511,6 @@ Found 2026-09-23 in the D27 audit: `demon status` and `otel status` are exempt (
 Plan: page `("services", "services")` — one row per supervised service (name, state, pid, uptime, last error) and an OTel block (endpoint, per-stream watermark, pending rows, last flush); both commands move to `COMMAND_PAGES`. Read-only; `demon start/stop` and `otel flush` stay CLI.
 
 Check: `services_page_exists_on_both_surfaces`; `tests/web.rs` fixture with a stopped service and a non-zero watermark; `just check` green.
-
-### T231. Hosts page: `agents list` / `agents info` on `tui` and `web`
-
-Found 2026-09-23 in the D27 audit: `agents list` and `agents info` are exempt and the comment block files them under "writing" commands (`tests/surface_parity.rs:281-291`) although they only read host state.
-
-Plan: page `("hosts", "hosts")` — per known host: kind (CLI / desktop / IDE), detected version, installed surfaces (hooks, MCP, plugin), config path; reuse the `agents list` probe and its cache so T168's `--version` wrapper noise cannot flake the page; fix the "writing" comment; both commands move to `COMMAND_PAGES`.
-
-Check: `hosts_page_exists_on_both_surfaces`; the page rows equal `agents list --json` on the host-fixture matrix; `just check` green.
 
 ### T232. Worktrees page: `worktree list` on `tui` and `web`
 

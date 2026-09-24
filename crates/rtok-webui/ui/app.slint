@@ -346,6 +346,7 @@ export component MainWindow inherits Window {
     in property <string> doctor-text;
     in property <string> stats-text;
     in property <string> graph-text;
+    in property <string> hosts-text;
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
@@ -742,6 +743,17 @@ export component MainWindow inherits Window {
                     }
                     BodyText {
                         text: graph-text;
+                    }
+                }
+
+                if page-id == "hosts": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "hosts";
+                    }
+                    BodyText {
+                        text: hosts-text;
                     }
                 }
             }

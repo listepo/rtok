@@ -61,6 +61,13 @@ pub struct Snapshot {
     /// this tick (no re-indexing). `None` when the `graph` feature is off or the store
     /// read failed.
     pub graph: Option<String>,
+    /// Hosts page (T231): `agents list`'s blocks — kind, detected version, installed
+    /// surfaces, config path — one per known host variant (D27), so `agents list` /
+    /// `agents info` can join `COMMAND_PAGES`. [`hosts_page_text`] reuses the same
+    /// probe `agents_list`'s JSON form calls (T168's `--version` noise filter and all)
+    /// behind a cache: never blocks a 2 s tick on a cold or stale probe — the tick
+    /// renders the last known text, or "probing hosts…" before the first one lands.
+    pub hosts: String,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -309,6 +316,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("skills", "skills"),
         ("stats", "stats"),
         ("graph", "graph"),
+        ("hosts", "hosts"),
     ]
 }
 
@@ -1131,6 +1139,51 @@ fn graph_page_text(_cfg: &Config) -> Option<String> {
     None
 }
 
+/// The Hosts page (T231): [`crate::agents::list`]'s blocks, verbatim — the same
+/// per-variant kind/version/config/module text `rtok agents list` prints, built from
+/// the same probe `agents_list`'s JSON form calls (D27, no duplicated logic).
+/// `agents list` spawns one `--version` per host variant (T168) — too slow for a 2 s
+/// snapshot tick — so this reuses [`doctor_for_snapshot`]'s cache shape, except a
+/// cold or stale entry never blocks the tick: a background thread refreshes it while
+/// the tick renders the last known text, or "probing hosts…" before the first probe
+/// lands.
+fn hosts_page_text(cfg: &Config) -> String {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, OnceLock};
+    use std::time::Instant;
+
+    struct Entry {
+        at: Instant,
+        text: String,
+    }
+    static CACHE: OnceLock<Mutex<Option<Entry>>> = OnceLock::new();
+    static REFRESHING: AtomicBool = AtomicBool::new(false);
+
+    let lock = CACHE.get_or_init(|| Mutex::new(None));
+    let last_known = lock.lock().ok().and_then(|g| {
+        g.as_ref()
+            .map(|e| (e.text.clone(), e.at.elapsed() < DOCTOR_SNAPSHOT_TTL))
+    });
+    if !matches!(last_known, Some((_, true))) && !REFRESHING.swap(true, Ordering::SeqCst) {
+        let cfg = cfg.clone();
+        std::thread::spawn(move || {
+            let text = crate::agents::list(&cfg);
+            if let Some(lock) = CACHE.get()
+                && let Ok(mut guard) = lock.lock()
+            {
+                *guard = Some(Entry {
+                    at: Instant::now(),
+                    text,
+                });
+            }
+            REFRESHING.store(false, Ordering::SeqCst);
+        });
+    }
+    last_known
+        .map(|(text, _)| text)
+        .unwrap_or_else(|| "probing hosts…\n".to_string())
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -1200,6 +1253,8 @@ impl<'a> Model<'a> {
             stats: stats_text,
             // T230: reads the store on this tick — see `graph_page_text`.
             graph: graph_page_text(self.cfg),
+            // T231: cached in the background — see `hosts_page_text`.
+            hosts: hosts_page_text(self.cfg),
         }
     }
 
