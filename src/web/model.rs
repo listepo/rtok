@@ -1810,11 +1810,7 @@ mod tests {
     #[test]
     fn doctor_page_rides_the_snapshot() {
         let cx = Runtime::in_memory("dash").unwrap();
-        let mut cfg = cx.config.clone();
-        let dir = std::env::temp_dir().join(format!("rtok-model-doctor-{}", std::process::id()));
-        cfg.doctor.settings_path = dir.join("missing-settings.json");
-        cfg.doctor.claude_json = dir.join("missing-claude.json");
-        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        let cfg = cx.config.clone();
         let snap = Model::new(&cfg, Some(&cx.store)).snapshot();
         let direct = doctor(&cfg).expect("doctor page");
         let carried = snap
@@ -1975,7 +1971,8 @@ mod tests {
 
     #[test]
     fn session_detail_filters_snapshot_calls_by_id() {
-        let mut snap = Model::new(&Config::default(), None).snapshot();
+        let cfg = crate::testutil::config("session-detail").0;
+        let mut snap = Model::new(&cfg, None).snapshot();
         snap.sessions = vec![SessionTotals {
             id: "a".into(),
             host: None,
@@ -2049,10 +2046,6 @@ mod tests {
     fn expand_payload_caps_greps_and_freezes_like_cli() {
         let mut cfg = crate::testutil::config("expand-model").0;
         cfg.expand.max_lines = 2;
-        let home = cfg.core.db_path.parent().unwrap().to_path_buf();
-        cfg.doctor.settings_path = home.join("missing-settings.json");
-        cfg.doctor.claude_json = home.join("missing-claude.json");
-        cfg.doctor.mcp_json = home.join("missing-mcp.json");
         let cx = crate::plugin::Runtime::open(cfg.clone(), "proxy-sess").unwrap();
         let id = cx
             .store
