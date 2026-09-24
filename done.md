@@ -209,6 +209,10 @@ Do (2026-09-22): the card's first step ruled out its own original plan — `PreT
 
 Check result (2026-09-22): `cargo test --lib plugins::memory::` green (handoff + hook coverage); `cargo test --test hook_spawn_brief` — 4/4 passed (`flag_off_is_a_passthrough`, `empty_ledger_is_a_passthrough`, `brief_carries_pointers_an_expand_id_and_stays_under_budget` incl. byte-stability on a second call, `non_subagent_events_are_untouched`); `just check` green.
 
+### T264. Raise the per-task size limit to 300 LOC
+
+Creator request 2026-09-24: one task = one PR of ≤300 LOC (was ≤200), still ≤10 files. Changed in `AGENTS.md` (the rule) and `migration.md` (its quote). Past deviations in `done.md` and splits already written into `plan.md` cards stay as they were.
+
 ### T262.2. Research: which hosts can inject context at subagent start
 
 Creator request 2026-09-24: extend the `SubagentStart` spawn brief (T130.2) beyond Claude Code where a host supports it. Known so far: VS Code links `plugins/claude` and already gets it; Kimi fires `SubagentStart` but discards the hook's result (`sessionExternalHooksService.ts` in MoonshotAI/kimi-code awaits `runner.trigger` and ignores it), so a brief there saves nothing; CodeWhale's `subagent_spawn` is observe-only. Check the rest (Codex, Cursor, Copilot CLI, Gemini, Grok, ZCode, OpenCode, Pi) from docs or source, and record the result in `research.md`.

@@ -4,7 +4,7 @@
 
 **Read first.** `plan.md`, `architecture.md`, `research.md`. Also `roadmap.md`, `ideas.md` (never implement), `done.md`. Per plugin: `src/plugins/<id>/AGENTS.md`. No unplanned work.
 
-**Workflow.** Claim a `todo` row in `plan.md` first. One task = one branch = one PR off `origin/main`; ≤200 LOC, ≤10 files. Finish: `just check`, commit `<id>: <title>`, move task to `done.md`.
+**Workflow.** Claim a `todo` row in `plan.md` first. One task = one branch = one PR off `origin/main`; ≤300 LOC, ≤10 files. Finish: `just check`, commit `<id>: <title>`, move task to `done.md`.
 
 **Rules.** Fail open: hook exits 0 in ≤10 ms unmodified. Lossless: `expand <id>`. No `Measurement` row = no saving claim. Injections budgeted, byte-stable. PostToolUse adds context only. New dep: one-line reason. No raw SQL (Diesel). No duplicated logic. Skills only in `skills/`, never bundled (T234). New plugins/hosts obey D21. Own TOML: schema from types, one config module (T238). Host configs: no schema; check only our entry, rest byte-for-byte.
 
