@@ -148,6 +148,17 @@ impl HookInput {
         {
             self.tool_response = Some(result);
         }
+        // `subagentStart` names the spawned agent `agentName` (T262.4).
+        if self.agent_type.is_none()
+            && let Some(name) = self.extra.remove("agentName").and_then(as_string)
+        {
+            self.agent_type = Some(name);
+        }
+        if self.task_description.is_none()
+            && let Some(what) = self.extra.remove("agentDescription").and_then(as_string)
+        {
+            self.task_description = Some(what);
+        }
         let name = if self.hook_event_name.is_empty() {
             event
         } else {
@@ -461,6 +472,7 @@ fn claude_event(name: &str) -> &str {
         "sessionEnd" => "SessionEnd",
         "userPromptSubmitted" => "UserPromptSubmit",
         "preCompact" => "PreCompact",
+        "subagentStart" => "SubagentStart",
         other => other,
     }
 }
@@ -744,6 +756,22 @@ mod tests {
         assert_eq!(input.tool_response.as_ref().unwrap(), "total 0\n");
         assert!(input.post_tool().is_some());
         assert!(input.pre_tool().is_none());
+    }
+
+    #[test]
+    fn copilot_subagent_start_maps_agent_name_and_description() {
+        let raw = serde_json::json!({
+            "sessionId": "cp-2",
+            "cwd": "/tmp",
+            "agentName": "explore",
+            "agentDescription": "look at /repo/a.rs"
+        });
+        let mut input: HookInput = serde_json::from_value(raw).unwrap();
+        input.adapt_copilot("subagentStart");
+        let start = input.subagent_start().expect("SubagentStart");
+        assert_eq!(start.agent_type, "explore");
+        assert_eq!(start.task_description, "look at /repo/a.rs");
+        assert!(input.extra.get("agentName").is_none(), "{:?}", input.extra);
     }
 
     #[test]

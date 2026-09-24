@@ -148,4 +148,13 @@ fn copilot_reads_reach_the_brief() {
     let out = hook(&home, "SubagentStart", &subagent_start(session));
     let text = brief_of(&out).expect("the Copilot read must reach the ledger");
     assert!(text.contains("/repo/c.rs"), "{text}");
+
+    // T262.4: Copilot's own `subagentStart` payload gets the brief as flat `additionalContext`.
+    let spawn =
+        json!({"sessionId": session, "timestamp": 1, "cwd": "/tmp", "agentName": "explore"});
+    let out = hook_as(&home, &["--host", "copilot"], "SubagentStart", &spawn);
+    let text = out["additionalContext"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{out}"));
+    assert!(text.contains("/repo/c.rs"), "{text}");
 }

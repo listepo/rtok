@@ -26,6 +26,7 @@ pub const EVENTS: &[(&str, &str)] = &[
     ("sessionStart", "SessionStart"),
     ("sessionEnd", "SessionEnd"),
     ("preCompact", "PreCompact"),
+    ("subagentStart", "SubagentStart"),
 ];
 
 /// The CLI and the desktop app read the same `~/.copilot` files.
@@ -318,7 +319,7 @@ mod tests {
         let (c, dir) = cfg("dry", true);
         let out = run(&c, false).unwrap();
         assert!(
-            out.starts_with("+ ") && out.ends_with("(6 events)"),
+            out.starts_with("+ ") && out.ends_with("(7 events)"),
             "{out}"
         );
         assert!(!hooks_path(&c).exists());
@@ -327,14 +328,14 @@ mod tests {
     }
 
     #[test]
-    fn apply_writes_six_events_is_idempotent_and_remove_deletes() {
+    fn apply_writes_seven_events_is_idempotent_and_remove_deletes() {
         let (c, dir) = cfg("apply", false);
         assert!(run(&c, false).unwrap().starts_with("+ "));
         assert_eq!(run(&c, false).unwrap(), NO_CHANGES);
         let doc: Value =
             serde_json::from_str(&fs::read_to_string(hooks_path(&c)).unwrap()).unwrap();
         assert_eq!(doc["version"], 1);
-        assert_eq!(doc["hooks"].as_object().unwrap().len(), 6);
+        assert_eq!(doc["hooks"].as_object().unwrap().len(), 7);
         assert!(doc["hooks"].get("preCompact").is_some());
         let pre = &doc["hooks"]["preToolUse"][0];
         assert_eq!(pre["type"], "command");
