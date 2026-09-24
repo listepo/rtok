@@ -98,6 +98,17 @@
           }
         ]
       }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook SubagentStart; exec \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\" SubagentStart",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

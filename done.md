@@ -209,6 +209,25 @@ Do (2026-09-22): the card's first step ruled out its own original plan — `PreT
 
 Check result (2026-09-22): `cargo test --lib plugins::memory::` green (handoff + hook coverage); `cargo test --test hook_spawn_brief` — 4/4 passed (`flag_off_is_a_passthrough`, `empty_ledger_is_a_passthrough`, `brief_carries_pointers_an_expand_id_and_stays_under_budget` incl. byte-stability on a second call, `non_subagent_events_are_untouched`); `just check` green.
 
+### T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs
+
+T130.1 (`done.md`) landed the mechanism — `SubagentStart` on the `Plugin` trait, the hook dispatch, config, and `memory::handoff::build_brief` shared with the `handoff` MCP tool — but nothing yet installs a `SubagentStart` matcher for real users, so the feature is inert until this lands. Needs: (1) `rtok agents install claude` registers `SubagentStart`, and `plugins/claude/hooks/hooks.json` carries the same entry (the plugin is the installer's hooks, T114); (2) `docs/agents.md` reblessed (`tests/agents_doc.rs` with `RTOK_BLESS=1`) and `tests/host_docs.rs` green. Split on claiming (2026-09-24): the outline line ranges (the original part 3) moved to T130.3.
+
+Scope: Claude only. `ENTRIES` in `src/agents/claude/mod.rs` is shared wholesale with Kimi (`src/agents/kimi/mod.rs`), which has not been cleared for `SubagentStart`; whether Kimi and the other Claude-compatible hosts (Gemini, Grok, Copilot, …) get it too stays the creator's call, raised in the PR.
+
+Plan:
+1. `src/agents/claude/mod.rs`: `CLAUDE_ENTRIES` = `ENTRIES` + `("SubagentStart", "")`, built in a const block; the settings installer (insert and strip) and the plugin-tree test use it; Kimi keeps `ENTRIES`.
+2. `plugins/claude/hooks/hooks.json`: the `SubagentStart` entry, same resolver line as the other events.
+3. Bless `docs/agents.md`; `agents_install` e2e and the claude unit tests show the new matcher; `just check`.
+
+Result: `CLAUDE_ENTRIES` (`ENTRIES` + `SubagentStart`, const-built) drives the settings installer's insert/strip and the plugin-tree test; `plugins/claude/hooks/hooks.json` carries the matching `SubagentStart` entry; both READMEs name it. Kimi keeps `ENTRIES` unchanged. `docs/agents.md` needed no change (the host table lists modules, not events). The hook stays inert until `[plugins.memory] spawn_brief = true` (T131 measures it).
+
+Check: `agents_install` matrix e2e shows the new `SubagentStart` matcher for the `claude` host; `tests/agents_doc.rs` and `tests/host_docs.rs` green; `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+
 ### T116. Copilot CLI plugin
 
 Do (2026-09-22): verified against the Copilot docs first (plugins-creating + cli-plugin-reference, fetched 2026-09-22): Copilot finds manifests in `.claude-plugin/` but its plugin hooks are the camelCase `preToolUse` shape, not Claude's `hook_event_name` — the T114 tree is not readable **as is**, so this is the card's else-branch: a `plugins/copilot/` tree in Copilot's legacy format (root `plugin.json` with `hooks`/`mcpServers` component paths, `hooks/hooks.json`, `.mcp.json`). The tree's hooks file IS `hooks_doc("rtok", 5)` — the same document `~/.copilot/hooks/rtok.json` writes, pinned by test (one shape, two surfaces, D21). Installer mirrors T115: `Support::Flag("--yes")` runs `copilot plugin install <resolved plugins/copilot>` (the documented local-path spec — not `marketplace add`, which registers marketplaces), `remove` uninstalls by the manifest's `name`; `installed()` reads the `installed-plugins/` manifest marker (`copilot plugin list --json` reports the same state), `COPILOT_HOME` redirects a non-default `[setup.copilot] dir`. D21 singleton: while the plugin is installed — including on the same run that installs it — `hooks/rtok.json` and `mcpServers.rtok` are taken back instead of added. `plugins/README.md` row, `## Docs` links, `docs/agents.md` blessed.
@@ -6248,15 +6267,6 @@ Result: `site/content/docs/reference/_content.gotmpl` mounts `docs/otel.md` and 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
 
-### T228. Config page: `config show` / `config get` on `tui` and `web`
-
-Found 2026-09-23 in the D27 audit: `config show` and `config get` are exempt (`tests/surface_parity.rs:401-408`) although `model::config_entries` (`src/web/model.rs:1055`) already lists every key with its value and D12 source.
-
-Plan: page `("config", "config")` — key, effective value, source (default / user file / project file / env / flag); read-only on both surfaces (writes stay CLI, D27); TUI tab with a `/` filter, Slint list with a filter box; both commands move to `COMMAND_PAGES`.
-
-Check: `config_page_exists_on_both_surfaces`; a `tests/web.rs` case on a temp config with one env override shows the env source; `just check` green.
-
-Result: New Config page ("config","config") on both surfaces: model::config_page_text renders config_entries rows as key = value (source) each tick; TUI tab with a / filter, Slint page with a filter box; read-only. config get gained --json {key,value,source}; config show/get moved from EXEMPT to COMMAND_PAGES/JSON_READERS. Tests: config_page_exists_on_both_surfaces, config_page_source_reflects_an_env_override (RTOK_PROXY_PORT → source env), webui snapshot parse.
 ### T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 
 Found 2026-09-22 in the store/accounting pass: `inline_body` (`src/store/mod.rs:1823-1828`) stores bodies under the inline cap through `String::from_utf8_lossy` and hashes the *lossy* text, so `request_sha256`/`response_sha256` are not hashes of the wire bytes and `call_io_request` (:736-750) returns U+FFFD-corrupted bytes as if they were the original request. Consumers like `src/measure/cache.rs:106` see different bytes than the proxy sent; the stored sha cannot verify the true payload. Lossless-by-default holds for archived content but not for inline-kept content.
