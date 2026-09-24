@@ -55,6 +55,12 @@ pub struct Snapshot {
     /// [`stats_skills`] already runs for the Skills page (no second aggregation). `None`
     /// when this tick's transcripts read failed.
     pub stats: Option<String>,
+    /// Graph page (T230): `graph status`'s index health (rows, files, the T68.3
+    /// pending/staleness set, `indexed_at`) plus `graph dead`'s unreferenced-definition
+    /// list, folded into one page (D27) — [`graph_page_text`], read from the store on
+    /// this tick (no re-indexing). `None` when the `graph` feature is off or the store
+    /// read failed.
+    pub graph: Option<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -302,6 +308,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("logs", "logs"),
         ("skills", "skills"),
         ("stats", "stats"),
+        ("graph", "graph"),
     ]
 }
 
@@ -1078,6 +1085,52 @@ fn stats_page_text(cfg: &Config, report: &stats::Report) -> String {
     out
 }
 
+/// Dead-symbol lines shown on the Graph page before it says "and N more" instead of
+/// flooding the page (T230). A cheap per-tick bound, not a token budget — `graph dead
+/// --json` (uncapped) still has the rest.
+const GRAPH_DEAD_CAP: usize = 200;
+
+/// The Graph page (T230): `graph status::collect`/`format_table` (same text `rtok
+/// graph status` prints) plus `graph::dead_candidates` (the same rows `rtok graph
+/// dead --json` prints, minus the `index_for` walk `--json` runs first), capped for
+/// display. Opens its own store handle like [`doctor`] — a few count queries plus a
+/// scan of the store's dead candidates, not a re-index. `None` when the `graph`
+/// feature is off (build-min) or either read failed.
+#[cfg(feature = "graph")]
+fn graph_page_text(cfg: &Config) -> Option<String> {
+    use crate::plugins::graph::{dead_candidates, status};
+
+    let rt = crate::plugin::Runtime::open(cfg.clone(), "web-graph").ok()?;
+    let ctx = crate::plugin::Ctx::new(&rt);
+    let root = std::env::current_dir().ok()?;
+    let health = status::collect(&ctx, &root).ok()?;
+    let mut out = status::format_table(&health);
+    out.push_str("\ndead symbols\n");
+    // T230: reads the store as it stands, no `index_for` walk — cheap per tick.
+    match dead_candidates(&ctx, &root) {
+        Ok(rows) if rows.is_empty() => out.push_str(" none\n"),
+        Ok(rows) => {
+            let total = rows.len();
+            for r in rows.iter().take(GRAPH_DEAD_CAP) {
+                out.push_str(&format!(" {}:{} {} {}\n", r.path, r.line, r.kind, r.name));
+            }
+            if total > GRAPH_DEAD_CAP {
+                out.push_str(&format!(
+                    " … {} more, capped at {GRAPH_DEAD_CAP} — `rtok graph dead --json` has the rest\n",
+                    total - GRAPH_DEAD_CAP
+                ));
+            }
+        }
+        Err(e) => out.push_str(&format!(" dead scan failed: {e}\n")),
+    }
+    Some(out)
+}
+
+#[cfg(not(feature = "graph"))]
+fn graph_page_text(_cfg: &Config) -> Option<String> {
+    None
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -1145,6 +1198,8 @@ impl<'a> Model<'a> {
             ref_ids,
             // T227: the same scan `stats_skills` already ran for the Skills page.
             stats: stats_text,
+            // T230: reads the store on this tick — see `graph_page_text`.
+            graph: graph_page_text(self.cfg),
         }
     }
 

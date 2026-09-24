@@ -175,6 +175,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "logs" => frame.render_widget(logs_text(app), area),
         "skills" => render_skills(frame, app, area),
         "stats" => frame.render_widget(stats(app), area),
+        "graph" => frame.render_widget(graph_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -409,6 +410,17 @@ fn doctor(app: &App) -> Paragraph<'static> {
 fn stats(app: &App) -> Paragraph<'static> {
     let Some(text) = app.snapshot().stats.as_ref() else {
         return empty("stats did not answer this tick — `rtok stats` has the details");
+    };
+    Paragraph::new(text.clone())
+}
+
+/// The model's Graph page (T230), verbatim: `rtok graph status`'s index health plus
+/// `rtok graph dead`'s unreferenced-definition list, from the same store read the
+/// snapshot already carries (D27) — a rendering, not a second read. `None` is a
+/// failed tick or the `graph` feature being off, not an empty page.
+fn graph_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().graph.as_ref() else {
+        return empty("graph did not answer this tick — `rtok graph status` has the details");
     };
     Paragraph::new(text.clone())
 }
@@ -875,8 +887,13 @@ mod tests {
     use rstest::rstest;
 
     /// What the loop would put on a real terminal, rendered into a buffer instead.
+    /// 90 wide: at 80, 9 tabs' padded titles and dividers (T230's `graph` was the
+    /// ninth) no longer fit the tab bar's `body.width - 4` (T15.2's border cols),
+    /// so `graph` fell off screen and `shell_paints_the_model_tabs_hints_and_tick`
+    /// failed on this file, not on a rendering bug — a little headroom for the next
+    /// page too.
     fn screen(app: &App) -> String {
-        let mut terminal = ratatui::Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut terminal = ratatui::Terminal::new(TestBackend::new(90, 24)).unwrap();
         terminal.draw(|frame| draw(frame, app)).unwrap();
         terminal
             .backend()

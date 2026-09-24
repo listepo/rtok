@@ -89,7 +89,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
-| T230 | todo | P2 | 3 | 0% | |
 | T231 | todo | P2 | 3 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
 
@@ -546,14 +545,6 @@ Found 2026-09-23 in the D27 audit: `demon status` and `otel status` are exempt (
 Plan: page `("services", "services")` — one row per supervised service (name, state, pid, uptime, last error) and an OTel block (endpoint, per-stream watermark, pending rows, last flush); both commands move to `COMMAND_PAGES`. Read-only; `demon start/stop` and `otel flush` stay CLI.
 
 Check: `services_page_exists_on_both_surfaces`; `tests/web.rs` fixture with a stopped service and a non-zero watermark; `just check` green.
-
-### T230. Graph page: index status and dead symbols on `tui` and `web`
-
-Found 2026-09-23 in the D27 audit: `graph status`, `graph dead`, `graph impact` and `graph affected` are exempt (`tests/surface_parity.rs:385-400`) though they are pure reads over `symbols`; I-80 rejected new export formats because "D27 says the web/TUI page is the surface", yet no page exists.
-
-Plan: page `("graph", "graph")` — index status (roots, files, symbols, edges, the T68.3 staleness line) and the dead-symbol list with path and line; `graph status` and `graph dead` move to `COMMAND_PAGES`. `impact` and `affected` need a target and stay CLI/MCP: keep them exempt with that reason written in the test.
-
-Check: `graph_page_exists_on_both_surfaces`; snapshot on a fixture index lists the same dead symbols as `graph dead --json`; `just check` green.
 
 ### T231. Hosts page: `agents list` / `agents info` on `tui` and `web`
 

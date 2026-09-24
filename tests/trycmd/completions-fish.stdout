@@ -363,6 +363,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcomm
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from index" -l dry-run -d 'Report what would be indexed and write no rows'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from index" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from dead" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
+complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from dead" -l json -d 'JSON rows instead of `path:line kind name` lines (T60.1, uncapped)'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from dead" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from status" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
 complete -c rtok -n "__fish_rtok_using_subcommand graph; and __fish_seen_subcommand_from status" -l json

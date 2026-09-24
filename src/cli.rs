@@ -492,7 +492,12 @@ enum GraphCmd {
         dry_run: bool,
     },
     /// List unreferenced private definitions (skips pub, trait impls, tests, macros)
-    Dead { path: Option<PathBuf> },
+    Dead {
+        path: Option<PathBuf>,
+        /// JSON rows instead of `path:line kind name` lines (T60.1, uncapped)
+        #[arg(long)]
+        json: bool,
+    },
     /// Index health for the current or given root (T68.3)
     Status {
         path: Option<PathBuf>,
@@ -1272,12 +1277,15 @@ pub fn run() -> Result<()> {
                         r.extension_mapped,
                     );
                 }
-                GraphCmd::Dead { path } => {
+                GraphCmd::Dead { path, json } => {
                     let root = path.unwrap_or(std::env::current_dir()?);
-                    print!(
-                        "{}",
-                        crate::plugins::graph::dead(&crate::plugin::Ctx::new(&cx), &root)?
-                    );
+                    let ctx = crate::plugin::Ctx::new(&cx);
+                    if json {
+                        let rows = crate::plugins::graph::dead_rows(&ctx, &root)?;
+                        println!("{}", serde_json::to_string_pretty(&rows)?);
+                    } else {
+                        print!("{}", crate::plugins::graph::dead(&ctx, &root)?);
+                    }
                 }
                 GraphCmd::Status { path, json } => {
                     crate::plugins::graph::status::run(&cfg, path, json)?;

@@ -12,7 +12,7 @@ use std::rc::Rc;
 /// Page ids the WASM UI renders, in `model::pages()` order (D23 / T19.4).
 /// `tests/surface_parity.rs` asserts this equals `rtok::web::model::pages()`.
 pub const PAGE_IDS: &[&str] = &[
-    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
+    "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats", "graph",
 ];
 
 /// Pure snapshot → view fields. Native-testable; the WASM `load_snapshot` applies these
@@ -39,6 +39,7 @@ pub mod snapshot {
         pub skills_header: String,
         pub skills: Vec<Skill>,
         pub stats_text: String,
+        pub graph_text: String,
     }
 
     #[derive(Debug, Default, PartialEq, Eq)]
@@ -109,6 +110,7 @@ pub mod snapshot {
             skills_header: v["skills"]["header"].as_str().unwrap_or("").to_string(),
             skills: skills_of(v),
             stats_text: stats_of(&v["stats"]),
+            graph_text: graph_of(&v["graph"]),
         }
     }
 
@@ -432,6 +434,15 @@ pub mod snapshot {
             .unwrap_or_else(|| "stats did not answer this tick — `rtok stats` has the details".into())
     }
 
+    /// The Graph page (T230): the wire already carries `rtok graph status`'s table plus
+    /// `rtok graph dead`'s list as one rendered string — no reconstruction here, unlike
+    /// [`doctor_of`], since the model sends the text itself.
+    fn graph_of(v: &Value) -> String {
+        v.as_str().map(str::to_string).unwrap_or_else(|| {
+            "graph did not answer this tick — `rtok graph status` has the details".into()
+        })
+    }
+
     fn savings_text(v: &Value) -> String {
         let Some(plugins) = v["plugins"].as_array() else {
             return "no measured savings yet".into();
@@ -539,6 +550,7 @@ pub fn apply_snapshot(ui: &MainWindow, v: &serde_json::Value) {
     ui.set_overview_turns(SharedString::from(view.overview_turns));
     ui.set_doctor_text(SharedString::from(view.doctor_text));
     ui.set_stats_text(SharedString::from(view.stats_text));
+    ui.set_graph_text(SharedString::from(view.graph_text));
 
     let plugins: Vec<PluginRow> = view
         .plugins
@@ -852,7 +864,8 @@ mod tests {
         assert_eq!(
             PAGE_IDS,
             [
-                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats"
+                "overview", "plugins", "calls", "sessions", "doctor", "logs", "skills", "stats",
+                "graph"
             ]
         );
     }
@@ -894,7 +907,8 @@ mod tests {
                 "instructions": null
             },
             "logs": ["2026-09-10 07:00:00 info web/serve: up"],
-            "stats": "sessions 1  compact 0  checkpoint 0  no_checkpoint 1  lines 1  malformed 0\n"
+            "stats": "sessions 1  compact 0  checkpoint 0  no_checkpoint 1  lines 1  malformed 0\n",
+            "graph": "root .  rows 3  files 2  pending 0\nwatch off\nindexed_at -\ndead symbols\n none\n"
         });
         let view = snapshot::parse(&v);
         assert!(
@@ -905,7 +919,8 @@ mod tests {
                 && PAGE_IDS.contains(&"doctor")
                 && PAGE_IDS.contains(&"plugins")
                 && PAGE_IDS.contains(&"skills")
-                && PAGE_IDS.contains(&"stats"),
+                && PAGE_IDS.contains(&"stats")
+                && PAGE_IDS.contains(&"graph"),
             "every model page id is a WASM tab"
         );
         assert_eq!(view.usage_ctt, 5);
@@ -922,6 +937,7 @@ mod tests {
         assert!(view.doctor_text.contains("rtok"));
         assert_eq!(view.logs, vec!["2026-09-10 07:00:00 info web/serve: up"]);
         assert!(view.stats_text.contains("sessions 1"));
+        assert!(view.graph_text.contains("rows 3"));
     }
 
     #[test]
@@ -991,5 +1007,12 @@ mod tests {
         let v = json!({"type": "snapshot", "stats": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
         let view = snapshot::parse(&v);
         assert!(view.stats_text.contains("did not answer"));
+    }
+
+    #[test]
+    fn missing_graph_is_a_failed_tick_not_empty() {
+        let v = json!({"type": "snapshot", "graph": null, "plugins": [], "calls": [], "sessions": [], "logs": [], "usage": {}});
+        let view = snapshot::parse(&v);
+        assert!(view.graph_text.contains("did not answer"));
     }
 }

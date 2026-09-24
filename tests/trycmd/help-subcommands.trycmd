@@ -544,6 +544,7 @@ Arguments:
 
 Options:
       --config <PATH>  User config file (else `RTOK_CONFIG` or `<home>/config.toml`)
+      --json           JSON rows instead of `path:line kind name` lines (T60.1, uncapped)
   -h, --help           Print help
 
 $ rtok graph status --help

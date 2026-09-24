@@ -230,6 +230,36 @@ fn stats_page_exists_on_both_surfaces() {
     );
 }
 
+/// T230: both surfaces render the Graph page — `graph status`'s index health plus
+/// `graph dead`'s list — from the same model accessor, so `graph status`/`graph dead`
+/// can leave EXEMPT for COMMAND_PAGES.
+#[test]
+fn graph_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"graph\", \"graph\")"),
+        "pages() offers graph"
+    );
+    assert!(
+        model.contains("fn graph_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"graph\" =>"),
+        "the TUI renders the graph page"
+    );
+    assert!(
+        web.contains("graph_text") && slint.contains("page-id == \"graph\""),
+        "the web Graph page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -282,6 +312,9 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     ("logs", "logs"),
     // the Stats page rides the snapshot since T227, so `rtok stats` renders it
     ("stats", "stats"),
+    // the Graph page rides the snapshot since T230, so both render it
+    ("graph status", "graph"),
+    ("graph dead", "graph"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -413,22 +446,8 @@ const EXEMPT: &[(&str, &str)] = &[
         "report",
         "renders model::report_ledgers into a document (P22); no snapshot page",
     ),
-    (
-        "graph dead",
-        "reads the symbol index on demand; no snapshot page yet",
-    ),
-    (
-        "graph status",
-        "index health on demand (T68.3); no snapshot page yet",
-    ),
-    (
-        "graph impact",
-        "symbol impact on demand (T68.4); no snapshot page yet",
-    ),
-    (
-        "graph affected",
-        "reads the symbol index on demand; no snapshot page yet",
-    ),
+    ("graph impact", "need a target; CLI/MCP only"),
+    ("graph affected", "need a target; CLI/MCP only"),
     (
         "config show",
         "renders model::config_entries; no snapshot page yet",
@@ -520,6 +539,8 @@ const JSON_READERS: &[&str] = &[
     "otel status",
     "memory status",
     "worktree list",
+    "graph status",
+    "graph dead",
 ];
 
 fn command_at<'a>(root: &'a Command, path: &str) -> &'a Command {

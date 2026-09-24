@@ -78,6 +78,5 @@
 - T226. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
-- T230. Graph page: index status and dead symbols on `tui` and `web`
 - T231. Hosts page: `agents list` / `agents info` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`

@@ -507,15 +507,32 @@ pub(crate) fn impact_lines_text(rows: &[(u32, String, String)]) -> String {
     out
 }
 
-/// `dead()`: unreferenced private definitions as `path:line kind name` lines (T52.4).
-/// Drops pub items, methods in trait impls/trait bodies, test files and `#[test]`
-/// fns, `macro` definitions and `main`.
-pub fn dead(cx: &Ctx, root: &Path) -> Result<String> {
+/// One `dead()` row (T52.4 / T230): an unreferenced private definition's location.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DeadRow {
+    pub path: String,
+    pub line: i32,
+    pub kind: String,
+    pub name: String,
+}
+
+/// `dead_rows()`: [`index_for`] (today's behaviour: freshen, then read) followed by
+/// [`dead_candidates`]. The shared computation behind `dead()`'s text and `graph dead
+/// --json` — CLI calls that are expected to walk the tree once for a current answer.
+pub fn dead_rows(cx: &Ctx, root: &Path) -> Result<Vec<DeadRow>> {
     index_for(cx, root)?;
+    dead_candidates(cx, root)
+}
+
+/// Unreferenced private definitions (T52.4), read from the store as it stands — no
+/// [`index_for`] walk. Drops pub items, methods in trait impls/trait bodies, test
+/// files and `#[test]` fns, `macro` definitions and `main`. The Graph page (T230)
+/// calls this directly: a 2 s tick reads the store, it does not re-walk the tree.
+pub fn dead_candidates(cx: &Ctx, root: &Path) -> Result<Vec<DeadRow>> {
     let key = index::canon(root);
     let mut files: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
-    let mut out = String::new();
+    let mut rows = Vec::new();
     for (path, name, kind, line) in cx.symbol_dead_candidates(&key)? {
         if kind == "macro" || name == "main" || is_test_path(&path) {
             continue;
@@ -564,10 +581,26 @@ pub fn dead(cx: &Ctx, root: &Path) -> Result<String> {
                 continue;
             }
         }
-        out.push_str(&format!("{path}:{line} {kind} {name}\n"));
+        rows.push(DeadRow {
+            path,
+            line,
+            kind,
+            name,
+        });
     }
-    if out.is_empty() {
+    Ok(rows)
+}
+
+/// `dead()`: [`dead_rows`] as `path:line kind name` lines (T52.4), capped for hook /
+/// CLI text output. `graph dead --json` (T230) prints the same rows uncapped instead.
+pub fn dead(cx: &Ctx, root: &Path) -> Result<String> {
+    let rows = dead_rows(cx, root)?;
+    if rows.is_empty() {
         return Ok(format!("no dead code in {}", root.display()));
+    }
+    let mut out = String::new();
+    for r in &rows {
+        out.push_str(&format!("{}:{} {} {}\n", r.path, r.line, r.kind, r.name));
     }
     cap(cx, out)
 }
