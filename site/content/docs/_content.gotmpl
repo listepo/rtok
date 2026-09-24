@@ -1,0 +1,19 @@
+{{/*
+  The getting-started page comes straight from the repository markdown mounted at
+  assets/repo/docs/getting-started.md, keeping the existing /docs/getting-started/ URL.
+  The repo file carries no front matter, so title and weight live here.
+*/}}
+{{ $r := resources.Get "repo/docs/getting-started.md" }}
+{{ with $r }}
+  {{/* Hextra renders the page title as the h1, so drop the leading h1 in the source file. */}}
+  {{ $body := replaceRE `\A#\s+[^\n]*\n` "" .Content }}
+  {{ $.AddPage (dict
+    "path" "getting-started"
+    "title" "Getting started"
+    "weight" 1
+    "params" (dict "editURL" "https://github.com/listepo/rtok/edit/main/docs/getting-started.md")
+    "content" (dict "value" $body "mediaType" "text/markdown")
+  ) }}
+{{ else }}
+  {{ errorf "getting-started adapter: %q not found under assets" "repo/docs/getting-started.md" }}
+{{ end }}

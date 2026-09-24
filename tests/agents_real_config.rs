@@ -45,8 +45,26 @@ const HOSTS: &[Host] = &[
         files: &[".config/opencode/opencode.json"],
     },
     Host {
+        id: "kilo",
+        files: &[".config/kilo/kilo.json"],
+    },
+    Host {
         id: "kimi",
         files: &[".kimi-code/config.toml"],
+    },
+    Host {
+        id: "grok",
+        files: &[".grok/config.toml"],
+    },
+    // rtok owns `hooks/rtok.json` outright (nothing foreign ever lands there); the file
+    // shared with a user's own servers is `mcp-config.json`.
+    Host {
+        id: "copilot",
+        files: &[".copilot/mcp-config.json"],
+    },
+    Host {
+        id: "aider",
+        files: &[".aider.conf.yml"],
     },
     Host {
         id: "zed",
@@ -63,6 +81,22 @@ const HOSTS: &[Host] = &[
     Host {
         id: "vscode",
         files: &["Library/Application Support/Code/User/settings.json"],
+    },
+    Host {
+        id: "gemini",
+        files: &[".gemini/settings.json"],
+    },
+    Host {
+        id: "codewhale",
+        files: &[".codewhale/config.toml", ".codewhale/mcp.json"],
+    },
+    Host {
+        id: "mimo",
+        files: &[".config/mimocode/mimocode.json"],
+    },
+    Host {
+        id: "omp",
+        files: &[".omp/agent/mcp.json"],
     },
 ];
 
@@ -253,12 +287,20 @@ real_config_round_trip! {
     claude_keeps_the_real_settings_json => "claude",
     codex_keeps_the_real_config_toml => "codex",
     opencode_keeps_the_real_opencode_json => "opencode",
+    kilo_keeps_the_real_kilo_json => "kilo",
     kimi_keeps_the_real_config_toml => "kimi",
+    grok_keeps_the_real_config_toml => "grok",
+    copilot_keeps_the_real_mcp_config_json => "copilot",
+    aider_keeps_the_real_conf_yml => "aider",
     windsurf_keeps_the_real_mcp_config_json => "windsurf",
     zcode_keeps_the_real_config_json => "zcode",
     // VS Code's settings.json may be JSONC too; whether this machine's is decides whether this
     // passes or reproduces T79, which is the honest answer for a test that reads a real file.
     vscode_keeps_the_real_settings_json => "vscode",
+    gemini_keeps_the_real_settings_json => "gemini",
+    codewhale_keeps_the_real_config_toml_and_mcp_json => "codewhale",
+    mimo_keeps_the_real_mimocode_json => "mimo",
+    omp_keeps_the_real_mcp_json => "omp",
 }
 
 /// Zed writes **JSONC** — its `settings.json` carries `//` comments and trailing commas

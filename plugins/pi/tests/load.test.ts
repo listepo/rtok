@@ -9,25 +9,38 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const PI = "@earendil-works/pi-coding-agent";
 
-/** Root of the pi package behind `pi` on PATH, or null. */
+// Windows never runs a bare `pi`: npm shims a package's bin as `pi.cmd` (cmd.exe), `pi.ps1`
+// (PowerShell) or `pi.exe` (a native launcher) depending on how it was installed, and none of
+// those resolve through a plain `pi` lookup — only the bare name covers macOS/Linux.
+const BIN_NAMES = ["pi", "pi.cmd", "pi.exe", "pi.ps1"];
+
+/** Root of the pi package behind `pi` (or a PATHEXT shim) on PATH, or null. */
 function piPackage(): string | null {
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    let bin: string;
-    try {
-      bin = fs.realpathSync(path.join(dir, "pi"));
-    } catch {
-      continue;
-    }
-    for (let d = path.dirname(bin); d !== path.dirname(d); d = path.dirname(d)) {
+    for (const name of BIN_NAMES) {
+      let bin: string;
       try {
-        if (JSON.parse(fs.readFileSync(path.join(d, "package.json"), "utf8")).name === PI) return d;
-      } catch {}
+        bin = fs.realpathSync(path.join(dir, name));
+      } catch {
+        continue;
+      }
+      for (let d = path.dirname(bin); d !== path.dirname(d); d = path.dirname(d)) {
+        try {
+          if (JSON.parse(fs.readFileSync(path.join(d, "package.json"), "utf8")).name === PI)
+            return d;
+        } catch {}
+      }
     }
   }
   return null;
 }
 
 const pkg = piPackage();
+if (!pkg) {
+  console.warn(
+    `skipped pi loader test (T48.1): no ${BIN_NAMES.join("/")} on PATH resolves to ${PI}`,
+  );
+}
 
 test.skipIf(!pkg)("pi loads the linked rtok directory once", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rtok-pi-load-"));

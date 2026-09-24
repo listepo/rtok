@@ -638,25 +638,13 @@ impl App {
 pub(super) mod tests {
     use super::*;
 
-    /// Point every snapshot probe that would read this operator's real machine at paths
-    /// inside a temp `home`: the doctor's host files, and the transcripts `read_share`
-    /// parses. T74: the transcripts leak was the load-sensitive tui gate — every
-    /// `model::snapshot` parsed the developer's real `~/.claude/projects` JSONL (≈30 s
-    /// CPU each on a busy box, ≈150 s for the toggle test), which is what once tripped
-    /// the suite-level 180 s kill.
-    pub(in crate::tui) fn hermetic(mut cfg: Config, home: &std::path::Path) -> Config {
-        cfg.doctor.settings_path = home.join("missing-settings.json");
-        cfg.doctor.claude_json = home.join("missing-claude.json");
-        cfg.doctor.mcp_json = home.join("missing-mcp.json");
-        cfg.stats.transcripts_dir = home.join("missing-transcripts");
-        cfg
-    }
-
+    /// A config on its own temp home whose every path stays inside it. T74: a snapshot on the
+    /// real `~/.claude/projects` JSONL cost ≈30 s CPU on a busy box (≈150 s for the toggle
+    /// test) and once tripped the suite-level 180 s kill.
     pub(in crate::tui) fn config() -> Config {
         // A dir per call: one shared `rtok-tui-<pid>` was deleted by each parallel test
         // while another was still opening its store in it (os error 22).
-        let dir = crate::testutil::tmp_dir("tui");
-        hermetic(Config::load_from(&dir).expect("config"), &dir)
+        crate::testutil::config_file_in(&crate::testutil::tmp_dir("tui"))
     }
 
     /// The Plugins tab with the row cursor on `id` — where the T15.4 toggle tests
@@ -665,9 +653,6 @@ pub(super) mod tests {
     pub(in crate::tui) fn cursor_on_plugin(cfg: &Config, id: &str) -> App {
         let mut cfg = cfg.clone();
         cfg.tui.tab = "plugins".into();
-        // Same hermetic probes as `config()` — App::new ticks the snapshot (T15.6).
-        let home = cfg.home.clone();
-        cfg = hermetic(cfg, &home);
         let mut app = App::new(&cfg);
         assert_eq!(app.page(), "plugins");
         let i = app
@@ -827,9 +812,7 @@ pub(super) mod tests {
     fn space_toggles_the_selected_plugin_through_config_set() {
         let dir = std::env::temp_dir().join(format!("rtok-tui-toggle-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        // T74: hermetic — with the real `stats.transcripts_dir` each re-read snapshot
-        // parsed this machine's session JSONL and the test ran minutes, not ms.
-        let cfg = hermetic(Config::load_from(&dir).expect("config"), &dir);
+        let cfg = crate::testutil::config_file_in(&dir);
         let mut app = cursor_on_plugin(&cfg, "cmd");
         let row = |app: &App| {
             app.snapshot()

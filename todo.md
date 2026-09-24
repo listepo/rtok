@@ -27,7 +27,6 @@
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
 
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`
-- T157. Probe: is `worktree.useRelativePaths` safe for every tool that opens this repository?
 - T159. Claude Code `WorktreeCreate`/`WorktreeRemove` hooks route through `rtok worktree`
 - T163. Replace raw SQL in `src/store/` with Diesel's query builder
 - T163.2. `src/store/otel.rs` and `src/store/embed.rs` without raw SQL
@@ -37,16 +36,11 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
-- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T204. A panicking plugin is dropped silently — the error never reaches the log
+- T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
-- T213. MCP conformance: version negotiation, `-32601` text, `tools/call` param validation
-- T215. Host test matrices skip `omp` and five real-config hosts; pi loader probe skips on Windows
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
-- T218. `docs/*.md` pages missing from the site nav; a hand-copied getting-started twin
-- T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 - T223. `windows-sys` linked in three versions
-- T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 - T226. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
@@ -55,3 +49,4 @@
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
 - T250.3. Cursor hooks find `rtok` off `PATH`
+- T255. Tests run under a fake `HOME`

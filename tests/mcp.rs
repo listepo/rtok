@@ -161,6 +161,10 @@ fn initialize_names_the_server_rtok() {
             .is_some_and(|s| !s.is_empty()),
         "{stdout}"
     );
+    // T213: a client that requests a version this server supports gets that exact version
+    // back (MCP lifecycle spec, "Initialization" — https://modelcontextprotocol.io/specification),
+    // not whatever `ProtocolVersion::default()` happens to resolve to in the linked `rmcp`.
+    assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "{stdout}");
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
