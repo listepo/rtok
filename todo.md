@@ -44,7 +44,6 @@
 - T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
 - T223. `windows-sys` linked in three versions
-- T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 - T226. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
