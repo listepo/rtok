@@ -34,7 +34,9 @@ fn install_rewrites_stale_claude_hooks_and_a_rerun_changes_nothing() {
     let root = json(&settings);
     let hooks = &root["hooks"];
     // The binary a fresh hook got — bare `rtok`, or the absolute `rtok.exe` on Windows.
-    let fresh = hooks["SessionEnd"][0]["hooks"][0]["command"].as_str().unwrap();
+    let fresh = hooks["SessionEnd"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
     let bin = fresh.strip_suffix(" hook SessionEnd").unwrap();
     let pre = &hooks["PreToolUse"][0]["hooks"][0];
     assert_eq!(pre["command"], format!("{bin} hook PreToolUse"), "{after}");
