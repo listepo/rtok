@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,310 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -188,6 +188,9 @@ target/tmp/t60-2-config-init.toml
 +dir           = "~/.codewhale"               # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
 +[setup.mimo]
 +config_path   = "~/.config/mimocode/mimocode.json" # mcp (OpenCode-fork shape)
++[setup.antigravity]
++plugins_path     = "~/.gemini/config/plugins"          # Antigravity 2.0 / IDE: plugins/antigravity linked here
++cli_plugins_path = "~/.gemini/antigravity-cli/plugins" # agy plugin install stages here; read only
 +
 +[expand]                              # rtok expand <id>
 +max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)
