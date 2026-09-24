@@ -19,5 +19,8 @@
   the family list in `research.md`.
 
 **Do not** parse shell syntax beyond the first argv word; do not add a shell parser dependency.
+One exception (T176): `bounded.rs` lexes quotes and `|`/`&&`/`||`/`;` to spot a command the agent
+already bounded (`sed -n a,bp`, `head`/`tail -n`, `grep -A/-B/-C/-m`, `cat -n`); those pass through
+unchanged up to `bounded::MAX_BYTES`.
 
 **Checks**: `plan.md` T3.1–T3.6. Golden tests live in `tests/cmd_golden/*.{in,out}`.

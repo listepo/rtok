@@ -61,7 +61,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
-| T176 | todo | P1 | 3 | 0% | |
 | T177 | todo | P2 | 3 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T179 | todo | P2 | 3 | 0% | |
@@ -494,14 +493,6 @@ Found in the 2026-09-22 audit: 380 hook errors `/bin/sh: rtok: command not found
 Plan: make the Claude Code plugin's hook command resolve `rtok` (PATH, then `~/.ketch/bin/rtok`) and, when absent, exit 0 silently except one SessionStart note naming `ketch install listepo/rtok`; apply the same to the other host plugins that shell out to `rtok`.
 
 Check: a plugin test runs the hook command with an empty `PATH` and no binary: exit 0, empty stdout except the one SessionStart note; `just test` green.
-
-### T176. Explicitly bounded output is not cut again
-
-Found in the 2026-09-22 audit: 335 times the agent called `expand` on an id it had just been shown; the filtered results totalled 533 KB and the expands 1.47 MB (≈ 234 K tokens paid twice). Worst: `sed -n '1,620p' src/hooks/types.rs` cut to 1.8 KB of 28 KB; `cargo nextest run … | tail -300` lost the failing-test detail (4.7 KB of 20 KB). Reproduced in the audit session itself: a 43-line `grep -A`/`sed -n` result lost 23 lines.
-
-Plan: treat a command the agent already bounded (`sed -n a,bp`, `head`/`tail -n`, `grep -A/-B/-C`, `cat -n` of named files) as asked-for — pass it through; for test/build runners keep failure blocks whole. Measure the re-expand rate in `rtok stats` so the change shows up as a number.
-
-Check: rule tests for each bounded form (output unchanged) and for a failing nextest log (failure block kept); `rtok stats` reports an "expand right after" count; `just test` green.
 
 ### T177. Large source dumps through `cat`/`sed`/`grep` get a filter
 
