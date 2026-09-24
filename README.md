@@ -289,6 +289,8 @@ usage input=0 cache_create=0 cache_read=0 output=0  hit=0.0%  median_context=0
 
 What keeps that `hit=` high with rtok installed: [docs/prompt-cache.md](docs/prompt-cache.md).
 
+Batch, Flex, and model routing on the proxy (pass-through vs rewrite, what is planned): [docs/batch-flex.md](docs/batch-flex.md).
+
 ## Commands
 
 | Command | Purpose |

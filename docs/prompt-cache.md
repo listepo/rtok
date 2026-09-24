@@ -78,3 +78,20 @@ Everything above shortens bytes; nothing loses them. Every shortened payload is 
 before the cut and `expand <id>` restores the original (`--lines`, `--grep`). The pointer
 in the transcript is byte-stable, so retrievability never rewrites the prefix: the cache
 keeps its hits and you keep the full text.
+
+## Sticky routing vs Batch / Flex
+
+Provider prompt-cache hits need a **stable byte prefix** and, on multi-pod upstreams,
+affinity to the same cache-bearing backend (I-84 / sticky routing). That is orthogonal to
+**Batch** (async pass-through; no live session KV shared with the interactive agent) and
+**Flex** (`service_tier` on the same sync wire — cache rules still apply, discount is the
+tier). rtok will not convert a sync agent turn into a Batch job just to save money; do that
+only with an explicit Batch client. Details: [batch-flex.md](batch-flex.md).
+
+```toml
+# Planned [proxy.routing] sticky flag (not loaded today) — pin upstream for cache affinity.
+# Flex is [proxy.flex]; Batch observe is [proxy.batch]. None of these rewrite the cached
+# system/tools/live-edge bytes the way a careless compress would.
+[proxy.routing]
+sticky = true
+```

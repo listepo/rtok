@@ -124,6 +124,23 @@ max_description_tokens = 60           # 0 = no truncate; sentence boundary; esti
 allow = []                            # empty = keep all names not in deny
 deny = []                             # drop these names from tools[]; later calls still forward
 
+# ── Batch / Flex / routing (planned — not loaded by the binary yet; see docs/batch-flex.md) ──
+# Copying these into ~/.rtok/config.toml will fail `rtok config validate` until the keys ship.
+# [proxy.batch]
+# enabled = true                      # fallback already forwards Batch paths today
+# observe = true                      # record create/poll/results (planned)
+# parse_results = false               # expand Batch result usage into ledger (planned)
+#
+# [proxy.flex]
+# enabled = false                     # prepare may set service_tier = "flex" (planned)
+# force = false                       # overwrite client service_tier
+# fallback = "none"                   # none | default on Flex 429 (TODO)
+#
+# [proxy.routing]
+# enabled = false                     # model/tier routing D9 (planned)
+# sticky = true                       # pin upstream for prompt-cache affinity (I-84)
+# default_model = ""                  # empty = leave client model
+
 [web]                                 # rtok web (same data as rtok tui)
 host = "127.0.0.1"                    # --host
 port = 3333                           # --port
@@ -375,6 +392,64 @@ enabled = false                      # off by default; no .wasm loaded until T32
 dir     = "~/.rtok/plugins"          # scan one level for *.wasm; D6 — this repo never vendors third-party plugins
 ```
 
+
+
+### `[proxy.batch]` / `[proxy.flex]` / `[proxy.routing]` — planned (see `docs/batch-flex.md`)
+
+These tables document the intended Batch pass-through, Flex `service_tier` rewrite, and
+model/sticky routing knobs. **They are not parsed yet** — adding them to a live config file
+fails `rtok config validate` until the corresponding `Config` fields land. The proxy
+fallback already forwards unknown paths (including `/v1/batches` and
+`/v1/messages/batches`) without a `Wire`; Flex injection and routing rewrites are future
+`prepare` / policy work. Full semantics: [`docs/batch-flex.md`](batch-flex.md).
+
+#### `[proxy.batch]`
+
+| Key | Type | Default (intended) | Meaning |
+|-----|------|--------------------|---------|
+| `enabled` | bool | `true` | Master switch; today the axum fallback always forwards Batch paths |
+| `observe` | bool | `true` | Record Batch create/poll/results as distinguishable ledger rows (**planned**) |
+| `parse_results` | bool | `false` | When true, parse result files/streams into `usage` rows (**planned**) |
+
+```toml
+# Planned — not loaded today
+[proxy.batch]
+enabled = true
+observe = true
+parse_results = false
+```
+
+#### `[proxy.flex]`
+
+| Key | Type | Default (intended) | Meaning |
+|-----|------|--------------------|---------|
+| `enabled` | bool | `false` | When true, `prepare` may set OpenAI `service_tier = "flex"` if the client omitted it |
+| `force` | bool | `false` | Overwrite a client-supplied `service_tier` |
+| `fallback` | string | `"none"` | `none` or `default` — behaviour on Flex `429` resource-unavailable (**TODO**) |
+
+```toml
+# Planned — not loaded today
+[proxy.flex]
+enabled = false
+force = false
+fallback = "none"
+```
+
+#### `[proxy.routing]`
+
+| Key | Type | Default (intended) | Meaning |
+|-----|------|--------------------|---------|
+| `enabled` | bool | `false` | Model / tier routing (D9); off until a policy + measurement Check exists |
+| `sticky` | bool | `true` | Prefer one upstream for provider prompt-cache affinity (I-84); not Batch vs Flex |
+| `default_model` | string | `""` | Empty = leave the client `model`; otherwise a fallback rewrite target |
+
+```toml
+# Planned — not loaded today
+[proxy.routing]
+enabled = false
+sticky = true
+default_model = ""
+```
 
 ### Stats prices (`[stats.prices]`)
 

@@ -213,3 +213,40 @@ is a tree-sitter-tags index), semantic response cache, or WASM plugin host. Thos
 `rtok tui` (P15) and `rtok demon` (P20) shipped in-tree after promotion from Later.
 Adapters over third-party tools stay out of *this repo* at every version (D6); a later WASM
 host loads plugins that live outside this repo.
+
+## 12. Batch / Flex pass
+
+Batch, Flex, and model routing are **proxy-only** concerns. Hooks and MCP never see LLM
+HTTP bodies; only `rtok proxy` (`src/proxy/`) sits on `ANTHROPIC_BASE_URL` /
+`OPENAI_BASE_URL`. See `docs/batch-flex.md`.
+
+Data flow for one proxied request (`src/proxy/mod.rs` `handle` → `shape_request`):
+
+```
+client ──POST /v1/…──► axum fallback
+                         │
+                         ├─ plain? (proxy/core/plugins.proxy disabled)
+                         │     └─ byte-forward, no record/compress/prepare
+                         │
+                         └─ shape_request
+                               ├─ record      → calls / call_io
+                               ├─ compress    → Plugin::proxy_filter (mode=compress)
+                               ├─ tools_rewrite (opt-in)
+                               ├─ prepare     → Wire shaping (include_usage today;
+                               │                Flex service_tier **planned**)
+                               └─ forward ──► provider upstream
+                                                │
+                                                └─ tee response → usage when Wire matches
+```
+
+| Traffic | Wire match today | Behaviour |
+|---------|------------------|-----------|
+| Sync chat (`/v1/messages`, `/v1/chat/completions`, `/v1/responses`, Gemini generate) | yes | record + optional compress/prepare + usage |
+| Batch (`/v1/batches`, `/v1/messages/batches`, …) | no (exact path match) | fallback pass-through; call row without usage parsing; observe/result parsing **planned** |
+| Flex | same sync wires | client may set `service_tier`; rtok injection via `prepare` **planned** |
+| Model routing (D9) | sync wires | **planned** rewrite under `[proxy.routing]` |
+
+No transparent sync→Batch conversion: agents need the reply on the same HTTP request.
+Config keys `[proxy.batch]`, `[proxy.flex]`, `[proxy.routing]` are documented in
+`docs/config.md` but not loaded until the `Config` fields ship.
+
