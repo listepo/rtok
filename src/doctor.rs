@@ -584,19 +584,26 @@ fn skill_invocations(cfg: &Config) -> Option<std::collections::BTreeMap<String, 
     let cutoff =
         std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(30 * 86400))?;
     let mut out = std::collections::BTreeMap::new();
-    for p in crate::measure::codex::jsonl_paths(&cfg.stats.transcripts_dir, cutoff) {
-        let Ok(parsed) = crate::measure::jsonl::parse_path(&p) else {
-            continue;
-        };
-        for u in &parsed.tool_uses {
-            if u.name == "Skill"
-                && let Some(s) = u.input.get("skill").and_then(|v| v.as_str())
-            {
-                *out.entry(s.to_string()).or_insert(0) += 1;
-            }
+    for (_, agg) in transcripts(cfg, cutoff) {
+        for (skill, n) in agg.skills {
+            *out.entry(skill).or_insert(0) += n;
         }
     }
     Some(out)
+}
+
+/// T135: transcript aggregates through the (path, size, mtime) cache kept beside the store.
+fn transcripts(
+    cfg: &Config,
+    cutoff: std::time::SystemTime,
+) -> Vec<(
+    std::path::PathBuf,
+    crate::measure::transcript_cache::FileAgg,
+)> {
+    // Tests keep the in-process cache only: a default `Config` points at the real `~/.rtok`.
+    let file = cfg.core.db_path.with_file_name("transcripts-cache.json");
+    let file = (!cfg!(test)).then_some(file.as_path());
+    crate::measure::transcript_cache::scan(&cfg.stats.transcripts_dir, cutoff, file)
 }
 
 const INJECTORS: &[&str] = &[
@@ -976,9 +983,20 @@ fn nonempty(s: Option<String>) -> Option<String> {
 /// and the deny stays off on no data.
 fn read_share(cfg: &Config) -> Option<ReadShare> {
     let since = crate::measure::stats::parse_since(&cfg.stats.since).ok()?;
-    let rep = crate::measure::stats::Replay::from_cfg(cfg);
-    let r = crate::measure::stats::collect(&cfg.stats.transcripts_dir, since, "", rep).ok()?;
-    let tok = |name: &str| r.tools.get(name).map(|row| row.est_tokens).unwrap_or(0);
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(since)
+        .unwrap_or(std::time::UNIX_EPOCH);
+    // `stats::collect` totals, minus its sub-agent transcripts (T128), cached per file.
+    let files: Vec<_> = transcripts(cfg, cutoff)
+        .into_iter()
+        .filter(|(p, _)| !crate::measure::subagents::is_subagent(p))
+        .collect();
+    let tok = |name: &str| -> u64 {
+        files
+            .iter()
+            .filter_map(|(_, a)| a.tool_tokens.get(name))
+            .sum()
+    };
     let (read, grep, glob) = (tok("Read"), tok("Grep"), tok("Glob"));
     let denom = read + grep + glob;
     if denom == 0 {

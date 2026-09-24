@@ -1231,7 +1231,7 @@ struct RowSamples {
     skills: BTreeMap<String, Vec<u64>>,
 }
 
-fn est_tokens(bytes: u64) -> u64 {
+pub(crate) fn est_tokens(bytes: u64) -> u64 {
     if bytes == 0 {
         0
     } else {
