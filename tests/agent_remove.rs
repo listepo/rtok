@@ -597,3 +597,84 @@ fn copy_tree(src: &std::path::Path, dest: &std::path::Path) {
         }
     }
 }
+
+/// T246.6: on cursor, gemini, kimi and codewhale an rtok hook the user edited (an extra key)
+/// stays unless `--yes`; the untouched ones go, and a second remove writes nothing.
+#[test]
+fn hook_hosts_remove_asks_before_taking_an_edited_hook() {
+    type Edit = fn(&str) -> String;
+    let hosts: [(&str, &str, Option<&str>, Edit, &str); 4] = [
+        (
+            "cursor",
+            ".cursor/hooks.json",
+            Some(
+                r#"{"version":1,"hooks":{"beforeShellExecution":[{"command":"rtok hook PreToolUse --host cursor","note":"mine"}],"afterShellExecution":[{"command":"rtok hook PostToolUse --host cursor"}]}}"#,
+            ),
+            |s| s.to_string(),
+            "hook PostToolUse",
+        ),
+        (
+            "gemini",
+            ".gemini/settings.json",
+            None,
+            |s| {
+                let mut doc: serde_json::Value = serde_json::from_str(s).unwrap();
+                doc["hooks"]["BeforeTool"][0]["hooks"][0]["note"] = serde_json::json!("mine");
+                doc.to_string()
+            },
+            "hook SessionEnd",
+        ),
+        (
+            "kimi",
+            ".kimi-code/config.toml",
+            None,
+            |s| s.replacen("[[hooks]]\n", "[[hooks]]\nnote = \"mine\"\n", 1),
+            "hook SessionEnd",
+        ),
+        (
+            "codewhale",
+            ".codewhale/config.toml",
+            None,
+            |s| s.replacen("[[hooks.hooks]]\n", "[[hooks.hooks]]\nnote = \"mine\"\n", 1),
+            "",
+        ),
+    ];
+    for (host, rel, seed, edit, untouched) in hosts {
+        let home = tmp(&format!("{host}-edited-hook"));
+        let cfg = write_cfg(&home);
+        let path = home.join(rel);
+        match seed {
+            Some(seed) => fs::write(&path, seed).unwrap(),
+            None => drop(rtok(&["agents", "install", host], &cfg, &home)),
+        }
+        let edited = edit(&fs::read_to_string(&path).unwrap());
+        assert!(edited.contains("mine"), "{host}: {edited}");
+        fs::write(&path, edited).unwrap();
+
+        let out = rtok(&["agents", "remove", host], &cfg, &home);
+        assert!(
+            out.contains("leave ") && out.contains("changed by you"),
+            "{host}: {out}"
+        );
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("mine") && raw.contains(" hook "),
+            "{host}: {raw}"
+        );
+        assert!(
+            untouched.is_empty() || !raw.contains(untouched),
+            "{host}: {raw}"
+        );
+        let again = rtok(&["agents", "remove", host], &cfg, &home);
+        assert!(again.contains("changed by you"), "{host}: {again}");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            raw,
+            "{host}: a leave report wrote"
+        );
+
+        rtok(&["agents", "remove", host, "--yes"], &cfg, &home);
+        let left = fs::read_to_string(&path).unwrap();
+        assert!(!left.contains(" hook "), "{host}: {left}");
+    }
+}

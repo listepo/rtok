@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+### T255. Tests run under a fake `HOME`
+
+Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
+
+Check: a canary test asserts `HOME` is not the real user home; `just check` green on macOS, Ubuntu and Windows CI.
+
+Plan (creator chose the nextest route 2026-09-24): cargo `[env]` also reaches `cargo run`, so a local `cargo run -- doctor` would read the fake home. Instead, `.config/nextest.toml` gets `experimental = ["setup-scripts"]` and one `test-home` setup script for all tests, `sh -c` on Unix and PowerShell on Windows (array form, no implicit shell).
+- The script creates `target/test-home` and exports `HOME` (and `USERPROFILE` on Windows) through `$NEXTEST_ENV`.
+- It pins `CARGO_HOME`, `RUSTUP_HOME` and mise's data and config dirs to their real values, so tests that spawn `rustup`, `rust-analyzer` or `mise where` still find the toolchain.
+- Git needs nothing: tests that commit pass their own `user.*`.
+- Canary `testutil::tests::nextest_runs_under_the_test_home`: under nextest, `HOME` ends in `test-home`.
+
+Result: `.config/nextest.toml` has `test-home-unix` (`sh -c`) and `test-home-windows` (PowerShell) setup scripts, one per host platform. Each empties and recreates `target/test-home` on every run. The canary `testutil::tests::nextest_runs_under_the_test_home` passes under nextest and skips under `cargo test`. The first full run left 294 files in the fake home, written by real host CLIs that host tests spawn (codex `~/.codex/tmp`, cursor `~/.cursor/cli-config.json`, kilo and opencode XDG dirs, omp logs, the Dart analysis server) and one `~/.rtok/config.toml`; before, all of them went to the developer's real home. `just check` green (1730 tests).
+
 ### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
 
 Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:
@@ -5718,6 +5732,21 @@ T171 (same symptom, found in the 2026-09-22 audit) is narrowed to its doctor hal
 
 Check: `cargo nextest --test claude_plugin --test agents_install --test agent_remove` 29/29; `just check` 1619 passed.
 
+### T171. Claude Code sees the rtok MCP server twice
+
+Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
+
+Plan: the install half is done by T243 — the direct entry was the Claude Desktop `mcpServers.rtok` in `claude_desktop_config.json`, which the desktop app's Code tab loads next to the plugin; install now drops it while the plugin is installed. Left: make doctor flag the pair (plugin installed + an rtok entry in `claude_desktop_config.json` or `~/.claude.json`) as a duplicate.
+
+Execution: `doctor::mcp_duplicate_lines(plugin, files)` — pure over the parsed files, so the test needs no host disk (D29); `page()` feeds it `plugin_installed` and the two files (`[doctor] claude_json`, `claude::desktop_path()`); each file with `mcpServers.rtok` next to the plugin is one `duplicate:` line under `overlaps`, naming the file and `rtok agents install claude` (which strips it, T243). Unit test in `src/doctor.rs`.
+
+Check: doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
+
+Result: `rtok doctor` now lists, under `overlaps`, one `duplicate:` line per file that still registers `mcpServers.rtok` while the Claude plugin (`rtok@rtok`) is installed — `~/.claude.json` (`[doctor] claude_json`) and `claude_desktop_config.json` (`claude::desktop_path()`) — naming the file and `rtok agents install claude`, which strips the entry under the plugin (T243). The check is a pure `mcp_duplicate_lines(plugin, files)` over the parsed files; no host table changed, so `docs/agents.md` needed no re-bless. Test: `doctor::tests::mcp_entry_next_to_the_claude_plugin_is_a_duplicate` (one file, both files, no plugin, no entry). `just check` green (1733 tests).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T242.1. Re-running install refreshes stale Claude-shaped hook entries
 
 Creator request 2026-09-24 (parent T242: `rtok agents update` updates in place where it can and reinstalls where it cannot, module by module). Today `claude::insert_ours` skips an `(event, matcher)` pair as soon as any rtok hook sits there, so an entry written by an older binary path (`/…/store/rtok/v0.1.0/rtok hook PreToolUse`), an old `timeout`, or a pair rtok no longer installs (a changed matcher) survives every re-install; the changed matcher even leaves two rtok hooks on one event. Done: an rtok entry whose command or timeout differs from what install writes now is rewritten in place (same array slot, foreign hooks in the same entry kept); rtok entries for pairs outside the host's entry list are dropped; a current file still reports `NO_CHANGES` byte for byte. Covers every host on `insert_ours` (Claude Code, ZCode, Codex hooks).
@@ -5937,6 +5966,17 @@ Same creator request as T246.1: `agents remove <host>` takes back a shipped skil
 Result: `SkillCopy::run` on remove checks `edited_since_marked`: anything under the owned copy newer than its `.rtok-owned` marker (which `copy_owned` writes last) is a user write — an edited or an added file. Such a copy goes through `rtok_agent_sdk::keep_edited` (T246.3): `?` on a dry run, `--yes` or a yes removes it, else `leave <dest> (changed by you; remove by hand)`. Comparing times instead of bytes with `skills/<name>` keeps a copy from an older rtok (whose shipped skill has since changed) removable without a question, and needs no hash dependency.
 
 Check: `skill_copy_remove_asks_before_taking_an_edited_copy` (a file dated after the marker keeps the copy without `--yes`, `--yes` takes it); SDK 29/29; `just check` green. The T250.3 card also got the T251 hint (tolerate a broken pipe on the hook stdin write).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+### T246.6. Hook entries of cursor, gemini, kimi and codewhale
+
+T246.3 did the Claude-shaped hooks (claude, codex `hooks.json`, zcode) through `claude::strip_ours`. cursor (`hooks.json` flat entries), gemini (`hooks.<Event>[]` with its own event names), kimi and codewhale (TOML `[[hooks]]` tables) each have their own `strip_ours`: each compares an rtok hook with the shape its installer writes and hands a changed one to `rtok_agent_sdk::keep_edited`.
+
+Result: each host's `strip_ours` now takes `(apply, path, …, timeout)` and removes per hook. Unchanged means exactly the installer's shape: cursor `{command}` alone; gemini an entry of only `hooks` with the hook `{type, command, timeout}` in ms; kimi a table on a pair `ENTRIES` lists with only `event`, `matcher` (when set), `command` and `timeout`; codewhale a table of only `name = "rtok"`, `event`, `command` and `timeout_secs`. Any binary path counts, as in T246.3. Shared helpers in `src/agents/mod.rs`: `takes_hook` (unchanged → take, else `keep_edited`), `removed_report` and `with_kept`; `claude::strip_ours` uses them too. gemini now drops only rtok's hook from a shared entry instead of the whole entry.
+
+Check: `hook_hosts_remove_asks_before_taking_an_edited_hook` (an extra key on one rtok hook per host: remove leaves it with a `changed by you` line and takes the rest, a second remove writes nothing, `--yes` takes it); `just check` green.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
