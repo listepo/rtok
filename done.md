@@ -6235,6 +6235,15 @@ Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejec
 Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
 
 Result: I-87 duplicate, Promoted header and I-28 were already fixed by #239; this drops the Open I-86 row (Rejected keeps T125's evidence) and the duplicate I-17 (pi only) Promoted row (the I-17 row already records T10.6). New tests/ideas_md.rs: every I-NN has exactly one defining row across Open/Later/Rejected/Promoted and every pipe-table has header+separator; fails on a re-added I-86 or a doubled I-87.
+### T221. Wrong and uncited public numbers (41 targets, ±15 %, 39 %) plus a number lint
+
+Found 2026-09-22 in the docs pass: `README.md:399` and `Cargo.toml:157` claim "41 integration targets" — `ls tests/*.rs` is 64; `README.md:269, 385` cite an "±15 % error margin" that appears nowhere in `research.md`; `docs/comparison.md:130` cites "39 % on Fable/Mythos 5.1", likewise untraceable; `docs/comparison.md:180` ("18.9 MiB") and :215 ("+0.81 ms p95") match `research.md` rows but cite nothing. Two are vendor-style claims, two are staleness-undetectable — breaking "every number in `README.md`, `docs/` or the site cites a measured row, `research.md`, or a dated command".
+
+Plan: cite each figure inline (`research.md §2 row …, <date>`) in the style of `docs/comparison.md:173`; for ±15 % and 39 % either add the missing measurement to `research.md` or drop/soften the number; fix the integration-target count with a dated count command or state the rule instead of a number.
+
+Check: a `just readme-check` number lint — any `N %` / `N MiB` / `N ms` figure in `README.md`/`docs/**` sits within a few words of `research.md`, a test name or a date, and the README target count equals `ls tests/*.rs | wc -l` at run time (fails on `main` today); `just check` green.
+
+Result: Dropped the untraceable ±15 % (README, docs/config.md, tokens.rs, lib.rs, plugin.rs, measure AGENTS.md) for 'uncalibrated heuristic'; cited 18.9 MiB / 98.1 % / +0.81 ms p95 inline to research.md with dates; README/Cargo.toml state the one-binary-per-tests/*.rs rule instead of '41 targets'. New tests/public_numbers.rs: every N %/MiB/ms figure in README/docs needs research.md, a date, a test name or an attribution word in its block ('10 ms' fail-open budget exempt by text); a stated README target count must equal tests/*.rs. Fails on the old docs (5 figures + 41≠73), passes now.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
