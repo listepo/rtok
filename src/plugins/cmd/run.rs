@@ -515,10 +515,25 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    fn on_cmd(c: &Config) -> bool {
+        shell_kind(&shell(c)) == ShellKind::Cmd
+    }
+
+    /// argv printing `text` through the host shell. cmd.exe has no `printf` and a newline
+    /// ends its command line, so there it `type`s a file holding `text` (T83.2).
+    fn print_argv(c: &Config, dir: &std::path::Path, text: &str) -> Vec<String> {
+        if !on_cmd(c) {
+            return vec!["printf".into(), text.into()];
+        }
+        let path = dir.join("print.txt");
+        fs::write(&path, text).unwrap();
+        vec!["type".into(), path.display().to_string()]
+    }
+
     #[test]
     fn printf_two_lines_exit_0_no_trailer() {
         let (c, dir) = cfg("printf");
-        let code = run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap();
+        let code = run(&c, &print_argv(&c, &dir, "a\nb\n"), None).unwrap();
         assert_eq!(code, 0);
         // T160: the trailing newline is noise — no pointer, so no archive row either.
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
@@ -550,11 +565,7 @@ mod tests {
         // Two argv lists, one output: the same bytes in two files, each printed by the host
         // shell's own file printer — cmd.exe has no `printf` and a newline ends its command
         // line (T83.11).
-        let print = if shell_kind(&shell(&c)) == ShellKind::Cmd {
-            "type"
-        } else {
-            "cat"
-        };
+        let print = if on_cmd(&c) { "type" } else { "cat" };
         for name in ["a.txt", "b.txt"] {
             let path = dir.join(name);
             fs::write(&path, &payload).unwrap();
@@ -636,7 +647,13 @@ mod tests {
     #[test]
     fn exit_3_is_preserved() {
         let (c, dir) = cfg("exit3");
-        let code = run(&c, &["sh".into(), "-c".into(), "exit 3".into()], None).unwrap();
+        // cmd.exe has no `sh`; its own `exit 3` ends it with that code (T83.2).
+        let argv: Vec<String> = if on_cmd(&c) {
+            vec!["exit 3".into()]
+        } else {
+            vec!["sh".into(), "-c".into(), "exit 3".into()]
+        };
+        let code = run(&c, &argv, None).unwrap();
         assert_eq!(code, 3);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -661,11 +678,9 @@ mod tests {
     #[test]
     fn three_runs_stats_plugin_cmd_json_has_rows() {
         let (c, dir) = cfg("stats3");
+        let argv = print_argv(&c, &dir, "a\nb\n");
         for _ in 0..3 {
-            assert_eq!(
-                run(&c, &["printf".into(), "a\nb\n".into()], None).unwrap(),
-                0
-            );
+            assert_eq!(run(&c, &argv, None).unwrap(), 0);
         }
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
         let rows = v["rows"].as_array().unwrap();
@@ -694,7 +709,19 @@ mod tests {
     #[test]
     fn one_arg_compound_command_runs_as_one_script() {
         let (c, dir) = cfg("compound");
-        let code = run(&c, &["printf a; printf b".into()], None).unwrap();
+        // cmd.exe chains with `&` and prints the same bytes with `type` (T83.2).
+        let snippet = if on_cmd(&c) {
+            let mut parts = Vec::new();
+            for text in ["a", "b"] {
+                let path = dir.join(format!("{text}.txt"));
+                fs::write(&path, text).unwrap();
+                parts.push(format!("type {}", cmd_quote(&path.display().to_string())));
+            }
+            parts.join("& ")
+        } else {
+            "printf a; printf b".into()
+        };
+        let code = run(&c, &[snippet], None).unwrap();
         assert_eq!(code, 0);
         // "ab" lost nothing, so T160 stores no archive — but the run is still measured.
         let v = crate::web::model::plugin_stats(&c, "cmd").unwrap();
