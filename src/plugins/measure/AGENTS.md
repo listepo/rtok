@@ -8,7 +8,7 @@
 `rtok_plugin_sdk::…`.
 
 **Invariants**
-- Estimates are labelled as estimates (±15 %); proxy `usage` rows are the only real counts.
+- Estimates are labelled as estimates (an uncalibrated heuristic, no accuracy figure); proxy `usage` rows are the only real counts.
 - Skip malformed transcript lines and *count* them; never abort a report on one bad line.
 - Context-token-turns for a tool_result of T tokens at turn t in an N-turn session = T × (N − t).
 - `rtok stats` must reproduce the numbers in `research.md` §2 within ±5 % (T1.2 Check).
