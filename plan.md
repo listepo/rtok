@@ -71,7 +71,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T202 | todo | P2 | 3 | 0% | |
 | T203 | todo | P2 | 3 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
-| T205 | todo | P2 | 3 | 0% | |
 | T206 | todo | P2 | 3 | 0% | |
 | T207 | todo | P1 | 3 | 0% | |
 | T208 | todo | P1 | 3 | 0% | |
@@ -804,14 +803,6 @@ Found 2026-09-22 in the core pass: every plugin call is wrapped in `catch_unwind
 Plan: one funnel helper for the four loops matching the `Err`, extracting the panic payload string and calling `cx.log("error", …)` with the plugin id before dropping the output.
 
 Check: `a_panicking_plugin_is_logged_and_the_rest_survives` — a registry with one panicking and one returning plugin: stdout keeps the good plugin's context and the store holds one `level = "error"` log row naming the plugin; `just test` green.
-
-### T205. Proxy bookkeeping blocks the tokio runtime before forwarding
-
-Found 2026-09-22 in the surfaces pass: `handle` (`src/proxy/mod.rs:203-251`) is async but does all bookkeeping synchronously on tokio workers — serde parse of up to 256 MB bodies, tokenizer estimates, a fresh `Runtime::open` per compress request (:546-602), archive file writes — and `finish` (:723-806) repeats sync inserts inside `tokio::spawn`. Nothing uses `spawn_blocking`; N concurrent requests pin N workers, and one huge body delays `/health`, other in-flight streams and TTFB.
-
-Plan: move request shaping (`record` + `compress` + `prepare`/`context_edits`/`rewrite_tools`) and `finish`'s store writes into `tokio::task::spawn_blocking`; keep the tee loop and channels async.
-
-Check: `health_stays_fast_while_a_large_request_is_recorded` — a ~20 MB compress request against a slow mock upstream while `GET /health` answers < 250 ms; the `proxy_*` suite unchanged; `just test` green.
 
 ### T206. `rtok web` builds each snapshot inline while holding the config mutex
 

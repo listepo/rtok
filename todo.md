@@ -60,7 +60,6 @@
 - T202. `recent_hook_inputs` and the handoff ledger re-parse up to 200 × 64 KB per event
 - T203. PreCompact/SessionEnd read the whole transcript and open extra stores
 - T204. A panicking plugin is dropped silently — the error never reaches the log
-- T205. Proxy bookkeeping blocks the tokio runtime before forwarding
 - T206. `rtok web` builds each snapshot inline while holding the config mutex
 - T207. Measurement totals computed three ways; non-catalogue plugins and expand rows disagree
 - T208. Multi-step store writes commit separately — freezes without a Measurement, orphan archives
