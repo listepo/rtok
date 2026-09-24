@@ -859,8 +859,14 @@ mod tests {
         let path = tmp("desktop-mcp");
         let a = apply(&cfg(path.clone(), false));
         rtok_agent_sdk::register_mcp(&a, &path, "rtok", &desktop_command(), &["mcp"]).unwrap();
+        // Compare the parsed value: a Windows path's `\` is `\\` in the raw JSON (T83.5).
         let raw = fs::read_to_string(&path).unwrap();
-        assert!(raw.contains(&desktop_command()), "{raw}");
+        let written: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            written["mcpServers"]["rtok"]["command"],
+            json!(desktop_command()),
+            "{raw}"
+        );
         assert_ne!(
             rtok_agent_sdk::unregister_mcp(&a, &path, "rtok").unwrap(),
             NO_CHANGES
