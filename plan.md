@@ -40,7 +40,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.4 | in progress | P2 | 4 | 0% | Claude Code / claude-opus-5-5 |
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
-| T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T204 | todo | P3 | 2 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
@@ -334,14 +333,6 @@ Left over from T163.7: `usage_ctt` (`COUNT() OVER`, `ROW_NUMBER() OVER`), `sessi
 Execution plan: (1) wait for T163.1 on `main`; (2) move the three statements, signatures and row order unchanged; (3) the `session_totals` and `recent_calls` tests unchanged and green, `rtok stats` unchanged on a DB clone; (4) `just check`.
 
 Check: no `sql_query` left in the three functions; tests unchanged and green; `just check`.
-
-### T171. Claude Code sees the rtok MCP server twice
-
-Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
-
-Plan: the install half is done by T243 — the direct entry was the Claude Desktop `mcpServers.rtok` in `claude_desktop_config.json`, which the desktop app's Code tab loads next to the plugin; install now drops it while the plugin is installed. Left: make doctor flag the pair (plugin installed + an rtok entry in `claude_desktop_config.json` or `~/.claude.json`) as a duplicate.
-
-Check: doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
 
 ### T178. Hook wall-clock time as Claude Code sees it
 
