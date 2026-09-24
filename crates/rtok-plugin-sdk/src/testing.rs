@@ -194,22 +194,23 @@ impl Archive for MemoryHost {
 impl Notes for MemoryHost {
     fn upsert_note(
         &self,
-        project: Option<&str>,
-        kind: &str,
-        title: &str,
-        body: &str,
-    ) -> Result<i32> {
-        self.insert_note(project, kind, title, body)
-    }
-
-    fn insert_note(
-        &self,
         _project: Option<&str>,
         _kind: &str,
         _title: &str,
         _body: &str,
     ) -> Result<i32> {
         Ok(0)
+    }
+
+    fn insert_note(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<i32> {
+        // T209: matches the real host — `insert_note` delegates to `upsert_note`.
+        self.upsert_note(project, kind, title, body)
     }
 
     fn latest_note(&self, _kind: &str) -> Result<Option<String>> {

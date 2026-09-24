@@ -145,6 +145,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0019.sql",
         include_str!("../../migrations/0019_archive_agent_context/up.sql"),
     ),
+    (
+        "0020.sql",
+        include_str!("../../migrations/0020_notes_topic_unique/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -201,6 +205,29 @@ pub(crate) fn fts_phrase_query(query: &str) -> Option<String> {
         .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
         .collect();
     (!quoted.is_empty()).then(|| quoted.join(" "))
+}
+
+/// The four required `notes` columns as one `.values(...)` tuple — shared by
+/// [`Store::insert_note`] and [`Store::insert_note_if_absent`] (T209), which differ only
+/// in the `INSERT` variant and what an ignored conflict means for the caller.
+#[allow(clippy::type_complexity)]
+fn note_values<'a>(
+    project: Option<&'a str>,
+    kind: &'a str,
+    title: &'a str,
+    body: &'a str,
+) -> (
+    diesel::dsl::Eq<notes::project, Option<&'a str>>,
+    diesel::dsl::Eq<notes::kind, &'a str>,
+    diesel::dsl::Eq<notes::title, &'a str>,
+    diesel::dsl::Eq<notes::body, &'a str>,
+) {
+    (
+        notes::project.eq(project),
+        notes::kind.eq(kind),
+        notes::title.eq(title),
+        notes::body.eq(body),
+    )
 }
 
 #[cfg(test)]
@@ -1030,19 +1057,50 @@ impl Store {
     ) -> Result<i32> {
         let mut conn = self.lock()?;
         diesel::insert_into(notes::table)
-            .values((
-                notes::project.eq(project),
-                notes::kind.eq(kind),
-                notes::title.eq(title),
-                notes::body.eq(body),
-            ))
+            .values(note_values(project, kind, title, body))
             .returning(notes::id)
             .get_result(&mut *conn)
             .map_err(Into::into)
     }
 
+    /// Insert only if `(project, kind, title)` is still free; `None` when a row already
+    /// holds that topic key (T209: `memory import` must never let an older export
+    /// overwrite a newer local body — unlike [`Store::upsert_note`], this never touches
+    /// an existing row). `INSERT OR IGNORE` names no conflict target, so it works against
+    /// the `notes_topic` expression index without the raw SQL `upsert_note` needs;
+    /// `RETURNING` yields no row when the insert was ignored, which `.optional()` reads
+    /// as the "already there" case.
+    pub fn insert_note_if_absent(
+        &self,
+        project: Option<&str>,
+        kind: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Option<i32>> {
+        let mut conn = self.lock()?;
+        diesel::insert_or_ignore_into(notes::table)
+            .values(note_values(project, kind, title, body))
+            .returning(notes::id)
+            .get_result(&mut *conn)
+            .optional()
+            .map_err(Into::into)
+    }
+
     /// One row per `(project, kind, title)` — the title is the topic key (T66.1). An
     /// existing row gets the new body and a fresh `ts`; returns `(id, updated)`.
+    ///
+    /// T209: this used to be a SELECT for the existing id followed by an UPDATE or
+    /// INSERT, with the mutex dropped before the INSERT — two writers (hooks, MCP, proxy
+    /// and `otel flush` are separate processes) racing the same topic key could both
+    /// insert. The write below is one atomic `INSERT … ON CONFLICT … DO UPDATE`, backed
+    /// by the `notes_topic` UNIQUE index (migration 0020), so a race resolves inside
+    /// SQLite instead of in this gap.
+    ///
+    /// `notes_topic` indexes `COALESCE(project, '')` rather than `project`: SQLite treats
+    /// NULL as a distinct value in a UNIQUE index, so a plain `(project, kind, title)`
+    /// index would not stop two NULL-project ("no project") notes from duplicating. Diesel's
+    /// `on_conflict` can only target a column tuple, not an expression index, so this one
+    /// statement is raw SQL — the DSL cannot express an expression conflict target.
     pub fn upsert_note(
         &self,
         project: Option<&str>,
@@ -1050,33 +1108,39 @@ impl Store {
         title: &str,
         body: &str,
     ) -> Result<(i32, bool)> {
-        let conn = self.lock()?;
-        let mut q = notes::table
+        let mut conn = self.lock()?;
+        // Informational only (callers report "created" vs "updated"): read before the
+        // atomic write below, so a true concurrent race can make it stale without ever
+        // producing a duplicate row — the UNIQUE index and the single statement own that.
+        let mut existed_q = notes::table
             .filter(notes::kind.eq(kind))
             .filter(notes::title.eq(title))
-            .order(notes::id.desc())
             .select(notes::id)
             .into_boxed();
-        q = match project {
-            Some(p) => q.filter(notes::project.eq(p)),
-            None => q.filter(notes::project.is_null()),
+        existed_q = match project {
+            Some(p) => existed_q.filter(notes::project.eq(p)),
+            None => existed_q.filter(notes::project.is_null()),
         };
-        let mut conn = conn;
-        if let Some(id) = q.first::<i32>(&mut *conn).optional()? {
-            diesel::update(notes::table.find(id))
-                .set((
-                    notes::body.eq(body),
-                    notes::ts.eq(diesel::dsl::sql::<BigInt>("unixepoch()")),
-                    // An explicit re-save revives the topic: a retired tombstone does not
-                    // outlive the human/agent writing the note again (T69.1).
-                    notes::retired.eq(None::<i64>),
-                    notes::superseded_by.eq(None::<i32>),
-                ))
-                .execute(&mut *conn)?;
-            return Ok((id, true));
-        }
-        drop(conn);
-        Ok((self.insert_note(project, kind, title, body)?, false))
+        let updated = existed_q.first::<i32>(&mut *conn).optional()?.is_some();
+
+        let id = sql_query(
+            "INSERT INTO notes (project, kind, title, body) VALUES (?, ?, ?, ?)
+             ON CONFLICT (COALESCE(project, ''), kind, title) DO UPDATE SET
+                 body = excluded.body,
+                 ts = unixepoch(),
+                 -- An explicit re-save revives the topic: a retired tombstone does not
+                 -- outlive the human/agent writing the note again (T69.1).
+                 retired = NULL,
+                 superseded_by = NULL
+             RETURNING id",
+        )
+        .bind::<Nullable<Text>, _>(project)
+        .bind::<Text, _>(kind)
+        .bind::<Text, _>(title)
+        .bind::<Text, _>(body)
+        .get_result::<UpsertedId>(&mut *conn)?
+        .id;
+        Ok((id, updated))
     }
 
     /// Every note but the session-local `checkpoint:*` / `session:*` rows, id order
@@ -2243,6 +2307,13 @@ struct Count {
     n: i64,
 }
 
+/// [`Store::upsert_note`]'s `RETURNING id` row.
+#[derive(QueryableByName)]
+struct UpsertedId {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+}
+
 /// FTS5 search hit (T6.1). The shape is the published contract's (D25); this is only the
 /// row diesel loads it into.
 #[derive(Debug, QueryableByName)]
@@ -2548,38 +2619,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A fresh on-disk db with every migration but the last one applied — the fixture a
+    /// test seeding a previous-schema quirk (0015, 0020, …) builds on before it seeds a
+    /// row and calls `Store::open` to run the one migration under test.
+    fn db_before_last_migration(tag: &str) -> (PathBuf, SqliteConnection) {
+        let dir = std::env::temp_dir().join(format!("rtok-mig-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("rtok.db");
+        let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
+        conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
+            .unwrap();
+        conn.batch_execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
+        )
+        .unwrap();
+        for (name, sql) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+            conn.batch_execute(sql).unwrap();
+            sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
+                .bind::<Text, _>(*name)
+                .execute(&mut conn)
+                .unwrap();
+        }
+        (dir, conn)
+    }
+
     /// T69.1: a `rtok.db` of the previous schema (0001–0014, one note) migrates in place —
     /// 0015 adds the lifecycle columns with live defaults and the note survives retiring.
     #[test]
     fn migration_0015_adds_lifecycle_columns_to_a_previous_schema_db() {
-        let dir = std::env::temp_dir().join(format!("rtok-mig-0015-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let (dir, mut conn) = db_before_last_migration("0015");
         let db = dir.join("rtok.db");
-        {
-            let mut conn = SqliteConnection::establish(db.to_str().unwrap()).unwrap();
-            conn.batch_execute("PRAGMA busy_timeout = 1000; PRAGMA journal_mode = WAL;")
-                .unwrap();
-            conn.batch_execute(
-                "CREATE TABLE IF NOT EXISTS schema_migrations (
-                    name TEXT PRIMARY KEY,
-                    applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
-            )
-            .unwrap();
-            for (name, sql) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
-                conn.batch_execute(sql).unwrap();
-                sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
-                    .bind::<Text, _>(*name)
-                    .execute(&mut conn)
-                    .unwrap();
-            }
-            sql_query(
-                "INSERT INTO notes (ts, kind, title, body)
-                 VALUES (1, 'note', 'old', 'before the lifecycle')",
-            )
-            .execute(&mut conn)
-            .unwrap();
-        }
+        sql_query(
+            "INSERT INTO notes (ts, kind, title, body)
+             VALUES (1, 'note', 'old', 'before the lifecycle')",
+        )
+        .execute(&mut conn)
+        .unwrap();
+        drop(conn);
         let store = Store::open(&db).unwrap();
         let row = store.note_row(1).unwrap().unwrap();
         assert_eq!(
@@ -2596,6 +2675,87 @@ mod tests {
             store.search_notes("before", 5).unwrap().is_empty(),
             "retired note does not search"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T209: a `rtok.db` already holding duplicate `(project, kind, title)` notes — the
+    /// select-then-insert race migration 0020 closes — migrates by keeping only the
+    /// newest row per topic key, the same "highest id" tie-break `upsert_note` used
+    /// before the fix. Covers a NULL-project key and a project-scoped key.
+    #[test]
+    fn migration_0020_drops_pre_existing_duplicate_notes() {
+        let (dir, mut conn) = db_before_last_migration("0020");
+        let db = dir.join("rtok.db");
+        conn.batch_execute(
+            "INSERT INTO notes (id, ts, project, kind, title, body) VALUES
+             (1, 1, NULL,   'note', 'dup', 'stale'),
+             (2, 2, NULL,   'note', 'dup', 'fresh'),
+             (3, 1, 'rtok', 'note', 'dup', 'stale'),
+             (4, 2, 'rtok', 'note', 'dup', 'fresh')",
+        )
+        .unwrap();
+        drop(conn);
+        let store = Store::open(&db).unwrap();
+        let mut conn = store.lock().unwrap();
+        let rows: Vec<(i32, String)> = notes::table
+            .order(notes::id.asc())
+            .select((notes::id, notes::body))
+            .load(&mut *conn)
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![(2, "fresh".to_string()), (4, "fresh".to_string())],
+            "kept only the newest row per (project, kind, title)"
+        );
+        let err = diesel::insert_into(notes::table)
+            .values((
+                notes::project.eq(None::<&str>),
+                notes::kind.eq("note"),
+                notes::title.eq("dup"),
+                notes::body.eq("third"),
+            ))
+            .execute(&mut *conn)
+            .unwrap_err();
+        assert!(
+            format!("{err}").contains("UNIQUE"),
+            "the index rejects a fresh duplicate too: {err}"
+        );
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T209: two connections (hooks/MCP/proxy/`otel flush` are separate processes) racing
+    /// the same topic key must not land two rows — the UNIQUE index (migration 0020)
+    /// makes the atomic `INSERT … ON CONFLICT … DO UPDATE` resolve the race inside
+    /// SQLite instead of the old select-then-insert gap.
+    #[test]
+    fn concurrent_upsert_note_yields_one_row() {
+        let dir = std::env::temp_dir().join(format!("rtok-note-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let db = dir.join("rtok.db");
+        let a = Store::open(&db).unwrap();
+        let b = Store::open(&db).unwrap();
+        std::thread::scope(|s| {
+            for store in [&a, &b] {
+                s.spawn(move || {
+                    for i in 0..50 {
+                        store
+                            .upsert_note(Some("rtok"), "note", "topic", &format!("body {i}"))
+                            .unwrap();
+                    }
+                });
+            }
+        });
+        let mut conn = a.lock().unwrap();
+        let rows: Vec<i32> = notes::table
+            .filter(notes::project.eq("rtok"))
+            .filter(notes::kind.eq("note"))
+            .filter(notes::title.eq("topic"))
+            .select(notes::id)
+            .load(&mut *conn)
+            .unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

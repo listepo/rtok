@@ -36,8 +36,12 @@ fn sha(body: &str) -> String {
     crate::store::hex_sha256(body.as_bytes())
 }
 
-/// Import one JSON object per line. Dedupe by sha256 of `body`. Always exit-success.
-/// `dry_run` counts exactly what a real run would insert and skip, and writes no rows.
+/// Import one JSON object per line. Dedupe by sha256 of `body`; a line whose
+/// `(project, kind, title)` already names a local note is skipped too, whatever its body —
+/// an older export must never replace a newer local body (T209: `notes_topic` is one row
+/// per topic key, so a plain insert would otherwise fail outright on the collision).
+/// Always exit-success. `dry_run` counts exactly what a real run would insert and skip,
+/// and writes no rows.
 pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
     let cx = crate::plugin::Runtime::open(cfg.clone(), "import")?;
     let raw = std::fs::read_to_string(path).unwrap_or_default();
@@ -46,6 +50,15 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
         .note_bodies()?
         .into_iter()
         .map(|b| sha(&b))
+        .collect();
+    // Topic keys already taken locally, kept up to date as lines are processed below so
+    // `dry_run` (which never writes) reaches the same skip/insert call a real run would
+    // for two imported lines that share a key neither one starts out matching locally.
+    let mut keys: HashSet<(Option<String>, String, String)> = cx
+        .store
+        .list_notes(None)?
+        .into_iter()
+        .map(|(project, kind, title, _body)| (project, kind, title))
         .collect();
     let mut r = Report::default();
     for line in raw.lines() {
@@ -62,11 +75,26 @@ pub fn run(cfg: &Config, path: &Path, dry_run: bool) -> Result<Report> {
             r.skipped += 1;
             continue;
         }
-        if !dry_run {
-            cx.store
-                .insert_note(row.project.as_deref(), &row.kind, &row.title, &row.body)?;
+        let key = (row.project.clone(), row.kind.clone(), row.title.clone());
+        if !keys.insert(key) {
+            r.skipped += 1;
+            continue;
         }
-        r.inserted += 1;
+        if dry_run {
+            r.inserted += 1;
+            continue;
+        }
+        match cx.store.insert_note_if_absent(
+            row.project.as_deref(),
+            &row.kind,
+            &row.title,
+            &row.body,
+        )? {
+            Some(_) => r.inserted += 1,
+            // Lost a race to a concurrent local write between the pre-load above and
+            // this statement — the local body stands, same as the in-memory check.
+            None => r.skipped += 1,
+        }
     }
     Ok(r)
 }
@@ -117,6 +145,52 @@ mod tests {
                 skipped: 50,
                 malformed: 1
             }
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// T209: `notes_topic` is one row per `(project, kind, title)`, so an import line
+    /// naming a key a local note already holds must be skipped, never overwrite it — an
+    /// older export must not replace a newer local body. `dry_run` reports the same
+    /// count without touching the store.
+    #[test]
+    fn a_line_whose_key_exists_locally_with_a_different_body_is_skipped() {
+        let (c, dir) = cfg("key-collision");
+        let cx = crate::plugin::Runtime::open(c.clone(), "seed").unwrap();
+        cx.store
+            .insert_note(Some("p"), "note", "t", "local body")
+            .unwrap();
+        drop(cx);
+        let p = dir.join("n.jsonl");
+        fs::write(
+            &p,
+            r#"{"kind":"note","title":"t","body":"import body","project":"p"}"#.to_string() + "\n",
+        )
+        .unwrap();
+
+        let dry = run(&c, &p, true).unwrap();
+        assert_eq!(
+            dry,
+            Report {
+                inserted: 0,
+                skipped: 1,
+                malformed: 0
+            }
+        );
+        let real = run(&c, &p, false).unwrap();
+        assert_eq!(real, dry, "dry_run and a real run agree");
+
+        let cx = crate::plugin::Runtime::open(c.clone(), "verify").unwrap();
+        let rows = cx.store.list_notes(Some("p")).unwrap();
+        assert_eq!(
+            rows,
+            vec![(
+                Some("p".to_string()),
+                "note".to_string(),
+                "t".to_string(),
+                "local body".to_string()
+            )],
+            "the local body survives the import untouched"
         );
         let _ = fs::remove_dir_all(&dir);
     }

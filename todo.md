@@ -54,7 +54,6 @@
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T204. A panicking plugin is dropped silently — the error never reaches the log
 - T206. `rtok web` builds each snapshot inline while holding the config mutex
-- T209. `upsert_note` select-then-insert races a duplicate past the topic key
 - T210. `measurements (session, ts)` has no index on never-pruned tables
 - T211. Inline `call_io` bodies are stored lossily (`from_utf8_lossy`)
 - T212. Semantic-cache key omits sampling params and tool schemas
