@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T179 | todo | P2 | 3 | 0% | |
 | T182 | todo | P2 | 3 | 0% | |
 | T184 | todo | P1 | 2 | 0% | |
 | T185 | todo | P1 | 3 | 0% | |
@@ -480,14 +479,6 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
-
-### T179. Why `read/dedup` and `read/delta` rarely fire
-
-Found in the 2026-09-22 audit: 367 same-session re-reads of the same file (≈ 2.35 MB) while `read/dedup` and `read/delta` together fired about 272 times, and only 2% of native `Read` results carry any rtok marker. Worst: one file read 29× in a session. Part of the misses may be sessions where `rtok` was not on `PATH` (T174). T136 measures `outline`-answerable reads; this task is about repeat reads.
-
-Plan: from transcripts, classify each repeat read: hook not run, file changed (delta expected), range read, sub-agent context (T127), or dedup declined; fix the largest class.
-
-Check: `rtok stats` prints the repeat-read classes; the fixed class shrinks on a replayed transcript fixture; `just test` green.
 
 ### T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 

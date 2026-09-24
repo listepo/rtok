@@ -113,6 +113,28 @@ Under the 5 % gate: I-82 (deny such Reads, point at `outline`) is rejected with 
 
 Resident: 56 020 282 tokens, **0.91 %** of session input; every block had a PNG or JPEG header. Under the 5 % gate: the multimodal token gate (§16.3 #9) stays unbuilt, with this number. Most image tokens come from the agent's own `Read` of image files, not from browser or simulator screenshots.
 
+### Repeat native Reads by class (T179, 2026-09-24)
+
+`rtok stats --since 30d --json` on this machine (367 sessions, 426 092 transcript lines), the new `repeat_reads` row: every native `Read` of a path already read this session (or, for `subagent`, by its parent/an earlier sibling — T127), not the first read of it, classified by why `read/dedup`+`read/delta` (the MCP `read` cache) did not shorten it. Priority order: a result already carrying a dedup/delta/archive marker → `fired`; else an Edit/Write/MultiEdit/Bash that *changed* the path since the last read → `changed`; else `offset`/`limit` differing from the last read → `ranged`; else, if nothing in the session carries any rtok marker → `hook_absent` (T174: `rtok` likely not on `PATH`); else → `declined`. `subagent` is a sub-agent's re-read of a path its parent or an earlier sibling already read — invisible to the per-session walk, so it is filled from `Subagents::reread_calls`/`reread_bytes` (T128) instead.
+
+`changed`'s Bash signal was revised after the first pass: naming the path in a Bash command was not enough (`cat`/`grep`/`sed -n`/`head` of the path are reads and are common), so `bash_touches` now requires a write signal — output redirection, `sed -i`/`perl -i`/`-pi`, `tee`, `mv`/`cp`/`rm`/`touch`/`patch` naming the path, or a "blanket writer" (`git checkout`/`restore`/`stash`/`reset`/`rebase`/`merge`/`pull`/`apply`/`cherry-pick`, `cargo fmt`/`rustfmt`/`oxfmt`/`prettier --write`) that can rewrite any tracked file without naming it. The numbers below are the re-measurement under that narrower rule.
+
+| Class | Calls | Share of calls | Bytes | Share of bytes |
+| --- | --- | --- | --- | --- |
+| `subagent` (d) | 1 017 | 41.0 % | 5 909 394 | 58.2 % |
+| `changed` (b) | 732 | 29.5 % | 2 141 409 | 21.1 % |
+| `ranged` (c) | 524 | 21.1 % | 1 976 031 | 19.5 % |
+| `hook_absent` (a) | 111 | 4.5 % | 53 192 | 0.5 % |
+| `fired` (e) | 55 | 2.2 % | 6 900 | 0.1 % |
+| `declined` (f) | 44 | 1.8 % | 58 386 | 0.6 % |
+| **Total** | **2 483** | **100 %** | **10 145 312** | **100 %** |
+
+Same total calls and bytes as the first pass — only reclassification moved: 118 reads that the old, name-only `bash_touches` had called `changed` are no longer flagged as touched by a plain read-only Bash, and fall through to `ranged` (+119) or, in a few cases, `hook_absent`/`declined`; `fired` and `subagent`, untouched by the Bash signal, are unchanged. The 2026-09-22 ad hoc audit's "367 same-session re-reads / ~272 dedup+delta fires" was a narrower count (no sub-agent transcripts, and evidently a different window); this run's per-session-file walk alone (everything but `subagent`) still finds 1 466 repeats, of which only 55 (`fired`) show a dedup/delta/archive marker — consistent with that audit's headline gap even though the totals do not match exactly.
+
+Largest class: `subagent` (d), 1 017 calls / 5.9 MB — a sub-agent re-reading a path its parent or an earlier sibling already read. Per plan, not fixed here: it is class (d), T127's territory (attribution/sharing across agent transcripts, not a `read` plugin bug), and any fix (e.g. seeding a sub-agent's dedup cache from its parent's reads) is a design decision — cross-process cache sharing, and whether a sub-agent *should* trust its parent's read of a path it cannot verify is still current — not a small, clear patch inside `src/plugins/read/**`.
+
+Largest non-(d) class both before and after the narrower `bash_touches`: `changed` (b), now 732 calls / 2.1 MB (was 850 / 2.6 MB) — still expected behaviour by construction (an Edit/Write/MultiEdit/Bash write touched the path since the last read), not a miss to fix. `ranged` (c) likewise: a different `offset`/`limit` is a different read. `hook_absent` (a) is T174's territory (`rtok` not on `PATH`), already tracked there. The only class that is a same-session, same-path, same-range repeat the cache should have caught and did not — `declined` (f) — is also the smallest both times (44 calls now, 0.6 % of bytes): too small to justify a code change, and `--json`-scale transcript text alone cannot show *why* the MCP `read` cache missed these 44 (a native `Read` never even consults it; these are native Reads that stayed native through the read-advice gate — under `native_max_bytes`, or within the recently-edited early return of `plugins/read/hook.rs::pre_tool` that returns `None` with no marker). The class ordering did not change under the narrower Bash signal, so the fix decision stands: no class here is both largest and a small, clear `read`-plugin fix, so none was made.
+
 ### `graph` index accuracy (T8.8, 2026-09-04)
 
 30 symbols of this repo labelled by hand from a plain-text scan, independent of the index that is
