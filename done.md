@@ -5706,3 +5706,22 @@ Result: `rtok agents update [host,…]` (`--dry-run`, `--cli/--desktop/--all`, `
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T239. `Measurement` rows match the bytes each surface actually returned
+
+`tests/plugins_e2e.rs` checks that a `cmd` run records a row of the right kind, not that the row is right. A saving that is not a correct `Measurement` row does not exist.
+
+Plan: one integration test per surface — `rtok hook` PostToolUse on a long Bash result, `rtok mcp` `read` on a large file, `rtok proxy` against the mock upstream with a long `tool_result` — each in a temp home. Read the rows with `Store::list_measurements` and assert `before`/`after` equal `tokens::estimate` of the original body and of the body the surface returned (the hook's `additionalContext`, the MCP result text, the forwarded request body); plus a short body (under the rule's threshold) records no row or a zero saving, never a negative one.
+
+Check: breaking the estimate call on one surface (e.g. recording `after` from the archived original) fails exactly that test; `just check` green.
+
+Do (2026-09-24): four new tests in `tests/plugins_e2e.rs`, each reading rows via `rtok::store::Store::list_measurements` and recomputing `before`/`after` independently from the surface's own returned bytes with `tokens::estimate` (never copied from the row). `cmd_hook_measurement_matches_returned_bytes`: confirms the `PreToolUse(Bash)` rewrite to `rtok run --` (`src/plugins/cmd/hook.rs`, `cmd` has no `post_tool`), then runs it and checks the `cmd` row against the printed output (`trailer_min_lines` raised to keep the measured text equal to the whole printed body — see bug note below). `read_stripped_measurement_matches_returned_text`: MCP `read` in `stripped` mode on a large file, row checked against the exact returned text (`src/plugins/read/mod.rs` records from the same `raw`/`out` strings it returns, no drift). `proxy_archive_measurement_matches_forwarded_bytes`: `rtok proxy` in `compress` mode, `archive` shortens an old `tool_result` past `keep_turns`; the forwarded upstream body is captured via an `httpmock` custom matcher and compared to the `archive` row (`compress`, on by default, is disabled in this test so its chained re-summarization doesn't also transform the pointer before it reaches the mock). `cmd_run_short_body_records_zero_not_negative_saving`: a body under the rule threshold prints verbatim and records `before_bytes == after_bytes`, never `after > before`.
+
+Mutation check: for each of the three byte-accuracy tests, temporarily made the surface record `after`/`est_after` from the original (pre-shortening) value instead of what it actually returned (`src/plugins/cmd/run.rs`, `src/plugins/read/mod.rs`, `src/plugins/archive/mod.rs` in turn) — each mutation failed exactly its own test and no other, then was reverted (`git diff --stat` clean on `src/` after each revert).
+
+Bug found, not laundered into the test: `src/plugins/cmd/run.rs`'s `emit_filtered` (~L368-384) records `after_bytes`/`est_after` from `filtered` alone, but when `pointer` is true it also prints a separate trailer line (`trailer(&id, lines)`, ~170 bytes) after `filtered` — the row then understates what the host actually received by the trailer's bytes/tokens. `needs_pointer()` returns true whenever `lines > trailer_min_lines` (default 40) regardless of the `named` state, so this is the common case for long Bash output under default config, not an edge case. `cmd_hook_measurement_matches_returned_bytes` avoids triggering it (raises `trailer_min_lines` in its temp config) rather than asserting around it; filed as a separate task (spawn_task `task_031c30dc`, "Fix cmd Measurement after_bytes excluding trailer") rather than fixed here, since T239's scope is tests, not this production fix.
+
+Result: `Measurement` rows for `cmd`/`read`/`archive` now have integration coverage that checks `before`/`after` against the bytes/tokens each surface actually returned, not just the row's `kind`; each check is proven by a mutation that fails only that test. `just check` green: `cargo fmt --check` clean, clippy `-D warnings` clean (workspace + `rtok-wasm-demo-guest`), `cargo nextest run --workspace` 1620 passed (4 slow, 3 skipped), jscpd/oxlint/oxfmt/pytest unaffected.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

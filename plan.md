@@ -83,7 +83,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
-| T239 | todo | P1 | 3 | 0% | |
 | T240 | todo | P2 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T244 | todo | P1 | 3 | 0% | |
@@ -523,14 +522,6 @@ Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` a
 Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
 
 Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
-
-### T239. `Measurement` rows match the bytes each surface actually returned
-
-`tests/plugins_e2e.rs` checks that a `cmd` run records a row of the right kind, not that the row is right. A saving that is not a correct `Measurement` row does not exist.
-
-Plan: one integration test per surface — `rtok hook` PostToolUse on a long Bash result, `rtok mcp` `read` on a large file, `rtok proxy` against the mock upstream with a long `tool_result` — each in a temp home. Read the rows with `Store::list_measurements` and assert `before`/`after` equal `tokens::estimate` of the original body and of the body the surface returned (the hook's `additionalContext`, the MCP result text, the forwarded request body); plus a short body (under the rule's threshold) records no row or a zero saving, never a negative one.
-
-Check: breaking the estimate call on one surface (e.g. recording `after` from the archived original) fails exactly that test; `just check` green.
 
 ### T240. Golden files for rule families without one
 
