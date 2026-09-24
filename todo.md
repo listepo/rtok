@@ -33,7 +33,6 @@
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
-- T137. `rtok stats`: image blocks row
 
 - T127. A dedup pointer reaches a sub-agent that never saw the body
 - T156. Probe: `WorktreeCreate`/`WorktreeRemove` hooks and reflink-seeded `target/`

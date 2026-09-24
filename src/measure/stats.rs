@@ -93,6 +93,9 @@ pub struct Report {
     /// T125: assistant thinking blocks in the session.
     #[serde(default, skip_serializing_if = "ThinkingRow::is_empty")]
     pub thinking: ThinkingRow,
+    /// T137: `image` content blocks. Absent when none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "ImageRow::is_empty")]
+    pub images: ImageRow,
     /// T61.1: skill bodies the transcripts inject as `isMeta` records, per skill
     /// name. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -202,6 +205,34 @@ pub struct ThinkingRow {
 }
 
 impl ThinkingRow {
+    fn is_empty(&self) -> bool {
+        self.blocks == 0
+    }
+}
+
+/// T137: `image` blocks in tool results and user messages. `tokens` uses
+/// [`super::image::tokens`] (the provider's published formula); `resident` multiplies each
+/// block's tokens by the API requests at or after its turn, like [`SkillRow`]'s. `no_size`
+/// blocks are not PNG/JPEG base64 and add no tokens. `by_source` keys by tool name, `user`
+/// for images pasted into a prompt.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageRow {
+    pub blocks: u64,
+    pub bytes: u64,
+    pub tokens: u64,
+    pub resident: u64,
+    pub no_size: u64,
+    pub by_source: BTreeMap<String, ImageSource>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageSource {
+    pub blocks: u64,
+    pub bytes: u64,
+    pub tokens: u64,
+}
+
+impl ImageRow {
     fn is_empty(&self) -> bool {
         self.blocks == 0
     }
@@ -431,6 +462,20 @@ impl Report {
                 "thinking blocks {} bytes {} est. tokens {} {:.4}% of session input\n",
                 self.thinking.blocks, self.thinking.bytes, est_toks, share
             ));
+        }
+        if self.images.blocks > 0 {
+            let d = &self.images;
+            let input = self.usage_input + self.usage_cache_create + self.usage_cache_read;
+            s.push_str(&format!(
+                "images blocks {}  bytes {}  est. tokens {}  resident {}  {:.2}% of session input  no_size {}\n",
+                d.blocks, d.bytes, d.tokens, d.resident, pct(d.resident, input), d.no_size
+            ));
+            for (src, r) in &d.by_source {
+                s.push_str(&format!(
+                    "  images {src}  blocks {}  bytes {}  est. tokens {}\n",
+                    r.blocks, r.bytes, r.tokens
+                ));
+            }
         }
         if self.repeat.calls > 0 {
             let d = &self.repeat;
@@ -974,6 +1019,7 @@ fn fold_session(
     }
 
     fold_thinking(parsed, report);
+    fold_images(parsed, &id_name, &mut report.images);
 
     fold_skills(parsed, &id_skill, report, &mut samples.skills);
     for u in &parsed.usages {
@@ -999,6 +1045,26 @@ fn fold_session(
 fn fold_thinking(parsed: &Parsed, report: &mut Report) {
     report.thinking.blocks += parsed.thinking.len() as u64;
     report.thinking.bytes += parsed.thinking.iter().map(|t| t.bytes).sum::<u64>();
+}
+
+/// T137: fold the session's image blocks; see [`ImageRow`].
+fn fold_images(parsed: &Parsed, id_name: &BTreeMap<&str, &str>, row: &mut ImageRow) {
+    for img in &parsed.images {
+        let later = parsed.usages.iter().filter(|u| u.turn >= img.turn).count() as u64;
+        row.blocks += 1;
+        row.bytes += img.bytes;
+        row.tokens += img.tokens;
+        row.resident += img.tokens.saturating_mul(later);
+        row.no_size += u64::from(!img.sized);
+        let src = match img.tool_use_id.as_str() {
+            "" => "user",
+            id => id_name.get(id).copied().unwrap_or("unknown"),
+        };
+        let r = row.by_source.entry(src.to_string()).or_default();
+        r.blocks += 1;
+        r.bytes += img.bytes;
+        r.tokens += img.tokens;
+    }
 }
 
 fn fold_skills(
@@ -1646,6 +1712,37 @@ mod tests {
         .unwrap();
         assert_eq!(r.thinking.blocks, 2);
         assert_eq!(r.thinking.bytes, 11);
+    }
+
+    /// T137: a PNG screenshot in a tool_result and a JPEG pasted into a prompt, both before
+    /// the second of two API requests: each is resident once.
+    #[test]
+    fn image_blocks_counted_with_size_and_tokens() {
+        use crate::measure::image::tests::{jpeg, png};
+        let dir = tempfile_dir();
+        let img = |data: String, mt: &str| json!({"type": "image", "source": {"type": "base64", "media_type": mt, "data": data}});
+        let lines = [
+            json!({"type": "assistant", "message": {"id": "a1", "content": [
+                {"type": "tool_use", "id": "s1", "name": "screenshot", "input": {}}],
+                "usage": {"input_tokens": 1000, "output_tokens": 1}}}),
+            json!({"type": "user", "message": {"content": [{"type": "tool_result",
+                "tool_use_id": "s1", "content": [img(png(1920, 1080), "image/png")]}]}}),
+            json!({"type": "user", "message": {"content": [img(jpeg(200, 200), "image/jpeg"),
+                {"type": "text", "text": "look"}]}}),
+            json!({"type": "assistant", "message": {"id": "a2", "content": [
+                {"type": "text", "text": "ok"}], "usage": {"input_tokens": 9000, "output_tokens": 1}}}),
+        ];
+        let body: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        fs::write(dir.join("t.jsonl"), body).unwrap();
+        let r = collect(&dir, Duration::from_secs(86400), "", Replay::default()).unwrap();
+        let d = &r.images;
+        assert_eq!((d.blocks, d.tokens, d.no_size), (2, 2691 + 64, 0));
+        assert_eq!(d.resident, 2691 + 64);
+        assert_eq!(d.by_source["screenshot"].tokens, 2691);
+        assert_eq!(d.by_source["user"].blocks, 1);
+        let text = r.to_table();
+        assert!(text.contains("images blocks 2"), "{text}");
+        assert!(text.contains("  images user  blocks 1"), "{text}");
     }
 
     /// T61.1: skill bodies ride as `isMeta` records keyed by the top-level

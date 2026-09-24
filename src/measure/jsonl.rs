@@ -49,6 +49,17 @@ pub struct ThinkingBlock {
     pub turn: u32,
 }
 
+/// T137: an `image` content block — inside a tool_result (`tool_use_id` set) or a user
+/// message (empty). `tokens` is 0 when the header is not PNG or JPEG (`sized` false).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageBlock {
+    pub tool_use_id: String,
+    pub bytes: u64,
+    pub tokens: u64,
+    pub sized: bool,
+    pub turn: u32,
+}
+
 #[derive(Debug, Default)]
 pub struct Parsed {
     pub lines: u64,
@@ -62,6 +73,7 @@ pub struct Parsed {
     pub assistant_texts: Vec<String>,
     pub usages: Vec<Usage>,
     pub thinking: Vec<ThinkingBlock>,
+    pub images: Vec<ImageBlock>,
     pub turns: u32,
     seen_ids: HashSet<String>,
 }
@@ -114,6 +126,7 @@ pub fn parse_dir(dir: &Path) -> std::io::Result<Parsed> {
                 acc.assistant_texts.extend(one.assistant_texts);
                 acc.usages.extend(one.usages);
                 acc.thinking.extend(one.thinking);
+                acc.images.extend(one.images);
             }
         }
     }
@@ -218,6 +231,13 @@ fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed, repeat: bool) 
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            if let Some(Value::Array(a)) = b.get("content")
+                && !repeat
+            {
+                for x in a {
+                    push_image(x, &tool_use_id, turn, out);
+                }
+            }
             out.tool_results.push(ToolResult {
                 tool_use_id,
                 content: flatten_content(b.get("content")),
@@ -231,6 +251,7 @@ fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed, repeat: bool) 
                 out.assistant_texts.push(t.to_string());
             }
         }
+        Some("image") if ty == "user" && !repeat => push_image(b, "", turn, out),
         Some("thinking") | Some("redacted_thinking") if ty == "assistant" && !repeat => {
             let data = b
                 .get("thinking")
@@ -244,6 +265,25 @@ fn ingest_block(b: &Value, ty: &str, turn: u32, out: &mut Parsed, repeat: bool) 
         }
         _ => {}
     }
+}
+
+/// T137: record `x` when it is an `image` block; base64 sources get bytes and pixel size.
+fn push_image(x: &Value, tool_use_id: &str, turn: u32, out: &mut Parsed) {
+    if x.get("type").and_then(Value::as_str) != Some("image") {
+        return;
+    }
+    let data = x
+        .pointer("/source/data")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let dims = super::image::dims(data);
+    out.images.push(ImageBlock {
+        tool_use_id: tool_use_id.to_string(),
+        bytes: super::image::decoded_len(data),
+        tokens: dims.map_or(0, |(w, h)| super::image::tokens(w, h)),
+        sized: dims.is_some(),
+        turn,
+    });
 }
 
 fn usage_of(v: &Value) -> Option<Usage> {

@@ -3,6 +3,7 @@
 pub mod baseline;
 pub mod cache;
 pub mod codex;
+pub mod image;
 pub mod jsonl;
 pub mod skills_listing;
 pub mod stats;
