@@ -48,7 +48,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T226 | todo | P2 | 2 | 0% | |
 =======
 | T260 | todo | P2 | 2 | 0% | |
-| T228 | todo | P2 | 2 | 0% | |
 >>>>>>> origin/main
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
