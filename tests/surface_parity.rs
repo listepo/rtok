@@ -375,6 +375,36 @@ fn services_page_exists_on_both_surfaces() {
     );
 }
 
+/// T232: both surfaces render the Worktrees page — `worktree list`'s table (path,
+/// branch, owner, state, age, `target/` size) — from the same model accessor, so
+/// `worktree list` can leave EXEMPT for COMMAND_PAGES; `gc`/`clean` stay CLI-only.
+#[test]
+fn worktrees_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"worktrees\", \"worktrees\")"),
+        "pages() offers worktrees"
+    );
+    assert!(
+        model.contains("fn worktrees_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"worktrees\" =>"),
+        "the TUI renders the worktrees page"
+    );
+    assert!(
+        web.contains("worktrees_text") && slint.contains("page-id == \"worktrees\""),
+        "the web Worktrees page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -439,6 +469,8 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Services page rides the snapshot since T229, so both render it
     ("demon status", "services"),
     ("otel status", "services"),
+    // the Worktrees page rides the snapshot since T232, so `worktree list` renders it
+    ("worktree list", "worktrees"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -556,10 +588,6 @@ const EXEMPT: &[(&str, &str)] = &[
     (
         "memory export",
         "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T66.2)",
-    ),
-    (
-        "worktree list",
-        "reads git and the checkout's file system, not the store: no model data (T151)",
     ),
     // reading, but on-demand today (T15.11); the frame does not carry the page yet
     (
