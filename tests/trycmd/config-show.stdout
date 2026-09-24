@@ -156,6 +156,7 @@ setup.codex.config_path = ~/.codex/config.toml
 setup.copilot.dir = ~/.copilot
 setup.cursor.hooks_path = ~/.cursor/hooks.json
 setup.dry_run = false
+setup.gemini.dir = ~/.gemini
 setup.grok.config_path = ~/.grok/config.toml
 setup.hook_timeout_s = 5
 setup.kilo.config_path = ~/.config/kilo/kilo.json

@@ -67,6 +67,7 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             Some(home.join("Library/Application Support/Code/User/mcp.json")),
         ),
         ("zed", vec![], Some(home.join(".config/zed/settings.json"))),
+        ("gemini", vec![], Some(home.join(".gemini/settings.json"))),
     ]
 }
 

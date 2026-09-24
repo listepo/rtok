@@ -27,7 +27,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T96 | todo | P1 | 3 | 0% | |
 | T97 | in progress | P1 | 3 | 95% | Claude Code / claude-fable-5-1 |
 | T117 | todo | P2 | 3 | 0% | |
-| T118.2 | todo | P2 | 3 | 0% | |
 | T118.3 | todo | P2 | 3 | 0% | |
 | T123 | in progress | P2 | 2 | 5% | Claude Code / claude-haiku-4-5 |
 
@@ -276,12 +275,6 @@ Extra tests (creator request 2026-09-21): `--dry-run` writes nothing (tree uncha
 VS Code agent plugins carry hooks and MCP and are registered by path in the `chat.pluginLocations` setting (https://code.visualstudio.com/docs/agent-customization/agent-plugins). Verify the accepted format (Claude-format plugins?) and the hook event names first. `rtok agents install vscode --yes` adds the plugin path to `chat.pluginLocations` in the user `settings.json` (JSONC — see T79 before writing it) and strips its own MCP entry while the plugin is listed (D21).
 
 Check: settings round-trip test (add, idempotent, remove keeps foreign entries); `just check` green.
-
-### T118.2. Gemini CLI host module: registration, config keys, e2e
-
-T118.1 (done.md) shipped the `--host gemini` hook I/O adapter (`src/hooks/types.rs::adapt_gemini`, `src/hooks/mod.rs::gemini_output`) with no host module yet — `--host` is a free string, not validated against a registry. This task adds the host itself: `src/agents/gemini/` (`mod.rs` + `README.md` with the module table and `## Docs`), registered in `HOSTS` and `host()` (`src/agents/mod.rs`), `[setup.gemini]` config keys (mirror an existing host's `dir`/override shape — see `copilot`/`devin`). Verify current `gemini` CLI detection (binary name, version flag, config home) against https://geminicli.com/docs/ before writing `installed()`/`support()`.
-
-Check: host matrix e2e with a fake `gemini` binary (`tests/common/agents.rs`); `docs/agents.md` host table regenerated (`RTOK_BLESS=1`, `tests/agents_doc.rs`); `just check` green.
 
 ### T118.3. Gemini CLI extension tree: manifest, hooks.json, MCP, install
 

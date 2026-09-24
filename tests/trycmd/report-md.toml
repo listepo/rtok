@@ -203,6 +203,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
 | setup.dry_run | false | default |
+| setup.gemini.dir | ~/.gemini | default |
 | setup.grok.config_path | ~/.grok/config.toml | default |
 | setup.hook_timeout_s | 5 | default |
 | setup.kilo.config_path | ~/.config/kilo/kilo.json | default |
@@ -251,7 +252,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-205 keys.
+206 keys.
 
 ## Doctor
 
@@ -382,6 +383,11 @@ agents
     mcp     not installed
     proxy   not supported: Zed serves hosted models or provider API keys; there is no documented base-URL setting to point at the proxy
     plugin  not supported: Zed extensions install from the marketplace; there is no local directory to link
+  gemini (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API
+    plugin  not supported: the extension tree ships in T118.3; no local plugin directory to link yet
 skills (1 listed, 154 desc bytes ≈ 38 tokens per request)
   dry-refactoring project desc 154c body 2772B calls - WARN never invoked
 ```
