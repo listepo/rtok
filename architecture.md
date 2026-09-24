@@ -160,7 +160,7 @@ migration is forbidden; add the next directory.
 | `tokens` | same surfaces (`before`/`after`/`mcp`) | `rtok stats --plugin <id>` |
 | `logs` | core + plugins via `Ctx::log` | doctor, debug |
 | `events` | (superseded; 0001 leftover) | — |
-| `measurements` | `Ctx::record` (optional `call_id`) | `rtok stats --plugin <id>`, bench |
+| `measurements` | `Ctx::record` (optional `call_id`; a hook row carries `once_key`, unique per call delivery, T245) | `rtok stats --plugin <id>`, bench |
 | `archive` | `cmd`, `read`, `archive`, `call_io` spill | `rtok expand`, `guard` |
 | `read_cache` | `read` | `read` (dedup) |
 | `notes` + `notes_fts` | `memory` | `memory` |

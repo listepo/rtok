@@ -149,6 +149,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0020.sql",
         include_str!("../../migrations/0020_notes_topic_unique/up.sql"),
     ),
+    (
+        "0021.sql",
+        include_str!("../../migrations/0021_measurements_once/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -355,8 +359,20 @@ impl Store {
 
     /// One `measurements` row. Prefer `Runtime::record`, which supplies the session.
     pub fn insert_measurement(&self, session: &str, m: &Measurement) -> Result<()> {
+        self.insert_measurement_once(session, m, None)
+    }
+
+    /// [`Store::insert_measurement`] for one delivery of a call: a row whose `once` key (the
+    /// call, e.g. `PreToolUse:<tool_use_id>`) plus plugin, kind and ref is already stored is
+    /// dropped, so a call delivered twice counts once (T245).
+    pub fn insert_measurement_once(
+        &self,
+        session: &str,
+        m: &Measurement,
+        once: Option<&str>,
+    ) -> Result<()> {
         let mut conn = self.lock()?;
-        insert_measurement_conn(&mut conn, session, m)
+        insert_measurement_conn(&mut conn, session, m, once)
     }
 
     /// Count `measurements` for one plugin. Used by `examples/hello_plugin.rs`.
@@ -953,7 +969,7 @@ impl Store {
         conn.immediate_transaction(|conn| -> Result<usize> {
             let n = mark_expanded_conn(&mut *conn, archive_id)?;
             if n > 0 {
-                insert_measurement_conn(&mut *conn, session, m)?;
+                insert_measurement_conn(&mut *conn, session, m, None)?;
             }
             Ok(n)
         })
@@ -2280,7 +2296,12 @@ fn insert_measurement_conn(
     conn: &mut SqliteConnection,
     session: &str,
     m: &Measurement,
+    once: Option<&str>,
 ) -> Result<()> {
+    let once_key = once.map(|o| {
+        let r = m.ref_id.as_deref().unwrap_or("");
+        format!("{o}|{}|{}|{r}", m.plugin, m.kind)
+    });
     let before_bytes = i64::try_from(m.before_bytes).context("measurement before_bytes")?;
     let after_bytes = i64::try_from(m.after_bytes).context("measurement after_bytes")?;
     let est_before = i32::try_from(m.est_before).context("measurement est_before")?;
@@ -2296,7 +2317,10 @@ fn insert_measurement_conn(
             measurements::est_after.eq(est_after),
             measurements::ref_id.eq(m.ref_id.as_deref()),
             measurements::call_id.eq(m.call_id),
+            measurements::once_key.eq(once_key),
         ))
+        .on_conflict(measurements::once_key)
+        .do_nothing()
         .execute(conn)?;
     Ok(())
 }
@@ -2619,10 +2643,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A fresh on-disk db with every migration but the last one applied — the fixture a
+    /// A fresh on-disk db with every migration before `tag` applied — the fixture a
     /// test seeding a previous-schema quirk (0015, 0020, …) builds on before it seeds a
     /// row and calls `Store::open` to run the one migration under test.
-    fn db_before_last_migration(tag: &str) -> (PathBuf, SqliteConnection) {
+    fn db_before_migration(tag: &str) -> (PathBuf, SqliteConnection) {
         let dir = std::env::temp_dir().join(format!("rtok-mig-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2636,7 +2660,8 @@ mod tests {
                 applied_at INTEGER NOT NULL DEFAULT (unixepoch()))",
         )
         .unwrap();
-        for (name, sql) in &MIGRATIONS[..MIGRATIONS.len() - 1] {
+        let before = format!("{tag}.sql");
+        for (name, sql) in MIGRATIONS.iter().take_while(|(n, _)| *n < before.as_str()) {
             conn.batch_execute(sql).unwrap();
             sql_query("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)")
                 .bind::<Text, _>(*name)
@@ -2650,7 +2675,7 @@ mod tests {
     /// 0015 adds the lifecycle columns with live defaults and the note survives retiring.
     #[test]
     fn migration_0015_adds_lifecycle_columns_to_a_previous_schema_db() {
-        let (dir, mut conn) = db_before_last_migration("0015");
+        let (dir, mut conn) = db_before_migration("0015");
         let db = dir.join("rtok.db");
         sql_query(
             "INSERT INTO notes (ts, kind, title, body)
@@ -2684,7 +2709,7 @@ mod tests {
     /// before the fix. Covers a NULL-project key and a project-scoped key.
     #[test]
     fn migration_0020_drops_pre_existing_duplicate_notes() {
-        let (dir, mut conn) = db_before_last_migration("0020");
+        let (dir, mut conn) = db_before_migration("0020");
         let db = dir.join("rtok.db");
         conn.batch_execute(
             "INSERT INTO notes (id, ts, project, kind, title, body) VALUES
@@ -2721,6 +2746,40 @@ mod tests {
             "the index rejects a fresh duplicate too: {err}"
         );
         drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T245: rows from before migration 0021 (identical ones included) keep a NULL
+    /// `once_key` and survive; afterwards a second delivery of one keyed call adds nothing.
+    #[test]
+    fn migration_0021_keeps_old_rows_and_records_a_keyed_call_once() {
+        let (dir, mut conn) = db_before_migration("0021");
+        let db = dir.join("rtok.db");
+        conn.batch_execute(
+            "INSERT INTO measurements (ts, session, plugin, kind, before_bytes, after_bytes,
+             est_before, est_after) VALUES (1, 's', 'read', 'delta', 9, 1, 3, 1),
+             (1, 's', 'read', 'delta', 9, 1, 3, 1)",
+        )
+        .unwrap();
+        drop(conn);
+        let store = Store::open(&db).unwrap();
+        let m = Measurement {
+            plugin: "read",
+            kind: "delta",
+            before_bytes: 9,
+            after_bytes: 1,
+            est_before: 3,
+            est_after: 1,
+            ref_id: None,
+            call_id: None,
+        };
+        for _ in 0..2 {
+            store
+                .insert_measurement_once("s", &m, Some("PreToolUse:t1"))
+                .unwrap();
+        }
+        store.insert_measurement("s", &m).unwrap();
+        assert_eq!(store.count_measurements().unwrap(), 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

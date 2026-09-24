@@ -129,6 +129,9 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     // SessionStart carries `cwd` like every other event, so the session row is attributed
     // from the first hook of the run rather than whichever call happens to arrive first.
     cx.cwd = input.cwd.clone();
+    // Plugin hooks plus leftover settings-file hooks deliver one call twice (T245).
+    let id = input.tool_use_id.as_deref().filter(|id| !id.is_empty());
+    cx.once = id.map(|id| format!("{}:{id}", input.hook_event_name));
     let out = dispatch(stdin, &input, &cx);
     if copilot {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();

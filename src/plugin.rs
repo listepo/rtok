@@ -94,6 +94,9 @@ pub struct Runtime {
     /// The `calls` row this dispatch runs under (the API request in the proxy), when the
     /// surface has one. `record_call` / `record_plugin_run` nest their rows under it.
     pub call_id: Option<i32>,
+    /// The tool call this dispatch serves (`<event>:<tool_use_id>`), when the surface knows
+    /// it: a host that delivers one call twice then records it once (T245).
+    pub once: Option<String>,
     /// Resolved once from `[hook] host` (same shape as `proxy::ProxyState::new`); an unknown
     /// slug falls back to `other` (6) rather than leaving the session row unattributed.
     host_id: Option<i32>,
@@ -134,6 +137,7 @@ impl Runtime {
             store,
             session: session.into(),
             call_id: None,
+            once: None,
             host_id,
             cwd: None,
             graph_watch_pending: Arc::new(Mutex::new(HashSet::new())),
@@ -147,7 +151,8 @@ impl Runtime {
 
     /// Persist a measurement for this session (the only path for savings into the DB).
     pub fn record(&self, m: &Measurement) -> Result<()> {
-        self.store.insert_measurement(&self.session, m)
+        self.store
+            .insert_measurement_once(&self.session, m, self.once.as_deref())
     }
 
     pub fn record_call(&self, surface: &str, kind: &str, name: Option<&str>) -> Result<i32> {
