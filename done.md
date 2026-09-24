@@ -5412,3 +5412,18 @@ Do (2026-09-24): `checkpoint::extract_path` now streams the transcript line by l
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T230. Graph page: index status and dead symbols on `tui` and `web`
+
+Found 2026-09-23 in the D27 audit: `graph status`, `graph dead`, `graph impact` and `graph affected` are exempt (`tests/surface_parity.rs:385-400`) though they are pure reads over `symbols`; I-80 rejected new export formats because "D27 says the web/TUI page is the surface", yet no page exists.
+
+Plan: page `("graph", "graph")` — index status (roots, files, symbols, edges, the T68.3 staleness line) and the dead-symbol list with path and line; `graph status` and `graph dead` move to `COMMAND_PAGES`. `impact` and `affected` need a target and stay CLI/MCP: keep them exempt with that reason written in the test.
+
+Check: `graph_page_exists_on_both_surfaces`; snapshot on a fixture index lists the same dead symbols as `graph dead --json`; `just check` green.
+
+Do (2026-09-24): T227's pattern, copied. `graph::mod.rs` splits `dead()` into `dead_rows` (`index_for` + filter, unchanged CLI behaviour) and a new `dead_candidates` (the filter alone, no `index_for` walk — what the page calls so a 2 s tick reads the store, not the tree); both return the new `DeadRow` (Serialize). `graph dead` gains `--json` (prints `dead_rows` uncapped) so it can join `COMMAND_PAGES`/`JSON_READERS` like `graph status` already could; `status::format_table` goes `pub(crate)` so the page reuses it verbatim. `model::pages()` gains `("graph", "graph")`; `Snapshot.graph: Option<String>` is `graph_page_text` — `status::collect`/`format_table` (rows/files/pending+T68.3/indexed_at) plus `dead_candidates`'s lines, capped at 200 with a "capped, `graph dead --json` has the rest" note; `#[cfg(not(feature = "graph"))]` returns `None` (build-min has no `plugins::graph`). TUI renders it in `view::graph_page`; the Slint web UI adds a `graph` page (`PAGE_IDS`, `graph-text`, no new icon — falls back to the default). `graph status`/`graph dead` move from `EXEMPT` to `COMMAND_PAGES` (+ `JSON_READERS`); `graph impact`/`graph affected` stay `EXEMPT` with reason "need a target; CLI/MCP only". Tests: `graph_page_exists_on_both_surfaces`, `tests/graph_model.rs`'s `graph_page_matches_dead_json_on_the_fixture_index` (indexes a 1-dead-row fixture via the `rtok` binary, asserts the in-process page's text contains every `graph dead --json` row and `graph status --json`'s rows/files/pending). Files: `src/plugins/graph/mod.rs`, `src/plugins/graph/status.rs`, `src/cli.rs`, `src/web/model.rs`, `src/tui/view.rs`, `crates/rtok-webui/src/lib.rs`, `crates/rtok-webui/ui/app.slint`, `tests/surface_parity.rs`, `tests/graph_model.rs`, `plan.md`.
+
+Result: `graph dead` rows come from `dead_rows`, which freshens via `index_for` and then calls `dead_candidates`. The Graph page calls `dead_candidates` directly, without the walk, capped at 200 rows with an "N more" line. `graph dead --json` is new; it is required for a `COMMAND_PAGES` entry (T60.1). The five trycmd completion/help goldens were regenerated. The TUI `screen()` test terminal is 90 columns wide so the ninth tab fits. Graph/surface/model/trycmd tests 109/109, webui lib 7/7, `just check` green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

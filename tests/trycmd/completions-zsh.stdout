@@ -993,6 +993,7 @@ _arguments "${_arguments_options[@]}" : /
 (dead)
 _arguments "${_arguments_options[@]}" : /
 '--config=[User config file (else /`RTOK_CONFIG/` or /`<home>/config.toml/`)]:PATH:_files' /
+'--json[JSON rows instead of /`path/:line kind name/` lines (T60.1, uncapped)]' /
 '-h[Print help]' /
 '--help[Print help]' /
 '::path:_files' /

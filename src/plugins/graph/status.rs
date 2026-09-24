@@ -49,7 +49,9 @@ pub fn run(cfg: &Config, path: Option<PathBuf>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn format_table(s: &GraphStatus) -> String {
+/// Rendered for `rtok graph status` and the Graph page (T230) — `pub(crate)` so
+/// `web::model` reuses the same text instead of re-formatting `GraphStatus` itself.
+pub(crate) fn format_table(s: &GraphStatus) -> String {
     let mut out = String::new();
     out.push_str(&format!("root {}\n", s.root));
     out.push_str(&format!("rows {}\n", s.rows));

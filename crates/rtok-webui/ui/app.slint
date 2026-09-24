@@ -345,6 +345,7 @@ export component MainWindow inherits Window {
     out property <SessionRow> selected-session: sessions[session-cursor];
     in property <string> doctor-text;
     in property <string> stats-text;
+    in property <string> graph-text;
     in-out property <[string]> logs;
     in property <string> skills-header;
     in-out property <[SkillRow]> skills;
@@ -730,6 +731,17 @@ export component MainWindow inherits Window {
                     }
                     BodyText {
                         text: stats-text;
+                    }
+                }
+
+                if page-id == "graph": PageScroll {
+                    max-content: content-max;
+                    gap: RtokTheme.space-2;
+                    TitleText {
+                        text: "graph";
+                    }
+                    BodyText {
+                        text: graph-text;
                     }
                 }
             }
