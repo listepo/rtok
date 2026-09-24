@@ -43,16 +43,10 @@ fn command(bin: &str, event: &str) -> String {
     if cfg!(windows) || bin != "rtok" {
         return format!("{bin} hook {event}");
     }
-    let note = if event == "SessionStart" {
-        r#" && printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}'"#
-    } else {
-        ""
-    };
-    format!(
-        "command -v rtok >/dev/null 2>&1 && exec rtok hook {event}; \
-         [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook {event}; \
-         true{note}; exit 0"
-    )
+    let note = (event == "SessionStart").then_some(
+        r#"{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}}"#,
+    );
+    super::hook_resolver(&format!("hook {event}"), note)
 }
 
 /// Exactly `<rtok-bin> hook <event>` (an older or Windows install), or the T174

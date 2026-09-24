@@ -162,19 +162,49 @@ pub fn run(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
+/// Copilot's flat `additionalContext` fallback note, shown once on `sessionStart` when `rtok` resolves nowhere.
+const MISSING_RTOK_NOTE: &str = r#"{"additionalContext":"rtok is not installed; run ketch install listepo/rtok to enable it."}"#;
+
 /// `{version: 1, hooks: {<event>: [{type: "command", bash, powershell, timeoutSec}]}}`.
 /// The plugin tree's `hooks/hooks.json` is this document with `bin = "rtok"`, pinned by
 /// `tests/copilot_plugin.rs` — one shape, two surfaces (D21).
+/// `bin = "rtok"` resolves `bash`/`powershell` at run time ([`super::hook_resolver`] /
+/// [`hook_resolver_ps`], `sessionStart` adds [`MISSING_RTOK_NOTE`]); other `bin` stays plain.
 pub fn hooks_doc(bin: &str, timeout: u64) -> Value {
     let mut hooks = serde_json::Map::new();
     for &(copilot, claude) in EVENTS {
-        let cmd = format!("{bin} hook {claude} --host copilot");
+        let args = format!("hook {claude} --host copilot");
+        let note = (copilot == "sessionStart").then_some(MISSING_RTOK_NOTE);
+        let (bash, powershell) = if bin == "rtok" {
+            (
+                super::hook_resolver(&args, note),
+                hook_resolver_ps(&args, note),
+            )
+        } else {
+            let cmd = format!("{bin} {args}");
+            (cmd.clone(), cmd)
+        };
         hooks.insert(
             copilot.into(),
-            json!([{"type": "command", "bash": cmd, "powershell": cmd, "timeoutSec": timeout}]),
+            json!([{"type": "command", "bash": bash, "powershell": powershell, "timeoutSec": timeout}]),
         );
     }
     json!({"version": 1, "hooks": hooks})
+}
+
+/// PowerShell twin of [`super::hook_resolver`] (Copilot's only `powershell` field); `& $r` with
+/// no pipeline keeps stdin; `note`, if given, is single-quoted; `json` must not contain `'`.
+fn hook_resolver_ps(args: &str, note: Option<&str>) -> String {
+    let tail = match note {
+        Some(json) => {
+            debug_assert!(!json.contains('\''), "{json}");
+            format!("'{json}'; exit 0")
+        }
+        None => "exit 0".to_string(),
+    };
+    format!(
+        "$r = (Get-Command rtok -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source; if (-not $r) {{ $k = Join-Path $env:USERPROFILE '.ketch\\bin\\rtok.exe'; if (Test-Path -LiteralPath $k) {{ $r = $k }} }}; if ($r) {{ & $r {args}; exit $LASTEXITCODE }}; {tail}"
+    )
 }
 
 /// Delete a file rtok owns: backed up like any edit, reported as `- <path>`; absent is no change.
@@ -311,10 +341,13 @@ mod tests {
         assert_eq!(pre["timeoutSec"], 5);
         let bash = pre["bash"].as_str().unwrap();
         assert!(
-            bash.ends_with("rtok hook PreToolUse --host copilot"),
+            bash.contains("exec rtok hook PreToolUse --host copilot"),
             "{bash}"
         );
-        assert_eq!(pre["powershell"], pre["bash"]);
+        assert!(bash.ends_with("; exit 0"), "{bash}");
+        let ps = pre["powershell"].as_str().unwrap();
+        assert!(ps.contains("hook PreToolUse --host copilot"), "{ps}");
+        assert!(ps.ends_with("; exit 0"), "{ps}");
         assert!(
             doc["hooks"]["userPromptSubmitted"][0]["bash"]
                 .as_str()

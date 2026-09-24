@@ -12,8 +12,10 @@ Install:
   plugin components — re-run the install after changing this folder.
 - Remove: `copilot plugin uninstall rtok` (the manifest's `name`, not the path).
 
-`rtok` must be on `PATH` (`ketch install listepo/rtok`); every hook fails open when it is
-missing and the MCP server does not start.
+`rtok` must be on `PATH` (`ketch install listepo/rtok`); the MCP server does not start without
+it. Hooks are more forgiving (T250.2): each line resolves `rtok` from PATH, then
+`~/.ketch/bin/rtok`, else fails open silently — except `sessionStart`, whose fallback prints
+one flat `additionalContext` note naming `ketch install listepo/rtok`.
 
 D21 singleton: use the plugin **or** `rtok agents install copilot`, not both. The installer
 writes `~/.copilot/hooks/rtok.json` and `mcp-config.json` only while this plugin is absent;
@@ -23,9 +25,10 @@ running two `rtok mcp` processes on one store.
 Files:
 
 - `plugin.json` — legacy manifest: `name` plus the `hooks` and `mcpServers` component paths.
-- `hooks/hooks.json` — `rtok hook <event> --host copilot` on `preToolUse`, `postToolUse`,
-  `userPromptSubmitted`, `sessionStart`, `sessionEnd`, `preCompact`, each `timeoutSec: 5`
-  (the same six events `~/.copilot/hooks/rtok.json` carries; checked by `tests/copilot_plugin.rs`).
+- `hooks/hooks.json` — the resolver line above running `hook <event> --host copilot` on
+  `preToolUse`, `postToolUse`, `userPromptSubmitted`, `sessionStart`, `sessionEnd`,
+  `preCompact`, each `timeoutSec: 5` (the same six events `~/.copilot/hooks/rtok.json` carries;
+  checked by `tests/copilot_plugin.rs`).
 - `.mcp.json` — `mcpServers.rtok` → `rtok mcp` (`{type: "local", command, args, tools}`).
 
 ## Docs
