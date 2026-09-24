@@ -152,6 +152,7 @@ report.since = 30d
 setup.aider.config_path = ~/.aider.conf.yml
 setup.backup = true
 setup.claude.settings_path = ~/.claude/settings.json
+setup.codewhale.dir = ~/.codewhale
 setup.codex.config_path = ~/.codex/config.toml
 setup.copilot.dir = ~/.copilot
 setup.cursor.hooks_path = ~/.cursor/hooks.json

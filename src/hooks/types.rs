@@ -207,6 +207,21 @@ impl HookInput {
         }
     }
 
+    /// CodeWhale (https://github.com/Hmbown/Codewhale/blob/main/docs/HOOKS.md, fetched
+    /// 2026-09-24): of its 15 hook events only `message_submit` sends real stdin JSON *and*
+    /// lets a hook steer the outcome — `tool_call_before`/`shell_env` are env-var-only (no
+    /// stdin at all) and the seven JSON-bearing observer events (`turn_end`, `subagent_*`,
+    /// `session_busy`/`idle`/`error`, `waiting_for_user`) are read-only, Codewhale never acts
+    /// on their reply. `message_submit`'s stdin is `{event, text, session_id, workspace, mode,
+    /// model, total_tokens}`; only `text` (→ Claude's `prompt`) matters here. See
+    /// `src/agents/codewhale/mod.rs` for why every other event stays unwired.
+    pub fn adapt_codewhale(&mut self, event: &str) {
+        self.hook_event_name = event.to_string();
+        if self.prompt.is_none() {
+            self.prompt = self.extra.remove("text").and_then(as_string);
+        }
+    }
+
     pub fn pre_tool(&self) -> Option<PreToolUse<'_>> {
         (self.hook_event_name == "PreToolUse").then_some(PreToolUse {
             tool_name: self.tool_name.as_deref()?,
@@ -537,6 +552,25 @@ mod tests {
             serde_json::from_str(r#"{"session_id":"s-2","hook_event_name":"PreToolUse"}"#).unwrap();
         assert_eq!(plain.agent_id, None);
         assert_eq!(plain.agent_type, None);
+    }
+
+    /// CodeWhale's `message_submit` stdin has no `hook_event_name`/`prompt` — the CLI arg
+    /// supplies the Claude event, `text` becomes `prompt`, everything else round-trips as
+    /// `extra` (T185).
+    #[test]
+    fn adapt_codewhale_maps_text_to_prompt_and_sets_the_event() {
+        let mut input: HookInput = serde_json::from_value(serde_json::json!({
+            "text": "hello",
+            "session_id": "sess_1",
+            "workspace": "/w",
+            "mode": "ACT"
+        }))
+        .unwrap();
+        input.adapt_codewhale("UserPromptSubmit");
+        assert_eq!(input.hook_event_name, "UserPromptSubmit");
+        assert_eq!(input.prompt.as_deref(), Some("hello"));
+        assert!(input.extra.contains_key("workspace"));
+        assert!(!input.extra.contains_key("text"), "text is consumed");
     }
 
     #[test]

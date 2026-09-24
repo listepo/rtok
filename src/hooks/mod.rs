@@ -105,6 +105,7 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     let copilot = !grok && cfg.hook.host == "copilot";
     let cursor = !grok && cfg.hook.host == "cursor";
     let gemini = !grok && cfg.hook.host == "gemini";
+    let codewhale = !grok && cfg.hook.host == "codewhale";
     if grok {
         input.adapt_grok(event);
     } else if cursor {
@@ -113,6 +114,8 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
         input.adapt_copilot(event);
     } else if gemini {
         input.adapt_gemini(event);
+    } else if codewhale {
+        input.adapt_codewhale(event);
     } else if cfg.hook.host == "devin" {
         input.adapt_devin(event, std::env::var("DEVIN_PROJECT_DIR").ok());
     } else if input.hook_event_name.is_empty() {
@@ -138,6 +141,10 @@ fn dispatch_owned_strict(stdin: &[u8], event: &str, cfg: &Config) -> Result<Vec<
     if gemini {
         let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
         return Ok(gemini_output(&parsed, &input.hook_event_name));
+    }
+    if codewhale {
+        let parsed: HookOutput = serde_json::from_slice(&out).unwrap_or_default();
+        return Ok(codewhale_output(&parsed, input.prompt.as_deref()));
     }
     Ok(out)
 }
@@ -171,6 +178,28 @@ pub fn gemini_output(out: &HookOutput, event: &str) -> Vec<u8> {
         return serde_json::to_vec(&v).unwrap_or_else(|_| empty());
     }
     empty()
+}
+
+/// CodeWhale's `message_submit` reads `{"text": "..."}` on stdout to replace the prompt
+/// wholesale (https://github.com/Hmbown/Codewhale/blob/main/docs/HOOKS.md#message_submit,
+/// fetched 2026-09-24) — there is no separate "add context" field like Claude's
+/// `additionalContext`, so a `UserPromptSubmit` plugin's context is folded into a full
+/// replacement text instead. `{}` (empty stdout) leaves the prompt unchanged, same as every
+/// other host with nothing to add.
+pub fn codewhale_output(out: &HookOutput, prompt: Option<&str>) -> Vec<u8> {
+    let empty = || b"{}".to_vec();
+    let Some(ctx) = out
+        .hook_specific_output
+        .as_ref()
+        .and_then(|h| h.additional_context.as_deref())
+    else {
+        return empty();
+    };
+    let text = match prompt {
+        Some(p) if !p.is_empty() => format!("{p}\n\n[hook context] {ctx}"),
+        _ => ctx.to_string(),
+    };
+    serde_json::to_vec(&serde_json::json!({"text": text})).unwrap_or_else(|_| empty())
 }
 
 /// GitHub Copilot CLI reads a flat object: `{permissionDecision, permissionDecisionReason,
@@ -613,6 +642,24 @@ mod tests {
         assert_eq!(
             json(gemini_output(&post, "PostToolUse")),
             serde_json::json!({"hookSpecificOutput": {"additionalContext": "ctx"}})
+        );
+    }
+
+    #[test]
+    fn codewhale_output_folds_context_into_a_full_text_replacement_and_empty_stays_empty() {
+        assert_eq!(
+            json(codewhale_output(&HookOutput::default(), Some("hi"))),
+            serde_json::json!({})
+        );
+        let post = post_out("ctx");
+        assert_eq!(
+            json(codewhale_output(&post, Some("hi"))),
+            serde_json::json!({"text": "hi\n\n[hook context] ctx"})
+        );
+        // No original prompt (adapter found none): the context stands alone.
+        assert_eq!(
+            json(codewhale_output(&post, None)),
+            serde_json::json!({"text": "ctx"})
         );
     }
 

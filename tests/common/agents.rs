@@ -91,6 +91,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".codeium/windsurf",
         ".config/zed",
         ".gemini",
+        ".codewhale",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -115,7 +116,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
-              [setup.gemini]\ndir = \"{h}/.gemini\"\n"
+              [setup.gemini]\ndir = \"{h}/.gemini\"\n\
+              [setup.codewhale]\ndir = \"{h}/.codewhale\"\n"
         ),
     )
     .unwrap();

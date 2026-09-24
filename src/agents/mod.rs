@@ -10,6 +10,7 @@
 
 pub mod aider;
 pub mod claude;
+pub mod codewhale;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
@@ -30,16 +31,32 @@ pub mod zed;
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use rtok_agent_sdk::NO_CHANGES;
 use rtok_plugin_sdk::Surface;
+use toml_edit::DocumentMut;
 
 use crate::config::Config;
 
 /// Every host rtok installs into, in `agents list` order.
 pub const HOSTS: &[&str] = &[
-    "claude", "cursor", "codex", "opencode", "kilo", "pi", "omp", "zcode", "kimi", "grok",
-    "vscode", "copilot", "aider", "windsurf", "zed", "gemini",
+    "claude",
+    "cursor",
+    "codex",
+    "opencode",
+    "kilo",
+    "pi",
+    "omp",
+    "zcode",
+    "kimi",
+    "grok",
+    "vscode",
+    "copilot",
+    "aider",
+    "windsurf",
+    "zed",
+    "gemini",
+    "codewhale",
 ];
 
 /// Every module an rtok install can carry, in print order.
@@ -64,6 +81,7 @@ pub fn host(id: &str) -> Option<&'static dyn Agent> {
         "aider" => Some(&aider::Aider),
         "zed" => Some(&zed::Zed),
         "gemini" => Some(&gemini::Gemini),
+        "codewhale" => Some(&codewhale::Codewhale),
         _ => None,
     }
 }
@@ -304,6 +322,20 @@ fn looks_like_a_version(line: &str) -> bool {
 
 pub(crate) fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
+}
+
+/// Read a TOML document at `path`, or start from an empty one when the file is simply
+/// absent. An unreadable file (non-UTF-8 byte, wrong permissions) is an error, not an empty
+/// document: swallowing it would let an installer overwrite a config it never actually read,
+/// leaving only the `_backup/` copy as a way back.
+pub(crate) fn load_toml(path: &Path) -> Result<DocumentMut> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).with_context(|| path.display().to_string()),
+    };
+    raw.parse::<DocumentMut>()
+        .with_context(|| path.display().to_string())
 }
 
 /// True when the app itself is found: its bundle or binary exists, or one of its marker
@@ -785,6 +817,28 @@ pub(crate) fn apply(cfg: &crate::config::Config) -> rtok_agent_sdk::Apply {
         backup: cfg.setup.backup,
         yes: cfg.setup.yes,
     }
+}
+
+/// [`Agent::apply`] for a host whose install is exactly "write the hook, then register or
+/// unregister the MCP server" — the shape every hooks+MCP host beyond the first repeats
+/// verbatim (T185).
+pub(crate) fn apply_hook_and_mcp(
+    cfg: &Config,
+    remove: bool,
+    hook: impl FnOnce(&Config, bool) -> Result<String>,
+    register_mcp: impl FnOnce(&Config) -> Result<String>,
+    unregister_mcp: impl FnOnce(&Config) -> Result<String>,
+) -> Result<Vec<String>> {
+    let mut lines = vec![hook(cfg, remove)?];
+    let mcp_line = if remove {
+        Some(unregister_mcp(cfg)?)
+    } else if cfg.setup.mcp {
+        Some(register_mcp(cfg)?)
+    } else {
+        None
+    };
+    lines.extend(mcp_line);
+    Ok(lines)
 }
 
 /// The `ANTHROPIC_BASE_URL` `agent setup claude --proxy` writes, and the one it reads back.

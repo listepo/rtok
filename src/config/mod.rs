@@ -370,6 +370,7 @@ section! {
         windsurf: SetupWindsurf = SetupWindsurf::default(),
         zed: SetupZed = SetupZed::default(),
         gemini: SetupGemini = SetupGemini::default(),
+        codewhale: SetupCodewhale = SetupCodewhale::default(),
     }
 }
 
@@ -465,6 +466,12 @@ section! {
     /// `[setup.gemini]` — Gemini CLI's `settings.json` (`hooks`, `mcpServers`) lives under
     /// `dir` (T118.2).
     SetupGemini { dir: PathBuf = p("~/.gemini") }
+}
+
+section! {
+    /// `[setup.codewhale]` — CodeWhale's `config.toml` (`[[hooks.hooks]]`) and sibling
+    /// `mcp.json` live under `dir` (T185, `$CODEWHALE_HOME`).
+    SetupCodewhale { dir: PathBuf = p("~/.codewhale") }
 }
 
 section! {
@@ -961,6 +968,7 @@ impl Config {
             &mut self.setup.windsurf.config_path,
             &mut self.setup.zed.config_path,
             &mut self.setup.gemini.dir,
+            &mut self.setup.codewhale.dir,
             &mut self.plugins.cmd.rules,
             &mut self.plugins.cmd.rules_dir,
             &mut self.plugins.inject.modes_dir,

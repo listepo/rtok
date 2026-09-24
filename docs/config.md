@@ -232,6 +232,8 @@ config_path   = "~/.codeium/windsurf/mcp_config.json"
 config_path   = "~/.config/zed/settings.json"
 [setup.gemini]
 dir           = "~/.gemini"                  # settings.json (hooks, mcpServers)
+[setup.codewhale]
+dir           = "~/.codewhale"               # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

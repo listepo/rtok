@@ -48,7 +48,6 @@
 - T178. Hook wall-clock time as Claude Code sees it
 - T182. Junk cleanup: `rtok agents junk clear` and per-host junk map
 - T184. rtok never resolves its home to a relative `.rtok`
-- T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
 - T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
 - T198. `plan.md` / `todo.md`: duplicate rows and cards, a misplaced Check, and code cards claimed by a low-cost model
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
