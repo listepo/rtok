@@ -28,6 +28,30 @@ pub fn is_bounded(snippet: &str) -> bool {
     any
 }
 
+/// T177: true only when `snippet` chains 2+ DISTINCT programs — `a && b`, `a; b` and
+/// `a\nb` all chain, but `cargo build && cargo test` and `cd x && cargo test` stay one
+/// program end to end. Reused by `formatters::compress` to route a genuinely mixed
+/// Bash string to the `[script]` rule instead of misreading it as (or losing) one
+/// family's specialised formatter/rule. A leading `cd`/`export` stage is skipped, same
+/// as `is_bounded`.
+pub(crate) fn mixed_chain(snippet: &str) -> bool {
+    let mut programs = std::collections::HashSet::new();
+    for pipeline in lex(snippet) {
+        let Some(last) = pipeline.last() else {
+            continue;
+        };
+        let silent = pipeline.len() == 1
+            && matches!(last.first().map(String::as_str), Some("cd" | "export"));
+        if silent {
+            continue;
+        }
+        if let Some(program) = pipeline.first().and_then(|stage| stage.first()) {
+            programs.insert(super::formatters::cmd_stem(program).to_string());
+        }
+    }
+    programs.len() >= 2
+}
+
 /// Pipelines of stages of words, quotes removed.
 fn lex(s: &str) -> Vec<Vec<Vec<String>>> {
     let mut lists = vec![vec![Vec::new()]];
@@ -44,6 +68,12 @@ fn lex(s: &str) -> Vec<Vec<Vec<String>>> {
             continue;
         }
         let sep = match c {
+            // A backslash-newline outside quotes is shell line continuation, not a
+            // separator — `cargo test \` + newline + `  --all` is one pipeline.
+            '\\' if chars.peek() == Some(&'\n') => {
+                chars.next();
+                None
+            }
             '\'' | '"' => {
                 quote = Some(c);
                 word.get_or_insert_default();
@@ -100,23 +130,61 @@ fn bounds(stage: &[String]) -> bool {
                 && counts(args, |n| !n.starts_with('+'))
         }
         "sed" => sed_range(args),
-        "grep" | "rg" => args.iter().any(|a| {
-            let short = a.strip_prefix('-').filter(|s| !s.starts_with('-'));
-            short.is_some_and(|s| {
-                s.trim_end_matches(|c: char| c.is_ascii_digit())
-                    .ends_with(['A', 'B', 'C', 'm'])
-            }) || [
-                "--context",
-                "--after-context",
-                "--before-context",
-                "--max-count",
-            ]
-            .iter()
-            .any(|l| a.split('=').next() == Some(l))
-        }),
-        "cat" => args.iter().any(|a| a == "-n") && args.iter().any(|a| !a.starts_with('-')),
+        // T177: `-A/-B/-C` bound the context *per match*, not the number of matches — a
+        // recursive `grep` can still return an unbounded hit list, so it also needs an
+        // explicit `-m`/`--max-count`. `rg` is recursive by default and has no
+        // `-r`/`-R` recursive flag (`-r` is `--replace`), so this extra check is
+        // `grep`-only (`cmd/AGENTS.md` notes `rg` is not covered).
+        stem @ ("grep" | "rg") => {
+            if stem == "grep" {
+                // `-r`/`-R` bundle with other short flags (`-rn`), so this checks
+                // membership, not an exact match; `--recursive` is matched exactly.
+                let recursive = args.iter().any(|a| {
+                    a == "--recursive"
+                        || (a.starts_with('-') && !a.starts_with("--") && a.contains(['r', 'R']))
+                });
+                let max_count = args.iter().any(|a| is_max_count(a));
+                if recursive && !max_count {
+                    return false;
+                }
+            }
+            has_bounding_context(args)
+        }
+        // T177: `-n` only numbers lines, it does not bound how many files print — require
+        // exactly one named file, or a `cat a.rs b.rs c.rs` dump passes through whole.
+        "cat" => {
+            args.iter().any(|a| a == "-n")
+                && args.iter().filter(|a| !a.starts_with('-')).count() == 1
+        }
         _ => false,
     }
+}
+
+/// `grep`/`rg` context or max-count flags (`-A/-B/-C/-m N`, `--context=N`, …) that bound
+/// how much a match prints. Shared by both families — `rg`'s check has no recursive gate.
+fn has_bounding_context(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        let short = a.strip_prefix('-').filter(|s| !s.starts_with('-'));
+        short.is_some_and(|s| {
+            s.trim_end_matches(|c: char| c.is_ascii_digit())
+                .ends_with(['A', 'B', 'C', 'm'])
+        }) || [
+            "--context",
+            "--after-context",
+            "--before-context",
+            "--max-count",
+        ]
+        .iter()
+        .any(|l| a.split('=').next() == Some(l))
+    })
+}
+
+fn is_max_count(a: &str) -> bool {
+    let short = a.strip_prefix('-').filter(|s| !s.starts_with('-'));
+    short.is_some_and(|s| {
+        s.trim_end_matches(|c: char| c.is_ascii_digit())
+            .ends_with('m')
+    }) || a.split('=').next() == Some("--max-count")
 }
 
 /// `head`/`tail` counts (`-n N`, `-nN`, `--lines=N`, `-c N`, `-N`) all pass `ok`.
@@ -185,11 +253,15 @@ mod tests {
     #[case("cargo nextest run |& tail -n 50")]
     #[case("git log --oneline | head")]
     #[case("head -n 40 a.rs b.rs")]
-    #[case("grep -rn -A3 'a|b' src")]
+    #[case("grep -rn -A3 -m 5 'a|b' src")]
     #[case("rg -C 2 needle")]
     #[case("grep -m 5 x f")]
+    #[case("grep -A3 x f")]
     #[case("cd /repo && sed -n '1,80p' Cargo.toml")]
     #[case("cat -n src/main.rs")]
+    // T177: `rg` is recursive by default and `-r` is `--replace`, not a recursive flag —
+    // only `grep`'s recursive-without-`-m` gate applies; the context flag still bounds it.
+    #[case("rg -r -C 2 needle src")]
     fn bounded_forms(#[case] cmd: &str) {
         assert!(is_bounded(cmd), "{cmd}");
     }
@@ -207,7 +279,38 @@ mod tests {
     #[case("cat a.rs")]
     #[case("cd /repo")]
     #[case("echo 'x | head'")]
+    // T177: `-A/-B/-C` bound context per match, not match count; a recursive `grep`
+    // without an explicit `-m`/`--max-count` can still return an unbounded hit list.
+    // (`rg` has no such gate — see `bounded_forms` above.)
+    #[case("grep -rn -A3 'a|b' src")]
+    // T177: `-n` only numbers lines; more than one named file is still an unbounded dump.
+    #[case("cat -n a.rs b.rs")]
     fn unbounded_forms(#[case] cmd: &str) {
         assert!(!is_bounded(cmd), "{cmd}");
+    }
+
+    #[rstest]
+    #[case("git status")]
+    // Same program end to end, chained or piped — not a mix.
+    #[case("cargo build && cargo test")]
+    #[case("cd x && cargo test")]
+    #[case("cargo test; cargo clippy")]
+    // Backslash-newline continuation is not a chain separator.
+    #[case("cargo test \\\n  --all")]
+    fn same_program_forms(#[case] cmd: &str) {
+        assert!(!super::mixed_chain(cmd), "{cmd}");
+    }
+
+    #[rstest]
+    #[case("cargo test && cargo clippy && git status")]
+    #[case("echo one; cat two")]
+    #[case("git status\ncat file.txt\nls")]
+    fn mixed_program_forms(#[case] cmd: &str) {
+        assert!(super::mixed_chain(cmd), "{cmd}");
+    }
+
+    #[test]
+    fn backslash_newline_continuation_does_not_split_a_pipeline() {
+        assert_eq!(super::lex("cargo test \\\n  --all").len(), 1);
     }
 }

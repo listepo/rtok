@@ -47,7 +47,6 @@
 - T171. Claude Code sees the rtok MCP server twice
 - T172. MCP tool failures always set `is_error`
 - T174. Plugin hooks fail open when `rtok` is not on `PATH`
-- T177. Large source dumps through `cat`/`sed`/`grep` get a filter
 - T178. Hook wall-clock time as Claude Code sees it
 - T179. Why `read/dedup` and `read/delta` rarely fire
 - T182. Junk cleanup: `rtok agents junk clear` and per-host junk map

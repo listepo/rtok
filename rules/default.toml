@@ -207,3 +207,15 @@ tail = 16
 keep = ["error[|error:|warning:"]
 group = "diag"
 dedupe = true
+
+# T177: a single Bash call chaining 2+ DISTINCT programs (`&&`, `;`, or a newline) —
+# matched by `formatters::compress`'s mixed-chain detection, not by a command name. A
+# same-program chain (`cargo build && cargo test`) keeps using that program's own
+# formatter/rule instead; only a genuine mix rarely fits one family's `keep` patterns,
+# so this stays generic.
+[script]
+max_lines = 30
+head = 10
+tail = 10
+keep = ["error|Error|fail|FAIL|panic|Exception|warning|Warning"]
+dedupe = true

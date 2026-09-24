@@ -2,7 +2,9 @@
 
 use super::rules;
 
-/// Compact `output`. Kind is `formatter`, `rule`, or `raw`.
+/// Compact `output`. Kind is `formatter`, `rule`, `raw` (below the size gate, or a T176
+/// bounded passthrough — both by design), or `unmatched` (a rule/formatter ran and
+/// shrank nothing — T177's actionable share).
 pub fn compress(
     settings: &rules::Settings,
     argv: &[String],
@@ -15,8 +17,14 @@ pub fn compress(
     if output.len() <= super::bounded::MAX_BYTES && super::bounded::is_bounded(&argv.join(" ")) {
         return (output.to_string(), "raw");
     }
-    let argv = family_argv(argv);
-    let rule = settings.pick(bin(&argv));
+    // T177: a single Bash string chaining 2+ DISTINCT programs (`&&`, `;`, or a newline)
+    // is not one family's output; matching only argv[0] picks the wrong rule, or none at
+    // all. A same-program chain (`cargo build && cargo test`, `cd x && cargo test`) keeps
+    // its own family's formatter/rule — only a genuine mix routes to `[script]`.
+    let multi = matches!(argv, [one] if super::bounded::mixed_chain(one));
+    let split = family_argv(argv);
+    let stem = if multi { "script" } else { bin(&split) };
+    let rule = settings.pick(stem);
     // T65.2: JSON bodies skip table formatters so kubectl -o json / gh --json
     // reach the compact pass instead of a NAME/STATUS parser.
     if rules::is_json_body(output) {
@@ -24,20 +32,20 @@ pub fn compress(
         let kind = if s.len() < output.len() {
             "rule"
         } else {
-            "raw"
+            "unmatched"
         };
         return (s, kind);
     }
-    if let Some(s) = format(&argv, output) {
+    if !multi && let Some(s) = format(&split, output) {
         return (s, "formatter");
     }
     let s = rules::apply(settings, output, exit, &rule, archive_id);
-    let kind = if bin(&argv) == "skill" {
+    let kind = if stem == "skill" {
         "skill"
     } else if s.len() < output.len() {
         "rule"
     } else {
-        "raw"
+        "unmatched"
     };
     (s, kind)
 }
@@ -503,6 +511,90 @@ mod tests {
                 .match_cmd,
             ""
         );
+    }
+
+    /// T177: a single Bash string joining 2+ commands is filtered by `[script]`, not by
+    /// the first command's family — `git`'s formatter would otherwise run on `cargo`'s
+    /// mixed-in output too.
+    #[test]
+    fn newline_joined_script_uses_the_script_rule_not_the_first_command() {
+        let settings = rules::Settings::builtin();
+        let body = (0..40)
+            .map(|i| format!("line {i} of mixed output"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let script = format!("git status\ncat file.txt\n{body}");
+        let (got, kind) = compress(&settings, std::slice::from_ref(&script), &script, 0, "id");
+        assert_eq!(kind, "rule", "{got}");
+        assert!(got.len() < script.len(), "{got}");
+        assert!(got.contains("omitted (expand id)"), "{got}");
+        // A single command with no `&&`/`;`/newline chain keeps using its own family.
+        let (_, single_kind) = compress(&settings, &["git status".into()], "clean\n", 0, "id");
+        assert_ne!(
+            single_kind, "rule",
+            "one-line git status should not hit [script]"
+        );
+    }
+
+    /// T177 (revised): a chain of the SAME program (`cargo build && cargo test`, or with a
+    /// leading `cd`) must keep using `cargo`'s own formatter/rule, not the generic
+    /// `[script]` — only a genuinely mixed chain loses the specialised path.
+    #[test]
+    fn same_program_chain_keeps_its_own_family_not_script() {
+        let settings = rules::Settings::builtin();
+        let diag = (0..40)
+            .map(|i| format!("warning: unused variable `x{i}`"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for cmd in [
+            "cargo build && cargo test".to_string(),
+            "cd crates/rtok && cargo test".to_string(),
+        ] {
+            let (got, kind) = compress(&settings, std::slice::from_ref(&cmd), &diag, 0, "id");
+            assert_ne!(kind, "rule", "{cmd}: {got}");
+        }
+    }
+
+    /// T177: `unmatched` (not `raw`) once a family rule ran and shrank nothing — `raw`
+    /// stays reserved for a tiny body below the trailer gate or a T176 bounded passthrough.
+    #[test]
+    fn a_picked_rule_that_shrinks_nothing_is_unmatched_not_raw() {
+        let settings = rules::Settings::builtin();
+        // `cat` has a named rule (`max_lines = 80`); 5 lines never reach the cut.
+        let body = "one\ntwo\nthree\nfour\nfive";
+        let (got, kind) = compress(&settings, &["cat".into(), "f".into()], body, 0, "id");
+        assert_eq!(got, body);
+        assert_eq!(kind, "unmatched");
+    }
+
+    /// T177: `cat -n` of several named files is not one bounded read (T176) — it must
+    /// still hit `[cat]`'s head/tail cut once it is large.
+    #[test]
+    fn unbounded_multi_file_cat_gets_the_cat_rule() {
+        let settings = rules::Settings::builtin();
+        let body = (0..200)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cmd = "cat -n a.rs b.rs c.rs".to_string();
+        let (got, kind) = compress(&settings, &[cmd], &body, 0, "id");
+        assert_eq!(kind, "rule", "{got}");
+        assert!(got.len() < body.len(), "{got}");
+    }
+
+    /// T177: a recursive grep/rg with a context flag but no `-m`/`--max-count` can return
+    /// an unbounded hit list — it must still hit `[grep]`'s cut once it is large.
+    #[test]
+    fn large_recursive_grep_hit_list_gets_the_grep_rule() {
+        let settings = rules::Settings::builtin();
+        let body = (0..200)
+            .map(|i| format!("src/f{i}.rs:{i}:needle found here"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cmd = "grep -rn -A3 needle src".to_string();
+        let (got, kind) = compress(&settings, &[cmd], &body, 0, "id");
+        assert_eq!(kind, "rule", "{got}");
+        assert!(got.len() < body.len(), "{got}");
     }
 
     /// The hook wraps Bash as `rtok run -- '<cmd>'`, so the command reaches `compress` as

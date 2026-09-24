@@ -90,6 +90,10 @@ pub struct Report {
     /// T176: expands of an id this session was shown. Absent when none, so the goldens hold.
     #[serde(default, skip_serializing_if = "ExpandAfterRow::is_empty")]
     pub expand_after: ExpandAfterRow,
+    /// T177: unmarked Bash bytes, "below size gate" vs "no rule matched". Absent when
+    /// none, so the goldens hold.
+    #[serde(default, skip_serializing_if = "BashUnmarkedRow::is_empty")]
+    pub bash_unmarked: BashUnmarkedRow,
     /// T125: assistant thinking blocks in the session.
     #[serde(default, skip_serializing_if = "ThinkingRow::is_empty")]
     pub thinking: ThinkingRow,
@@ -193,6 +197,25 @@ pub struct ExpandAfterRow {
 impl ExpandAfterRow {
     fn is_empty(&self) -> bool {
         self.calls == 0
+    }
+}
+
+/// T177: `cmd` measurements that carry no rtok marker (`kind = raw` or `unmatched`),
+/// split by why. `gate_bytes` never reached a rule — a tiny body below the trailer gate
+/// or a T176 bounded passthrough, both by design. `unmatched_bytes` reached a picked
+/// rule/formatter and shrank nothing — the actionable share the 2026-09-22 audit named
+/// (large `cat`/`sed`/`grep` dumps, newline-joined scripts).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BashUnmarkedRow {
+    pub gate_calls: u64,
+    pub gate_bytes: u64,
+    pub unmatched_calls: u64,
+    pub unmatched_bytes: u64,
+}
+
+impl BashUnmarkedRow {
+    fn is_empty(&self) -> bool {
+        self.gate_calls == 0 && self.unmatched_calls == 0
     }
 }
 
@@ -499,6 +522,19 @@ impl Report {
         if !self.bash_default_rule.is_empty() {
             s.push_str(&format_section("bash_default", &self.bash_default_rule));
         }
+        if !self.bash_unmarked.is_empty() {
+            let d = &self.bash_unmarked;
+            let total = d.gate_bytes + d.unmatched_bytes;
+            s.push_str(&format!(
+                "bash unmarked  below_gate calls {} bytes {} {:.1}%  no_rule calls {} bytes {} {:.1}%\n",
+                d.gate_calls,
+                d.gate_bytes,
+                pct(d.gate_bytes, total),
+                d.unmatched_calls,
+                d.unmatched_bytes,
+                pct(d.unmatched_bytes, total)
+            ));
+        }
         s.push_str(&format_section("mcp", &self.mcp_groups));
         if let Some(skills) = &self.skills {
             s.push_str(&skills_section(skills));
@@ -580,6 +616,19 @@ pub fn attach_bash_cmd(report: &mut Report, store: &Store) -> Result<()> {
     }
     let mut samples: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for r in store.list_measurements("cmd")? {
+        // T177: every raw/unmatched measurement's bytes, split by why there is no
+        // marker — independent of the per-family `bash_default_rule` ranking below.
+        match r.kind.as_str() {
+            "raw" => {
+                report.bash_unmarked.gate_calls += 1;
+                report.bash_unmarked.gate_bytes += r.before_bytes.max(0) as u64;
+            }
+            "unmatched" => {
+                report.bash_unmarked.unmatched_calls += 1;
+                report.bash_unmarked.unmatched_bytes += r.before_bytes.max(0) as u64;
+            }
+            _ => {}
+        }
         if r.kind != "rule" {
             continue;
         }
@@ -1449,6 +1498,7 @@ fn mcp_group(name: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rtok_plugin_sdk::Measurement;
     use serde_json::json;
     use std::fs;
     use std::io::Write;
@@ -2071,6 +2121,53 @@ mod tests {
             r.to_table()
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T177: `attach_bash_cmd` splits unmarked `cmd` bytes into "below size gate"
+    /// (`raw`) vs "no rule matched" (`unmatched`), independent of `rule`/`formatter`
+    /// measurements that recorded a real shrink.
+    #[test]
+    fn bash_unmarked_splits_gate_from_unmatched() {
+        let store = Store::open_in_memory().unwrap();
+        let meas = |kind: &'static str, before: u64| Measurement {
+            plugin: "cmd",
+            kind,
+            before_bytes: before,
+            after_bytes: before,
+            est_before: 10,
+            est_after: 10,
+            ref_id: None,
+            call_id: None,
+        };
+        store.insert_measurement("s1", &meas("raw", 50)).unwrap();
+        store.insert_measurement("s1", &meas("raw", 30)).unwrap();
+        store
+            .insert_measurement("s1", &meas("unmatched", 900))
+            .unwrap();
+        // A real shrink must not count as unmarked either way.
+        store
+            .insert_measurement(
+                "s1",
+                &Measurement {
+                    after_bytes: 100,
+                    ..meas("rule", 1000)
+                },
+            )
+            .unwrap();
+        let mut report = Report::default();
+        attach_bash_cmd(&mut report, &store).unwrap();
+        let d = &report.bash_unmarked;
+        assert_eq!(d.gate_calls, 2, "{d:?}");
+        assert_eq!(d.gate_bytes, 80, "{d:?}");
+        assert_eq!(d.unmatched_calls, 1, "{d:?}");
+        assert_eq!(d.unmatched_bytes, 900, "{d:?}");
+        assert!(
+            report
+                .to_table()
+                .contains("bash unmarked  below_gate calls 2 bytes 80"),
+            "{}",
+            report.to_table()
+        );
     }
 
     /// Write `lines` to the dir's transcript and collect the report — the tail
