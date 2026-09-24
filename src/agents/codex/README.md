@@ -11,7 +11,7 @@ Files: `~/.codex/config.toml` (MCP / proxy) and `~/.codex/hooks.json` (`PreCompa
 | mcp | yes | `[mcp_servers.rtok]` with `command`/`args` → `rtok mcp` |
 | proxy | `--proxy` | `[model_providers.rtok]` with `base_url = http://<bind>:<port>/v1` and `model_provider = "rtok"` |
 | hooks | yes | `hooks.json` `PreCompact` → `pre_compact`, `PostCompact` → `session_start` `source=compact` |
-| plugin | yes | runs `codex plugin marketplace add listepo/rtok` (skipped once Codex already knows the `rtok` marketplace) and `codex plugin add rtok@rtok` (remove: `plugin remove` + `marketplace remove`); installed by default once `codex` is on PATH — no flag needed; while it is installed it is the only call path, so setup strips its own `[mcp_servers.rtok]` and `hooks.json`; a missing or failing `codex` leaves the offer open instead of failing the install |
+| plugin | yes | runs `codex plugin marketplace add listepo/rtok` (skipped once Codex already knows the `rtok` marketplace) and `codex plugin add rtok@rtok` (remove: `plugin remove` + `marketplace remove`); installed by default once `codex` is on PATH — no flag needed; while it is installed it is the only call path, so setup strips its own `[mcp_servers.rtok]` and `hooks.json`; a missing or failing `codex` leaves the offer open instead of failing the install; `rtok agents update` runs `codex plugin marketplace upgrade rtok` (Codex has no `plugin update`; it refreshes the installed cache too) and reinstalls plugin and marketplace only when that fails |
 
 ## rtok plugins this host reaches
 

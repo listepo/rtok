@@ -196,6 +196,65 @@ fn plugin(cfg: &Config, remove: bool) -> Result<String> {
     })
 }
 
+/// Every file of the installed plugin cache with its bytes, in path order. `marketplace
+/// upgrade` keeps the `<version>` dir and writes no record to `config.toml`, so the cache
+/// content is the only evidence an upgrade changed anything (codex-cli 0.155.1, 2026-09-24).
+fn cache_bytes(cfg: &Config) -> Vec<(PathBuf, Vec<u8>)> {
+    let dir = config_dir(cfg).join("plugins/cache/rtok/rtok");
+    ignore::WalkBuilder::new(dir)
+        .standard_filters(false)
+        .sort_by_file_name(|a, b| a.cmp(b))
+        .build()
+        .flatten()
+        .filter_map(|e| Some((e.path().to_path_buf(), fs::read(e.path()).ok()?)))
+        .collect()
+}
+
+/// `agents update` over a plugin already enabled from the GitHub marketplace (T242.4). Codex
+/// has no `plugin update`: `marketplace upgrade rtok` re-fetches the snapshot and the installed
+/// cache in place. A failed upgrade means a broken snapshot, so the whole chain is reinstalled
+/// (`plugin remove`, `marketplace remove`, `marketplace add`, `plugin add`). An unchanged cache
+/// reads as [`NO_CHANGES`], so an upgrade that found nothing new says `already current`.
+fn plugin_update(cfg: &Config) -> Result<String> {
+    const UPDATE: [&[&str]; 1] = [&["plugin", "marketplace", "upgrade", "rtok"]];
+    const REINSTALL: [&[&str]; 4] = [
+        &["plugin", "remove", PLUGIN_ID],
+        &["plugin", "marketplace", "remove", "rtok"],
+        &["plugin", "marketplace", "add", MARKETPLACE_REPO],
+        &["plugin", "add", PLUGIN_ID],
+    ];
+    let shown = |steps: &[&[&str]]| {
+        steps
+            .iter()
+            .map(|s| format!("codex {}", s.join(" ")))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    };
+    if apply(cfg).dry_run {
+        return Ok(format!("~ plugin {PLUGIN_ID} ({})", shown(&UPDATE)));
+    }
+    if super::find_on_path("codex").is_none() {
+        return Ok(NO_CHANGES.into());
+    }
+    let before = cache_bytes(cfg);
+    let Err(e) = UPDATE.iter().try_for_each(|s| codex_cli(cfg, s)) else {
+        return Ok(if cache_bytes(cfg) == before {
+            NO_CHANGES.into()
+        } else {
+            format!("~ plugin {PLUGIN_ID} updated")
+        });
+    };
+    match REINSTALL.iter().try_for_each(|s| codex_cli(cfg, s)) {
+        Ok(()) => Ok(format!(
+            "~ plugin {PLUGIN_ID} reinstalled (update failed: {e})"
+        )),
+        Err(e2) => Ok(format!(
+            "offer {PLUGIN_SRC} → {} (codex failed: {e2})",
+            shown(&REINSTALL)
+        )),
+    }
+}
+
 /// Codex CLI: `[mcp_servers.rtok]` and, with `--proxy`, `[model_providers.rtok]`.
 pub struct Codex;
 
@@ -261,7 +320,14 @@ impl Agent for Codex {
         // Offer first: once the plugin is enabled it is the only call path (D21 singleton),
         // so the config.toml/hooks.json copies are stripped, not added — judged by Codex's
         // own record, so a dry run or a declined offer still gets the file-based install.
-        let mut lines = vec![plugin(cfg, remove)?];
+        let update = mode == Mode::Update
+            && plugin_installed(cfg)
+            && marketplace_state(cfg) == MarketplaceState::Github;
+        let mut lines = vec![if update {
+            plugin_update(cfg)?
+        } else {
+            plugin(cfg, remove)?
+        }];
         if remove || plugin_installed(cfg) {
             lines.push(run(cfg, true)?);
             lines.push(run_hooks(cfg, true)?);
