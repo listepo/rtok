@@ -97,6 +97,8 @@ pub fn search(cx: &Ctx, pattern: &str, path: &str, max: Option<u32>) -> Result<S
         Path::new(if path.is_empty() { "." } else { path }),
         &cfg.allow_paths,
     )?;
+    // T263: the resolved root, so an explicit `path` still works from `/`.
+    super::walk_root_ok(&root)?;
     let cap = max.unwrap_or(cfg.search_max).max(1) as usize;
     // Same grammar as `expand --grep`: an invalid regex searches literally
     // instead of erroring the whole call.
@@ -154,6 +156,8 @@ pub fn tree(cx: &Ctx, path: &str, depth: Option<u32>) -> Result<String> {
         Path::new(if path.is_empty() { "." } else { path }),
         &cfg.allow_paths,
     )?;
+    // T263: as in `search`.
+    super::walk_root_ok(&root)?;
     let depth = depth.unwrap_or(cfg.tree_depth).max(1) as usize;
     let base = canonical_base(&cwd);
     let mut rows = Vec::new();

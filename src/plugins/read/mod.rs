@@ -239,6 +239,22 @@ fn under_ascii_case_insensitive(path: &Path, root: &Path) -> bool {
     })
 }
 
+/// T263: refuse to walk `/` or the home directory (Claude.app launches `rtok mcp` in `/`);
+/// such a walk times out instead of answering.
+pub(crate) fn walk_root_ok(root: &Path) -> Result<()> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let is_home = std::env::home_dir()
+        .and_then(|h| h.canonicalize().ok())
+        .is_some_and(|h| h == root);
+    if root.parent().is_none() || is_home {
+        bail!(
+            "no project root: rtok mcp runs in {}; pass an absolute path inside the repository or start rtok mcp there",
+            root.display()
+        );
+    }
+    Ok(())
+}
+
 /// Cap at `plugins.read.max_chars`; an oversized text is archived and the cut carries its id.
 pub(crate) fn cap(cx: &Ctx, text: String) -> Result<String> {
     let max = cx.plugin_config::<crate::config::Read>("read").max_chars as usize;
@@ -374,6 +390,16 @@ pub(crate) mod tests {
             .to_string();
         let _ = fs::remove_file(&outside);
         assert!(err.contains("outside cwd"), "{err}");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// T263: `/` is refused; an ordinary project directory is not.
+    #[test]
+    fn walk_root_ok_rejects_filesystem_root_and_accepts_a_project_dir() {
+        assert!(walk_root_ok(Path::new("/")).is_err());
+        let dir = std::env::temp_dir().join(format!("rtok-walk-root-ok-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert!(walk_root_ok(&dir).is_ok());
         let _ = fs::remove_dir_all(dir);
     }
 
