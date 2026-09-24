@@ -87,6 +87,10 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T239 | todo | P1 | 3 | 0% | |
 | T240 | todo | P2 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
+| T243 | in progress | P1 | 2 | 10% | Claude Code / opus-5-5 |
+| T244 | todo | P1 | 3 | 0% | |
+| T245 | todo | P2 | 3 | 0% | |
+| T246 | todo | P1 | 4 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -553,6 +557,38 @@ The golden and surface tests measure one call at a time; no test shows the savin
 Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
 
 Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
+
+### T243. The Claude Code plugin supersedes the Claude Desktop `mcpServers.rtok`
+
+Found 2026-09-24 on this machine: a Claude Code session in the desktop app's Code tab lists two rtok MCP servers — `mcp__plugin_rtok_rtok__*` from the plugin and `mcp__rtok__*` from `claude_desktop_config.json`, which `rtok agents install claude` writes for the Desktop variant. Two servers, two call paths: D21 broken, and the model sees every tool twice. Creator's decision: when the plugin is installed it is the one call path, so the Desktop entry goes (Claude Desktop chat loses rtok MCP).
+
+Plan: in `src/agents/claude/mod.rs` `Claude::apply`, the Desktop branch calls `unregister_mcp` instead of `register_mcp` when `plugin_installed(cfg)` (the Cli variant runs first, so a fresh plugin install already counts) and says why in the report line; `installed()` for Desktop stays file-based. Update `src/agents/claude/README.md` (mcp desktop row). Tests in `tests/claude_plugin.rs`: with the plugin installed, an existing desktop `mcpServers.rtok` is removed and a fresh install never writes it; without the plugin the desktop entry is still written (existing `agents_install` test).
+
+Check: both tests green; `just check` green.
+
+### T244. No surface sees rtok twice after `agents install`
+
+Generalises T243 to every host (creator request 2026-09-24): no test checks that one agent surface (CLI, desktop app, the desktop app's Code tab, IDE extension) ends up with at most one rtok MCP server and at most one rtok hook per event, counting every place that surface reads — plugin, user config, desktop config.
+
+Plan: `tests/singleton.rs` — for each host in `rtok agents list`, a temp home with fake bins/apps for all variants, `rtok agents install <host> --yes`, then a per-host table of which files and plugin dirs each surface loads (taken from each host's `README.md` `## Docs`), and assert rtok MCP entries ≤ 1 and rtok hook commands per event ≤ 1 per surface. Run install twice to catch appends. A host whose surfaces cannot be faked is listed in the test with the reason.
+
+Check: the test fails on `main` before T243 for Claude and passes after; `just check` green. Needs T243.
+
+### T245. One tool call is processed once
+
+Runtime half of the same request: a host may fire two events for one call (Cursor: `afterMCPExecution` and `postToolUse`; Claude Code with both the plugin and settings-file hooks), and each processing adds a `Measurement` row and an archive entry, so savings double-count (D3).
+
+Plan: `tests/one_call_once.rs` — per host payload fixture set, feed every event the host fires for one MCP call and one Bash call through `rtok hook` in a temp home, then assert exactly one `Measurement` row and at most one archive entry per call (query through the existing store API, no raw SQL). Also a Claude home with the plugin and leftover settings-file hooks: one PostToolUse call still yields one row.
+
+Check: the test goes red when the `afterMCPExecution` path records its own row; `just check` green.
+
+### T246. Removal takes back only what rtok wrote, and asks about what the user changed
+
+Creator request 2026-09-24: removing rtok (`agents remove <host>`, and the plugin-supersedes strips of T243) must take back only what rtok itself wrote; anything the user changed in it is asked about — remove or keep. Today `rtok_agent_sdk::unregister_server` drops any entry named `rtok` whatever its command, and `skill::sync` removes a marked rtok skill even after the user edited it. Hooks already go through `strip_ours` + `is_rtok_bin`, but a user-edited rtok hook (other matcher, timeout, extra args) goes silently too.
+
+Plan: one ownership check per kind, three outcomes — **ours, unchanged** (equal to what the installer writes now): remove; **ours, changed by the user**: ask `? remove <what> in <file>? you changed it [y/N]` through a new SDK prompt whose default (Enter, EOF) is keep, `--yes` removes, no terminal keeps and names it in the report (`leave … (changed by you; remove by hand)`); **not ours**: leave and name it. Split: T246.1 MCP entries (`unregister_server` compares the entry with the one `register_server` would write; `is_rtok_bin` on the command) and hook entries (per host `strip_ours` compares with the written shape); T246.2 shipped skills (compare the copy with `skills/<name>`). Tests per outcome in `crates/rtok-agent-sdk` and `tests/agent_remove.rs`: unchanged entry removed, edited entry kept without `--yes` on a pipe and removed with it, foreign `rtok` entry untouched; the same three for a skill.
+
+Check: those tests green; `just check` green.
 
 ## Reference
 
