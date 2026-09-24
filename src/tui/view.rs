@@ -178,6 +178,7 @@ fn render_page(frame: &mut Frame, app: &App, area: Rect) {
         "graph" => frame.render_widget(graph_page(app), area),
         "hosts" => frame.render_widget(hosts_page(app), area),
         "config" => frame.render_widget(config_page(app), area),
+        "services" => frame.render_widget(services_page(app), area),
         page => unreachable!("page `{page}` has no TUI body — surface_parity holds the list"),
     }
 }
@@ -449,6 +450,19 @@ fn config_page(app: &App) -> Paragraph<'static> {
         .map(|v| v.join("\n"))
         .unwrap_or_else(|| text.clone());
     Paragraph::new(format!("/{filter}\n{filtered}"))
+}
+
+/// The model's Services page (T229), from the snapshot (D27): `demon status`'s
+/// per-service rows plus `otel status`'s exporter health, verbatim like [`graph_page`]
+/// — no filter, since the page is a handful of rows rather than a scrollable log.
+fn services_page(app: &App) -> Paragraph<'static> {
+    let Some(text) = app.snapshot().services.as_ref() else {
+        return empty(
+            "services did not answer this tick — `rtok demon status`/`rtok otel status` \
+             have the details",
+        );
+    };
+    Paragraph::new(text.clone())
 }
 
 /// The model's Calls page (T15.5): the ledger's recent rows, newest first — surface,

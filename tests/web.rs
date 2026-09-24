@@ -155,6 +155,27 @@ fn config_page_source_reflects_an_env_override() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// T229: the Services page folds `demon status`'s per-service rows (no state file
+/// on a fresh fixture, so every service reads `stopped`, like `demon status` itself)
+/// with `otel status`'s pending count — one inserted `logs` row past the (zero) mark
+/// is the "non-zero watermark" the plan card asks for, through the same
+/// `Store::otel_pending`/`last_log` `otel_status` already reads (D27, no second
+/// reader).
+#[test]
+fn services_page_reflects_a_stopped_service_and_a_pending_otel_row() {
+    let (cfg, dir) = rtok::testutil::config("services-fixture");
+    let store = rtok::store::Store::open(&cfg.core.db_path).expect("open store");
+    store
+        .insert_log("error", "otel", "flush", "boom", None, None, None)
+        .expect("insert log");
+    let snap = rtok::web::model::snapshot(&cfg);
+    let text = snap.services.expect("services page answers");
+    assert!(text.contains("stopped"), "{text}");
+    assert!(text.contains("logs_pending=1"), "{text}");
+    assert!(text.contains("boom"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[tokio::test]
 async fn ws_set_accepts_plugin_enabled() {
     let (_addr, state, dir, task) = serve("set-ok").await;

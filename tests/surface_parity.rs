@@ -345,6 +345,36 @@ fn config_page_exists_on_both_surfaces() {
     );
 }
 
+/// T229: both surfaces render the Services page — `demon status`'s per-service rows
+/// plus `otel status`'s exporter health — from the same model accessor, so `demon
+/// status`/`otel status` can join `COMMAND_PAGES`.
+#[test]
+fn services_page_exists_on_both_surfaces() {
+    let Surfaces {
+        model,
+        tui,
+        web,
+        slint,
+        ..
+    } = SURFACES;
+    assert!(
+        model.contains("(\"services\", \"services\")"),
+        "pages() offers services"
+    );
+    assert!(
+        model.contains("fn services_page_text"),
+        "the one accessor lives on the model (D23)"
+    );
+    assert!(
+        tui.contains("\"services\" =>"),
+        "the TUI renders the services page"
+    );
+    assert!(
+        web.contains("services_text") && slint.contains("page-id == \"services\""),
+        "the web Services page renders the same text"
+    );
+}
+
 #[test]
 fn wasm_ui_renders_every_model_page() {
     let lib = include_str!(concat!(
@@ -406,6 +436,9 @@ const COMMAND_PAGES: &[(&str, &str)] = &[
     // the Config page rides the snapshot since T228, so both render it
     ("config show", "config"),
     ("config get", "config"),
+    // the Services page rides the snapshot since T229, so both render it
+    ("demon status", "services"),
+    ("otel status", "services"),
 ];
 
 /// The commands D27 exempts, each with its reason. Streaming commands print a stream,
@@ -525,10 +558,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "dumps notes as the portable JSONL `memory import` reads; the Memory page is where they render (T66.2)",
     ),
     (
-        "otel status",
-        "exporter echo: endpoint, watermarks, pending rows",
-    ),
-    (
         "worktree list",
         "reads git and the checkout's file system, not the store: no model data (T151)",
     ),
@@ -543,7 +572,6 @@ const EXEMPT: &[(&str, &str)] = &[
         "logs export",
         "the same Logs selection, unnumbered and uncoloured",
     ),
-    ("demon status", "renders Model::demon; no snapshot page yet"),
 ];
 
 /// Every runnable command path, space-joined — the walk `config_coverage` already

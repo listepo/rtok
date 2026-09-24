@@ -71,6 +71,11 @@ pub struct Snapshot {
     /// Config page (T228): `rtok config show --sources`'s rows, through
     /// [`config_page_text`] (D27, no second layering). `None` on a failed tick.
     pub config: Option<String>,
+    /// Services page (T229): `demon status`'s per-service rows plus `otel status`'s
+    /// exporter health, through [`services_page_text`] (D27, no second reader —
+    /// [`Model::demon`] and [`otel_status`] already build both). `None` on a failed
+    /// tick.
+    pub services: Option<String>,
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
@@ -321,6 +326,7 @@ pub fn pages() -> &'static [(&'static str, &'static str)] {
         ("graph", "graph"),
         ("hosts", "hosts"),
         ("config", "config"),
+        ("services", "services"),
     ]
 }
 
@@ -1205,6 +1211,49 @@ fn config_page_text(cfg: &Config) -> Option<String> {
     Some(out)
 }
 
+/// The Services page (T229): [`demon::rows`]'s per-service state — the same rows
+/// `demon status` already builds (D27) — plus [`otel_status`]'s exporter health, so
+/// both commands can join `COMMAND_PAGES`. Plain text, not [`demon::table`]: that
+/// colours the state word for a terminal, which the web `BodyText` cannot render.
+/// No `last_error` column: nothing records one per service today, so the row points
+/// at the service's own log file instead of fabricating a message. `None` on a
+/// failed tick, like [`config_page_text`].
+fn services_page_text(cfg: &Config) -> Option<String> {
+    let rows = demon::rows(cfg, &[]).ok()?;
+    let mut out = String::new();
+    for r in &rows {
+        out.push_str(&format!(
+            "{}  {}  pid={}  uptime={}  log={}\n",
+            r.service,
+            if r.running { "running" } else { "stopped" },
+            r.child.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
+            r.uptime_secs
+                .map(|s| format!("{s}s"))
+                .unwrap_or_else(|| "-".into()),
+            r.log.display(),
+        ));
+    }
+    if let Ok(otel) = otel_status(cfg) {
+        out.push_str(&format!(
+            "otel endpoint={} calls_mark={} calls_pending={} logs_mark={} \
+             logs_pending={} sessions_mark={}\n",
+            otel.endpoint.as_deref().unwrap_or("-"),
+            otel.calls_mark,
+            otel.calls_pending,
+            otel.logs_mark,
+            otel.logs_pending,
+            otel.sessions_mark,
+        ));
+        if let Some(last) = &otel.last {
+            out.push_str(&format!(
+                "last flush: [{}] {} {}\n",
+                last.level, last.name, last.message
+            ));
+        }
+    }
+    Some(out)
+}
+
 /// One row of the `rtok config show` page: an effective key, its value, and which layer
 /// (`default|user|project|env|flag`) set it.
 #[derive(Debug, Serialize)]
@@ -1278,6 +1327,8 @@ impl<'a> Model<'a> {
             hosts: hosts_page_text(self.cfg),
             // T228: reads the layered figment fresh each tick — see `config_page_text`.
             config: config_page_text(self.cfg),
+            // T229: reuses `demon::rows` and `otel_status` — see `services_page_text`.
+            services: services_page_text(self.cfg),
         }
     }
 
