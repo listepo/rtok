@@ -29,7 +29,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
-- T260. Web Sessions page: live-only filter and a help overlay
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
