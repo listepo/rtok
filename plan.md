@@ -60,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T246.5 | todo | P1 | 2 | 0% | |
 | T250.3 | todo | P1 | 3 | 0% | |
 | T246.6 | todo | P1 | 3 | 0% | |
-| T254 | in progress | P2 | 3 | 5% | Claude Code / claude-opus-5-5 |
 | T255 | todo | P2 | 3 | 0% | |
 
 
@@ -433,24 +432,6 @@ Check: `tests/cursor_plugin.rs` runs each plugin command as Cursor does (`/bin/s
 T246.3 did the Claude-shaped hooks (claude, codex `hooks.json`, zcode) through `claude::strip_ours`. cursor (`hooks.json` flat entries), gemini (`hooks.<Event>[]` with its own event names), kimi and codewhale (TOML `[[hooks]]` tables) each have their own `strip_ours`: each compares an rtok hook with the shape its installer writes and hands a changed one to `rtok_agent_sdk::keep_edited`.
 
 Check: `tests/agent_remove.rs` leaves an edited rtok hook of each host without `--yes` and takes it with `--yes`; `just check` green.
-
-### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
-
-Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:
-- `tui::app::tests::hermetic` (called from `app.rs` and `view.rs`) redirects four paths in memory. It misses `stats.codex_dir` and every `setup.*` path, and the toggle tests reload `config.toml`, which drops the redirect. Every `App::new` snapshot scans the real `~/.codex/sessions`.
-- Six `doctor.rs` tests start from `Config::default()`. Two read the real `~/.claude/projects`, and all read the real agent configs.
-- `testutil::config_file_in` writes five paths into `config.toml`. The `setup.*` paths stay real for `tests/web.rs`, `graph_model.rs` and `stats_model.rs`.
-- Two `web::model` tests hand-copy the doctor redirect on a `testutil::config` that is already rebased.
-
-Plan:
-- `Config::path_fields_mut` names each field with its dotted key, so one list serves both `~` expansion and the tests.
-- `config_file_in` writes every absolute path of `config_in(dir)` into `dir/config.toml`.
-- TUI: every `hermetic` caller uses `config_file_in(&dir)` plus its own overrides, and `hermetic` goes away.
-- `doctor.rs` tests start from `testutil::config_in(&dir)` and drop the redirect lines that just repeat it.
-- The copies in `web::model` go.
-- A guard test fails when any path of `config_in` or `config_file_in` lies outside `dir` (relative paths aside), so a new `~` field cannot leak again.
-
-Check: `cargo nextest run --lib` on `tui::`, `web::model`, `doctor::` and `testutil`, fast; `--test web`, `graph_model` and `stats_model` pass; `just check` green.
 
 ### T255. Tests run under a fake `HOME`
 
