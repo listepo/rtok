@@ -4908,6 +4908,36 @@ Status: done 2026-09-22
 Check result: both tests pass; the e2e output starts at `line 21` of 50 and ends at `line 50`, so `tail -30` ran inside `rtok run`. A manual run of the installed hook on the same command printed `rtok run -- 'sleep 1; cat … | tail -30'` and the `[rtok … expand]` trailer. No wrap rule changed.
 Model: Claude Code / claude-opus-5
 
+### T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
+
+Plan: `HookInput::adapt_cline(event)` in `src/hooks/types.rs` beside `adapt_cursor` / `adapt_copilot` / `adapt_devin`; a `cline` arm in `dispatch_owned_strict` plus `cline_output` in `src/hooks/mod.rs`; `--host` list grows by `cline` (`config/default.toml`, `docs/config.md`, `src/cli.rs` help line, trycmd snapshots).
+
+Do (Muse Spark / rtok): `adapt_cline` lifts `hookName` / `taskId` / `workspaceRoots` / `tool_call` / `tool_result` to Claude fields; `run_commands` single-command → `Bash` + `command`, `read_files` → `Read`, multi-entry commands pass through untouched; lifecycle (`agent_start`, `agent_resume`, `prompt_submit`, `agent_end`, `agent_error`, `agent_abort`, `session_shutdown`) maps to SessionStart / UserPromptSubmit / SessionEnd / no-op. `cline_output` prints `overrideInput: {commands: [..]}` for rewrites, `context` for injections, `cancel: true` + `errorMessage` for denies, `{}` otherwise. Fail open: garbage stdin prints `{}` and exits 0.
+
+Status: done 2026-09-22
+Check result: `hooks::types::tests::cline_maps_tool_call_result_and_lifecycle`, `hooks::tests::cline_output_shapes_override_context_block_and_empty`, `hooks::tests::cline_pre_tool_use_rewrites_single_command_and_fails_open` green; `cargo test --lib` 908 passed; fmt + clippy clean.
+Model: Muse Spark / rtok
+
+### T95. Cline plugin tree (`plugins/cline/`)
+
+Plan: one POSIX script `plugins/cline/hooks/rtok-hook` taking the event from its file name; `plugins/cline/README.md` with `## Docs`; a `tests/` check (executable, fail-open without `rtok`, every linked event known to `adapt_cline`).
+
+Do (Muse Spark / rtok): `plugins/cline/hooks/rtok-hook` (`#!/bin/sh`, executable) runs `rtok hook <event> --host cline`, prints `{}` + ketch hint on stderr with `rtok` missing; `plugins/cline/README.md` with hand install, honoured / not-honoured notes and `## Docs` Cline links; `tests/cline_plugin.rs` pins the three behaviours.
+
+Status: done 2026-09-22
+Check result: `tests/cline_plugin.rs` 3 passed; `host_docs` 2 passed.
+Model: Muse Spark / rtok
+
+### T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
+
+Plan: new host `cline` in `src/agents/cline/` registered in `HOSTS` and `host()`; one `HostPlugin` per event into `~/Documents/Cline/Hooks`; MCP into both `cline_mcp_settings.json` files; `[setup.cline]` keys; docs bless; install matrix.
+
+Do (Muse Spark / rtok): `src/agents/cline/mod.rs` (CLI + VS Code extension variants, 5 per-event hook links, MCP register/unregister for CLI path + extension `globalStorage` path resolved via the `vscode` host, `support` hooks/mcp yes, plugin `--yes`, proxy no); `src/agents/cline/README.md`; `HOSTS` + `host()` + `restart.rs` desktop-name row; `[setup.cline] hooks_path` / `mcp_path` in `config/default.toml`, `src/config/mod.rs`, `docs/config.md`; `docs/agents.md` re-blessed; `tests/agents_install.rs` matrix row; trycmd snapshots re-blessed. Deviations: shipped whole (not split into T96.1/T96.2); extension MCP path is `<VS Code User>/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (globalStorage lives inside `User/`, verified on this machine); `CLINE_DIR` / `CLINE_MCP_SETTINGS_PATH` env overrides from the card not implemented.
+
+Status: done 2026-09-22
+Check result: `agents::cline` 3 passed; `agents_doc`, `host_docs`, `config_coverage`, `cline_plugin`, `cli_trycmd` green; lib 910 passed (1 pre-existing `list_prints` hang skipped — `codex --version` hangs on this machine, also on main); fmt + clippy clean.
+Model: Muse Spark / rtok
+Re-land (2026-09-24, Claude Code / claude-opus-5-5 + claude-sonnet-5): #172 was auto-reverted (e3fa1b44) because main had gained `HostPlugin.default_install` (T164) meanwhile. Re-applied on current main: `default_install: false`; MCP removal through `unregister_ours` (T246.2); `hooks_path` moved from `files()` to `markers()` (a directory cannot be backed up); `files()` per variant; the hook script takes the T174/T250 resolver (PATH, `~/.ketch/bin`, silent `{}`, one hint on `TaskStart`); `tests/singleton.rs` knows the Cline plugin carries no MCP; `cline` listed as unsupported in `tools/publish_marketplace`. `just check` green (1745 passed).
 ### T164. Host plugins that only install by local link go in by default, idempotently
 
 Assigned as T162, but that id was already taken by a concurrent session's task before this one registered — max open id on `origin/main` was T163, so this landed as T164 instead.
@@ -5218,6 +5248,19 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 Do (Claude Code / claude-opus-5-5, 2026-09-24): no code change. The failure came from CRLF checkouts, which T82's `.gitattributes` (`* text=auto eol=lf`) already removed. The test's line is dropped from the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
 
 Check result: a probe branch ran every `cfg(windows)`-filtered test on `windows-latest` (ci run 36032362793, 2026-09-24): `agents_doc_table_matches_the_host_code` passed there (0.077 s). `just check` green on macOS.
+### T223. `windows-sys` linked in three versions
+
+Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
+
+Plan: `cargo tree -d` to find the 0.52/0.60 holders, bump those transitive parents within existing semver ranges (no direct dep version bumps) or nudge the lockfile (`cargo update -p windows-sys@…`); record the reason per the dependency rule.
+
+Check: `grep -c 'name = "windows-sys"' Cargo.lock` = 1 (or `mise exec -- cargo tree -d` shows no windows-sys entry); `just check` green on windows-latest.
+
+Blocked (2026-09-24, checked against the lockfile): no in-range update removes a copy. `windows-sys` 0.52.0 comes from `ring` 0.17.14 (latest release; pulled by `rustls-webpki` / `quinn-proto`), 0.60.2 from `notify` 8.2.0 (latest stable; 9 is `9.0.0-rc.5`). Needs a creator decision: `notify` 9 once it leaves RC (drops 0.60), and a rustls crypto provider other than `ring` or a new `ring` release (drops 0.52).
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): with the creator's permission (2026-09-24), `notify` 8 → `9.0.0-rc.5`, the latest release, still an RC. 9 moved to `windows-sys` 0.61, so the 0.60.2 copy and its `windows-targets` 0.53 family leave `Cargo.lock`. `graph/watch.rs` compiles unchanged, because the `recommended_watcher` / `Event` API is the same. 0.52.0 stays in the lockfile only as `ring`'s requirement, and `ring` is an optional dependency of `rustls-webpki` / `quinn-proto` that no active feature enables: `cargo tree -i windows-sys@0.52.0 --target all` prints nothing, so it is never compiled. Swapping the rustls crypto provider was not needed.
+
+Check result: `cargo tree -d --target all -e normal,build` lists no `windows-sys` entry (the Check's second form); `Cargo.lock` holds 0.52.0 (unbuilt) and 0.61.2. `just check` green (1750 tests); the `windows` CI job builds the new `notify`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5

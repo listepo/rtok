@@ -6,13 +6,11 @@
 - T83.12. `plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full` fails on Windows
 - T83.13. `agent_remove::uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy` fails on Windows (os error 4390)
 - T83.14. `plugins_e2e::graph_session_start_map_off_by_default_and_on_when_capped` fails on Windows (empty `{}`)
+- T83.15. `otel::stop_hook_spawns_the_flush_and_stays_under_10ms` fails on Windows (`SessionEnd set ended_at`)
 - T87. `rtok hook <event> --host devin` reads Devin's payload
 - T88. Devin plugin tree (`plugins/devin/`)
 - T89. `rtok agents install devin` — CLI and Desktop, plugin as the singleton
 - T91.2. Antigravity skill roots and research sentence
-- T94. `rtok hook <event> --host cline` speaks Cline's file-hook JSON both ways
-- T95. Cline plugin tree (`plugins/cline/`)
-- T96. `rtok agents install cline` — CLI and the VS Code extension, one hooks directory
 - T97. `rtok agents install kilo` — Kilo Code: the shared OpenCode plugin plus `kilo.json` MCP
 
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
@@ -31,10 +29,11 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
-- T223. `windows-sys` linked in three versions
 - T235.2. `rtok run` starts no login shell per call
 - T260. Web Sessions page: live-only filter and a help overlay
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
 - T241. Replay bench: saving over a fixed session corpus
 - T246.5. zed and grok MCP entries
+- T262.1. Claude hook entries come from `plugins/claude/hooks/hooks.json`
+- T262.2. Research: which hosts can inject context at subagent start

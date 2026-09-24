@@ -91,6 +91,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".copilot/hooks",
         ".codeium/windsurf",
         ".config/zed",
+        "Documents/Cline/Hooks",
+        ".cline/data/settings",
         ".gemini",
         ".codewhale",
         ".config/mimocode",
@@ -122,6 +124,8 @@ pub fn write_cfg(home: &Path) -> PathBuf {
              [setup.aider]\nconfig_path = \"{h}/.aider.conf.yml\"\n\
               [setup.windsurf]\nconfig_path = \"{h}/.codeium/windsurf/mcp_config.json\"\n\
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
+             [setup.cline]\nhooks_path = \"{h}/Documents/Cline/Hooks\"\n\
+             mcp_path = \"{h}/.cline/data/settings/cline_mcp_settings.json\"\n\
               [setup.gemini]\ndir = \"{h}/.gemini\"\n\
               [setup.codewhale]\ndir = \"{h}/.codewhale\"\n\
               [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n\
