@@ -77,8 +77,6 @@
 - T223. `windows-sys` linked in three versions
 - T224. Tracked build/report artifacts: `report.html`, `report/`, `dump/`
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
-- T225.1. `rtok logs` through tailspin
-- T234. Skills have one source: host plugins link `skills/`, never copy
 - T226. Web Sessions page: live-only filter and a help overlay
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
