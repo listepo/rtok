@@ -39,6 +39,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
+| T262.1 | in progress | P2 | 2 | 10% | Claude Code / claude-opus-5-5 |
+| T262.2 | todo | P3 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -305,6 +307,20 @@ zed (JSONC editor) and grok (TOML) take the T246.1 ownership check on their own 
 
 Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--yes`; `just check` green.
 
+
+### T262.1. Claude hook entries come from `plugins/claude/hooks/hooks.json`
+
+Creator request 2026-09-24: the hook list lives in the plugin folder, and every install path takes it from there. Today `CLAUDE_ENTRIES` in `src/agents/claude/mod.rs` is the source and a test compares `hooks.json` against it, so a new event has to be written twice. Read the `(event, matcher)` pairs from `hooks.json` via `include_str!` at build time (no plugin build step; the GitHub plugin install and `rtok agents install claude` share one file). The shared `ENTRIES` list that Kimi and ZCode take stays a Rust constant.
+
+Plan: replace the `CLAUDE_ENTRIES` const with a `LazyLock` that parses `hooks.json` in file order (a small serde map visitor; `serde_json` here has no `preserve_order`, so a `Value` would sort events and reorder install reports); `plugin_tree_matches_the_installer` keeps checking each entry's command and timeout, plus that the file starts with `ENTRIES`.
+
+Check: `rtok agents install claude --dry-run` output is unchanged; `just check` green.
+
+### T262.2. Research: which hosts can inject context at subagent start
+
+Creator request 2026-09-24: extend the `SubagentStart` spawn brief (T130.2) beyond Claude Code where a host supports it. Known so far: VS Code links `plugins/claude` and already gets it; Kimi fires `SubagentStart` but discards the hook's result (`sessionExternalHooksService.ts` in MoonshotAI/kimi-code awaits `runner.trigger` and ignores it), so a brief there saves nothing; CodeWhale's `subagent_spawn` is observe-only. Check the rest (Codex, Cursor, Copilot CLI, Gemini, Grok, ZCode, OpenCode, Pi) from docs or source, and record the result in `research.md`.
+
+Check: a `research.md` section lists each host with a source link and a yes/no; follow-up tasks only for the yes rows.
 
 ## Reference
 
