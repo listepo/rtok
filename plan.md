@@ -41,7 +41,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T131 | todo | P2 | 3 | 0% | |
 | T132 | todo | P2 | 2 | 0% | |
 | T134 | todo | P1 | 2 | 0% | |
-| T137 | todo | P3 | 3 | 0% | |
 
 | T127 | todo | P2 | 3 | 0% | |
 | T126 | in progress | P2 | 1 | 5% | Claude Code / claude-haiku-4-5 |
@@ -318,10 +317,6 @@ Check: `rtok agents install claude` offers the agent file and removal takes it a
 Gate for I-91 (`research.md` §17.2). The Agent SDK hooks page says `updatedToolOutput` "works for any tool"; rtok's standing rule says PostToolUse can only add context. If the CLI honours it, native Read/Bash output could be shrunk in place (pointer + `expand <id>`) instead of wrapped or denied — that changes the design of `cmd`, `read` and `guard`, so it is a creator decision, not a silent change. No product code in this task.
 Plan: throwaway hook script (scratch, not committed) returning `hookSpecificOutput.updatedToolOutput` for `Read` and `Bash` on the current Claude Code; run one Read and one Bash; check what the model received in the transcript. Repeat for an MCP tool.
 Check: a dated row in `research.md` §3 with the Claude Code version, the payload sent and what the transcript shows, per tool kind. Honoured → the `AGENTS.md` rule line and I-91 are put to the creator with the row; not honoured → I-91 closes with the date.
-### T137. `rtok stats`: image blocks row
-Gate for a multimodal token gate (`research.md` §16.3 #9). Screenshots from browser and simulator tools enter the live zone as image blocks; rtok measures bytes of text only, so their share is unknown.
-Plan: count `image` content blocks in tool results and user messages per tool; bytes; pixel size from the PNG `IHDR` / JPEG `SOF` header (fixed-offset parse, no new dependency); estimated tokens by the provider's published formula, cited in the code comment and in the row.
-Check: fixture with one PNG and one JPEG block; dated row in `research.md` §2. Under 5 % of input tokens → closes with the number; above → a card for downscale-or-OCR goes to the creator.
 ### T123. `rtok doctor` names `[proxy.tools_rewrite]` when it applies
 
 `research.md` §2 (T59.5 row): 8,951 MCP description tokens × 40,402 turns = 6.2 % of session input on a host without Tool Search — the largest measured share with a shipped lever that is off by default. `doctor` already prints `mcp_tool_search likely disabled` and per-server `desc tokens` (`src/doctor.rs` `render`), and stops there. Add one advice line when all hold: Tool Search likely disabled, rtok's proxy is a hop in the Anthropic chain, `proxy.tools_rewrite.enabled = false`, and the summed description tokens are above a threshold (config key under `[doctor]`, default from the 3 % gate). The line names the total and the config key; per T59.7 it never says "saves N". Same field in the JSON report.

@@ -98,6 +98,21 @@ Verdict: `mode=stripped` wins; imports-only skipped (loses the bodies a Read of 
 
 Under the 5 % gate: I-82 (deny such Reads, point at `outline`) is rejected with this number. The `read` plugin's advice deny (T4.6) already turns most such Reads away before they produce a result; these six got through.
 
+### Image blocks in the live zone (T137, 2026-09-24)
+
+`rtok stats --since 30d` on this machine (367 sessions, 424 122 transcript lines), `images` row: every `image` content block in a tool result or a user message. Bytes are decoded base64; pixel size comes from the PNG `IHDR` / JPEG `SOF` header; tokens are `⌈w/28⌉ × ⌈h/28⌉` at the high-resolution tier (long edge 2576 px, 4784-token cap), per the Anthropic vision docs ("Resolution and token cost", read 2026-09-24). `resident` multiplies each block's tokens by the API requests at or after its turn — an upper bound, since compaction drops images earlier.
+
+| Source | Blocks | Bytes | Est. tokens |
+| --- | --- | --- | --- |
+| `Read` of an image file | 182 | 21 258 233 | 159 978 |
+| Browser pane (`browser_batch`, `computer`) | 23 | 674 729 | 11 610 |
+| iOS Simulator `control` | 3 | 606 872 | 7 128 |
+| Other MCP screenshots (2 tools) | 2 | 234 584 | 2 036 |
+| Pasted into a prompt | 1 | 243 375 | 370 |
+| **Total** | **211** | **23 017 793** | **181 122** |
+
+Resident: 56 020 282 tokens, **0.91 %** of session input; every block had a PNG or JPEG header. Under the 5 % gate: the multimodal token gate (§16.3 #9) stays unbuilt, with this number. Most image tokens come from the agent's own `Read` of image files, not from browser or simulator screenshots.
+
 ### `graph` index accuracy (T8.8, 2026-09-04)
 
 30 symbols of this repo labelled by hand from a plain-text scan, independent of the index that is
@@ -1279,7 +1294,7 @@ Prioritized for an agent product like AirTalk. Effort: S &lt; 1 week, M ~1–3 w
 | 6 | **Structured tool I/O (JSON Schema / strict)** | Medium output + easier trim | M | Force tools to return compact tables/fields instead of prose; then `toon` / formatters win more often. |
 | 7 | **Sub-agent isolation + budgeted handoff** (I-46) | Medium when Task/Agent traffic grows | M | Child context starts small; parent gets a digest with archive ids — not a full transcript paste. |
 | 8 | **Identifier / path dictionary in-session** | Low–Medium | L | Replace repeated long paths with short codes in tool results; expand on demand. Easy to break models; needs A/B. |
-| 9 | **Multimodal token gate** | High $ when screenshots dominate | S–M | Prefer OCR/text or downscale; refuse or summarize images in the live zone. Separate from text CTT. |
+| 9 | **Multimodal token gate** | High $ when screenshots dominate | S–M | Prefer OCR/text or downscale; refuse or summarize images in the live zone. Separate from text CTT. T137 (2026-09-24): images are 0.91 % of session input (§2) — under the 5 % gate, not built. |
 | 10 | **Speculative local draft → verify** | Mixed | L | Local small model proposes; cloud model verifies — can cut cloud **output** tokens, adds complexity and wrong-draft risk. |
 
 ### 16.4 Sources (non-obvious)
