@@ -1635,3 +1635,27 @@ Never junk, on any host: settings/config files, credentials and auth tokens, ses
 | gemini | not documented — `~/.gemini/tmp/<hash>/` exists but holds checkpoints/shell history, which is session history, not junk | not documented | not documented | documented: https://geminicli.com/docs/cli/settings/, https://geminicli.com/docs/resources/troubleshooting/ | 2026-09-24 |
 | codewhale | not documented | not documented — `audit.log` is tied to session reconciliation, not a pure rotating log | `~/.codewhale/update-check.json` (single file; caches the update-check result, reused for `check_interval_hours`) | source: https://github.com/Hmbown/Codewhale/blob/main/docs/CONFIGURATION.md | 2026-09-24 |
 
+## 23. Subagent-start context injection per host (T262.2) (2026-09-24)
+
+Question: which hosts let a hook add context to a sub-agent before it runs, the way Claude Code's `SubagentStart` returns `hookSpecificOutput.additionalContext` (the T130 spawn brief)? Checked from each host's hook docs or source; the two yes rows re-read first-hand.
+
+| Host | Verdict | Event, output | Source |
+| --- | --- | --- | --- |
+| Claude Code | yes | `SubagentStart`, `additionalContext` | wired in T130.2 |
+| VS Code Copilot Chat | yes | runs `plugins/claude` hooks as-is | `src/agents/vscode/mod.rs` |
+| Codex | yes | `SubagentStart`; plain stdout or hook-specific context becomes developer context for the subagent | https://learn.chatgpt.com/docs/hooks |
+| Copilot CLI | yes | `subagentStart` (matcher on agent name), `additionalContext` prepended to the subagent's prompt; the built-in general-purpose agent emits no event | https://docs.github.com/en/copilot/reference/hooks-reference |
+| Kimi | event-only | `SubagentStart` fires; the result of `runner.trigger` is discarded | MoonshotAI/kimi-code `packages/agent-core-v2/src/features/externalHooks/session/sessionExternalHooksService.ts` |
+| Cursor | event-only | `subagentStart` output has only `permission` / `user_message` | https://cursor.com/docs/hooks |
+| Grok | event-only (weak) | `SubagentStart` / `SubagentStop` fire; no output schema documented | https://docs.x.ai/build/features/hooks |
+| CodeWhale | event-only | `subagent_spawn` is an observer event; result discarded | `src/agents/codewhale/README.md` |
+| Gemini CLI | no | no subagent event (`BeforeAgent` / `AfterAgent` are the parent turn) | https://geminicli.com/docs/hooks/reference/ |
+| ZCode | no | no subagent event | https://zcode.z.ai/en/docs/hooks |
+| OpenCode, Kilo | no | plugin events have no subagent spawn | https://opencode.ai/docs/plugins |
+| Pi, omp | no | no hookable spawn; subagents are an extension of their own | badlogic/pi-mono `docs/extensions.md` |
+| Windsurf | no | no subagent event among the documented hooks | https://docs.devin.ai/desktop/cascade/hooks |
+| Cline | no | `new_task` hands off in the same conversation, no child agent | https://docs.cline.bot/customization/hooks |
+| Antigravity | no (weak) | no hook on `invoke_subagent` | https://antigravity.google/docs/hooks/ |
+| MiMo | no | no hook system | mimo docs |
+
+Follow-ups: T262.3 (Codex) and T262.4 (Copilot CLI). Grok and Antigravity rest on missing docs, so a docs change there is worth a recheck. Found on the way: Copilot CLI `subagentStop` accepts `modifiedResponse`, which replaces the subagent's answer to the parent (idea I-98).

@@ -209,6 +209,21 @@ Do (2026-09-22): the card's first step ruled out its own original plan — `PreT
 
 Check result (2026-09-22): `cargo test --lib plugins::memory::` green (handoff + hook coverage); `cargo test --test hook_spawn_brief` — 4/4 passed (`flag_off_is_a_passthrough`, `empty_ledger_is_a_passthrough`, `brief_carries_pointers_an_expand_id_and_stays_under_budget` incl. byte-stability on a second call, `non_subagent_events_are_untouched`); `just check` green.
 
+### T262.2. Research: which hosts can inject context at subagent start
+
+Creator request 2026-09-24: extend the `SubagentStart` spawn brief (T130.2) beyond Claude Code where a host supports it. Known so far: VS Code links `plugins/claude` and already gets it; Kimi fires `SubagentStart` but discards the hook's result (`sessionExternalHooksService.ts` in MoonshotAI/kimi-code awaits `runner.trigger` and ignores it), so a brief there saves nothing; CodeWhale's `subagent_spawn` is observe-only. Check the rest (Codex, Cursor, Copilot CLI, Gemini, Grok, ZCode, OpenCode, Pi) from docs or source, and record the result in `research.md`.
+
+Plan: one doc/source pass per host (Sonnet sub-agent for the lookups, results re-checked against the cited source), then `research.md` §23 with a host table and follow-up tasks for the yes rows.
+
+Check: a `research.md` section lists each host with a source link and a yes/no; follow-up tasks only for the yes rows.
+
+Do (Claude Code / claude-opus-5-5, 2026-09-24): `research.md` §23. Yes: Codex (`SubagentStart`, stdout becomes developer context) and Copilot CLI (`subagentStart`, `additionalContext`), both re-read first-hand; follow-ups T262.3 and T262.4. Event-only: Kimi, Cursor, Grok, CodeWhale. No: Gemini, ZCode, OpenCode, Kilo, Pi, omp, Windsurf, Cline, Antigravity, MiMo. Idea I-98 (Copilot `subagentStop.modifiedResponse`).
+
+Check result: §23 lists every host with a source; follow-up tasks only for the two yes rows.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs
 
 T130.1 (`done.md`) landed the mechanism — `SubagentStart` on the `Plugin` trait, the hook dispatch, config, and `memory::handoff::build_brief` shared with the `handoff` MCP tool — but nothing yet installs a `SubagentStart` matcher for real users, so the feature is inert until this lands. Needs: (1) `rtok agents install claude` registers `SubagentStart`, and `plugins/claude/hooks/hooks.json` carries the same entry (the plugin is the installer's hooks, T114); (2) `docs/agents.md` reblessed (`tests/agents_doc.rs` with `RTOK_BLESS=1`) and `tests/host_docs.rs` green. Split on claiming (2026-09-24): the outline line ranges (the original part 3) moved to T130.3.

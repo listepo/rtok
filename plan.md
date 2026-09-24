@@ -40,7 +40,8 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T232 | todo | P3 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
-| T262.2 | todo | P3 | 2 | 0% | |
+| T262.3 | todo | P2 | 2 | 0% | |
+| T262.4 | todo | P2 | 2 | 0% | |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
@@ -316,11 +317,17 @@ zed (JSONC editor) and grok (TOML) take the T246.1 ownership check on their own 
 Check: `tests/agent_remove.rs` leaves an edited zed and grok entry without `--yes`; `just check` green.
 
 
-### T262.2. Research: which hosts can inject context at subagent start
+### T262.3. Codex: spawn brief on `SubagentStart`
 
-Creator request 2026-09-24: extend the `SubagentStart` spawn brief (T130.2) beyond Claude Code where a host supports it. Known so far: VS Code links `plugins/claude` and already gets it; Kimi fires `SubagentStart` but discards the hook's result (`sessionExternalHooksService.ts` in MoonshotAI/kimi-code awaits `runner.trigger` and ignores it), so a brief there saves nothing; CodeWhale's `subagent_spawn` is observe-only. Check the rest (Codex, Cursor, Copilot CLI, Gemini, Grok, ZCode, OpenCode, Pi) from docs or source, and record the result in `research.md`.
+`research.md` §23: Codex fires `SubagentStart` and adds the hook's stdout (or its hook-specific context) to the subagent as developer context. Add `SubagentStart` to `plugins/codex/hooks/hooks.json` and the Codex installer's list, and make `rtok hook SubagentStart` answer in the shape Codex reads.
 
-Check: a `research.md` section lists each host with a source link and a yes/no; follow-up tasks only for the yes rows.
+Check: a Codex `SubagentStart` payload through `rtok hook` returns the brief in Codex's shape (test); `just check` green.
+
+### T262.4. Copilot CLI: spawn brief on `subagentStart`
+
+`research.md` §23: Copilot CLI's `subagentStart` prepends `additionalContext` to the subagent's prompt (not for the built-in general-purpose agent). Add it to `plugins/copilot/hooks/hooks.json` and the Copilot installer, and map Copilot's payload to rtok's `SubagentStart`.
+
+Check: a Copilot `subagentStart` payload through `rtok hook` returns `additionalContext` with the brief (test); `just check` green.
 
 ## Reference
 
