@@ -100,8 +100,7 @@ threads-required = "num-test-threads"
 platform = 'cfg(windows)'
 default-filter = '''
 not (
-    (binary(otel) & test(=hooks_stay_fast_with_an_unreachable_endpoint))
-  | (binary(commands_e2e) & test(=run_long_output_then_expand_round_trips))
+    (binary(commands_e2e) & test(=run_long_output_then_expand_round_trips))
   | (binary(agents_install) & test(/^(list_reports_installed_modules_per_host|setup_twice_takes_one_backup_and_says_already_installed)$/))
   | (binary(agents_doc) & test(=agents_doc_table_matches_the_host_code))
   | (binary(cli_trycmd) & test(=cli))
