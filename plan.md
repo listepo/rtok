@@ -23,7 +23,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.8 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T241 | todo | P2 | 3 | 0% | |
 | T246.5 | todo | P1 | 2 | 0% | |
 | T262.3 | todo | P2 | 2 | 0% | |
 
@@ -184,14 +183,6 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
-
-### T241. Replay bench: saving over a fixed session corpus
-
-The golden and surface tests measure one call at a time; no test shows the saving over a whole session mix of Bash, Read, Grep and MCP results, so a change that helps one family and hurts the mix goes unnoticed.
-
-Plan: `tests/fixtures/replay/session.jsonl` — about 30 anonymised hook payloads shaped like a real Claude Code session (tool mix taken from `rtok stats` on this machine, bodies written or scrubbed by hand; no real paths, names or secrets). `tests/replay_bench.rs` feeds them through `rtok hook` in a temp home, sums the `Measurement` rows, prints a per-plugin table (`--nocapture`) and asserts the total saving stays over a floor set a few points below the first run. Record the first run as a dated `research.md` §2 row with the command.
-
-Check: the test fails when a plugin is disabled in the temp config; the `research.md` row cites the command; `just check` green. Needs T239.
 
 ### T246.5. zed and grok MCP entries
 
