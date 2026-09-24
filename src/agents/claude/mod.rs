@@ -1114,6 +1114,27 @@ mod tests {
         assert_eq!(market["plugins"][0]["source"], "./");
     }
 
+    /// T132: the shipped scout stays cheap (`model: haiku`) and scoped to the plugin-scoped
+    /// rtok MCP tool names Claude Code resolves for a plugin's own server
+    /// (`mcp__plugin_<plugin>_<server>__<tool>`, per the plugins reference doc) — a bare or
+    /// unscoped name would silently never fire.
+    #[test]
+    fn scout_agent_ships_with_the_cheap_scoped_frontmatter() {
+        let text = include_str!("../../../plugins/claude/agents/rtok-scout.md");
+        let front = text
+            .strip_prefix("---\n")
+            .and_then(|s| s.split_once("\n---\n"))
+            .expect("frontmatter fenced by `---`")
+            .0;
+        assert!(front.contains("name: rtok-scout"), "{front}");
+        assert!(front.contains("model: haiku"), "{front}");
+        for tool in ["read", "search", "outline", "explore", "expand"] {
+            let want = format!("mcp__plugin_rtok_rtok__{tool}");
+            assert!(front.contains(&want), "{front}: missing {want}");
+        }
+        assert!(!front.contains("mcp__rtok__"), "{front}: unscoped MCP name");
+    }
+
     // --- T139: `plugin()` decision logic — installed/known-marketplace/fresh, no real `claude` ---
 
     fn plugin_dir(name: &str) -> std::path::PathBuf {
