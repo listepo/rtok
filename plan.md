@@ -52,7 +52,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T246.5 | todo | P1 | 2 | 0% | |
 | T250.3 | todo | P1 | 3 | 0% | |
 | T246.6 | todo | P1 | 3 | 0% | |
-| T261 | in progress | P2 | 3 | 5% | Claude Code / claude-opus-5-5 |
+| T261 | in progress | P2 | 3 | 80% | Claude Code / claude-opus-5-5 |
 
 
 ### T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
