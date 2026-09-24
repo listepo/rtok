@@ -111,6 +111,7 @@ not (
   | (binary(filter) & test(=opencode_plugin_unit_test_with_api_mock))
   | test(/^plugins::cmd::run::tests::(one_arg_compound_command_runs_as_one_script|exit_3_is_preserved|printf_two_lines_exit_0_no_trailer|three_runs_stats_plugin_cmd_json_has_rows)$/)
   | test(=plugins::cmd::formatters::tests::ten_families_and_aws_key_unredacted)
+  | test(=agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config)
   | test(=plugins::cmd::run::tests::identical_output_from_different_commands_dedups)
   | test(=plugins::read::cache::tests::vfs_small_change_is_hunks_large_is_full_missing_archive_is_full)
   | (binary(agent_remove) & test(=uninstall_clears_the_installed_marks_over_a_materialized_plugin_copy))
