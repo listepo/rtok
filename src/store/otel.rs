@@ -170,13 +170,22 @@ impl Store {
         .load(&mut *conn)?)
     }
 
+    /// T207: reads [`Store::measurement_totals`] instead of its own raw `GROUP BY` — the
+    /// Diesel DSL expresses this aggregate fine, so the raw SQL was the one thing here
+    /// the crate rule (no raw SQL where the DSL can say it) didn't actually need. An
+    /// `expand` group's `saved` comes out negative (retrieval costs tokens, same as
+    /// `ReportSavings::saved`), not dropped — the exporter reports the cost, not just
+    /// the win.
     pub fn otel_saved_totals(&self) -> Result<Vec<SavedTotal>> {
-        let mut conn = self.lock()?;
-        Ok(sql_query(
-            "SELECT plugin, kind, COALESCE(SUM(est_before - est_after),0) AS saved
-             FROM measurements GROUP BY plugin, kind ORDER BY plugin, kind",
-        )
-        .load(&mut *conn)?)
+        Ok(self
+            .measurement_totals()?
+            .into_iter()
+            .map(|t| SavedTotal {
+                plugin: t.plugin,
+                kind: t.kind,
+                saved: t.est_before - t.est_after,
+            })
+            .collect())
     }
 
     pub fn otel_call_totals(&self) -> Result<Vec<CallTotal>> {

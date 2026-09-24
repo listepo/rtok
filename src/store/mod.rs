@@ -611,6 +611,22 @@ impl Store {
         Ok(tokens::table.count().get_result(&mut *conn)?)
     }
 
+    /// Whole-`measurements`-ledger row count (T207): `report_window`'s "measurements"
+    /// figure, replacing a per-catalogue-plugin `list_measurements` loop that missed
+    /// out-of-tree/WASM plugins and cost an N+1.
+    pub fn count_measurements(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(measurements::table.count().get_result(&mut *conn)?)
+    }
+
+    /// Whole-`usage`-ledger row count (T207): `report_window`'s "usage" figure,
+    /// replacing a per-session `usage_rows` loop (an N+1 for no reason — the loop never
+    /// used anything but the row count).
+    pub fn count_usage(&self) -> Result<i64> {
+        let mut conn = self.lock()?;
+        Ok(usage::table.count().get_result(&mut *conn)?)
+    }
+
     #[cfg(test)]
     pub fn count_calls(&self) -> Result<i64> {
         let mut conn = self.lock()?;
@@ -1437,6 +1453,40 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Rows and est_before/est_after summed per `(plugin, kind)`, across every plugin the
+    /// ledger has ever seen — not just the catalogue (T207). The one aggregate
+    /// `report_window`, `report_savings`, `otel_saved_totals` and both `plugin_stats`
+    /// read instead of each hand-rolling its own sum (or, for `otel_saved_totals`,
+    /// dropping to raw SQL); callers decide what an `expand` group means (a cost, not a
+    /// saving — `ReportSavings::saved`'s contract), this is just the read.
+    pub fn measurement_totals(&self) -> Result<Vec<MeasurementTotal>> {
+        use diesel::dsl::{count_star, sum};
+        let mut conn = self.lock()?;
+        let rows = measurements::table
+            .group_by((measurements::plugin, measurements::kind))
+            .select((
+                measurements::plugin,
+                measurements::kind,
+                count_star(),
+                sum(measurements::est_before),
+                sum(measurements::est_after),
+            ))
+            .order((measurements::plugin, measurements::kind))
+            .load::<(String, String, i64, Option<i64>, Option<i64>)>(&mut *conn)?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(plugin, kind, rows, est_before, est_after)| MeasurementTotal {
+                    plugin,
+                    kind,
+                    rows,
+                    est_before: est_before.unwrap_or(0),
+                    est_after: est_after.unwrap_or(0),
+                },
+            )
+            .collect())
+    }
+
     /// Per `(project, kind)` note counts for `memory status` (T69.4).
     pub fn memory_note_aggs(&self, project: Option<&str>) -> Result<Vec<MemoryNoteKindAgg>> {
         use diesel::IntoSql;
@@ -2248,6 +2298,16 @@ pub struct MeasRow {
     pub est_before: i32,
     pub est_after: i32,
     pub ref_id: Option<String>,
+}
+
+/// One `(plugin, kind)` group from [`Store::measurement_totals`] (T207).
+#[derive(Debug, Clone)]
+pub struct MeasurementTotal {
+    pub plugin: String,
+    pub kind: String,
+    pub rows: i64,
+    pub est_before: i64,
+    pub est_after: i64,
 }
 
 /// Aggregated usage totals grouped by API (T11.6).

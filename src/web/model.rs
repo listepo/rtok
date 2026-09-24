@@ -71,7 +71,7 @@ pub struct Snapshot {
 }
 
 /// The shared stats widget: `usage` rows for the overview, `Measurement` rows per plugin.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize)]
 pub struct Stats {
     pub input: i64,
     pub output: i64,
@@ -377,10 +377,13 @@ pub fn stats_report(cfg: &Config) -> Result<stats::Report> {
 pub fn plugin_stats(cfg: &Config, plugin: &str) -> Result<Value> {
     let store = Store::open(&cfg.core.db_path)?;
     let rows = store.list_measurements(plugin)?;
+    // `archive_hits` still isolates the expand-rate metric, but `rows` no longer drops
+    // expand rows from the listing (T207): they are a cost, not a saving, so they count
+    // negative (`ReportSavings::saved`'s contract) rather than being hidden — dropping
+    // them here made this page's row count disagree with the Plugins page's.
     let archive_hits = rows.iter().filter(|r| r.kind == "expand").count();
     let rows: Vec<Value> = rows
         .into_iter()
-        .filter(|r| r.kind != "expand")
         .map(|r| {
             json!({
                 "kind": r.kind,
@@ -462,7 +465,8 @@ pub struct ReportSavings {
 
 #[derive(Debug, Serialize)]
 pub struct ReportSavingsSection {
-    /// One row per catalogue plugin with at least one `Measurement` row.
+    /// One row per plugin with at least one `Measurement` row — every plugin the
+    /// ledger has seen, not just the catalogue (T207).
     pub rows: Vec<ReportSavings>,
     pub total_rows: u64,
     pub total_saved: i64,
@@ -596,19 +600,14 @@ fn report_window(
     let span = i64::try_from(stats::parse_since(&since)?.as_secs()).unwrap_or(i64::MAX);
     let from_unix = to_unix.saturating_sub(span);
     let date = |secs: i64| crate::log::stamp(secs.max(0) as u64)[..10].to_string();
-    let mut measurements = 0;
-    for (id, _) in crate::config::CATALOGUE {
-        measurements += store.list_measurements(id)?.len() as u64;
-    }
-    let mut usage = 0;
-    for session in store.usage_sessions()? {
-        usage += store.usage_rows(&session)?.len() as u64;
-    }
     Ok(ReportWindow {
         calls_in_window: calls.iter().filter(|c| c.ts >= from_unix).count() as u64,
         calls_total: calls.len() as u64,
-        measurements,
-        usage,
+        // T207: one `COUNT(*)` each, the whole ledger — the old per-catalogue-plugin
+        // and per-session loops undercounted (out-of-tree plugins never showed up
+        // despite the "Whole-ledger counts" label below) and cost an N+1 per report.
+        measurements: store.count_measurements()? as u64,
+        usage: store.count_usage()? as u64,
         since,
         from_unix,
         to_unix,
@@ -619,30 +618,35 @@ fn report_window(
 }
 
 fn report_savings(store: &Store) -> Result<ReportSavingsSection> {
-    let mut rows = Vec::new();
+    // T207: one grouped read for every plugin the ledger has ever recorded a
+    // `Measurement` for — not just the catalogue, so out-of-tree/WASM plugins count —
+    // folded from (plugin, kind) down to (plugin). `saved` keeps an `expand` group
+    // negative (`ReportSavings::saved`'s contract): it is a cost, not a saving, so it
+    // nets out of the total instead of being dropped from it.
+    let mut by_plugin: BTreeMap<String, (i64, i64, i64)> = BTreeMap::new();
     let mut kinds = std::collections::BTreeSet::new();
-    let (mut total_rows, mut total_saved) = (0u64, 0i64);
-    for (id, _) in crate::config::CATALOGUE {
-        let ms = store.list_measurements(id)?;
-        if ms.is_empty() {
-            continue;
-        }
-        let (mut before, mut after) = (0i64, 0i64);
-        for m in &ms {
-            before += i64::from(m.est_before);
-            after += i64::from(m.est_after);
-            kinds.insert(m.kind.clone());
-        }
-        total_rows += ms.len() as u64;
-        total_saved += before - after;
-        rows.push(ReportSavings {
-            plugin: (*id).to_string(),
-            rows: ms.len() as u64,
-            est_before: before,
-            est_after: after,
-            saved: before - after,
-        });
+    for t in store.measurement_totals()? {
+        kinds.insert(t.kind);
+        let e = by_plugin.entry(t.plugin).or_insert((0, 0, 0));
+        e.0 += t.rows;
+        e.1 += t.est_before;
+        e.2 += t.est_after;
     }
+    let (mut total_rows, mut total_saved) = (0u64, 0i64);
+    let rows = by_plugin
+        .into_iter()
+        .map(|(plugin, (n, before, after))| {
+            total_rows += n as u64;
+            total_saved += before - after;
+            ReportSavings {
+                plugin,
+                rows: n as u64,
+                est_before: before,
+                est_after: after,
+                saved: before - after,
+            }
+        })
+        .collect();
     Ok(ReportSavingsSection {
         rows,
         total_rows,
@@ -1321,6 +1325,9 @@ impl<'a> Model<'a> {
 
     /// Plugins: the catalogue, each with its page and — when it saves tokens — its stats.
     pub fn plugins(&self) -> Vec<PluginPage> {
+        // T207: one grouped read for the whole page instead of a `list_measurements`
+        // per catalogue plugin — the N+1 `report_savings` had too, and the same read.
+        let totals = self.plugin_stat_totals();
         Registry::new(self.cfg)
             .pages()
             .into_iter()
@@ -1347,25 +1354,34 @@ impl<'a> Model<'a> {
                     summary: page.summary,
                     saves_tokens: page.saves_tokens,
                     fields: page.fields,
-                    stats: page.saves_tokens.then(|| self.plugin_stats(m.id)),
+                    stats: page
+                        .saves_tokens
+                        .then(|| totals.get(m.id).copied().unwrap_or_default()),
                 }
             })
             .collect()
     }
 
-    fn plugin_stats(&self, id: &str) -> Stats {
-        let mut s = Stats::default();
+    /// `rows`/est_before/est_after per plugin, every `Measurement` kind summed in — an
+    /// `expand` row counts negative here too (`ReportSavings::saved`'s contract), the
+    /// same [`Store::measurement_totals`] read `report_savings` builds its rows from, so
+    /// the Plugins page and `rtok report` cannot disagree about one plugin's rows again
+    /// (T207).
+    fn plugin_stat_totals(&self) -> BTreeMap<String, Stats> {
+        let mut by = BTreeMap::new();
         let Some(store) = self.store else {
-            return s;
+            return by;
         };
-        if let Ok(rows) = store.list_measurements(id) {
-            s.rows = rows.len() as u64;
-            for r in rows {
-                s.est_before += i64::from(r.est_before);
-                s.est_after += i64::from(r.est_after);
-            }
+        let Ok(totals) = store.measurement_totals() else {
+            return by;
+        };
+        for t in totals {
+            let s: &mut Stats = by.entry(t.plugin).or_default();
+            s.rows += t.rows as u64;
+            s.est_before += t.est_before;
+            s.est_after += t.est_after;
         }
-        s
+        by
     }
 
     /// Logs page (T15.11): the last `n` log lines, newest first — `[log] lines` when
@@ -1547,6 +1563,61 @@ mod tests {
         let stats = cmd.stats.as_ref().unwrap();
         assert_eq!(stats.est_before, 25);
         assert_eq!(stats.est_after, 10);
+    }
+
+    /// T207's Check: `Store::measurement_totals`'s `GROUP BY` against the per-row loop it
+    /// replaced, at a size the old per-plugin `list_measurements` N+1 would make slow —
+    /// several plugins (one outside the catalogue), several kinds, `expand` included.
+    #[test]
+    fn plugin_stats_matches_sql_aggregates_on_10k_rows() {
+        let cx = Runtime::in_memory("dash-10k").unwrap();
+        let plugins = ["cmd", "archive", "wasm_widget"];
+        let kinds = ["filter", "expand", "rule"];
+        for i in 0..10_000i64 {
+            cx.record(&Measurement {
+                plugin: plugins[(i % plugins.len() as i64) as usize],
+                kind: kinds[(i % kinds.len() as i64) as usize],
+                before_bytes: 100,
+                after_bytes: 40,
+                est_before: (i % 50) as u32 + 1,
+                est_after: (i % 20) as u32,
+                ref_id: None,
+                call_id: None,
+            })
+            .unwrap();
+        }
+
+        // The naive per-row aggregate every one of the three callers used to hand-roll.
+        let mut want: BTreeMap<(String, String), (i64, i64, i64)> = BTreeMap::new();
+        for plugin in plugins {
+            for m in cx.store.list_measurements(plugin).unwrap() {
+                let e = want
+                    .entry((plugin.to_string(), m.kind.clone()))
+                    .or_insert((0, 0, 0));
+                e.0 += 1;
+                e.1 += i64::from(m.est_before);
+                e.2 += i64::from(m.est_after);
+            }
+        }
+        let got: BTreeMap<(String, String), (i64, i64, i64)> = cx
+            .store
+            .measurement_totals()
+            .unwrap()
+            .into_iter()
+            .map(|t| ((t.plugin, t.kind), (t.rows, t.est_before, t.est_after)))
+            .collect();
+        assert_eq!(got, want);
+
+        // The Plugins page sums the same read across kinds, per plugin (T207).
+        let totals = Model::new(&cx.config, Some(&cx.store)).plugin_stat_totals();
+        for plugin in ["cmd", "archive"] {
+            let want_plugin = want.iter().filter(|((p, _), _)| p == plugin).fold(
+                (0u64, 0i64, 0i64),
+                |(rows, before, after), (_, (n, b, a))| (rows + *n as u64, before + b, after + a),
+            );
+            let s = totals.get(plugin).unwrap();
+            assert_eq!((s.rows, s.est_before, s.est_after), want_plugin, "{plugin}");
+        }
     }
 
     /// T15.3's Check: the Overview page carries the store's own sums — totals, CTT and

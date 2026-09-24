@@ -623,3 +623,75 @@ fn healthy_store_has_no_recommendations() {
 
     let _ = fs::remove_dir_all(&h);
 }
+
+/// T207's Check: a non-catalogue (out-of-tree/WASM-shaped) plugin's rows and an
+/// `expand` row must not make `report_window`, `report_savings` and the OTLP exporter's
+/// `otel_saved_totals` disagree, and the CLI's and dashboard's `plugin_stats` must count
+/// the same rows for one plugin.
+#[test]
+fn report_totals_agree_with_the_store_and_otel_export() {
+    let h = home("t207-totals");
+    let cfg = rtok::config::Config::load_from(&h).expect("config");
+    let store = rtok::store::Store::open(&cfg.core.db_path).expect("store");
+    store
+        .upsert_session("s1", None, None, None, Some("proxy"))
+        .unwrap();
+    for (plugin, kind, est_before, est_after) in [
+        ("cmd", "filter", 25, 10),
+        // Out-of-tree/WASM plugins are not in `crate::config::CATALOGUE` — the bug
+        // T207 fixes is that these rows used to vanish from the report entirely.
+        ("wasm_widget", "raw", 8, 8),
+        // A cost, not a saving: `est_after` > `est_before`.
+        ("archive", "expand", 0, 16),
+    ] {
+        store
+            .insert_measurement(
+                "s1",
+                &rtok::Measurement {
+                    plugin,
+                    kind,
+                    before_bytes: 100,
+                    after_bytes: 40,
+                    est_before,
+                    est_after,
+                    ref_id: None,
+                    call_id: None,
+                },
+            )
+            .unwrap();
+    }
+
+    let ledgers = rtok::web::model::report_ledgers(&cfg).expect("report ledgers");
+    assert_eq!(
+        ledgers.window.measurements,
+        store.count_measurements().unwrap() as u64,
+        "report_window.measurements is the whole ledger, not just the catalogue"
+    );
+    let otel_saved: i64 = store
+        .otel_saved_totals()
+        .unwrap()
+        .iter()
+        .map(|r| r.saved)
+        .sum();
+    assert_eq!(
+        ledgers.savings.total_saved, otel_saved,
+        "report_savings and the OTLP export must sum the same ledger the same way"
+    );
+
+    // The CLI's `stats --plugin <id>` and the dashboard's Plugins page must agree on
+    // row counts — including "archive", whose only row here is the `expand` one.
+    let dash = rtok::web::model::Model::new(&cfg, Some(&store)).plugins();
+    for id in ["cmd", "archive"] {
+        let cli = rtok::web::model::plugin_stats(&cfg, id).unwrap();
+        let cli_rows = cli["rows"].as_array().unwrap().len() as u64;
+        let dash_rows = dash
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.stats.as_ref())
+            .unwrap()
+            .rows;
+        assert_eq!(cli_rows, dash_rows, "{id}");
+    }
+
+    let _ = fs::remove_dir_all(&h);
+}
