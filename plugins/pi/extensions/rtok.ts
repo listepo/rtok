@@ -65,6 +65,13 @@ function rtok(args, input, signal) {
 function hintMissing(pi) {
   if (pi._rtokHinted) return;
   pi._rtokHinted = true;
+  // T48.2 / I-36: the hint must reach the model through `pi.sendMessage`
+  // (LLM context), not `pi.appendEntry` (TUI-only, invisible to the model).
+  // Older pi builds without `sendMessage` still get the TUI entry.
+  if (typeof pi.sendMessage === "function") {
+    pi.sendMessage({ customType: "rtok-missing", content: KETCH_HINT, display: true });
+    return;
+  }
   pi.appendEntry?.("system", KETCH_HINT);
 }
 
@@ -101,7 +108,10 @@ export default function (pi) {
       event?.signal,
     );
     if (g.missing) {
-      if (event.toolName === "bash") pi.appendEntry?.("system", KETCH_HINT);
+      // Route through the same once-per-session guard as `tool_result`'s
+      // hint (T195): a raw `appendEntry` here bypassed `hintMissing` and
+      // appended one TUI entry per bash call instead of once.
+      if (event.toolName === "bash") hintMissing(pi);
     } else if (!g.failed) {
       try {
         const v = JSON.parse(g.stdout);

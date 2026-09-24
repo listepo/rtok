@@ -17,13 +17,17 @@ function load(body: string | null, extra: Record<string, unknown> = {}) {
   const on: Record<string, Handler> = {};
   const entries: [string, string][] = [];
   const tools: any[] = [];
+  const messages: any[] = [];
   extension({
     on: (name: string, fn: Handler) => (on[name] = fn),
     appendEntry: (kind: string, text: string) => entries.push([kind, text]),
     registerTool: (t: any) => tools.push(t),
+    // The T195 hint reaches the model via `sendMessage`; pass
+    // `{ sendMessage: undefined }` in `extra` to test the appendEntry fallback.
+    sendMessage: (m: any) => messages.push(m),
     ...extra,
   });
-  return { on, entries, tools };
+  return { on, entries, tools, messages };
 }
 
 test("bash calls are rewritten to one quoted `rtok run --`", async () => {
@@ -75,7 +79,7 @@ test("a small read result stays byte-identical", async () => {
 });
 
 test("a spawn failure on read returns the original", async () => {
-  const { on, entries } = load(null);
+  const { on, entries, messages } = load(null);
   expect(
     await on.tool_result({
       toolName: "read",
@@ -83,19 +87,32 @@ test("a spawn failure on read returns the original", async () => {
       content: [{ text: "whole file" }],
     }),
   ).toBeUndefined();
-  expect(entries).toHaveLength(1);
-  expect(entries[0][1]).toMatch(/ketch install listepo\/rtok/);
+  expect(messages, "the hint reaches the model via sendMessage").toHaveLength(1);
+  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install listepo\/rtok/);
+  expect(entries, "TUI-only appendEntry stays unused when sendMessage exists").toHaveLength(0);
 });
 
 test("missing rtok fails open and names ketch", async () => {
-  const { on, entries } = load(null);
+  const { on, entries, messages } = load(null);
   const event = { toolName: "bash", input: { command: "ls" } };
   await on.tool_call(event);
   expect(event.input.command, "the command runs unchanged").toBe("ls");
-  expect(entries).toHaveLength(1);
-  expect(entries[0][1]).toMatch(/ketch install listepo\/rtok/);
+  expect(messages, "the hint reaches the model via sendMessage").toHaveLength(1);
+  expect(String(messages[0]?.content ?? "")).toMatch(/ketch install listepo\/rtok/);
+  expect(entries, "TUI-only appendEntry stays unused when sendMessage exists").toHaveLength(0);
+  await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
+  expect(messages, "once per session").toHaveLength(1);
   const result = await on.tool_result({ toolName: "bash", content: [{ text: "big" }] });
   expect(result, "the result passes through").toBeUndefined();
+});
+
+test("without sendMessage the hint falls back to appendEntry once", async () => {
+  const { on, entries, messages } = load(null, { sendMessage: undefined });
+  await on.tool_call({ toolName: "bash", input: { command: "ls" } });
+  await on.tool_call({ toolName: "bash", input: { command: "pwd" } });
+  expect(messages).toHaveLength(0);
+  expect(entries).toHaveLength(1);
+  expect(entries[0][1]).toMatch(/ketch install listepo\/rtok/);
 });
 
 test("a shorter filter result replaces the bash output", async () => {
@@ -142,6 +159,38 @@ test("an rtok that exits before reading stdin keeps the original (EPIPE fails op
   const result = await on.tool_result({ toolName: "bash", content: [{ type: "text", text }] });
   expect(result, "the result passes through unchanged").toBeUndefined();
 });
+
+test("a stub exiting 1 after partial stdout keeps the original (fail open, D1)", async () => {
+  const { on } = load(`process.stdout.write("truncated [rtok expand abc]");\nprocess.exit(1);`);
+  const result = await on.tool_result({
+    toolName: "bash",
+    content: [{ type: "text", text: "line\n".repeat(50) }],
+  });
+  expect(result, "a non-zero exit must not replace the result with partial stdout").toBeUndefined();
+});
+
+test("an abort-killed rtok keeps the original", async () => {
+  fakeHangingRtok();
+  const on: Record<string, Handler> = {};
+  extension({ on: (name: string, fn: Handler) => (on[name] = fn) });
+  const controller = new AbortController();
+  const start = Date.now();
+  // "grep" (not "bash"/"read"/"edit"/"write") skips the unabortable
+  // PostToolUse hook call and goes straight to the filter call, which
+  // does carry `event.signal`.
+  const promise = on.tool_result({
+    toolName: "grep",
+    input: { pattern: "foo" },
+    content: [{ type: "text", text: "original output" }],
+    signal: controller.signal,
+  });
+  controller.abort();
+  const result = await promise;
+  expect(result, "an aborted spawn must not replace the result").toBeUndefined();
+  // Well under the 30 s hang and the 5 s spawn timeout: the abort signal, not
+  // the timeout, must be what ends the child.
+  expect(Date.now() - start).toBeLessThan(4_000);
+}, 10_000);
 
 /** The `archive rewrite --stdin` fake: rewrites the first large toolResult to a pointer. */
 const ARCHIVE_REWRITES = `
