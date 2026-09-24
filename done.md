@@ -5630,3 +5630,14 @@ Result: under `Mode::Update`, with `rtok@rtok` installed and the `rtok` marketpl
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+
+### T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
+
+After T242.2. Under `Mode::Update` with `rtok@rtok` in Codex's config: `codex plugin marketplace upgrade rtok`, then `plugin remove` + `plugin add` only if the upgrade fails. Fake `codex` learns `marketplace upgrade`. Check: argv log for both paths, `config.toml` tables intact.
+
+Plan: codex-cli 0.155.1 has no `plugin update`; in a scratch `CODEX_HOME` (2026-09-24) `plugin marketplace upgrade rtok` re-materialised both the marketplace snapshot and the installed cache `plugins/cache/rtok/rtok/<version>/`, but writes nothing to `config.toml` and keeps the version dir, so the evidence of a change is the cache tree's bytes. `src/agents/codex/mod.rs`: `plugin_update` runs the upgrade, compares the cache tree before/after (unchanged → `NO_CHANGES`), and on failure reinstalls the whole chain (`plugin remove`, `marketplace remove`, `marketplace add`, `plugin add`) since a failed upgrade means a broken snapshot. Fake `codex` (sh + cmd) learns `marketplace upgrade rtok` (writes the cache file; fails when `$HOME/fake-codex-fail-upgrade` exists). e2e in `tests/agents_update.rs`: argv log for both paths, `already current` on rerun, config tables intact; plain install leaves an enabled plugin alone.
+
+Result: under `agents update`, an enabled Codex plugin from the GitHub marketplace runs `codex plugin marketplace upgrade rtok`; the installed cache's bytes before and after decide `~ plugin rtok@rtok updated` or `already current`. A failed upgrade reinstalls plugin and marketplace (`plugin remove`, `marketplace remove`, `marketplace add`, `plugin add`). Plain `install` still leaves an enabled plugin alone. Files: `src/agents/codex/mod.rs`, `src/agents/codex/README.md`, `tests/common/agents.rs` (fake `codex` learns `marketplace upgrade`), `tests/agents_update.rs` (3 e2e).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5

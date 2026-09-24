@@ -171,7 +171,8 @@ fn raw_with_path(args: &[&str], cfg: &Path, home: &Path, path: std::ffi::OsStrin
 /// `${CODEX_HOME:-$HOME/.codex}/config.toml`'s `[marketplaces.rtok]` / `[plugins."rtok@rtok"]`
 /// tables the way `codex plugin marketplace add|remove` / `plugin add|remove` do, including the
 /// real CLI's "already added from a different source" error on a second `marketplace add` with
-/// a different source. A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
+/// a different source; `marketplace upgrade rtok` rewrites the installed cache's `.mcp.json`
+/// (fails while `<home>/fake-codex-fail-upgrade` exists, T242.4). A shell script on Unix; on Windows a `.cmd` shim (the same shape npm
 /// installs the real CLI as), which `agents::run_cli`'s `cmd /C` wrapper (T139 windows fix)
 /// resolves the way it resolves the real thing.
 /// A fake `copilot` beside the fake `claude`, so `rtok()`'s PATH picks it up: logs every
@@ -349,6 +350,11 @@ case "$*" in
   "plugin add rtok@rtok")
     grep -q '^\[plugins\."rtok@rtok"\]$' "$cfg" 2>/dev/null || printf '\n[plugins."rtok@rtok"]\nenabled = true\n' >> "$cfg"
     ;;
+  "plugin marketplace upgrade rtok")
+    [ -e "$HOME/fake-codex-fail-upgrade" ] && { echo "rtok: upgrade failed" >&2; exit 1; }
+    d="$(dirname "$cfg")/plugins/cache/rtok/rtok/0.0.1"
+    mkdir -p "$d" && echo upgraded > "$d/.mcp.json"
+    ;;
   "plugin remove rtok@rtok")
     awk '/^\[plugins\."rtok@rtok"\]$/{skip=1;next} /^\[/{skip=0} !skip' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
     ;;
@@ -383,6 +389,13 @@ if "%ALLARGS%"=="plugin add rtok@rtok" (
   findstr /c:"[plugins.\"rtok@rtok\"]" "%CFG%" >nul 2>&1 || (
     >>"%CFG%" echo([plugins."rtok@rtok"]
     >>"%CFG%" echo enabled = true
+  )
+)
+if "%ALLARGS%"=="plugin marketplace upgrade rtok" (
+  if exist "%HOME%\fake-codex-fail-upgrade" (echo rtok: upgrade failed 1>&2 & exit /b 1)
+  for %%F in ("%CFG%") do (
+    if not exist "%%~dpFplugins\cache\rtok\rtok\0.0.1" mkdir "%%~dpFplugins\cache\rtok\rtok\0.0.1"
+    >"%%~dpFplugins\cache\rtok\rtok\0.0.1\.mcp.json" echo upgraded
   )
 )
 if "%ALLARGS%"=="plugin remove rtok@rtok" (

@@ -79,7 +79,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T223 | todo | P3 | 2 | 0% | |
 | T224 | todo | P3 | 1 | 0% | |
 | T235 | todo | P1 | 3 | 0% | |
-| T242.4 | todo | P2 | 3 | 0% | |
 | T242.5 | todo | P2 | 3 | 0% | |
 | T226 | todo | P2 | 2 | 0% | |
 | T228 | todo | P2 | 2 | 0% | |
@@ -879,10 +878,6 @@ Findings from a load incident on the creator's machine (16 cores, load average ~
 - An `apps/rtok/target/debug/rtok logs watch --lines 5` had been running for 5.5 days with ppid 1: `logs watch` does not exit when the terminal or agent that started it goes away.
 
 Done means: `rtok run` waits for the wrapped process, not for EOF — once the child exits it reaps it, drains what is already buffered (short bounded wait) and returns the child's exit code even if a descendant still holds the pipe, covered by a test that spawns a detached grandchild; `rtok run` starts no login shell unless something it needs comes only from the login profile (decide and record why; measure the per-call saving with hyperfine on idle and on a loaded host); `rtok logs watch` exits when its parent dies or its stdout closes (SIGHUP/SIGPIPE, or ppid becoming 1), covered by a test.
-
-### T242.4. Codex plugin: `marketplace upgrade`, reinstall on failure
-
-After T242.2. Under `Mode::Update` with `rtok@rtok` in Codex's config: `codex plugin marketplace upgrade rtok`, then `plugin remove` + `plugin add` only if the upgrade fails. Fake `codex` learns `marketplace upgrade`. Check: argv log for both paths, `config.toml` tables intact.
 
 ### T242.5. Cursor, Kimi and Gemini hooks: refresh stale rtok entries on install/update
 
