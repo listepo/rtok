@@ -15,6 +15,7 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T83.13 | todo | P1 | 3 | 0% | |
 | T83.14 | todo | P1 | 3 | 0% | |
 | T83.15 | todo | P1 | 3 | 0% | |
+| T83.16 | in progress | P1 | 2 | 60% | Claude Code / claude-opus-5-5 |
 | T87 | in progress | P1 | 2 | 70% | Claude Code / claude-fable-5-1 |
 | T88 | todo | P1 | 2 | 0% | |
 | T89 | todo | P1 | 3 | 0% | |
@@ -93,6 +94,14 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 ### T83.15. `otel::stop_hook_spawns_the_flush_and_stays_under_10ms` fails on Windows (`SessionEnd set ended_at`)
 
 From run 36046793837 (PR #335, 2026-09-24); the test passed in PR #336's `windows` job, which dropped its filter (T83.9), so it is intermittent. The `Stop` hook's flush child is still running when the `SessionEnd` hook fires; on Windows the child likely holds the store file, the `SessionEnd` write fails open, and `ended_at` stays empty. Find which write loses (store busy timeout, file lock), make `SessionEnd` survive a concurrent flush child, and drop the test from the `cfg(windows)` filter.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+### T83.16. `plugins::read::search::tests::search_fn_main_finds_src_main` fails on Windows (`src\main.rs`)
+
+From run 36047996475's `windows` job (PR #352, 2026-09-24). `search` and `tree` print paths through `Path::display`, so Windows shows `src\main.rs` and the test, like any agent pasting the path into another tool call, looks for `src/main.rs`. It passed before only while some other hit line happened to contain `src/main.rs` inside the `search_max` cap.
+
+Plan: `display_rel` in `src/plugins/read/search.rs` turns `\` into `/` on Windows only (`\` is a legal file-name byte on Unix); the existing case-insensitive test already accepts either spelling.
 
 Check: the test passes in the `windows` CI job; `just check` stays green.
 
