@@ -346,15 +346,15 @@ agents
     proxy   not supported: Grok Build providers live in its own settings tables; setup does not edit them
     plugin  not installed (--yes)
   vscode (desktop)
-    hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    hooks   not supported: no direct hooks file rtok writes; the linked plugin's hooks/hooks.json is what VS Code's Local harness runs (chat.useClaudeHooks)
     mcp     not installed
     proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
-    plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
+    plugin  not installed (--yes)
   vscode (desktop)
-    hooks   not supported: VS Code agent hooks use Claude-format I/O; T46.3 copilot mapping serves only the Copilot CLI camelCase hooks in ~/.copilot/hooks/rtok.json
+    hooks   not supported: no direct hooks file rtok writes; the linked plugin's hooks/hooks.json is what VS Code's Local harness runs (chat.useClaudeHooks)
     mcp     not installed
     proxy   not supported: Copilot in VS Code has no documented base-URL setting to point at the proxy
-    plugin  not supported: VS Code loads MCP from the user mcp.json; there is no local plugin directory to link
+    plugin  not installed (--yes)
   copilot (cli)
     hooks   not installed
     mcp     not installed
