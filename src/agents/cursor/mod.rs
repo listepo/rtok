@@ -303,7 +303,9 @@ fn strip_ours(apply: &Apply, path: &Path, root: &mut Value) -> String {
         let before = arr.len();
         arr.retain(|e| {
             let unchanged = e.as_object().is_some_and(|o| o.len() == 1)
-                && e["command"].as_str().is_some_and(|c| c.ends_with(&suffix));
+                && e["command"].as_str().is_some_and(|c| {
+                    c.ends_with(&suffix) || c == hook_cmd("rtok", rtok_event, None)
+                });
             let at = || format!("hooks.{event} in {}", path.display());
             !is_ours(e) || !super::takes_hook(apply, unchanged, at, &mut kept)
         });
