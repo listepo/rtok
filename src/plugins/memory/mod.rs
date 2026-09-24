@@ -38,7 +38,11 @@ impl Plugin for Memory {
             ToolDef {
                 name: "mem_save",
                 description: "Save a note; same project+kind+title updates it.",
-                input_schema: json!({"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"project":{"type":"string"}},"required":["kind","title","body"]}),
+                // `kind` is not in `required`: the handler defaults it to "note" (a real,
+                // intentional default), unlike `title`/`body`, which the handler used to
+                // coerce to "" on omission — silently storing a broken note instead of
+                // rejecting the call (T213).
+                input_schema: json!({"type":"object","properties":{"kind":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"project":{"type":"string"}},"required":["title","body"]}),
             },
             ToolDef {
                 name: "mem_search",
