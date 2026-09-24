@@ -4,7 +4,7 @@ stdout = """
 target/tmp/t60-2-config-init.toml
 --- a/target/tmp/t60-2-config-init.toml
 +++ b/target/tmp/t60-2-config-init.toml
-@@ -0,0 +1,306 @@
+@@ -0,0 +1,307 @@
 +# rtok configuration. Every CLI flag has a key here; flags and RTOK_* env vars override.
 +# Precedence: defaults < this file < <git root>/.rtok.toml < env < flags.
 +# Docs: docs/config.md. Check: `rtok config validate`. Where a value came from: `rtok config show --sources`.
@@ -15,6 +15,7 @@ target/tmp/t60-2-config-init.toml
 +archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
 +session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 +call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
++hook_max_input_bytes = 8388608        # rtok hook <event> stdin cap (8 MiB); over it, exits 0 unmodified, no archiving or hashing (T201)
 +retain_calls_days    = 30             # 0 = keep `calls` forever
 +
 +[log]                                 # rtok's own log (D26); `rtok logs` reads it

@@ -56,6 +56,7 @@ Every effective key with its origin — the `config show --sources` page.
 | core.call_io_inline_bytes | 65536 | default |
 | core.db_path | ~/.rtok/rtok.db | default |
 | core.enabled | true | default |
+| core.hook_max_input_bytes | 8388608 | default |
 | core.retain_calls_days | 30 | default |
 | core.session_env | CLAUDE_SESSION_ID | default |
 | demon.backoff_ms | 1000 | default |
@@ -255,7 +256,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-209 keys.
+210 keys.
 
 ## Doctor
 

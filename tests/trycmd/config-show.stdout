@@ -9,6 +9,7 @@ core.archive_dir = ~/.rtok/archive
 core.call_io_inline_bytes = 65536
 core.db_path = ~/.rtok/rtok.db
 core.enabled = true
+core.hook_max_input_bytes = 8388608
 core.retain_calls_days = 30
 core.session_env = CLAUDE_SESSION_ID
 demon.backoff_ms = 1000

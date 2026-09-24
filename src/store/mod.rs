@@ -545,6 +545,20 @@ impl Store {
             .unwrap_or((None, None)))
     }
 
+    /// T201: the sha256 columns beside [`Self::call_io_archives`] — `NULL` for a body
+    /// `spill` never archived (over `inline_cap` with `archive_dir = None`, the hook path),
+    /// so a caller can tell "never hashed" from "hashed and inlined".
+    #[cfg(test)]
+    pub fn call_io_shas(&self, call_id: i32) -> Result<(Option<String>, Option<String>)> {
+        let mut conn = self.lock()?;
+        Ok(call_io::table
+            .filter(call_io::call_id.eq(call_id))
+            .select((call_io::request_sha256, call_io::response_sha256))
+            .first::<(Option<String>, Option<String>)>(&mut *conn)
+            .optional()?
+            .unwrap_or((None, None)))
+    }
+
     /// Archive ids a Calls row can expand (T60.4): spilled `call_io` body first,
     /// else a `measurements.ref_id` on that call. One pair of queries for the
     /// page, so the snapshot does not N+1 on a tick.
@@ -781,22 +795,25 @@ impl Store {
             let (text, sha, raw) = inline_body(body);
             return Ok((Some(text), None, n, Some(sha), None, false, raw));
         }
-        // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
-        // The archive file already holds the exact bytes, so no `raw` column is needed here.
+        // Over cap: metadata always. Archive only when a directory is supplied (never on
+        // hook) — T201: without one, the sha is never written or expanded from anywhere,
+        // so the hash itself is skipped too rather than paying a full pass over a body the
+        // hook path can only ever throw away. The archive file already holds the exact
+        // bytes, so no `raw` column is needed here.
+        let Some(dir) = archive_dir else {
+            return Ok((None, None, n, None, None, false, None));
+        };
         let sha = hex_sha256(body);
-        if let Some(dir) = archive_dir {
-            let (path, created) = write_archive_file(dir, &sha, body)?;
-            return Ok((
-                None,
-                Some(sha.clone()),
-                n,
-                Some(sha),
-                Some(path),
-                created,
-                None,
-            ));
-        }
-        Ok((None, None, n, Some(sha), None, false, None))
+        let (path, created) = write_archive_file(dir, &sha, body)?;
+        Ok((
+            None,
+            Some(sha.clone()),
+            n,
+            Some(sha),
+            Some(path),
+            created,
+            None,
+        ))
     }
 
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
@@ -3928,6 +3945,45 @@ mod tests {
             .unwrap();
         assert_eq!(session, "sess-a");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// T201: the hook path (`archive_dir = None`) never writes or expands a spilled body,
+    /// so `spill` must not pay a sha256 pass over it either — both sha columns land NULL,
+    /// same as `request_archive`/`response_archive`.
+    #[rstest]
+    fn spill_over_cap_without_archive_dir_skips_hashing() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_session("s", Some(1), None, None, None)
+            .unwrap();
+        let call_id = store
+            .insert_call("s", "hook", "hook", Some(1), None, None, None, None)
+            .unwrap();
+        let big = vec![b'x'; 70 * 1024];
+        store
+            .insert_call_io(call_id, Some(&big), Some(&big), 64 * 1024, None)
+            .unwrap();
+        let mut conn = store.lock().unwrap();
+        let row: (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = call_io::table
+            .filter(call_io::call_id.eq(call_id))
+            .select((
+                call_io::request_sha256,
+                call_io::response_sha256,
+                call_io::request_archive,
+                call_io::response_archive,
+            ))
+            .first(&mut *conn)
+            .unwrap();
+        assert_eq!(
+            row,
+            (None, None, None, None),
+            "over cap + no archive_dir must skip hashing, not just archiving"
+        );
     }
 
     #[test]

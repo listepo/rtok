@@ -97,6 +97,11 @@ section! {
         log_file: Option<PathBuf> = None,
         session_env: String = s("CLAUDE_SESSION_ID"),
         call_io_inline_bytes: u32 = 65536,
+        /// T201: `rtok hook <event>`'s stdin is bounded here before it is even parsed — a
+        /// body over this many bytes fails the hook open to `{}` (unmodified, one stderr
+        /// line) instead of paying a JSON-parse-plus-hashing cost that grows with the
+        /// payload (D1: ≤ 10 ms). 8 MiB default.
+        hook_max_input_bytes: u32 = 8_388_608,
         retain_calls_days: u32 = 30,
         /// Removed in T24.5: it is now `log.to_db`. Accepted from an old file with a
         /// warning, then dropped.

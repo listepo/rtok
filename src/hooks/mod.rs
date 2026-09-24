@@ -26,18 +26,39 @@ const LOCK_WAIT: crate::store::LockWait = crate::store::LockWait {
 /// Fail-open hook entry: always writes JSON and does not return `Err`.
 /// With `[hook] fail_open = false` (debugging only) errors surface as a panic
 /// instead of `{}` — the default `true` keeps the fail-open rule (D1).
+///
+/// T201: stdin used to be an unbounded `read_to_end`, so a multi-MB payload paid a JSON
+/// parse plus downstream hashing that grew linearly with its size — the ≤ 10 ms budget (D1)
+/// broke deterministically per MB. `core.hook_max_input_bytes` bounds the read via `Take`
+/// (one byte over the cap, so a body exactly at the limit is not mistaken for oversized);
+/// a body over it is discarded before it ever reaches the JSON parser and the hook fails
+/// open to `{}` unmodified, with one stderr line.
 pub fn run(event: &str, mut stdin: impl Read, mut stdout: impl Write, cfg: &Config) {
+    let max = u64::from(cfg.core.hook_max_input_bytes);
     if cfg.hook.fail_open {
         let mut buf = Vec::new();
-        let _ = stdin.read_to_end(&mut buf);
+        let _ = stdin.by_ref().take(max + 1).read_to_end(&mut buf);
+        if buf.len() as u64 > max {
+            eprintln!(
+                "rtok: hook {event} stdin over core.hook_max_input_bytes ({max} bytes); failing open"
+            );
+            let _ = stdout.write_all(b"{}");
+            return;
+        }
         let out = panic::catch_unwind(AssertUnwindSafe(|| dispatch_owned(&buf, event, cfg)))
             .unwrap_or_else(|_| b"{}".to_vec());
         let _ = stdout.write_all(&out);
     } else {
         let mut buf = Vec::new();
         stdin
+            .by_ref()
+            .take(max + 1)
             .read_to_end(&mut buf)
             .expect("rtok hook: stdin unreadable (fail_open = false)");
+        assert!(
+            buf.len() as u64 <= max,
+            "rtok hook: stdin over core.hook_max_input_bytes ({max} bytes, debugging only)"
+        );
         let out = dispatch_owned_strict(&buf, event, cfg).expect("rtok hook");
         let _ = stdout.write_all(&out);
     }
@@ -694,6 +715,11 @@ mod tests {
         let (req, res) = cx.store.call_io_archives(ids[0]).unwrap();
         assert!(req.is_none(), "{req:?}");
         assert!(res.is_none(), "{res:?}");
+        // T201: never archived (`archive_dir = None` on every hook call) must mean never
+        // hashed either — `spill` skips the sha256 pass rather than computing one nothing
+        // can ever expand.
+        let (req_sha, _res_sha) = cx.store.call_io_shas(ids[0]).unwrap();
+        assert!(req_sha.is_none(), "{req_sha:?}");
     }
 
     #[test]

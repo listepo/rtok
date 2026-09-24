@@ -44,7 +44,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T199 | todo | P2 | 1 | 0% | |
-| T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
 | T211 | todo | P2 | 3 | 0% | |
 | T213 | todo | P3 | 2 | 0% | |
@@ -601,14 +600,6 @@ Found 2026-09-22 in the docs pass: I-86 sits in the Open table and in Rejected a
 Plan: drop the Open I-86 row (Rejected carries the evidence) or revert the Rejected entry until T125 closes — pick one; delete the duplicate I-87 keeping "promoted T135"; give Promoted one matching header and repair the I-28 cell; remove the blank line inside the Open table. Docs only.
 
 Check: `ideas_ids_unique_and_disjoint` — every `I-NN` occurs in exactly one of Open/Later/Rejected/Promoted and every pipe-table has a header + separator before its rows; `just site` builds.
-
-### T201. Hook path does unbounded reads and hashes bodies it never archives
-
-Found 2026-09-22 in the core pass: hook stdin is `read_to_end` with no cap and parsed whole (`src/hooks/mod.rs:22-23`); `insert_call_io` → `spill` (`src/store/mod.rs:541-563`) sha256s over-cap bodies even though the hook path passes `archive_dir = None` (the hash feeds only a metadata column); `guard::post_tool` (`src/plugins/guard/mod.rs:71-77, 330-339`) sha256s and writes the entire tool response to the archive dir synchronously on every cached Read/Bash. A 20 MB PostToolUse payload costs two full passes plus the JSON DOM per event — the ≤ 10 ms budget breaks deterministically per MB (T178 family).
-
-Plan: skip `hex_sha256` in `spill` when `archive_dir` is `None` and the body is over cap (store NULL sha); bound the stdin read (`Take` at a `core.hook_max_input_bytes`, above which the hook fails open to `{}`); defer or cap `guard`'s archive write over a size threshold.
-
-Check: `oversized_hook_call_io_does_not_archive` extended — over-cap bodies record NULL `request_sha256`/`response_sha256`; `spill_over_cap_without_archive_dir_skips_hashing`; latency gate with a 5 MB PostToolUse fixture dispatches < 50 ms; `just test` green.
 
 ### T204. A panicking plugin is dropped silently — the error never reaches the log
 

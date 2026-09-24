@@ -8,6 +8,7 @@ db_path     = "~/.rtok/rtok.db"       # one SQLite file, WAL (decision D8)
 archive_dir = "~/.rtok/archive"       # raw payloads for `rtok expand <id>` (decision D4)
 session_env = "CLAUDE_SESSION_ID"     # env var consulted for the session id when stdin has none
 call_io_inline_bytes = 65536          # MCP/API bodies larger than this go to archive (hooks never archive)
+hook_max_input_bytes = 8388608        # rtok hook <event> stdin cap (8 MiB); over it, exits 0 unmodified, no archiving or hashing (T201)
 retain_calls_days    = 30             # 0 = keep `calls` forever
 
 [log]                                 # rtok's own log (D26); `rtok logs` reads it
