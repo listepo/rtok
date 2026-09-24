@@ -257,7 +257,15 @@ fn tools_rewrite_advice(
 /// asked for their tools, proxy hops answer `/health` or do not.
 pub fn page(cfg: &Config) -> Result<Report> {
     let settings = read_json(&cfg.doctor.settings_path);
-    let hooks = count_hooks(settings.as_ref());
+    let mut hooks = count_hooks(settings.as_ref());
+    // A plugin install carries its hooks outside `settings.json` (D21 strips the
+    // file entries while the plugin is installed): count them too, so the header
+    // agrees with the agents block below (T173).
+    let carried = plugin_hooks(cfg);
+    hooks.total += carried.total;
+    for (event, n) in carried.by_event {
+        *hooks.by_event.entry(event).or_insert(0) += n;
+    }
     let claude = read_json(&cfg.doctor.claude_json);
     let mut servers = mcp_servers(claude.as_ref(), Path::new(&cfg.doctor.mcp_json));
     // rtok's own MCP surface, so the P6/P8 gates compare like with like.
@@ -466,11 +474,9 @@ fn plugin_skill_dirs(home: &Path) -> Vec<String> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for (id, entries) in plugins {
-        for e in entries.as_array().into_iter().flatten() {
-            if let Some(p) = e.get("installPath").and_then(|v| v.as_str()) {
-                out.push(format!("{p}/skills [{id}]"));
-            }
+    for id in plugins.keys() {
+        for p in plugin_install_paths(&v, id) {
+            out.push(format!("{p}/skills [{id}]"));
         }
     }
     out
@@ -733,21 +739,75 @@ fn count_hooks(settings: Option<&Value>) -> HookCount {
         total: 0,
         by_event: BTreeMap::new(),
     };
-    let Some(hooks) = settings
+    if let Some(hooks) = settings
         .and_then(|s| s.get("hooks"))
         .and_then(Value::as_object)
-    else {
-        return c;
-    };
+    {
+        add_hooks_object(&mut c, hooks);
+    }
+    c
+}
+
+/// Add every command under a `hooks` object — `settings.json` or an installed
+/// plugin's `hooks/hooks.json`, same shape — into the running count.
+fn add_hooks_object(c: &mut HookCount, hooks: &serde_json::Map<String, Value>) {
     for (event, entries) in hooks {
         let n = match entries {
             Value::Array(a) => a.iter().map(inner_hook_count).sum(),
             _ => 0,
         };
         c.total += n;
-        c.by_event.insert(event.clone(), n);
+        *c.by_event.entry(event.clone()).or_insert(0) += n;
+    }
+}
+
+/// Hooks carried by the installed Claude plugin (T173). While the plugin is
+/// installed, setup strips the file entries (D21), so `settings.json` alone
+/// reads 0 while the agents block reports hooks installed. Same install check
+/// the agents block uses through `Claude::installed` (`agents::claude::
+/// plugin_installed`) and the same `installed_plugins.json` location
+/// (`agents::claude::config_dir`) — so the two never drift. The install paths
+/// come from `plugin_install_paths`, the parser `plugin_skill_dirs` already
+/// runs for skills. Fail open: an unreadable plugin tree counts 0.
+fn plugin_hooks(cfg: &Config) -> HookCount {
+    let mut c = HookCount {
+        total: 0,
+        by_event: BTreeMap::new(),
+    };
+    if !crate::agents::claude::plugin_installed(cfg) {
+        return c;
+    }
+    let path = crate::agents::claude::config_dir(cfg).join("plugins/installed_plugins.json");
+    let Ok(root) =
+        serde_json::from_str::<Value>(&std::fs::read_to_string(path).unwrap_or_default())
+    else {
+        return c;
+    };
+    for p in plugin_install_paths(&root, crate::agents::claude::PLUGIN_ID) {
+        let file = read_json(&Path::new(&p).join("hooks/hooks.json"));
+        if let Some(obj) = file
+            .as_ref()
+            .and_then(|v| v.get("hooks"))
+            .and_then(Value::as_object)
+        {
+            add_hooks_object(&mut c, obj);
+        }
     }
     c
+}
+
+/// Every `installPath` an `installed_plugins.json`'s `plugins` map lists for `id`
+/// (`{"plugins": {"<id>": [{"installPath": …}, …]}}`, the V2 shape both `plugin_hooks`
+/// and `plugin_skill_dirs` need — one parser, not two).
+fn plugin_install_paths(root: &Value, id: &str) -> Vec<String> {
+    root.get("plugins")
+        .and_then(|p| p.get(id))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.get("installPath").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect()
 }
 
 fn inner_hook_count(entry: &Value) -> usize {
@@ -935,14 +995,22 @@ fn read_share(cfg: &Config) -> Option<ReadShare> {
 /// The `ANTHROPIC_BASE_URL` a Claude Code session sees: `settings.json` `env` wins over the
 /// shell, and empty means unset. The proxy chain and the tool-search warning read it in
 /// opposite orders, so `env` `""` plus a settings URL showed a chain and no warning.
+/// A URL equal to the default Anthropic endpoint (trailing slash tolerated) is not
+/// custom — Claude Desktop sets it explicitly — so it reads as unset (T173).
 fn anthropic_base(settings: Option<&Value>, env: Option<String>) -> Option<String> {
-    nonempty(
+    let base = nonempty(
         settings
             .and_then(|s| s.pointer("/env/ANTHROPIC_BASE_URL"))
             .and_then(Value::as_str)
             .map(str::to_string),
     )
-    .or_else(|| nonempty(env))
+    .or_else(|| nonempty(env))?;
+    (!is_default_anthropic_base(&base)).then_some(base)
+}
+
+/// True for `https://api.anthropic.com` with any trailing slashes (T173).
+fn is_default_anthropic_base(url: &str) -> bool {
+    url.trim().trim_end_matches('/') == "https://api.anthropic.com"
 }
 
 fn openai_seed(cfg: &Config, settings: Option<&Value>) -> Option<String> {
@@ -1292,6 +1360,92 @@ mod tests {
         assert_eq!(b(Some(&s), "http://b").as_deref(), Some("http://a"));
         assert_eq!(b(Some(&empty), "http://b").as_deref(), Some("http://b"));
         assert_eq!(b(None, ""), None);
+    }
+
+    /// T173: Claude Desktop sets `ANTHROPIC_BASE_URL` to the default endpoint
+    /// explicitly — that is not a custom base, so no tool-search warning.
+    #[test]
+    fn anthropic_base_ignores_the_default_endpoint() {
+        let plain = serde_json::json!({"env": {"ANTHROPIC_BASE_URL": "https://api.anthropic.com"}});
+        let slash =
+            serde_json::json!({"env": {"ANTHROPIC_BASE_URL": "https://api.anthropic.com/"}});
+        let custom = serde_json::json!({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:8790"}});
+        assert_eq!(anthropic_base(Some(&plain), None), None);
+        assert_eq!(anthropic_base(Some(&slash), None), None);
+        assert_eq!(
+            anthropic_base(None, Some("https://api.anthropic.com".into())),
+            None
+        );
+        assert_eq!(
+            anthropic_base(Some(&custom), None).as_deref(),
+            Some("http://127.0.0.1:8790")
+        );
+        // A custom env URL still loses to an explicit default in settings.
+        assert_eq!(anthropic_base(Some(&plain), Some("http://a".into())), None);
+    }
+
+    /// T173: a plugin-only home — empty `settings.json` hooks, plugin installed —
+    /// counts the plugin-carried hooks, agreeing with the agents block.
+    #[test]
+    fn page_counts_plugin_carried_hooks_on_a_plugin_only_home() {
+        let dir = std::env::temp_dir().join(format!("rtok-t173-plugin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let install = dir.join("cache/rtok/1.0");
+        std::fs::create_dir_all(install.join("hooks")).unwrap();
+        std::fs::create_dir_all(dir.join("plugins")).unwrap();
+        std::fs::write(dir.join("settings.json"), "{}").unwrap();
+        // `serde_json::json!` (not a hand-formatted string) so a Windows install path's
+        // backslashes are JSON-escaped rather than landing raw in the file and failing
+        // to parse.
+        std::fs::write(
+            dir.join("plugins/installed_plugins.json"),
+            serde_json::json!({
+                "version": 2,
+                "plugins": {"rtok@rtok": [{"installPath": install.to_string_lossy()}]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            install.join("hooks/hooks.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command"}]}]}}"#,
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.setup.claude.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg.stats.transcripts_dir = dir.clone();
+        let report = page(&cfg).unwrap();
+        assert_eq!(report.hooks_total, 1, "{:?}", report.hooks_by_event);
+        assert_eq!(report.hooks_by_event["PreToolUse"], 1);
+        let text = report.to_text();
+        assert!(text.starts_with("hooks 1\n"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T173: the default endpoint in `settings.json` raises no tool-search warning.
+    #[test]
+    fn page_warns_no_tool_search_on_the_default_endpoint() {
+        let dir = std::env::temp_dir().join(format!("rtok-t173-base-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("settings.json"),
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://api.anthropic.com"}}"#,
+        )
+        .unwrap();
+        let mut cfg = Config::default();
+        cfg.doctor.settings_path = dir.join("settings.json");
+        cfg.setup.claude.settings_path = dir.join("settings.json");
+        cfg.doctor.claude_json = dir.join("missing-claude.json");
+        cfg.doctor.mcp_json = dir.join("missing-mcp.json");
+        cfg.stats.transcripts_dir = dir.clone();
+        let report = page(&cfg).unwrap();
+        assert!(!report.mcp_tool_search_disabled);
+        assert!(!report.to_text().contains("mcp_tool_search"), "{report:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

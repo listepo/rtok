@@ -60,7 +60,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
-| T173 | todo | P2 | 1 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
 | T175 | todo | P2 | 2 | 0% | |
 | T176 | todo | P1 | 3 | 0% | |
@@ -488,14 +487,6 @@ Found in the 2026-09-22 audit: 40 `read`/`expand`/`search` results carried `path
 Plan: in `src/mcp.rs` map every tool `Err` (including the root guard in `src/plugins/read/mod.rs:202`) to `is_error: true` with one `Error:` prefix; strip surrounding quotes in the line-range parser.
 
 Check: unit tests for an outside-cwd read (`is_error` true), a quoted range (accepted) and the error text (one prefix); `just test` green.
-
-### T173. `rtok doctor` false positives: `hooks 0` and `mcp_tool_search`
-
-Found in the 2026-09-22 audit. `count_hooks` (`src/doctor.rs:731-751`) reads only `settings.json` → `hooks`, so a plugin install prints `hooks 0` while the agents block says hooks ✓ installed. `anthropic_base()` (`src/doctor.rs:938-945`) treats any `ANTHROPIC_BASE_URL` as custom, so Claude Desktop's default `https://api.anthropic.com` prints "mcp_tool_search likely disabled".
-
-Plan: count plugin-carried hooks (the same install check the agents block uses); ignore a base URL equal to the default Anthropic endpoint (trailing slash tolerated).
-
-Check: doctor tests for a plugin-only home (hooks counted) and for the default URL (no warning); `just test` green.
 
 ### T174. Plugin hooks fail open when `rtok` is not on `PATH`
 
