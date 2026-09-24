@@ -280,7 +280,7 @@ complete -c rtok -n "__fish_rtok_using_subcommand run" -l config -d 'User config
 complete -c rtok -n "__fish_rtok_using_subcommand run" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand filter" -l cmd -d 'Command family hint (`git status`, `cargo test`, …)' -r
 complete -c rtok -n "__fish_rtok_using_subcommand filter" -l config -d 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)' -r -F
-complete -c rtok -n "__fish_rtok_using_subcommand filter" -l stdin -d 'Read the payload from stdin (OpenCode `tool.execute.after`)'
+complete -c rtok -n "__fish_rtok_using_subcommand filter" -l stdin -d 'Read the payload from stdin (OpenCode `tool[..]cute.after`)'
 complete -c rtok -n "__fish_rtok_using_subcommand filter" -l archive -d 'Archive stdin and print the expand trailer (same path as `run`)'
 complete -c rtok -n "__fish_rtok_using_subcommand filter" -s h -l help -d 'Print help'
 complete -c rtok -n "__fish_rtok_using_subcommand expand" -l lines -d 'Inclusive 1-based range `a-b`' -r

@@ -580,7 +580,7 @@ Register-ArgumentCompleter -Native -CommandName 'rtok' -ScriptBlock {
         'rtok;filter' {
             [CompletionResult]::new('--cmd', '--cmd', [CompletionResultType]::ParameterName, 'Command family hint (`git status`, `cargo test`, …)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'User config file (else `RTOK_CONFIG` or `<home>/config.toml`)')
-            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool.execute.after`)')
+            [CompletionResult]::new('--stdin', '--stdin', [CompletionResultType]::ParameterName, 'Read the payload from stdin (OpenCode `tool[..]cute.after`)')
             [CompletionResult]::new('--archive', '--archive', [CompletionResultType]::ParameterName, 'Archive stdin and print the expand trailer (same path as `run`)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')

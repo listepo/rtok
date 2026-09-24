@@ -532,7 +532,8 @@ fn audit_from(
             };
             let source = plugin.as_deref().unwrap_or(source);
             for sub in subdirs(dir) {
-                let Some(name) = sub.rsplit('/').next() else {
+                // `file_name`, not `rsplit('/')`: Windows paths end in `\<name>` (T83.7).
+                let Some(name) = Path::new(&sub).file_name().and_then(|n| n.to_str()) else {
                     continue;
                 };
                 let Some(md) = read(&format!("{sub}/SKILL.md")) else {

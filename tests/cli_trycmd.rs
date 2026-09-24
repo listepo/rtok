@@ -15,9 +15,12 @@ use std::path::Path;
 
 #[test]
 fn cli() {
-    trycmd::TestCases::new()
-        .case("tests/trycmd/*.toml")
-        .case("tests/trycmd/*.trycmd");
+    let cases = trycmd::TestCases::new();
+    cases.case("tests/trycmd/*.toml").case("tests/trycmd/*.trycmd");
+    // POSIX-only by design: `/bin/echo`, `SHELL=/bin/sh` and `cat` do not exist on Windows (T83.7).
+    if cfg!(windows) {
+        cases.skip("tests/trycmd/run.toml").skip("tests/trycmd/expand.trycmd");
+    }
 }
 
 /// trycmd 1.2.1's `Env` only recognizes `inherit`, `add` and `remove` — and has no
