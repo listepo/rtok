@@ -1521,14 +1521,16 @@ bogus = true
             PathBuf::from("/repo/target/tmp/case")
         );
         // An already-absolute result is returned as-is; cwd/fallback are not consulted.
+        // `temp_dir()` is absolute on every platform (`/srv/rtok` is not on Windows).
+        let abs = std::env::temp_dir().join("srv-rtok");
         assert_eq!(
             home_dir_absolute(
-                Some(OsString::from("/srv/rtok")),
+                Some(abs.clone().into_os_string()),
                 None,
                 || panic!("cwd should not be read"),
                 || panic!("fallback should not run"),
             ),
-            PathBuf::from("/srv/rtok")
+            abs
         );
         // A relative HOME (no RTOK_HOME) is explicit input too: absolutized, not defaulted.
         assert_eq!(
