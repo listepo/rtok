@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtok hook PreCompact",
+            "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PreCompact; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PreCompact; exit 0",
+            "commandWindows": "rtok hook PreCompact",
             "timeout": 5
           }
         ]
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "rtok hook PostCompact",
+            "command": "command -v rtok >/dev/null 2>&1 && exec rtok hook PostCompact; [ -x \"$HOME/.ketch/bin/rtok\" ] && exec \"$HOME/.ketch/bin/rtok\" hook PostCompact; exit 0",
+            "commandWindows": "rtok hook PostCompact",
             "timeout": 5
           }
         ]
