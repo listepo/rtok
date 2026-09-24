@@ -5248,6 +5248,10 @@ Check: the test passes in the `windows` CI job; `just check` stays green.
 Do (Claude Code / claude-opus-5-5, 2026-09-24): no code change. The failure came from CRLF checkouts, which T82's `.gitattributes` (`* text=auto eol=lf`) already removed. The test's line is dropped from the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
 
 Check result: a probe branch ran every `cfg(windows)`-filtered test on `windows-latest` (ci run 36032362793, 2026-09-24): `agents_doc_table_matches_the_host_code` passed there (0.077 s). `just check` green on macOS.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
 ### T223. `windows-sys` linked in three versions
 
 Found 2026-09-22 in the docs pass: `Cargo.lock` holds `windows-sys` 0.52.0, 0.60.2 and 0.61.2 simultaneously (transitive users at 0.52/0.60 beside `rtok-sys`'s 0.61) — the only multi-version crate of note (the tree-sitter grammar family is single-version). On Windows three copies of the bindings compile and link, growing the binary and the T178 cold-start cost that is already over the 10 ms hook budget.
