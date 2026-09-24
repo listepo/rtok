@@ -458,6 +458,40 @@ fn claude_remove_asks_before_taking_an_edited_mcp_entry() {
     assert!(json(&claude_json)["mcpServers"]["rtok"].is_object());
 }
 
+/// T246.3: an rtok hook the user edited (here its timeout) stays unless `--yes`; the
+/// untouched ones go, and a report of only `leave` lines writes nothing.
+#[test]
+fn claude_remove_asks_before_taking_an_edited_hook() {
+    let home = tmp("claude-edited-hook");
+    let cfg = write_cfg(&home);
+    let settings = home.join(".claude/settings.json");
+    rtok_without_claude(&["agents", "install", "claude"], &cfg, &home);
+    let mut doc = json(&settings);
+    doc["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = serde_json::json!(60);
+    fs::write(&settings, doc.to_string()).unwrap();
+
+    let out = rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
+    assert!(out.contains("leave hooks.PreToolUse Bash in"), "{out}");
+    let raw = fs::read_to_string(&settings).unwrap();
+    assert!(
+        contains_hook(&raw, "PreToolUse") && !contains_hook(&raw, "SessionEnd"),
+        "{raw}"
+    );
+    let again = rtok_without_claude(&["agents", "remove", "claude"], &cfg, &home);
+    assert!(again.contains("changed by you"), "{again}");
+    assert_eq!(
+        fs::read_to_string(&settings).unwrap(),
+        raw,
+        "a leave report wrote"
+    );
+
+    rtok_without_claude(&["agents", "remove", "claude", "--yes"], &cfg, &home);
+    assert!(!contains_hook(
+        &fs::read_to_string(&settings).unwrap(),
+        "PreToolUse"
+    ));
+}
+
 /// No `claude` on PATH (T139), so the install writes `settings.json` itself instead of
 /// handing it to the plugin — the file this test watches actually changes each run.
 #[test]

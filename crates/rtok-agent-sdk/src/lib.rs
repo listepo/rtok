@@ -61,9 +61,14 @@ pub struct Apply {
 }
 
 impl Apply {
-    /// True when this run may write a file for `report`.
+    /// True when this run may write a file for `report`. A report of only `leave …` / `? …`
+    /// lines changed nothing, so it writes nothing either (T246).
     pub fn writes(&self, report: &str) -> bool {
-        !self.dry_run && report != NO_CHANGES
+        !self.dry_run
+            && report != NO_CHANGES
+            && !report
+                .lines()
+                .all(|l| l.starts_with("leave ") || l.starts_with("? "))
     }
 }
 
@@ -468,14 +473,22 @@ pub fn unregister_owned(
     if !runs_bin(&have, is_bin) {
         return Ok(format!("leave {at} (not rtok's; remove by hand)"));
     }
-    let changed = rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin);
-    if changed && apply.dry_run && !apply.yes {
-        return Ok(format!("? {at} (changed by you; remove asks)"));
-    }
-    if changed && !confirmed(apply, &format!("remove {at}? you changed it")) {
-        return Ok(format!("leave {at} (changed by you; remove by hand)"));
+    if rtok_as_one(&have, is_bin) != rtok_as_one(ours, is_bin)
+        && let Some(leave) = keep_edited(apply, &at)
+    {
+        return Ok(leave);
     }
     unregister_server(apply, path, key, name)
+}
+
+/// For an rtok entry the user changed, `at` naming it: `None` removes it (`--yes`, or the
+/// user said yes); `Some(report)` keeps it — `? …` on a dry run, `leave …` once declined.
+pub fn keep_edited(apply: &Apply, at: &str) -> Option<String> {
+    if apply.dry_run && !apply.yes {
+        return Some(format!("? {at} (changed by you; remove asks)"));
+    }
+    (!confirmed(apply, &format!("remove {at}? you changed it")))
+        .then(|| format!("leave {at} (changed by you; remove by hand)"))
 }
 
 fn runs_bin(v: &Value, is_bin: fn(&str) -> bool) -> bool {
@@ -949,6 +962,15 @@ mod tests {
         assert!(!accepted(&a, "install?"), "a headless run must not accept");
         a.yes = true;
         assert!(accepted(&a, "install?"), "--yes must accept without asking");
+    }
+
+    /// T246.3: a report that only leaves or asks changed nothing, so it writes nothing; one
+    /// real change beside it still writes.
+    #[test]
+    fn a_leave_only_report_writes_nothing() {
+        let a = Apply::default();
+        assert!(!a.writes("leave a (changed by you; remove by hand)\n? b (remove asks)"));
+        assert!(a.writes("leave a (changed by you; remove by hand)\n3 removed"));
     }
 
     /// The one line `accepted` reads, judged: Enter keeps the default (yes — the old
