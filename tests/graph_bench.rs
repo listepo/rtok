@@ -8,7 +8,6 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use rtok::config::Config;
 use rtok::plugin::{Ctx, Runtime};
 use rtok::plugins::graph::{callers, impact, index, symbol};
 use rtok::store::Store;
@@ -189,9 +188,7 @@ fn home(name: &str) -> (Runtime, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!("rtok-bench-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut c = Config::default();
-    c.core.db_path = dir.join("rtok.db");
-    c.core.archive_dir = dir.join("archive");
+    let c = rtok::testutil::config_in(&dir);
     (Runtime::open(c, name).unwrap(), dir)
 }
 

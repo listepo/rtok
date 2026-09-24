@@ -100,9 +100,7 @@ fn hook_returns_despite_exclusive_lock() {
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("temp home");
     let db = tmp.join("rtok.db");
-    let mut cfg = rtok::config::Config::default();
-    cfg.core.db_path = db.clone();
-    cfg.core.archive_dir = tmp.join("archive");
+    let cfg = rtok::testutil::config_in(&tmp);
 
     // Warm the store once so the locked run exercises contention, not migration.
     let fixture = include_bytes!("fixtures/hooks/pre_tool_read.json");
