@@ -179,6 +179,9 @@ diesel::table! {
         response_json -> Nullable<Text>,
         request_archive -> Nullable<Text>,
         response_archive -> Nullable<Text>,
+        // T211: exact bytes, written only when the inline body is not valid UTF-8.
+        request_raw -> Nullable<Binary>,
+        response_raw -> Nullable<Binary>,
     }
 }
 

@@ -5848,3 +5848,4 @@ Check: `cargo nextest --test plugins_e2e`; `just check`.
 
 Status: done 2026-09-24
 Model: Claude Code / claude-opus-5-5
+

@@ -153,6 +153,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0021.sql",
         include_str!("../../migrations/0021_measurements_once/up.sql"),
     ),
+    (
+        "0022.sql",
+        include_str!("../../migrations/0022_call_io_raw_bodies/up.sql"),
+    ),
 ];
 
 pub struct Store {
@@ -707,9 +711,9 @@ impl Store {
         archive_dir: Option<&Path>,
     ) -> Result<()> {
         let session = self.call_session(call_id)?;
-        let (req_json, req_arch, req_bytes, req_sha, req_path, req_created) =
+        let (req_json, req_arch, req_bytes, req_sha, req_path, req_created, req_raw) =
             self.spill(request, inline_cap, archive_dir)?;
-        let (res_json, res_arch, res_bytes, res_sha, res_path, res_created) =
+        let (res_json, res_arch, res_bytes, res_sha, res_path, res_created, res_raw) =
             self.spill(response, inline_cap, archive_dir)?;
         let mut created_files = Vec::new();
         if req_created {
@@ -737,6 +741,8 @@ impl Store {
                     call_io::response_json.eq(res_json.as_deref()),
                     call_io::request_archive.eq(req_arch.as_deref()),
                     call_io::response_archive.eq(res_arch.as_deref()),
+                    call_io::request_raw.eq(req_raw.as_deref()),
+                    call_io::response_raw.eq(res_raw.as_deref()),
                 ))
                 .execute(&mut *conn)?;
             Ok(())
@@ -764,20 +770,29 @@ impl Store {
     /// created the file, so a failed transaction knows which files are safe to remove.
     fn spill(&self, body: Option<&[u8]>, cap: usize, archive_dir: Option<&Path>) -> Result<Spill> {
         let Some(body) = body else {
-            return Ok((None, None, 0, None, None, false));
+            return Ok((None, None, 0, None, None, false, None));
         };
         let n = i64::try_from(body.len()).unwrap_or(i64::MAX);
         if body.len() <= cap {
-            let (text, sha) = inline_body(body);
-            return Ok((Some(text), None, n, Some(sha), None, false));
+            let (text, sha, raw) = inline_body(body);
+            return Ok((Some(text), None, n, Some(sha), None, false, raw));
         }
         // Over cap: metadata always. Archive only when a directory is supplied (never on hook).
+        // The archive file already holds the exact bytes, so no `raw` column is needed here.
         let sha = hex_sha256(body);
         if let Some(dir) = archive_dir {
             let (path, created) = write_archive_file(dir, &sha, body)?;
-            return Ok((None, Some(sha.clone()), n, Some(sha), Some(path), created));
+            return Ok((
+                None,
+                Some(sha.clone()),
+                n,
+                Some(sha),
+                Some(path),
+                created,
+                None,
+            ));
         }
-        Ok((None, None, n, Some(sha), None, false))
+        Ok((None, None, n, Some(sha), None, false, None))
     }
 
     /// Write `body` to `dir/<sha256>` and upsert the `archive` row. Returns the id.
@@ -986,19 +1001,29 @@ impl Store {
         Ok((total, expanded))
     }
 
-    /// The request bytes recorded for a call (inline `call_io.request_json`, else the archive).
+    /// The exact request bytes recorded for a call: `call_io.request_raw` when present (T211
+    /// — an inline body that was not valid UTF-8), else inline `request_json` (valid UTF-8,
+    /// so its bytes already are the wire bytes), else the archive. A row written before T211
+    /// has no `request_raw` and falls back to the lossy `request_json` text, lazily.
     pub fn call_io_request(&self, call_id: i32) -> Result<Option<Vec<u8>>> {
-        let row: Option<(Option<String>, Option<String>)> = {
+        // `(request_json, request_raw, request_archive)`.
+        type RequestRow = (Option<String>, Option<Vec<u8>>, Option<String>);
+        let row: Option<RequestRow> = {
             let mut conn = self.lock()?;
             call_io::table
                 .find(call_id)
-                .select((call_io::request_json, call_io::request_archive))
+                .select((
+                    call_io::request_json,
+                    call_io::request_raw,
+                    call_io::request_archive,
+                ))
                 .first(&mut *conn)
                 .optional()?
         };
         match row {
-            Some((Some(json), _)) => Ok(Some(json.into_bytes())),
-            Some((None, Some(id))) => self.get_archive(&id, None),
+            Some((_, Some(raw), _)) => Ok(Some(raw)),
+            Some((Some(json), None, _)) => Ok(Some(json.into_bytes())),
+            Some((None, None, Some(id))) => self.get_archive(&id, None),
             _ => Ok(None),
         }
     }
@@ -2210,8 +2235,9 @@ impl Store {
 }
 
 /// `(inline json, archive sha, byte count, content sha, archive file path, file created by
-/// this call)`. The last two are `Some`/`true` together only when the body was spilled to
-/// disk — see [`Store::spill`] (T208).
+/// this call, raw bytes)`. The archive fields are `Some`/`true` together only when the body
+/// was spilled to disk — see [`Store::spill`] (T208). `raw` is `Some` only for an inline body
+/// that is not valid UTF-8 (T211) — see [`inline_body`].
 type Spill = (
     Option<String>,
     Option<String>,
@@ -2219,17 +2245,29 @@ type Spill = (
     Option<String>,
     Option<PathBuf>,
     bool,
+    Option<Vec<u8>>,
 );
 
 /// `(host slug, project, cwd)` — [`Store::session_row`].
 #[cfg(test)]
 type SessionRow = (Option<String>, Option<String>, Option<String>);
 
-/// Lossy UTF-8 text stored inline and the sha256 of that exact string.
-fn inline_body(body: &[u8]) -> (String, String) {
-    let text = String::from_utf8_lossy(body).into_owned();
-    let sha = hex_sha256(text.as_bytes());
-    (text, sha)
+/// Text stored inline for display, the sha256 of `body`'s raw bytes, and — only when `body`
+/// is not valid UTF-8 — the exact bytes to keep alongside the lossy text (T211). Valid UTF-8
+/// already round-trips losslessly through the `TEXT` column (its bytes are `body`'s bytes),
+/// so the `BLOB` column is written only for the lossy case, avoiding doubled storage for the
+/// common path. The sha is always over `body` itself, so it matches the old behavior for
+/// valid UTF-8 and now verifies the true wire bytes for invalid UTF-8 too.
+fn inline_body(body: &[u8]) -> (String, String, Option<Vec<u8>>) {
+    let sha = hex_sha256(body);
+    match std::str::from_utf8(body) {
+        Ok(s) => (s.to_owned(), sha, None),
+        Err(_) => (
+            String::from_utf8_lossy(body).into_owned(),
+            sha,
+            Some(body.to_vec()),
+        ),
+    }
 }
 
 pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
@@ -3762,7 +3800,13 @@ mod tests {
             assert_eq!(text, "plain");
             assert_eq!(request_sha256.unwrap(), hex_sha256(text.as_bytes()));
         }
+        assert_eq!(
+            store.call_io_request(call_id).unwrap(),
+            Some(b"plain".to_vec())
+        );
 
+        // T211: invalid UTF-8 must still hash and round-trip as the exact wire bytes, not
+        // the `from_utf8_lossy` text stored for display.
         let bad = [b'b', b'a', b'd', 0xff, 0xfe, b'o', b'k'];
         let call_id2 = store
             .insert_call("s", "mcp", "mcp_call", Some(1), None, None, None, None)
@@ -3770,15 +3814,19 @@ mod tests {
         store
             .insert_call_io(call_id2, Some(&bad), None, 1 << 20, None)
             .unwrap();
-        let mut conn = store.lock().unwrap();
-        let (request_json2, request_sha256_2): (Option<String>, Option<String>) = call_io::table
-            .filter(call_io::call_id.eq(call_id2))
-            .select((call_io::request_json, call_io::request_sha256))
-            .first(&mut *conn)
-            .unwrap();
-        let text2 = request_json2.unwrap();
-        assert_eq!(text2, String::from_utf8_lossy(&bad));
-        assert_eq!(request_sha256_2.unwrap(), hex_sha256(text2.as_bytes()));
+        {
+            let mut conn = store.lock().unwrap();
+            let (request_json2, request_sha256_2): (Option<String>, Option<String>) =
+                call_io::table
+                    .filter(call_io::call_id.eq(call_id2))
+                    .select((call_io::request_json, call_io::request_sha256))
+                    .first(&mut *conn)
+                    .unwrap();
+            let text2 = request_json2.unwrap();
+            assert_eq!(text2, String::from_utf8_lossy(&bad));
+            assert_eq!(request_sha256_2.unwrap(), hex_sha256(&bad));
+        }
+        assert_eq!(store.call_io_request(call_id2).unwrap(), Some(bad.to_vec()));
     }
 
     #[rstest]
