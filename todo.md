@@ -74,3 +74,7 @@
 - T228. Config page: `config show` / `config get` on `tui` and `web`
 - T229. Services page: `demon status` and `otel status` on `tui` and `web`
 - T232. Worktrees page: `worktree list` on `tui` and `web`
+- T238. Saving floor for the `cmd` golden corpus
+- T239. `Measurement` rows match the bytes each surface actually returned
+- T240. Golden files for rule families without one
+- T241. Replay bench: saving over a fixed session corpus
