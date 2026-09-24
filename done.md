@@ -5163,6 +5163,18 @@ Check result: `cargo nextest run --test demon` — 6/6 passed locally on macOS (
 Status: done 2026-09-23
 Model: Claude Code / claude-sonnet-5
 
+### T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
+
+The desktop Claude config path assertion assumes a Unix absolute path or a Unix `rtok` binary name (no `.exe`). Read `src/agents/claude/mod.rs`'s desktop-config writer and decide whether it needs a `cfg(windows)` path/extension branch or the test's expected string needs a platform-aware fixture. One family split out of the original T83; see T83.2 for the closing criterion.
+
+Result: not a product bug — the test matched `desktop_command()` as a substring of the raw JSON, and a Windows path's `\` is written as `\\` there. The test now compares the parsed `mcpServers.rtok.command`; `desktop_path()` / `desktop_command()` were already Windows-correct (`%APPDATA%\Claude`, absolute `current_exe`). Its line left the `cfg(windows)` `default-filter` in `.config/nextest.toml`.
+
+Check: the test passes in the `windows` CI job; `just check` stays green.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
+
+
 ### T180. Research: filtering WebFetch, WebSearch and browser page text
 
 Found in the 2026-09-22 audit: `WebSearch` 1.9 MB, `WebFetch` 1.3 MB and `Claude_Browser` `get_page_text`/`read_page` 0.25 MB in 7 days with no rtok involvement. PostToolUse cannot change native results (see T134), so the path is unclear.
