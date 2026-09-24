@@ -43,7 +43,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T163.9 | in progress | P2 | 3 | 0% | Claude Code / claude-opus-5-5 |
 | T171 | todo | P1 | 2 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
-| T184 | todo | P1 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
 | T201 | todo | P2 | 2 | 0% | |
 | T204 | todo | P3 | 2 | 0% | |
@@ -372,16 +371,6 @@ Step 2 plan (D32): (a) `crates/rtok-hook`, the std-only wire format; (b) `rtok h
 Check: a dated `research.md` row with measured start time before/after; hook p50 as seen by Claude Code under 10 ms on this machine; `just test` green.
 
 Progress (research.md §19): the plugin launcher (a second `/bin/sh` per call) was the largest cost; `hooks.json` now execs `rtok` from PATH directly, p50 as Claude Code sees it 20.9 → 14.6 ms (PreToolUse) and 19.0 → 13.3 ms (PostToolUse). Remaining: the node + `/bin/sh` floor (5 ms) plus `rtok --version` (5.6 ms) already exceed 10 ms, so the Check needs a resident process with a small hook client — proposed as its own task. Locked store (§19.6): the hook now waits 5 ms on another writer, not 1 s per statement, and fails open with the input unchanged — 1.06–2.13 s → ~20 ms. Remaining: the resident process and hook client.
-
-### T184. rtok never resolves its home to a relative `.rtok`
-
-Found 2026-09-22 while closing T169: `cli_trycmd` writes `./.rtok/config.toml` and `./.rtok/rtok.db` into the checkout. Bisected to five cases — `agents-sessions-json`, `doctor-json`, `otel-json`, `plugins-json`, `stats-price`. Ten `tests/trycmd/*.toml` cases put their variables straight under `[env]` (`RTOK_HOME = "target/tmp/…"`). trycmd 1.2.1's `Env` knows only `inherit`, `add` and `remove`, has no `deny_unknown_fields`, and drops those keys silently; the 26 other cases use `[env.add]` correctly. With `inherit = false` the binary then runs with neither `HOME` nor `RTOK_HOME`, and `Config::home_dir` returns `"".join(".rtok")`, a path relative to the cwd. Reproduced: `env -i rtok --config tests/trycmd/input/json-readers.toml plugins --json` in the repo root creates `./.rtok/`; with `RTOK_HOME` set it does not. The tracked `.rtok/config.toml` (added by `1a40127`, a stale copy of `config/default.toml`) is the same output committed; the project layer reads `<git root>/.rtok.toml`, not that file.
-
-Plan: (1) move the ten cases' variables under `[env.add]`, re-bless whatever output then changes, and add a test that fails on any bare key under `[env]` in `tests/trycmd/*.toml`; (2) `Config::home_dir` (`home_dir_from`, `src/config/mod.rs`) falls back to `std::env::home_dir()` (not deprecated in the pinned Rust 1.97.1; on Unix it reads `getpwuid_r` when `HOME` is unset) and never returns a relative path — when no home resolves, pick a behaviour that keeps hooks fail-open (for example the OS temp dir) and cover it with a unit test; (3) untrack `.rtok/config.toml` and ignore `/.rtok/`.
-
-Check: after `just test`, no `./.rtok` and no `./~` in the checkout; `env -i rtok plugins --json` from the repo root creates nothing in the cwd; the new trycmd-schema test fails on `main`; `just check` green.
-
-Check: dry-run with `all` lists only marketplace-capable hosts; dry-run with an unsupported host fails non-zero; a fixture/module test covers at least one host's publish payload shape; CI workflow exists and is referenced by the script; `just check` / docs build green for touched files.
 
 ### T226. Web Sessions page: live-only filter and a help overlay
 

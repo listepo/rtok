@@ -12,7 +12,8 @@ report/jscpd-report.json
 # Agent worktrees must not be indexed by graph walk
 .worktrees/
 .claude/
-.rtok/rtok.db
+# T184: rtok's own home, and a stray tracked copy of it (1a40127)
+/.rtok/
 # A config path left as a literal `~` resolves against the cwd (T169)
 /~/
 rtok.db

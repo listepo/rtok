@@ -20,6 +20,40 @@ fn cli() {
         .case("tests/trycmd/*.trycmd");
 }
 
+/// trycmd 1.2.1's `Env` only recognizes `inherit`, `add` and `remove` — and has no
+/// `deny_unknown_fields`, so a bare key sitting directly under `[env]` (e.g.
+/// `RTOK_HOME = "…"` instead of under `[env.add]`) is silently dropped instead of reaching
+/// the process env. A case that meant to isolate `HOME`/`RTOK_HOME` then runs with neither,
+/// and `Config::home_dir` used to write `./.rtok/` into whatever the cwd happened to be
+/// (T184; found while closing T169).
+#[test]
+fn trycmd_env_blocks_only_use_known_keys() {
+    let known: HashSet<&str> = ["inherit", "add", "remove"].into_iter().collect();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/trycmd");
+    for ent in fs::read_dir(&root).unwrap() {
+        let path = ent.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap();
+        let doc: toml_edit::DocumentMut = text
+            .parse()
+            .unwrap_or_else(|e| panic!("{}: invalid TOML: {e}", path.display()));
+        let Some(env) = doc.get("env").and_then(|e| e.as_table_like()) else {
+            continue;
+        };
+        for (key, _) in env.iter() {
+            assert!(
+                known.contains(key),
+                "{}: [env] has key `{key}`, which trycmd's Env struct does not know — it is \
+                 silently dropped instead of reaching the process. Move it under [env.add] \
+                 (or [env.remove]).",
+                path.display()
+            );
+        }
+    }
+}
+
 /// Every visible clap command (and every `rtok …` cell in README.md's command
 /// table) must appear in a trycmd case, so a new command cannot land without a
 /// golden (T60.2).

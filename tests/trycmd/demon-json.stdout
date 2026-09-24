@@ -37,6 +37,6 @@
     "child": null,
     "uptime_secs": null,
     "restarts": null,
-    "log": ".rtok/demon/hook.log"
+    "log": "[CWD]/target/tmp/t60-1-demon-json/demon/hook.log"
   }
 ]

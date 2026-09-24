@@ -37,7 +37,6 @@
 - T163.9. Window and CTE queries through the shared extension module
 - T171. Claude Code sees the rtok MCP server twice
 - T178. Hook wall-clock time as Claude Code sees it
-- T184. rtok never resolves its home to a relative `.rtok`
 - T199. `ideas.md`: I-86 both open and rejected, I-87 twice, broken Promoted table
 - T201. Hook path does unbounded reads and hashes bodies it never archives
 - T204. A panicking plugin is dropped silently — the error never reaches the log
