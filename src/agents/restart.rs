@@ -491,6 +491,7 @@ mod tests {
     /// instead of silently skipping restart coverage.
     fn expected_desktop_name(variant: &str) -> &'static str {
         match variant {
+            "Antigravity" => "Antigravity",
             "Claude Desktop" => "Claude",
             "GitHub Copilot" => "GitHub Copilot",
             "Cursor" => "Cursor",
