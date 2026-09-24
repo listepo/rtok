@@ -4,6 +4,8 @@ One plugin directory for all three Antigravity surfaces — Antigravity CLI (`ag
 and Antigravity IDE read global plugins from `~/.gemini/config/plugins/` (D21: plugin and MCP as
 one unit, one `rtok mcp` per store). By hand: `agy plugin install <path to this folder>`, or place
 this folder at `~/.gemini/config/plugins/rtok` and restart the desktop app.
+`rtok agents install antigravity --yes` links it for the desktop apps and prints the
+`agy plugin install` line for the CLI (T91.1).
 
 `rtok` must be on `PATH`. If it is missing, install it with ketch: `ketch install listepo/rtok`.
 
