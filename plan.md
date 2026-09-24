@@ -61,7 +61,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T171 | todo | P1 | 2 | 0% | |
 | T172 | todo | P2 | 2 | 0% | |
 | T174 | todo | P1 | 2 | 0% | |
-| T175 | todo | P2 | 2 | 0% | |
 | T176 | todo | P1 | 3 | 0% | |
 | T177 | todo | P2 | 3 | 0% | |
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
@@ -495,14 +494,6 @@ Found in the 2026-09-22 audit: 380 hook errors `/bin/sh: rtok: command not found
 Plan: make the Claude Code plugin's hook command resolve `rtok` (PATH, then `~/.ketch/bin/rtok`) and, when absent, exit 0 silently except one SessionStart note naming `ketch install listepo/rtok`; apply the same to the other host plugins that shell out to `rtok`.
 
 Check: a plugin test runs the hook command with an empty `PATH` and no binary: exit 0, empty stdout except the one SessionStart note; `just test` green.
-
-### T175. No trailer on tiny outputs
-
-Found in the 2026-09-22 audit: in 1 134 of 4 333 shortened Bash results the rtok trailer (174 B mean, up to 535 B) is longer than the content left (under 200 chars) — 198 KB of pure overhead in 7 days, mostly background polling (`until grep -q …; do sleep 30; done`, `tail -30 …/tasks/*.output`). `needs_pointer` (`src/plugins/cmd/run.rs:165`) adds the trailer whenever the canonical text changed.
-
-Plan: when the raw body is itself small (under the trailer's own size or a configured floor), emit it unfiltered with no trailer; keep lossless-by-default intact because nothing is cut.
-
-Check: unit test — a 150-byte body that the formatter would reshape comes back verbatim with no trailer; the `Measurement` row shows no negative saving; `just test` green.
 
 ### T176. Explicitly bounded output is not cut again
 

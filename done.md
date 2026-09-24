@@ -5208,6 +5208,19 @@ Done: added `fake_copilot` to `tests/common/agents.rs`'s fake-bin set so every p
 Check result: `cargo nextest run --lib -E 'test(agents::tests)'` 27/27 pass, including both new tests. `cargo fmt --check` and `cargo clippy --lib --tests --all-features -- -D warnings` clean. `cargo nextest run --all-features` across all 13 integration-test binaries that build on `tests/common/agents.rs` (`agent_remove`, `agents_doc`, `agents_install`, `agents_real_config`, `claude_plugin`, `codex_plugin_install`, `copilot_plugin`, `hook_fail_open`, `mcp`, `mcp_call_lsp_orphan`, `opencode_plugin`, `pi_plugin`, `skill`) 271/271 pass, confirming the fake `copilot` shim installed everywhere breaks nothing else.
 Model: Claude Code / claude-sonnet-5
 
+### T175. No trailer on tiny outputs
+
+Found in the 2026-09-22 audit: in 1 134 of 4 333 shortened Bash results the rtok trailer (174 B mean, up to 535 B) is longer than the content left (under 200 chars) — 198 KB of pure overhead in 7 days, mostly background polling (`until grep -q …; do sleep 30; done`, `tail -30 …/tasks/*.output`). `needs_pointer` (`src/plugins/cmd/run.rs:165`) adds the trailer whenever the canonical text changed.
+
+Plan: when the raw body is itself small (under the trailer's own size or a configured floor), emit it unfiltered with no trailer; keep lossless-by-default intact because nothing is cut.
+
+Check: unit test — a 150-byte body that the formatter would reshape comes back verbatim with no trailer; the `Measurement` row shows no negative saving; `just test` green.
+
+Done: `emit_filtered` (`src/plugins/cmd/run.rs`) now short-circuits when `body.len() <= trailer.len()` — the raw bytes print verbatim (lossless, nothing archived) and a zero-saving `raw` Measurement row is recorded. Review fixes made on the WIP: extracted one `trailer(id, lines)` helper (`src/plugins/cmd/run.rs`) shared by `emit_filtered`'s two print sites and `filter::run_with_store` (`src/plugins/cmd/filter.rs`), instead of three copies of the same format string; simplified `body.len() < trailer.len() + 1` to `body.len() <= trailer.len()`; fixed a clippy `manual_repeat_n` lint the WIP's non-UTF-8 archive test fixture introduced. `mcp/wrap.rs` keeps its own copy — a different module with its own MCP-specific wrapping, not a natural shared import. Confirmed `rtok filter --archive` (shares `emit_filtered` with `rtok run`) is covered by the same unit tests plus `tests/lossless_roundtrip.rs`'s `cmd` driver.
+
+Check result: `cargo nextest run` for `plugins::cmd::run::tests` (18/18, including `tiny_body_passes_through_verbatim_with_no_negative_saving` and the padded `archive_keeps_bytes_that_are_not_utf8`), `plugins::cmd::filter::tests` (3/3) and `--test lossless_roundtrip` (2/2) all green; `just check` (fmt, clippy, full test suite) green.
+Model: Claude Code / claude-sonnet-5
+
 ### T170. A slow hook is logged, not only printed to stderr
 
 Found 2026-09-22 in an audit of 7 days of Claude Code transcripts plus `~/.rtok/rtok.db`: `rtok.log` does not exist and the `logs` table has 0 rows, although 335 of 46 807 hook calls ran over `[hook] max_ms = 10`. `src/hooks/mod.rs:188-190` only `eprintln!`s the `slow_note`; the config comment promises "the event is logged as slow", and Claude Code does not surface hook stderr to the operator.

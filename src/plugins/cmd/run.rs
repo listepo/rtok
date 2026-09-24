@@ -183,6 +183,13 @@ pub(crate) fn names_the_id(filtered: &str, id: &str) -> bool {
     filtered.contains(&format!("expand {id}"))
 }
 
+/// The pointer line appended after a filtered body: names the id, the line count and
+/// how to expand it. The one spelling shared by `rtok run`, `rtok filter --archive`
+/// and `rtok filter --stdin` so the three surfaces stay byte-identical.
+pub(crate) fn trailer(id: &str, lines: u32) -> String {
+    format!("[rtok {id} · {lines} lines · expand: rtok expand {id}]")
+}
+
 /// `body` up to the noise a filter may remove without a reader losing anything:
 /// whitespace runs (padding, trailing newline) and ANSI escapes, compared line by line.
 /// Every other byte stays verbatim — a `\xff` that came back U+FFFD must read as a loss.
@@ -297,14 +304,39 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
     }
     // The id is the body's sha256, so the filter can name it before any store write.
     let id = crate::store::hex_sha256(body);
-    let settings = rules::Settings::from_config(cfg);
-    let family = formatters::family(argv);
-    let (filtered, kind) = formatters::compress(&settings, argv, &before, exit, &id);
     let lines = if body.is_empty() {
         0
     } else {
         before.lines().count() as u32
     };
+    // T175: no trailer on tiny outputs. The trailer is ~170 B; when the raw body is
+    // itself smaller, filtered output plus trailer can only be larger than the input.
+    // Emit the raw bytes verbatim with no trailer and no archive (nothing is cut, so
+    // lossless-by-default holds), and record a zero-saving row so the ledger stays honest.
+    let pointer_line = trailer(&id, lines);
+    if body.len() <= pointer_line.len() {
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(body);
+        if !body.is_empty() && !body.ends_with(b"\n") {
+            let _ = out.write_all(b"\n");
+        }
+        let est = cx.estimate(&before, Class::Code);
+        let _ = cx.record(&Measurement {
+            plugin: "cmd",
+            kind: "raw",
+            before_bytes: body.len() as u64,
+            after_bytes: body.len() as u64,
+            est_before: est,
+            est_after: est,
+            ref_id: None,
+            call_id: None,
+        });
+        return;
+    }
+    let settings = rules::Settings::from_config(cfg);
+    let family = formatters::family(argv);
+    let (filtered, kind) = formatters::compress(&settings, argv, &before, exit, &id);
     // A formatter that trims a 29-line `git log` to 20 leaves the other 9 reachable only
     // through this id. A shortening that took only whitespace/ANSI has nothing to expand
     // (T160) — and then nothing references the id, so the archive row is skipped too.
@@ -332,7 +364,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32) {
         println!();
     }
     if pointer {
-        println!("[rtok {id} · {lines} lines · expand: rtok expand {id}]");
+        println!("{}", trailer(&id, lines));
     }
     let _ = cx.record(&Measurement {
         plugin: "cmd",
@@ -485,19 +517,28 @@ mod tests {
 
     /// D4 at the byte level: a command that emits invalid UTF-8 must come back whole from
     /// `expand`. The archive used to store the lossy string, so every such byte was U+FFFD.
-    /// Emit bytes with POSIX octal `printf` escapes (`\\377`), not bash-only `\\xHH`:
-    /// dash `/bin/sh` leaves `\\xHH` literal, which made this test fail when `SHELL` is unset.
+    /// This is `emit_filtered`'s job, not the host shell's: earlier drafts padded the
+    /// fixture through a real `rtok run` subprocess (a `printf` octal escape, then a file
+    /// read via `cat`/`type`) and hit a different Windows shell-quoting failure each time
+    /// — cmd.exe mangles backslash escapes and treats `%` as expansion, and even a plain
+    /// `type <path>` came back empty on that runner. None of that exercises the archive
+    /// logic under test, so call `emit_filtered` directly, like
+    /// `emit_filtered_archives_stdin_and_records` above.
     #[test]
     fn archive_keeps_bytes_that_are_not_utf8() {
         let (c, dir) = cfg("bytes");
-        let code = run(&c, &["printf".into(), r"\377\376ok\n".into()]).unwrap();
-        assert_eq!(code, 0);
+        // T175 passes bodies smaller than their own trailer through with no archive, so
+        // this fixture pads past the ~170 B trailer to still exercise the archive path.
+        let mut body = b"\xff\xfeok\n".to_vec();
+        body.extend(std::iter::repeat_n(b'x', 300));
+        body.push(b'\n');
+        emit_filtered(&c, &["cat".into()], &body, 0);
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .unwrap()
             .map(|e| e.unwrap().path())
             .collect();
         let raw = fs::read(&files[0]).unwrap();
-        assert_eq!(raw, b"\xff\xfeok\n");
+        assert_eq!(raw, body);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -562,6 +603,54 @@ mod tests {
             "hello-trycmd",
             false
         ));
+    }
+
+    /// T175: bodies smaller than their own trailer pass through verbatim. A 150-byte
+    /// `ps` body the `ps_aux` formatter would reshape comes back byte-identical with
+    /// no trailer, no archive row, and a zero-saving `raw` Measurement row.
+    #[test]
+    fn tiny_body_passes_through_verbatim_with_no_negative_saving() {
+        let (c, dir) = cfg("tiny-passthrough");
+        let line = "root         1  0.0  00:00:01 /sbin/init worker-7 extra-flag";
+        let mut rows = vec!["USER         PID  %CPU TIME     COMMAND".to_string()];
+        while rows.join("\n").len() + 1 + line.len() < 150 {
+            rows.push(line.to_string());
+        }
+        let body = rows.join("\n");
+        assert!(body.len() < 200, "fixture must be tiny: {}", body.len());
+        let filtered = formatters::compress(
+            &rules::Settings::builtin(),
+            &["ps".into(), "aux".into()],
+            &body,
+            0,
+            "deadbeef",
+        )
+        .0;
+        assert_ne!(filtered, body, "formatter must reshape the fixture");
+        assert!(
+            needs_pointer(
+                body.lines().count() as u32,
+                40,
+                body.as_bytes(),
+                &filtered,
+                false
+            ),
+            "old path would have attached a trailer"
+        );
+        emit_filtered(&c, &["ps".into(), "aux".into()], body.as_bytes(), 0);
+        let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
+            .map(|rd| rd.map(|e| e.unwrap().path()).collect())
+            .unwrap_or_default();
+        assert!(files.is_empty(), "no archive on pass-through: {files:?}");
+        let store = crate::store::Store::open(&c.core.db_path).unwrap();
+        let rows = store.list_measurements("cmd").unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].kind, "raw", "{rows:?}");
+        assert_eq!(rows[0].before_bytes, body.len() as i64, "{rows:?}");
+        assert_eq!(rows[0].after_bytes, rows[0].before_bytes, "{rows:?}");
+        assert_eq!(rows[0].est_after, rows[0].est_before, "{rows:?}");
+        assert!(rows[0].ref_id.is_none(), "{rows:?}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
