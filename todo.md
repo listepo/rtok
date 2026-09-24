@@ -47,3 +47,4 @@
 - T246.5. zed and grok MCP entries
 - T250.3. Cursor hooks find `rtok` off `PATH`
 - T246.6. Hook entries of cursor, gemini, kimi and codewhale
+- T261. CI takes ~9.5 min on macOS; the webui check recompiles 183 crates every run
