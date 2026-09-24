@@ -1,5 +1,6 @@
 argv: python_trace
 exit: 0
+min_saving: 18
 ---
 ok 0
 ok 1

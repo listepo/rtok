@@ -1,5 +1,6 @@
 argv: docker ps
 exit: 0
+min_saving: 59
 ---
 CONTAINER ID   IMAGE                        COMMAND                  STATUS         PORTS                      NAMES
 web-00        Up 3 days   0.0.0.0:8000->80/tcp   registry.local/web:v0.2.1

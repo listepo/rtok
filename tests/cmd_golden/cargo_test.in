@@ -1,5 +1,6 @@
 argv: cargo test
 exit: 0
+min_saving: 47
 ---
    Compiling foo v0.1.0
     Finished test

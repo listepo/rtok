@@ -5621,3 +5621,18 @@ Result: One `Store::measurement_totals()` (Diesel `GROUP BY plugin, kind`, no ra
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T238. Saving floor for the `cmd` golden corpus
+
+`tests/cmd_golden` locks each family's output byte for byte (`ten_families_and_aws_key_unredacted` in `src/plugins/cmd/formatters.rs`), but nothing guards the size of the saving: `RTOK_BLESS` can re-bless a `.out` that keeps twice as much and every test stays green.
+
+Plan: a `min_saving: <percent>` header line in each `.in` next to `argv:` / `exit:`; the golden test estimates tokens of the `.in` body and the produced output with `tokens::estimate` (fixed `Estimator` rates, as in `tests/mode_bench.rs`) and fails when the saving is under the floor or the output is larger than the input. Floors are set a few points below today's value per file; files whose rule leaves short output unchanged declare `min_saving: 0`. A missing header fails the test, so new goldens must declare one.
+
+Check: lowering a rule's `head`/`tail` in `rules/default.toml` and re-blessing makes the test fail with the file name, the floor and the measured value; `just check` green.
+
+Do (2026-09-24): `parse_in` in `src/plugins/cmd/formatters.rs` now reads an optional `min_saving: <percent>` header line (alongside `argv:`/`exit:`) and returns it as `Option<u32>`; every one of its 4 call sites in the test module was updated for the new 4-tuple. `ten_families_and_aws_key_unredacted` estimates the `.in` body and the `compress()`-produced output with `crate::tokens::estimate(_, Class::Code, &SAVING_RATES)` — `Class::Code` because that is the class `cmd/run.rs` and `cmd/filter.rs` already record every `Measurement` with (reused, not duplicated), and `SAVING_RATES` is a fixed local `Estimator { code: 3.5, prose: 4.2, json: 3.0, cjk: 1.0 }` matching `tests/mode_bench.rs`/`tokens::tests::RATES`, not `Estimator::default()`, so a config default change can't silently move the floors. The test panics naming the file, floor and measured value when saving < floor, and separately when output tokens > input tokens; a `.in` without `min_saving:` panics naming the file. All 43 goldens got a `min_saving:` header measured against today's `compress()` output (`floor = max(0, measured - 3)`); none had output larger than input, so no family needed reporting as a bug. `src/plugins/cmd/AGENTS.md`'s golden-tests line now documents the header and the three failure modes. Verify: `mise exec -- cargo test --lib plugins::cmd::formatters`, mutation check (temporarily set `apt.in`'s floor to 99 → failed naming `apt.in`, "saving 17% below floor 99%"; temporarily dropped `aws.in`'s header → failed "missing `min_saving:` header"; both reverted), `mise exec -- just check`.
+
+Result: `tests/cmd_golden/*.in` all carry `min_saving: <percent>`, measured `2026-09-24` against `formatters::compress()` with `Class::Code` and the fixed 3.5/4.2/3.0/1.0 rates — floor min 0% (`cat.in`, `npm.in`, output already unchanged by design), floor median 18%, floor max 92% (`cargo_check.in`). `ten_families_and_aws_key_unredacted` fails a file below its floor, one whose output outgrew its input, or one missing the header. Files: `src/plugins/cmd/formatters.rs`, `src/plugins/cmd/AGENTS.md`, `tests/cmd_golden/*.in` (43 files, one header line each).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

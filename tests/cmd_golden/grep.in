@@ -1,5 +1,6 @@
 argv: grep -n hit src
 exit: 0
+min_saving: 53
 ---
 src/a.rs:1: hit 0
 src/a.rs:1: hit 1

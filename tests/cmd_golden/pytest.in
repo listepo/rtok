@@ -1,5 +1,6 @@
 argv: pytest
 exit: 0
+min_saving: 57
 ---
 ============================= test session starts ==============================
 collected 3 items

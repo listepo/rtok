@@ -82,7 +82,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T228 | todo | P2 | 2 | 0% | |
 | T229 | todo | P2 | 2 | 0% | |
 | T232 | todo | P3 | 2 | 0% | |
-| T238 | todo | P1 | 2 | 0% | |
 | T239 | todo | P1 | 3 | 0% | |
 | T240 | todo | P2 | 2 | 0% | |
 | T241 | todo | P2 | 3 | 0% | |
@@ -524,14 +523,6 @@ Found 2026-09-23 in the D27 audit: `worktree list` and `worktree gc --dry-run` a
 Plan: page `("worktrees", "worktrees")` — path, branch, owner (lock reason), age, `target/` size, prunable flag: the same rows as `worktree list --json`, read through one accessor; `gc`/`clean` stay CLI. Bound the filesystem walk (cached size, TTL) so the snapshot tick stays cheap (T206).
 
 Check: `worktrees_page_exists_on_both_surfaces`; a fixture repo with one locked worktree renders its owner; `just check` green.
-
-### T238. Saving floor for the `cmd` golden corpus
-
-`tests/cmd_golden` locks each family's output byte for byte (`ten_families_and_aws_key_unredacted` in `src/plugins/cmd/formatters.rs`), but nothing guards the size of the saving: `RTOK_BLESS` can re-bless a `.out` that keeps twice as much and every test stays green.
-
-Plan: a `min_saving: <percent>` header line in each `.in` next to `argv:` / `exit:`; the golden test estimates tokens of the `.in` body and the produced output with `tokens::estimate` (fixed `Estimator` rates, as in `tests/mode_bench.rs`) and fails when the saving is under the floor or the output is larger than the input. Floors are set a few points below today's value per file; files whose rule leaves short output unchanged declare `min_saving: 0`. A missing header fails the test, so new goldens must declare one.
-
-Check: lowering a rule's `head`/`tail` in `rules/default.toml` and re-blessing makes the test fail with the file name, the floor and the measured value; `just check` green.
 
 ### T239. `Measurement` rows match the bytes each surface actually returned
 

@@ -435,21 +435,51 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cmd_golden")
     }
 
-    fn parse_in(s: &str) -> (Vec<String>, i32, String) {
+    /// `min_saving: <percent>` (T238): the floor a family's saving must clear, checked in
+    /// `ten_families_and_aws_key_unredacted`. `None` when the header line is absent — the
+    /// golden test then fails so every `.in` must declare one.
+    fn parse_in(s: &str) -> (Vec<String>, i32, Option<u32>, String) {
         let mut argv = Vec::new();
         let mut exit = 0;
+        let mut min_saving = None;
         let mut rest = s;
         for line in s.lines() {
             if let Some(a) = line.strip_prefix("argv: ") {
                 argv = a.split_whitespace().map(str::to_string).collect();
             } else if let Some(e) = line.strip_prefix("exit: ") {
                 exit = e.parse().unwrap_or(0);
+            } else if let Some(m) = line.strip_prefix("min_saving: ") {
+                min_saving = m.trim().parse().ok();
             } else if line == "---" {
                 rest = s.split_once("---\n").map(|(_, r)| r).unwrap_or("");
                 break;
             }
         }
-        (argv, exit, rest.to_string())
+        (argv, exit, min_saving, rest.to_string())
+    }
+
+    /// Fixed rates (T238), matching `tests/mode_bench.rs` and `tokens::tests::RATES` — not
+    /// `Estimator::default()`, so a config default change can't silently shift the goldens'
+    /// floors.
+    const SAVING_RATES: crate::config::Estimator = crate::config::Estimator {
+        code: 3.5,
+        prose: 4.2,
+        json: 3.0,
+        cjk: 1.0,
+    };
+
+    /// Saving % of shrinking `before` to `after`, both estimated as `Class::Code` — the same
+    /// class `cmd/run.rs` and `cmd/filter.rs` record every `Measurement` with, so the floor
+    /// tracks what a real run actually reports instead of a duplicated estimate path.
+    fn saving_pct(before: &str, after: &str) -> (u32, u32, i64) {
+        let b = crate::tokens::estimate(before, rtok_plugin_sdk::Class::Code, &SAVING_RATES);
+        let a = crate::tokens::estimate(after, rtok_plugin_sdk::Class::Code, &SAVING_RATES);
+        let pct = if b == 0 {
+            0
+        } else {
+            (b as i64 - a as i64) * 100 / b as i64
+        };
+        (b, a, pct)
     }
 
     #[test]
@@ -468,11 +498,26 @@ mod tests {
             }
             n += 1;
             let raw = fs::read_to_string(&p).unwrap();
-            let (argv, exit, output) = parse_in(&raw);
+            let (argv, exit, min_saving, output) = parse_in(&raw);
             let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
             let outp = p.with_extension("out");
             let want = fs::read_to_string(&outp).unwrap();
             assert_eq!(got.trim_end(), want.trim_end(), "{}", p.display());
+            // T238: guard the size of the saving, not only the bytes — a re-blessed `.out`
+            // that keeps twice as much must fail even though it still matches itself.
+            let floor = min_saving
+                .unwrap_or_else(|| panic!("{}: missing `min_saving:` header", p.display()));
+            let (before, after, pct) = saving_pct(&output, &got);
+            assert!(
+                after <= before,
+                "{}: output ({after} tok) is larger than input ({before} tok)",
+                p.display()
+            );
+            assert!(
+                pct >= floor as i64,
+                "{}: saving {pct}% below floor {floor}% (before {before} tok, after {after} tok)",
+                p.display()
+            );
         }
         assert!(n >= 10, "need 10 families, got {n}");
         let secret = fs::read_to_string(dir.join("cat.in")).unwrap();
@@ -480,7 +525,7 @@ mod tests {
         let (got, _) = compress(
             &settings,
             &["cat".into(), "secrets.env".into()],
-            &parse_in(&secret).2,
+            &parse_in(&secret).3,
             0,
             "id",
         );
@@ -609,7 +654,7 @@ mod tests {
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("in"))
         {
             let raw = fs::read_to_string(&p).unwrap();
-            let (argv, exit, output) = parse_in(&raw);
+            let (argv, exit, _, output) = parse_in(&raw);
             if argv.is_empty() {
                 continue;
             }
@@ -651,7 +696,7 @@ mod tests {
             ("ps_aux.in", ["ps", "aux"], "worker-"),
         ] {
             let raw = fs::read_to_string(dir.join(file)).unwrap();
-            let (_, exit, output) = parse_in(&raw);
+            let (_, exit, _, output) = parse_in(&raw);
             let argv = argv0.iter().map(|w| w.to_string()).collect::<Vec<_>>();
             let (got, kind) = compress(&settings, &argv, &output, exit, "deadbeef");
             assert_eq!(kind, "formatter", "{file}");
@@ -727,7 +772,7 @@ mod tests {
             "dotnet_dup.in",
         ] {
             let raw = fs::read_to_string(dir.join(file)).unwrap();
-            let (argv, exit, output) = parse_in(&raw);
+            let (argv, exit, _, output) = parse_in(&raw);
             let (got, _) = compress(&settings, &argv, &output, exit, "deadbeef");
             let mut off = settings.pick(bin(&family_argv(&argv)));
             off.group = Group::Off;

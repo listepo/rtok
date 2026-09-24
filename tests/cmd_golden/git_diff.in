@@ -1,5 +1,6 @@
 argv: git diff
 exit: 0
+min_saving: 11
 ---
 diff --git a/src/lib.rs b/src/lib.rs
 index 111..222 100644

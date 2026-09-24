@@ -1,5 +1,6 @@
 argv: find .
 exit: 0
+min_saving: 82
 ---
 ./src/a0.rs
 ./src/a1.rs

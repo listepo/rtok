@@ -1,5 +1,6 @@
 argv: git log
 exit: 0
+min_saving: 0
 ---
 commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 Author: Dev <dev@example.com>
