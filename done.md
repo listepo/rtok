@@ -5928,3 +5928,16 @@ Result: The exit-127 errors came from the settings-file hooks that `rtok agents 
 
 Status: done 2026-09-24
 Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)
+
+### T250.1. Codex plugin hooks find `rtok` off `PATH`
+
+T250.1–T250.4, creator request 2026-09-24, the follow-up T174 left open: the Codex, Copilot, Cursor and Grok plugin `hooks.json` files call a bare `rtok hook …` with no fallback, so a host whose hook shell lacks `~/.ketch/bin` (a GUI app started from the Dock) hits `rtok: command not found` (exit 127) on every event. Each gets T174's resolver — PATH, then `~/.ketch/bin/rtok`, then exit 0 silently — with any missing-rtok note only on the host's session-start event, in that host's own output shape. How each host runs a hook (read from its shipped code, 2026-09-24): Codex `$SHELL -lc` on Unix and `%COMSPEC% /C` with an optional `commandWindows` on Windows; Copilot separate `bash` and `powershell` fields; Cursor one `command`, `sh -c "<command> <<'CURSOR_HOOK_EOF' …"` on Unix and PowerShell `@'…'@ | & <command>` on Windows; Grok `sh -c` on Unix and PowerShell on Windows, no per-OS field.
+
+Codex: `plugins/codex/hooks/hooks.json` PreCompact/PostCompact get the resolver in `command` and the unchanged bare line in `commandWindows` (cmd.exe cannot run it). Codex's own `~/.codex/hooks.json` is written by `claude::insert_ours`, so T174 fixes that surface. No session-start event here, so no note.
+
+Check: `tests/codex_plugin.rs` runs each `command` with `/bin/sh -c`, an empty PATH and a temp HOME: exit 0 and empty stdout without rtok, a fake `~/.ketch/bin/rtok` exec'd when present; `commandWindows` stays `rtok hook <event>`; `just check` green.
+
+Result: `plugins/codex/hooks/hooks.json` PreCompact and PostCompact now run `command -v rtok >/dev/null 2>&1 && exec rtok hook <event>; [ -x "$HOME/.ketch/bin/rtok" ] && exec "$HOME/.ketch/bin/rtok" hook <event>; exit 0` in `command` and the bare `rtok hook <event>` in `commandWindows`. Codex runs `command` through `$SHELL -lc` on Unix and `commandWindows` through `%COMSPEC% /C` on Windows. There is no brace group, so a fish login shell still parses the line. `~/.codex/hooks.json`, written by `rtok agents install codex` through `claude::insert_ours`, is fixed by T174. Tests: `tests/codex_plugin.rs` pins both fields and runs each `command` with `/bin/sh -c`, an empty PATH and a temp HOME: silent exit 0 without rtok, and the fake `~/.ketch/bin/rtok` exec'd when present.
+
+Status: done 2026-09-24
+Model: Claude Code / claude-sonnet-5 (code), claude-opus-5-5 (review)

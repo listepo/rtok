@@ -19,8 +19,11 @@ Install:
   before they run. Remove: `codex plugin remove rtok@rtok`, then
   `codex plugin marketplace remove rtok`.
 
-`rtok` must be on `PATH`. If it is missing, both hooks fail open (Codex only blocks on an explicit
-decision) and the MCP server does not start; install it with ketch: `ketch install listepo/rtok`.
+The hooks resolve `rtok` from `PATH`, then `~/.ketch/bin/rtok`, else exit 0 silently (Codex only
+blocks on an explicit decision) — so a hook shell whose `PATH` lacks ketch's install dir still
+finds `rtok`. `commandWindows` keeps the bare `rtok hook <event>` for `cmd.exe`, which cannot run
+the POSIX fallback. The MCP server still needs `rtok` on `PATH` and does not start without it.
+Install with ketch: `ketch install listepo/rtok`.
 
 Use the plugin **or** `rtok agents install codex`, not both. That installer writes the same two
 hooks to `~/.codex/hooks.json` and `[mcp_servers.rtok]` to `~/.codex/config.toml`; with both in
@@ -30,8 +33,9 @@ place every event fires twice and two `rtok mcp` processes share one store. Run
 Files:
 
 - `.codex-plugin/plugin.json` — manifest (name, version, metadata, `hooks` and `mcpServers` paths).
-- `hooks/hooks.json` — `rtok hook PreCompact` and `rtok hook PostCompact`, each `timeout: 5`: the
-  same events `rtok agents install codex` registers. Checked by `tests/codex_plugin.rs`.
+- `hooks/hooks.json` — `PreCompact` and `PostCompact`, each `timeout: 5`, resolving `rtok` from
+  `PATH` then `~/.ketch/bin/rtok` (`commandWindows` bare for `cmd.exe`): the same events
+  `rtok agents install codex` registers. Checked by `tests/codex_plugin.rs`.
 - `.mcp.json` — `mcpServers.rtok` → `rtok mcp`.
 - `.agents/plugins/marketplace.json` — the local marketplace that lists this folder.
 
