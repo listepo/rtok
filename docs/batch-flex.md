@@ -195,6 +195,15 @@ default_model = ""      # empty = leave client model
 # policy table / classifier: not specified yet (**TODO**)
 ```
 
+
+## Model routing (separate line)
+
+**Planned / Later** — not part of the Batch/Flex MVP. Decision **D9** /
+`research.md` §16.3 #3: route by job (cheap for mechanical work, mid for
+coding, expensive only after user confirm) by rewriting `model` on sync
+wires under `[proxy.routing]`. Sticky upstream (`sticky`, I-84) is
+prompt-cache affinity, not model pick. Full design: [model-routing.md](model-routing.md).
+
 ## Related
 
 - [prompt-cache.md](prompt-cache.md) — why rewrites stay outside the live edge
