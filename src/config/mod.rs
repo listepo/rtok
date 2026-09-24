@@ -380,7 +380,6 @@ section! {
         gemini: SetupGemini = SetupGemini::default(),
         codewhale: SetupCodewhale = SetupCodewhale::default(),
         mimo: SetupMimo = SetupMimo::default(),
-        antigravity: SetupAntigravity = SetupAntigravity::default(),
     }
 }
 
@@ -488,16 +487,6 @@ section! {
     /// `[setup.mimo]` — MiMo Code's `mimocode.json` (`mcp`), the OpenCode-fork config file
     /// (T186, `MIMOCODE_HOME`/`MIMOCODE_CONFIG` move it).
     SetupMimo { config_path: PathBuf = p("~/.config/mimocode/mimocode.json") }
-}
-
-section! {
-    /// `[setup.antigravity]` — Antigravity 2.0 / IDE plugin root (`plugins_path`, rtok links
-    /// `plugins/antigravity` there) and the CLI's staged-plugin root (`cli_plugins_path`,
-    /// written only by `agy plugin install`; read to detect it) (T91.1).
-    SetupAntigravity {
-        plugins_path: PathBuf = p("~/.gemini/config/plugins"),
-        cli_plugins_path: PathBuf = p("~/.gemini/antigravity-cli/plugins"),
-    }
 }
 
 section! {
@@ -1017,8 +1006,6 @@ impl Config {
             setup.gemini.dir,
             setup.codewhale.dir,
             setup.mimo.config_path,
-            setup.antigravity.plugins_path,
-            setup.antigravity.cli_plugins_path,
             plugins.cmd.rules,
             plugins.cmd.rules_dir,
             plugins.inject.modes_dir,

@@ -181,9 +181,6 @@ dir           = "~/.gemini"                  # settings.json (hooks, mcpServers)
 dir           = "~/.codewhale"               # config.toml ([[hooks.hooks]]), mcp.json (mcpServers)
 [setup.mimo]
 config_path   = "~/.config/mimocode/mimocode.json" # mcp (OpenCode-fork shape)
-[setup.antigravity]
-plugins_path     = "~/.gemini/config/plugins"          # Antigravity 2.0 / IDE: plugins/antigravity linked here
-cli_plugins_path = "~/.gemini/antigravity-cli/plugins" # agy plugin install stages here; read only
 
 [expand]                              # rtok expand <id>
 max_lines = 0                         # 0 = unlimited   (--lines a-b is per call)

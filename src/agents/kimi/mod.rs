@@ -17,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use rtok_agent_sdk::NO_CHANGES;
+use rtok_agent_sdk::{KETCH_INSTALL, NO_CHANGES};
 use serde_json::{Value, json};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
 
@@ -171,20 +171,38 @@ pub fn plugin_detected(cfg: &Config) -> bool {
     plugin_marker(cfg).is_file()
 }
 
-/// The `/plugins install <resolved plugins/kimi path>` line (T86, [`super::print_offer`]):
-/// rtok never writes `plugins/managed/` or `installed.json` — that format is Kimi's and
-/// undocumented.
+/// The `/plugins install <resolved plugins/kimi path>` line (T86): printed behind
+/// `--yes` only, on dry-run and apply alike; rtok never writes `plugins/managed/`
+/// or `installed.json` — that format is Kimi's and undocumented.
+/// On remove the managed copy is left alone with its own remove line.
+/// Gating on the flag matches `Support::Offer("--yes")`; the flag never turns
+/// the printed line into state (`installed()` reads the marker alone).
 pub fn offer_plugin(cfg: &Config, remove: bool) -> Result<String> {
-    Ok(super::print_offer(
-        cfg,
-        remove,
-        plugin_detected(cfg),
-        "plugins/kimi",
-        &format!(
-            "/plugins install {}",
+    let a = apply(cfg);
+    if a.dry_run {
+        if !a.yes {
+            return Ok(NO_CHANGES.into());
+        }
+        return Ok(format!(
+            "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
             super::plugin_src("plugins/kimi").display()
-        ),
-        "keep plugins/managed/rtok (owned by Kimi; remove with `/plugins remove rtok`)",
+        ));
+    }
+    if remove {
+        if plugin_detected(cfg) {
+            return Ok(
+                "keep plugins/managed/rtok (owned by Kimi; remove with `/plugins remove rtok`)"
+                    .into(),
+            );
+        }
+        return Ok(NO_CHANGES.into());
+    }
+    if !a.yes {
+        return Ok(NO_CHANGES.into());
+    }
+    Ok(format!(
+        "offer plugins/kimi → /plugins install {} {KETCH_INSTALL}",
+        super::plugin_src("plugins/kimi").display()
     ))
 }
 

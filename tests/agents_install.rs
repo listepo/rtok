@@ -85,8 +85,6 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
             vec![],
             Some(home.join(".config/mimocode/mimocode.json")),
         ),
-        // Desktop links the plugin on `--yes` (no `default_install`); nothing file-backed.
-        ("antigravity", vec!["--yes"], None),
     ]
 }
 

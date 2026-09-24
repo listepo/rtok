@@ -94,8 +94,6 @@ pub fn write_cfg(home: &Path) -> PathBuf {
         ".gemini",
         ".codewhale",
         ".config/mimocode",
-        ".gemini/config/plugins",
-        ".gemini/antigravity-cli/plugins",
     ] {
         fs::create_dir_all(home.join(sub)).unwrap();
     }
@@ -124,9 +122,7 @@ pub fn write_cfg(home: &Path) -> PathBuf {
               [setup.zed]\nconfig_path = \"{h}/.config/zed/settings.json\"\n\
               [setup.gemini]\ndir = \"{h}/.gemini\"\n\
               [setup.codewhale]\ndir = \"{h}/.codewhale\"\n\
-              [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n\
-              [setup.antigravity]\nplugins_path = \"{h}/.gemini/config/plugins\"\n\
-              cli_plugins_path = \"{h}/.gemini/antigravity-cli/plugins\"\n"
+              [setup.mimo]\nconfig_path = \"{h}/.config/mimocode/mimocode.json\"\n"
         ),
     )
     .unwrap();
