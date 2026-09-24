@@ -122,7 +122,8 @@ fn hook_commands_resolve_path_then_ketch_then_exit_open() {
                 .spawn()
                 .unwrap();
             let mut stdin = child.stdin.take().unwrap();
-            stdin.write_all(b"{}").unwrap();
+            // A fail-open hook may exit before reading stdin: a broken pipe is fine (T251).
+            drop(stdin.write_all(b"{}"));
             drop(stdin);
             let out = child.wait_with_output().unwrap();
             assert!(out.status.success(), "{event}: {command}");
