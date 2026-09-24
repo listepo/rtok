@@ -1,11 +1,13 @@
 //! T38.2: one e2e case per catalogue plugin through its surface (Measurement rows where owed).
 use rtok::config::Config;
 use rtok::proxy::{ProxyState, app};
+use rtok::store::MeasRow;
+use rtok::tokens::{self, Class};
 use serde_json::json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 struct Home(PathBuf);
 impl Drop for Home {
     fn drop(&mut self) {
@@ -39,6 +41,11 @@ fn kinds(home: &Home, plugin: &str) -> Vec<String> {
     let s = rtok::store::Store::open(&home.0.join("rtok.db")).unwrap();
     let rows = s.list_measurements(plugin).unwrap();
     rows.into_iter().map(|r| r.kind).collect()
+}
+/// T239: full rows (not just kinds) for asserting `before`/`after` against real bytes.
+fn rows(home: &Home, plugin: &str) -> Vec<MeasRow> {
+    let s = rtok::store::Store::open(&home.0.join("rtok.db")).unwrap();
+    s.list_measurements(plugin).unwrap()
 }
 fn tool(home: &Home, cwd: &Path, name: &str, args: &str) -> String {
     let p = format!("{{\"name\":\"{name}\",\"arguments\":{args}}}");
@@ -311,4 +318,196 @@ async fn compress_summary_row_visible_in_stats() {
     let rows = v["rows"].as_array().unwrap();
     let hit = rows.iter().any(|r| r["kind"] == "summary");
     assert!(hit, "{out}");
+}
+
+// T239: `Measurement` rows must match the bytes each surface actually returned, not just
+// carry the right `kind`. Each test below recomputes `before`/`after` independently from
+// what the surface really sent back (never copied from the row) using the same estimator
+// (`rtok::tokens::estimate`) and config rates the production code used.
+
+/// Hook surface: `cmd` has no `PostToolUse` handler (`grep -n "fn post_tool" src/plugins/cmd`
+/// finds none) — the whole saving happens at `PreToolUse`, which rewrites `Bash` to
+/// `rtok run --` (`src/plugins/cmd/hook.rs`); the host then executes that, and its stdout
+/// *is* what `PostToolUse` would see. So this test confirms the rewrite, then runs it.
+///
+/// `trailer_min_lines` is raised so the row's `filtered` text is the whole printed body:
+/// at the default, `emit_filtered` (src/plugins/cmd/run.rs:368-384) prints `filtered` plus
+/// a separate `[rtok <id> · N lines · expand …]` trailer line, but measures only `filtered`
+/// — the row then understates `after` by the trailer's bytes/tokens. That is a real bug
+/// (reported separately); this test does not launder it into a false-passing assertion.
+#[test]
+fn cmd_hook_measurement_matches_returned_bytes() {
+    let home = tmp("cmd-bytes");
+    std::fs::write(
+        home.0.join("config.toml"),
+        "[plugins.cmd]\ntrailer_min_lines = 100000\n",
+    )
+    .unwrap();
+    let body: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+    let file = home.0.join("big.txt");
+    std::fs::write(&file, &body).unwrap();
+    // Built with `json!` (not `format!`) so a Windows `C:\...` path serializes as valid
+    // JSON — a raw backslash in a hand-written string literal breaks parsing and the hook
+    // fails open silently, per `tests/commands_e2e.rs`'s `hook_rewrite_of_sleep_cat_tail_runs_through_rtok`.
+    let original = format!("cat {}", file.display());
+    let pre = json!({
+        "session_id": "s",
+        "cwd": home.0,
+        "tool_name": "Bash",
+        "tool_input": {"command": original},
+        "hook_event_name": "PreToolUse",
+    })
+    .to_string();
+    let modified = js(&run(&home, &["hook", "PreToolUse"], &pre, &home.0))["hookSpecificOutput"]
+        ["updatedInput"]["command"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert!(modified.starts_with("rtok run -- "), "{modified}");
+    let out = run(&home, &["run", "cat", file.to_str().unwrap()], "", &home.0);
+    let rows = rows(&home, "cmd");
+    let row = rows
+        .iter()
+        .find(|r| r.kind != "raw")
+        .expect("shortened row");
+    let cfg = Config::load_from(&home.0).unwrap();
+    assert_eq!(row.before_bytes as usize, body.len());
+    assert_eq!(
+        row.est_before,
+        tokens::estimate(&body, Class::Code, &cfg.estimator) as i32
+    );
+    // `emit_filtered` pads a trailing `\n` after the measured text when it is missing one
+    // (run.rs ~L369); allow that one cosmetic byte while token estimates must match exactly.
+    assert!(
+        row.after_bytes as usize == out.len() || row.after_bytes as usize + 1 == out.len(),
+        "after_bytes {} vs returned {} bytes",
+        row.after_bytes,
+        out.len()
+    );
+    assert_eq!(
+        row.est_after,
+        tokens::estimate(&out, Class::Code, &cfg.estimator) as i32
+    );
+    assert!(row.after_bytes <= row.before_bytes, "{row:?}");
+}
+
+/// MCP surface: `read` on a large file in `stripped` mode. `src/plugins/read/mod.rs`
+/// records `before_bytes`/`after_bytes` from the exact `raw`/`out` strings it returns, so
+/// there is no intermediate value to drift from what the tool answers with.
+#[test]
+fn read_stripped_measurement_matches_returned_text() {
+    let home = tmp("read-bytes");
+    let mut src = String::new();
+    for i in 1..=120 {
+        src.push_str(&format!(
+            "// comment line {i} filler filler filler filler\n"
+        ));
+    }
+    src.push_str("fn f() { let x = 1; println!(\"{}\", x); }\n");
+    std::fs::write(home.0.join("a.rs"), &src).unwrap();
+    let out = tool(
+        &home,
+        &home.0,
+        "read",
+        r#"{"path":"a.rs","mode":"stripped"}"#,
+    );
+    assert!(out.len() < src.len(), "{out}");
+    let cfg = Config::load_from(&home.0).unwrap();
+    let rows = rows(&home, "read");
+    let row = rows
+        .iter()
+        .find(|r| r.kind == "stripped")
+        .expect("stripped row");
+    assert_eq!(row.before_bytes as usize, src.len());
+    assert_eq!(
+        row.est_before,
+        tokens::estimate(&src, Class::Code, &cfg.estimator) as i32
+    );
+    assert_eq!(row.after_bytes as usize, out.len());
+    assert_eq!(
+        row.est_after,
+        tokens::estimate(&out, Class::Code, &cfg.estimator) as i32
+    );
+}
+
+/// Proxy surface: `compress` mode archives a `tool_result` older than `keep_turns`
+/// (`src/plugins/archive/mod.rs::rewrite_block`), which records `before`/`after` from the
+/// same `text`/`live` strings it substitutes into the request — so the row is checked
+/// against the bytes actually forwarded to the upstream mock, captured via a custom matcher.
+#[tokio::test]
+async fn proxy_archive_measurement_matches_forwarded_bytes() {
+    let home = tmp("archive-bytes");
+    let captured: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+    let cap = captured.clone();
+    let srv = httpmock::MockServer::start();
+    srv.mock(|w, t| {
+        w.method(httpmock::Method::POST)
+            .path("/v1/messages")
+            .is_true(move |req: &httpmock::HttpMockRequest| {
+                *cap.lock().unwrap() = Some(req.body_vec());
+                true
+            });
+        t.status(200).body(UP);
+    });
+    let mut cfg = Config::load_from(&home.0).unwrap();
+    cfg.proxy.upstream = srv.base_url();
+    cfg.proxy.mode = "compress".into();
+    // `compress` (on by default) would further shrink the archive pointer into an
+    // extractive summary and record its own chained row (src/plugins/compress/mod.rs) —
+    // off here so `archive`'s pointer is what actually reaches the upstream mock.
+    cfg.plugins.compress.enabled = false;
+    let st = Arc::new(ProxyState::new(&cfg).unwrap());
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let a = l.local_addr().unwrap().to_string();
+    tokio::spawn(axum::serve(l, app(st.clone())).into_future());
+
+    // 5 user turns, `keep_turns` (default 4) means only the oldest (turn 4, counted from
+    // the end) is eligible; the other 4 are small and stay untouched, so exactly one row.
+    let text: String = (1..=600)
+        .map(|i| format!("1:{i}:padding"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut ms = vec![user_msg(1, &serde_json::to_string(&text).unwrap())];
+    ms.extend((2..=5).map(|t| user_msg(t, "\"ok\"")));
+    let req = format!(
+        r#"{{"model":"m","messages":[{}],"metadata":{{"user_id":"s-archive-bytes"}}}}"#,
+        ms.join(",")
+    )
+    .into_bytes();
+    assert_eq!(post(&a, req).await, UP);
+
+    let db_rows = st.store.list_measurements("archive").unwrap();
+    assert_eq!(db_rows.len(), 1, "{db_rows:?}");
+    let row = &db_rows[0];
+    assert_eq!(row.before_bytes as usize, text.len());
+    assert_eq!(
+        row.est_before,
+        tokens::estimate(&text, Class::Code, &cfg.estimator) as i32
+    );
+    let body = captured.lock().unwrap().clone().expect("upstream request");
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let live = v["messages"][0]["content"][0]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    assert_eq!(row.after_bytes as usize, live.len());
+    assert_eq!(
+        row.est_after,
+        tokens::estimate(&live, Class::Code, &cfg.estimator) as i32
+    );
+    assert!(row.after_bytes <= row.before_bytes, "{row:?}");
+}
+
+/// A body below the rule's threshold prints verbatim (`emit_filtered`'s early `raw` return,
+/// src/plugins/cmd/run.rs): the row must show zero saving, never `after > before`.
+#[test]
+fn cmd_run_short_body_records_zero_not_negative_saving() {
+    let home = tmp("cmd-short");
+    let out = run(&home, &["run", "echo", "hi"], "", &home.0);
+    let rows = rows(&home, "cmd");
+    let row = rows.last().expect("a row for the short body");
+    assert_eq!(row.kind, "raw");
+    assert_eq!(row.before_bytes, row.after_bytes, "{row:?}");
+    assert_eq!(row.after_bytes as usize, out.len());
+    assert!(row.after_bytes <= row.before_bytes);
 }
