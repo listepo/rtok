@@ -49,6 +49,7 @@ const DOC_DOMAINS: &[(&str, &str)] = &[
     ("plugins/pi", "pi.dev"),
     ("plugins/zcode", "zcode.z.ai"),
     ("src/agents/aider", "aider.chat"),
+    ("src/agents/antigravity", "antigravity.google"),
     ("src/agents/claude", "code.claude.com"),
     ("src/agents/codewhale", "github.com"),
     ("src/agents/codex", "chatgpt.com"),
