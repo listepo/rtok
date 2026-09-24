@@ -26,6 +26,9 @@ use crate::plugins::cmd::rules::{self, Settings};
 enum Framing {
     Line,
     Header,
+    /// A malformed header block (unparseable `Content-Length`, or a body shorter than the
+    /// one declared): the exact bytes consumed so far, forwarded with no framing added.
+    Raw,
 }
 
 /// `tools/call` request ids the client sent and the server has not answered yet, with the
@@ -71,10 +74,13 @@ pub fn run(cfg: &Config, argv: &[String]) -> Result<i32> {
     let mut reader = BufReader::new(from_server);
     let mut frame = Vec::new();
     while let Some(framing) = read_frame(&mut reader, &mut frame) {
-        let short = runtime.as_ref().and_then(|cx| {
-            let tool = take_call(&pending, &frame)?;
-            shorten(cx, &settings, &server, &tool, &frame)
-        });
+        // Always drain `pending` for this id, even when `runtime` is None (D4: a store
+        // that fails to open must not leak the map for the connection's lifetime).
+        let tool = take_call(&pending, &frame);
+        let short = runtime
+            .as_ref()
+            .zip(tool.as_deref())
+            .and_then(|(cx, tool)| shorten(cx, &settings, &server, tool, &frame));
         let body = short.as_deref().unwrap_or(&frame);
         if write_frame(&mut stdout, framing, body).is_err() {
             break;
@@ -83,7 +89,9 @@ pub fn run(cfg: &Config, argv: &[String]) -> Result<i32> {
     Ok(child.wait()?.code().unwrap_or(1))
 }
 
-/// One frame's JSON body without its framing. `None` at EOF or on a broken header.
+/// One frame's JSON body without its framing, or (`Framing::Raw`) the exact bytes of a
+/// malformed header block. `None` only at real EOF — every byte read off the wire is
+/// forwarded exactly once, never dropped (fail open, D4).
 fn read_frame(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Option<Framing> {
     buf.clear();
     let first = loop {
@@ -102,24 +110,54 @@ fn read_frame(r: &mut impl BufRead, buf: &mut Vec<u8>) -> Option<Framing> {
         }
         return Some(Framing::Line);
     }
+    let mut header = Vec::new();
     let mut len = None;
     loop {
         let mut line = String::new();
         if r.read_line(&mut line).ok()? == 0 {
-            return None;
+            // Stream closed mid-header: forward whatever real bytes already arrived
+            // rather than silently dropping them.
+            return if header.is_empty() {
+                None
+            } else {
+                *buf = header;
+                Some(Framing::Raw)
+            };
         }
-        let line = line.trim_end();
-        if line.is_empty() {
+        header.extend_from_slice(line.as_bytes());
+        let trimmed = line.trim_end();
+        if trimmed.is_empty() {
             break;
         }
-        if let Some((name, value)) = line.split_once(':')
+        if let Some((name, value)) = trimmed.split_once(':')
             && name.eq_ignore_ascii_case("content-length")
         {
             len = value.trim().parse::<usize>().ok();
         }
     }
-    buf.resize(len?, 0);
-    r.read_exact(buf).ok()?;
+    let Some(len) = len else {
+        // No parseable `Content-Length`: forward the header block verbatim. The blank
+        // line just consumed is already a clean boundary to resynchronize on.
+        *buf = header;
+        return Some(Framing::Raw);
+    };
+    buf.resize(len, 0);
+    let mut got = 0;
+    while got < len {
+        match r.read(&mut buf[got..]) {
+            Ok(0) => break,
+            Ok(n) => got += n,
+            Err(_) => break,
+        }
+    }
+    if got < len {
+        // Body shorter than declared: forward the header plus whatever body bytes
+        // arrived, byte-for-byte, instead of blocking forever or dropping data.
+        buf.truncate(got);
+        header.extend_from_slice(buf);
+        *buf = header;
+        return Some(Framing::Raw);
+    }
     Some(Framing::Header)
 }
 
@@ -131,6 +169,9 @@ fn write_frame(w: &mut impl Write, framing: Framing, body: &[u8]) -> std::io::Re
         }
         Framing::Header => {
             write!(w, "Content-Length: {}\r\n\r\n", body.len())?;
+            w.write_all(body)?;
+        }
+        Framing::Raw => {
             w.write_all(body)?;
         }
     }
@@ -254,6 +295,23 @@ mod tests {
             Some(Framing::Header)
         ));
         assert_eq!(buf, b"{}");
+        assert!(read_frame(&mut r, &mut buf).is_none());
+    }
+
+    #[test]
+    fn header_without_content_length_resyncs_at_the_next_frame() {
+        let body = br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+        let mut stream = b"content-length: nope\r\nX-Other: y\r\n\r\n".to_vec();
+        write_frame(&mut stream, Framing::Header, body).unwrap();
+        let mut r = Cursor::new(stream);
+        let mut buf = Vec::new();
+        assert!(matches!(read_frame(&mut r, &mut buf), Some(Framing::Raw)));
+        assert_eq!(buf, b"content-length: nope\r\nX-Other: y\r\n\r\n");
+        assert!(matches!(
+            read_frame(&mut r, &mut buf),
+            Some(Framing::Header)
+        ));
+        assert_eq!(buf, body);
         assert!(read_frame(&mut r, &mut buf).is_none());
     }
 
