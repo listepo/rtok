@@ -59,7 +59,6 @@ Token-reduction CLI for AI coding agents: hooks, MCP server, API proxy; measured
 | T178 | in progress | P1 | 4 | 75% | Claude Code / claude-opus-5-5 |
 | T182 | todo | P2 | 3 | 0% | |
 | T184 | todo | P1 | 2 | 0% | |
-| T185 | todo | P1 | 3 | 0% | |
 | T186 | todo | P1 | 3 | 0% | |
 | T198 | todo | P2 | 2 | 0% | |
 | T199 | todo | P2 | 1 | 0% | |
@@ -708,20 +707,6 @@ Already covered: `assert_cmd`, `divan`, `httpmock`, `insta`, `rstest`,
 `trycmd`, `similar`. Skip `test-case` / `expect-test` / `mockito` duplicates;
 `testcontainers` / `bolero`/`honggfuzz` only if a measured e2e/fuzz gap appears.
 
-
-### T185. `rtok agents install codewhale` — CodeWhale host (MCP + hooks)
-
-Creator request 2026-09-22: host for CodeWhale (ex-DeepSeek TUI), the open-source terminal coding agent (https://github.com/Hmbown/CodeWhale, https://codewhale.net). Install should wire rtok into CodeWhale the same way other CLI hosts do: MCP first, hooks where the event map is honest.
-
-What CodeWhale is (research): local-first Rust agent (`codewhale` / `codewhale-tui`); reads/edits the workspace, runs shell under approval gates (Plan / Act / YOLO); multi-provider (DeepSeek default, OpenRouter, Anthropic, Ollama/vLLM/SGLang, …); MCP client via `~/.codewhale/mcp.json` (legacy `~/.deepseek/mcp.json`); TUI lifecycle hooks in `~/.codewhale/config.toml` as `[[hooks.hooks]]` with events such as `session_start`, `tool_call_before`, `turn_end`; skills under `~/.codewhale/skills/`; `codewhale exec` for headless/CI.
-
-Plan:
-1. Probe on a real install: confirm mcp.json shape, whether `codewhale mcp add` is the supported write path, and which hook events can carry `rtok hook <event>` (stdin/env contract from their HOOKS.md). Document findings in `research.md` §15.
-2. `src/agents/codewhale/` — `Agent` impl: detect `codewhale` on PATH and `$CODEWHALE_HOME` / `~/.codewhale/`; install writes `mcpServers.rtok` → `rtok mcp`; optionally registers hooks only for events we can map 1:1. Config keys in `config/default.toml` / docs.
-3. Unit tests: idempotent install/remove; foreign MCP servers survive; `agents_doc` bless; trycmd `agents-list*`.
-4. No plugin bundle in v1 unless the probe shows a stable, documented plugin store path (otherwise Offer-only like Kimi/Grok).
-
-Check: `rtok agents list` shows `codewhale`; install on a machine with CodeWhale puts rtok in mcp.json; `just check`.
 
 ### T186. `rtok agents install mimo` — MiMo Code CLI and MiMo Desktop
 

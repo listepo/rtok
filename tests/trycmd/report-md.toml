@@ -199,6 +199,7 @@ Every effective key with its origin — the `config show --sources` page.
 | setup.aider.config_path | ~/.aider.conf.yml | default |
 | setup.backup | true | default |
 | setup.claude.settings_path | ~/.claude/settings.json | default |
+| setup.codewhale.dir | ~/.codewhale | default |
 | setup.codex.config_path | ~/.codex/config.toml | default |
 | setup.copilot.dir | ~/.copilot | default |
 | setup.cursor.hooks_path | ~/.cursor/hooks.json | default |
@@ -252,7 +253,7 @@ Every effective key with its origin — the `config show --sources` page.
 | web.port | 3333 | default |
 | worktree.root |  | default |
 
-206 keys.
+207 keys.
 
 ## Doctor
 
@@ -388,6 +389,11 @@ agents
     mcp     not installed
     proxy   not supported: Gemini CLI has no documented base-URL setting; its own HTTP_PROXY/HTTPS_PROXY covers MCP server transport only, not the model API
     plugin  not supported: the extension tree ships in T118.3; no local plugin directory to link yet
+  codewhale (cli)
+    hooks   not installed
+    mcp     not installed
+    proxy   not supported: CodeWhale providers are [providers.<name>] tables with their own base_url and keys (docs/CONFIGURATION.md); setup does not edit them
+    plugin  not supported: CodeWhale's plugin-bundle system needs a reviewed remote source and exact environment-source references (docs/PLUGIN_BUNDLES.md); there is no local directory to link
 skills (1 listed, 154 desc bytes ≈ 38 tokens per request)
   dry-refactoring project desc 154c body 2772B calls - WARN never invoked
 ```

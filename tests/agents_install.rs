@@ -68,6 +68,11 @@ fn hosts(home: &Path) -> Vec<(&'static str, Vec<&'static str>, Option<PathBuf>)>
         ),
         ("zed", vec![], Some(home.join(".config/zed/settings.json"))),
         ("gemini", vec![], Some(home.join(".gemini/settings.json"))),
+        (
+            "codewhale",
+            vec!["--yes"],
+            Some(home.join(".codewhale/config.toml")),
+        ),
     ]
 }
 
