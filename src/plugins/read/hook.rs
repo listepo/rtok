@@ -48,22 +48,21 @@ fn last_read_id(cx: &Ctx, path: &str) -> Option<String> {
 }
 
 /// The edit window: the last 5 finished tool calls (PostToolUse rows).
+/// T202: `hook_event_name` lives in `calls.name` (`record_call`, `src/hooks/mod.rs`), so the
+/// filter and this limit are now a `WHERE`/`LIMIT` in the query itself
+/// (`recent_hook_inputs_for_event`) — a session with a long history of other events, or of
+/// large PostToolUse bodies further back, costs nothing here.
 const WINDOW_TOOL_CALLS: usize = 5;
-/// Hook rows read to find them. The window used to be the last 10 rows of any event, but
-/// prompts, session starts, compactions and every PreToolUse write rows too, so an edit two
-/// tool calls back could already be out of it.
-const SCAN_ROWS: i64 = 50;
 
 /// True when a PostToolUse(Edit|Write) for `path` sits in the window.
 /// Fail open: a store error allows the Read (unmodified input, D1), and so does a hook
 /// body the store could not keep (empty string) — the window cannot rule out an edit of
 /// this file, and denying a Read of a file the agent just wrote is the worse error.
 fn recently_edited(cx: &Ctx, path: &str) -> bool {
-    let bodies = match cx.recent_hook_inputs(SCAN_ROWS) {
+    let bodies = match cx.recent_hook_inputs_for_event("PostToolUse", WINDOW_TOOL_CALLS as i64) {
         Ok(b) => b,
         Err(_) => return true,
     };
-    let mut tool_calls = 0;
     for b in &bodies {
         if b.is_empty() {
             return true;
@@ -71,15 +70,8 @@ fn recently_edited(cx: &Ctx, path: &str) -> bool {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(b) else {
             continue;
         };
-        if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("PostToolUse") {
-            continue;
-        }
         if edits_path(&v, path) {
             return true;
-        }
-        tool_calls += 1;
-        if tool_calls == WINDOW_TOOL_CALLS {
-            break;
         }
     }
     false
@@ -143,7 +135,7 @@ mod tests {
             "tool_name": "Edit",
             "tool_input": {"file_path": path},
         });
-        let id = cx.record_call("hook", "hook", None).unwrap();
+        let id = cx.record_call("hook", "hook", Some("PostToolUse")).unwrap();
         cx.store
             .insert_call_io(
                 id,
@@ -174,7 +166,7 @@ mod tests {
             "tool_name": "Edit",
             "tool_input": {"file_path": path},
         });
-        let hid = cx.record_call("hook", "hook", None).unwrap();
+        let hid = cx.record_call("hook", "hook", Some("PostToolUse")).unwrap();
         cx.store
             .insert_call_io(
                 hid,
@@ -193,8 +185,11 @@ mod tests {
         }
     }
 
+    /// Mirrors `src/hooks/mod.rs`'s real dispatch: `calls.name` is the hook event name (T202
+    /// filters on it), taken from the same `hook_event_name` field this fixture's body sets.
     fn hook_row(cx: &crate::plugin::Runtime, body: serde_json::Value) {
-        let id = cx.record_call("hook", "hook", None).unwrap();
+        let event = body.get("hook_event_name").and_then(|e| e.as_str());
+        let id = cx.record_call("hook", "hook", event).unwrap();
         let bytes = serde_json::to_vec(&body).unwrap();
         cx.store
             .insert_call_io(id, Some(&bytes), None, 65536, None)
@@ -324,7 +319,7 @@ mod tests {
             "tool_input": {"file_path": p.to_str().unwrap()},
             "pad": big,
         });
-        let id = cx.record_call("hook", "hook", None).unwrap();
+        let id = cx.record_call("hook", "hook", Some("PostToolUse")).unwrap();
         cx.store
             .insert_call_io(
                 id,
@@ -342,6 +337,72 @@ mod tests {
         assert!(
             pre_tool(&ev(&input), &Ctx::new(&cx)).is_none(),
             "an unreadable window must not deny a file this session may have written"
+        );
+    }
+
+    /// T202 Check: 50 unrelated 60 KB `PostToolUse` rows in this session must not make a
+    /// native `Read` PreToolUse pay for their bodies. Wall time here is a generous
+    /// debug-build smoke bound only (CI must not flake on it); the actual p95 < 10 ms budget
+    /// is `cargo test --release latency` (T2.2). The real guard is the query itself: it must
+    /// fetch at most the window size, not all 50 rows (~3 MB) to find nothing in it.
+    #[test]
+    fn hook_pre_tool_read_stays_under_budget_with_50_large_rows() {
+        let cx = cx("big-history");
+        let dir = cx.config.core.archive_dir.parent().unwrap().to_path_buf();
+        let p = dir.join("target.txt");
+        fs::write(&p, "x".repeat(100 * 1024)).unwrap();
+        let path = p.to_str().unwrap();
+
+        // 50 unrelated PostToolUse rows, ~60 KB each, none of them touching `path`.
+        let pad = "x".repeat(60 * 1024);
+        for n in 0..50 {
+            let body = json!({
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Write",
+                "tool_input": {"file_path": format!("/repo/unrelated_{n}.rs")},
+                "pad": pad,
+            });
+            let id = cx.record_call("hook", "hook", Some("PostToolUse")).unwrap();
+            cx.store
+                .insert_call_io(
+                    id,
+                    Some(&serde_json::to_vec(&body).unwrap()),
+                    None,
+                    200_000,
+                    None,
+                )
+                .unwrap();
+        }
+
+        let input = json!({"file_path": path});
+        let start = std::time::Instant::now();
+        let decision = pre_tool(&ev(&input), &Ctx::new(&cx));
+        let elapsed = start.elapsed();
+        assert!(
+            decision.is_some(),
+            "no edit of `path` sits in the 50-row history; the large file must still deny"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(500),
+            "debug-build smoke bound (real budget: release latency test): {elapsed:?}"
+        );
+
+        // The real guard: the query returns at most the window, not the full history.
+        let rows = cx
+            .store
+            .recent_hook_inputs_for_event(&cx.session, "PostToolUse", WINDOW_TOOL_CALLS as i64)
+            .unwrap();
+        assert!(
+            rows.len() <= WINDOW_TOOL_CALLS,
+            "fetched {} rows, want at most the {WINDOW_TOOL_CALLS}-row window",
+            rows.len()
+        );
+        let bytes: usize = rows.iter().map(String::len).sum();
+        assert!(
+            bytes < 500 * 1024,
+            "fetched {bytes} bytes across {} rows; want a few small rows, not the ~3 MB the \
+             full 50-row history holds",
+            rows.len()
         );
     }
 }

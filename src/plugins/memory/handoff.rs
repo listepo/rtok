@@ -47,9 +47,13 @@ pub fn handoff_tool() -> rtok_plugin_sdk::ToolDef {
 const INSTRUCTIONS: &str = "Read a slice with rtok read(mode=lines, range=a-b) before the whole \
 file.\nGet the archived body with rtok expand <id>; answer with path:line citations.";
 
-/// Hook rows scanned for a `PreToolUse(Read|Edit|Write)` when building the ledger (T130).
-/// Generous: several unrelated tool calls can sit between two file touches.
-const LEDGER_SCAN_ROWS: i64 = 200;
+/// `PreToolUse` rows scanned for a `Read|Edit|Write` when building the ledger (T130).
+/// T202: `hook_event_name` lives in `calls.name` (`record_call`, `src/hooks/mod.rs`), so the
+/// query itself now returns only `PreToolUse` rows (`recent_hook_inputs_for_event`) instead
+/// of the last 200 rows of *any* event with the filter applied afterwards in Rust — 100 keeps
+/// today's reach: every tool call writes a Pre and a Post row, so 200 rows of any event held
+/// about 100 `PreToolUse` rows.
+const LEDGER_SCAN_ROWS: i64 = 100;
 
 /// One path this session's own traffic named, and the archive id of its last full MCP read
 /// when the (unrelated, optional) `read` plugin's cache still has one.
@@ -67,16 +71,13 @@ struct Pointer {
 fn ledger(cx: &Ctx) -> Vec<Pointer> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    let Ok(bodies) = cx.recent_hook_inputs(LEDGER_SCAN_ROWS) else {
+    let Ok(bodies) = cx.recent_hook_inputs_for_event("PreToolUse", LEDGER_SCAN_ROWS) else {
         return out;
     };
     for b in &bodies {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(b) else {
             continue;
         };
-        if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("PreToolUse") {
-            continue;
-        }
         let tool = v.get("tool_name").and_then(|t| t.as_str()).unwrap_or("");
         if !matches!(tool, "Read" | "Edit" | "Write") {
             continue;
@@ -187,14 +188,15 @@ mod tests {
     }
 
     /// Fabricates a `PreToolUse(<tool>)` row in the hook window `ledger()` scans (T130), the
-    /// same shape `hooks::dispatch` archives on every real call.
+    /// same shape `hooks::dispatch` archives on every real call — including `calls.name`
+    /// (T202 filters `ledger()`'s query on it, same as real dispatch does).
     fn touch(cx: &crate::plugin::Runtime, tool: &str, path: &str) {
         let stdin = serde_json::json!({
             "hook_event_name": "PreToolUse",
             "tool_name": tool,
             "tool_input": {"file_path": path},
         });
-        let id = cx.record_call("hook", "hook", None).unwrap();
+        let id = cx.record_call("hook", "hook", Some("PreToolUse")).unwrap();
         cx.store
             .insert_call_io(
                 id,
