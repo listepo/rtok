@@ -28,8 +28,9 @@ Files:
   kept for local/dev use (`claude plugin marketplace add plugins/claude`); the installer itself
   now adds the repo-root marketplace (`../../.claude-plugin/marketplace.json`, source
   `./plugins/claude`) by its GitHub shorthand `listepo/rtok`.
-- `hooks/hooks.json` — the installer's nine entries (`claude::ENTRIES`: PreToolUse Bash, Read,
-  Skill; PostToolUse `*`; UserPromptSubmit; SessionStart; PreCompact; PostCompact; SessionEnd) →
+- `hooks/hooks.json` — the installer's ten entries (`claude::CLAUDE_ENTRIES`: PreToolUse Bash, Read,
+  Skill; PostToolUse `*`; UserPromptSubmit; SessionStart; PreCompact; PostCompact; SessionEnd;
+  SubagentStart — the spawn brief, T130) →
   `rtok hook <event>`, `timeout` 5 s. The command execs `rtok` from PATH in Claude Code's own
   shell and runs `scripts/hook.sh` only when PATH has none: the second shell cost ~6 ms per call
   (`research.md` §19). A unit test in `src/agents/claude/mod.rs` keeps them equal.
