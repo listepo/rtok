@@ -1,6 +1,5 @@
 - T83.2. `plugins::cmd::run::tests` shell-spawn family fails on Windows
 - T83.4. `agents_install` / `cursor_plugin` / `pi_plugin` / `opencode_plugin` symlink and path expectations fail on Windows
-- T83.5. `agents::claude::tests::desktop_writes_absolute_rtok_into_claude_desktop_config` fails on Windows
 - T83.6. `agents_doc::agents_doc_table_matches_the_host_code` fails on Windows
 - T83.7. `cli_trycmd::cli` fails on Windows
 - T83.8. `commands_e2e::run_long_output_then_expand_round_trips` fails on Windows
@@ -21,7 +20,7 @@
 
 - T124. Realized `tools_rewrite` saving as a dated `research.md` row
 
-- T130.2. Spawn brief: wire the `SubagentStart` hook into the Claude installer, bless docs, add outline ranges
+- T130.3. Spawn brief: outline line ranges on pointers
 - T131. Measure the spawn brief: cost row and on/off re-read share
 - T132. Ship a Haiku scout agent definition with the Claude Code plugin
 - T134. Probe: does a CLI command hook's `PostToolUse` `updatedToolOutput` replace native tool output?
@@ -35,7 +34,6 @@
 - T163.8. Retention without raw SQL; close T163
 - T163.9. Window and CTE queries through the shared extension module
 - T178. Hook wall-clock time as Claude Code sees it
-- T216. Tests that cannot fail: wildcard trycmd snapshots and `## Docs` slicing
 - T223. `windows-sys` linked in three versions
 - T235. `rtok run` hangs on inherited pipes and pays for a login shell per call; `rtok logs watch` outlives its parent
 - T260. Web Sessions page: live-only filter and a help overlay
