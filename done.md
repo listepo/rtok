@@ -1,5 +1,19 @@
 # rtok — completed tasks
 
+### T255. Tests run under a fake `HOME`
+
+Creator request 2026-09-24. T254 closes the leaks through `Config`, but code that resolves home itself (`agents::home_dir`, `Config::home_dir`, `env_user_home`) still sees the real `HOME` in any test that does not set it. Give every test process a throwaway `HOME` (and `USERPROFILE`) under `target/` so a missed path lands in a sandbox, never in `~/.claude` or `~/.codex`. The obvious place is cargo's `[env]` in `.cargo/config.toml` with `force = true`, provided nextest honours it and build scripts are not affected; if either fails, use a nextest setup script instead. Tests that need git settings from the home (commits in fixtures) get an explicit `user.name`/`user.email` instead.
+
+Check: a canary test asserts `HOME` is not the real user home; `just check` green on macOS, Ubuntu and Windows CI.
+
+Plan (creator chose the nextest route 2026-09-24): cargo `[env]` also reaches `cargo run`, so a local `cargo run -- doctor` would read the fake home. Instead, `.config/nextest.toml` gets `experimental = ["setup-scripts"]` and one `test-home` setup script for all tests, `sh -c` on Unix and PowerShell on Windows (array form, no implicit shell).
+- The script creates `target/test-home` and exports `HOME` (and `USERPROFILE` on Windows) through `$NEXTEST_ENV`.
+- It pins `CARGO_HOME`, `RUSTUP_HOME` and mise's data and config dirs to their real values, so tests that spawn `rustup`, `rust-analyzer` or `mise where` still find the toolchain.
+- Git needs nothing: tests that commit pass their own `user.*`.
+- Canary `testutil::tests::nextest_runs_under_the_test_home`: under nextest, `HOME` ends in `test-home`.
+
+Result: `.config/nextest.toml` has `test-home-unix` (`sh -c`) and `test-home-windows` (PowerShell) setup scripts, one per host platform. Each empties and recreates `target/test-home` on every run. The canary `testutil::tests::nextest_runs_under_the_test_home` passes under nextest and skips under `cargo test`. The first full run left 294 files in the fake home, written by real host CLIs that host tests spawn (codex `~/.codex/tmp`, cursor `~/.cursor/cli-config.json`, kilo and opencode XDG dirs, omp logs, the Dart analysis server) and one `~/.rtok/config.toml`; before, all of them went to the developer's real home. `just check` green (1730 tests).
+
 ### T254. Unit tests read the real `~/.claude*`, `~/.codex` and agent configs
 
 Creator request 2026-09-24, after T252. Tests still reach the developer's real home through `Config` paths nobody redirected:
@@ -5717,6 +5731,21 @@ Result: `Claude::apply`'s Desktop branch unregisters `mcpServers.rtok` instead o
 T171 (same symptom, found in the 2026-09-22 audit) is narrowed to its doctor half.
 
 Check: `cargo nextest --test claude_plugin --test agents_install --test agent_remove` 29/29; `just check` 1619 passed.
+
+### T171. Claude Code sees the rtok MCP server twice
+
+Found in the 2026-09-22 audit: every Claude Code session lists both `mcp__rtok__*` and `mcp__plugin_rtok_rtok__*` (700+ deferred-tool listings in 7 days); only `mcp__rtok__*` is ever called (854 calls, 0 on the plugin name). `rtok doctor` shows `mcp ✓ installed` and `plugin ✓ installed` for `claude (cli)` at once. Two registrations break the D21 singleton and pay the tool descriptions twice.
+
+Plan: the install half is done by T243 — the direct entry was the Claude Desktop `mcpServers.rtok` in `claude_desktop_config.json`, which the desktop app's Code tab loads next to the plugin; install now drops it while the plugin is installed. Left: make doctor flag the pair (plugin installed + an rtok entry in `claude_desktop_config.json` or `~/.claude.json`) as a duplicate.
+
+Execution: `doctor::mcp_duplicate_lines(plugin, files)` — pure over the parsed files, so the test needs no host disk (D29); `page()` feeds it `plugin_installed` and the two files (`[doctor] claude_json`, `claude::desktop_path()`); each file with `mcpServers.rtok` next to the plugin is one `duplicate:` line under `overlaps`, naming the file and `rtok agents install claude` (which strips it, T243). Unit test in `src/doctor.rs`.
+
+Check: doctor reports a duplicate on a fixture that has both; `tests/agents_doc.rs` re-blessed if the host table changes; `just test` green.
+
+Result: `rtok doctor` now lists, under `overlaps`, one `duplicate:` line per file that still registers `mcpServers.rtok` while the Claude plugin (`rtok@rtok`) is installed — `~/.claude.json` (`[doctor] claude_json`) and `claude_desktop_config.json` (`claude::desktop_path()`) — naming the file and `rtok agents install claude`, which strips the entry under the plugin (T243). The check is a pure `mcp_duplicate_lines(plugin, files)` over the parsed files; no host table changed, so `docs/agents.md` needed no re-bless. Test: `doctor::tests::mcp_entry_next_to_the_claude_plugin_is_a_duplicate` (one file, both files, no plugin, no entry). `just check` green (1733 tests).
+
+Status: done 2026-09-24
+Model: Claude Code / claude-opus-5-5
 
 ### T242.1. Re-running install refreshes stale Claude-shaped hook entries
 

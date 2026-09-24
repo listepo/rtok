@@ -288,15 +288,32 @@ pub fn run(cfg: &Config, args: &[String], agent: Option<&str>) -> Result<i32> {
 /// expand trailer, record a Measurement. Shared by `rtok run` and `rtok filter --archive`
 /// (which always passes `None`: that surface has no dispatch-time context to scope by).
 pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agent: Option<&str>) {
+    let mut out = std::io::stdout();
+    emit_filtered_to(cfg, argv, body, exit, agent, &mut out);
+}
+
+/// [`emit_filtered`] writing to `out` instead of stdout — tests assert the printed bytes
+/// (T175 verbatim pass-through) without capturing the process stdout.
+fn emit_filtered_to(
+    cfg: &Config,
+    argv: &[String],
+    body: &[u8],
+    exit: i32,
+    agent: Option<&str>,
+    out: &mut dyn std::io::Write,
+) {
     let before = String::from_utf8_lossy(body);
+    let write_text = |out: &mut dyn std::io::Write, text: &str| {
+        let _ = out.write_all(text.as_bytes());
+        if !text.is_empty() && !text.ends_with('\n') {
+            let _ = out.write_all(b"\n");
+        }
+    };
     let cx = match crate::plugin::Runtime::open(cfg.clone(), "run") {
         Ok(cx) => cx,
         Err(_) => {
             // Fail open on the CLI path too: never swallow the command's output (D4).
-            print!("{before}");
-            if !before.is_empty() && !before.ends_with('\n') {
-                println!();
-            }
+            write_text(out, &before);
             return;
         }
     };
@@ -305,7 +322,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agen
     // scopes the hit to the caller's window, so a sub-agent never sees a pointer to a body
     // written by the main window or a different sub-agent (and vice versa).
     if let Some(msg) = crate::plugin::identical_result(&cx, "cmd", body, agent) {
-        println!("{msg}");
+        write_text(out, &msg);
         return;
     }
     // The id is the body's sha256, so the filter can name it before any store write.
@@ -321,8 +338,6 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agen
     // lossless-by-default holds), and record a zero-saving row so the ledger stays honest.
     let pointer_line = trailer(&id, lines);
     if body.len() <= pointer_line.len() {
-        use std::io::Write as _;
-        let mut out = std::io::stdout().lock();
         let _ = out.write_all(body);
         if !body.is_empty() && !body.ends_with(b"\n") {
             let _ = out.write_all(b"\n");
@@ -358,10 +373,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agen
         // The archive keeps the command's bytes, not the lossy `String` used to filter
         // and print them: `expand` must return what the command wrote, including invalid UTF-8.
         if cx.put_archive_for(body, agent).is_err() {
-            print!("{before}");
-            if !before.is_empty() && !before.ends_with('\n') {
-                println!();
-            }
+            write_text(out, &before);
             return;
         }
     }
@@ -375,7 +387,7 @@ pub fn emit_filtered(cfg: &Config, argv: &[String], body: &[u8], exit: i32, agen
         shown.push_str(&pointer_line);
         shown.push('\n');
     }
-    print!("{shown}");
+    let _ = out.write_all(shown.as_bytes());
     let _ = cx.record(&Measurement {
         plugin: "cmd",
         kind,
@@ -723,7 +735,28 @@ mod tests {
             ),
             "old path would have attached a trailer"
         );
-        emit_filtered(&c, &["ps".into(), "aux".into()], body.as_bytes(), 0, None);
+        let mut printed = Vec::new();
+        emit_filtered_to(
+            &c,
+            &["ps".into(), "aux".into()],
+            body.as_bytes(),
+            0,
+            None,
+            &mut printed,
+        );
+        let mut expect = body.as_bytes().to_vec();
+        if !expect.is_empty() && !expect.ends_with(b"\n") {
+            expect.push(b'\n');
+        }
+        assert_eq!(
+            printed, expect,
+            "pass-through must be verbatim (no trailer)"
+        );
+        assert!(
+            !String::from_utf8_lossy(&printed).contains("expand"),
+            "no expand trailer on tiny body: {}",
+            String::from_utf8_lossy(&printed)
+        );
         let files: Vec<_> = fs::read_dir(&c.core.archive_dir)
             .map(|rd| rd.map(|e| e.unwrap().path()).collect())
             .unwrap_or_default();
